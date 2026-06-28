@@ -62,16 +62,37 @@ module LossDeclaration =
 /// a renamed kind is a RefactorLog move, never a drop+add; a reshaped attribute
 /// names only the facets that changed (the ALTER touches one column, not the
 /// table).
+/// A data-preserving kind rename in a migration preview — the RefactorLog
+/// channel. Named (recon #24; was a positional `(SsKey * Name * Name)` tuple
+/// where "the first Name is old" had to be remembered) so from/to can't be
+/// swapped at a use site.
+type KindRename =
+    {
+        Key  : SsKey
+        From : Name
+        To   : Name
+    }
+
+/// A per-attribute reshape in a migration preview — the ALTER channel. Named
+/// (recon #24; was a positional `(SsKey * SsKey * Set<AttributeFacet>)` tuple)
+/// so the kind key and the attribute key can't be transposed.
+type AttributeReshape =
+    {
+        Kind      : SsKey
+        Attribute : SsKey
+        Facets    : Set<AttributeFacet>
+    }
+
 type MigrationPreview =
     {
         Channels           : CatalogDiff.ChannelCounts
         Norm               : int
-        /// Kind renames (key, from, to) — the data-preserving RefactorLog channel.
-        RenamedKinds       : (SsKey * Name * Name) list
+        /// Kind renames — the data-preserving RefactorLog channel.
+        RenamedKinds       : KindRename list
         AddedKinds         : SsKey list
         RemovedKinds       : SsKey list
-        /// Per-attribute reshapes (kindKey, attrKey, facets) — the ALTER channel.
-        ReshapedAttributes : (SsKey * SsKey * Set<AttributeFacet>) list
+        /// Per-attribute reshapes — the ALTER channel.
+        ReshapedAttributes : AttributeReshape list
     }
 
 /// The plan `migrate A B` produces **before it touches anything**: the
@@ -95,7 +116,7 @@ module Migration =
             CatalogDiff.renamed diff
             |> Map.toList
             |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
-            |> List.map (fun (k, r) -> (k, r.OldName, r.NewName))
+            |> List.map (fun (k, r) -> { Key = k; From = r.OldName; To = r.NewName })
         let reshaped =
             CatalogDiff.attributeDiffs diff
             |> Map.toList
@@ -103,7 +124,7 @@ module Migration =
             |> List.collect (fun (kindKey, ad) ->
                 ad.Reshaped
                 |> List.sortBy (fun c -> SsKey.rootOriginal c.AttributeKey)
-                |> List.map (fun c -> (kindKey, c.AttributeKey, c.Facets)))
+                |> List.map (fun c -> { Kind = kindKey; Attribute = c.AttributeKey; Facets = c.Facets }))
         { Channels = CatalogDiff.channelCounts diff
           Norm = CatalogDiff.norm diff
           RenamedKinds = renamed

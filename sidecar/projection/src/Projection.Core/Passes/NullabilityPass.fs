@@ -71,12 +71,8 @@ module NullabilityPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: NullabilityDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.AttributeKey
-          TransformKind  =
-              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.AttributeKey
+            (Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken
@@ -246,21 +242,14 @@ module NullabilityPass =
             WrapDecisions      = fun decisions -> { Decisions = decisions }
             BuildEvent         = decisionEvent
         }
-        let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        // Per-attribute distribution surfaces under
-        // `pass.nullability.attribute` — one Bench sample per
-        // decision opportunity-evaluation iteration (decision-count
-        // = attributes × interventions; the per-iteration tail
-        // bounds the diagnostic-mapping cost).
-        let entries =
-            lineage.Value.Decisions
-            |> Bench.iterMap "pass.nullability.attribute" (opportunityEntry profile)
-            |> List.choose id
-        lineageDiagnostics {
-            let! value = lineage
-            do! LineageDiagnostics.writeDiagnostics entries
-            return value
-        }
+        // recon #12 — `fanOut` + the decision→diagnostic tail, now one primitive.
+        // Per-attribute distribution surfaces under `pass.nullability.attribute`
+        // (one Bench sample per decision-evaluation iteration; decision-count =
+        // attributes × interventions).
+        Composition.fanOutWithDiagnostics
+            fanOutConfig "pass.nullability.attribute"
+            (fun (ds: NullabilityDecisionSet) -> ds.Decisions) (opportunityEntry profile)
+            catalog policy profile
 
     /// Convenience accessor for tests and consumers that only care
     /// about the decision set (not the diagnostic stream). Domain-

@@ -122,11 +122,17 @@ differing names or attribute orderings are equal at the catalog level.
 **A5. Derived identities are deterministic and traceable.** When a pass
 introduces a new node (e.g., symmetric closure adds an inverse reference),
 the new node's identity is `Derived(parent, reason)` — never freshly
-generated, never randomized. The `reason` string is documented and reserved
-(the sidecar uses the reasons listed in `DECISIONS.md`).
+generated, never randomized. The `reason` is a **closed `DerivationReason` DU**
+(recon #14, 2026-06-27) — unforgeable by construction; new reasons are added to
+the DU, never as free strings. (Superseded the open-string form whose reserved
+values were listed in `DECISIONS.md`.)
 
-  *Enforcement.* `SsKey.Derived` is the only constructor for synthesized
-  identity; no code path constructs `Original` from a non-source string.
+  *Enforcement.* `SsKey.derivedFrom` is the only constructor for synthesized
+  identity, and it takes a closed `DerivationReason` — a malformed reason is
+  unconstructable by type (the prior blank-string rejection is now structural).
+  The codec (`serialize`/`deserialize`) round-trips the reason through
+  `DerivationReason.serialize`/`parse`, so a malformed *stored* token fails loud
+  rather than minting a silently-different identity.
   *Property test.* Re-running a pass yields the same derived keys for the
   same parents.
 

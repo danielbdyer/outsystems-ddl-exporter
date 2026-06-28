@@ -76,12 +76,8 @@ module UniqueIndexPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: UniqueIndexDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.IndexKey
-          TransformKind  =
-              Annotated (UniqueIndexDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.IndexKey
+            (Annotated (UniqueIndexDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// indexes by `SsKey` within each kind. Interventions are taken
@@ -182,20 +178,14 @@ module UniqueIndexPass =
             WrapDecisions      = fun decisions -> { Decisions = decisions }
             BuildEvent         = decisionEvent
         }
-        let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        // Per-index distribution surfaces under
-        // `pass.uniqueIndex.index` — one Bench sample per decision
-        // opportunity-evaluation iteration (decision-count =
+        // recon #12 — `fanOut` + the decision→diagnostic tail, now one primitive.
+        // Per-index distribution surfaces under `pass.uniqueIndex.index`
+        // (one Bench sample per decision-evaluation iteration; decision-count =
         // indexes × interventions).
-        let entries =
-            lineage.Value.Decisions
-            |> Bench.iterMap "pass.uniqueIndex.index" opportunityEntry
-            |> List.choose id
-        lineageDiagnostics {
-            let! value = lineage
-            do! LineageDiagnostics.writeDiagnostics entries
-            return value
-        }
+        Composition.fanOutWithDiagnostics
+            fanOutConfig "pass.uniqueIndex.index"
+            (fun (ds: UniqueIndexDecisionSet) -> ds.Decisions) opportunityEntry
+            catalog policy profile
 
     /// Convenience accessor for tests and consumers that only care
     /// about the decision set (not the diagnostic stream). Domain-named

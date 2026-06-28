@@ -23,7 +23,21 @@
     <Compile Include="Navigator.fs" />
     <Compile Include="OperatorConsole.fs" />
     <Compile Include="RelaxationStore.fs" />
-    <Compile Include="RunFaces.fs" />
+    <Compile Include="CliExit.fs" />
+    <Compile Include="Faces/Common.fs" />
+    <Compile Include="Faces/Migrate.fs" />
+    <Compile Include="Faces/Export.fs" />
+    <Compile Include="Faces/Deploy.fs" />
+    <Compile Include="Faces/Transfer.fs" />
+    <Compile Include="Faces/Synthetic.fs" />
+    <Compile Include="Faces/Emit.fs" />
+    <Compile Include="Faces/Canary.fs" />
+    <Compile Include="Faces/Approve.fs" />
+    <Compile Include="Faces/Operational.fs" />
+    <Compile Include="Faces/Explain.fs" />
+    <Compile Include="Faces/Inspect.fs" />
+    <Compile Include="Faces/Diff.fs" />
+    <Compile Include="Faces/Slice.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

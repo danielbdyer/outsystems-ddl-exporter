@@ -115,15 +115,13 @@ module CentralityPass =
     /// or `maxIterations`, whichever fires first. Returns the converged
     /// rank vector + the number of iterations actually run.
     let private runUntilConverged (nodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (initial: Map<SsKey, decimal>) =
-        let mutable rank = initial
-        let mutable iterations = 0
-        let mutable converged = false
-        while not converged && iterations < maxIterations do
+        // recon #19 — the bounded fixed-point scheme, named once in `Fixpoint`.
+        // The step drives `pageRankStep` and reports convergence when the
+        // max-delta falls below `convergenceEps`.
+        initial
+        |> Fixpoint.iterate maxIterations (fun rank ->
             let newRank, maxDelta = pageRankStep nodes outDegree revAdj rank
-            rank <- newRank
-            iterations <- iterations + 1
-            if maxDelta < convergenceEps then converged <- true
-        rank, iterations
+            newRank, maxDelta < convergenceEps)
 
     /// Sort the converged rank vector into a deterministic score list:
     /// DESC by score; ASC by SsKey for ties.

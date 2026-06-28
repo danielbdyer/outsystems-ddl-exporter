@@ -142,7 +142,7 @@ type SsdtDataBehaviorE2ETests(fixture: EphemeralContainerFixture) =
             let catalog = tenantCatalog ()
             let policy =
                 { Policy.empty with
-                    Emission = { EmissionPolicy.combined with DeleteScope = Some { Terms = [ { Column = "TENANTID"; Value = "1" } ] } } }
+                    Emission = { EmissionPolicy.combined with DeleteScope = Some { Terms = [ { Column = (ColumnName.create "TENANTID" |> Result.value); Value = "1" } ] } } }
             let seeds = staticSeeds policy catalog
             // the emitter actually produced the convergent-delete arm (else the test is vacuous)
             Assert.Contains("NOT MATCHED BY SOURCE", seeds)

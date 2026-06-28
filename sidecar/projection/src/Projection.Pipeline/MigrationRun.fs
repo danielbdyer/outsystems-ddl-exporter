@@ -174,7 +174,7 @@ module MigrationRun =
                                   with
                                     Metadata =
                                         Map.ofList
-                                            [ "synthesisSource", w.SynthesisSource
+                                            [ "synthesisSource", RenameSynthesisSource.text w.SynthesisSource
                                               "sourceTable", w.SourceTable
                                               "targetTable", w.TargetTable ] })
                         Ok

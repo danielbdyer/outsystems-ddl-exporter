@@ -81,9 +81,9 @@ let ``migrate: a rename is the RefactorLog channel (one renamed kind, norm 1), n
     Assert.Equal(0, plan.Preview.Channels.AddedKinds)
     Assert.Equal(0, plan.Preview.Channels.RemovedKinds)
     Assert.Equal(1, plan.Preview.Norm)
-    let (_, fromN, toN) = List.exactlyOne plan.Preview.RenamedKinds
-    Assert.Equal("Customer", Name.value fromN)
-    Assert.Equal("Patron", Name.value toN)
+    let rename = List.exactlyOne plan.Preview.RenamedKinds
+    Assert.Equal("Customer", Name.value rename.From)
+    Assert.Equal("Patron", Name.value rename.To)
     // A rename carries no data violation (‖rename‖_data = 0, A43).
     Assert.True(Migration.isSafe plan)
 
@@ -92,8 +92,8 @@ let ``migrate: a reshape is the ALTER channel (one changed attribute), touching 
     let plan = Migration.plan DeclareNone sampleCatalog reshapedTarget |> mustOk
     Assert.Equal(1, plan.Preview.Channels.ChangedAttributes)
     Assert.Equal(0, plan.Preview.Channels.RenamedKinds)
-    let (_, _, facets) = List.exactlyOne plan.Preview.ReshapedAttributes
-    Assert.Equal<Set<AttributeFacet>>(Set.singleton AttributeFacet.Nullability, facets)
+    let reshape = List.exactlyOne plan.Preview.ReshapedAttributes
+    Assert.Equal<Set<AttributeFacet>>(Set.singleton AttributeFacet.Nullability, reshape.Facets)
 
 [<Fact>]
 let ``migrate: an added kind is the Added channel`` () =

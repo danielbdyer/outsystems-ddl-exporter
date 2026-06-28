@@ -137,69 +137,11 @@ module ReadSide =
             IsNotTrusted : bool
         }
 
-    /// E2 (debrief G4) — classify an FK metadata row before it becomes a
-    /// `Reference`. `SCHEMA_NAME()` returns NULL when a referenced/parent
-    /// schema was dropped between the metadata read and the FK probe, or
-    /// when the account lacks `VIEW DEFINITION` on that schema. Such a row
-    /// cannot be faithfully reconstructed; per the no-silent-drop boundary
-    /// axiom it must surface a NAMED diagnostic — not a silent skip, not an
-    /// opaque `GetString` cast failure that aborts the whole readback. Pure +
-    /// public so the classification is unit-witnessed without a live
-    /// substrate (`tests/Projection.Tests/ForeignKeyReadbackTests.fs`).
-    [<RequireQualifiedAccess>]
-    module ForeignKeyReadback =
-
-        /// All coordinates resolved non-blank — the row reconstructs.
-        type FkCoordinates =
-            {
-                SourceSchema : string
-                SourceTable  : string
-                SourceColumn : string
-                TargetSchema : string
-                TargetTable  : string
-                TargetColumn : string
-                IsNotTrusted : bool
-            }
-
-        type Classification =
-            | Reconstructable of FkCoordinates
-            | Unreadable of reason: string
-
-        let private norm (o: string option) : string option =
-            o |> Option.map (fun (s: string) -> s.Trim()) |> Option.filter (fun s -> s <> "")
-
-        /// Classify a raw FK row. `None` models a NULL read (`SCHEMA_NAME()`
-        /// or a NULL column); a blank/whitespace string is treated
-        /// identically. On an unreadable coordinate the reason names the
-        /// visible endpoints and which side's schema was lost, plus the two
-        /// likely causes, so an operator can locate and fix the grant.
-        let classify
-            (sourceSchema: string option) (sourceTable: string option) (sourceColumn: string option)
-            (targetSchema: string option) (targetTable: string option) (targetColumn: string option)
-            (isNotTrusted: bool)
-            : Classification =
-            match norm sourceSchema, norm sourceTable, norm sourceColumn,
-                  norm targetSchema, norm targetTable, norm targetColumn with
-            | Some ss, Some st, Some sc, Some ts, Some tt, Some tc ->
-                Reconstructable
-                    { SourceSchema = ss; SourceTable = st; SourceColumn = sc
-                      TargetSchema = ts; TargetTable = tt; TargetColumn = tc
-                      IsNotTrusted = isNotTrusted }
-            | nSrcSchema, _, _, nTgtSchema, _, _ ->
-                let show (o: string option) = norm o |> Option.defaultValue "<unreadable>"
-                let src = System.String.Concat(show sourceSchema, ".", show sourceTable, ".", show sourceColumn)
-                let tgt = System.String.Concat(show targetSchema, ".", show targetTable, ".", show targetColumn)
-                let which =
-                    match nSrcSchema, nTgtSchema with
-                    | None, None -> "both endpoints' schemas"
-                    | None, _ -> "the parent schema"
-                    | _, None -> "the referenced schema"
-                    | _ -> "a coordinate"
-                Unreadable
-                    (System.String.Concat(
-                        "readside.foreignKeys: cross-schema FK ", src, " -> ", tgt,
-                        " skipped — ", which,
-                        " unreadable (NULL SCHEMA_NAME: dropped schema, or missing VIEW DEFINITION grant on a least-privilege account)"))
+    // E2 (debrief G4) — the cross-schema FK readback classifier
+    // (`ForeignKeyReadback.classify`) moved to pure Core (recon #20): NULL-
+    // coordinate classification is identity/coordinate logic, not SQL. The two
+    // call sites below reference it from `Projection.Core` (opened above); the
+    // DB-free test (`ForeignKeyReadbackTests`) follows it home.
 
     /// One key column of a reflected non-PK index (`sys.indexes ⋈
     /// sys.index_columns`), within a `(schema, table)` group: the owning
@@ -892,7 +834,7 @@ module ReadSide =
         // "[%s]"` hand-rolled bracket-quoting at three call sites
         // (column names, schema, table) — audit Top-10 #10: single
         // source of truth for SQL identifier quoting.
-        let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+        let encode = SqlIdentifier.quote   // recon #8 — the one Core quoter (≡ EncodeIdentifier, byte-verified)
         let columns =
             kind.Attributes
             |> List.map (fun a -> encode (ColumnRealization.columnNameText a.Column))
@@ -1018,7 +960,7 @@ module ReadSide =
     /// empty `keys` yields a guaranteed-empty read (`WHERE 1 = 0`). The caller
     /// chunks large key sets.
     let readRowsKeyedStream (cnn: SqlConnection) (kind: Kind) (keyColumn: Name) (keys: string list) : AsyncStream<RowQuantum> =
-        let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+        let encode = SqlIdentifier.quote   // recon #8 — the one Core quoter (≡ EncodeIdentifier, byte-verified)
         let physicalKeyCol =
             kind.Attributes
             |> List.tryFind (fun a -> a.Name = keyColumn)
@@ -1105,7 +1047,7 @@ module ReadSide =
             // `Identifier.EncodeIdentifier` to match `readRowsStream`
             // (single source of truth for SQL identifier encoding;
             // audit Section 4 consistency fix).
-            let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+            let encode = SqlIdentifier.quote   // recon #8 — the one Core quoter (≡ EncodeIdentifier, byte-verified)
             let qualified =
                 System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
                     ".",

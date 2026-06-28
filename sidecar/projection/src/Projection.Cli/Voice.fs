@@ -742,6 +742,88 @@ module Voice =
           Action         = fun _ -> Some(View.Action "Start the Docker daemon or set DOCKER_HOST, then retry.") }
 
     // ------------------------------------------------------------------
+    // §4 move verdicts — the transfer / migrate faces. These were inline
+    // `printfn` prose in the run faces (the register-drift recon #11 names:
+    // newer faces routed through the Voice, the older transfer/migrate ones
+    // emitted English inline). The load-plan TABLE stays a face-side disclosure
+    // (structured, per-kind); only the verdict LEAD and the drop refusal — the
+    // operator's finding — are voiced here.
+    // ------------------------------------------------------------------
+
+    /// `transfer.previewPlan` — the §4 move DryRun verdict: what would move, with
+    /// the no-write guarantee asserted. `rowCount` / `tableCount` ride the lead.
+    let private transferPreviewPlan : Copy =
+        { Code           = "transfer.previewPlan"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "rowCount" p, text "tableCount" p with
+                | Some rows, Some tables ->
+                    View.Hero(View.Ok, sprintf "Preview — %s row(s) would move across %s table(s), in dependency order. No rows written." (humane rows) (humane tables))
+                | _ -> View.Hero(View.Ok, "Preview — rows would move in dependency order. No rows written.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `transfer.applied` — the §4 move Execute verdict: rows moved, in dependency
+    /// order (the engine's guarantee that a row never lands before its referents).
+    let private transferApplied : Copy =
+        { Code           = "transfer.applied"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "rowCount" p, text "tableCount" p with
+                | Some rows, Some tables ->
+                    View.Hero(View.Ok, sprintf "%s row(s) moved across %s table(s), in dependency order." (humane rows) (humane tables))
+                | _ -> View.Hero(View.Ok, "Rows moved in dependency order.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `transfer.rowsDropped` — the §10 fail-loud drop refusal: a successful write
+    /// that dropped FK-orphan rows surfaces a distinct non-zero exit unless the
+    /// operator declared the loss. ONE definition (the recon's "one violation of
+    /// say-prose-once" — the literal was duplicated verbatim across the transfer
+    /// and synthetic faces). `droppedCount` rides the lead.
+    let private transferRowsDropped : Copy =
+        { Code           = "transfer.rowsDropped"
+          DocSection     = "§10"
+          Statement      =
+            fun p ->
+                match text "droppedCount" p with
+                | Some n -> View.Hero(View.Bad, sprintf "%s row(s) would be dropped — a relationship points to an unmatched record." (humane n))
+                | None   -> View.Hero(View.Bad, "Rows would be dropped — a relationship points to an unmatched record.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some(View.Action "Pass --allow-drops to accept the loss, or resolve the records.") }
+
+    /// `migrate.applied` — the §6 migrate execute verdict: the schema change ran
+    /// and the round-trip read-back matched the model (`Ingest ∘ Project = id`).
+    /// `detail` (statements applied / rows captured / record) is the proof beneath.
+    let private migrateApplied : Copy =
+        { Code           = "migrate.applied"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Applied and verified. The deployed schema now matches the model.")
+          Substantiation =
+            fun p ->
+                match text "detail" p with
+                | Some d -> [ View.Field("evidence", d, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    /// `migrate.verificationFailed` — the §6 migrate post-condition failure: the
+    /// changes WERE applied but the read-back does not match the model, so no run
+    /// was recorded. A verdict (the change landed) with a warning register (the
+    /// proof did not close). `detail` names what diverged / what was skipped.
+    let private migrateVerificationFailed : Copy =
+        { Code           = "migrate.verificationFailed"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Warn, "The changes were applied, but the read-back does not match the model. No run was recorded.")
+          Substantiation =
+            fun p ->
+                match text "detail" p with
+                | Some d -> [ View.Field("detail", d, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
     // registry's `registered ⇔ executed`), so the copy can't drift from
@@ -766,6 +848,12 @@ module Voice =
           verifyDataDiverged
           ejectVerified
           ejectUnverified
+          // §4 — move verdicts (transfer / migrate)
+          transferPreviewPlan
+          transferApplied
+          transferRowsDropped
+          migrateApplied
+          migrateVerificationFailed
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
           ejectPackaged
@@ -856,61 +944,109 @@ module Voice =
     // through `errorSurface`.
     // ------------------------------------------------------------------
 
-    /// The operator-facing frame for an error code's routing prefix
-    /// (`THE_VOICE.md` §10 / §14). Returns the statement Hero + the next-move
-    /// action. The routing is exhaustive over the known prefixes; an unmatched
-    /// code falls through to the generic §10 frame (never a stack trace, never a
-    /// system-shout). Public so the totality test asserts the routing is total.
-    let errorFrame (code: string) : View.View * View.View option =
-        if code.StartsWith "pipeline.config." then
+    /// The finite set of operator-facing error FRAMES (§10 / §14). The error-code
+    /// space is open-ended (sprintf-built subcodes), so a single catalog entry per
+    /// subcode is impossible; instead the code's top-prefix routes onto this CLOSED
+    /// DU, and `frameCopy` is a TOTAL projection over it — the same closed-DU
+    /// discipline `gateStatement` (over `Preflight.GateLabel`) and
+    /// `migrationStopDetail` (over `MigrationError`) already use in this file. The
+    /// `frame ⇔ copy` totality is then compiler-enforced (exhaustive match) and
+    /// test-covered (`VoiceTotalityTests`), closing the gap where the old 12-branch
+    /// `if/elif` `errorFrame` carried its copy inline, unreachable by any totality.
+    type ErrorFrame =
+        | ConfigProblem
+        | IntentGate
+        | ConnectionMalformed
+        | ConnectionUnresolved
+        | TimelineNameInvalid
+        | ReconcileArgumentInvalid
+        | ModelLoadFailed
+        | SchemaUnreadable
+        | TargetUnreachable
+        | PermissionDenied
+        | GenericStop
+
+    /// Route an error code's top-prefix onto its `ErrorFrame`. Ordering matters
+    /// HERE and only here, for the two genuine subset relationships (documented
+    /// inline): the specific `transfer.connection.{spec,ref}` prefixes precede the
+    /// generic `connection` substring, and the permission substrings sit last. The
+    /// routing is the one place a new prefix is wired; the COPY is total elsewhere.
+    let classifyError (code: string) : ErrorFrame =
+        if code.StartsWith "pipeline.config." then ConfigProblem
+        elif code = "gate.intent" then IntentGate
+        // `transfer.connection.{spec,ref}` MUST precede the generic `connection`
+        // substring below — a malformed/unresolved reference is an argument
+        // finding, not a reachability claim (the prior routing once overstated it).
+        elif code.StartsWith "transfer.connection.spec" then ConnectionMalformed
+        elif code.StartsWith "transfer.connection.ref" then ConnectionUnresolved
+        elif code.StartsWith "timeline.name" then TimelineNameInvalid
+        elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then ReconcileArgumentInvalid
+        elif code.StartsWith "adapter.osm." || code.StartsWith "model." then ModelLoadFailed
+        elif code.StartsWith "readside." then SchemaUnreadable
+        elif code.Contains "connection" then TargetUnreachable
+        elif code.Contains "insufficientGrant" || code.Contains "grantProbe" || code.Contains "permission" then PermissionDenied
+        else GenericStop
+
+    /// The §10 / §14 copy for an `ErrorFrame` — the statement Hero + the next-move
+    /// action. TOTAL over the closed DU (the compiler forbids a frame without
+    /// copy). Verbatim the copy the old inline `errorFrame` carried.
+    let frameCopy (frame: ErrorFrame) : View.View * View.View option =
+        match frame with
+        | ConfigProblem ->
             View.Hero(View.Bad, "The configuration has a problem. Correct it and rerun."),
             Some(View.Action "Correct the configuration and rerun.")
-        elif code = "gate.intent" then
+        | IntentGate ->
             // §5/§7 two-gate consent model: `--go` states intent, the
             // PROJECTION_ALLOW_EXECUTE arming is the second gate. A CLI consent
             // concern, not an engine pre-flight (DECISIONS 2026-06-08 — the flat
             // gate.intent code, not a Preflight.GateLabel variant).
             View.Hero(View.Warn, "A live write requires PROJECTION_ALLOW_EXECUTE=1 in the environment."),
             Some(View.Action "Set PROJECTION_ALLOW_EXECUTE=1, then re-run.")
-        elif code.StartsWith "transfer.connection.spec" then
+        | ConnectionMalformed ->
             // §14 set-but-invalid: the reference's *shape* is wrong — an argument
-            // finding, never a reachability claim (the prior routing borrowed the
-            // unreachable frame for parse failures, which overstated the probe).
+            // finding, never a reachability claim.
             View.Hero(View.Bad, "The connection reference is malformed — the expected shape is env:NAME or file:PATH. Correct it and rerun."),
             Some(View.Action "Correct the connection reference and rerun.")
-        elif code.StartsWith "transfer.connection.ref" then
+        | ConnectionUnresolved ->
             // §14 required-and-missing: the reference is well-formed but the
             // secret it points to (the env var / the file) is absent or empty.
             View.Hero(View.Bad, "The connection reference does not resolve to a connection string. Provide the secret it points to, then retry."),
             Some(View.Action "Provide the connection secret, then retry.")
-        elif code.StartsWith "timeline.name" then
+        | TimelineNameInvalid ->
             // §14 set-but-invalid: the --env label cannot name a timeline.
             View.Hero(View.Bad, "The environment label cannot name a timeline. Correct the --env label and rerun."),
             Some(View.Action "Correct the --env label and rerun.")
-        elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then
+        | ReconcileArgumentInvalid ->
             // §14 set-but-invalid — a reconciliation argument the run cannot
             // use; the located cause (the spec / the file) is the substantiation.
             View.Hero(View.Bad, "A reconciliation argument is invalid. Correct the --reconcile / --user-map value and rerun."),
             Some(View.Action "Correct the --reconcile / --user-map value and rerun.")
-        elif code.StartsWith "adapter.osm." || code.StartsWith "model." then
+        | ModelLoadFailed ->
             // §10 invalid input — the model could not be loaded; the located
             // detail (path / line / field) is the substantiation beneath.
             View.Hero(View.Bad, "The model failed to load. Correct it and rerun."),
             Some(View.Action "Correct the model and rerun.")
-        elif code.StartsWith "readside." then
+        | SchemaUnreadable ->
             // §10 — the deployed schema could not be read (the same finding the
             // §5 SchemaReadFailed gate states).
             View.Hero(View.Bad, "The deployed schema could not be read. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
-        elif code.Contains "connection" then
+        | TargetUnreachable ->
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
-        elif code.Contains "insufficientGrant" || code.Contains "grantProbe" || code.Contains "permission" then
+        | PermissionDenied ->
             View.Hero(View.Warn, "A required permission is denied. Grant it, then retry."),
             Some(View.Action "Grant the permission, then retry.")
-        else
+        | GenericStop ->
             View.Hero(View.Bad, "Stopped before any change was applied. The cause is shown below."),
             None
+
+    /// The operator-facing frame for an error code (`THE_VOICE.md` §10 / §14):
+    /// classify the code's prefix onto its `ErrorFrame`, then voice it. One
+    /// dispatcher now — routing (`classifyError`) split from copy (`frameCopy`,
+    /// total over the closed DU), each independently testable.
+    let errorFrame (code: string) : View.View * View.View option =
+        frameCopy (classifyError code)
 
     /// Voice a `ValidationError` as a §10/§14 `Surface` — the located cause (the
     /// message) is the substantiation; the code rides beneath, never on the

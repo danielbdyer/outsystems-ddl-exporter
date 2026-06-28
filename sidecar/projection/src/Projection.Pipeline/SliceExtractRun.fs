@@ -33,25 +33,9 @@ module SliceExtractRun =
     /// (opened directly). The cross-environment design is indifferent to how
     /// the source is addressed.
     let private openSource (spec: string) : Task<Result<SqlConnection>> =
-        task {
-            if spec.StartsWith "env:" || spec.StartsWith "file:" then
-                match TransferSpec.parseConnectionSpec spec with
-                | Error es -> return Result.failure es
-                | Ok connRef ->
-                    let sub : Substrate =
-                        { Environment   = Environment.Named "slice-source"
-                          Role          = SubstrateRole.Source
-                          ConnectionRef = connRef }
-                    return! ConnectionResolver.openSubstrate sub
-            else
-                let connStr = if spec.StartsWith "live:" then spec.Substring 5 else spec
-                try
-                    let cnn = new SqlConnection(connStr)
-                    do! cnn.OpenAsync()
-                    return Result.success cnn
-                with ex ->
-                    return Result.failureOf (ValidationError.create "connection.openFailed" ex.Message)
-        }
+        // recon #13 — the one connection-opener (env:/file:/live:/bare), shared
+        // with `SliceApplyRun.openTarget` (was byte-identical but for role+label).
+        ConnectionSpec.openSpec SubstrateRole.Source "slice-source" spec
 
     /// Extract the closure for a single-root slice and write the golden dataset
     /// to `outPath`. Returns `(censusByEntity, danglingMandatoryCount)`.

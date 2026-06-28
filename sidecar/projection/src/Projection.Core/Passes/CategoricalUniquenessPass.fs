@@ -73,12 +73,8 @@ module CategoricalUniquenessPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: CategoricalUniquenessDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.AttributeKey
-          TransformKind  =
-              Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.AttributeKey
+            (Annotated (CategoricalUniquenessDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

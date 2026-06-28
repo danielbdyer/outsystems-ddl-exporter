@@ -243,7 +243,7 @@ let private findChild (entitiesOf: Kind -> 'e list) (keyOf: 'e -> SsKey) (kindKe
 // (defensive — every diffed key resolves in its own side).
 
 // The flat SsKey → Name index is the shared `Catalog.nameIndex` primitive (Core) —
-// the diff, the run/apply narration (`RunFaces`), and the transfer report all resolve
+// the diff, the run/apply narration (`Faces.Transfer`), and the transfer report all resolve
 // through ONE projection now (the displayName chapter's consolidation).
 let private nameIndex (cat: Catalog) : Map<SsKey, string> = Catalog.nameIndex cat
 

@@ -9,8 +9,9 @@ open Projection.Adapters.OssysSql
 
 /// The V1-free **live OSSYS model read** primitive — the shared core behind
 /// `ModelResolution` (flow surface) and `Compose.readConfigModel` (full-export
-/// surface). Compiled first in the Pipeline project (no intra-project
-/// dependencies) so both consumers can reach it regardless of compile order.
+/// surface). The connection-spec decode + open now flow through the one
+/// `ConnectionSpec.openSpec` opener (recon #13 — compiled before this), so this
+/// module carries no bespoke connection-ref decode of its own.
 ///
 /// Reads the OutSystems model directly from a live OSSYS database: V2's own
 /// `MetadataSnapshotRunner` (over V2's carbon-copied rowset SQL) → `RowsetBundle`
@@ -18,19 +19,6 @@ open Projection.Adapters.OssysSql
 /// SsKey** (A1-stable). No V1 chain, no `osm_model.json`.
 [<RequireQualifiedAccess>]
 module LiveModelRead =
-
-    /// Parse a connection reference (`env:<var>` / `file:<path>`) — the
-    /// out-of-band credential pointer (D9), never the secret. Inlined here so
-    /// this primitive carries no intra-Pipeline dependency.
-    let parseConnRef (spec: string) : Result<ConnectionRef> =
-        let trimmed = (spec: string).Trim()
-        if trimmed.StartsWith "env:" then Result.success (ConnectionRef.EnvVar (trimmed.Substring 4))
-        elif trimmed.StartsWith "file:" then Result.success (ConnectionRef.File (trimmed.Substring 5))
-        else
-            Result.failureOf
-                (ValidationError.create
-                    "model.ossys.connRef"
-                    (sprintf "model OSSYS connection '%s' must be an out-of-band reference (env:<var> or file:<path>)." spec))
 
     /// Read the model from an already-open OSSYS connection under the
     /// supplied scope parameters: snapshot → bundle → Catalog (native
@@ -87,25 +75,21 @@ module LiveModelRead =
     let fromConnection (cnn: SqlConnection) : Task<Result<Catalog>> =
         fromConnectionWith MetadataSnapshotRunner.defaultParameters cnn
 
-    /// Read the model live from a connection reference under the supplied
-    /// scope parameters: parse → open (Source role) → `fromConnectionWith`.
+    /// Read the model live from a connection spec under the supplied scope
+    /// parameters: open (Source role, through the one `ConnectionSpec.openSpec`)
+    /// → `fromConnectionWith`. Accepts every spec form uniformly (`env:` /
+    /// `file:` / `live:` / bare — recon #13, D9 amended 2026-06-28); `env:` /
+    /// `file:` remain the recommended out-of-band form.
     let fromConnSpecWith
         (parameters: MetadataSnapshotRunner.SnapshotParameters)
         (connSpec: string)
         : Task<Result<Catalog>> =
         task {
-            match parseConnRef connSpec with
+            match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-model-source" connSpec with
             | Error es -> return Result.failure es
-            | Ok connRef ->
-                let sub : Substrate =
-                    { Environment   = Environment.Named "ossys-model-source"
-                      Role          = SubstrateRole.Source
-                      ConnectionRef = connRef }
-                match! ConnectionResolver.openSubstrate sub with
-                | Error es -> return Result.failure es
-                | Ok cnn ->
-                    use cnn = cnn
-                    return! fromConnectionWith parameters cnn
+            | Ok cnn ->
+                use cnn = cnn
+                return! fromConnectionWith parameters cnn
         }
 
     /// Read the model live from a connection reference: parse → open (Source

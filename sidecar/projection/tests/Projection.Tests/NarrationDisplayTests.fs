@@ -33,7 +33,7 @@ let ``verify-data payload names the table by Name, not its GUID rootOriginal`` (
         { RowCountDeltas  = [ { Kind = kindK; Before = 10L<row>; After = 12L<row> } ]
           NullCountDeltas = []
           Warnings        = [] }
-    let rowDeltas = RunFaces.integrityPayload contract report |> Map.find "rowDeltas" |> string
+    let rowDeltas = Faces.Operational.integrityPayload contract report |> Map.find "rowDeltas" |> string
     Assert.Contains("Orders", rowDeltas)                    // the readable Name
     Assert.DoesNotContain("c0000000", rowDeltas)            // not the GUID
 
@@ -48,7 +48,7 @@ let ``verify-data payload names a column by Name in the null-count deltas`` () =
         { RowCountDeltas  = []
           NullCountDeltas = [ { Kind = kindK; Attribute = attrK; Before = 0L<row>; After = 3L<row> } ]
           Warnings        = [] }
-    let nullDeltas = RunFaces.integrityPayload contract report |> Map.find "nullDeltas" |> string
+    let nullDeltas = Faces.Operational.integrityPayload contract report |> Map.find "nullDeltas" |> string
     Assert.Contains("Customer", nullDeltas)
     Assert.Contains("Email", nullDeltas)
     Assert.DoesNotContain("c0000000", nullDeltas)
@@ -75,6 +75,6 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           ReplayedPriorDrops       = None
           SyntheticUnsatisfiableFks = []
           Names                    = Map.ofList [ kindK, "Orders" ] }
-    let out = capture (fun () -> RunFaces.narrateTransferReport report)
+    let out = capture (fun () -> Faces.Transfer.narrateTransferReport report)
     Assert.Contains("Orders", out)                  // the readable Name from the report's index
     Assert.DoesNotContain("d0000000", out)          // not the GUID rootOriginal

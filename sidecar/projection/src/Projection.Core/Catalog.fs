@@ -534,8 +534,9 @@ module ColumnRealization =
     /// (`CONSTELLATION_BACKLOG.md` plane N3): SQL treats `CustomerId` and
     /// `CUSTOMERID` as one column, so a case-sensitive lookup silently
     /// fails to resolve an operator's differently-cased ref. (Pre-existing
-    /// adopters of this policy, not yet migrated to this name:
-    /// `Policy.fs:82`, `OssysRowsetReader.fs:325`.)
+    /// adopter of this policy, not yet migrated to this name:
+    /// `OssysRowsetReader.fs:325`. `DeleteScopePolicy.resolveFor` was migrated
+    /// 2026-06-28, recon #24, when its term column became a typed `ColumnName`.)
     let columnNameEquals (name: string) (c: ColumnRealization) : bool =
         System.String.Equals(columnNameText c, name, System.StringComparison.OrdinalIgnoreCase)
 
@@ -1397,21 +1398,20 @@ module Reference =
     let withConstraintState (hasDbConstraint: bool) (isConstraintTrusted: bool) (r: Reference) : Reference =
         { r with ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted }
 
-    /// The reserved SsKey derivation reason the symmetric-closure pass
-    /// stamps on synthesized inverse references (the first reserved
-    /// reason, DECISIONS 2026-05-06). Owned here — the compile-order
-    /// floor of the reference vocabulary — so the deployability
-    /// predicate below and the pass share one definition;
-    /// `SymmetricClosure.inverseReason` aliases this constant.
-    /// (DECISIONS 2026-06-12 — reconciliation slice 1.)
-    [<Literal>]
-    let inverseDerivationReason : string = "inverse"
+    /// The SsKey derivation reason the symmetric-closure pass stamps on
+    /// synthesized inverse references. Owned here — the compile-order floor of
+    /// the reference vocabulary — so the deployability predicate below and the
+    /// pass share one definition; `SymmetricClosure.inverseReason` aliases it.
+    /// (DECISIONS 2026-06-12 — reconciliation slice 1; closed to the
+    /// `DerivationReason` DU 2026-06-27, recon #14.)
+    let inverseDerivationReason : DerivationReason = DerivationReason.Inverse
 
     /// True iff this reference is a symmetric-closure inverse — a
-    /// pass-synthesized edge carrying `DerivedFrom(_, "inverse")`.
+    /// pass-synthesized edge carrying `DerivedFrom(_, Inverse)`. Total match over
+    /// the closed `DerivationReason` set.
     let isInverse (r: Reference) : bool =
         match r.SsKey with
-        | DerivedFrom (_, reason) when reason = inverseDerivationReason -> true
+        | DerivedFrom (_, DerivationReason.Inverse) -> true
         | _ -> false
 
     /// The single definition site for "deployable reference"

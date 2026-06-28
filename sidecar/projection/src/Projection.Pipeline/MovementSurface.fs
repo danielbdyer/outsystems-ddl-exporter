@@ -689,7 +689,8 @@ module ProjectionConfig =
     /// than let it parse, render, and list while reaching nothing (A44:
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
-        set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare" ]
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
+              "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -1792,6 +1793,13 @@ module Command =
         | "compare" :: rest -> Result.success (Intent.Compare rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
+        // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
+        // `argv.[0]` match in `Program.main`, now first-class typed intents on the
+        // one dispatch plane. `slice-reset` is `slice-apply` under `reset = true`.
+        | "slice-extract" :: rest -> Result.success (Intent.SliceExtract rest)
+        | "slice-apply" :: rest   -> Result.success (Intent.SliceApply (false, rest))
+        | "slice-reset" :: rest   -> Result.success (Intent.SliceApply (true, rest))
+        | "slice-run" :: rest     -> Result.success (Intent.SliceFlow rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             // D8 — the value-bearing synthesis knobs. A malformed value is a
             // refusal (named, never a silent fall-through to the default).
@@ -1851,3 +1859,6 @@ module Command =
         | Intent.Compare args      -> planCompare cfg args
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
+        | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }
+        | Intent.SliceApply (reset, args)  -> { Notes = []; Action = PlanAction.RunSliceApply (reset, args) }
+        | Intent.SliceFlow args            -> { Notes = []; Action = PlanAction.RunSliceFlow args }

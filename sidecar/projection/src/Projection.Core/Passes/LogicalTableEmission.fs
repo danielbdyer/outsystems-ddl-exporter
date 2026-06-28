@@ -72,11 +72,8 @@ module LogicalTableEmission =
     let private classification : Classification = OperatorIntent Emission
 
     let private substitutedEvent (key: SsKey) (before: TableId) (after: TableId) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = PhysicallyRenamed { Before = before; After = after }
-          Classification = classification }
+        LineageEvent.forPass passName version classification key
+            (PhysicallyRenamed { Before = before; After = after })
 
     /// Substitute the logical name into the physical-realization slot. A kind
     /// whose SsKey is in `pins` is SKIPPED: an operator-supplied PHYSICAL-form

@@ -98,11 +98,7 @@ module VisibilityMask =
     let private classification : Classification = OperatorIntent Selection
 
     let private removedEvent (predicate: Predicate) (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Removed predicate.Reason
-          Classification = classification }
+        LineageEvent.forPass passName version classification key (Removed predicate.Reason)
 
     // -----------------------------------------------------------------------
     // The pass.

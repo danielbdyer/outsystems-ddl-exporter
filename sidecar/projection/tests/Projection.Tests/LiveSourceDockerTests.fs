@@ -122,7 +122,7 @@ type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
                                         ("INSERT INTO [dbo].[OSUSR_CMP_ORDER] ([ID], [STATUS]) " +
                                          "VALUES (1, NULL);")
                                 // Resolve A as a profilable Source, B's catalog only —
-                                // mirroring `RunFaces.runCompare`.
+                                // mirroring `Faces.Diff.runCompare`.
                                 let! srcA = Ref.resolveSource (Ref.parse ("live:" + connA))
                                 let srcA = mustOk srcA
                                 let! aCatR = Source.read srcA

@@ -64,11 +64,8 @@ module LogicalColumnEmission =
     let private classification : Classification = OperatorIntent Emission
 
     let private substitutedEvent (key: SsKey) (kind: TableId) (before: string) (after: string) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = ColumnPhysicallyRenamed { Kind = kind; Before = before; After = after }
-          Classification = classification }
+        LineageEvent.forPass passName version classification key
+            (ColumnPhysicallyRenamed { Kind = kind; Before = before; After = after })
 
     let private substituteAttribute (events: LineageBuffer.Buffer) (kind: TableId) (a: Attribute) : Attribute =
         let logical = Name.value a.Name
@@ -98,8 +95,8 @@ module LogicalColumnEmission =
         |> List.fold
             (fun (acc: string) (physical, logical) ->
                 acc.Replace(  // LINT-ALLOW: bracketed-identifier token rewrite at the substitution pass; the tokens are typed names lifted from the IR (ColumnRealization/Name), not composed prose; Core is ScriptDom-free by design so a typed-AST rewrite is not available at this layer
-                    System.String.Concat("[", physical, "]"),  // LINT-ALLOW: terminal bracketed-identifier for the rename-pair refactorlog field; no use-case-specific AST at this string site
-                    System.String.Concat("[", logical, "]"),  // LINT-ALLOW: terminal bracketed-identifier for the rename-pair refactorlog field; no use-case-specific AST at this string site
+                    SqlIdentifier.quote physical,   // recon #8 — the one Core quoter (also `]`-escapes, which the prior inline literal did not)
+                    SqlIdentifier.quote logical,
                     System.StringComparison.OrdinalIgnoreCase))
             definition
 

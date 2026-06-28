@@ -215,8 +215,9 @@ let ``A5: derived identities are deterministic + traceable — verified by Catal
         "tests/Projection.Tests/CatalogTests.fs"
         "A5: derived(parent, reason) is deterministic"
     // Bucket B — `SsKey.derivedFrom` is the sole constructor of
-    // `DerivedFrom`; the smart constructor rejects blank reasons; the
-    // chained-derivation reason walk is tested.
+    // `DerivedFrom`; the reason is a closed `DerivationReason` DU (recon #14),
+    // so a malformed reason is unconstructable by type (the prior blank-string
+    // rejection is now structural); the chained-derivation reason walk is tested.
     ()
 
 // ===========================================================================

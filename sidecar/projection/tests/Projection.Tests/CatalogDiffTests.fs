@@ -792,7 +792,7 @@ let ``A1: a Synthesized-key rename is surfaced, not silently re-keyed`` () =
     // …but the instability is SURFACED, not silent.
     match CatalogDiff.synthesizedRenameWarnings diff with
     | [ w ] ->
-        Assert.Equal("READSIDE_KIND", w.SynthesisSource)
+        Assert.Equal(RenameSynthesisSource.Known "READSIDE_KIND", w.SynthesisSource)
         Assert.Equal("dbo.T_OLD", w.SourceTable)
         Assert.Equal("dbo.T_NEW", w.TargetTable)
     | other -> Assert.Fail(sprintf "expected exactly one synthesized-rename warning, got %A" other)

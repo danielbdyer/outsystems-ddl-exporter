@@ -292,6 +292,26 @@ type LineageEvent = {
     Classification : Classification
 }
 
+/// Smart constructor for the per-pass lineage event (recon #15). Every pass
+/// carries a fixed `(PassName, PassVersion, Classification)` and mints events
+/// that vary ONLY by `SsKey` + `TransformKind`; before this each pass
+/// hand-wrote the 5-field record literal (the `decisionEvent`/`touchedEvent`/
+/// `createdEvent`/… family, ~16 copies across the pass tree). Partially applying
+/// `forPass passName version classification` once per pass yields the pass's
+/// `mkEvent : SsKey -> TransformKind -> LineageEvent`, so the A23 invariant —
+/// every event carries its `PassVersion` + `Classification` — is enforced at one
+/// site instead of re-typed per pass. (The analytics family already did this
+/// internally via `touchedEpilogue`; this generalizes it.)
+[<RequireQualifiedAccess>]
+module LineageEvent =
+
+    let forPass (passName: string) (version: int) (classification: Classification) (key: SsKey) (kind: TransformKind) : LineageEvent =
+        { PassName       = passName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = kind
+          Classification = classification }
+
 
 /// Writer-monadic carrier for any pass output. Per A25, every IR
 /// transformation in the pipeline runs inside `Lineage<_>`; lineage is

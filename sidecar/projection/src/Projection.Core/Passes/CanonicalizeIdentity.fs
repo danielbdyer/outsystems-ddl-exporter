@@ -99,11 +99,7 @@ module CanonicalizeIdentity =
 
     /// Build the lineage event recording that the pass observed a kind.
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Touched
-          Classification = classification }
+        LineageEvent.forPass passName version classification key Touched
 
     /// Run the pass over a catalog. Returns the canonicalized catalog
     /// wrapped in a lineage with one `Touched` event per kind.

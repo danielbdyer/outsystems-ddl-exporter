@@ -393,3 +393,17 @@ module LifecycleStore =
                         | Error m -> Error (ParseFailure (path, m))
                 with ex ->
                     Error (ParseFailure (path, ex.Message))
+
+    /// Load the durable timeline at `path`, then run a pure `fromChain` over it,
+    /// mapping BOTH failure modes to operator-facing strings: a malformed/absent
+    /// store via `describe`, a non-composable chain via `onChainError`. The shared
+    /// load→describe→run shape behind `EjectRun.fromStore` / `ReportRun.fromStore`
+    /// (recon #25) — generic over the chain-result's error so each caller keeps its
+    /// own typed `fromChain` and its own reconstruction-failure message.
+    let withLoaded (fromChain: EpisodicLifecycle -> Result<'a, 'e>) (onChainError: string) (path: string) : Result<'a, string> =
+        match load path with
+        | Error e -> Error (describe e)
+        | Ok chain ->
+            match fromChain chain with
+            | Ok value -> Ok value
+            | Error _  -> Error onChainError

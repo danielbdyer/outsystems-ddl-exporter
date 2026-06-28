@@ -49,7 +49,12 @@ let private inScopeCodes : Set<string> =
           "eject.packaged"; "eject.verified"; "eject.unverified"
           "eject.storeUnreadable"
           // the verify-data face: the §6 data-fidelity verdict pair
-          "verifyData.matched"; "verifyData.diverged" ]
+          "verifyData.matched"; "verifyData.diverged"
+          // the §4 move verdicts — the transfer / migrate faces (register
+          // migration recon #11): preview / applied / drop refusal, and the
+          // migrate execute-leg applied / verification-failed verdicts
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -100,6 +105,9 @@ let private knownEmittableCodes : Set<string> =
           "eject.storeUnreadable"
           // the verify-data face's verdict pair
           "verifyData.matched"; "verifyData.diverged"
+          // the §4 transfer / migrate move verdicts (recon #11)
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -216,7 +224,9 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "verifyData.matched"; "verifyData.diverged"
           "drift.none"; "drift.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
-          "migrate.inexpressible"; "migrate.stopped" ]
+          "migrate.inexpressible"; "migrate.stopped"
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed" ]
 
 [<Fact>]
 let ``Voice totality: every code rendered by a run face is voiced (no silent verdict — NM-47)`` () =
@@ -409,6 +419,42 @@ let ``Voice errorFrame: a reconciliation argument routes to the §14 invalid fra
         match Voice.errorFrame code with
         | View.Hero(View.Bad, text), Some _ -> Assert.Contains("reconciliation argument", text)
         | other -> Assert.Fail(sprintf "unexpected reconcile frame for %s: %A" code other)
+
+// The error-frame dispatcher unification (recon #11): `errorFrame` was a
+// 12-branch ordering-dependent `if/elif` carrying its copy inline, unreachable by
+// any totality. It is now `classifyError` (routing) >> `frameCopy` (total over the
+// closed `ErrorFrame` DU) — the §10/§14 sibling of the §5 gate⇔copy projection.
+
+[<Fact>]
+let ``Voice errorFrame: frameCopy is total + register-clean over the closed ErrorFrame DU`` () =
+    // Every frame in the closed DU yields register-clean copy with a non-empty
+    // statement. `frameCopy` is compiler-exhaustive, so a new DU case cannot land
+    // without copy; this pins that the copy is also CLEAN — the frame⇔copy totality.
+    let allFrames =
+        [ Voice.ConfigProblem; Voice.IntentGate; Voice.ConnectionMalformed
+          Voice.ConnectionUnresolved; Voice.TimelineNameInvalid
+          Voice.ReconcileArgumentInvalid; Voice.ModelLoadFailed
+          Voice.SchemaUnreadable; Voice.TargetUnreachable
+          Voice.PermissionDenied; Voice.GenericStop ]
+    for frame in allFrames do
+        let statement, _ = Voice.frameCopy frame
+        assertClean (sprintf "frameCopy %A" frame) statement
+        match statement with
+        | View.Hero(_, t) -> Assert.False(System.String.IsNullOrWhiteSpace t, sprintf "frame %A has an empty statement" frame)
+        | other -> Assert.Fail(sprintf "frame %A statement is not a Hero: %A" frame other)
+
+[<Fact>]
+let ``Voice errorFrame: classifyError routes the specific prefixes ABOVE the generic connection substring`` () =
+    // The ordering-shadow the old if/elif silently depended on, now PINNED: a
+    // transfer.connection.{spec,ref} is an ARGUMENT frame (malformed / unresolved),
+    // never the generic "unreachable" — even though all three contain "connection".
+    Assert.Equal(Voice.ConnectionMalformed,  Voice.classifyError "transfer.connection.specShape")
+    Assert.Equal(Voice.ConnectionUnresolved, Voice.classifyError "transfer.connection.refMissing")
+    Assert.Equal(Voice.TargetUnreachable,    Voice.classifyError "migrate.connectionUnavailable")
+    Assert.Equal(Voice.ConfigProblem,        Voice.classifyError "pipeline.config.typeMismatch")
+    Assert.Equal(Voice.IntentGate,           Voice.classifyError "gate.intent")
+    Assert.Equal(Voice.PermissionDenied,     Voice.classifyError "transfer.insufficientGrant")
+    Assert.Equal(Voice.GenericStop,          Voice.classifyError "something.unclassified")
 
 // ---------------------------------------------------------------------------
 // the verify-data face's §6 pair — the divergence demotes each delta family

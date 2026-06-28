@@ -81,6 +81,18 @@ type Substrate =
         ConnectionRef : ConnectionRef
     }
 
+/// The factory for the predominant inline substrate shape across the run
+/// modules (recon #13): a role-bound substrate over an out-of-band
+/// `ConnectionRef`, tagged with a one-off `Named` environment whose `label`
+/// surfaces in a resolution / open failure. Before this, the same three-field
+/// record was reconstructed by hand at ~6 sites (`ConnectionSpec`,
+/// `LiveModelRead`, `Hydration` ×2, `ProfileCaptureRun`, `SyntheticLoadRun`),
+/// each free to forget the `Role` or mistype the label.
+[<RequireQualifiedAccess>]
+module Substrate =
+    let fromRef (role: SubstrateRole) (label: string) (connRef: ConnectionRef) : Substrate =
+        { Environment = Environment.Named label; Role = role; ConnectionRef = connRef }
+
 /// The connection set a Transfer binds: which substrate is the data
 /// `Source`, which is the write `Sink`, and which substrates are profiled
 /// for identity reference. For a `ReconciledByRule` Transfer the Sink is

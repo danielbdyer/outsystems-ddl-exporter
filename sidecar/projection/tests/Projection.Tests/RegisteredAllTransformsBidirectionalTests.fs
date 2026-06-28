@@ -41,15 +41,36 @@ open Projection.Tests.TotalityFunctor
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7'-prelude: RegisteredAllTransforms.all validates through TransformRegistry.create`` () =
+let ``A.4.7'-prelude: RegisteredAllTransforms.all validates through TransformRegistry.create (distinct names, well-formed sites)`` () =
+    // `create` runs `validateUniqueNames` + per-site validation, so a duplicate
+    // name across ANY two contributing surfaces — the unified-registry analog of
+    // the per-partition set-equality guards (E1/E2/E5/NM-43) — fails here. (The
+    // prior `>= 21` floor only caught wholesale removal; distinctness is the
+    // stronger structural guarantee, and the per-partition presence guards below
+    // catch a source dropped from the `@`-assembly.)
     match TransformRegistry.create RegisteredAllTransforms.all with
-    | Ok entries ->
-        Assert.True(
-            List.length entries >= 21,
-            sprintf "expected >= 21 entries; got %d" (List.length entries))
+    | Ok _ -> ()
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         Assert.Fail(sprintf "Expected RegisteredAllTransforms.all to validate; got: %s" codes)
+
+[<Fact>]
+let ``registered ⇔ executed (data + transfer partitions): every RegisteredDataTransforms + transferEpic surface appears in the unified registry`` () =
+    // E1/E2/E5/NM-43 pin the emit / read / seam / pass-chain partitions to the
+    // unified registry by name-set equality against their bound execution source.
+    // The two partitions those guards DON'T reach are the Data-axis composer/emitter
+    // surfaces (`RegisteredDataTransforms.all`) and the Transfer epic
+    // (`RegisteredAllTransforms.transferEpic`). This pins both: a surface dropped
+    // from the `@`-assembly — the "executed but absent from the totality view"
+    // failure mode (the F13/SuggestConfig class) — fails here, not silently.
+    let allNames = RegisteredAllTransforms.all |> List.map (fun m -> m.Name) |> Set.ofList
+    for m in Projection.Targets.Data.RegisteredDataTransforms.all do
+        Assert.True(Set.contains m.Name allNames,
+            sprintf "RegisteredDataTransforms surface '%s' is not in RegisteredAllTransforms.all" m.Name)
+    for m in RegisteredAllTransforms.transferEpic do
+        Assert.True(Set.contains m.Name allNames,
+            sprintf "transferEpic surface '%s' is not in RegisteredAllTransforms.all" m.Name)
+    Assert.NotEmpty RegisteredAllTransforms.transferEpic
 
 [<Fact>]
 let ``A.4.7'-prelude: RegisteredAllTransforms.all covers Adapter / Pass / Emitter / Pipeline stages`` () =

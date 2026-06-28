@@ -9,7 +9,7 @@ open Projection.Cli
 /// `printfn`, bypassing the `View` engine — so it had no JSON/`--query` lens and
 /// escaped the code⇔copy + twelve-rule tests, while `View.Trail` (built for
 /// exactly this surface) had ZERO producers. The face now builds a `View`
-/// (`RunFaces.explainView`) routed through `TtyRenderer.renderAnswer`. These pin
+/// (`Faces.Explain.explainView`) routed through `TtyRenderer.renderAnswer`. These pin
 /// that the explain story IS a `View.Trail` and carries the JSON lens — the human
 /// and machine views are one value.
 
@@ -27,7 +27,7 @@ let private trailEvent (passName: string) (key: SsKey) (kind: TransformKind) : L
 let ``NM-37: the explain story is a View.Trail (the previously zero-producer block)`` () =
     let key = SsKey.ossysOriginal (System.Guid.NewGuid())
     let trail = [ trailEvent "NullabilityPass" key TransformKind.Touched ]
-    let view = RunFaces.explainView "OrderHeader" trail []
+    let view = Faces.Explain.explainView "OrderHeader" trail []
     // JSON lens — explain now has the structured projection it lacked. The block
     // the audit named (`View.Trail`) is present, with its named label.
     let blocks = (json view).GetProperty("blocks").EnumerateArray() |> Seq.toList
@@ -45,7 +45,7 @@ let ``NM-37: a finding renders as a status field with its suggested fix (the JSO
         { DiagnosticEntry.create "explain" DiagnosticSeverity.Warning "profile.nullBudget" "20% NULL" with
             SsKey = Some key
             SuggestedConfig = Some { Path = "$.policy.nullBudget"; Value = "0.5"; Note = None } }
-    let view = RunFaces.explainView "CustomerId" [] [ diag ]
+    let view = Faces.Explain.explainView "CustomerId" [] [ diag ]
     let blocks = (json view).GetProperty("blocks").EnumerateArray() |> Seq.toList
     let kindOf (b: JsonElement) = nonNull (b.GetProperty("kind").GetString())
     let kinds = blocks |> List.map kindOf
@@ -60,7 +60,7 @@ let ``NM-37: a finding renders as a status field with its suggested fix (the JSO
 
 [<Fact>]
 let ``NM-37: an empty match names the gap and the next move (never silence)`` () =
-    let view = RunFaces.explainView "Nope" [] []
+    let view = Faces.Explain.explainView "Nope" [] []
     let blocks = (json view).GetProperty("blocks").EnumerateArray() |> Seq.toList
     let kinds = blocks |> List.map (fun b -> nonNull (b.GetProperty("kind").GetString()))
     Assert.Contains("note", kinds)     // "no transforms or findings matched"

@@ -67,7 +67,7 @@ let private scenarios : (string * Config.Config * Catalog) list =
         { baseConfig with
             Emission =
                 { baseConfig.Emission with
-                    DeleteScope = Some { Terms = [ { Column = "TenantId"; Value = "42" } ] } } },
+                    DeleteScope = Some { Terms = [ { Column = (ColumnName.create "TenantId" |> Result.value); Value = "42" } ] } } },
         GoldenCatalog.catalog
       "pruned-platform-auto",
         { baseConfig with
