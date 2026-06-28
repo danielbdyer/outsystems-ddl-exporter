@@ -89,25 +89,9 @@ module SliceApplyRun =
     /// `SliceExtractRun.openSource`: `env:`/`file:` via ConnectionResolver;
     /// `live:<connStr>` / a bare connection string opened directly).
     let private openTarget (spec: string) : Task<Result<SqlConnection>> =
-        task {
-            if spec.StartsWith "env:" || spec.StartsWith "file:" then
-                match TransferSpec.parseConnectionSpec spec with
-                | Error es -> return Result.failure es
-                | Ok connRef ->
-                    let sub : Substrate =
-                        { Environment   = Environment.Named "slice-target"
-                          Role          = SubstrateRole.Sink
-                          ConnectionRef = connRef }
-                    return! ConnectionResolver.openSubstrate sub
-            else
-                let connStr = if spec.StartsWith "live:" then spec.Substring 5 else spec
-                try
-                    let cnn = new SqlConnection(connStr)
-                    do! cnn.OpenAsync()
-                    return Result.success cnn
-                with ex ->
-                    return Result.failureOf (ValidationError.create "connection.openFailed" ex.Message)
-        }
+        // recon #13 — the one connection-opener, shared with
+        // `SliceExtractRun.openSource` (was byte-identical but for role+label).
+        ConnectionSpec.openSpec SubstrateRole.Sink "slice-target" spec
 
     /// Read the golden, read the target schema, emit the artifact, write it.
     /// Returns the row count emitted.
