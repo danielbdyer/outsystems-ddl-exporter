@@ -352,7 +352,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                 "Extracted model path is required to hydrate foreign key metadata. Provide extract.outputPath or persist the extraction payload.");
         }
 
-        var sqlMetadataOptions = CreateSqlMetadataOptions(request.ExtractModel.SqlOptions);
+        var sqlMetadataOptions = request.ExtractModel.SqlOptions?.ToModelIngestionMetadata();
         if (sqlMetadataOptions is null)
         {
             _logger.LogWarning("Skipping FK hydration: SQL metadata connection string is not configured.");
@@ -401,25 +401,6 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
             extraction.Dataset);
     }
 
-    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
-    {
-        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            return null;
-        }
-
-        var authentication = sqlOptions.Authentication;
-        var connectionOptions = new SqlConnectionOptions(
-            authentication.Method,
-            authentication.TrustServerCertificate,
-            authentication.ApplicationName,
-            authentication.AccessToken);
-
-        return new ModelIngestionSqlMetadataOptions(
-            sqlOptions.ConnectionString,
-            connectionOptions,
-            sqlOptions.CommandTimeoutSeconds);
-    }
 
     private void LogFailure(
         PipelineExecutionLogBuilder log,

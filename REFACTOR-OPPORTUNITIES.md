@@ -173,14 +173,15 @@ single structural sink.
   leaving the public opportunity analyzer's `ITighteningAnalyzer` unambiguous. Build + Validation green.
 
 ### Remaining structural collapses
-- [ ] **4.9 Follow-up (round-trip-sensitive).** Duplicate ProfileSnapshot DTO family defined
-  twice (serializer vs deserializer, ~170 LOC). High value, but the two halves differ in
-  nullable defaults and a `Ref` read-alias; merging needs the shared DTO to satisfy both
-  directions and must be guarded by the existing round-trip tests. Worth its own PR.
-- [ ] **4.10** Profiling SQL command/reader scaffold repeated ~6×
-  (`ProfilingQueryExecutor`, `TableMetadataLoader`) — `ReadDictionaryAsync` helper +
-  `ApplyCommandTimeout`/`ComputeSha256`/`CreateSqlMetadataOptions` dedup. ~90-130 LOC.
-  **[cross-validated]**
+- [x] **4.9 Done.** Unified the duplicate ProfileSnapshot DTO family (serializer vs
+  deserializer) into one shared internal `ProfileSnapshotDocuments.cs`. The `Ref` read-alias
+  is preserved via `JsonIgnore(WhenWritingNull)` so serialized output is byte-identical.
+  Json (89) + profile serialization/round-trip Pipeline tests (44) green.
+- [x] **4.10 (partial)** Deduplicated `CreateSqlMetadataOptions` — four byte-identical private
+  copies (`ModelLoader`, `FullExportPipeline`, `FullExportApplicationService`,
+  `BuildSsdtApplicationService`) → one `ResolvedSqlOptions.ToModelIngestionMetadata()`.
+  The `ProfilingQueryExecutor`/`TableMetadataLoader` reader-loop scaffold remains a follow-up
+  (Med risk — per-call command config + error codes must be preserved exactly).
 - [ ] **4.11** 5 command factories bypass `PipelineCommandFactory` (Analyze, Inspect,
   VerifyData, Policy, UatUsers) — re-hand-roll scope/error/exit-code plumbing.
   `SplitTableIdentifier` copy-pasted verbatim (78 LOC) between two UAT files.
