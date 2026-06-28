@@ -1,4 +1,5 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE: the pure profiling-derivation suite (recon #5) — its only non-typed primitives are (a) reified imperative algorithms (HashSet/Dictionary/ResizeArray + local mutables for O(n) frequency / dedup / composite-key building, isolated and pure-pool-tested) and (b) terminal type-tagged value-key strings for those hash/group operations (a hash key IS a string primitive); no SQL / typed-AST surface applies in this math-only module.
 
 // No `open System`: this module lives in `namespace Projection.Core`, and opening
 // System would shadow the Core `Attribute` / `Index` types with `System.Attribute` /
