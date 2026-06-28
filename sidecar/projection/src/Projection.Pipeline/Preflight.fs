@@ -555,45 +555,71 @@ module Preflight =
         | MidWriteNotProtected        -> "mid-write not protected"
         | UnclassifiedRefusal         -> "unclassified refusal"
 
-    /// The closed `code → (exit, label)` mapping. TOTAL over the gate code
-    /// vocabulary: every known refusal maps to its DISTINCT per-verb exit code +
-    /// operator label; any code outside the vocabulary falls to the named
-    /// `(3, UnclassifiedRefusal)` default (a generic non-zero refusal — fail
-    /// loud, never a silent exit 0). Matches on the `category.subject.problem`
-    /// stem so both the `migrate.*` and `transfer.*` namespaces of the same axis
-    /// classify identically (the transfer verb re-codes the migrate-named
-    /// refusals under `transfer.*`; they are the SAME axis, SAME exit).
-    let classify (code: string) : int * GateLabel =
+    /// The distinct CLI exit code for each gate axis — TOTAL over the closed
+    /// `GateLabel` DU (the compiler forbids an axis without an exit), so the
+    /// operator's exit-code contract is ONE greppable mapping rather than numbers
+    /// scattered through a prefix chain. The exit IS a function of the axis: every
+    /// destructive-failure axis is 9, the connection/schema-read axis 6, the
+    /// permission axis 7, the argument axis 2, the named default 3.
+    let exitOf (label: GateLabel) : int =
+        match label with
+        | ConnectionUnavailable       -> 6
+        | InsufficientGrant           -> 7
+        | ReconciliationMismatch      -> 2
+        | UnmappedIdentities          -> 9
+        | DataViolatesTightening      -> 9
+        | CdcTrackedSink              -> 9
+        | SchemaReadFailed            -> 6
+        | UndeclaredDestructiveChange -> 9
+        | MidWriteNotProtected        -> 9
+        | UnclassifiedRefusal         -> 3
+
+    /// Route a refusal code onto its gate axis (`GateLabel`). The explicit
+    /// aliasing of the `migrate.*` / `transfer.*` namespaces of one axis: the two
+    /// verbs re-code the SAME axis under their own prefixes, and route together
+    /// here. A code outside the vocabulary is the named `UnclassifiedRefusal`
+    /// default (never a silent miss). Separated from the exit (`exitOf`) so the
+    /// routing and the exit-code policy are each independently total + testable.
+    let labelOf (code: string) : GateLabel =
         // Connection — exit 6 on transfer; the migrate verb's connection
         // pre-flight surfaces under exit 7 (permission/credential class), so the
         // connection axis is reported on its own (6) and the grant axis on (7).
         if code.StartsWith "transfer.connection" || code = "migrate.connectionUnavailable" then
-            6, ConnectionUnavailable
+            ConnectionUnavailable
         elif code = "transfer.insufficientGrant" || code = "transfer.grantProbeFailed"
              || code = "migrate.insufficientGrant" || code = "migrate.grantProbeFailed" then
-            7, InsufficientGrant
+            InsufficientGrant
         elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then
-            2, ReconciliationMismatch
+            ReconciliationMismatch
         elif code = "transfer.unmappedIdentities" then
-            9, UnmappedIdentities
+            UnmappedIdentities
         elif code = "migrate.dataViolatesTightening" then
-            9, DataViolatesTightening
+            DataViolatesTightening
         elif code = "transfer.cdcTrackedSink" || code = "migrate.cdcTrackedSink" then
             // The same axis under both namespaces — the migrate verb's
             // RefusedByCdc routes through the gate surface under its own name.
-            9, CdcTrackedSink
+            CdcTrackedSink
         elif code = "migrate.schemaReadFailed" then
-            6, SchemaReadFailed
+            SchemaReadFailed
         elif code.StartsWith "migrate.undeclaredDestructive" then
-            9, UndeclaredDestructiveChange
+            UndeclaredDestructiveChange
         elif code.StartsWith "transfer.midWriteNotProtected" || code = "migrate.midWriteNotProtected" then
             // The transactionality axis (A3): a mid-write crash on an
             // unprotected write path. The same destructive-failure class as the
             // other exit-9 axes — a half-populated target is a destructive
             // outcome, not a generic refusal.
-            9, MidWriteNotProtected
+            MidWriteNotProtected
         else
-            3, UnclassifiedRefusal
+            UnclassifiedRefusal
+
+    /// The closed `code → (exit, label)` mapping: route the code onto its axis
+    /// (`labelOf`), then read the axis's exit (`exitOf`). TOTAL over the gate code
+    /// vocabulary — a code outside it falls to the named `(3, UnclassifiedRefusal)`
+    /// default (fail loud, never a silent exit 0). One dispatcher now, routing
+    /// (`labelOf`) split from exit-code policy (`exitOf`).
+    let classify (code: string) : int * GateLabel =
+        let label = labelOf code
+        exitOf label, label
 
     /// A gate refusal as the composition reports it: the structured first-failure
     /// `ValidationError` together with its `(exit, label)` classification. The

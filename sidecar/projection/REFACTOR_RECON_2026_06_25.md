@@ -25,9 +25,9 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **16 findings resolved (15 fully
+(this doc now lives here so it merges in with the sweep). **17 findings resolved (16 fully
 landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
-partially landed, 4 untouched.** (#4 and #7 both carry a *reasoned decline* on their
+partially landed, 3 untouched.** (#4 and #7 both carry a *reasoned decline* on their
 over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
@@ -55,7 +55,7 @@ section also carries a per-section `> **Status:**` line.
 | 6 | Typed-tree boundary analyzer | 🟧 | ✅ **done** | `eb243e6d` (bans capabilities by resolved full name) |
 | 7 | `FkGraph` build-once | 🟧 | ✅ **done** / remainder **declined** | The genuine dup (the `addNeighbor` undirected fold) was consolidated into `undirectedAdjacency` (2 consumers). The full `FkGraph` reification is **declined out loud (2026-06-27)**: the 2 remaining "copies" are deliberate, documented carve-outs (Centrality's reverse-adj perf `Dictionary`; the cascade adjacency is classifier-filtered, needs Catalog+`CycleResolution`, can't be an edges-only `FkGraph` method) — reifying them would be a zero-consumer symmetry-build (the §5 dead-algebra anti-pattern). |
 | 8 | Shared quoting primitive | 🟧 | ✅ **done** | Core `SqlIdentifier.quote`/`qualified` (byte-verified ≡ `EncodeIdentifier`); routes `LogicalColumnEmission` (fixes its latent `]` bug), `RemediationEmitter`, ReadSide/LiveProfiler (2026-06-27). |
-| 9 | Code→exit registry | 🟧 | ○ remaining | — |
+| 9 | Code→exit registry | 🟧 | ✅ **done** (co-location declined) | `Preflight.classify` split into `labelOf` (routing) + `exitOf` (TOTAL over the closed `GateLabel` DU) — the exit contract is one greppable closed-DU mapping; same pattern as #11 `errorFrame`. Full mint-site co-location declined: exit belongs with the gate AXIS, not scattered across non-gate `ValidationError.create` sites. |
 | 10 | `parseSemanticType` → Core | 🟧 | ✅ **done** | OSSYS→V2 mapping decisions moved to pure `Core.OssysTypeMapping.tryParse` (option); adapter keeps the `adapter.osm.*` refusal shim + `normalizeAttributeType` (2026-06-27). |
 | 11 | Finish Voice migration + unify dispatchers | 🟧 | ◑ **partial** | **Dispatcher unified (2026-06-28):** `errorFrame` split into `classifyError` (routing) + `frameCopy` (total over the new closed `ErrorFrame` DU) — the §10/§14 sibling of the §5 gate⇔copy; new totality tests pin the closed-DU copy + the ordering-shadow. **Drop-warning dedup + transfer/migrate verdicts (2026-06-28):** the verbatim-duplicated drop refusal (Transfer ≡ Synthetic) collapses to one `transfer.rowsDropped`; `transfer.previewPlan`/`transfer.applied` + `migrate.applied`/`migrate.verificationFailed` voiced, routed through `renderVoicedTo`, registered in `all` + the three totality code-sets. Build clean Debug+Release; pure 3750/0, docker 273/0. **Open:** the `approve`/`inspect` refusals + the migrate-with-data leg + the tightening-relax acks (lower-value located refusals/narration). |
 | 12 | `fanOutWithDiagnostics` primitive | 🟧 | ✅ **done** | `Composition.fanOutWithDiagnostics` added; Nullability/UniqueIndex/ForeignKey passes' decision→diagnostic tails collapse to it (2026-06-27). |
@@ -348,7 +348,7 @@ let private brackets (s: string) : string = System.String.Concat("[", s, "]")   
 
 ## 9. 🟧 Co-locate exit-code semantics with the refusal-code mint sites (code→exit registry)
 
-> **Status (2026-06-27):** ○ **Not started.** (The Binding registry from #2 now provides the natural seam — code→exit is a `ConfigAxis`-style registry.)
+> **Status (2026-06-28):** ✅ **Done (the exit-policy split) — full mint-site co-location declined with reasons.** `Preflight.classify` fused two concerns into one prefix `if/elif`: the routing (`code → GateLabel`) and the exit-code per axis (the numbers inline). Split into `labelOf : code → GateLabel` (the routing, with the `migrate.*` / `transfer.*` same-axis aliasing explicit) and `exitOf : GateLabel → int` (**TOTAL over the closed `GateLabel` DU** — the compiler now forbids an axis without an exit, so the operator's exit contract is ONE greppable closed-DU mapping, not numbers scattered through a chain); `classify = (exitOf ∘ labelOf, labelOf)`. Behavior byte-identical; this is the same proven pattern as #11's `errorFrame` split. New `PreflightAllTests` pin `exitOf` totality (every axis → its distinct non-zero exit) + the composition identity. **Declined with reasons (the recon's XL "co-locate with the mint sites"):** scattering the exit-code onto every `ValidationError.create "transfer.…"` site would push exit semantics into hundreds of mint sites, most of which are NOT gate codes (plain validation errors with no exit meaning) — the exit belongs with the gate AXIS (the closed `GateLabel` DU), which is exactly where `exitOf` now puts it, in one place. The "forget to classify a new code" risk the recon names is inherent to prefix routing, and the landing point is the named fail-loud `(3, UnclassifiedRefusal)` default (a non-zero refusal, never a silent exit 0). Build clean; the Preflight / refusal / CliExit suites (74 tests) green.
 
 **Anchors:** `Preflight.fs:566` (`classify (code: string) : int * GateLabel` — a 30-line `if code.StartsWith "transfer.connection" … elif code = "transfer.insufficientGrant" …` chain); mint sites far away, e.g. `TransferRun.fs:69` (`"transfer.reverseLeg.streamingTablesUnsupported"`).
 

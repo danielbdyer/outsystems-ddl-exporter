@@ -278,6 +278,38 @@ let ``G0: labelText renders every GateLabel variant (closed-DU totality)`` () =
         Assert.False(System.String.IsNullOrWhiteSpace(Preflight.labelText l))
 
 [<Fact>]
+let ``G0: exitOf is total over the closed GateLabel DU and every axis carries a non-zero exit (recon #9)`` () =
+    // The exit-code per axis is now its OWN total function (`exitOf`), split from
+    // the routing (`labelOf`) — so the operator's exit contract is one greppable
+    // closed-DU mapping. This pins each axis's distinct exit AND that none is 0
+    // (every refusal exits non-zero — fail loud). A new GateLabel cannot land
+    // without `exitOf` covering it (compiler-exhaustive); this names the values.
+    let expected =
+        [ Preflight.ConnectionUnavailable,       6
+          Preflight.InsufficientGrant,           7
+          Preflight.ReconciliationMismatch,      2
+          Preflight.UnmappedIdentities,          9
+          Preflight.DataViolatesTightening,      9
+          Preflight.CdcTrackedSink,              9
+          Preflight.SchemaReadFailed,            6
+          Preflight.UndeclaredDestructiveChange, 9
+          Preflight.MidWriteNotProtected,        9
+          Preflight.UnclassifiedRefusal,         3 ]
+    for label, exit in expected do
+        Assert.Equal(exit, Preflight.exitOf label)
+        Assert.NotEqual(0, Preflight.exitOf label)
+
+[<Fact>]
+let ``G0: classify = (exitOf ∘ labelOf, labelOf) — the dispatcher composes its two halves`` () =
+    // The refactor's identity: `classify` is exactly the routing (`labelOf`)
+    // composed with the exit policy (`exitOf`). A representative code across the
+    // axes pins that the composition matches the fused result.
+    for code in [ "transfer.connectionUnavailable"; "migrate.dataViolatesTightening"
+                  "transfer.reconcile.userMatch"; "gate.never.seen" ] do
+        let label = Preflight.labelOf code
+        Assert.Equal<int * Preflight.GateLabel>((Preflight.exitOf label, label), Preflight.classify code)
+
+[<Fact>]
 let ``NM-61: a migrate connection refusal classifies to exit 6 (its own axis), not the flattened 7`` () =
     // NM-61 — the migrate face (`migratePreflights` / `runMigrateWithData`) once
     // hardcoded EVERY refusal to exit 7, so a dead endpoint exited 6 on `transfer`
