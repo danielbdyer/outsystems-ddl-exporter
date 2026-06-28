@@ -1072,7 +1072,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
     // G7 relax — the CLI gate honored END-TO-END against a live CDC-tracked
     // sink. The G7 witness above proves the gate REFUSES; this proves the
     // steward's two reachable answers through the REAL CLI seam
-    // (`RunFaces.tighteningPreflight`, which composes `Intervene` + the
+    // (`Faces.Migrate.tighteningPreflight`, which composes `Intervene` + the
     // `RelaxationStore` blessing) against a CDC-tracked OSUSR_TG_TICKET:
     //   1. NO blessing, headless → the gate degrades to the named Halt fallback
     //      (Error 9); no DDL runs (NOTE still nullable, 3 rows intact). The
@@ -1142,7 +1142,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             Assert.True(
                                 Set.isEmpty (Projection.Cli.RelaxationStore.read configFile),
                                 "fixture: the config must carry no blessing yet")
-                            let! halted = Projection.Cli.RunFaces.tighteningPreflight sourceA target cnn
+                            let! halted = Projection.Cli.Faces.Migrate.tighteningPreflight sourceA target cnn
                             match halted with
                             | Error code -> Assert.Equal(9, code)
                             | Ok _ -> Assert.Fail("with no blessing the headless gate must Halt (Error 9), not proceed")
@@ -1167,7 +1167,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
 
                             // LEG 2 — WITH the blessing: the same headless gate now
                             // PROCEEDS, relaxing NOTE back to nullable.
-                            let! relaxed = Projection.Cli.RunFaces.tighteningPreflight sourceA target cnn
+                            let! relaxed = Projection.Cli.Faces.Migrate.tighteningPreflight sourceA target cnn
                             let effectiveTarget =
                                 match relaxed with
                                 | Ok cat -> cat

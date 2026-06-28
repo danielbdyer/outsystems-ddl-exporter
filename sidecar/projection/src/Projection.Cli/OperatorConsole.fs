@@ -10,7 +10,7 @@ module Projection.Cli.OperatorConsole
 // (verbose / pretty / watch, set once by the global-flag strip in `main`),
 // the bench dump, the `withRun` LogSink run envelope, and the stage arcs the
 // live Watch board pre-seeds. Extracted from Program.fs (2026-06-10
-// decomposition, the B7/`Deploy.fs` precedent) so the faces (`RunFaces`) and
+// decomposition, the B7/`Deploy.fs` precedent) so the faces (`Faces/*.fs`) and
 // the dispatcher (`Program`) share one substrate.
 
 open System

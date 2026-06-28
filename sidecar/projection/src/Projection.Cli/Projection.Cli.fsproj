@@ -25,7 +25,11 @@
     <Compile Include="RelaxationStore.fs" />
     <Compile Include="CliExit.fs" />
     <Compile Include="Faces/Common.fs" />
-    <Compile Include="RunFaces.fs" />
+    <Compile Include="Faces/Migrate.fs" />
+    <Compile Include="Faces/Export.fs" />
+    <Compile Include="Faces/Deploy.fs" />
+    <Compile Include="Faces/Transfer.fs" />
+    <Compile Include="Faces/Synthetic.fs" />
     <Compile Include="Faces/Emit.fs" />
     <Compile Include="Faces/Canary.fs" />
     <Compile Include="Faces/Approve.fs" />

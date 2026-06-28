@@ -75,6 +75,6 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           ReplayedPriorDrops       = None
           SyntheticUnsatisfiableFks = []
           Names                    = Map.ofList [ kindK, "Orders" ] }
-    let out = capture (fun () -> RunFaces.narrateTransferReport report)
+    let out = capture (fun () -> Faces.Transfer.narrateTransferReport report)
     Assert.Contains("Orders", out)                  // the readable Name from the report's index
     Assert.DoesNotContain("d0000000", out)          // not the GUID rootOriginal

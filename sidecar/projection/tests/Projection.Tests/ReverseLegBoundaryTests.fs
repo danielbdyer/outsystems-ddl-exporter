@@ -48,7 +48,7 @@ let private tinyModel : Catalog =
 let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
-        RunFaces.runReverseLegTransfer
+        Faces.Transfer.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
@@ -60,7 +60,7 @@ let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, e
 let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name (exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
-        RunFaces.runReverseLegTransfer
+        Faces.Transfer.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
@@ -72,7 +72,7 @@ let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name
 let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no longer refused) — it passes the spec gate and reaches the apparatus`` () =
     let model = tinyModel
     let exit =
-        RunFaces.runReverseLegTransfer
+        Faces.Transfer.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
@@ -191,7 +191,7 @@ let ``Phase 3 address-drift: a sibling journal under a different marker signals 
 let ``streaming face: an explicit --streaming with --tables refuses at the face with exit 2`` () =
     let model = tinyModel
     let exit =
-        RunFaces.runReverseLegTransfer
+        Faces.Transfer.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)

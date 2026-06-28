@@ -12,7 +12,11 @@ open Projection.Adapters.Sql
 open Projection.Pipeline
 open Projection.Targets.SSDT
 open Projection.Cli.OperatorConsole
-open Projection.Cli.RunFaces
+open Projection.Cli.Faces.Migrate
+open Projection.Cli.Faces.Export
+open Projection.Cli.Faces.Deploy
+open Projection.Cli.Faces.Transfer
+open Projection.Cli.Faces.Synthetic
 open Projection.Cli.Faces.Emit
 open Projection.Cli.Faces.Canary
 open Projection.Cli.Faces.Approve
