@@ -185,8 +185,11 @@ single structural sink.
 - [ ] **4.11** 5 command factories bypass `PipelineCommandFactory` (Analyze, Inspect,
   VerifyData, Policy, UatUsers) — re-hand-roll scope/error/exit-code plumbing.
   `SplitTableIdentifier` copy-pasted verbatim (78 LOC) between two UAT files.
-- [ ] **4.12** 9 single-string value objects + 4 `IComparer` null-preambles +
-  duplicate-detection helpers across aggregates — template/share.
+- [x] **4.12 (partial)** Added `NullSafeComparer<T>` base in Osm.Smo and refactored the 4
+  comparers (`SmoTableBuilder`, `SmoRenameLens`, `SmoColumnBuilder`, `SmoTriggerBuilder`) to
+  drop the identical null-handling preamble, keeping only their key chains. Smo green (100).
+  (The 9 single-string value objects + cross-aggregate duplicate-detection helpers remain a
+  follow-up — the value-object collapse really wants a source generator.)
 - [ ] **4.13** Single-impl interface cluster (~150-300 LOC): `IPathCanonicalizer`,
   several `Json/Deserialization` validators/factories with no test double — inline.
 - (4.14 moved up — see the status block at the top of Phase 4.)
