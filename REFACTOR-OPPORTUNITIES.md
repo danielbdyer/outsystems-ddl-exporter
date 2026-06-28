@@ -93,12 +93,12 @@ lever. `if (x.IsFailure) return Result<T>.Failure(x.Errors)` appears **266× acr
 - [ ] **2.2** FK declarative matrix (`TighteningPolicyMatrix.ForeignKeys`) referenced
   only by tests while production hand-rolls the same logic in `ForeignKeyEvaluator`.
   Reconcile to one source of truth (prefer making the evaluator consume the matrix).
-- [ ] **2.3** `ProfileSnapshotDebugFormatter.cs` (~99 LOC, tests-only) — remove or
-  relocate to test support.
-- [ ] **2.4** Local `Result<T>` reinvented in `PolicyCommandFactory.cs:1046` — delete,
-  use the domain `Result<T>`.
-- [ ] **2.5** Two unused summary builders in `PolicyDecisionSummaryFormatter.cs:346-392`
-  (`BuildNullContradictionSummary`, `BuildOrphanSummary`). ~47 LOC.
+- [x] **2.3** Deleted `ProfileSnapshotDebugFormatter.cs` (production-dead; tests-only) and
+  its test; repointed `DotNetCli` assembly anchor to the public `SpectreProgressRunner`.
+- [x] **2.4** Deleted the local `Result<T>` in `PolicyCommandFactory`; `BuildSeverityFilter`
+  now returns the domain `Result<T>` (`Failure(code, message)`).
+- [x] **2.5** Deleted the two unused summary builders in `PolicyDecisionSummaryFormatter`
+  (`BuildNullContradictionSummary`, `BuildOrphanSummary`).
 - [ ] **2.6** ⚠️ **TRAP — do NOT delete:** `ScripterExtensions.Dispose` looks dead to
   grep (zero textual refs) but is load-bearing via extension-method binding in
   `SmoContext.cs:95`. Make the call explicit instead of removing it.
@@ -195,6 +195,10 @@ golden-output diffing before/after.
   and `…NullsOnlyNullableEdges` fail on a clean tree (verified by stash + clean rebuild).
   Cycle/edge phase-counting in `PhasedDynamicEntityInsertGenerator`; unrelated to the
   refactor. Tracked here so phase test runs aren't mistaken for regressions.
+- `Osm.Cli.Tests.FilesystemPermissionTests.BuildSsdt_fails_when_output_directory_is_read_only`
+  fails on a clean tree — the test expects a write failure on a read-only directory, but
+  the container runs as root (root bypasses read-only permissions). Environment artifact,
+  not a code regression.
 
 ## Verification notes
 
