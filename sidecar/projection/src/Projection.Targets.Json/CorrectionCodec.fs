@@ -49,7 +49,7 @@ module CorrectionCodec =
         | ValueFidelityMode.Preserve   -> "preserve"
         | ValueFidelityMode.Synthesize -> "synthesize"
 
-    let private inv (d: decimal) : string = d.ToString(CultureInfo.InvariantCulture)
+    let private inv (d: decimal) : string = JsonCodecKernel.inv d
 
     let private wVolumeTarget (jw: Utf8JsonWriter) (target: VolumeTarget) : unit =
         jw.WriteStartObject()
@@ -151,30 +151,13 @@ module CorrectionCodec =
     // DECODE — rebuilt through `Correction.create` (A39 re-validation).
     // ======================================================================
 
-    let private fail (code: string) (msg: string) : Result<'a> =
-        Result.failureOf (ValidationError.create code msg)
-
-    let private asString (el: JsonElement) : Result<string> =
-        if el.ValueKind = JsonValueKind.String then
-            match el.GetString() with
-            | null -> fail "correctionCodec.expectedString" "string element returned null"
-            | s -> Ok s
-        else fail "correctionCodec.expectedString" (sprintf "expected string, got %A" el.ValueKind)
-
-    let private prop (el: JsonElement) (name: string) : Result<JsonElement> =
-        match el.TryGetProperty name with
-        | true, v -> Ok v
-        | _ -> fail "correctionCodec.missingField" (sprintf "missing field '%s'" name)
-
-    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> =
-        prop el name |> Result.bind read
-
-    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> =
-        match el.TryGetProperty name with
-        | true, v when v.ValueKind = JsonValueKind.Array ->
-            v.EnumerateArray() |> Seq.map read |> Result.collect
-        | true, v -> fail "correctionCodec.expectedArray" (sprintf "field '%s': expected array, got %A" name v.ValueKind)
-        | _ -> Ok []
+    // Decode kernel — thin delegations to the shared `JsonCodecKernel` (prefix
+    // `"correctionCodec"`), so the emitted error codes stay byte-identical.
+    let private fail (code: string) (msg: string) : Result<'a> = JsonCodecKernel.fail code msg
+    let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "correctionCodec" el
+    let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "correctionCodec" el name
+    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> = JsonCodecKernel.field "correctionCodec" el name read
+    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> = JsonCodecKernel.listField "correctionCodec" el name read
 
     let private readSsKey (el: JsonElement) : Result<SsKey> =
         asString el |> Result.bind SsKey.deserialize
@@ -198,19 +181,8 @@ module CorrectionCodec =
             | "synthesize" -> Ok ValueFidelityMode.Synthesize
             | o -> fail "correctionCodec.fidelity.unknown" (sprintf "unknown ValueFidelityMode '%s'" o))
 
-    let private asInt (el: JsonElement) : Result<int> =
-        if el.ValueKind = JsonValueKind.Number then
-            match el.TryGetInt32() with
-            | true, n -> Ok n
-            | _ -> fail "correctionCodec.expectedInt" "number is not an int32"
-        else fail "correctionCodec.expectedInt" (sprintf "expected number, got %A" el.ValueKind)
-
-    let private asDecimal (el: JsonElement) : Result<decimal> =
-        asString el
-        |> Result.bind (fun s ->
-            match System.Decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture) with
-            | true, d -> Ok d
-            | _ -> fail "correctionCodec.expectedDecimal" (sprintf "not an invariant-culture decimal: '%s'" s))
+    let private asInt (el: JsonElement) : Result<int> = JsonCodecKernel.asInt "correctionCodec" el
+    let private asDecimal (el: JsonElement) : Result<decimal> = JsonCodecKernel.asDecimal "correctionCodec" el
 
     let private readVolumeTarget (el: JsonElement) : Result<VolumeTarget> =
         field el "target" asString

@@ -85,20 +85,11 @@ module GoldenCodec =
 
     // -- DECODE ------------------------------------------------------------
 
-    let private fail (code: string) (msg: string) : Result<'a> =
-        Result.failureOf (ValidationError.create code msg)
-
-    let private asString (el: JsonElement) : Result<string> =
-        if el.ValueKind = JsonValueKind.String then
-            match el.GetString() with
-            | null -> fail "golden.expectedString" "string element returned null"
-            | s    -> Ok s
-        else fail "golden.expectedString" (sprintf "expected string, got %A" el.ValueKind)
-
-    let private prop (el: JsonElement) (name: string) : Result<JsonElement> =
-        match el.TryGetProperty name with
-        | true, v -> Ok v
-        | _       -> fail "golden.missingField" (sprintf "missing field '%s'" name)
+    // Decode kernel — thin delegations to the shared `JsonCodecKernel` (prefix
+    // `"golden"`), so the emitted error codes stay byte-identical.
+    let private fail (code: string) (msg: string) : Result<'a> = JsonCodecKernel.fail code msg
+    let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "golden" el
+    let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "golden" el name
 
     let private readRow (el: JsonElement) : Result<Map<Name, string>> =
         if el.ValueKind <> JsonValueKind.Object then fail "golden.expectedRowObject" "row is not a JSON object"

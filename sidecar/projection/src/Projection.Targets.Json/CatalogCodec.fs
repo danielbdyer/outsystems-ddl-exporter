@@ -28,7 +28,7 @@ module CatalogCodec =
     [<Literal>]
     let version : int = 1
 
-    let private inv (d: decimal) : string = d.ToString(CultureInfo.InvariantCulture)
+    let private inv (d: decimal) : string = JsonCodecKernel.inv d
 
     // ======================================================================
     // ENCODE — each `writeX : Utf8JsonWriter -> X -> unit` writes one JSON value.
@@ -414,59 +414,18 @@ module CatalogCodec =
     // gate `Module.create` / `Catalog.create` re-proves invariants (A39).
     // ======================================================================
 
-    let private fail (code: string) (msg: string) : Result<'a> =
-        Result.failureOf (ValidationError.create code msg)
-
-    let private prop (el: JsonElement) (name: string) : Result<JsonElement> =
-        match el.TryGetProperty name with
-        | true, v -> Ok v
-        | _ -> fail "codec.missingField" (sprintf "missing field '%s'" name)
-
-    let private asString (el: JsonElement) : Result<string> =
-        if el.ValueKind = JsonValueKind.String then
-            match el.GetString() with
-            | null -> fail "codec.expectedString" "string element returned null"
-            | s -> Ok s
-        else fail "codec.expectedString" (sprintf "expected string, got %A" el.ValueKind)
-
-    let private asBool (el: JsonElement) : Result<bool> =
-        match el.ValueKind with
-        | JsonValueKind.True  -> Ok true
-        | JsonValueKind.False -> Ok false
-        | k -> fail "codec.expectedBool" (sprintf "expected bool, got %A" k)
-
-    let private asInt (el: JsonElement) : Result<int> =
-        if el.ValueKind = JsonValueKind.Number then
-            match el.TryGetInt32() with
-            | true, n -> Ok n
-            | _ -> fail "codec.expectedInt" "number is not an int32"
-        else fail "codec.expectedInt" (sprintf "expected number, got %A" el.ValueKind)
-
-    let private asDecimal (el: JsonElement) : Result<decimal> =
-        asString el
-        |> Result.bind (fun s ->
-            match System.Decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture) with
-            | true, d -> Ok d
-            | _ -> fail "codec.expectedDecimal" (sprintf "not an invariant-culture decimal: '%s'" s))
-
-    /// Read a required named field through a value-reader.
-    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> =
-        prop el name |> Result.bind read
-
-    /// Read an optional named field: missing or JSON null → `None`.
-    let private optField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a option> =
-        match el.TryGetProperty name with
-        | true, v when v.ValueKind = JsonValueKind.Null -> Ok None
-        | true, v -> read v |> Result.map Some
-        | _ -> Ok None
-
-    /// Read a named array field; missing → empty list.
-    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> =
-        match el.TryGetProperty name with
-        | true, v when v.ValueKind = JsonValueKind.Array ->
-            v.EnumerateArray() |> Seq.map read |> Seq.toList |> Result.collect
-        | true, v -> fail "codec.expectedArray" (sprintf "field '%s': expected array, got %A" name v.ValueKind)
-        | _ -> Ok []
+    // Decode kernel — thin delegations to the shared `JsonCodecKernel` (prefix
+    // `"codec"`), so the emitted error codes stay byte-identical. `fail` is a
+    // passthrough (call sites compose the full `codec.<x>` code themselves).
+    let private fail (code: string) (msg: string) : Result<'a> = JsonCodecKernel.fail code msg
+    let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "codec" el name
+    let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "codec" el
+    let private asBool (el: JsonElement) : Result<bool> = JsonCodecKernel.asBool "codec" el
+    let private asInt (el: JsonElement) : Result<int> = JsonCodecKernel.asInt "codec" el
+    let private asDecimal (el: JsonElement) : Result<decimal> = JsonCodecKernel.asDecimal "codec" el
+    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> = JsonCodecKernel.field "codec" el name read
+    let private optField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a option> = JsonCodecKernel.optField el name read
+    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> = JsonCodecKernel.listField "codec" el name read
 
     // -- value-types ------------------------------------------------------
 
