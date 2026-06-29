@@ -125,7 +125,7 @@ public static class StaticEntitySeedDefinitionBuilder
 
     private static StaticEntitySeedTableDefinition CreateDefinition(string moduleName, EntityModel entity, NamingOverrideOptions namingOverrides)
     {
-        var snapshot = EntityEmissionSnapshot.Create(moduleName, entity);
+        var snapshot = EmittableEntityProjection.Create(moduleName, entity);
 
         var filteredAttributes = snapshot.EmittableAttributes
             .Where(static attribute => !(attribute.OnDisk.IsComputed ?? false))

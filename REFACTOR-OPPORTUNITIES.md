@@ -178,8 +178,11 @@ single structural sink.
   architectural move, not a cleanup, and warrants its own change.
 
 ### Naming collisions (same name, different concept)
-- [ ] **4.5** `EntityEmissionSnapshot` ×2 (`Model/Emission/` vs `Model/Artifacts/`). Follow-up
-  (rename ripples through Smo/Emission/Pipeline consumers — its own PR).
+- [x] **4.5** Renamed the `Model/Emission/EntityEmissionSnapshot` (an entity's emittable
+  attribute projection) to `EmittableEntityProjection`, de-colliding it from the unrelated
+  `Model/Artifacts/EntityEmissionSnapshot` (physical table artifact). Compiler-guided rename
+  across Smo/Emission/Pipeline consumers + tests (Artifacts type untouched). Build + affected
+  suites green.
 - [x] **4.6** `OpportunitiesReport` ×2 — **resolved by Phase 2.1**: the legacy `Tightening/`
   copy was deleted, leaving only the canonical `Tightening/Opportunities/` one.
 - [ ] **4.7** `CacheMetadataBuilder` ×2 (`Application/` vs `Evidence/`) — follow-up; needs a

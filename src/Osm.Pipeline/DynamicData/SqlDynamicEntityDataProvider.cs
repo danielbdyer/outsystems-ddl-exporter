@@ -130,7 +130,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                     continue;
                 }
 
-                var snapshot = EntityEmissionSnapshot.Create(context.ModuleName, context.Entity);
+                var snapshot = EmittableEntityProjection.Create(context.ModuleName, context.Entity);
                 var definition = CreateDefinition(snapshot, namingOverrides);
                 if (definition.Columns.Length == 0)
                 {
@@ -278,7 +278,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
     }
 
     private static void TrackParentRequirements(
-        EntityEmissionSnapshot snapshot,
+        EmittableEntityProjection snapshot,
         NamingOverrideOptions namingOverrides,
         EntityLookup lookup,
         ParentRequirementTracker tracker,
@@ -305,7 +305,7 @@ public sealed class SqlDynamicEntityDataProvider : IDynamicEntityDataProvider
                 continue;
             }
 
-            var parentSnapshot = EntityEmissionSnapshot.Create(parentContext.ModuleName, parentContext.Entity);
+            var parentSnapshot = EmittableEntityProjection.Create(parentContext.ModuleName, parentContext.Entity);
             var definition = CreateDefinition(parentSnapshot, namingOverrides);
             if (definition.Columns.Length == 0)
             {
@@ -678,7 +678,7 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
     }
 
     private static StaticEntitySeedTableDefinition CreateDefinition(
-        EntityEmissionSnapshot snapshot,
+        EmittableEntityProjection snapshot,
         NamingOverrideOptions namingOverrides)
     {
         var filteredAttributes = snapshot.EmittableAttributes
@@ -757,7 +757,7 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
 
     private static string[] DetermineOrderColumns(
         StaticEntitySeedTableDefinition definition,
-        EntityEmissionSnapshot snapshot)
+        EmittableEntityProjection snapshot)
     {
         var primaryColumns = definition.Columns
             .Where(static column => column.IsPrimaryKey)
