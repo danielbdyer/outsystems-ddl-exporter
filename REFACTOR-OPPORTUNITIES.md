@@ -147,19 +147,29 @@ single structural sink.
   Removing it changes those contracts; it's a product decision, not a mechanical cleanup.
 
 ### Discipline / guardrail compliance
-- [ ] **4.1** No-string-concat violation: `CreateTableStatementBuilder.cs:262-282`
-  hand-builds `$"ALTER TABLE … WITH NOCHECK ADD CONSTRAINT …"` (standing `// TODO`).
-  Route through ScriptDom `AlterTableAddTableElementStatement` +
-  `ForeignKeyConstraintDefinition`.
-- [ ] **4.2** Text-surgery formatters re-parse already-rendered DDL by splitting on
-  `"FOREIGN KEY"`/`"DEFAULT"`/`"CONSTRAINT"` strings
-  (`CreateTableFormatter.cs`, `ConstraintFormatter.cs`). Drive formatting from the AST
-  via `SqlScriptGeneratorOptions`, or at minimum collapse the shared line-walk.
-- [ ] **4.3** `ExtendedPropertyScriptBuilder.cs:82-136` builds `sp_addextendedproperty`
-  via 3 near-identical raw templates — parameterize or emit via AST.
-- [ ] **4.4** Physical SQL leaking into the pure decision layer:
-  `TighteningOpportunitiesAnalyzer.cs:340-723` emits `ALTER TABLE`/`CREATE UNIQUE INDEX`
-  T-SQL — relocate statement building to emission.
+> **Decision on the output-changing DDL items (4.1, 4.2-AST, 4.4):** recommended AGAINST
+> executing as pure refactors. Each would change or relocate the **emitted SQL text that
+> users deploy**, for a *purity-only* benefit — the current code is already
+> injection-safe (every identifier goes through `QuoteIdentifier`). Churning every
+> consumer's deployment artifacts (and risking subtly-wrong ScriptDom output) to satisfy a
+> style guardrail on already-correct code is net-negative. If the team *wants* AST-driven
+> DDL formatting, it should be a deliberate, separately-reviewed change with regenerated +
+> human-reviewed golden files and a changelog note — not folded into a cleanup sweep.
+- [~] **4.1 Recommended against (output churn).** `CreateTableStatementBuilder` hand-builds the
+  NOCHECK-FK `ALTER TABLE` string. It is injection-safe today; routing through ScriptDom
+  changes the emitted text format (the golden `…[JobRun]  WITH NOCHECK ADD CONSTRAINT…` would
+  change). Left as-is; the `// TODO` is aspirational, not a defect.
+- [~] **4.2 Recommended against (output churn / marginal).** The AST-driven rewrite of
+  `CreateTableFormatter`/`ConstraintFormatter` changes output; the output-preserving
+  alternative (sharing the ~3-line split+builder setup behind two divergent per-line state
+  machines) is marginal and touches the most output-sensitive code in the tree. Left as-is.
+- [x] **4.3** `ExtendedPropertyScriptBuilder` — the three `sp_addextendedproperty` templates
+  collapsed into one parameterized builder. **Output byte-identical** (verified by the
+  ExtendedProperty tests + emission golden fixtures + SSDT matrix goldens).
+- [~] **4.4 Deferred (contract-preserving move, high effort).** `TighteningOpportunitiesAnalyzer`
+  emits T-SQL strings that are a **public artifact** (the opportunity JSON `Statements`).
+  Relocating them to the emission layer must preserve those exact strings; it is an
+  architectural move, not a cleanup, and warrants its own change.
 
 ### Naming collisions (same name, different concept)
 - [ ] **4.5** `EntityEmissionSnapshot` ×2 (`Model/Emission/` vs `Model/Artifacts/`). Follow-up
