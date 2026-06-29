@@ -339,7 +339,11 @@ module Transfer =
         : Task<LaneDescent list> =
         task {
             match chunks with
-            | [] -> return descents
+            // `descents` accumulates REVERSED (each chunk's `List.rev newDescents`
+            // prepended in O(|newDescents|)) and is reversed once here — so the
+            // per-chunk fold is O(n), not the O(chunks²) a right-append `@` makes
+            // on an orphan/descent-heavy load.
+            | [] -> return List.rev descents
             | chunk :: rest ->
                 // Single-value bind then destructure — a tuple `let!` is not
                 // statically compilable under Release (FS3511).
@@ -349,7 +353,7 @@ module Transfer =
                         identityAttr deferred lane chunk
                 let pairs, succeededLane, newDescents = outcome
                 pairs |> List.iter (fun (srcVal, assignedVal) -> PackedSurrogateRemap.capture kindKey srcVal assignedVal remap)
-                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (descents @ newDescents) rest
+                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (List.rev newDescents @ descents) rest
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -1800,7 +1804,10 @@ module Transfer =
             task {
                 let! chunkRaw = pending
                 if List.isEmpty chunkRaw then
-                    return Result.success ({ Ingested = ingested; Written = written }, skips, descents)
+                    // `skips` / `descents` accumulate REVERSED (each chunk prepended
+                    // in O(|new|)); reversed once here so the per-chunk fold is O(n),
+                    // not the O(chunks²) a right-append `@` makes on a skip-heavy load.
+                    return Result.success ({ Ingested = ingested; Written = written }, List.rev skips, List.rev descents)
                 else
                     let nextPending = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
                     match! writeChunk kind load basis pkOf lane chunkIx chunkRaw with
@@ -1808,7 +1815,7 @@ module Transfer =
                     | Ok (written', newDescents, newSkips, lane') ->
                         return! loadKindChunks kind load basis pkOf stream nextPending (chunkIx + 1) lane'
                                     (ingested + List.length chunkRaw) (written + written')
-                                    (skips @ newSkips) (descents @ newDescents)
+                                    (List.rev newSkips @ skips) (List.rev newDescents @ descents)
             }
 
         let loadTotal = List.length plan.Loads
@@ -1865,7 +1872,9 @@ module Transfer =
             : Task<(SsKey * UnresolvedReference) list> =
             task {
                 let! chunkRaw = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
-                if List.isEmpty chunkRaw then return skips
+                // `skips` accumulates REVERSED (each chunk prepended in O(|new|)),
+                // reversed once at the terminal — O(n), not the O(chunks²) of `@`.
+                if List.isEmpty chunkRaw then return List.rev skips
                 else
                     let remapped2 = repoint basis Set.empty kind chunkRaw
                     let newSkips =
@@ -1898,7 +1907,7 @@ module Transfer =
                     let updates = rowsForUpdate |> List.choose renderUpdate
                     if not (List.isEmpty updates) then
                         do! Deploy.executeBatch sink (String.concat "\n" updates)
-                    return! phase2Chunks kind load basis idAttr renderUpdate stream (skips @ newSkips)
+                    return! phase2Chunks kind load basis idAttr renderUpdate stream (List.rev newSkips @ skips)
             }
 
         let rec phase2 (loads: DataLoadKind list) (skips: (SsKey * UnresolvedReference) list)
