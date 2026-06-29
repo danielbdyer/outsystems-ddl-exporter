@@ -238,14 +238,23 @@ the `SplitTableIdentifier` dedup (4.11), and the `NullSafeComparer` base (4.12).
 on its own commit, built clean, and passed its scoped suites; **net ≈ −1,000 LOC** despite
 adding the new `Result` API + tests and the shared DTO/comparer files.
 
-**Deferred to focused follow-up PRs (with rationale recorded inline above):** the items that
-touch **public contract surface** (4.14 manifest/fingerprint/config; potentially 4.5/4.7 renames),
-**golden DDL output** (4.1–4.4 — the no-string-concat DDL rewrites and AST-driven formatters),
-or **serializer round-trips** (4.9 DTO dedup), plus the broad **options/resolver/binder sprawl**
-(4.16) and **CLI command-factory** restructure (4.11). These are individually valuable but each
-needs its own golden-diff / round-trip / contract verification, which is why they were not
-bundled into this sweep. 2.2 (FK matrix) is likewise deferred — it is a test-validated spec,
-not dead code.
+**Also completed in later rounds:** 4.9 (ProfileSnapshot DTO unification, output byte-identical),
+4.10-partial (`CreateSqlMetadataOptions`), 4.11-partial (`SplitTableIdentifier`),
+4.12-partial (`NullSafeComparer`), 4.3 (extended-property templates, output byte-identical),
+**4.1 (NOCHECK FK via ScriptDom — the one genuine emitted-DDL change, golden-reviewed + now
+actively tested)**, and the naming de-collisions 4.5 (`EmittableEntityProjection`) and
+4.7 (`CacheOutcomeMetadataBuilder`/`CacheKeyMetadataBuilder`).
+
+**Genuinely remaining (each a dedicated follow-up, with rationale inline above):**
+- **4.14** — contract change (manifest/fingerprint/cache + backward-compatible JSON config input);
+  needs product sign-off, not an autonomous cleanup.
+- **4.2-AST / 4.4** — infeasible as clean refactors: 4.2-AST would re-format *every* emitted table
+  (the bespoke formatters do what the script generator can't); 4.4 is layering-blocked (the pure
+  decision layer can't depend on emission).
+- **4.16 (options/resolver/binder sprawl)**, **4.11-full (CLI factory consolidation)**,
+  **4.17 (`*ApplicationService`/`*ResultSetProcessor` naming migration)** — large multi-file
+  restructures with config back-compat / wide-rename risk; each warrants its own reviewed PR.
+- **2.2 (FK matrix)** kept (test-validated spec); **4.13 (`IPathCanonicalizer`)** kept (DI seam).
 
 ## Recommended sequencing
 
