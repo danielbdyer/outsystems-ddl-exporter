@@ -155,10 +155,16 @@ single structural sink.
 > style guardrail on already-correct code is net-negative. If the team *wants* AST-driven
 > DDL formatting, it should be a deliberate, separately-reviewed change with regenerated +
 > human-reviewed golden files and a changelog note — not folded into a cleanup sweep.
-- [~] **4.1 Recommended against (output churn).** `CreateTableStatementBuilder` hand-builds the
-  NOCHECK-FK `ALTER TABLE` string. It is injection-safe today; routing through ScriptDom
-  changes the emitted text format (the golden `…[JobRun]  WITH NOCHECK ADD CONSTRAINT…` would
-  change). Left as-is; the `// TODO` is aspirational, not a defect.
+- [x] **4.1 Done (output change, golden-reviewed).** `BuildNoCheckForeignKeyStatements` now
+  returns ScriptDom AST (`AlterTableAddTableElementStatement` with `ExistingRowsCheckEnforcement
+  = NoCheck`, plus `AlterTableConstraintModificationStatement` for the `NOCHECK CONSTRAINT`
+  disable), scripted through the shared generator — no more hand-concatenated SQL (TODO removed).
+  Verified the generated SQL is valid + semantically equivalent. The `edge-case-untrusted/JobRun.sql`
+  golden was **stale and orphaned** (predated the disable-statement logic; not loaded by any
+  test); it is regenerated and now covered by a new **active** test
+  `Create_matches_edge_case_untrusted_fixture_scripts` (env-gated regen via
+  `OSM_UPDATE_UNTRUSTED_FIXTURE=1`). The referenced-table name resolution is unchanged
+  (identical `GetEffectiveTableName` call); only the ALTER statement formatting changed.
 - [~] **4.2 Recommended against (output churn / marginal).** The AST-driven rewrite of
   `CreateTableFormatter`/`ConstraintFormatter` changes output; the output-preserving
   alternative (sharing the ~3-line split+builder setup behind two divergent per-line state
