@@ -146,7 +146,7 @@ module StaticSeedsEmitter =
                 Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
-                StagedSource = None
+                RowSource   = MergeRowSource.InlineValues
             }
         // Above the threshold the inline `USING (VALUES …)` MERGE hits SQL Server
         // error 8623, so stage the rows through a `#temp`. Below, the inline form
@@ -160,7 +160,7 @@ module StaticSeedsEmitter =
             Bench.recordSample "emit.staticSeeds.staged" 1L
             StagedMerge.renderStagedPhase1 "emit.staticSeeds" verification bracketIdentity
                 (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
-                { args with StagedSource = Some (StagedMerge.stagedTempName k) }
+                args
         else
         Bench.recordSample "emit.staticSeeds.inline" 1L
         // The inline MERGE as a typed `Statement` batch. The terminal `;` + `GO`
@@ -291,7 +291,7 @@ module StaticSeedsEmitter =
             let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
+                |> Option.bind DeleteScope.create
             let deferred = load.DeferredFkColumns
             // NM-26 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
             // whenever the kind carries ANY IDENTITY column, via the

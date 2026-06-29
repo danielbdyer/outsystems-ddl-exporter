@@ -175,7 +175,7 @@ module MigrationDependenciesEmitter =
                 Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
-                StagedSource = None
+                RowSource   = MergeRowSource.InlineValues
             }
         // Above the operator's `emission.dataStaging` threshold the inline
         // `USING (VALUES …)` MERGE hits SQL Server error 8623 (the optimizer's
@@ -188,7 +188,7 @@ module MigrationDependenciesEmitter =
             Bench.recordSample "emit.migrationDeps.staged" 1L
             StagedMerge.renderStagedPhase1 "emit.migrationDeps" verification bracketIdentity
                 (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
-                { args with StagedSource = Some (StagedMerge.stagedTempName k) }
+                args
         else
         Bench.recordSample "emit.migrationDeps.inline" 1L
         // The inline MERGE as a typed `Statement` batch — terminal `;` + `GO`
@@ -322,7 +322,7 @@ module MigrationDependenciesEmitter =
             let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
+                |> Option.bind DeleteScope.create
             let deferred = load.DeferredFkColumns
             let typeLookup = KindColumns.columnTypeLookup kind
             let typedRows =

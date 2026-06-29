@@ -63,7 +63,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             Rows = [ [ pkLit ] ]
             CdcAware = false
             DeleteScope = None
-            StagedSource = None
+            RowSource = MergeRowSource.InlineValues
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -111,32 +111,33 @@ let private mergeArgs (deleteScope: DeleteScope option) : MergeBuildArgs =
                 SqlLiteral.ofRaw Text    "a" ] ]
         CdcAware    = false
         DeleteScope = deleteScope
-        StagedSource = None
+        RowSource   = MergeRowSource.InlineValues
     }
 
 // ---------------------------------------------------------------------------
-// StagedSource — the error-8623-safe form. `Some "#seed_X"` makes the MERGE (and
-// the validate-before-apply guard) draw from a pre-staged `#temp` instead of an
-// inline `VALUES` constructor. `None` (the default) is byte-identical.
+// MergeRowSource — the error-8623-safe form. `Staged "#seed_X"` makes the MERGE
+// (and the validate-before-apply guard) draw from a pre-staged `#temp` instead
+// of an inline `VALUES` constructor. `InlineValues` (the default) is
+// byte-identical.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``StagedSource Some: the MERGE draws from the #temp, not an inline VALUES`` () =
-    let sql = renderMerge { mergeArgs None with StagedSource = Some "#seed_Widget" }
+let ``MergeRowSource Staged: the MERGE draws from the #temp, not an inline VALUES`` () =
+    let sql = renderMerge { mergeArgs None with RowSource = MergeRowSource.Staged "#seed_Widget" }
     Assert.Contains("[#seed_Widget]", sql)     // USING the staged temp table
     // the row literals now live in the #temp, not the MERGE — `N'a'` is the
     // inline Name value, present in the VALUES form, absent in the staged form.
     Assert.DoesNotContain("N'a'", sql)
 
 [<Fact>]
-let ``StagedSource None: the MERGE keeps the inline VALUES (byte-identical default)`` () =
+let ``MergeRowSource InlineValues: the MERGE keeps the inline VALUES (byte-identical default)`` () =
     let sql = renderMerge (mergeArgs None)
     Assert.Contains("VALUES", sql)
     Assert.DoesNotContain("#seed", sql)
 
 [<Fact>]
-let ``StagedSource Some: the validate-before-apply guard EXCEPTs the #temp, not a VALUES`` () =
-    let guard = ScriptDomBuild.buildValidateBeforeApplyGuard { mergeArgs None with StagedSource = Some "#seed_Widget" }
+let ``MergeRowSource Staged: the validate-before-apply guard EXCEPTs the #temp, not a VALUES`` () =
+    let guard = ScriptDomBuild.buildValidateBeforeApplyGuard { mergeArgs None with RowSource = MergeRowSource.Staged "#seed_Widget" }
     let sql = ScriptDomGenerate.generateOne guard
     Assert.Contains("[#seed_Widget]", sql)
     Assert.DoesNotContain("VALUES", sql)
@@ -336,7 +337,7 @@ let ``AC-D7/AC-G4: DeleteScope=None is byte-identical to the pre-scope MERGE out
 [<Fact>]
 let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATCHED BY SOURCE THEN DELETE arm`` () =
     let scope : DeleteScope =
-        { Terms = [ ("Tenant", SqlLiteral.ofRaw Integer "7") ] }
+        DeleteScope.create [ ("Tenant", SqlLiteral.ofRaw Integer "7") ] |> Option.get
     let rendered = renderMerge (mergeArgs (Some scope))
     // Exactly one DELETE arm.
     let occurrences =
@@ -351,9 +352,10 @@ let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATC
 [<Fact>]
 let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
     let scope : DeleteScope =
-        { Terms =
+        DeleteScope.create
             [ ("Tenant", SqlLiteral.ofRaw Integer "7")
-              ("Name",   SqlLiteral.ofRaw Text    "a") ] }
+              ("Name",   SqlLiteral.ofRaw Text    "a") ]
+        |> Option.get
     let rendered = renderMerge (mergeArgs (Some scope))
     // The generator wraps long predicates with continuation-indentation;
     // normalize whitespace to assert the folded AND content regardless of

@@ -904,7 +904,7 @@ module ScriptDomBuild =
     /// Gates which target rows the `WHEN NOT MATCHED BY SOURCE` arm may
     /// delete — rows outside the scope survive.
     let private deleteScopePredicate (scope: DeleteScope) : BooleanExpression =
-        scope.Terms
+        DeleteScope.terms scope
         |> List.map (fun (col, value) ->
             let cmp = BooleanComparisonExpression()
             cmp.ComparisonType <- BooleanComparisonType.Equals
@@ -937,13 +937,13 @@ module ScriptDomBuild =
         // inline `USING (VALUES (...), (...)) AS Source(c1, c2, ...)`. Every other
         // arm (ON, WHEN MATCHED/NOT MATCHED/NOT MATCHED BY SOURCE) references the
         // `[Source]` alias identically, so only the table reference changes.
-        match args.StagedSource with
-        | Some tempName ->
+        match args.RowSource with
+        | Staged tempName ->
             let namedRef = NamedTableReference()
             namedRef.SchemaObject <- tempSchemaObject tempName
             namedRef.Alias <- bracketed "Source"
             spec.TableReference <- namedRef :> TableReference
-        | None ->
+        | InlineValues ->
             let inline_ = InlineDerivedTable()
             args.Rows
             |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
@@ -1143,13 +1143,13 @@ module ScriptDomBuild =
         // nodes across the two EXCEPT arms); the inline VALUES re-materializes,
         // but the guard is opt-in so O(rows)×2 is acceptable.
         let sourceFrom () : TableReference =
-            match args.StagedSource with
-            | Some tempName ->
+            match args.RowSource with
+            | Staged tempName ->
                 let t = NamedTableReference()
                 t.SchemaObject <- tempSchemaObject tempName
                 t.Alias <- bracketed "Source"
                 t :> TableReference
-            | None ->
+            | InlineValues ->
                 let idt = InlineDerivedTable()
                 for row in args.Rows do
                     let rv = RowValue()
