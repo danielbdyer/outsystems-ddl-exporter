@@ -28,7 +28,7 @@ public sealed class EvidenceCacheService : IEvidenceCacheService
         var descriptorCollector = new EvidenceDescriptorCollector(_fileSystem, canonicalizer);
         var manifestEvaluator = new ManifestEvaluator(_fileSystem);
         var cacheWriter = new EvidenceCacheWriter(_fileSystem, canonicalizer);
-        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
+        var metadataBuilder = new CacheOutcomeMetadataBuilder(canonicalizer);
 
         _normalizer = new CacheRequestNormalizer(_fileSystem, descriptorCollector, canonicalizer);
         _evaluator = new CacheEntryEvaluator(_fileSystem, manifestEvaluator, timestamp, metadataBuilder);

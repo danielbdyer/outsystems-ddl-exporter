@@ -17,7 +17,7 @@ internal sealed record EntityEmissionContext(
 {
     public static EntityEmissionContext Create(string moduleName, EntityModel entity)
     {
-        var snapshot = EntityEmissionSnapshot.Create(moduleName, entity);
+        var snapshot = EmittableEntityProjection.Create(moduleName, entity);
 
         return new EntityEmissionContext(
             snapshot.ModuleName,

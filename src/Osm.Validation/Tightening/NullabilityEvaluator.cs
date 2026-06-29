@@ -10,7 +10,7 @@ using Osm.Validation.Tightening.Signals;
 
 namespace Osm.Validation.Tightening;
 
-internal sealed class NullabilityEvaluator : ITighteningAnalyzer
+internal sealed class NullabilityEvaluator : IColumnDecisionAnalyzer
 {
     private readonly TighteningOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> _columnProfiles;
@@ -237,78 +237,5 @@ internal sealed class NullabilityEvaluator : ITighteningAnalyzer
 
         var decision = Evaluate(context.Entity, context.Attribute, context.Column);
         builder.SetNullability(decision);
-
-        if (!ShouldCreateOpportunity(decision))
-        {
-            return;
-        }
-
-        var summary = BuildNullabilitySummary(decision);
-        var risk = ChangeRiskClassifier.ForNotNull(decision);
-        var disposition = ResolveOpportunityDisposition(decision);
-        var opportunity = Opportunity.Create(
-            OpportunityType.Nullability,
-            "NOT NULL",
-            summary,
-            risk,
-            decision.Rationales,
-            column: context.Column,
-            disposition: disposition);
-
-        builder.AddOpportunity(opportunity);
-    }
-
-    private static readonly ISet<string> ActionableBlockerRationales = new HashSet<string>(StringComparer.Ordinal)
-    {
-        TighteningRationales.ProfileMissing,
-        TighteningRationales.NullBudgetEpsilon,
-        TighteningRationales.DataHasNulls,
-        TighteningRationales.DataHasOrphans
-    };
-
-    private static bool ShouldCreateOpportunity(NullabilityDecision decision)
-        => decision.RequiresRemediation || (!decision.MakeNotNull && HasActionableBlocker(decision));
-
-    private static OpportunityDisposition ResolveOpportunityDisposition(NullabilityDecision decision)
-        => decision.RequiresRemediation || (!decision.MakeNotNull && HasActionableBlocker(decision))
-            ? OpportunityDisposition.NeedsRemediation
-            : OpportunityDisposition.ReadyToApply;
-
-    private static bool HasActionableBlocker(NullabilityDecision decision)
-    {
-        foreach (var rationale in decision.Rationales)
-        {
-            if (ActionableBlockerRationales.Contains(rationale))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string BuildNullabilitySummary(NullabilityDecision decision)
-    {
-        if (decision.RequiresRemediation)
-        {
-            return "NOT NULL was not applied. Remediate data before enforcement can proceed.";
-        }
-
-        if (decision.Rationales.Contains(TighteningRationales.ProfileMissing))
-        {
-            return "NOT NULL was not applied. Collect profiling evidence before enforcement can proceed.";
-        }
-
-        if (decision.Rationales.Contains(TighteningRationales.NullBudgetEpsilon))
-        {
-            return "NOT NULL was not applied. Column exceeds the configured null budget threshold.";
-        }
-
-        if (decision.Rationales.Contains(TighteningRationales.DataHasNulls))
-        {
-            return "NOT NULL was not applied. Profiling detected NULL values that contradict the logical mandatory flag.";
-        }
-
-        return "NOT NULL was not applied. Review policy blockers before enforcement can proceed.";
     }
 }

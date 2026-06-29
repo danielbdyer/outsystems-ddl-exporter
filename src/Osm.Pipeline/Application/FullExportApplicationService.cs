@@ -597,7 +597,7 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
                 "Extracted model path is required to hydrate foreign key metadata. Provide extract.outputPath or persist the extraction payload.");
         }
 
-        var sqlMetadataOptions = CreateSqlMetadataOptions(sqlOptions);
+        var sqlMetadataOptions = sqlOptions?.ToModelIngestionMetadata();
         if (sqlMetadataOptions is null)
         {
             return extractionResult;
@@ -660,25 +660,6 @@ public sealed class FullExportApplicationService : PipelineApplicationServiceBas
         return extraction.OutputPath;
     }
 
-    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
-    {
-        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            return null;
-        }
-
-        var authentication = sqlOptions.Authentication;
-        var connectionOptions = new SqlConnectionOptions(
-            authentication.Method,
-            authentication.TrustServerCertificate,
-            authentication.ApplicationName,
-            authentication.AccessToken);
-
-        return new ModelIngestionSqlMetadataOptions(
-            sqlOptions.ConnectionString,
-            connectionOptions,
-            sqlOptions.CommandTimeoutSeconds);
-    }
 
     private static SchemaApplyOptions ResolveSchemaApplyOptions(
         CliConfigurationContext configurationContext,

@@ -211,7 +211,10 @@ internal sealed class CreateTableStatementBuilder
         return builder.ToImmutable();
     }
 
-    public ImmutableArray<string> BuildNoCheckForeignKeyStatements(
+    // Emits the deferred NOCHECK foreign keys as ScriptDom AST statements (scripted by the
+    // caller through the shared script generator) rather than hand-concatenated SQL — every
+    // identifier and clause now flows through the AST, honoring the no-string-concat guardrail.
+    public ImmutableArray<TSqlStatement> BuildNoCheckForeignKeyStatements(
         SmoTableDefinition table,
         string effectiveTableName,
         ImmutableArray<SmoForeignKeyDefinition> deferredForeignKeys,
@@ -234,10 +237,10 @@ internal sealed class CreateTableStatementBuilder
 
         if (deferredForeignKeys.IsDefaultOrEmpty)
         {
-            return ImmutableArray<string>.Empty;
+            return ImmutableArray<TSqlStatement>.Empty;
         }
 
-        var statements = ImmutableArray.CreateBuilder<string>(deferredForeignKeys.Length);
+        var statements = ImmutableArray.CreateBuilder<TSqlStatement>();
 
         foreach (var foreignKey in deferredForeignKeys)
         {
@@ -253,32 +256,47 @@ internal sealed class CreateTableStatementBuilder
                 table.LogicalName,
                 effectiveTableName);
 
-            var schemaIdentifier = _identifierFormatter.QuoteIdentifier(table.Schema, options.Format);
-            var tableIdentifier = _identifierFormatter.QuoteIdentifier(effectiveTableName, options.Format);
-            var constraintIdentifier = _identifierFormatter.QuoteIdentifier(foreignKeyName, options.Format);
-            var referencedSchemaIdentifier = _identifierFormatter.QuoteIdentifier(foreignKey.ReferencedSchema, options.Format);
-            var referencedTableIdentifier = _identifierFormatter.QuoteIdentifier(referencedTableName, options.Format);
-
-            var columnList = string.Join(", ", foreignKey.Columns.Select(c => _identifierFormatter.QuoteIdentifier(c, options.Format)));
-            var referencedColumnList = string.Join(", ", foreignKey.ReferencedColumns.Select(c => _identifierFormatter.QuoteIdentifier(c, options.Format)));
-
-            var deleteClause = string.Empty;
-            var deleteAction = MapDeleteActionToString(foreignKey.DeleteAction);
-            // TODO: Try to get SMO to build the below instead of concatenating it ourselves
-            if (!string.Equals(deleteAction, "NO ACTION", StringComparison.OrdinalIgnoreCase))
+            var constraint = new ForeignKeyConstraintDefinition
             {
-                deleteClause = $" ON DELETE {deleteAction}";
+                ConstraintIdentifier = _identifierFormatter.CreateIdentifier(foreignKeyName, options.Format),
+                ReferenceTableName = _identifierFormatter.BuildSchemaObjectName(foreignKey.ReferencedSchema, referencedTableName, options.Format),
+            };
+
+            var deleteAction = MapDeleteAction(foreignKey.DeleteAction);
+            if (deleteAction != DeleteUpdateAction.NoAction)
+            {
+                constraint.DeleteAction = deleteAction;
             }
 
-            var statement = $"ALTER TABLE {schemaIdentifier}.{tableIdentifier}  WITH NOCHECK ADD CONSTRAINT {constraintIdentifier}{Environment.NewLine}" +
-                           $"    FOREIGN KEY ({columnList}) REFERENCES {referencedSchemaIdentifier}.{referencedTableIdentifier} ({referencedColumnList}){deleteClause}";
+            foreach (var column in foreignKey.Columns)
+            {
+                constraint.Columns.Add(_identifierFormatter.CreateIdentifier(column, options.Format));
+            }
 
-            statements.Add(statement);
+            foreach (var referencedColumn in foreignKey.ReferencedColumns)
+            {
+                constraint.ReferencedTableColumns.Add(_identifierFormatter.CreateIdentifier(referencedColumn, options.Format));
+            }
 
-            // If the FK should remain unchecked (untrusted), emit NOCHECK CONSTRAINT to disable it
+            var addConstraint = new AlterTableAddTableElementStatement
+            {
+                SchemaObjectName = _identifierFormatter.BuildSchemaObjectName(table.Schema, effectiveTableName, options.Format),
+                ExistingRowsCheckEnforcement = ConstraintEnforcement.NoCheck,
+                Definition = new TableDefinition(),
+            };
+            addConstraint.Definition.TableConstraints.Add(constraint);
+            statements.Add(addConstraint);
+
+            // If the FK should remain unchecked (untrusted), disable it with NOCHECK CONSTRAINT.
             if (foreignKey.IsNoCheck)
             {
-                statements.Add($"ALTER TABLE {schemaIdentifier}.{tableIdentifier} NOCHECK CONSTRAINT {constraintIdentifier};");
+                var disableConstraint = new AlterTableConstraintModificationStatement
+                {
+                    SchemaObjectName = _identifierFormatter.BuildSchemaObjectName(table.Schema, effectiveTableName, options.Format),
+                    ConstraintEnforcement = ConstraintEnforcement.NoCheck,
+                };
+                disableConstraint.ConstraintNames.Add(_identifierFormatter.CreateIdentifier(foreignKeyName, options.Format));
+                statements.Add(disableConstraint);
             }
         }
 
@@ -546,13 +564,5 @@ internal sealed class CreateTableStatementBuilder
         ForeignKeyAction.Cascade => DeleteUpdateAction.Cascade,
         ForeignKeyAction.SetNull => DeleteUpdateAction.SetNull,
         _ => DeleteUpdateAction.NoAction,
-    };
-
-    private static string MapDeleteActionToString(ForeignKeyAction action) => action switch
-    {
-        ForeignKeyAction.Cascade => "CASCADE",
-        ForeignKeyAction.SetNull => "SET NULL",
-        ForeignKeyAction.SetDefault => "SET DEFAULT",
-        _ => "NO ACTION",
     };
 }

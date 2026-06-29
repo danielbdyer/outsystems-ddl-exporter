@@ -41,7 +41,7 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var step = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
 
         var result = await step.ExecuteAsync(initial);
@@ -94,7 +94,7 @@ public class BuildSsdtPipelineStepTests
             Metadata: new Dictionary<string, string?>());
 
         var request = CreateRequest(output.Path, cacheOptions: cacheOptions);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
         var coordinator = new EvidenceCacheCoordinator(cacheService);
@@ -115,14 +115,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var step = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
 
         var result = await step.ExecuteAsync(evidenceState);
@@ -140,14 +136,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var step = new BuildSsdtEmissionStep(
@@ -176,14 +168,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -275,21 +263,23 @@ public class BuildSsdtPipelineStepTests
 
         var opportunityArtifacts = new OpportunityArtifacts(opportunitiesPath, validationsPath, safePath, "PRINT 1;", remediationPath, "PRINT 2;");
 
-        var state = new SqlValidated(
-            request,
-            logBuilder,
-            bootstrap,
-            EvidenceCache: null,
-            policyDecisions,
-            decisionReport,
-            opportunities,
-            validations,
-            ImmutableArray<PipelineInsight>.Empty,
-            manifest,
-            decisionLogPath,
-            opportunityArtifacts,
-            Path.Combine(output.Path, "OutSystemsModel.sqlproj"),
-            SsdtSqlValidationSummary.Empty);
+        var state = new BuildSsdtState
+        {
+            Request = request,
+            Log = logBuilder,
+            Bootstrap = bootstrap,
+            EvidenceCache = null,
+            Decisions = policyDecisions,
+            Report = decisionReport,
+            Opportunities = opportunities,
+            Validations = validations,
+            Insights = ImmutableArray<PipelineInsight>.Empty,
+            Manifest = manifest,
+            DecisionLogPath = decisionLogPath,
+            OpportunityArtifacts = opportunityArtifacts,
+            SqlProjectPath = Path.Combine(output.Path, "OutSystemsModel.sqlproj"),
+            SqlValidation = SsdtSqlValidationSummary.Empty,
+        };
 
         var step = new BuildSsdtStaticSeedStep(CreateSeedGenerator());
 
@@ -354,14 +344,10 @@ public class BuildSsdtPipelineStepTests
             }
         };
 
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -390,14 +376,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new CollidingStaticEntityDataProvider());
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -437,14 +419,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -522,14 +500,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path, staticDataProvider: new EchoStaticEntityDataProvider());
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -594,14 +568,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -633,14 +603,10 @@ public class BuildSsdtPipelineStepTests
     {
         using var output = new TempDirectory();
         var request = CreateRequest(output.Path);
-        var initial = new PipelineInitialized(request, new PipelineExecutionLogBuilder(TimeProvider.System));
+        var initial = new BuildSsdtState { Request = request, Log = new PipelineExecutionLogBuilder(TimeProvider.System) };
         var bootstrapStep = new BuildSsdtBootstrapStep(CreatePipelineBootstrapper(), CreateProfilerFactory());
         var bootstrapState = (await bootstrapStep.ExecuteAsync(initial)).Value;
-        var evidenceState = new EvidencePrepared(
-            bootstrapState.Request,
-            bootstrapState.Log,
-            bootstrapState.Bootstrap,
-            EvidenceCache: null);
+        var evidenceState = bootstrapState with { EvidenceCache = null };
         var policyStep = new BuildSsdtPolicyDecisionStep(new TighteningPolicy(), new TighteningOpportunitiesAnalyzer());
         var decisionState = (await policyStep.ExecuteAsync(evidenceState)).Value;
         var emissionStep = new BuildSsdtEmissionStep(
@@ -737,7 +703,7 @@ public class BuildSsdtPipelineStepTests
         return DynamicEntityDataset.Create(new[] { table });
     }
 
-    private static StaticSeedsGenerated CreateStaticSeedsGeneratedState(
+    private static BuildSsdtState CreateStaticSeedsGeneratedState(
         string outputDirectory,
         OsmModel model,
         DynamicEntityDataset dataset,
@@ -829,25 +795,27 @@ public class BuildSsdtPipelineStepTests
             Path.Combine(outputDirectory, "remediation.sql"),
             string.Empty);
 
-        return new StaticSeedsGenerated(
-            request,
-            log,
-            bootstrap,
-            EvidenceCache: null,
-            decisions,
-            report,
-            opportunities,
-            validations,
-            ImmutableArray<PipelineInsight>.Empty,
-            manifest,
-            decisionLogPath,
-            opportunityArtifacts,
-            sqlProjectPath,
-            SsdtSqlValidationSummary.Empty,
-            ImmutableArray<string>.Empty,
-            ImmutableArray<StaticEntityTableData>.Empty,
-            StaticSeedTopologicalOrderApplied: true,
-            StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical);
+        return new BuildSsdtState
+        {
+            Request = request,
+            Log = log,
+            Bootstrap = bootstrap,
+            EvidenceCache = null,
+            Decisions = decisions,
+            Report = report,
+            Opportunities = opportunities,
+            Validations = validations,
+            Insights = ImmutableArray<PipelineInsight>.Empty,
+            Manifest = manifest,
+            DecisionLogPath = decisionLogPath,
+            OpportunityArtifacts = opportunityArtifacts,
+            SqlProjectPath = sqlProjectPath,
+            SqlValidation = SsdtSqlValidationSummary.Empty,
+            StaticSeedScriptPaths = ImmutableArray<string>.Empty,
+            StaticSeedData = ImmutableArray<StaticEntityTableData>.Empty,
+            StaticSeedTopologicalOrderApplied = true,
+            StaticSeedOrderingMode = EntityDependencyOrderingMode.Alphabetical,
+        };
     }
 
     private static SanitizedDynamicFixture CreateSanitizedDynamicFixture()
