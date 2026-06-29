@@ -2169,6 +2169,7 @@ module ScriptDomBuild =
     /// >7500-char property values) flow through the writer without
     /// reshaping the signature.
     let private buildSetExtendedPropertyCore
+            (procName: string)
             (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
@@ -2189,7 +2190,7 @@ module ScriptDomBuild =
             p
 
         let procRef = ProcedureReference()
-        procRef.Name <- schemaObjectName "sys" "sp_addextendedproperty"
+        procRef.Name <- schemaObjectName "sys" procName
         let procRefName = ProcedureReferenceName()
         procRefName.ProcedureReference <- procRef
 
@@ -2427,13 +2428,26 @@ module ScriptDomBuild =
         stmt.Objects.Add(schemaObjectName schema name)
         stmt
 
-    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ) — the
+    /// initial `sp_addextendedproperty` binding.
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
             : Diagnostics<ExecuteStatement> =
-        Diagnostics.ofValue (buildSetExtendedPropertyCore owner propertyName propertyValue)
+        Diagnostics.ofValue (buildSetExtendedPropertyCore "sp_addextendedproperty" owner propertyName propertyValue)
+
+    /// The `sp_updateextendedproperty` sibling — RE-binds an existing property
+    /// (the migrate rename channel: `sp_rename` moves the object, this re-points
+    /// its logical-name property). Structurally identical to
+    /// `buildSetExtendedProperty`; only the procedure differs. Replaces the
+    /// hand-rolled `sprintf` + single-quote escaper at the migrate boundary.
+    let buildUpdateExtendedProperty
+            (owner: ExtendedPropertyOwner)
+            (propertyName: string)
+            (propertyValue: string option)
+            : Diagnostics<ExecuteStatement> =
+        Diagnostics.ofValue (buildSetExtendedPropertyCore "sp_updateextendedproperty" owner propertyName propertyValue)
 
     /// Parse a raw trigger `Definition` string into its `TSqlStatement`.
     /// Returns `None` when the definition is blank, the parser reports

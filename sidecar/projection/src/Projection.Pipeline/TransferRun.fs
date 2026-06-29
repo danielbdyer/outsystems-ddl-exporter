@@ -252,6 +252,22 @@ module Transfer =
             (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
             deferred rows
 
+    /// Render one Phase-2 UPDATE from typed args through the SAME typed node the
+    /// SSDT data lane uses (`ScriptDomBuild.buildUpdateStatement`) — not a
+    /// hand-built `sprintf "UPDATE … SET … WHERE …;"`. `generateOne` omits the
+    /// trailing `;` SQL Server requires after a single-statement render, so it is
+    /// appended here — the executeBatch contract: `;`-terminated statements
+    /// joined by `\n`. `CdcAware = true` appends the typed change-detection
+    /// predicate so an idempotent re-point is a structural no-op (CDC-silent
+    /// under `--allow-cdc`, write-minimal on a non-CDC sink) — the cross-emitter
+    /// CDC-silence invariant the per-row string copy used to bypass.
+    let private renderPhase2Update (args: UpdateBuildArgs) : string =
+        System.String.Concat(  // LINT-ALLOW: terminal `;` statement terminator on a fully-typed UPDATE render; generateOne omits it on a single-statement render (same as the data lane's renderDataBatch)
+            ScriptDomGenerate.generateOne
+                ((ScriptDomBuild.buildUpdateStatement args).Value
+                    :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
+            ";")
+
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
     /// key. `None` when the kind has no PK or no deferred columns.
@@ -260,17 +276,17 @@ module Transfer =
         let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
         if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then None
         else
-            let lit (a: Attribute) =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-                |> SqlLiteral.ofRaw a.Type
-                |> SqlLiteral.toString
-            let clause (a: Attribute) = sprintf "%s = %s" (Render.quote (ColumnRealization.columnNameText a.Column)) (lit a)
-            Some (
-                sprintf "UPDATE %s SET %s WHERE %s;"
-                    (Render.tableQualified kind.Physical)
-                    (deferredAttrs |> List.map clause |> String.concat ", ")
-                    (pkAttrs |> List.map clause |> String.concat " AND "))
+            let cellOf (a: Attribute) : string * SqlLiteral =
+                let lit =
+                    Map.tryFind a.Name row.Values
+                    |> Option.defaultValue ""
+                    |> SqlLiteral.ofRaw a.Type
+                ColumnRealization.columnNameText a.Column, lit
+            Some (renderPhase2Update
+                { Target     = kind.Physical
+                  SetCells   = deferredAttrs |> List.map cellOf
+                  WhereCells = pkAttrs |> List.map cellOf
+                  CdcAware   = true })
 
     /// `phase2UpdateSql` at the quantum grain (Q3): the per-attribute
     /// literal getters are staged against the stream's basis once per
@@ -282,20 +298,20 @@ module Transfer =
         let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
         if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then (fun _ -> None)
         else
-            let clauseOf (a: Attribute) : RowQuantum -> string =
+            // Stage the per-attribute (column, literal) getters once per kind;
+            // per row they build the typed cells the typed UPDATE node consumes.
+            let cellGetterOf (a: Attribute) : RowQuantum -> string * SqlLiteral =
                 let get = RowQuantum.cellGetter basis a.Name
-                fun q ->
-                    sprintf "%s = %s"
-                        (Render.quote (ColumnRealization.columnNameText a.Column))
-                        (get q |> SqlLiteral.ofRaw a.Type |> SqlLiteral.toString)
-            let setClauses = deferredAttrs |> List.map clauseOf
-            let whereClauses = pkAttrs |> List.map clauseOf
+                let col = ColumnRealization.columnNameText a.Column
+                fun q -> col, (get q |> SqlLiteral.ofRaw a.Type)
+            let setGetters   = deferredAttrs |> List.map cellGetterOf
+            let whereGetters = pkAttrs       |> List.map cellGetterOf
             fun q ->
-                Some (
-                    sprintf "UPDATE %s SET %s WHERE %s;"
-                        (Render.tableQualified kind.Physical)
-                        (setClauses |> List.map (fun render -> render q) |> String.concat ", ")
-                        (whereClauses |> List.map (fun render -> render q) |> String.concat " AND "))
+                Some (renderPhase2Update
+                    { Target     = kind.Physical
+                      SetCells   = setGetters   |> List.map (fun g -> g q)
+                      WhereCells = whereGetters |> List.map (fun g -> g q)
+                      CdcAware   = true })
 
     /// The chunk size every capture rung consumes (the staged rungs amortize
     /// one MERGE per chunk; the bench rationale and the rung mechanics live
