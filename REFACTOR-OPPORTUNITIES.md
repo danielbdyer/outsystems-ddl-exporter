@@ -185,8 +185,11 @@ single structural sink.
   suites green.
 - [x] **4.6** `OpportunitiesReport` ×2 — **resolved by Phase 2.1**: the legacy `Tightening/`
   copy was deleted, leaving only the canonical `Tightening/Opportunities/` one.
-- [ ] **4.7** `CacheMetadataBuilder` ×2 (`Application/` vs `Evidence/`) — follow-up; needs a
-  semantic-overlap check before merging (the two assemble different metadata shapes).
+- [x] **4.7** `CacheMetadataBuilder` ×2 — confirmed they are **different concepts** (Evidence's
+  `BuildOutcomeMetadata` for cache outcome vs Application's `Build` for cache-key inputs), so
+  renamed rather than merged: Evidence → `CacheOutcomeMetadataBuilder`, Application →
+  `CacheKeyMetadataBuilder`. Clean namespace separation (no file referenced both). Build +
+  cache/evidence tests green.
 - [x] **4.8** `ITighteningAnalyzer` ×2 — renamed the internal decision-setting interface to
   `IColumnDecisionAnalyzer` (concept: analyzes a column → writes its tightening decision),
   leaving the public opportunity analyzer's `ITighteningAnalyzer` unambiguous. Build + Validation green.

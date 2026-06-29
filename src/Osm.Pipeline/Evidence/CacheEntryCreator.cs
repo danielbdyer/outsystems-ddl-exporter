@@ -9,12 +9,12 @@ internal sealed class CacheEntryCreator
 {
     private readonly EvidenceCacheWriter _cacheWriter;
     private readonly Func<DateTimeOffset> _timestampProvider;
-    private readonly CacheMetadataBuilder _metadataBuilder;
+    private readonly CacheOutcomeMetadataBuilder _metadataBuilder;
 
     public CacheEntryCreator(
         EvidenceCacheWriter cacheWriter,
         Func<DateTimeOffset> timestampProvider,
-        CacheMetadataBuilder metadataBuilder)
+        CacheOutcomeMetadataBuilder metadataBuilder)
     {
         _cacheWriter = cacheWriter ?? throw new ArgumentNullException(nameof(cacheWriter));
         _timestampProvider = timestampProvider ?? throw new ArgumentNullException(nameof(timestampProvider));

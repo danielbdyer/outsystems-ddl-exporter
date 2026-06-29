@@ -115,7 +115,7 @@ public sealed class CacheEntryEvaluatorTests
         Assert.NotEqual(expectedCount, result.Metadata["actual.selection.count"]);
     }
 
-    private static async Task<(CacheRequestContext Context, CacheMetadataBuilder Builder)> CreateCacheEntryAsync(MockFileSystem fileSystem)
+    private static async Task<(CacheRequestContext Context, CacheOutcomeMetadataBuilder Builder)> CreateCacheEntryAsync(MockFileSystem fileSystem)
     {
         var root = "/cache";
         var modelPath = "/inputs/model.json";
@@ -137,7 +137,7 @@ public sealed class CacheEntryEvaluatorTests
         var normalized = await normalizer.TryNormalizeAsync(request, CancellationToken.None);
         var context = normalized.Value;
 
-        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
+        var metadataBuilder = new CacheOutcomeMetadataBuilder(canonicalizer);
         var creator = new CacheEntryCreator(
             new EvidenceCacheWriter(fileSystem, canonicalizer),
             () => new DateTimeOffset(2024, 8, 7, 10, 0, 0, TimeSpan.Zero),

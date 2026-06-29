@@ -10,7 +10,7 @@ public sealed class CacheMetadataBuilderTests
     [Fact]
     public void BuildOutcomeMetadata_ShouldMergeReasonAndBaseMetadata()
     {
-        var builder = new CacheMetadataBuilder(new ForwardSlashPathCanonicalizer());
+        var builder = new CacheOutcomeMetadataBuilder(new ForwardSlashPathCanonicalizer());
         var createdAt = new DateTimeOffset(2024, 8, 7, 12, 0, 0, TimeSpan.Zero);
         var manifest = new EvidenceCacheManifest(
             "1.0",

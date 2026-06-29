@@ -96,7 +96,7 @@ public sealed class PipelineApplicationServiceBaseTests
             UatUsersConfiguration.Empty);
 
         var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
-        var metadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var metadataBuilder = new CacheKeyMetadataBuilder(pathCanonicalizer);
         var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, pathCanonicalizer);
 
         return new PipelineRequestContext(
