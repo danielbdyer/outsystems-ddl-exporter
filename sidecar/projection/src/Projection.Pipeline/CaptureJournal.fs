@@ -42,6 +42,21 @@ type CaptureJournal =
             FilePath : string
         }
 
+/// The MEMORY-LEAN resume index over a `CaptureJournal`. The resume run holds
+/// this for its whole duration alongside the live remap, so it deliberately does
+/// NOT retain the journal's bulk (the per-chunk captured pairs — `O(minted keys)`
+/// for an estate-scale `AssignedBySink` load). Instead it maps each
+/// `(kind root, chunk index)` to the BYTE OFFSET of its NDJSON line; the one
+/// chunk being admitted is re-read + parsed on demand (`tryFindRecord`). Peak is
+/// `O(journal keys)` offsets, not `O(journal pairs)` arrays — the prior
+/// `CaptureJournal.load` Dictionary held every record's pairs at once.
+type ResumeIndex =
+    private
+        {
+            IndexFilePath : string
+            Offsets       : System.Collections.Generic.Dictionary<string * int, int64>
+        }
+
 [<RequireQualifiedAccess>]
 module CaptureJournal =
 
@@ -97,6 +112,81 @@ module CaptureJournal =
                     | null -> ()
                     | record -> index[(record.Kind, record.ChunkIx)] <- record
         index
+
+    /// The NDJSON line separator (the `append` writes `Serialize record + "\n"`).
+    [<Literal>]
+    let private NewlineByte : byte = 0x0Auy
+
+    /// Read the single NDJSON line that STARTS at `offset` (up to the next
+    /// newline or EOF), decoded as UTF-8. Used by `tryFindRecord` to parse one
+    /// record's bytes on demand — the only place a record's (potentially large)
+    /// pairs are materialized on the resume path.
+    let private readLineAt (path: string) (offset: int64) : string =
+        use fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)
+        fs.Seek(offset, SeekOrigin.Begin) |> ignore
+        let acc = System.Collections.Generic.List<byte>()
+        let buf = Array.zeroCreate<byte> 65536
+        let mutable finished = false
+        while not finished do
+            let n = fs.Read(buf, 0, buf.Length)
+            if n = 0 then finished <- true
+            else
+                match System.Array.IndexOf(buf, NewlineByte, 0, n) with
+                | -1 -> acc.AddRange(System.ArraySegment(buf, 0, n))
+                | nl ->
+                    acc.AddRange(System.ArraySegment(buf, 0, nl))
+                    finished <- true
+        System.Text.Encoding.UTF8.GetString(acc.ToArray())
+
+    /// Build the memory-lean `ResumeIndex`: a single byte-level scan that maps
+    /// each `(kind root, chunk index)` to its line's START offset WITHOUT
+    /// retaining the parsed record (only enough is deserialized to read the key).
+    /// A re-appended key takes the LATEST offset (last-write-wins — mirrors
+    /// `load`). Blank / literal-`null` lines are skipped; a corrupt line throws
+    /// (the same not-silently-lossy contract `load` carries). A missing journal
+    /// is an empty index (a fresh run).
+    let openResumeIndex (journal: CaptureJournal) : ResumeIndex =
+        let offsets = System.Collections.Generic.Dictionary<string * int, int64>()
+        if File.Exists journal.FilePath then
+            use fs = new FileStream(journal.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read)
+            let buf = Array.zeroCreate<byte> 65536
+            let lineBytes = System.Collections.Generic.List<byte>()
+            let mutable lineStart = 0L
+            let mutable bufStart = 0L
+            let recordLine () =
+                if lineBytes.Count > 0 then
+                    let line = System.Text.Encoding.UTF8.GetString(lineBytes.ToArray())
+                    if not (System.String.IsNullOrWhiteSpace line) then
+                        match JsonSerializer.Deserialize<ChunkRecord> line with
+                        | null   -> ()
+                        | record -> offsets[(record.Kind, record.ChunkIx)] <- lineStart
+                lineBytes.Clear()
+            let mutable read = fs.Read(buf, 0, buf.Length)
+            while read > 0 do
+                for i in 0 .. read - 1 do
+                    if buf.[i] = NewlineByte then
+                        recordLine ()
+                        lineStart <- bufStart + int64 i + 1L
+                    else
+                        lineBytes.Add buf.[i]
+                bufStart <- bufStart + int64 read
+                read <- fs.Read(buf, 0, buf.Length)
+            // A trailing line with no final newline (the append always writes one,
+            // so this is normally empty — but tolerate a hand-truncated file).
+            recordLine ()
+        { IndexFilePath = journal.FilePath; Offsets = offsets }
+
+    /// Resolve one journaled chunk by `(kind root, chunk index)`, re-reading and
+    /// parsing its line at the indexed offset. `None` when the key is absent (a
+    /// fresh chunk past the crash point). The pairs are materialized HERE, for
+    /// the one chunk being admitted — never the whole journal at once.
+    let tryFindRecord (index: ResumeIndex) (kindRoot: string) (chunkIx: int) : ChunkRecord option =
+        match index.Offsets.TryGetValue((kindRoot, chunkIx)) with
+        | false, _     -> None
+        | true, offset ->
+            match JsonSerializer.Deserialize<ChunkRecord> (readLineAt index.IndexFilePath offset) with
+            | null   -> None
+            | record -> Some record
 
     /// Append one completed chunk. The write is flushed on close, so a
     /// crash AFTER the append never re-executes the chunk and a crash

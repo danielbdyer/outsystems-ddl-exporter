@@ -1687,7 +1687,10 @@ module Transfer =
             |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
             |> Set.ofList
         let remap = PackedSurrogateRemap.create ()
-        let journalIndex = journal |> Option.map CaptureJournal.load
+        // The memory-lean resume index (byte offsets, not the full record set):
+        // each chunk's pairs are read on demand, so a hundreds-of-millions-row
+        // resume does not hold the whole journal resident beside the live remap.
+        let journalIndex = journal |> Option.map CaptureJournal.openResumeIndex
 
         // The combined surrogate lookup: a target's assigned key is in the
         // packed remap (AssignedBySink, stream-captured) OR the reconcile
@@ -1731,9 +1734,7 @@ module Transfer =
                 let journaled =
                     journalIndex
                     |> Option.bind (fun index ->
-                        match index.TryGetValue((SsKey.rootOriginal load.Kind, chunkIx)) with
-                        | true, record -> Some record
-                        | false, _ -> None)
+                        CaptureJournal.tryFindRecord index (SsKey.rootOriginal load.Kind) chunkIx)
                 match journaled with
                 | Some record ->
                     // L2 — the journal grain's ResumeAdmit (R3 / RI-3): the
