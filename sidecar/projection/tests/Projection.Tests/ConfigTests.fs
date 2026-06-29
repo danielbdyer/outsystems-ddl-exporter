@@ -573,8 +573,29 @@ let ``Config.parse: unknown top-level property is tolerated`` () =
 let ``Config.parse: defaults applied when sections are absent`` () =
     let json = """{ "model": { "path": "m.json" } }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal("fixture", cfg.Profiler.Provider)
+    Assert.Equal(Config.ProfilerProvider.Fixture, cfg.Profiler.Provider)
     Assert.Equal("SchemaOnly", cfg.Policy.Insertion)
+
+// -----------------------------------------------------------------------
+// profiler.provider — the closed ProfilerProvider DU. "live"/"fixture"
+// parse to their variants; an unrecognized token is a NAMED refusal, not a
+// silent downgrade to fixture (a typo'd provider must not silently disable
+// live profiling — the named-refusal discipline).
+// -----------------------------------------------------------------------
+
+[<Fact>]
+let ``Config.parse: profiler.provider "live" parses to ProfilerProvider.Live`` () =
+    let json = """{ "model": { "path": "m.json" }, "profiler": { "provider": "live" } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Equal(Config.ProfilerProvider.Live, cfg.Profiler.Provider)
+
+[<Fact>]
+let ``Config.parse: profiler.provider unknown token is a named refusal (never silently fixture)`` () =
+    let json = """{ "model": { "path": "m.json" }, "profiler": { "provider": "fixtuer" } }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "profiler.provider.unknown"),
+        sprintf "expected a profiler.provider.unknown refusal; got %A" (errors |> List.map (fun e -> e.Code)))
 
 // -----------------------------------------------------------------------
 // Config.fromFile — file I/O wrapper. A.1 CLI bridge ingests config via

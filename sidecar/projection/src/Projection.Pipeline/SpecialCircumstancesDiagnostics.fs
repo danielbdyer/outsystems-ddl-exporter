@@ -77,10 +77,7 @@ module SpecialCircumstancesDiagnostics =
         (catalog: Catalog)
         : DiagnosticEntry list =
         let allKinds = Catalog.allKinds catalog
-        let kindByKey =
-            allKinds
-            |> List.map (fun k -> k.SsKey, k)
-            |> Map.ofList
+        let kindByKey = Catalog.kindIndex catalog
         // Target-kind SsKeys referenced by ANY kind, whose target has
         // no PK. Deduplicate at the target-kind level: one entry per
         // missing-PK target regardless of how many references point at

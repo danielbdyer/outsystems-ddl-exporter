@@ -20,7 +20,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             OnlyActiveAttributes   = true
         }
         Profile     = { Path = None }
-        Profiler    = { Provider = "fixture" }
+        Profiler    = { Provider = Config.ProfilerProvider.Fixture }
         Overrides   = {
             TableRenames           = []
             MigrationDependencies  = None

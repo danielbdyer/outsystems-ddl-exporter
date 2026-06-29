@@ -342,7 +342,7 @@ module MigrationRun =
     /// **Table renames precede column renames**, and both precede the ALTERs, so
     /// every later statement references the post-rename physical names.
     let renameStatements (diff: CatalogDiff) : string list =
-        let byKey (c: Catalog) = Catalog.allKinds c |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let byKey (c: Catalog) = Catalog.kindIndex c
         let src = byKey (CatalogDiff.source diff)
         let tgt = byKey (CatalogDiff.target diff)
         // LINT-ALLOW (whole function): `sp_rename` / `sp_updateextendedproperty`
