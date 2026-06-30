@@ -199,119 +199,6 @@ module Transfer =
 
     // -- Projection-onto-Sink realization -----------------------------------
 
-    /// Project a kind's already-post-substitution rows into `SqlBulkCopy`
-    /// cell rows. Deferred FK columns are emitted as the empty raw —
-    /// `KeepNulls` maps that to SQL NULL — so Phase 1 satisfies a cycle;
-    /// Phase 2 re-points them.
-    let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        rows
-        |> List.map (fun row ->
-            attrs
-            |> List.map (fun a ->
-                let raw =
-                    if Set.contains a.Name deferred then ""
-                    else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
-
-    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        toCellsOver kind.Attributes deferred rows
-
-    /// The minted-bulk-lane projection: every attribute EXCEPT the IDENTITY
-    /// PK (the Sink mints it; `Bulk.copyRowsSinkMinted` carries no
-    /// `KeepIdentity`).
-    let private toCellRowsExcludingIdentity (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        toCellsOver
-            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
-            deferred rows
-
-    /// Q3 — the cell projections at the quantum grain (A40 siblings of
-    /// `toCellsOver`; the streaming realization's lanes consume these):
-    /// per-column getters are STAGED against the stream's (renamed) basis
-    /// once per kind, then applied per row. Deferred FK columns emit the
-    /// empty raw (SQL NULL under KeepNulls), exactly as the Map-carried
-    /// projection does.
-    let private quantumCellsOver (basis: RowBasis) (attrs: Attribute list) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        let cols =
-            attrs
-            |> List.map (fun a ->
-                let get =
-                    if Set.contains a.Name deferred then (fun _ -> "")
-                    else RowQuantum.cellGetter basis a.Name
-                ColumnRealization.columnNameText a.Column, a.Type, get)
-        rows
-        |> List.map (fun q ->
-            cols |> List.map (fun (col, ty, get) -> { Column = col; Type = ty; Raw = get q }))
-
-    let private quantumCellRows (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        quantumCellsOver basis kind.Attributes deferred rows
-
-    /// The minted-bulk-lane projection at the quantum grain — every
-    /// attribute EXCEPT the IDENTITY PK (the Sink mints it).
-    let private quantumCellRowsExcludingIdentity (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        quantumCellsOver basis
-            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
-            deferred rows
-
-    /// Render one Phase-2 UPDATE from typed args through the SAME typed node the
-    /// SSDT data lane uses (`ScriptDomBuild.buildUpdateStatement`) — not a
-    /// hand-built `sprintf "UPDATE … SET … WHERE …;"`. `generateOne` omits the
-    /// trailing `;` SQL Server requires after a single-statement render, so it is
-    /// appended here — the executeBatch contract: `;`-terminated statements
-    /// joined by `\n`. `CdcAware = true` appends the typed change-detection
-    /// predicate so an idempotent re-point is a structural no-op (CDC-silent
-    /// under `--allow-cdc`, write-minimal on a non-CDC sink) — the cross-emitter
-    /// CDC-silence invariant the per-row string copy used to bypass.
-    let private renderPhase2Update (args: UpdateBuildArgs) : string =
-        System.String.Concat(  // LINT-ALLOW: terminal `;` statement terminator on a fully-typed UPDATE render; generateOne omits it on a single-statement render (same as the data lane's renderDataBatch)
-            ScriptDomGenerate.generateOne
-                ((ScriptDomBuild.buildUpdateStatement args).Value
-                    :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";")
-
-    /// Phase-2 UPDATE for one row: set the deferred FK columns to their
-    /// (already remapped, plan-side) values, keyed by the kind's primary
-    /// key. `None` when the kind has no PK or no deferred columns.
-    let private phase2UpdateSql (kind: Kind) (deferred: Set<Name>) (row: StaticRow) : string option =
-        let pkAttrs = kind.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
-        let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
-        if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then None
-        else
-            let cellOf (a: Attribute) : string * SqlLiteral =
-                let lit =
-                    Map.tryFind a.Name row.Values
-                    |> Option.defaultValue ""
-                    |> SqlLiteral.ofRaw a.Type
-                ColumnRealization.columnNameText a.Column, lit
-            Some (renderPhase2Update
-                { Target     = kind.Physical
-                  SetCells   = deferredAttrs |> List.map cellOf
-                  WhereCells = pkAttrs |> List.map cellOf
-                  CdcAware   = true })
-
-    /// `phase2UpdateSql` at the quantum grain (Q3): the per-attribute
-    /// literal getters are staged against the stream's basis once per
-    /// kind; the returned closure renders one row's UPDATE. A kind with
-    /// no PK or no deferred columns resolves to a constant `None` closure
-    /// once, never per row.
-    let private phase2UpdateSqlQuantum (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) : (RowQuantum -> string option) =
-        let pkAttrs = kind.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
-        let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
-        if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then (fun _ -> None)
-        else
-            // Stage the per-attribute (column, literal) getters once per kind;
-            // per row they build the typed cells the typed UPDATE node consumes.
-            let cellGetterOf (a: Attribute) : RowQuantum -> string * SqlLiteral =
-                let get = RowQuantum.cellGetter basis a.Name
-                let col = ColumnRealization.columnNameText a.Column
-                fun q -> col, (get q |> SqlLiteral.ofRaw a.Type)
-            let setGetters   = deferredAttrs |> List.map cellGetterOf
-            let whereGetters = pkAttrs       |> List.map cellGetterOf
-            fun q ->
-                Some (renderPhase2Update
-                    { Target     = kind.Physical
-                      SetCells   = setGetters   |> List.map (fun g -> g q)
-                      WhereCells = whereGetters |> List.map (fun g -> g q)
-                      CdcAware   = true })
 
     /// The chunk size every capture rung consumes (the staged rungs amortize
     /// one MERGE per chunk; the bench rationale and the rung mechanics live
@@ -528,7 +415,7 @@ module Transfer =
                                     // predecessor, so this lane never carries
                                     // deferred columns.)
                                     do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                            (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
+                                            (TransferCellShaping.toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                                 | Some idAttr ->
                                     let! descents =
                                         captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
@@ -538,9 +425,9 @@ module Transfer =
                                 | None ->
                                     // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
                                     // unreachable; fall back to the bulk path rather than drop the rows.
-                                    do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRows sink kind.Physical (TransferCellShaping.toCellRows kind load.DeferredFkColumns remapped.Rows)
                             | _ ->
-                                do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                do! Bulk.copyRows sink kind.Physical (TransferCellShaping.toCellRows kind load.DeferredFkColumns remapped.Rows)
                     loaded.Value <- loaded.Value + 1
                     LogSink.recordStageProgress "load" loaded.Value loadTotal loadSw.ElapsedMilliseconds
 
@@ -577,7 +464,7 @@ module Transfer =
                                                 { row with Values = Map.add idAttr.Name assigned row.Values })
                                         | _ -> None)
                                 | _ -> remapped2.Rows
-                            let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                            let updates = rowsForUpdate |> List.choose (TransferCellShaping.phase2UpdateSql kind load.DeferredFkColumns)
                             if not (List.isEmpty updates) then
                                 do! Deploy.executeBatch sink (String.concat "\n" updates)
 
@@ -661,94 +548,6 @@ module Transfer =
     // before the load is absent from the snapshot, so the restore never re-trusts
     // it — never overriding the operator's decision, never re-validating data the
     // operator chose not to validate.
-
-    /// The plan's loaded (inserted-into) tables, lower-cased `schema.table`.
-    let private loadedTableKeys (catalog: Catalog) (plan: DataLoadPlan) : Set<string> =
-        plan.Loads
-        |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
-        |> List.map (fun k -> TableId.normalizedKey k.Physical)
-        |> Set.ofList
-
-    /// Pre-load snapshot — the `(schema, table, fk)` of every ENABLED + TRUSTED
-    /// FK on a loaded table, read from `sys.foreign_keys` (the deployed truth).
-    /// An FK the schema deployed UNTRUSTED (`is_not_trusted = 1` — a `NoCheckFk`
-    /// decision) is excluded, so the restore never touches it.
-    let private trustedFksOnLoadedTables (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(string * string * string) list> =
-        task {
-            let loaded = loadedTableKeys catalog plan
-            if Set.isEmpty loaded then return [] else
-            let trusted = System.Collections.Generic.List<string * string * string>()
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <-
-                "SELECT s.name, t.name, fk.name \
-                 FROM sys.foreign_keys fk \
-                 JOIN sys.tables t ON fk.parent_object_id = t.object_id \
-                 JOIN sys.schemas s ON t.schema_id = s.schema_id \
-                 WHERE fk.is_not_trusted = 0 AND fk.is_disabled = 0;"
-            use! reader = cmd.ExecuteReaderAsync()
-            let mutable go = true
-            while go do
-                let! has = reader.ReadAsync()
-                if has then trusted.Add(reader.GetString 0, reader.GetString 1, reader.GetString 2)
-                else go <- false
-            reader.Close()
-            return
-                trusted
-                |> Seq.filter (fun (sch, tbl, _) ->
-                    Set.contains (TableId.normalizedKeyOf sch tbl) loaded)
-                |> List.ofSeq
-        }
-
-    /// The CAPABILITY recognizer for the FK re-trust — the ALTER cannot run
-    /// because the sink login holds no ALTER on the object (a `ManagedDml` /
-    /// `grant: data` cloud sink, granted only SELECT/INSERT/UPDATE/DELETE).
-    /// 1088 / 4902 ("cannot find the object … because it does not exist or you do
-    /// not have permissions" — the ALTER-TABLE permission/visibility form) and
-    /// 229 (ALTER permission denied) DESCEND to the named
-    /// `FkTrustNotRestoredOnBulkLoad` tolerance. Everything else — notably a
-    /// constraint conflict (547) — PROPAGATES: a re-validation that fails on the
-    /// DATA is the loud fidelity signal, never masked (mirrors
-    /// `SurrogateCapture.isCapabilityRefusal`).
-    let private isAlterCapabilityRefusal (ex: SqlException) : bool =
-        CapabilityRefusal.isRefusal Capability.AlterConstraintTrust ex
-
-    /// Restore the trust the bulk load stripped — re-validate each FK in the
-    /// pre-load snapshot (`wasTrusted`) with `ALTER TABLE … WITH CHECK CHECK
-    /// CONSTRAINT` (one child×parent-PK semi-join per FK). After a faithful
-    /// transfer the data satisfies each FK so it succeeds; a CONSTRAINT failure
-    /// is a LOUD signal the load was not faithful — a post-load integrity
-    /// assertion, never silent corruption.
-    ///
-    /// A sink that cannot ALTER at all — the `ManagedDml` cloud archetype
-    /// (`grant: data`; no ALTER anywhere in the write path) — DESCENDS the
-    /// capability ladder: the re-trust is skipped, the FKs stay as the bulk load
-    /// left them (untrusted), and the disposition is surfaced via the
-    /// `retrust-skipped` stage — the named `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`,
-    /// never silent. (Re-trust is a `FullRights` capability; on a DML-only login
-    /// the ALTER is not available, exactly as the J5 archetype model records.)
-    /// The gate is `WriteOptions.RetrustForeignKeys` (default on); the explicit
-    /// opt-out is the same named tolerance.
-    let private restoreFkTrust (sink: SqlConnection) (wasTrusted: (string * string * string) list) : Task<unit> =
-        task {
-            if List.isEmpty wasTrusted then return () else
-            let stmts =
-                wasTrusted
-                |> List.map (fun (sch, tbl, fk) ->
-                    // LINT-ALLOW: terminal SQL-text boundary; identifiers are sys.* catalog-view
-                    // names (deployed truth), each quoted via Render.quote.
-                    System.String.Concat(
-                        "ALTER TABLE ", Render.quote sch, ".", Render.quote tbl,
-                        " WITH CHECK CHECK CONSTRAINT ", Render.quote fk, ";"))
-            try
-                do! Deploy.executeBatch sink (String.concat "\n" stmts)
-                LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
-            with :? SqlException as ex when isAlterCapabilityRefusal ex ->
-                // Capability descent — the sink login cannot ALTER (a ManagedDml /
-                // data-grant cloud sink). No ALTER ⇒ no re-validation: descend to
-                // the named FkTrustNotRestoredOnBulkLoad tolerance, surfaced via
-                // the retrust-skipped stage, never silent.
-                LogSink.recordStageProgress "retrust-skipped" 0 (List.length wasTrusted) 0L
-        }
 
     /// The durable phase-marker table — records which transfers completed, so a
     /// re-run of an already-finished transfer is a no-op (idempotent).
@@ -1208,7 +1007,7 @@ module Transfer =
                 let! preTrustedFks =
                     task {
                         if mode = Execute && writeOpts.RetrustForeignKeys
-                        then return! trustedFksOnLoadedTables sink catalog plan
+                        then return! TransferFkTrust.trustedFksOnLoadedTables sink catalog plan
                         else return []
                     }
                 let! writeSkips, laneDescents, replayedPriorDrops =
@@ -1237,7 +1036,7 @@ module Transfer =
                 // pre-load snapshot, so NoCheckFk decisions are preserved). A
                 // re-validation that fails is a loud integrity signal, not silent.
                 if mode = Execute && writeOpts.RetrustForeignKeys then
-                    do! restoreFkTrust sink preTrustedFks
+                    do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                 return
                     Result.success
                         { Mode                = mode
@@ -1759,7 +1558,7 @@ module Transfer =
                                 match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
                                 | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
                                     do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                            (quantumCellRowsExcludingIdentity basis kind load.DeferredFkColumns remapped.Rows)
+                                            (TransferCellShaping.quantumCellRowsExcludingIdentity basis kind load.DeferredFkColumns remapped.Rows)
                                     return [], lane, []
                                 | Some idAttr ->
                                     let! outcome =
@@ -1770,10 +1569,10 @@ module Transfer =
                                     pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
                                     return pairs, succeeded, descents
                                 | None ->
-                                    do! Bulk.copyRows sink kind.Physical (quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
                                     return [], lane, []
                             | _ ->
-                                do! Bulk.copyRows sink kind.Physical (quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
                                 return [], lane, []
                         }
                     let pairs, succeededLane, descents = laneOutcome
@@ -1925,7 +1724,7 @@ module Transfer =
                         | Some kind, Some ingestKind ->
                             let idAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
                             let basis = RowBasis.rename renameMap (Kind.rowBasis ingestKind)
-                            let renderUpdate = phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
+                            let renderUpdate = TransferCellShaping.phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
                             let stream = Ingestion.streamKind source ingestKind
                             let! kindSkips = phase2Chunks kind load basis idAttr renderUpdate stream []
                             return! phase2 rest (skips @ kindSkips)

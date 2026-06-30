@@ -56,6 +56,8 @@
     <Compile Include="CaptureJournal.fs" />
     <Compile Include="RenameProjection.fs" />
     <Compile Include="CatalogRendition.fs" />
+    <Compile Include="TransferCellShaping.fs" />
+    <Compile Include="TransferFkTrust.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
