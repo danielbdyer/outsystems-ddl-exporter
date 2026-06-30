@@ -31,9 +31,6 @@
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
-    <Compile Include="InactiveAttributeDiagnostics.fs" />
-    <Compile Include="FkSelectivityDiagnostics.fs" />
-    <Compile Include="JointDependencyDiagnostics.fs" />
     <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="MigrationDependenciesBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
