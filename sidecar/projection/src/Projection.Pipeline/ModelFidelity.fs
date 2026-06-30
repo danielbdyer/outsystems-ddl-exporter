@@ -608,15 +608,20 @@ module ModelFidelity =
         | true, node -> Option.ofObj node
         | _ -> None
 
+    // The narrow catch on the value coercions: `JsonNode.GetValue<T>` throws
+    // `InvalidOperationException` (wrong node kind) / `FormatException` (bad
+    // number) on a type mismatch — those are the "absent/ill-typed field → None"
+    // cases. A bare `with _` also swallowed OutOfMemory / cancellation etc.; the
+    // narrowed catch lets those fatals propagate.
     let private tryStr (o: JsonObject) (key: string) : string option =
         tryNode o key
-        |> Option.bind (fun node -> try Some (node.GetValue<string>()) with _ -> None)
+        |> Option.bind (fun node -> try Some (node.GetValue<string>()) with :? System.InvalidOperationException | :? System.FormatException -> None)
 
     let private tryInt (o: JsonObject) (key: string) : int option =
-        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int>()) with _ -> None)
+        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int>()) with :? System.InvalidOperationException | :? System.FormatException -> None)
 
     let private tryInt64 (o: JsonObject) (key: string) : int64 option =
-        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int64>()) with _ -> None)
+        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int64>()) with :? System.InvalidOperationException | :? System.FormatException -> None)
 
     let private asObject (node: JsonNode) : JsonObject option =
         match node with :? JsonObject as o -> Some o | _ -> None
@@ -681,7 +686,7 @@ module ModelFidelity =
                       | None -> ()
                       | Some arr ->
                           for n in elements arr do
-                              match (try Some (n.GetValue<string>()) with _ -> None) with
+                              match (try Some (n.GetValue<string>()) with :? System.InvalidOperationException | :? System.FormatException -> None) with
                               | Some token ->
                                   match ToleratedDivergence.tryParse token with
                                   | Some d -> yield { Divergence = d }
@@ -709,4 +714,6 @@ module ModelFidelity =
                       DataViolations       = violations
                       AcceptedDivergences  = accepted
                       UniquenessCandidates = candidates }
-        with _ -> None
+        // Malformed top-level JSON (the fail-closed contract); a fatal still
+        // propagates rather than masquerading as "no fidelity report recorded".
+        with :? System.Text.Json.JsonException -> None

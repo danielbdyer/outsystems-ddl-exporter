@@ -77,7 +77,7 @@ module RunLedger =
                 Outcome = getStr "outcome"; Canary = canary
                 Registered = getInt "registered"; Applied = getInt "applied"; Declined = getInt "declined"
             }
-        with _ -> None
+        with :? System.Text.Json.JsonException -> None   // malformed ledger JSON → None; a fatal propagates
 
     /// The configured ledger directory (opt-in via `PROJECTION_LEDGER_DIR`).
     let configuredDir () : string option =

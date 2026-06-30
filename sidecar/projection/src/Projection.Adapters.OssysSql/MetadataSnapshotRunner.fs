@@ -908,7 +908,7 @@ module MetadataSnapshotRunner =
                 match codes |> List.distinct with
                 | [ single ] -> Some single
                 | _          -> None
-        with _ -> None
+        with :? System.Text.Json.JsonException -> None   // malformed JSON → None; a fatal propagates
 
     /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): parse
     /// V1's `#AllIdx.PartitionColumnsJson` into a `string list`.
@@ -934,7 +934,7 @@ module MetadataSnapshotRunner =
                     }
                     |> Seq.toList
                 Some names
-        with _ -> None
+        with :? System.Text.Json.JsonException -> None   // malformed JSON → None; a fatal propagates
 
     /// Slice A.4.7'-prelude.row56-dataspace (LR7 closure): project
     /// V1's `#AllIdx.DataSpaceName` + `DataSpaceType` (+
