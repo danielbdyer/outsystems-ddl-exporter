@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>Projection.Tests</RootNamespace>
+    <AssemblyName>Projection.Tests.Support</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="TaskSync.fs" />
+    <Compile Include="TotalityFunctor.fs" />
+    <Compile Include="IRBuilders.fs" />
+    <Compile Include="Fixtures.fs" />
+    <Compile Include="StaticCatalogFixtures.fs" />
+    <Compile Include="ProfileFixtures.fs" />
+    <Compile Include="GoldenCatalog.fs" />
+    <Compile Include="Fixtures/SourceSchema.fs" />
+    <Compile Include="Fixtures/FixtureGenerator.fs" />
+    <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+    <PackageReference Include="Spectre.Console.Testing" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Projection.Core/Projection.Core.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Data/Projection.Targets.Data.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Json/Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.OperationalDiagnostics/Projection.Targets.OperationalDiagnostics.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Distributions/Projection.Targets.Distributions.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.Sql/Projection.Adapters.Sql.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.Osm/Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.OssysSql/Projection.Adapters.OssysSql.fsproj" />
+    <ProjectReference Include="../../src/Projection.Pipeline/Projection.Pipeline.fsproj" />
+    <ProjectReference Include="../../src/Projection.Cli/Projection.Cli.fsproj" />
+  </ItemGroup>
+
+</Project>

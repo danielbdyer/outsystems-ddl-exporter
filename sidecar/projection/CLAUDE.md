@@ -102,9 +102,12 @@ These are deliberately *restated*, not just pointed at — each has cost an agen
 within their first session. Everything not on this list, this file only points to.
 
 1. **Never run the pure and Docker test pools as one `dotnet test`** — it OOM-kills the host.
-   Use `scripts/test.sh` (`fast` / `docker` / `canary` / `focus <name>` / `all`). And **CDC
-   test classes always use `IsolatedContainerFixture`** — `sp_cdc_enable_db` flips
-   instance-wide state; never on the warm container.
+   Use `scripts/test.sh` (`fast` / `docker` / `scale` / `canary` / `focus <name>` / `all`). And
+   **CDC test classes always use `IsolatedContainerFixture`** — `sp_cdc_enable_db` flips
+   instance-wide state; never on the warm container. **The suite is split by assembly**: pure
+   tests in `Projection.Tests`, every `Docker-SqlServer` test in `Projection.Tests.Integration`,
+   shared fixtures in `Projection.Tests.Support` — a **new Docker test goes in Integration**, not
+   `Projection.Tests` (xUnit collections can't span assemblies). See `tests/README.md`.
 2. **A batch of `Could not open a connection` failures means the warm SQL container died**,
    not a regression. `scripts/warm-sql.sh restart`. Check `scripts/test.sh status` first,
    always. Same remedy for a second signature (2026-06-12): **a bulk load that hangs

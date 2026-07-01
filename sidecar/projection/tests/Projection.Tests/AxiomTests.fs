@@ -667,7 +667,7 @@ let ``L3-C1 (Wave-3 slice 3.4): per-environment Tolerance config is fail-closed 
 [<Fact>]
 let ``A-DataAdjunction (candidate, Wave-3 slice 3.1): Ingestion ∘ Projection = id on the row-digest axis — verified by TransferCanaryTests`` () =
     citationOf
-        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "tests/Projection.Tests.Integration/TransferCanaryTests.fs"
         "data canary: multi-table FK chain round-trips with empty PhysicalSchema diff"
     // Bucket A for the data-level adjunction (the data sibling of H-050's
     // schema adjunction). The Transfer ingests Source rows, builds the
@@ -682,7 +682,7 @@ let ``A-DataAdjunction (candidate, Wave-3 slice 3.1): Ingestion ∘ Projection =
 [<Fact>]
 let ``L3-C5 (Wave-3 slice 3.1): an Execute Transfer pre-flights the sink for CDC and refuses unless allowed — verified by TransferCanaryTests`` () =
     citationOf
-        "tests/Projection.Tests/TransferCanaryTests.fs"
+        "tests/Projection.Tests.Integration/TransferCanaryTests.fs"
         "3.1: CDC pre-flight refuses --execute against a CDC-tracked sink, allow-cdc overrides"
     // Bucket A. `Transfer.cdcTrackedTables` queries `sys.tables.is_tracked_by_cdc`;
     // `runCore` refuses an Execute run (`transfer.cdcTrackedSink`) against a
@@ -711,7 +711,7 @@ let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts th
 [<Fact>]
 let ``L3-Emission-LogicalTriangle (slice D.1.c): canary roundtrip preserves logical-name identity AND substitutes physical = logical — verified by LogicalNameTriangleCanaryTests`` () =
     citationOf
-        "tests/Projection.Tests/LogicalNameTriangleCanaryTests.fs"
+        "tests/Projection.Tests.Integration/LogicalNameTriangleCanaryTests.fs"
         "Slice D.1.c triangle: pipeline-emit on realistic source preserves logical identity AND substitutes physical = logical"
     // Bucket A — the chapter D arc's closing predicate. Canary runs:
     //   1. Source DDL with V2.LogicalName extended properties deploys
@@ -761,7 +761,7 @@ let ``L3-S2 (Wave-1 slice 1.1): DACPAC round-trips a Catalog's tables + columns 
 [<Fact>]
 let ``L3-S6 (Wave-1 slice 1.2): DEFAULT values survive emit → deploy → ReadSide round-trip on the PhysicalSchema.Default axis — verified by CanaryRoundTripTests`` () =
     citationOf
-        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "tests/Projection.Tests.Integration/CanaryRoundTripTests.fs"
         "Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide with empty PhysicalSchema diff"
     // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
     // The IR axis (`Attribute.DefaultValue`) and SSDT emission (`DEFAULT`
@@ -790,7 +790,7 @@ let ``L3-S6 (Wave-1 slice 1.2): DEFAULT values survive emit → deploy → ReadS
 [<Fact>]
 let ``L3-S4/S5/S8/S9 (Wave-1 slice 1.3): triggers, sequences, CHECK constraints, and extended properties survive emit → deploy → ReadSide on the PhysicalSchema.Annotations axis — verified by CanaryRoundTripTests`` () =
     citationOf
-        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "tests/Projection.Tests.Integration/CanaryRoundTripTests.fs"
         "Slice 1.3: triggers / checks / sequences / extended properties are RECOVERED through emit / deploy / ReadSide"
     // Bucket A (promoted 2026-05-30 from Bucket D, "gated on A.0' IR lift").
     // The IR axes (Kind.Triggers / Kind.ColumnChecks / Catalog.Sequences /
@@ -822,7 +822,7 @@ let ``L3-S4/S5/S8/S9 (Wave-1 slice 1.3): triggers, sequences, CHECK constraints,
 [<Fact>]
 let ``L3-S7 (Wave-1 slice 1.3 real-SQL leg): computed columns round-trip — emit → deploy → ReadSide restores computed state + definition — verified by CanaryRoundTripTests`` () =
     citationOf
-        "tests/Projection.Tests/CanaryRoundTripTests.fs"
+        "tests/Projection.Tests.Integration/CanaryRoundTripTests.fs"
         "Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / deploy / ReadSide with state + definition restored"
     // Bucket A (promoted 2026-05-30 from Bucket C). The real-SQL leg closes
     // the LAST hollow-canary feature: `ReadSide.readComputedColumns` (sys.
@@ -840,7 +840,7 @@ let ``L3-S7 (Wave-1 slice 1.3 real-SQL leg): computed columns round-trip — emi
 [<Fact>]
 let ``L3-Emission-LogicalRoundtrip (slice D.1.b): logical names survive deploy → ReadSide round-trip via V2.LogicalName extended property — verified by LogicalNameRoundtripTests`` () =
     citationOf
-        "tests/Projection.Tests/LogicalNameRoundtripTests.fs"
+        "tests/Projection.Tests.Integration/LogicalNameRoundtripTests.fs"
         "Slice D.1.b roundtrip: ReadSide recovers Kind.Name from V2.LogicalName property when deployed physical differs"
     // Bucket A — V2 emits a `V2.LogicalName` extended property on
     // every CREATE TABLE + every column carrying the catalog's
@@ -995,10 +995,10 @@ let ``T13: evolution over time is composition — replay = fold ⊕ along the ti
     // existence. The §10 Atomic `BEGIN TRAN` envelope stays deferred; this is the
     // J5-evidence-backed compensating channel.
     citationOf
-        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "tests/Projection.Tests.Integration/MigrationCanaryTests.fs"
         "M21 canary: a mid-deploy ALTER failure rides the groupoid inverse to roll back to A — rename undone, data survives, no corruption"
     citationOf
-        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "tests/Projection.Tests.Integration/MigrationCanaryTests.fs"
         "M21 canary: a part-way ALTER failure never silently corrupts — clean rollback or named residual, data survives"
     citationOf
         "tests/Projection.Tests/LifecycleTests.fs"
@@ -1059,10 +1059,10 @@ let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture 
     // not vacuously zero (changed content DOES capture). The general ‖δ‖ = k
     // is the ⬚ trigger (EXECUTION_PLAN 6.F.3-data).
     citationOf
-        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "tests/Projection.Tests.Integration/CdcSilenceTests.fs"
         "Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy"
     citationOf
-        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "tests/Projection.Tests.Integration/CdcSilenceTests.fs"
         "Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)"
     // M11 (THE VECTOR Wave 2) — the norm is a genuine METRIC: the triangle
     // inequality ‖compose d1 d2‖ ≤ ‖d1‖ + ‖d2‖ (subadditivity over composition,
@@ -1097,10 +1097,10 @@ let ``T16: the Project square commutes (the master equation; migrate A B)`` () =
     // B' reproduces B's schema, data survives, the re-run is idempotent. Column
     // renames + the cross-substrate data load (schema + data) also run live.
     citationOf
-        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "tests/Projection.Tests.Integration/MigrationCanaryTests.fs"
         "migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent"
     citationOf
-        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "tests/Projection.Tests.Integration/MigrationCanaryTests.fs"
         "migrate canary: executeWithData migrates the sink schema then loads rows from the source"
 
 [<Fact>]
