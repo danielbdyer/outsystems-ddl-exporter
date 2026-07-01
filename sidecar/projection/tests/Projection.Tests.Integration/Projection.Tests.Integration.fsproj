@@ -1,0 +1,82 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateProgramFile>true</GenerateProgramFile>
+    <RootNamespace>Projection.Tests</RootNamespace>
+    <AssemblyName>Projection.Tests.Integration</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="IntegrationCollections.fs" />
+    <Compile Include="EphemeralContainerFixture.fs" />
+    <Compile Include="LiveSourceDockerTests.fs" />
+    <Compile Include="ClosureOracleDockerTests.fs" />
+    <Compile Include="SliceApplyDockerTests.fs" />
+    <Compile Include="SliceRunDockerTests.fs" />
+    <Compile Include="LogicalNameRoundtripTests.fs" />
+    <Compile Include="SchemaMigrationCanaryTests.fs" />
+    <Compile Include="MigrationCanaryTests.fs" />
+    <Compile Include="IndexRoundtripTests.fs" />
+    <Compile Include="StaticPopulationEmitterTests.fs" />
+    <Compile Include="CdcSilenceTests.fs" />
+    <Compile Include="CdcSilenceCrossEmitterTests.fs" />
+    <Compile Include="CdcSilencePropertyTests.fs" />
+    <Compile Include="CdcMeasureTests.fs" />
+    <Compile Include="UserDirectoryProbeTests.fs" />
+    <Compile Include="LiveProfilerIntegrationTests.fs" />
+    <Compile Include="VerifyDataIntegrationTests.fs" />
+    <Compile Include="IngestionIntegrationTests.fs" />
+    <Compile Include="TransferCanaryTests.fs" />
+    <Compile Include="ReverseLegCanaryTests.fs" />
+    <Compile Include="ReverseLegScaleTests.fs" />
+    <Compile Include="ReverseLegStreamingTests.fs" />
+    <Compile Include="KeymapSpillTests.fs" />
+    <Compile Include="RunWithConfigProfileTests.fs" />
+    <Compile Include="DacpacPublishEquivalenceTests.fs" />
+    <Compile Include="SsdtArtifactDeployE2ETests.fs" />
+    <Compile Include="SsdtDataBehaviorE2ETests.fs" />
+    <Compile Include="StagedMergeDeployE2ETests.fs" />
+    <Compile Include="MergeScaleMeasurement.fs" />
+    <Compile Include="CanaryDeployTests.fs" />
+    <Compile Include="UnifiedShapingFlowTests.fs" />
+    <Compile Include="CanaryRoundTripTests.fs" />
+    <Compile Include="LogicalNameTriangleCanaryTests.fs" />
+    <Compile Include="GeneratorScaleTests.fs" />
+    <Compile Include="PerfHarnessScenarios.fs" />
+    <Compile Include="ComprehensiveCanaryTests.fs" />
+    <Compile Include="ExecuteBatchParallelTests.fs" />
+    <Compile Include="SyntheticLoadTests.fs" />
+    <Compile Include="SyntheticCanaryTests.fs" />
+    <Compile Include="ModelResolutionDockerTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+    <PackageReference Include="Spectre.Console.Testing" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Projection.Core/Projection.Core.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Data/Projection.Targets.Data.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Json/Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.OperationalDiagnostics/Projection.Targets.OperationalDiagnostics.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.Distributions/Projection.Targets.Distributions.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.Sql/Projection.Adapters.Sql.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.Osm/Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.OssysSql/Projection.Adapters.OssysSql.fsproj" />
+    <ProjectReference Include="../../src/Projection.Pipeline/Projection.Pipeline.fsproj" />
+    <ProjectReference Include="../../src/Projection.Cli/Projection.Cli.fsproj" />
+    <ProjectReference Include="../Projection.Tests.Support/Projection.Tests.Support.fsproj" />
+  </ItemGroup>
+
+</Project>

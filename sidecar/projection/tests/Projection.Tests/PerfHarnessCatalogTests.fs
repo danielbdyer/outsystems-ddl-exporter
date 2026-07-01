@@ -17,7 +17,13 @@ let private sourceFile () : string =
     // tests/Projection.Tests/ (bin/<cfg>/<tfm> → three parents).
     let rec ascend (dir: DirectoryInfo) =
         let candidate = Path.Combine(dir.FullName, "PerfHarnessScenarios.fs")
+        // 2026-07-01 assembly split: PerfHarnessScenarios.fs moved to the
+        // Projection.Tests.Integration project (it depends on the container
+        // fixtures). Once the walk reaches the tests/ dir, find it there.
+        let integCandidate =
+            Path.Combine(dir.FullName, "Projection.Tests.Integration", "PerfHarnessScenarios.fs")
         if File.Exists candidate then candidate
+        elif File.Exists integCandidate then integCandidate
         else
             match dir.Parent with
             | null ->

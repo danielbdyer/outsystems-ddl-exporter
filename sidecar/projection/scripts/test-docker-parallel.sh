@@ -56,8 +56,9 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TESTS_DIR="$ROOT/tests/Projection.Tests"
-TEST_PROJECT="$TESTS_DIR/Projection.Tests.fsproj"
+# Docker tests live in the Integration assembly (2026-07-01 assembly split).
+TESTS_DIR="$ROOT/tests/Projection.Tests.Integration"
+TEST_PROJECT="$TESTS_DIR/Projection.Tests.Integration.fsproj"
 CONFIG="${TEST_CONFIG:-Debug}"
 RESULTS_DIR="/tmp/projection-test-results"
 MEM_FLOOR_MB="${DP_MEM_FLOOR_MB:-700}"

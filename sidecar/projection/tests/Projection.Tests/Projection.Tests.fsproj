@@ -23,12 +23,6 @@
 
   <ItemGroup>
     <Compile Include="TestCollections.fs" />
-    <Compile Include="TaskSync.fs" />
-    <Compile Include="EphemeralContainerFixture.fs" />
-    <Compile Include="LiveSourceDockerTests.fs" />
-    <Compile Include="ClosureOracleDockerTests.fs" />
-    <Compile Include="SliceApplyDockerTests.fs" />
-    <Compile Include="SliceRunDockerTests.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="LedgerTests.fs" />
@@ -53,7 +47,6 @@
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="InterveneTests.fs" />
     <Compile Include="RelaxationStoreTests.fs" />
-    <Compile Include="TotalityFunctor.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
     <Compile Include="WatchInjectionTests.fs" />
@@ -63,9 +56,6 @@
     <Compile Include="FullExportStoreTests.fs" />
     <Compile Include="SsKeyTests.fs" />
     <Compile Include="UuidV5Tests.fs" />
-    <Compile Include="IRBuilders.fs" />
-    <Compile Include="Fixtures.fs" />
-    <Compile Include="StaticCatalogFixtures.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="ModuleFilterTests.fs" />
@@ -73,7 +63,6 @@
     <Compile Include="ActionableDiagnosticsTests.fs" />
     <Compile Include="TableRenameTests.fs" />
     <Compile Include="LogicalNameEmissionTests.fs" />
-    <Compile Include="LogicalNameRoundtripTests.fs" />
     <Compile Include="TighteningBindingTests.fs" />
     <Compile Include="ModuleFilterBindingTests.fs" />
     <Compile Include="SpecialCircumstancesBindingTests.fs" />
@@ -115,8 +104,6 @@
     <Compile Include="AdjunctionLawTests.fs" />
     <Compile Include="RefactorLogEmitterTests.fs" />
     <Compile Include="SchemaMigrationEmitterTests.fs" />
-    <Compile Include="SchemaMigrationCanaryTests.fs" />
-    <Compile Include="MigrationCanaryTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />
     <Compile Include="RefactorLogAccumulateTests.fs" />
     <Compile Include="ScriptDomRoundTripTests.fs" />
@@ -124,7 +111,6 @@
     <Compile Include="ToleranceTests.fs" />
     <Compile Include="MatrixLadderTests.fs" />
     <Compile Include="ForeignKeyReadbackTests.fs" />
-    <Compile Include="IndexRoundtripTests.fs" />
     <Compile Include="ReferenceConstraintStateTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="StaticSeedsRemapTests.fs" />
@@ -136,14 +122,7 @@
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
     <Compile Include="HydrationTests.fs" />
-    <Compile Include="StaticPopulationEmitterTests.fs" />
-    <Compile Include="CdcSilenceTests.fs" />
-    <Compile Include="CdcSilenceCrossEmitterTests.fs" />
-    <Compile Include="CdcSilencePropertyTests.fs" />
-    <Compile Include="CdcMeasureTests.fs" />
-    <Compile Include="UserDirectoryProbeTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
-    <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="SyntheticDataTests.fs" />
@@ -219,16 +198,7 @@
     <Compile Include="ColumnRealityDivergenceTests.fs" />
     <Compile Include="AdvisoryTuningTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
-    <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="DataIntegrityCheckerTests.fs" />
-    <Compile Include="VerifyDataIntegrationTests.fs" />
-    <Compile Include="IngestionIntegrationTests.fs" />
-    <Compile Include="TransferCanaryTests.fs" />
-    <Compile Include="ReverseLegCanaryTests.fs" />
-    <Compile Include="ReverseLegScaleTests.fs" />
-    <Compile Include="ReverseLegStreamingTests.fs" />
-    <Compile Include="KeymapSpillTests.fs" />
-    <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
     <Compile Include="SqlprojWireTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
@@ -304,11 +274,6 @@
     <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DacpacRoundTripTests.fs" />
-    <Compile Include="DacpacPublishEquivalenceTests.fs" />
-    <Compile Include="SsdtArtifactDeployE2ETests.fs" />
-    <Compile Include="SsdtDataBehaviorE2ETests.fs" />
-    <Compile Include="StagedMergeDeployE2ETests.fs" />
-    <Compile Include="MergeScaleMeasurement.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
@@ -329,7 +294,6 @@
     <Compile Include="DecisionEmissionTests.fs" />
     <Compile Include="DeployableReferenceTests.fs" />
     <Compile Include="SnapshotScopeBindingTests.fs" />
-    <Compile Include="GoldenCatalog.fs" />
     <Compile Include="GoldenEmissionTests.fs" />
     <Compile Include="DataLaneGoldenTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
@@ -342,21 +306,7 @@
     <Compile Include="SiblingEmitterContractTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
-    <Compile Include="CanaryDeployTests.fs" />
-    <Compile Include="UnifiedShapingFlowTests.fs" />
-    <Compile Include="Fixtures/SourceSchema.fs" />
-    <Compile Include="Fixtures/FixtureGenerator.fs" />
-    <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />
-    <Compile Include="CanaryRoundTripTests.fs" />
-    <Compile Include="LogicalNameTriangleCanaryTests.fs" />
-    <Compile Include="GeneratorScaleTests.fs" />
-    <Compile Include="PerfHarnessScenarios.fs" />
     <Compile Include="PerfHarnessCatalogTests.fs" />
-    <Compile Include="ComprehensiveCanaryTests.fs" />
-    <Compile Include="ExecuteBatchParallelTests.fs" />
-    <Compile Include="SyntheticLoadTests.fs" />
-    <Compile Include="SyntheticCanaryTests.fs" />
-    <Compile Include="ModelResolutionDockerTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -380,6 +330,8 @@
     <ProjectReference Include="..\..\src\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Cli\Projection.Cli.fsproj" />
+    <ProjectReference Include="..\Projection.Tests.Support\Projection.Tests.Support.fsproj" />
+    <ProjectReference Include="..\Projection.Tests.Integration\Projection.Tests.Integration.fsproj" />
   </ItemGroup>
 
 </Project>

@@ -73,6 +73,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TESTS_DIR="$ROOT/tests/Projection.Tests"
 TEST_PROJECT="$TESTS_DIR/Projection.Tests.fsproj"
+# 2026-07-01 assembly split: the Docker/SQL tests moved into their own
+# Projection.Tests.Integration assembly (xUnit collections can't span
+# assemblies, so all Docker tests live together). The PURE pool is now the
+# whole Projection.Tests assembly (Docker-free); the DOCKER/SCALE pools run the
+# Integration assembly.
+INTEG_DIR="$ROOT/tests/Projection.Tests.Integration"
+INTEG_PROJECT="$INTEG_DIR/Projection.Tests.Integration.fsproj"
+SLN="$ROOT/Projection.sln"
 CONFIG="${TEST_CONFIG:-Debug}"
 RESULTS_DIR="/tmp/projection-test-results"
 
@@ -103,7 +111,7 @@ docker_classes() {
             print name
             armed = 0
         }
-    ' "$TESTS_DIR"/*.fs 2>/dev/null \
+    ' "$INTEG_DIR"/*.fs 2>/dev/null \
         | grep -v '^EphemeralContainerFixture$' \
         | sort -u
 }
@@ -123,11 +131,10 @@ scale_classes() {
         PerfHarnessCatalogTests
 }
 
-# `FullyQualifiedName~A|FullyQualifiedName~B|...` — selects the Docker pool,
-# minus the scale tier (see scale_classes).
+# The Docker pool is the whole Integration assembly MINUS the scale tier, so
+# the filter is just the scale exclusion (`FullyQualifiedName!~S1&...`).
 docker_filter() {
-    docker_classes | grep -vE "$(scale_classes | paste -sd '|' -)" \
-        | sed 's/^/FullyQualifiedName~/' | paste -sd '|' -
+    scale_classes | sed 's/^/FullyQualifiedName!~/' | paste -sd '&' -
 }
 
 # `FullyQualifiedName~S1|FullyQualifiedName~S2|...` — the scale tier only.
@@ -135,12 +142,9 @@ scale_filter() {
     scale_classes | sed 's/^/FullyQualifiedName~/' | paste -sd '|' -
 }
 
-# `FullyQualifiedName!~A&FullyQualifiedName!~B&...` — selects the pure pool.
-# Built from the FULL docker set (scale included) so no Docker/scale class ever
-# leaks into the parallel pure pool.
-pure_filter() {
-    docker_classes | sed 's/^/FullyQualifiedName!~/' | paste -sd '&' -
-}
+# The pure pool is the whole Projection.Tests assembly (Docker tests now live in
+# the separate Integration assembly), so no filter is needed.
+pure_filter() { printf ''; }
 
 # If PROJECTION_MSSQL_CONN_STR is unset but the warm container
 # (scripts/warm-sql.sh) is running, point the Docker pool at it so the
@@ -170,15 +174,21 @@ warm_autodetect() {
 # project files, props/targets, restore assets). The scan costs ~100 ms and
 # replaces a ~10 s no-op MSBuild walk in the steady-state loop — the build
 # runs only when something actually changed. TEST_FORCE_BUILD=1 overrides.
+# Current when BOTH test assemblies (pure + integration) are newer than every
+# build input. The scan replaces a ~10 s no-op MSBuild walk. TEST_FORCE_BUILD=1
+# overrides.
 build_is_current() {
-    local dll="$TESTS_DIR/bin/$CONFIG/net9.0/Projection.Tests.dll"
-    [[ -f "$dll" ]] || return 1
+    local pure="$TESTS_DIR/bin/$CONFIG/net9.0/Projection.Tests.dll"
+    local integ="$INTEG_DIR/bin/$CONFIG/net9.0/Projection.Tests.Integration.dll"
+    [[ -f "$pure" && -f "$integ" ]] || return 1
+    # oldest of the two DLLs is the reference — if any input is newer than it, rebuild
+    local ref="$pure"; [[ "$integ" -ot "$pure" ]] && ref="$integ"
     local newer
-    newer="$(find "$ROOT/src" "$ROOT/tests" "$ROOT/global.json" \
+    newer="$(find "$ROOT/src" "$ROOT/tests" "$ROOT/global.json" "$ROOT/Directory.Build.props" \
                 \( -name '*.fs' -o -name '*.fsproj' -o -name '*.props' \
                    -o -name '*.targets' -o -name 'project.assets.json' \
                    -o -name 'global.json' \) \
-                -not -path '*/bin/*' -newer "$dll" -print -quit 2>/dev/null)"
+                -not -path '*/bin/*' -newer "$ref" -print -quit 2>/dev/null)"
     [[ -z "$newer" ]]
 }
 
@@ -188,13 +198,13 @@ build_once() {
         return 0
     fi
     if [[ "${TEST_FORCE_BUILD:-0}" != "1" ]] && build_is_current; then
-        log "build current — skipping (every input older than the test DLL; TEST_FORCE_BUILD=1 overrides)"
+        log "build current — skipping (every input older than the test DLLs; TEST_FORCE_BUILD=1 overrides)"
         return 0
     fi
-    log "building Projection.Tests ($CONFIG)..."
+    log "building the solution ($CONFIG)..."
     local t0 t1
     t0=$(date +%s)
-    if ! dotnet build "$TEST_PROJECT" -c "$CONFIG" --nologo -v q; then
+    if ! dotnet build "$SLN" -c "$CONFIG" --nologo -v q; then
         err "build failed"
         exit 1
     fi
@@ -240,6 +250,9 @@ failed_names_of() {
 
 run_pool() {
     local label="$1" filter="$2" maxpar="${3:-}"
+    # Which assembly this pool runs. Pure pool -> Projection.Tests; docker/scale
+    # pools set RUN_PROJECT to the Integration assembly before calling.
+    local project="${RUN_PROJECT:-$TEST_PROJECT}"
     local trx="$RESULTS_DIR/$label.trx"
     local live="$RESULTS_DIR/$label.live.log"
     local status="$RESULTS_DIR/$label.status"
@@ -270,7 +283,7 @@ run_pool() {
     # the same stream observable from OUTSIDE this process (a backgrounded
     # run, a `| tail`-buffered pipe, a detached session); trx is the
     # structured ground truth for failure extraction.
-    dotnet test "$TEST_PROJECT" -c "$CONFIG" --no-build --nologo \
+    dotnet test "$project" -c "$CONFIG" --no-build --nologo \
         "${filter_args[@]}" \
         --logger "console;verbosity=normal" \
         --logger "trx;LogFileName=$label.trx" \
@@ -373,7 +386,9 @@ case "$CMD" in
         fi
         warm_autodetect
         build_once
-        run_pool focus "FullyQualifiedName~$FOCUS_ARG"
+        # Docker classes live in the Integration assembly; run it so focused
+        # Docker iteration works (a pure-class focus should use `fast`).
+        RUN_PROJECT="$INTEG_PROJECT" run_pool focus "FullyQualifiedName~$FOCUS_ARG"
         exit $?
         ;;
     fast)
@@ -384,13 +399,13 @@ case "$CMD" in
     docker)
         warm_autodetect
         build_once
-        run_pool docker "$(docker_filter)"
+        RUN_PROJECT="$INTEG_PROJECT" run_pool docker "$(docker_filter)"
         exit $?
         ;;
     canary)
         warm_autodetect
         build_once
-        run_pool canary "FullyQualifiedName~Canary"
+        RUN_PROJECT="$INTEG_PROJECT" run_pool canary "FullyQualifiedName~Canary"
         exit $?
         ;;
     scale)
@@ -399,7 +414,7 @@ case "$CMD" in
         # not every inner loop.
         warm_autodetect
         build_once
-        run_pool scale "$(scale_filter)"
+        RUN_PROJECT="$INTEG_PROJECT" run_pool scale "$(scale_filter)"
         exit $?
         ;;
     all)
@@ -407,10 +422,11 @@ case "$CMD" in
         build_once
         # Sequential, separate processes — pools never run concurrently, so
         # the host is never over-subscribed (the OOM-crash fix). `all` keeps
-        # FULL coverage: fast + docker + the scale tier docker excludes.
+        # FULL coverage: fast (pure assembly) + docker + the scale tier docker
+        # excludes (both the Integration assembly).
         run_pool fast "$(pure_filter)";     fast_code=$?
-        run_pool docker "$(docker_filter)"; docker_code=$?
-        run_pool scale "$(scale_filter)";   scale_code=$?
+        RUN_PROJECT="$INTEG_PROJECT" run_pool docker "$(docker_filter)"; docker_code=$?
+        RUN_PROJECT="$INTEG_PROJECT" run_pool scale "$(scale_filter)";   scale_code=$?
         echo
         bold "──────── summary ────────"
         log "fast:   exit $fast_code"
