@@ -108,12 +108,36 @@ docker_classes() {
         | sort -u
 }
 
-# `FullyQualifiedName~A|FullyQualifiedName~B|...` — selects the Docker pool.
+# Scale / throughput-measurement Docker classes. These are the 100k-row
+# streaming envelopes, the 150-table generator canary, and the merge/perf
+# harness measurements — heavy (~100s of the ~497s Docker wall) and NOT
+# inner-loop correctness gates. They are tiered OUT of the `docker` pool (the
+# inner loop) and run under `scale`; `all` still runs them, so total coverage
+# is unchanged — only the dev loop is lighter. Measured 2026-07-01: the
+# `docker` pool drops from ~497s to ~391s with these removed.
+scale_classes() {
+    printf '%s\n' \
+        ReverseLegScaleTests \
+        GeneratorScaleTests \
+        MergeScaleMeasurement \
+        PerfHarnessCatalogTests
+}
+
+# `FullyQualifiedName~A|FullyQualifiedName~B|...` — selects the Docker pool,
+# minus the scale tier (see scale_classes).
 docker_filter() {
-    docker_classes | sed 's/^/FullyQualifiedName~/' | paste -sd '|' -
+    docker_classes | grep -vE "$(scale_classes | paste -sd '|' -)" \
+        | sed 's/^/FullyQualifiedName~/' | paste -sd '|' -
+}
+
+# `FullyQualifiedName~S1|FullyQualifiedName~S2|...` — the scale tier only.
+scale_filter() {
+    scale_classes | sed 's/^/FullyQualifiedName~/' | paste -sd '|' -
 }
 
 # `FullyQualifiedName!~A&FullyQualifiedName!~B&...` — selects the pure pool.
+# Built from the FULL docker set (scale included) so no Docker/scale class ever
+# leaks into the parallel pure pool.
 pure_filter() {
     docker_classes | sed 's/^/FullyQualifiedName!~/' | paste -sd '&' -
 }
@@ -328,8 +352,10 @@ fi
 case "$CMD" in
     list)
         bold "Docker pool classes:"; docker_classes | sed 's/^/  /'
+        echo; bold "scale tier classes (tiered out of docker):"; scale_classes | sed 's/^/  /'
         echo; bold "pure filter:";   pure_filter
         echo; bold "docker filter:"; docker_filter
+        echo; bold "scale filter:";  scale_filter
         exit 0
         ;;
     status)
@@ -367,22 +393,34 @@ case "$CMD" in
         run_pool canary "FullyQualifiedName~Canary"
         exit $?
         ;;
+    scale)
+        # The scale / throughput-measurement tier tiered out of `docker`
+        # (see scale_classes). Serial, warm-honoring. Run before merge / in CI,
+        # not every inner loop.
+        warm_autodetect
+        build_once
+        run_pool scale "$(scale_filter)"
+        exit $?
+        ;;
     all)
         warm_autodetect
         build_once
         # Sequential, separate processes — pools never run concurrently, so
-        # the host is never over-subscribed (the OOM-crash fix).
+        # the host is never over-subscribed (the OOM-crash fix). `all` keeps
+        # FULL coverage: fast + docker + the scale tier docker excludes.
         run_pool fast "$(pure_filter)";     fast_code=$?
         run_pool docker "$(docker_filter)"; docker_code=$?
+        run_pool scale "$(scale_filter)";   scale_code=$?
         echo
         bold "──────── summary ────────"
         log "fast:   exit $fast_code"
         log "docker: exit $docker_code"
-        [[ "$fast_code" -eq 0 && "$docker_code" -eq 0 ]] && exit 0 || exit 1
+        log "scale:  exit $scale_code"
+        [[ "$fast_code" -eq 0 && "$docker_code" -eq 0 && "$scale_code" -eq 0 ]] && exit 0 || exit 1
         ;;
     *)
         err "unknown command: $CMD"
-        err "usage: test.sh [fast|docker|canary|all|list|status] [-- <dotnet test args>]"
+        err "usage: test.sh [fast|docker|scale|canary|all|list|status] [-- <dotnet test args>]"
         err "       test.sh focus <FullyQualifiedName-substring> [-- <dotnet test args>]"
         exit 2
         ;;
