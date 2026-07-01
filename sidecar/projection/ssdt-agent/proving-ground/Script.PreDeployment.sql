@@ -1,0 +1,88 @@
+/*
+  Script.PreDeployment.sql — the PRE-DEPLOY slot. (Build Action = PreDeploy.)
+
+  This script runs BEFORE SSDT applies the schema delta. It is the home of the data fix-ups that
+  let a flip publish cleanly — a pre-deploy dedupe, an over-length reconcile, a NULL backfill.
+  The pattern is: fix the data here so the destination CREATE lands without a veto. A change
+  that is genuinely cleared by this script is Mechanism 3 (Pre-Deploy + Declarative), single-PR.
+
+  IMPORTANT — a pre-deploy backfill does NOT clear EVERY veto. See the make-mandatory example
+  below: on a POPULATED table the NULL->NOT NULL guard is table-has-rows, so clearing the NULLs
+  here does NOT let the ALTER land. Prove the remedy with a clean Strict re-run; do not assume it.
+
+  PARALLEL EXECUTORS: do NOT edit this authored file. Copy the proving-ground tree to a private
+  scratch dir, edit the COPY, and publish to a UNIQUE database per `../self-test/PROTOCOL.md`.
+
+  It is idempotent and safe to run on every publish — it only touches rows that still violate
+  the rule. Empty by default; uncomment the worked example when proving a flip.
+
+  ----------------------------------------------------------------------------------------------
+  WORKED EXAMPLE — make-mandatory flip (Customer.Email NULL -> NOT NULL)  [CORRECTED 2026-06-30]
+  ----------------------------------------------------------------------------------------------
+  Scenario: you edited Customer.sql to `Email NVARCHAR(256) NOT NULL`. The default seed has NULL
+  Email rows, so a Strict publish VETOES.
+
+  The intuitive fix — backfill the NULLs here, before the schema delta — was DISPROVEN on this
+  proving ground. SSDT generates the BlockOnPossibleDataLoss guard for NULL->NOT NULL as:
+
+      IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer])
+          RAISERROR (N'Rows were detected. The schema update is terminating because data loss
+                       might occur.', 16, 127)
+      -- ... then, below it:
+      ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(256) NOT NULL;
+
+  That guard fires on the table HAVING ANY ROW — it never inspects the Email column. SSDT
+  computes the deploy script ONCE, up front, from the pre-publish state, and is conservative by
+  design: it cannot know that this pre-deploy backfill (which runs at deploy time, after the
+  script is already generated) will have emptied the NULLs. PROVEN: with the backfill below
+  active, `SELECT COUNT(*) FROM dbo.Customer WHERE Email IS NULL` returned 0, yet Strict STILL
+  vetoed and the column STAYED nullable.
+
+  So this backfill is NECESSARY but NOT SUFFICIENT on a populated table. Run it, re-run the NULL
+  probe to PROVE 0 NULLs remain, and you have earned the right to make the conscious call — NOT
+  a clean NOT NULL. The honest, proven remedy on a populated table is ONE of:
+    (a) a TARGETED relaxation of BlockOnPossibleDataLoss for THIS one change, AFTER proving zero
+        NULLs — operationally Mechanism 4 / Script-Only with a named, logged gate-relaxation
+        (e.g. a scoped publish-profile override). The proof packet carries BOTH the zero-NULL
+        probe AND the explicit record of the relaxation decision; or
+    (b) restructure as Mechanism 5, Multi-Phase, multi-PR, so the engine never has to relax its
+        guard.
+  An EMPTY table is the clean contrast: no rows, the IF EXISTS is false, the ALTER lands —
+  Mechanism 1, Tier 1, no script needed.
+
+  Choose a backfill that is HONEST to the developer's intent. The literal placeholder below is
+  fine for the proving ground; in production you confirm the real backfill value (a derived
+  value, a sentinel, or a hard requirement to collect the data first). The point here is to show
+  that the veto is real, that the backfill clears the NULLs, and that Strict STILL refuses.
+*/
+
+-- IF EXISTS (SELECT 1 FROM dbo.Customer WHERE Email IS NULL)
+-- BEGIN
+--     PRINT 'Pre-deploy backfill: stamping NULL Customer.Email rows. NOTE: this clears the NULLs';
+--     PRINT 'but does NOT clear the Strict NULL->NOT NULL veto on a populated table (table-has-rows';
+--     PRINT 'guard). Re-run the NULL probe to confirm 0 remain, then make the conscious gate call.';
+--     UPDATE dbo.Customer
+--         SET Email = N'unknown+' + CAST(Id AS NVARCHAR(20)) + N'@example.invalid'
+--         WHERE Email IS NULL;
+-- END
+-- GO
+
+/*
+  ----------------------------------------------------------------------------------------------
+  WORKED EXAMPLE — Ambitious Narrowing flip (Product.Code NVARCHAR(50) -> NVARCHAR(10))
+  ----------------------------------------------------------------------------------------------
+  Scenario: you edited Product.sql to `Code NVARCHAR(10)`. The seed has an over-length Code, so
+  Strict vetoes on data loss. Reconcile the over-length rows here before the delta. NOTE: silent
+  truncation is a DECISION — confirm with the developer whether truncation is acceptable or
+  whether the over-length values must be preserved (which makes this Multi-Phase instead). Probe
+  MAX(LEN(Code)) first: if every value already fits the new size, there is NO veto and no
+  backfill — the same narrow op is a clean Mechanism 1, decided by the data not the .sql.
+*/
+
+-- UPDATE dbo.Product
+--     SET Code = LEFT(Code, 10)
+--     WHERE LEN(Code) > 10;
+-- GO
+
+PRINT 'Pre-deploy: no backfill active. Uncomment a worked example when proving a flip.';
+GO
