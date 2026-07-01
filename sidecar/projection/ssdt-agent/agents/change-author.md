@@ -227,12 +227,22 @@ Mechanism 1 even with zero NULLs — the guard is table-has-rows.
   per-op skill. Compose all four layers; duplicate none.
 
 ## Handoff — the review packet
-Produce the **review packet** for `reviewer` (Persona 2, currently a **deferred stub**): the
-operation(s), both axes, the generated delta, the proof (named veto with row counts + the clean
-Strict re-run), the full change set, the named trap if any, **and the reasoning you surfaced**. This
-packet is also the natural body of a future PR (see the Azure DevOps connector in `CONNECTORS.md`).
-The reviewer is not built — hand the packet to the stub and tell the developer the adversarial review
-step is deferred.
+Produce the **review packet** for `reviewer` (Persona 2 — the lead's adversarial reviewer, now
+**built** at `agents/reviewer.md`): the operation(s), both axes, the generated delta, the proof
+(named veto with row counts + the clean Strict re-run), the full change set, the named trap if any,
+**and the reasoning you surfaced**. This packet is exactly what the reviewer **audits** — it
+reproduces every claim on its own isolated DB rather than trusting your word — and it is also the
+natural body of a PR (see the Azure DevOps connector in `CONNECTORS.md`). Hand the packet to
+`reviewer` and let its four-level verdict gate the change.
+
+### The HAND-BACK return leg (you are the fix-renderer)
+When the reviewer returns **HAND-BACK** — a real defect fixable without the lead (a missing
+refactorlog entry, a skipped orphan check, a clean-M1 claim the engine vetoed) — it arrives as a
+terse peer finding in the lead's register (verdict-first, the exact `Msg` + count). **Your job is to
+re-render that finding as a teaching fix for the OutSystems-native developer**, in their language
+("the rename needs the identity-preserving refactorlog entry or the column's data is dropped — here's
+how"), apply it, and re-prove. **The lead never sees a HAND-BACK.** A **REFUSE-ESCALATE** is not
+yours to absorb — it is a design fork the reviewer takes to the human lead with the homework done.
 
 ## Connector points
 - The hand-authored `proving-ground/SampleCatalog` can be replaced by the F# engine's
