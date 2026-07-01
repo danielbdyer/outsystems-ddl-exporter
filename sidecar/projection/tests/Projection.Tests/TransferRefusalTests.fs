@@ -166,7 +166,7 @@ let ``PE-1/P-REKEY: the wipe never targets a ReconciledByRule kind (golden users
         planOf
             [ load userKey  IdentityDisposition.ReconciledByRule []
               load orderKey IdentityDisposition.PreservedFromSource [] ]
-    let targets = Transfer.wipeTargets plan (topoOf [ userKey; orderKey ]) None
+    let targets = TransferResume.wipeTargets plan (topoOf [ userKey; orderKey ]) None
     Assert.DoesNotContain(userKey, targets)
     Assert.Contains(orderKey, targets)
 
@@ -176,7 +176,7 @@ let ``PE-1: the wipe respects the LoadSet (a kind outside the declared subset is
         planOf
             [ load orderKey IdentityDisposition.PreservedFromSource []
               load otherKey IdentityDisposition.PreservedFromSource [] ]
-    let targets = Transfer.wipeTargets plan (topoOf [ orderKey; otherKey ]) (Some (Set.ofList [ orderKey ]))
+    let targets = TransferResume.wipeTargets plan (topoOf [ orderKey; otherKey ]) (Some (Set.ofList [ orderKey ]))
     Assert.Equal<SsKey list>([ orderKey ], targets)
 
 [<Fact>]
@@ -186,5 +186,5 @@ let ``PE-1: with no LoadSet the wipe targets every non-reconciled loaded kind, c
             [ load orderKey IdentityDisposition.PreservedFromSource []
               load otherKey IdentityDisposition.PreservedFromSource [] ]
     // topo [Order; Other] reversed (child-first) = [Other; Order]
-    let targets = Transfer.wipeTargets plan (topoOf [ orderKey; otherKey ]) None
+    let targets = TransferResume.wipeTargets plan (topoOf [ orderKey; otherKey ]) None
     Assert.Equal<SsKey list>([ otherKey; orderKey ], targets)

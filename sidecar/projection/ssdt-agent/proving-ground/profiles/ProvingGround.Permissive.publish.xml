@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProvingGround.Permissive.publish.xml — THE CONSEQUENCE ORACLE.
+
+  Identical to the Strict profile EXCEPT it lets the change proceed PAST the veto so you can see
+  WHAT the veto was protecting against. Run this only AFTER Strict has vetoed, and only on the
+  throwaway DB. Snapshot the per-row data hash before and after (see talk-to-local-sql) to see
+  exactly which rows GenerateSmartDefaults silently stamped, or which values truncated. The
+  before/after diff is the proof of consequence.
+
+    BlockOnPossibleDataLoss = False  -> proceed past the veto (we want to observe the damage).
+    GenerateSmartDefaults   = True   -> let SSDT silently backfill NOT NULL columns, so you can
+                                        SHOW the developer the values it would have stamped on its
+                                        own — usually NOT what they intended. That is the lesson.
+
+  This is a DIAGNOSTIC, never the path you ship. The change you hand the developer is the one
+  that passes STRICT clean after a real, confirmed remedy.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetConnectionString>Server=localhost,11433;Initial Catalog=ProvingGround;User ID=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False</TargetConnectionString>
+    <BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>True</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>True</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>

@@ -58,6 +58,8 @@
     <Compile Include="CatalogRendition.fs" />
     <Compile Include="TransferCellShaping.fs" />
     <Compile Include="TransferFkTrust.fs" />
+    <Compile Include="TransferRevert.fs" />
+    <Compile Include="TransferResume.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
