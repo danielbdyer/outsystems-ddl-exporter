@@ -1,4 +1,4 @@
-namespace Projection.Pipeline
+namespace Projection.Core
 
 // LINT-ALLOW-FILE: diagnostic message text built via `sprintf` with
 // numeric interpolation (uniqueness ratio, observed rows, attribute

@@ -30,7 +30,7 @@ module ProfileCodec =
     [<Literal>]
     let version : int = 1
 
-    let private inv (d: decimal) : string = d.ToString(CultureInfo.InvariantCulture)
+    let private inv (d: decimal) : string = JsonCodecKernel.inv d
 
     // ======================================================================
     // ENCODE
@@ -242,63 +242,18 @@ module ProfileCodec =
     // DECODE — leaves rebuilt through smart constructors (A39).
     // ======================================================================
 
-    let private fail (code: string) (msg: string) : Result<'a> =
-        Result.failureOf (ValidationError.create code msg)
-
-    let private prop (el: JsonElement) (name: string) : Result<JsonElement> =
-        match el.TryGetProperty name with
-        | true, v -> Ok v
-        | _ -> fail "profileCodec.missingField" (sprintf "missing field '%s'" name)
-
-    let private asString (el: JsonElement) : Result<string> =
-        if el.ValueKind = JsonValueKind.String then
-            match el.GetString() with
-            | null -> fail "profileCodec.expectedString" "string element returned null"
-            | s -> Ok s
-        else fail "profileCodec.expectedString" (sprintf "expected string, got %A" el.ValueKind)
-
-    let private asBool (el: JsonElement) : Result<bool> =
-        match el.ValueKind with
-        | JsonValueKind.True  -> Ok true
-        | JsonValueKind.False -> Ok false
-        | k -> fail "profileCodec.expectedBool" (sprintf "expected bool, got %A" k)
-
-    let private asInt64 (el: JsonElement) : Result<int64> =
-        if el.ValueKind = JsonValueKind.Number then
-            match el.TryGetInt64() with
-            | true, n -> Ok n
-            | _ -> fail "profileCodec.expectedInt64" "number is not an int64"
-        else fail "profileCodec.expectedInt64" (sprintf "expected number, got %A" el.ValueKind)
-
-    let private asInt (el: JsonElement) : Result<int> =
-        if el.ValueKind = JsonValueKind.Number then
-            match el.TryGetInt32() with
-            | true, n -> Ok n
-            | _ -> fail "profileCodec.expectedInt" "number is not an int32"
-        else fail "profileCodec.expectedInt" (sprintf "expected number, got %A" el.ValueKind)
-
-    let private asDecimal (el: JsonElement) : Result<decimal> =
-        asString el
-        |> Result.bind (fun s ->
-            match System.Decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture) with
-            | true, d -> Ok d
-            | _ -> fail "profileCodec.expectedDecimal" (sprintf "not an invariant-culture decimal: '%s'" s))
-
-    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> =
-        prop el name |> Result.bind read
-
-    let private optField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a option> =
-        match el.TryGetProperty name with
-        | true, v when v.ValueKind = JsonValueKind.Null -> Ok None
-        | true, v -> read v |> Result.map Some
-        | _ -> Ok None
-
-    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> =
-        match el.TryGetProperty name with
-        | true, v when v.ValueKind = JsonValueKind.Array ->
-            v.EnumerateArray() |> Seq.map read |> Result.collect
-        | true, v -> fail "profileCodec.expectedArray" (sprintf "field '%s': expected array, got %A" name v.ValueKind)
-        | _ -> Ok []
+    // Decode kernel — thin delegations to the shared `JsonCodecKernel` (prefix
+    // `"profileCodec"`), so the emitted error codes stay byte-identical.
+    let private fail (code: string) (msg: string) : Result<'a> = JsonCodecKernel.fail code msg
+    let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "profileCodec" el name
+    let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "profileCodec" el
+    let private asBool (el: JsonElement) : Result<bool> = JsonCodecKernel.asBool "profileCodec" el
+    let private asInt64 (el: JsonElement) : Result<int64> = JsonCodecKernel.asInt64 "profileCodec" el
+    let private asInt (el: JsonElement) : Result<int> = JsonCodecKernel.asInt "profileCodec" el
+    let private asDecimal (el: JsonElement) : Result<decimal> = JsonCodecKernel.asDecimal "profileCodec" el
+    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> = JsonCodecKernel.field "profileCodec" el name read
+    let private optField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a option> = JsonCodecKernel.optField el name read
+    let private listField (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a list> = JsonCodecKernel.listField "profileCodec" el name read
 
     let private readSsKey (el: JsonElement) : Result<SsKey> =
         asString el |> Result.bind SsKey.deserialize

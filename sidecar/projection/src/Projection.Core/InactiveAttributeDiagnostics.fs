@@ -1,4 +1,4 @@
-namespace Projection.Pipeline
+namespace Projection.Core
 
 open Projection.Core
 

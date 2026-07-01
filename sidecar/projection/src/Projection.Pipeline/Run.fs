@@ -203,7 +203,7 @@ module Run =
                 Events = events; Artifacts = artifacts
                 Ledgers = ledgers; Bench = bench
             }
-        with _ -> None
+        with :? System.Text.Json.JsonException -> None   // malformed run JSON → None; a fatal propagates
 
     // --- the store (opt-in via PROJECTION_RUNS_DIR) ------------------------
 

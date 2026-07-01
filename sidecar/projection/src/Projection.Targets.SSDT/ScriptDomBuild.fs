@@ -904,7 +904,7 @@ module ScriptDomBuild =
     /// Gates which target rows the `WHEN NOT MATCHED BY SOURCE` arm may
     /// delete — rows outside the scope survive.
     let private deleteScopePredicate (scope: DeleteScope) : BooleanExpression =
-        scope.Terms
+        DeleteScope.terms scope
         |> List.map (fun (col, value) ->
             let cmp = BooleanComparisonExpression()
             cmp.ComparisonType <- BooleanComparisonType.Equals
@@ -937,13 +937,13 @@ module ScriptDomBuild =
         // inline `USING (VALUES (...), (...)) AS Source(c1, c2, ...)`. Every other
         // arm (ON, WHEN MATCHED/NOT MATCHED/NOT MATCHED BY SOURCE) references the
         // `[Source]` alias identically, so only the table reference changes.
-        match args.StagedSource with
-        | Some tempName ->
+        match args.RowSource with
+        | Staged tempName ->
             let namedRef = NamedTableReference()
             namedRef.SchemaObject <- tempSchemaObject tempName
             namedRef.Alias <- bracketed "Source"
             spec.TableReference <- namedRef :> TableReference
-        | None ->
+        | InlineValues ->
             let inline_ = InlineDerivedTable()
             args.Rows
             |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
@@ -1143,13 +1143,13 @@ module ScriptDomBuild =
         // nodes across the two EXCEPT arms); the inline VALUES re-materializes,
         // but the guard is opt-in so O(rows)×2 is acceptable.
         let sourceFrom () : TableReference =
-            match args.StagedSource with
-            | Some tempName ->
+            match args.RowSource with
+            | Staged tempName ->
                 let t = NamedTableReference()
                 t.SchemaObject <- tempSchemaObject tempName
                 t.Alias <- bracketed "Source"
                 t :> TableReference
-            | None ->
+            | InlineValues ->
                 let idt = InlineDerivedTable()
                 for row in args.Rows do
                     let rv = RowValue()
@@ -2169,6 +2169,7 @@ module ScriptDomBuild =
     /// >7500-char property values) flow through the writer without
     /// reshaping the signature.
     let private buildSetExtendedPropertyCore
+            (procName: string)
             (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
@@ -2189,7 +2190,7 @@ module ScriptDomBuild =
             p
 
         let procRef = ProcedureReference()
-        procRef.Name <- schemaObjectName "sys" "sp_addextendedproperty"
+        procRef.Name <- schemaObjectName "sys" procName
         let procRefName = ProcedureReferenceName()
         procRefName.ProcedureReference <- procRef
 
@@ -2427,13 +2428,26 @@ module ScriptDomBuild =
         stmt.Objects.Add(schemaObjectName schema name)
         stmt
 
-    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
+    /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ) — the
+    /// initial `sp_addextendedproperty` binding.
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
             (propertyName: string)
             (propertyValue: string option)
             : Diagnostics<ExecuteStatement> =
-        Diagnostics.ofValue (buildSetExtendedPropertyCore owner propertyName propertyValue)
+        Diagnostics.ofValue (buildSetExtendedPropertyCore "sp_addextendedproperty" owner propertyName propertyValue)
+
+    /// The `sp_updateextendedproperty` sibling — RE-binds an existing property
+    /// (the migrate rename channel: `sp_rename` moves the object, this re-points
+    /// its logical-name property). Structurally identical to
+    /// `buildSetExtendedProperty`; only the procedure differs. Replaces the
+    /// hand-rolled `sprintf` + single-quote escaper at the migrate boundary.
+    let buildUpdateExtendedProperty
+            (owner: ExtendedPropertyOwner)
+            (propertyName: string)
+            (propertyValue: string option)
+            : Diagnostics<ExecuteStatement> =
+        Diagnostics.ofValue (buildSetExtendedPropertyCore "sp_updateextendedproperty" owner propertyName propertyValue)
 
     /// Parse a raw trigger `Definition` string into its `TSqlStatement`.
     /// Returns `None` when the definition is blank, the parser reports

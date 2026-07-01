@@ -125,12 +125,13 @@ module ClosureOracle =
     /// frontiers are not expanded), reading parents live via `fetch`. Bounded
     /// by a hard hop cap (the runaway backstop). Returns the closed state; the
     /// caller derives `Closure.materialize` / `Closure.reportWith` from it.
-    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Closure.ClosureState> =
+    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Result<Closure.ClosureState>> =
         task {
             let mutable state = Closure.empty
             let mutable pending = roots
             let mutable fuel = 100000
             let mutable running = true
+            let mutable refusal : ValidationError option = None
             while running do
                 // Pure planner: fold the fetched rows in, plan the next hop's
                 // parent fetches (honouring `Stop` frontiers). Empty IS the
@@ -140,7 +141,16 @@ module ClosureOracle =
                 if List.isEmpty fetches then
                     running <- false
                 elif fuel <= 0 then
-                    failwith "closure.fuelExhausted: closure walk did not reach a fixed point within the hop cap"
+                    // The runaway backstop: a reachable operational outcome (a
+                    // pathological reference graph), so it is a NAMED refusal on
+                    // the report, not an unstructured `failwith`. A mutable flag
+                    // (not a nested match in the loop) keeps the `task` block
+                    // FS3511-safe under Release static compilation.
+                    refusal <-
+                        Some (ValidationError.create
+                                "closure.fuelExhausted"
+                                "closure walk did not reach a fixed point within the hop cap")
+                    running <- false
                 else
                     let mutable fetched : Closure.FetchedRows list = []
                     for fc in fetches do
@@ -148,5 +158,7 @@ module ClosureOracle =
                         fetched <- fr :: fetched
                     pending <- fetched
                     fuel <- fuel - 1
-            return state
+            match refusal with
+            | Some es -> return Result.failureOf es
+            | None    -> return Result.success state
         }

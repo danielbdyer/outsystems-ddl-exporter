@@ -99,10 +99,13 @@ module StagedMerge =
         (args: MergeBuildArgs)
         : string =
         use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase1"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
-        let tempName =
-            match args.StagedSource with
-            | Some n -> n
-            | None -> invalidOp "StagedMerge.renderStagedPhase1: args.StagedSource must be Some"
+        // This module OWNS the staged source: the `#temp` name is derived here from
+        // `k` (the same derivation the inline path never needs), and the args are
+        // re-pointed to `Staged` so the MERGE + guard `USING [#temp]`. The caller
+        // hands inline-shaped args; the staged routing is not its concern — so
+        // there is no `RowSource` precondition to violate (the old `invalidOp`).
+        let tempName = stagedTempName k
+        let args = { args with RowSource = MergeRowSource.Staged tempName }
         let guardOpt =
             match verification with
             | DataVerification.ValidateBeforeApply ->

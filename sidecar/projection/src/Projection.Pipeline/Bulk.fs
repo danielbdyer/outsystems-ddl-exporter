@@ -72,24 +72,82 @@ module Bulk =
             | Binary ->
                 box (Convert.FromHexString (RawValueCodec.stripHexPrefix raw))
 
-    /// Build a `DataTable` matching the column shape of the first
-    /// row in a batch. Subsequent rows must share the shape; the
-    /// caller groups by shape before invoking.
-    let private buildTable (shape: CellValue list) : DataTable =
-        let dt = new DataTable()
-        for c in shape do
-            let col = new DataColumn(c.Column, clrType c.Type)
-            col.AllowDBNull <- true
-            dt.Columns.Add col
-        dt
+    /// Parse one cell to the CLR object SqlBulkCopy expects, coalescing the
+    /// nullable `parseRaw` result to a non-null `obj` (`DBNull` for the absent
+    /// case) so the reader's row buffer stays `obj[]`.
+    let private cellToObj (cv: CellValue) : obj =
+        match parseRaw cv.Type cv.Raw with
+        | null -> DBNull.Value :> obj
+        | v    -> v
 
-    let private fillTable (dt: DataTable) (rows: CellValue list list) : unit =
-        for row in rows do
-            let arr =
-                row
-                |> List.map (fun cv -> parseRaw cv.Type cv.Raw)
-                |> List.toArray
-            dt.Rows.Add arr |> ignore
+    /// The named contract for `CellValueDataReader`'s unused typed getters
+    /// (SqlBulkCopy's streaming path calls `GetValue`, never these). Module-level
+    /// so it generalizes to `unit -> 'a`.
+    let private ns () : 'a = raise (NotSupportedException "CellValueDataReader: SqlBulkCopy uses GetValue; typed getters are unsupported")
+
+    /// An `IDataReader` over a homogeneous batch of `CellValue` rows — the
+    /// streaming source for `SqlBulkCopy.WriteToServerAsync`. Replaces the prior
+    /// `DataTable`, which held EVERY row's `obj[]` + `DataRow` simultaneously
+    /// (the whole batch resident a SECOND time, on top of the caller's
+    /// `CellValue list list`). The reader parses ONE row at a time via
+    /// `parseRaw`, so peak client memory per batch is O(1 row), not O(batch) —
+    /// the reverse leg's per-row allocation hot-spot on the estate-scale load.
+    /// SqlBulkCopy's streaming path uses `Read` / `FieldCount` / `GetValue` /
+    /// `GetName` / `GetOrdinal` / `GetFieldType` / `IsDBNull`; the typed getters
+    /// it never calls raise (the named contract, not a silent stub).
+    type private CellValueDataReader(shape: CellValue list, rows: CellValue list list) =
+        let cols = List.toArray shape
+        let rowArr = List.toArray rows
+        let mutable idx = -1
+        let mutable current : obj[] = Array.empty
+        let ordinalOf (name: string) : int =
+            match cols |> Array.tryFindIndex (fun c -> c.Column = name) with
+            | Some i -> i
+            | None   -> raise (IndexOutOfRangeException name)
+        interface IDataReader with
+            member _.Read() : bool =
+                idx <- idx + 1
+                if idx < rowArr.Length then
+                    current <- rowArr.[idx] |> List.map cellToObj |> List.toArray
+                    true
+                else false
+            member _.NextResult() : bool = false
+            member _.Depth : int = 0
+            member _.IsClosed : bool = false
+            member _.RecordsAffected : int = -1
+            member _.Close() : unit = ()
+            member _.GetSchemaTable() = null
+        interface IDataRecord with
+            member _.FieldCount : int = cols.Length
+            member _.GetName(i: int) : string = cols.[i].Column
+            member _.GetOrdinal(name: string) : int = ordinalOf name
+            member _.GetFieldType(i: int) : Type = clrType cols.[i].Type
+            member _.GetDataTypeName(i: int) : string = (clrType cols.[i].Type).Name
+            member _.GetValue(i: int) : obj = current.[i]
+            member _.IsDBNull(i: int) : bool = (current.[i] :? DBNull)
+            member _.GetValues(values: obj[]) : int =
+                let n = min values.Length current.Length
+                Array.blit current 0 values 0 n
+                n
+            member _.Item with get (i: int) : obj = current.[i]
+            member _.Item with get (name: string) : obj = current.[ordinalOf name]
+            member _.GetBoolean(_: int) : bool = ns ()
+            member _.GetByte(_: int) : byte = ns ()
+            member _.GetBytes(_: int, _: int64, _: byte[] | null, _: int, _: int) : int64 = ns ()
+            member _.GetChar(_: int) : char = ns ()
+            member _.GetChars(_: int, _: int64, _: char[] | null, _: int, _: int) : int64 = ns ()
+            member _.GetData(_: int) : IDataReader = ns ()
+            member _.GetDateTime(_: int) : DateTime = ns ()
+            member _.GetDecimal(_: int) : decimal = ns ()
+            member _.GetDouble(_: int) : float = ns ()
+            member _.GetFloat(_: int) : float32 = ns ()
+            member _.GetGuid(_: int) : Guid = ns ()
+            member _.GetInt16(_: int) : int16 = ns ()
+            member _.GetInt32(_: int) : int = ns ()
+            member _.GetInt64(_: int) : int64 = ns ()
+            member _.GetString(_: int) : string = ns ()
+        interface IDisposable with
+            member _.Dispose() : unit = ()
 
     let private copyCore
         (cnn: SqlConnection)
@@ -98,20 +156,20 @@ module Bulk =
         (rows: CellValue list list)
         : Task<unit> =
         task {
-            if List.isEmpty rows then return ()
-            else
+            match rows with
+            | [] -> return ()
+            | shape :: _ ->
                 use _ = Bench.scope "deploy.bulk.copyRows"
-                let shape = List.head rows
-                use dt = buildTable shape
-                fillTable dt rows
+                let rowCount = List.length rows
                 use bulk = new SqlBulkCopy(cnn, opts, null)
                 bulk.DestinationTableName <- destination
                 for c in shape do
                     bulk.ColumnMappings.Add(c.Column, c.Column) |> ignore
                 bulk.BulkCopyTimeout <- 0
-                bulk.BatchSize <- rows.Length
-                Bench.recordSample "deploy.bulk.copyRows.batchSize" (int64 rows.Length)
-                do! bulk.WriteToServerAsync dt
+                bulk.BatchSize <- rowCount
+                Bench.recordSample "deploy.bulk.copyRows.batchSize" (int64 rowCount)
+                use reader = new CellValueDataReader(shape, rows)
+                do! bulk.WriteToServerAsync(reader :> IDataReader)
         }
 
     /// Bulk-copy a homogeneous batch of `InsertRow` values into the

@@ -93,7 +93,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             OnlyActiveAttributes   = true
         }
         Profile     = { Path = None }
-        Profiler    = { Provider = "fixture" }
+        Profiler    = { Provider = Config.ProfilerProvider.Fixture }
         Overrides   = overrides
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true

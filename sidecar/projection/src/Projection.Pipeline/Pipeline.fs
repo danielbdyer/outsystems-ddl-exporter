@@ -1332,11 +1332,17 @@ module Compose =
     /// missing connection is a named failure.
     let private acquireProfile (cfg: Config.Config) (catalog: Catalog) : Task<Result<Profile>> =
         task {
-            if cfg.Profiler.Provider <> Config.LiveProfilerProvider then
+            match cfg.Profiler.Provider with
+            | Config.ProfilerProvider.Fixture ->
                 return Result.success Profile.empty
-            else
-                match System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar with
-                | null | "" ->
+            | Config.ProfilerProvider.Live ->
+                // Coalesce the nullable env read to a non-null string (F#9
+                // nullness) so the non-empty branch passes a non-null value.
+                let connectionString =
+                    System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
+                    |> Option.ofObj
+                    |> Option.defaultValue ""
+                if connectionString = "" then
                     return
                         Result.failureOf
                             (ValidationError.create
@@ -1345,7 +1351,7 @@ module Compose =
                                     "profiler.provider = \"%s\" requires the %s environment variable (D9: connection sources are out-of-band)."
                                     Config.LiveProfilerProvider
                                     Config.SourceConnectionStringEnvVar))
-                | connectionString ->
+                else
                     return! profileFromLiveConnection connectionString catalog
         }
 

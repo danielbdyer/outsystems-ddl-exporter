@@ -19,14 +19,51 @@ open Projection.Core
 /// deleted ONLY when it ALSO satisfies the scope predicate; rows outside the
 /// scope (in T−S but not in the scope) survive.
 ///
-/// `Terms` is a non-empty list of `(column, value)` equality terms over the
+/// `terms` is a NON-EMPTY list of `(column, value)` equality terms over the
 /// MERGE target (e.g. a tenant / partition gate), folded left-to-right with
 /// `AND` into the predicate `Target.[col1] = <v1> [AND Target.[col2] = <v2> …]`.
 /// Decoupled from ScriptDom so the scope is expressible from domain code.
+///
+/// Non-emptiness is enforced by the private field + `DeleteScope.create` smart
+/// constructor: a scope with zero terms is not a scope — per AC-D7 it must never
+/// degrade into an UNSCOPED delete, and `deleteScopePredicate`'s left-fold has no
+/// identity for `[]`. `create` returns `None` for an empty term list, exactly the
+/// faithful "no delete arm" semantics `DeleteScopePolicy.resolveFor` already
+/// produces. The old public record permitted `{ Terms = [] }` — a representable
+/// illegal state that would crash the fold; this makes it unconstructable.
 type DeleteScope =
-    {
-        Terms : (string * SqlLiteral) list
-    }
+    private
+        {
+            Terms : (string * SqlLiteral) list
+        }
+
+[<RequireQualifiedAccess>]
+module DeleteScope =
+
+    /// Build a delete scope from equality terms. `None` for an empty list (no
+    /// scope ⇒ no delete arm — the AC-D7-faithful rendering, never an unscoped
+    /// delete); `Some` carrying the guaranteed-non-empty terms otherwise.
+    let create (terms: (string * SqlLiteral) list) : DeleteScope option =
+        match terms with
+        | [] -> None
+        | _  -> Some { Terms = terms }
+
+    /// The guaranteed-non-empty equality terms.
+    let terms (scope: DeleteScope) : (string * SqlLiteral) list = scope.Terms
+
+/// Where a MERGE draws its source rows from — a closed dichotomy so the
+/// inline/staged fork is compiler-checked, not encoded in a `string option`
+/// whose `None` means one thing to one consumer and a crash to another.
+///
+/// `InlineValues` → `USING (VALUES (…), (…)) AS Source(cols)` — the default,
+/// byte-identical to the pre-staging output. `Staged tempName` → the MERGE (and
+/// the validate-before-apply guard) draw from a pre-staged `#temp` table
+/// (`USING [#seed_X]`), the form that sidesteps SQL Server error 8623 (the
+/// optimizer cannot plan a large row-value constructor). In the staged case
+/// `Rows` still carries the rows so the caller can stage them into the `#temp`.
+type MergeRowSource =
+    | InlineValues
+    | Staged of tempName: string
 
 /// MERGE construction args. Decoupled from `Catalog`/`Kind`/`Attribute` (carry
 /// `TableId` + name lists + typed `SqlLiteral` rows) so the builder is testable
@@ -40,14 +77,10 @@ type MergeBuildArgs =
         Rows        : SqlLiteral list list
         CdcAware    : bool
         DeleteScope : DeleteScope option
-        /// `Some "#seed_X"` → the MERGE (and the validate-before-apply guard)
-        /// draw their source from a pre-staged `#temp` table (`USING [#seed_X]`)
-        /// instead of the inline `USING (VALUES …)` constructor — the form that
-        /// sidesteps SQL Server error 8623 (the optimizer cannot plan a large
-        /// row-value constructor). `Rows` still carries the rows so the caller
-        /// can stage them into the `#temp`. `None` (the default) is byte-identical
-        /// to the pre-staging output.
-        StagedSource : string option
+        /// Whether the MERGE sources from the inline `VALUES` constructor or a
+        /// pre-staged `#temp` (the error-8623-safe form for large kinds). See
+        /// `MergeRowSource`.
+        RowSource   : MergeRowSource
     }
 
 /// UPDATE construction args. Decoupled from `Catalog`/`Kind`/`Attribute`

@@ -21,7 +21,7 @@ let private mkConfig (insertion: string) : Config.Config =
             OnlyActiveAttributes   = true
         }
         Profile     = { Path = None }
-        Profiler    = { Provider = "fixture" }
+        Profiler    = { Provider = Config.ProfilerProvider.Fixture }
         Overrides   = {
             TableRenames           = []
             MigrationDependencies  = None

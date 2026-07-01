@@ -80,7 +80,8 @@ type ClosureOracleDockerTests(fixture: EphemeralContainerFixture) =
 
                     // Seed the walk with order 1000 and drive it to the fixed point.
                     let! roots = ClosureOracle.fetchRootsByKey cnn catalog orderK.SsKey (pkName orderK) (Set.ofList [ "1000" ])
-                    let! state = ClosureOracle.walk cnn catalog [] [ roots ]
+                    let! stateR = ClosureOracle.walk cnn catalog [] [ roots ]
+                    let state = Result.value stateR
                     let report = Closure.report catalog state
 
                     let keysOf (tableName: string) : Set<string> =

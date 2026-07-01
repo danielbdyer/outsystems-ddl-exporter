@@ -778,8 +778,7 @@ module SsdtDdlEmitter =
         (catalog: Catalog)
         : Kind list * Map<SsKey, Kind> * Map<SsKey, Attribute> =
         let allKinds = Catalog.allKinds catalog
-        let targetByKey =
-            allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let targetByKey = Catalog.kindIndex catalog
         let pkAttrByKey =
             allKinds
             |> List.choose (fun k ->
@@ -848,10 +847,7 @@ module SsdtDdlEmitter =
         // single TopologicalOrderPass with two emitters).
         let order =
             (TopologicalOrderPass.runWith SkipSelfEdges catalog).Value.Order
-        let kindByKey =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> k.SsKey, k)
-            |> Map.ofList
+        let kindByKey = Catalog.kindIndex catalog
         let orderedKinds =
             order |> List.choose (fun key -> Map.tryFind key kindByKey)
         seq {

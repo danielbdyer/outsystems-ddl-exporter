@@ -59,22 +59,19 @@ module RemediationEmitter =
     /// decision; cross-derivation shared state lands as a precomputed
     /// index at construction time, not as repeated `List.tryFind`.
     let private kindByAttributeKey (catalog: Catalog) : Map<SsKey, Kind * Attribute> =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
+        Catalog.allKinds catalog
         |> List.collect (fun k ->
             k.Attributes |> List.map (fun a -> a.SsKey, (k, a)))
         |> Map.ofList
 
     let private kindByReferenceKey (catalog: Catalog) : Map<SsKey, Kind * Reference> =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
+        Catalog.allKinds catalog
         |> List.collect (fun k ->
             k.References |> List.map (fun r -> r.SsKey, (k, r)))
         |> Map.ofList
 
     let private kindByIndexKey (catalog: Catalog) : Map<SsKey, Kind * Index> =
-        catalog.Modules
-        |> List.collect (fun m -> m.Kinds)
+        Catalog.allKinds catalog
         |> List.collect (fun k ->
             k.Indexes |> List.map (fun i -> i.SsKey, (k, i)))
         |> Map.ofList
