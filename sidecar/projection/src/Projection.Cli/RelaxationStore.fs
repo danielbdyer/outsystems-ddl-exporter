@@ -34,7 +34,12 @@ let private rootObjectOf (path: string) : JsonObject option =
             match JsonNode.Parse(File.ReadAllText path) with
             | :? JsonObject as o -> Some o
             | _ -> None
-        with _ -> None
+        // Malformed JSON or a file-read failure → no blessing; a fatal / an
+        // unexpected bug propagates rather than masquerading as "no blessing".
+        with
+        | :? System.Text.Json.JsonException
+        | :? System.IO.IOException
+        | :? System.UnauthorizedAccessException -> None
 
 /// The blessed relaxation keys recorded in `path` — empty when the file or the
 /// section is absent / malformed (a missing blessing is simply no blessing).

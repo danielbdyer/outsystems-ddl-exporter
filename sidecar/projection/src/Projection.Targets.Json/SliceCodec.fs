@@ -80,23 +80,12 @@ module SliceCodec =
 
     // -- DECODE (re-validating through SliceSpec.create) -------------------
 
-    let private fail (code: string) (msg: string) : Result<'a> =
-        Result.failureOf (ValidationError.create code msg)
-
-    let private asString (el: JsonElement) : Result<string> =
-        if el.ValueKind = JsonValueKind.String then
-            match el.GetString() with
-            | null -> fail "slice.expectedString" "string element returned null"
-            | s    -> Ok s
-        else fail "slice.expectedString" (sprintf "expected string, got %A" el.ValueKind)
-
-    let private prop (el: JsonElement) (name: string) : Result<JsonElement> =
-        match el.TryGetProperty name with
-        | true, v -> Ok v
-        | _       -> fail "slice.missingField" (sprintf "missing field '%s'" name)
-
-    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> =
-        prop el name |> Result.bind read
+    // Decode kernel — thin delegations to the shared `JsonCodecKernel` (prefix
+    // `"slice"`), so the emitted error codes stay byte-identical.
+    let private fail (code: string) (msg: string) : Result<'a> = JsonCodecKernel.fail code msg
+    let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "slice" el
+    let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "slice" el name
+    let private field (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> = JsonCodecKernel.field "slice" el name read
 
     let private readName (el: JsonElement) : Result<Name> =
         asString el |> Result.bind Name.create

@@ -173,6 +173,12 @@
     <Compile Include="Passes/ForeignKeyPass.fs" />
     <Compile Include="Passes/CategoricalUniquenessPass.fs" />
     <Compile Include="Passes/UserFkReflowPass.fs" />
+    <!-- Pure profile-evidence diagnostic scans (Profile -> DiagnosticEntry list).
+         Lifted out of Projection.Pipeline (the I/O shell) — they depend only on
+         Core types, so they belong with the other Profile/Catalog scans. -->
+    <Compile Include="FkSelectivityDiagnostics.fs" />
+    <Compile Include="InactiveAttributeDiagnostics.fs" />
+    <Compile Include="JointDependencyDiagnostics.fs" />
     <Compile Include="RegisteredTransforms.fs" />
   </ItemGroup>
 

@@ -218,7 +218,7 @@ let ``live: a column rename emits sp_rename COLUMN + a column-level logical re-b
     Assert.Contains("sp_rename", stmts.[0])
     Assert.Contains("'COLUMN'", stmts.[0])
     Assert.Contains("RENAMED_COL", stmts.[0])
-    Assert.Contains("@level2type=N'COLUMN'", stmts.[1])
+    Assert.Contains("@level2type = N'COLUMN'", stmts.[1])
     Assert.Contains("RenamedCol", stmts.[1])
 
 [<Fact>]

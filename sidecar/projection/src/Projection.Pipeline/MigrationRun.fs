@@ -342,20 +342,29 @@ module MigrationRun =
     /// **Table renames precede column renames**, and both precede the ALTERs, so
     /// every later statement references the post-rename physical names.
     let renameStatements (diff: CatalogDiff) : string list =
-        let byKey (c: Catalog) = Catalog.allKinds c |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let byKey (c: Catalog) = Catalog.kindIndex c
         let src = byKey (CatalogDiff.source diff)
         let tgt = byKey (CatalogDiff.target diff)
-        // LINT-ALLOW (whole function): `sp_rename` / `sp_updateextendedproperty`
-        // are system-procedure calls at a terminal text boundary; ScriptDom has
-        // no first-class node for them, and every interpolated value is a
-        // validated `TableId` component / `ColumnName` / `Name` (single-quotes
-        // doubled), not free operator text. Per the LINT-ALLOW substantive-
-        // rationale discipline.
+        // LINT-ALLOW (the `sp_rename` calls only): `sp_rename` is a
+        // system-procedure call at a terminal text boundary; ScriptDom has no
+        // first-class node for it, and every interpolated value is a validated
+        // `TableId` component / `ColumnName` (single-quotes doubled), not free
+        // operator text. The logical-name RE-BIND below is now fully typed
+        // (`ScriptDomBuild.buildUpdateExtendedProperty` — the same node the SSDT
+        // emitter uses for `sp_addextendedproperty`), so it carries no escaper.
         let esc (s: string) : string = s.Replace("'", "''")
         let colOf (k: Kind) (attrKey: SsKey) : string option =
             k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
         let nameOf (k: Kind) (attrKey: SsKey) : Name option =
             k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> a.Name)
+        // The logical-name re-bind, rendered from the typed `sp_updateextendedproperty`
+        // node; `generateOne` omits the trailing `;`, appended for the batch contract.
+        let reBindStmt (owner: ExtendedPropertyOwner) (logicalName: string) : string =
+            System.String.Concat(
+                ScriptDomGenerate.generateOne
+                    ((ScriptDomBuild.buildUpdateExtendedProperty owner "Projection.LogicalName" (Some logicalName)).Value
+                        :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
+                ";")
 
         // (1) Table renames — same SsKey, changed kind Name.
         let tableRenames =
@@ -365,7 +374,6 @@ module MigrationRun =
             |> List.collect (fun (key, _) ->
                 match Map.tryFind key src, Map.tryFind key tgt with
                 | Some s, Some t ->
-                    let schema = TableId.schemaText t.Physical
                     let newTable = TableId.tableText t.Physical
                     let srcSchema = TableId.schemaText s.Physical
                     let srcTable = TableId.tableText s.Physical
@@ -373,14 +381,9 @@ module MigrationRun =
                         if srcTable <> newTable then
                             [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc srcSchema) (esc srcTable) (esc newTable) ]
                         else []
-                    let reBind =
-                        sprintf
-                            // WP5 / C1 — rebind the renamed identity property
-                            // (`Projection.LogicalName`). Legacy `V2.*`-bearing
-                            // deployed schemas are the dual-window migrate edge
-                            // (Docker-gated; named in DECISIONS).
-                            "EXEC sys.sp_updateextendedproperty @name=N'Projection.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
-                            (esc (Name.value t.Name)) (esc schema) (esc newTable)
+                    // WP5 / C1 — rebind the renamed identity property
+                    // (`Projection.LogicalName`) on the post-rename table.
+                    let reBind = reBindStmt (TableProperty t.Physical) (Name.value t.Name)
                     spRename @ [ reBind ]
                 | _ -> [])
 
@@ -405,12 +408,9 @@ module MigrationRun =
                                 if oldCol <> newCol then
                                     [ sprintf "EXEC sp_rename '%s.%s.%s', '%s', 'COLUMN';" (esc schema) (esc table) (esc oldCol) (esc newCol) ]
                                 else []
-                            let reBind =
-                                sprintf
-                                    // WP5 / C1 — rebind the renamed identity
-                                    // property (`Projection.LogicalName`).
-                                    "EXEC sys.sp_updateextendedproperty @name=N'Projection.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s', @level2type=N'COLUMN', @level2name=N'%s';"
-                                    (esc (Name.value newName)) (esc schema) (esc table) (esc newCol)
+                            // WP5 / C1 — rebind the renamed identity property
+                            // (`Projection.LogicalName`) on the post-rename column.
+                            let reBind = reBindStmt (ColumnProperty (tKind.Physical, newCol)) (Name.value newName)
                             spRename @ [ reBind ]
                         | _ -> [])
                 | _ -> [])

@@ -98,16 +98,51 @@ module Config =
     // dead). `profiler.provider` IS consumed (`LiveProfiler` selection) and
     // stays.
 
-    type ProfilerSection = {
-        Provider   : string
-    }
-
-    /// `profiler.provider` value that selects live source-environment
+    /// `profiler.provider` token that selects live source-environment
     /// profiling against an accessible SQL database (the `LiveProfiler`
-    /// adapter). Any other value (default `"fixture"`) carries
-    /// `Profile.empty` forward as the no-evidence base case.
+    /// adapter). Retained as the canonical token literal (referenced in
+    /// operator-facing diagnostics); the parsed form is `ProfilerProvider`.
     [<Literal>]
     let LiveProfilerProvider = "live"
+
+    /// `profiler.provider` token for the no-evidence base case.
+    [<Literal>]
+    let FixtureProfilerProvider = "fixture"
+
+    /// Which evidence source the run profiles against. `Live` selects
+    /// source-environment profiling via the `LiveProfiler` adapter (an
+    /// accessible SQL database; the connection is sourced out-of-band per D9).
+    /// `Fixture` (the default) carries `Profile.empty` forward as the
+    /// no-evidence base case. A closed DU so the selection is TOTAL at the
+    /// consumer — not a stringly-typed `<> "live"` comparison whose
+    /// "anything-else silently means fixture" fall-through hides a typo'd
+    /// provider (the named-refusal discipline: a downgrade is never silent).
+    [<RequireQualifiedAccess>]
+    type ProfilerProvider =
+        | Live
+        | Fixture
+
+    [<RequireQualifiedAccess>]
+    module ProfilerProvider =
+        /// The canonical token for a provider (round-trips with `ofToken`).
+        let toToken (p: ProfilerProvider) : string =
+            match p with
+            | ProfilerProvider.Live    -> LiveProfilerProvider
+            | ProfilerProvider.Fixture -> FixtureProfilerProvider
+
+        /// Parse a `profiler.provider` token. `None` for an unrecognized token
+        /// — the parser turns that into a NAMED refusal rather than silently
+        /// defaulting to fixture. Exact-match (the prior `<> "live"` test was
+        /// case-sensitive).
+        let ofToken (token: string) : ProfilerProvider option =
+            match token with
+            | s when s = LiveProfilerProvider    -> Some ProfilerProvider.Live
+            | s when s = FixtureProfilerProvider -> Some ProfilerProvider.Fixture
+            | _                                  -> None
+
+    type ProfilerSection = {
+        Provider   : ProfilerProvider
+    }
 
     /// D9 (secret-free by construction): the connection string for live
     /// profiling is sourced out-of-band from this environment variable,
@@ -398,7 +433,7 @@ module Config =
     }
 
     let private defaultProfiler : ProfilerSection = {
-        Provider   = "fixture"
+        Provider   = ProfilerProvider.Fixture
     }
 
     let private defaultOverrides : OverridesSection = {
@@ -845,15 +880,19 @@ module Config =
         match tryGetProperty root "profiler" with
         | None -> Result.success defaultProfiler
         | Some element ->
-            let providerR =
-                match getOptionalString element "provider" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultProfiler.Provider
-                | Ok (Some s) -> Result.success s
-            match providerR with
+            match getOptionalString element "provider" with
             | Error es -> Error es
-            | Ok provider ->
-                Result.success { Provider = provider }
+            | Ok None -> Result.success defaultProfiler
+            | Ok (Some s) ->
+                match ProfilerProvider.ofToken s with
+                | Some p -> Result.success { Provider = p }
+                | None ->
+                    Result.failureOf (
+                        configError
+                            "profiler.provider.unknown"
+                            (sprintf
+                                "profiler.provider \"%s\" is not recognized; expected \"%s\" or \"%s\"."
+                                s LiveProfilerProvider FixtureProfilerProvider))
 
     let private parsePhysicalName (element: JsonElement) : Result<PhysicalName> =
         match getString element "schema" with

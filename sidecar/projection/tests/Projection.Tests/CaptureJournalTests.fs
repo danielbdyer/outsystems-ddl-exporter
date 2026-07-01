@@ -168,6 +168,97 @@ let ``R3: drift refuses by name — the live slice's recomputed fingerprint disa
         Assert.Equal(("201", "250", 50), drift.Recorded)
         Assert.Equal(("201", "250", 49), drift.Recomputed)
 
+// -- the memory-lean ResumeIndex (byte-offset index; pairs on demand) ------
+// item 4 redesign: the streaming resume no longer loads the whole journal
+// Dictionary up front. `openResumeIndex` keeps only (key -> byte offset);
+// `tryFindRecord` re-reads + parses one line on demand. These pin that the
+// lean index agrees with `load` (incl. the pairs), the last-wins index, the
+// blank/null tolerance, AND byte-offset correctness across multi-byte UTF-8.
+
+[<Fact>]
+let ``ResumeIndex: tryFindRecord round-trips a record including its pairs`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        let rec0 = chunk "OS_USER" 0 "1" "50000" 50000 [| [| "1"; "9001" |]; [| "2"; "9002" |] |]
+        CaptureJournal.append j rec0
+        let index = CaptureJournal.openResumeIndex j
+        match CaptureJournal.tryFindRecord index "OS_USER" 0 with
+        | None -> failwith "expected the journaled chunk"
+        | Some back ->
+            Assert.Equal("1", back.FirstPk)
+            Assert.Equal("50000", back.LastPk)
+            Assert.Equal(50000, back.RawCount)
+            Assert.Equal<string[][]>(rec0.Pairs, back.Pairs))
+
+[<Fact>]
+let ``ResumeIndex: an absent (kind, chunkIx) is None; a never-written journal resolves nothing`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        Assert.Equal(None, CaptureJournal.tryFindRecord (CaptureJournal.openResumeIndex j) "OS_USER" 0)
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        let index = CaptureJournal.openResumeIndex j
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 0).IsSome)
+        Assert.Equal(None, CaptureJournal.tryFindRecord index "OS_USER" 1)
+        Assert.Equal(None, CaptureJournal.tryFindRecord index "OS_ORDER" 0))
+
+[<Fact>]
+let ``ResumeIndex: a re-appended (kind, chunkIx) resolves to the LATEST record (last-write-wins)`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 99 [||])
+        match CaptureJournal.tryFindRecord (CaptureJournal.openResumeIndex j) "OS_USER" 0 with
+        | Some back -> Assert.Equal(99, back.RawCount)
+        | None -> failwith "expected the re-appended chunk")
+
+[<Fact>]
+let ``ResumeIndex: blank and literal-null lines are skipped; valid records still resolve`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        File.AppendAllText(CaptureJournal.filePath j, "\n   \nnull\n")
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        let index = CaptureJournal.openResumeIndex j
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 0).IsSome)
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 1).IsSome))
+
+[<Fact>]
+let ``ResumeIndex: byte offsets stay correct across multi-byte UTF-8 lines`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        // Non-ASCII PKs/pairs make the first lines multi-BYTE while few CHARS —
+        // a naive char-length offset would mis-seek the later records.
+        CaptureJournal.append j (chunk "OS_ÜSER" 0 "café" "naïve" 3 [| [| "café"; "δ9001" |] |])
+        CaptureJournal.append j (chunk "OS_ÜSER" 1 "λ" "Ω" 2 [| [| "λ"; "Ω2" |] |])
+        CaptureJournal.append j (chunk "OS_ORDER" 0 "1" "3" 3 [| [| "1"; "x" |] |])
+        let index = CaptureJournal.openResumeIndex j
+        match CaptureJournal.tryFindRecord index "OS_ÜSER" 1 with
+        | Some back ->
+            Assert.Equal("λ", back.FirstPk)
+            Assert.Equal("Ω", back.LastPk)
+            Assert.Equal<string[][]>([| [| "λ"; "Ω2" |] |], back.Pairs)
+        | None -> failwith "expected the second multi-byte chunk"
+        match CaptureJournal.tryFindRecord index "OS_ORDER" 0 with
+        | Some back -> Assert.Equal<string[][]>([| [| "1"; "x" |] |], back.Pairs)
+        | None -> failwith "expected the third chunk")
+
+[<Fact>]
+let ``ResumeIndex: agrees with load on every key (incl. pairs)`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [| [| "1"; "9001" |] |])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        CaptureJournal.append j (chunk "OS_ORDER" 0 "1" "3" 3 [| [| "7"; "8" |] |])
+        let loaded = CaptureJournal.load j
+        let index = CaptureJournal.openResumeIndex j
+        for kv in loaded do
+            match CaptureJournal.tryFindRecord index (fst kv.Key) (snd kv.Key) with
+            | Some back ->
+                Assert.Equal(kv.Value.FirstPk, back.FirstPk)
+                Assert.Equal(kv.Value.RawCount, back.RawCount)
+                Assert.Equal<string[][]>(kv.Value.Pairs, back.Pairs)
+            | None -> failwithf "ResumeIndex missed key %A that load held" kv.Key)
+
 [<Fact>]
 let ``R3: journaled pairs rebuild the remap through replay — the effectful fold adapted at the instance`` () =
     let remap = PackedSurrogateRemap.create ()

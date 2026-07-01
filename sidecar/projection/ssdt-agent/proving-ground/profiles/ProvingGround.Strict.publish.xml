@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProvingGround.Strict.publish.xml — THE VETO DETECTOR.
+
+  This profile mirrors production's REFUSALS. It is how you discover that a change the .sql text
+  says is harmless is actually blocked by the data. When a Strict publish vetoes, the data has
+  flipped the bucket up — that veto, with its row counts, is the proof you hand the developer.
+
+  Aimed ONLY at the throwaway ProvingGround DB on the warm container. DropObjectsNotInSource is
+  True here precisely because the proving ground is disposable and we WANT to see drops — never
+  point this profile at anything real.
+
+    BlockOnPossibleDataLoss = True   -> the veto. NOT NULL on NULL data, narrowing that
+                                        truncates, drops of populated objects all REFUSE.
+    GenerateSmartDefaults   = False  -> do NOT silently backfill. We want the refusal, not a fix.
+    DropObjectsNotInSource  = True   -> drop-by-absence is visible (proving ground is throwaway).
+    IgnoreColumnOrder       = True   -> column-order churn does not masquerade as a real change.
+
+  CONNECTOR POINT (CONNECTORS.md §6): the TargetConnectionString points at the warm-sql.sh
+  container. Reuse that existing substrate; never introduce a new orchestration script.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetConnectionString>Server=localhost,11433;Initial Catalog=ProvingGround;User ID=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False</TargetConnectionString>
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>True</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>

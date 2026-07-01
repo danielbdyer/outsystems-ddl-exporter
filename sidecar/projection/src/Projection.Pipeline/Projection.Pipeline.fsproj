@@ -31,9 +31,6 @@
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
-    <Compile Include="InactiveAttributeDiagnostics.fs" />
-    <Compile Include="FkSelectivityDiagnostics.fs" />
-    <Compile Include="JointDependencyDiagnostics.fs" />
     <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="MigrationDependenciesBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
@@ -59,6 +56,10 @@
     <Compile Include="CaptureJournal.fs" />
     <Compile Include="RenameProjection.fs" />
     <Compile Include="CatalogRendition.fs" />
+    <Compile Include="TransferCellShaping.fs" />
+    <Compile Include="TransferFkTrust.fs" />
+    <Compile Include="TransferRevert.fs" />
+    <Compile Include="TransferResume.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />

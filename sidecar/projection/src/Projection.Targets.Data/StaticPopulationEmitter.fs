@@ -126,10 +126,7 @@ module StaticPopulationEmitter =
         use _ = Bench.scope "emit.staticPopulation.statements"
         let order =
             (TopologicalOrderPass.runWith SkipSelfEdges catalog).Value.Order
-        let kindByKey =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> k.SsKey, k)
-            |> Map.ofList
+        let kindByKey = Catalog.kindIndex catalog
         seq {
             for ssKey in order do
                 match Map.tryFind ssKey kindByKey with

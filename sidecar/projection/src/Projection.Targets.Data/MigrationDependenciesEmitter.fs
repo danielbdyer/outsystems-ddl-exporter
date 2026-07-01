@@ -127,131 +127,11 @@ module MigrationDependenciesEmitter =
     // The deferred-aware VALUES-clause literal projection is shared:
     // `Projection.Core.KindColumns.typedValuesToSqlLiterals`.
 
-    /// Render the MERGE statement for a kind with its migration
-    /// rows via ScriptDom's typed-AST + `Sql160ScriptGenerator`
-    /// pipeline. Same architectural shape as `StaticSeedsEmitter.
-    /// renderMerge` — the Tier-3 hard-requirement adoption is what
-    /// makes this code so similar to the slice-α / δ precedent.
-    /// CDC-aware predicate dispatch per `Profile.CdcAwareness` is
-    /// preserved.
-    let private renderMerge
-        (verification: DataVerification)
-        (staging: DataStagingPolicy)
-        (deleteScope: DeleteScope option)
-        (cdcAware: bool)
-        (bracketIdentity: bool)
-        (deferred: Set<Name>)
-        (k: Kind)
-        (typedRows: Map<Name, SqlLiteral> list)
-        : string =
-        use _ = Bench.scope "emit.migrationDeps.renderMerge"
-        Bench.recordSample "emit.migrationDeps.renderMerge.rows" (int64 typedRows.Length)
-        let table : TableId =
-            { Schema = k.Physical.Schema
-              Table  = k.Physical.Table; Catalog = None }
-        // Slice 5.13.cdc-silence-cross-emitter: mirror of
-        // `StaticSeedsEmitter.renderMerge`. Deferred columns are
-        // owned by Phase-2; including them in Phase-1's WHEN MATCHED
-        // UPDATE branch causes idempotent redeploy to overwrite the
-        // target column with the Phase-1 NULL, then Phase-2 sets it
-        // back. Filtering deferred from UpdColumns makes Phase-1
-        // structurally silent on the deferred-FK axis.
-        // Gap N2: exclude persisted computed columns (`Computed = Some _`)
-        // — UPDATE SET <computed> = ... is a hard SQL error, and the
-        // column must not enter the change-detection predicate. Mirrors
-        // `StaticSeedsEmitter.renderMerge`.
-        let updColumns =
-            k.Attributes
-            |> List.filter (fun a -> not a.IsPrimaryKey)
-            |> List.filter (fun a -> not (Set.contains a.Name deferred))
-            |> List.filter (fun a -> a.Computed = None)
-            |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-        let args : MergeBuildArgs =
-            {
-                Target     = table
-                AllColumns = KindColumns.orderedColumnNames k
-                PkColumns  = KindColumns.pkColumnNames k
-                UpdColumns = updColumns
-                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
-                CdcAware    = cdcAware
-                DeleteScope = deleteScope
-                StagedSource = None
-            }
-        // Above the operator's `emission.dataStaging` threshold the inline
-        // `USING (VALUES …)` MERGE hits SQL Server error 8623 (the optimizer's
-        // plan-complexity wall), so stage the rows through a `#temp` — the SAME
-        // shared `StagedMerge` rendering StaticSeeds uses (migration is its
-        // second consumer). Below the threshold the inline form stands —
-        // byte-identical to the pre-staging output. Migration rows can be large
-        // (FK-reweave for big estates), so this lane needs the staged path too.
-        if DataStagingPolicy.shouldStage staging (List.length typedRows) then
-            Bench.recordSample "emit.migrationDeps.staged" 1L
-            StagedMerge.renderStagedPhase1 "emit.migrationDeps" verification bracketIdentity
-                (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
-                { args with StagedSource = Some (StagedMerge.stagedTempName k) }
-        else
-        Bench.recordSample "emit.migrationDeps.inline" 1L
-        // The inline MERGE as a typed `Statement` batch — terminal `;` + `GO`
-        // framing lives in `ScriptDomGenerate.renderDataBatch` (the data lane's
-        // one terminal-text boundary), not here. NM-25 (mirror StaticSeedsEmitter
-        // WP6 step 1): an IDENTITY-PK migration kind brackets the MERGE with
-        // `SET IDENTITY_INSERT [t] ON/OFF` in the SAME GO batch (the toggle is
-        // session-scoped; the leveled deploy opens a connection per GO).
-        let mergeBatch =
-            if not bracketIdentity then
-                ScriptDomGenerate.renderDataBatch [ Statement.Merge args ]
-            else
-                ScriptDomGenerate.renderDataBatch
-                    [ Statement.SetIdentityInsert (table, true)
-                      Statement.Merge args
-                      Statement.SetIdentityInsert (table, false) ]
-        // NM-73 — prepend the validate-before-apply drift guard as its OWN GO
-        // batch before the MERGE (mirrors StaticSeedsEmitter). `Standard` is
-        // byte-identical; `ValidateBeforeApply` parses V1's symmetric-EXCEPT
-        // THROW guard over the same `args` rows the MERGE writes.
-        match verification with
-        | DataVerification.Standard -> mergeBatch
-        | DataVerification.ValidateBeforeApply ->
-            let guardText =
-                ScriptDomGenerate.generateOne (ScriptDomBuild.buildValidateBeforeApplyGuard args)
-            System.String.Concat(  // LINT-ALLOW: terminal guard-batch prefix (NM-73; mirrors StaticSeedsEmitter); the guard is the typed-AST parse-template render of V1's symmetric-EXCEPT THROW, framed as its own GO batch ahead of the MERGE; the V1 `GO` batch separator is the terminal-text literal
-                guardText, "\nGO\n", mergeBatch)
-
-    /// Render one Phase-2 UPDATE for a row with a deferred FK column.
-    /// Same shape as `StaticSeedsEmitter.renderUpdate`. Per the
-    /// Tier-3 cash-out: `ScriptDomBuild.buildUpdateStatement` is the
-    /// typed-AST primitive; this emitter is its second consumer.
-    let private renderUpdate
-        (cdcAware: bool)
-        (k: Kind)
-        (deferred: Set<Name>)
-        (typedValues: Map<Name, SqlLiteral>)
-        : string =
-        use _ = Bench.scope "emit.migrationDeps.renderUpdate"
-        let table : TableId =
-            { Schema = k.Physical.Schema
-              Table  = k.Physical.Table; Catalog = None }
-        let cellOf (a: Attribute) : string * SqlLiteral =
-            let lit =
-                Map.tryFind a.Name typedValues
-                |> Option.defaultValue SqlLiteral.NullLit
-            ColumnRealization.columnNameText a.Column, lit
-        let setCells =
-            k.Attributes
-            |> List.filter (fun a -> Set.contains a.Name deferred)
-            |> List.map cellOf
-        let whereCells =
-            k.Attributes
-            |> List.filter (fun a -> a.IsPrimaryKey)
-            |> List.map cellOf
-        let args : UpdateBuildArgs =
-            { Target     = table
-              SetCells   = setCells
-              WhereCells = whereCells
-              CdcAware   = cdcAware }
-        // The Phase-2 UPDATE as a typed `Statement` batch — terminal framing in
-        // `renderDataBatch` (the data lane's one terminal-text boundary).
-        ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
+    // The Phase-1 MERGE / Phase-2 UPDATE rendering moved to the shared
+    // `MergeRender` module (this lane's copies were byte-identical to
+    // StaticSeedsEmitter's modulo the Bench label — and had drifted to a swapped
+    // `deferred`/`bracketIdentity` arg order, now removed). This lane passes
+    // `"emit.migrationDeps"` as the Bench prefix.
 
     // -------------------------------------------------------------------
     // User-FK rewrite (chapter 4.2 slice η).
@@ -322,7 +202,7 @@ module MigrationDependenciesEmitter =
             let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
+                |> Option.bind DeleteScope.create
             let deferred = load.DeferredFkColumns
             let typeLookup = KindColumns.columnTypeLookup kind
             let typedRows =
@@ -340,7 +220,7 @@ module MigrationDependenciesEmitter =
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
             let renderedPhase1 =
-                renderMerge verification staging scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
+                MergeRender.renderMerge "emit.migrationDeps" verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 elif DataStagingPolicy.shouldStage staging (List.length typedRows) then
@@ -353,7 +233,7 @@ module MigrationDependenciesEmitter =
                     StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware table kind deferred (typedRows |> List.map snd)
                 else
                     typedRows
-                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware kind deferred vs)
+                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> MergeRender.renderUpdate "emit.migrationDeps" cdcAware kind deferred vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`

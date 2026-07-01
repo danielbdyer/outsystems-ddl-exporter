@@ -57,7 +57,11 @@ module ReportRun =
                     |> ModelFidelity.fromJson
                     |> Option.map ModelFidelity.render
                 else None
-            with _ -> None)
+            // `fromJson` already returns None on malformed JSON; this guards the
+            // file read. A fatal / unexpected bug propagates (not swallowed).
+            with
+            | :? System.IO.IOException
+            | :? System.UnauthorizedAccessException -> None)
         |> Option.defaultValue []
 
     /// Render the bundle as operator-facing lines (THE_VOICE register: stative;

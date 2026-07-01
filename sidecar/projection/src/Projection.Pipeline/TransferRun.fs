@@ -199,103 +199,6 @@ module Transfer =
 
     // -- Projection-onto-Sink realization -----------------------------------
 
-    /// Project a kind's already-post-substitution rows into `SqlBulkCopy`
-    /// cell rows. Deferred FK columns are emitted as the empty raw —
-    /// `KeepNulls` maps that to SQL NULL — so Phase 1 satisfies a cycle;
-    /// Phase 2 re-points them.
-    let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        rows
-        |> List.map (fun row ->
-            attrs
-            |> List.map (fun a ->
-                let raw =
-                    if Set.contains a.Name deferred then ""
-                    else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
-
-    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        toCellsOver kind.Attributes deferred rows
-
-    /// The minted-bulk-lane projection: every attribute EXCEPT the IDENTITY
-    /// PK (the Sink mints it; `Bulk.copyRowsSinkMinted` carries no
-    /// `KeepIdentity`).
-    let private toCellRowsExcludingIdentity (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        toCellsOver
-            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
-            deferred rows
-
-    /// Q3 — the cell projections at the quantum grain (A40 siblings of
-    /// `toCellsOver`; the streaming realization's lanes consume these):
-    /// per-column getters are STAGED against the stream's (renamed) basis
-    /// once per kind, then applied per row. Deferred FK columns emit the
-    /// empty raw (SQL NULL under KeepNulls), exactly as the Map-carried
-    /// projection does.
-    let private quantumCellsOver (basis: RowBasis) (attrs: Attribute list) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        let cols =
-            attrs
-            |> List.map (fun a ->
-                let get =
-                    if Set.contains a.Name deferred then (fun _ -> "")
-                    else RowQuantum.cellGetter basis a.Name
-                ColumnRealization.columnNameText a.Column, a.Type, get)
-        rows
-        |> List.map (fun q ->
-            cols |> List.map (fun (col, ty, get) -> { Column = col; Type = ty; Raw = get q }))
-
-    let private quantumCellRows (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        quantumCellsOver basis kind.Attributes deferred rows
-
-    /// The minted-bulk-lane projection at the quantum grain — every
-    /// attribute EXCEPT the IDENTITY PK (the Sink mints it).
-    let private quantumCellRowsExcludingIdentity (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) (rows: RowQuantum list) : CellValue list list =
-        quantumCellsOver basis
-            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
-            deferred rows
-
-    /// Phase-2 UPDATE for one row: set the deferred FK columns to their
-    /// (already remapped, plan-side) values, keyed by the kind's primary
-    /// key. `None` when the kind has no PK or no deferred columns.
-    let private phase2UpdateSql (kind: Kind) (deferred: Set<Name>) (row: StaticRow) : string option =
-        let pkAttrs = kind.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
-        let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
-        if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then None
-        else
-            let lit (a: Attribute) =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-                |> SqlLiteral.ofRaw a.Type
-                |> SqlLiteral.toString
-            let clause (a: Attribute) = sprintf "%s = %s" (Render.quote (ColumnRealization.columnNameText a.Column)) (lit a)
-            Some (
-                sprintf "UPDATE %s SET %s WHERE %s;"
-                    (Render.tableQualified kind.Physical)
-                    (deferredAttrs |> List.map clause |> String.concat ", ")
-                    (pkAttrs |> List.map clause |> String.concat " AND "))
-
-    /// `phase2UpdateSql` at the quantum grain (Q3): the per-attribute
-    /// literal getters are staged against the stream's basis once per
-    /// kind; the returned closure renders one row's UPDATE. A kind with
-    /// no PK or no deferred columns resolves to a constant `None` closure
-    /// once, never per row.
-    let private phase2UpdateSqlQuantum (basis: RowBasis) (kind: Kind) (deferred: Set<Name>) : (RowQuantum -> string option) =
-        let pkAttrs = kind.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
-        let deferredAttrs = kind.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
-        if List.isEmpty pkAttrs || List.isEmpty deferredAttrs then (fun _ -> None)
-        else
-            let clauseOf (a: Attribute) : RowQuantum -> string =
-                let get = RowQuantum.cellGetter basis a.Name
-                fun q ->
-                    sprintf "%s = %s"
-                        (Render.quote (ColumnRealization.columnNameText a.Column))
-                        (get q |> SqlLiteral.ofRaw a.Type |> SqlLiteral.toString)
-            let setClauses = deferredAttrs |> List.map clauseOf
-            let whereClauses = pkAttrs |> List.map clauseOf
-            fun q ->
-                Some (
-                    sprintf "UPDATE %s SET %s WHERE %s;"
-                        (Render.tableQualified kind.Physical)
-                        (setClauses |> List.map (fun render -> render q) |> String.concat ", ")
-                        (whereClauses |> List.map (fun render -> render q) |> String.concat " AND "))
 
     /// The chunk size every capture rung consumes (the staged rungs amortize
     /// one MERGE per chunk; the bench rationale and the rung mechanics live
@@ -323,7 +226,11 @@ module Transfer =
         : Task<LaneDescent list> =
         task {
             match chunks with
-            | [] -> return descents
+            // `descents` accumulates REVERSED (each chunk's `List.rev newDescents`
+            // prepended in O(|newDescents|)) and is reversed once here — so the
+            // per-chunk fold is O(n), not the O(chunks²) a right-append `@` makes
+            // on an orphan/descent-heavy load.
+            | [] -> return List.rev descents
             | chunk :: rest ->
                 // Single-value bind then destructure — a tuple `let!` is not
                 // statically compilable under Release (FS3511).
@@ -333,7 +240,7 @@ module Transfer =
                         identityAttr deferred lane chunk
                 let pairs, succeededLane, newDescents = outcome
                 pairs |> List.iter (fun (srcVal, assignedVal) -> PackedSurrogateRemap.capture kindKey srcVal assignedVal remap)
-                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (descents @ newDescents) rest
+                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (List.rev newDescents @ descents) rest
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -345,94 +252,6 @@ module Transfer =
     /// against the completed remap. `PreservedFromSource` /
     /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
     /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
-    /// Build A — the child-first `DELETE`-by-captured-key revert script for a
-    /// failed load. For each `AssignedBySink` kind, in the REVERSE of the
-    /// parent-first insert order (children first, so an FK never blocks a delete),
-    /// delete the sink-minted rows by their captured assigned PKs. Pre-existing
-    /// rows are untouched — only minted keys are targeted — so this is a precise
-    /// undo, not a wipe. Empty when nothing was captured. The IN list is chunked to
-    /// stay within SQL Server's statement limits; integral keys inline, a
-    /// non-integral fallback key renders as an escaped `N'…'` literal.
-    let private buildRevertScript (catalog: Catalog) (plan: DataLoadPlan) (remap: PackedSurrogateRemap) : string list =
-        let assignedByKind = PackedSurrogateRemap.assignedKeysByKind remap
-        let renderKey (k: string) : string =
-            match System.Int64.TryParse k with
-            | true, _ -> k
-            | false, _ -> System.String.Concat("N'", k.Replace("'", "''"), "'")
-        plan.Loads
-        |> List.rev
-        |> List.collect (fun load ->
-            if load.Disposition <> IdentityDisposition.AssignedBySink then []
-            else
-                match Map.tryFind load.Kind assignedByKind, Catalog.tryFindKind load.Kind catalog with
-                | Some (_ :: _ as keys), Some kind ->
-                    match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
-                    | Some pk ->
-                        let table = Render.tableQualified kind.Physical
-                        let pkCol = Render.quote (ColumnRealization.columnNameText pk.Column)
-                        keys
-                        |> List.chunkBySize 1000
-                        |> List.map (fun chunk ->
-                            sprintf "DELETE FROM %s WHERE %s IN (%s);" table pkCol (chunk |> List.map renderKey |> String.concat ", "))
-                    | None -> []
-                | _ -> [])
-
-    /// Build A — act on the revert script after a failed load: always write it to
-    /// the artifact dir when one is configured (the operator's reviewable backstop),
-    /// and EXECUTE it when `autoRevert` is set (best-effort per statement — the
-    /// artifact remains the fallback if a delete itself fails). No-op on an empty
-    /// script. The caller re-raises the original failure afterward: the load failed;
-    /// this only ensures the partial sink-minted rows are reverted or scripted.
-    let private runRevert (sink: SqlConnection) (autoRevert: bool) (artifactDir: string option) (script: string list) : Task<unit> =
-        task {
-            if not (List.isEmpty script) then
-                match artifactDir with
-                | Some dir ->
-                    try
-                        System.IO.Directory.CreateDirectory dir |> ignore
-                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" script)
-                    with _ -> ()
-                | None -> ()
-                if autoRevert then
-                    for stmt in script do
-                        try do! Deploy.executeBatch sink stmt
-                        with _ -> ()
-        }
-
-    /// D — the STREAMING arm's remap source for the data-leg compensating-undo.
-    /// The materialized `writePlan` reverts from an in-memory `PackedSurrogateRemap`;
-    /// the estate-scale streaming path's durable record of every sink-minted key is
-    /// the off-box `CaptureJournal` (NDJSON, only fully-committed chunks appended —
-    /// a crashed chunk is neither journaled nor captured). Replay every journaled
-    /// chunk's `(source → assigned)` pairs back into a fresh remap, mapping each
-    /// record's root-string `Kind` to the catalog's `SsKey` (the inverse of the
-    /// `SsKey.rootOriginal` the journal stores). The per-record capture mirrors
-    /// `CaptureJournal.spec`'s Apply (the journal grain's effectful remap fold the
-    /// resume path uses); reconstructed here over ALL kinds rather than one at a time.
-    let private replayJournalToRemap (catalog: Catalog) (journal: CaptureJournal) : PackedSurrogateRemap =
-        let remap = PackedSurrogateRemap.create ()
-        let rootToKey =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> SsKey.rootOriginal k.SsKey, k.SsKey)
-            |> Map.ofList
-        for KeyValue (_, record) in CaptureJournal.load journal do
-            match Map.tryFind record.Kind rootToKey with
-            | Some ssKey -> record.Pairs |> Array.iter (fun p -> if p.Length = 2 then PackedSurrogateRemap.capture ssKey p[0] p[1] remap)
-            | None -> ()
-        remap
-
-    /// D — act on the streaming reverse-leg's compensating-undo after a partial
-    /// load: reconstruct the remap from the journal, then run the SAME M23
-    /// `buildRevertScript` + `runRevert` the materialized arm runs (only the remap
-    /// source differs — journal-replayed vs in-memory). A `None` journal is a safe
-    /// no-op: with no journal there are no recorded captures to revert (streaming
-    /// execute requires `--journal` anyway, so on a real run `journal` is `Some`).
-    let private runRevertFromJournal (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (journal: CaptureJournal option) (autoRevert: bool) (revertDir: string option) : Task<unit> =
-        task {
-            match journal with
-            | Some j -> do! runRevert sink autoRevert revertDir (buildRevertScript catalog plan (replayJournalToRemap catalog j))
-            | None   -> ()
-        }
 
     let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
@@ -508,7 +327,7 @@ module Transfer =
                                     // predecessor, so this lane never carries
                                     // deferred columns.)
                                     do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                            (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
+                                            (TransferCellShaping.toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                                 | Some idAttr ->
                                     let! descents =
                                         captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
@@ -518,9 +337,9 @@ module Transfer =
                                 | None ->
                                     // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
                                     // unreachable; fall back to the bulk path rather than drop the rows.
-                                    do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRows sink kind.Physical (TransferCellShaping.toCellRows kind load.DeferredFkColumns remapped.Rows)
                             | _ ->
-                                do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                do! Bulk.copyRows sink kind.Physical (TransferCellShaping.toCellRows kind load.DeferredFkColumns remapped.Rows)
                     loaded.Value <- loaded.Value + 1
                     LogSink.recordStageProgress "load" loaded.Value loadTotal loadSw.ElapsedMilliseconds
 
@@ -557,7 +376,7 @@ module Transfer =
                                                 { row with Values = Map.add idAttr.Name assigned row.Values })
                                         | _ -> None)
                                 | _ -> remapped2.Rows
-                            let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                            let updates = rowsForUpdate |> List.choose (TransferCellShaping.phase2UpdateSql kind load.DeferredFkColumns)
                             if not (List.isEmpty updates) then
                                 do! Deploy.executeBatch sink (String.concat "\n" updates)
 
@@ -580,7 +399,7 @@ module Transfer =
                 // artifact, then re-raise the ORIGINAL failure (the load DID fail;
                 // pre-existing rows are untouched). With both levers off this is
                 // byte-identical to the prior bare re-raise.
-                do! runRevert sink autoRevert revertArtifactDir (buildRevertScript catalog plan remap)
+                do! TransferRevert.runRevert sink autoRevert revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
                 return Unchecked.defaultof<_>
             | RunAborted (refusal, None) -> return failwith refusal
@@ -593,210 +412,6 @@ module Transfer =
     // crash-safe resumable/idempotent load (phase-tracked, NOT a single
     // all-or-nothing transaction envelope).
 
-    /// FK-ordered wipe: DELETE every target table CHILD-FIRST (reverse
-    /// topological order) so a foreign-key constraint never blocks the clear.
-    /// (`TRUNCATE` is refused by SQL Server on an FK-referenced table regardless
-    /// of order, so the child-first DELETE is the FK-safe realization of the
-    /// wipe — same end state, the `2·|rows|` CDC cost `EmissionMode` documents.)
-    /// The kinds the wipe will DELETE, child-first — the pure core of
-    /// `wipeFkOrdered`. The wipe never touches two classes of kind (PE-1 /
-    /// P-REKEY — golden user-exclusion holds under *any* strategy, not just
-    /// Incremental):
-    /// (1) a **`ReconciledByRule`** kind — its sink rows are the sink's OWN
-    /// (matched by business key); deleting them would destroy the sink's
-    /// inventory (e.g. its users) and the zeroed plan would not re-insert them;
-    /// (2) a kind outside `loadSet` (the declared golden subset) — untouched,
-    /// not refreshed. `loadSet = None` wipes every non-reconciled loaded kind.
-    let wipeTargets (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : SsKey list =
-        let loaded =
-            plan.Loads
-            |> List.filter (fun l -> l.Disposition <> IdentityDisposition.ReconciledByRule)
-            |> List.map (fun l -> l.Kind)
-            |> Set.ofList
-        let inScope =
-            match loadSet with
-            | Some ls -> Set.intersect loaded ls
-            | None    -> loaded
-        List.rev topo.Order |> List.filter (fun k -> Set.contains k inScope)
-
-    let private wipeFkOrdered (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<unit> =
-        task {
-            for k in wipeTargets plan topo loadSet do
-                match Catalog.tryFindKind k catalog with
-                | None      -> ()
-                | Some kind ->
-                    do! Deploy.executeBatch sink
-                            (System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";"))  // LINT-ALLOW: terminal SQL-text boundary; table name is a validated TableId via Render.tableQualified
-        }
-
-    // -- Option C (operator-authorized 2026-06-15): FK-trust restoration --------
-    //
-    // `SqlBulkCopy` (no `CHECK_CONSTRAINTS`) marks every FK on a bulk-loaded table
-    // `is_not_trusted = 1`. The faithful post-transfer state is the AS-DEPLOYED
-    // trust state — the sink schema deploy already honored every FK-trust decision
-    // (a normal FK trusted; a `NoCheckFk` decision deployed `WITH NOCHECK` →
-    // untrusted). So the restore SNAPSHOTS which FKs were trusted BEFORE the load
-    // and re-validates exactly those afterward. Critically this PRESERVES a
-    // `NoCheckFk` decision (the very fidelity M1 established): an FK untrusted
-    // before the load is absent from the snapshot, so the restore never re-trusts
-    // it — never overriding the operator's decision, never re-validating data the
-    // operator chose not to validate.
-
-    /// The plan's loaded (inserted-into) tables, lower-cased `schema.table`.
-    let private loadedTableKeys (catalog: Catalog) (plan: DataLoadPlan) : Set<string> =
-        plan.Loads
-        |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
-        |> List.map (fun k -> TableId.normalizedKey k.Physical)
-        |> Set.ofList
-
-    /// Pre-load snapshot — the `(schema, table, fk)` of every ENABLED + TRUSTED
-    /// FK on a loaded table, read from `sys.foreign_keys` (the deployed truth).
-    /// An FK the schema deployed UNTRUSTED (`is_not_trusted = 1` — a `NoCheckFk`
-    /// decision) is excluded, so the restore never touches it.
-    let private trustedFksOnLoadedTables (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(string * string * string) list> =
-        task {
-            let loaded = loadedTableKeys catalog plan
-            if Set.isEmpty loaded then return [] else
-            let trusted = System.Collections.Generic.List<string * string * string>()
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <-
-                "SELECT s.name, t.name, fk.name \
-                 FROM sys.foreign_keys fk \
-                 JOIN sys.tables t ON fk.parent_object_id = t.object_id \
-                 JOIN sys.schemas s ON t.schema_id = s.schema_id \
-                 WHERE fk.is_not_trusted = 0 AND fk.is_disabled = 0;"
-            use! reader = cmd.ExecuteReaderAsync()
-            let mutable go = true
-            while go do
-                let! has = reader.ReadAsync()
-                if has then trusted.Add(reader.GetString 0, reader.GetString 1, reader.GetString 2)
-                else go <- false
-            reader.Close()
-            return
-                trusted
-                |> Seq.filter (fun (sch, tbl, _) ->
-                    Set.contains (TableId.normalizedKeyOf sch tbl) loaded)
-                |> List.ofSeq
-        }
-
-    /// The CAPABILITY recognizer for the FK re-trust — the ALTER cannot run
-    /// because the sink login holds no ALTER on the object (a `ManagedDml` /
-    /// `grant: data` cloud sink, granted only SELECT/INSERT/UPDATE/DELETE).
-    /// 1088 / 4902 ("cannot find the object … because it does not exist or you do
-    /// not have permissions" — the ALTER-TABLE permission/visibility form) and
-    /// 229 (ALTER permission denied) DESCEND to the named
-    /// `FkTrustNotRestoredOnBulkLoad` tolerance. Everything else — notably a
-    /// constraint conflict (547) — PROPAGATES: a re-validation that fails on the
-    /// DATA is the loud fidelity signal, never masked (mirrors
-    /// `SurrogateCapture.isCapabilityRefusal`).
-    let private isAlterCapabilityRefusal (ex: SqlException) : bool =
-        CapabilityRefusal.isRefusal Capability.AlterConstraintTrust ex
-
-    /// Restore the trust the bulk load stripped — re-validate each FK in the
-    /// pre-load snapshot (`wasTrusted`) with `ALTER TABLE … WITH CHECK CHECK
-    /// CONSTRAINT` (one child×parent-PK semi-join per FK). After a faithful
-    /// transfer the data satisfies each FK so it succeeds; a CONSTRAINT failure
-    /// is a LOUD signal the load was not faithful — a post-load integrity
-    /// assertion, never silent corruption.
-    ///
-    /// A sink that cannot ALTER at all — the `ManagedDml` cloud archetype
-    /// (`grant: data`; no ALTER anywhere in the write path) — DESCENDS the
-    /// capability ladder: the re-trust is skipped, the FKs stay as the bulk load
-    /// left them (untrusted), and the disposition is surfaced via the
-    /// `retrust-skipped` stage — the named `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`,
-    /// never silent. (Re-trust is a `FullRights` capability; on a DML-only login
-    /// the ALTER is not available, exactly as the J5 archetype model records.)
-    /// The gate is `WriteOptions.RetrustForeignKeys` (default on); the explicit
-    /// opt-out is the same named tolerance.
-    let private restoreFkTrust (sink: SqlConnection) (wasTrusted: (string * string * string) list) : Task<unit> =
-        task {
-            if List.isEmpty wasTrusted then return () else
-            let stmts =
-                wasTrusted
-                |> List.map (fun (sch, tbl, fk) ->
-                    // LINT-ALLOW: terminal SQL-text boundary; identifiers are sys.* catalog-view
-                    // names (deployed truth), each quoted via Render.quote.
-                    System.String.Concat(
-                        "ALTER TABLE ", Render.quote sch, ".", Render.quote tbl,
-                        " WITH CHECK CHECK CONSTRAINT ", Render.quote fk, ";"))
-            try
-                do! Deploy.executeBatch sink (String.concat "\n" stmts)
-                LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
-            with :? SqlException as ex when isAlterCapabilityRefusal ex ->
-                // Capability descent — the sink login cannot ALTER (a ManagedDml /
-                // data-grant cloud sink). No ALTER ⇒ no re-validation: descend to
-                // the named FkTrustNotRestoredOnBulkLoad tolerance, surfaced via
-                // the retrust-skipped stage, never silent.
-                LogSink.recordStageProgress "retrust-skipped" 0 (List.length wasTrusted) 0L
-        }
-
-    /// The durable phase-marker table — records which transfers completed, so a
-    /// re-run of an already-finished transfer is a no-op (idempotent).
-    ///
-    /// L4 — G10 on the ledger contract (R3 / RI-3): this is the DEGENERATE
-    /// single-quantum instance, retired as a separate ledger mechanism. One
-    /// entry ("the whole run"), fingerprint = the plan signature
-    /// (`planMarker`, recomputed from the live plan on every run — the
-    /// grain's ResumeAdmit, with equality realized as the SQL set-membership
-    /// `isMarked` answers), WriteAdmit positional at `markComplete` (after
-    /// `writePlan`, the same control-flow witness as the journal's append).
-    /// It exercises NOTHING of the contract's replay machinery, honestly: a
-    /// single full-state quantum has no partial sums to rebuild — the sink's
-    /// rows ARE the state, and the admitted re-run's no-op IS the resume.
-    /// The streaming realization's chunk-grain journal (`CaptureJournal`) is
-    /// the non-degenerate sibling; the two stay distinct REALIZATIONS of one
-    /// contract, not two mechanisms.
-    /// NM-53 — the marker now persists the prior run's DROP COUNT, not just the
-    /// completion fact. A transfer that legitimately dropped FK-orphans on its
-    /// first run (exit 9) and then re-runs hits the completion marker; without
-    /// the persisted count the no-op return is `SkippedReferences = []` → exit 0,
-    /// so a refresh wrapper re-running to confirm sees a misleading clean. The
-    /// `DropCount` column lets the no-op path REPLAY the prior drop verdict.
-    /// `ADD`-guarded so a marker table from a pre-NM-53 run gains the column.
-    let private progressTableSql : string =
-        "IF OBJECT_ID('dbo.__projection_transfer_progress') IS NULL \
-           CREATE TABLE dbo.__projection_transfer_progress \
-             ( Marker NVARCHAR(450) NOT NULL PRIMARY KEY, \
-               CompletedAt DATETIME2 NOT NULL CONSTRAINT DF___ptp_at DEFAULT SYSUTCDATETIME(), \
-               DropCount INT NOT NULL CONSTRAINT DF___ptp_drops DEFAULT 0 ); \
-         IF COL_LENGTH('dbo.__projection_transfer_progress', 'DropCount') IS NULL \
-           ALTER TABLE dbo.__projection_transfer_progress \
-             ADD DropCount INT NOT NULL CONSTRAINT DF___ptp_drops DEFAULT 0;"
-
-    /// A deterministic signature of a plan — the sorted set of target tables it
-    /// loads. Two re-runs of the same transfer share it; a different transfer
-    /// (different tables) does not.
-    let private planMarker (catalog: Catalog) (plan: DataLoadPlan) : string =
-        plan.Loads
-        |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
-        |> List.map (fun k -> Render.tableQualified k.Physical)
-        |> List.sort
-        |> String.concat "|"
-
-    /// NM-53 — `None` when the marker is absent (not yet complete); `Some n` when
-    /// the transfer completed, carrying the DROP COUNT it recorded. The no-op
-    /// re-run replays that count so a prior exit-9 (FK-orphan drops) is not
-    /// silently re-reported as a clean exit-0.
-    let private markedDropCount (sink: SqlConnection) (marker: string) : Task<int option> =
-        task {
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <- "SELECT DropCount FROM dbo.__projection_transfer_progress WHERE Marker = @m;"
-            cmd.Parameters.AddWithValue("@m", marker) |> ignore
-            let! v = cmd.ExecuteScalarAsync()
-            return
-                if isNull v || v = box System.DBNull.Value then None
-                else Some (System.Convert.ToInt32 v)
-        }
-
-    let private markComplete (sink: SqlConnection) (marker: string) (dropCount: int) : Task<unit> =
-        task {
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker, DropCount) VALUES (@m, @d);"
-            cmd.Parameters.AddWithValue("@m", marker) |> ignore
-            cmd.Parameters.AddWithValue("@d", dropCount) |> ignore
-            let! _ = cmd.ExecuteNonQueryAsync()
-            return ()
-        }
 
     /// **G10 — the resumable/idempotent envelope around `writePlan`.** A
     /// completed transfer (its marker present) is a NO-OP on re-run. Otherwise
@@ -817,21 +432,21 @@ module Transfer =
     /// it as a replay, not as freshly-observed drops).
     let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
-            do! Deploy.executeBatch sink progressTableSql
-            let marker = planMarker catalog plan
-            let! prior = markedDropCount sink marker
+            do! Deploy.executeBatch sink TransferResume.progressTableSql
+            let marker = TransferResume.planMarker catalog plan
+            let! prior = TransferResume.markedDropCount sink marker
             match prior with
             | Some priorDrops ->
                 // Completed already: no-op the write, but REPLAY the prior drop
                 // verdict so a re-run does not silently report a clean exit-0.
                 return [], [], Some priorDrops
             | None ->
-                do! wipeFkOrdered sink catalog plan topo loadSet
+                do! TransferResume.wipeFkOrdered sink catalog plan topo loadSet
                 let! (writeSkips, laneDescents) = writePlan sink catalog plan autoRevert revertArtifactDir
                 // The drop count = plan-build drops + this write's drops; the same
                 // sum `SkippedReferences` (and thus `hasDrops`) sees this run.
                 let dropCount = plan.SkippedReferences.Length + writeSkips.Length
-                do! markComplete sink marker dropCount
+                do! TransferResume.markComplete sink marker dropCount
                 return writeSkips, laneDescents, None
         }
 
@@ -1188,7 +803,7 @@ module Transfer =
                 let! preTrustedFks =
                     task {
                         if mode = Execute && writeOpts.RetrustForeignKeys
-                        then return! trustedFksOnLoadedTables sink catalog plan
+                        then return! TransferFkTrust.trustedFksOnLoadedTables sink catalog plan
                         else return []
                     }
                 let! writeSkips, laneDescents, replayedPriorDrops =
@@ -1201,7 +816,7 @@ module Transfer =
                                 // wipe of the plan's tables, then the standard load.
                                 // Restricted to the LoadSet so an excluded family
                                 // (golden user-exclusion) is untouched, not wiped.
-                                do! wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
+                                do! TransferResume.wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
                                 let! (skips, descents) = writePlan sink catalog plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
                                 return skips, descents, None
                             | EmissionMode.Incremental, true ->
@@ -1217,7 +832,7 @@ module Transfer =
                 // pre-load snapshot, so NoCheckFk decisions are preserved). A
                 // re-validation that fails is a loud integrity signal, not silent.
                 if mode = Execute && writeOpts.RetrustForeignKeys then
-                    do! restoreFkTrust sink preTrustedFks
+                    do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                 return
                     Result.success
                         { Mode                = mode
@@ -1404,7 +1019,7 @@ module Transfer =
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
                                     // σ generation has no declared subset — wipe all.
-                                    do! wipeFkOrdered sink catalog plan topo None
+                                    do! TransferResume.wipeFkOrdered sink catalog plan topo None
                                     return! writePlan sink catalog plan false None
                                 | EmissionMode.Incremental ->
                                     return! writePlan sink catalog plan false None
@@ -1667,7 +1282,10 @@ module Transfer =
             |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
             |> Set.ofList
         let remap = PackedSurrogateRemap.create ()
-        let journalIndex = journal |> Option.map CaptureJournal.load
+        // The memory-lean resume index (byte offsets, not the full record set):
+        // each chunk's pairs are read on demand, so a hundreds-of-millions-row
+        // resume does not hold the whole journal resident beside the live remap.
+        let journalIndex = journal |> Option.map CaptureJournal.openResumeIndex
 
         // The combined surrogate lookup: a target's assigned key is in the
         // packed remap (AssignedBySink, stream-captured) OR the reconcile
@@ -1711,9 +1329,7 @@ module Transfer =
                 let journaled =
                     journalIndex
                     |> Option.bind (fun index ->
-                        match index.TryGetValue((SsKey.rootOriginal load.Kind, chunkIx)) with
-                        | true, record -> Some record
-                        | false, _ -> None)
+                        CaptureJournal.tryFindRecord index (SsKey.rootOriginal load.Kind) chunkIx)
                 match journaled with
                 | Some record ->
                     // L2 — the journal grain's ResumeAdmit (R3 / RI-3): the
@@ -1738,7 +1354,7 @@ module Transfer =
                                 match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
                                 | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
                                     do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                            (quantumCellRowsExcludingIdentity basis kind load.DeferredFkColumns remapped.Rows)
+                                            (TransferCellShaping.quantumCellRowsExcludingIdentity basis kind load.DeferredFkColumns remapped.Rows)
                                     return [], lane, []
                                 | Some idAttr ->
                                     let! outcome =
@@ -1749,10 +1365,10 @@ module Transfer =
                                     pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
                                     return pairs, succeeded, descents
                                 | None ->
-                                    do! Bulk.copyRows sink kind.Physical (quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
                                     return [], lane, []
                             | _ ->
-                                do! Bulk.copyRows sink kind.Physical (quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
                                 return [], lane, []
                         }
                     let pairs, succeededLane, descents = laneOutcome
@@ -1784,7 +1400,10 @@ module Transfer =
             task {
                 let! chunkRaw = pending
                 if List.isEmpty chunkRaw then
-                    return Result.success ({ Ingested = ingested; Written = written }, skips, descents)
+                    // `skips` / `descents` accumulate REVERSED (each chunk prepended
+                    // in O(|new|)); reversed once here so the per-chunk fold is O(n),
+                    // not the O(chunks²) a right-append `@` makes on a skip-heavy load.
+                    return Result.success ({ Ingested = ingested; Written = written }, List.rev skips, List.rev descents)
                 else
                     let nextPending = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
                     match! writeChunk kind load basis pkOf lane chunkIx chunkRaw with
@@ -1792,7 +1411,7 @@ module Transfer =
                     | Ok (written', newDescents, newSkips, lane') ->
                         return! loadKindChunks kind load basis pkOf stream nextPending (chunkIx + 1) lane'
                                     (ingested + List.length chunkRaw) (written + written')
-                                    (skips @ newSkips) (descents @ newDescents)
+                                    (List.rev newSkips @ skips) (List.rev newDescents @ descents)
             }
 
         let loadTotal = List.length plan.Loads
@@ -1849,7 +1468,9 @@ module Transfer =
             : Task<(SsKey * UnresolvedReference) list> =
             task {
                 let! chunkRaw = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
-                if List.isEmpty chunkRaw then return skips
+                // `skips` accumulates REVERSED (each chunk prepended in O(|new|)),
+                // reversed once at the terminal — O(n), not the O(chunks²) of `@`.
+                if List.isEmpty chunkRaw then return List.rev skips
                 else
                     let remapped2 = repoint basis Set.empty kind chunkRaw
                     let newSkips =
@@ -1882,7 +1503,7 @@ module Transfer =
                     let updates = rowsForUpdate |> List.choose renderUpdate
                     if not (List.isEmpty updates) then
                         do! Deploy.executeBatch sink (String.concat "\n" updates)
-                    return! phase2Chunks kind load basis idAttr renderUpdate stream (skips @ newSkips)
+                    return! phase2Chunks kind load basis idAttr renderUpdate stream (List.rev newSkips @ skips)
             }
 
         let rec phase2 (loads: DataLoadKind list) (skips: (SsKey * UnresolvedReference) list)
@@ -1899,7 +1520,7 @@ module Transfer =
                         | Some kind, Some ingestKind ->
                             let idAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
                             let basis = RowBasis.rename renameMap (Kind.rowBasis ingestKind)
-                            let renderUpdate = phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
+                            let renderUpdate = TransferCellShaping.phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
                             let stream = Ingestion.streamKind source ingestKind
                             let! kindSkips = phase2Chunks kind load basis idAttr renderUpdate stream []
                             return! phase2 rest (skips @ kindSkips)
@@ -2095,7 +1716,7 @@ module Transfer =
                     else
                         let journal =
                             journalDirectory
-                            |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
+                            |> Option.map (fun dir -> CaptureJournal.create dir (TransferResume.planMarker sinkContract plan))
                         // Phase 3 — the address-drift guard: if THIS run's
                         // journal file is absent but the directory holds a
                         // prior run's journal under a different plan marker,
@@ -2133,7 +1754,7 @@ module Transfer =
                                     let! r = writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds
                                     return r
                                 with ex ->
-                                    do! runRevertFromJournal sink sinkContract plan journal autoRevert revertDir
+                                    do! TransferRevert.runRevertFromJournal sink sinkContract plan journal autoRevert revertDir
                                     System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
                                     return Unchecked.defaultof<_>
                             }
