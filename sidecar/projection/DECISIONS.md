@@ -25762,3 +25762,33 @@ named PRIMARY (case-insensitive) to `None`; non-primary filegroups and
 partition schemes carry as before. The emitter stays IR-faithful — an
 explicitly authored `Filegroup "PRIMARY"` still renders; reflection
 alone can no longer produce it.
+
+## 2026-07-02 — Perf-gate retargeted at the Integration assembly; the canary baseline re-recorded (the floor legitimately moved)
+
+The 2026-07-01 assembly split moved every Docker/SQL test — including
+the operator-reality canary (`GeneratorScaleTests`) — into
+`Projection.Tests.Integration`, but `scripts/perf-gate.sh` still built
+and filtered the PURE `Projection.Tests` assembly. Consequence: the
+gate's `FullyQualifiedName~Operator-reality` filter matched ZERO tests,
+no bench snapshot was written, and the gate has been verdict-blind
+since the split. The script now targets the Integration assembly.
+
+**Why the baseline is re-recorded (`PERF_GATE_RECORD=1`).** The prior
+floor was recorded 2026-05-20 against a DIFFERENT canary population —
+its `emit.staticPopulation.statements.stream.elements` mean was 50,000
+vs the current canary's 6,250 (the canary was deliberately slimmed to
+the 6.25k × 150 stop-hook shape; the test's own docstring records the
+larger shape as "inappropriate for stop hooks"). Because the gate was
+snapshot-blind from the split until now, the floor was never re-based
+to the slimmed canary. Comparing today's runs against the 2026-05-20
+floor therefore compares different populations, not code drift — the
+"regressions" it reported on first re-run were (a) the population
+mismatch on the bytes label and (b) the survival-rule-13 concurrent-
+load false-trip on `emit.staticPopulation.statements.stream` (two gate
+runs raced; the label is the rule's own worked example). The new floor
+is recorded on a quiet host, 5 runs, 95 labels; the per-segment bytes
+label is deterministic across all 5 runs (σ = 0).
+
+**Guard going forward.** The gate's building/filter target and the
+test's assembly must move together — a filter that matches nothing now
+fails loudly at the no-snapshot check, which is what surfaced this.

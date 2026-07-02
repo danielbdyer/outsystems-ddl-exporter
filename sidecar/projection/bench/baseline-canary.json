@@ -1,1387 +1,577 @@
 {
-  "RecordedAtUtc": "2026-05-20T01:34:12Z",
+  "RecordedAtUtc": "2026-07-02T02:21:47Z",
   "Tag": "operatorReality",
   "Runs": 5,
   "Stats": [
     {
       "Label": "batchSplitter.scriptDom",
       "SampleCount": 5,
-      "MeanMs": 312.2,
-      "StdevMs": 31.7
+      "MeanMs": 727.8,
+      "StdevMs": 31.4
     },
     {
       "Label": "deploy.bulk.copyRows",
       "SampleCount": 5,
-      "MeanMs": 3182.8,
-      "StdevMs": 140.8
+      "MeanMs": 1088.0,
+      "StdevMs": 39.9
     },
     {
       "Label": "deploy.bulk.copyRows.batchSize",
       "SampleCount": 5,
-      "MeanMs": 100000.0,
+      "MeanMs": 12500.0,
       "StdevMs": 0.0
     },
     {
       "Label": "deploy.createDatabase",
       "SampleCount": 5,
-      "MeanMs": 740.4,
-      "StdevMs": 24.2
+      "MeanMs": 770.4,
+      "StdevMs": 57.9
     },
     {
       "Label": "deploy.executeBatch",
       "SampleCount": 5,
-      "MeanMs": 2783.2,
-      "StdevMs": 73.8
+      "MeanMs": 8776.2,
+      "StdevMs": 221.6
     },
     {
       "Label": "deploy.executeBatch.segment",
       "SampleCount": 5,
-      "MeanMs": 2468.4,
-      "StdevMs": 56.6
+      "MeanMs": 8046.2,
+      "StdevMs": 212.7
     },
     {
       "Label": "deploy.executeBatch.segment.bytes",
       "SampleCount": 5,
-      "MeanMs": 349055.0,
+      "MeanMs": 1193497.0,
       "StdevMs": 0.0
     },
     {
       "Label": "deploy.executeStream",
       "SampleCount": 5,
-      "MeanMs": 3212.8,
-      "StdevMs": 63.7
+      "MeanMs": 9001.0,
+      "StdevMs": 179.1
     },
     {
       "Label": "deploy.executeStream.input",
       "SampleCount": 5,
-      "MeanMs": 3200.0,
-      "StdevMs": 62.9
+      "MeanMs": 8991.6,
+      "StdevMs": 178.9
     },
     {
       "Label": "deploy.executeStream.input.elements",
       "SampleCount": 5,
-      "MeanMs": 50300.0,
+      "MeanMs": 14190.0,
       "StdevMs": 0.0
     },
     {
       "Label": "deploy.runWideCanary",
       "SampleCount": 5,
-      "MeanMs": 10952.6,
-      "StdevMs": 267.5
+      "MeanMs": 13315.0,
+      "StdevMs": 282.7
     },
     {
       "Label": "deploy.runWideCanary.diff",
       "SampleCount": 5,
-      "MeanMs": 819.0,
-      "StdevMs": 17.6
+      "MeanMs": 212.2,
+      "StdevMs": 7.0
     },
     {
       "Label": "deploy.runWideCanary.sourcePhase",
       "SampleCount": 5,
-      "MeanMs": 475.2,
-      "StdevMs": 16.3
+      "MeanMs": 542.6,
+      "StdevMs": 59.1
     },
     {
       "Label": "deploy.runWideCanary.targetPhase",
       "SampleCount": 5,
-      "MeanMs": 268.0,
-      "StdevMs": 19.1
+      "MeanMs": 231.4,
+      "StdevMs": 18.1
     },
     {
       "Label": "deploy.useContainer",
       "SampleCount": 5,
-      "MeanMs": 10951.0,
-      "StdevMs": 267.2
+      "MeanMs": 13313.2,
+      "StdevMs": 282.4
     },
     {
       "Label": "deploy.useContainer.warm",
       "SampleCount": 5,
-      "MeanMs": 10944.2,
-      "StdevMs": 267.1
+      "MeanMs": 13306.0,
+      "StdevMs": 282.5
     },
     {
       "Label": "emit.ssdt.statements",
       "SampleCount": 5,
-      "MeanMs": 25.6,
-      "StdevMs": 0.9
+      "MeanMs": 25.4,
+      "StdevMs": 3.9
     },
     {
       "Label": "emit.staticPopulation.statements.stream",
       "SampleCount": 5,
-      "MeanMs": 3019.4,
-      "StdevMs": 61.0
+      "MeanMs": 8664.6,
+      "StdevMs": 161.4
     },
     {
       "Label": "emit.staticPopulation.statements.stream.elements",
       "SampleCount": 5,
-      "MeanMs": 50000.0,
+      "MeanMs": 6250.0,
       "StdevMs": 0.0
     },
     {
       "Label": "fixture.bulkLoader",
       "SampleCount": 5,
-      "MeanMs": 3120.2,
-      "StdevMs": 139.2
+      "MeanMs": 1267.0,
+      "StdevMs": 65.6
+    },
+    {
+      "Label": "physicalSchema.attribute",
+      "SampleCount": 5,
+      "MeanMs": 17.8,
+      "StdevMs": 39.8
     },
     {
       "Label": "physicalSchema.diff",
       "SampleCount": 5,
-      "MeanMs": 140.4,
-      "StdevMs": 6.8
+      "MeanMs": 23.4,
+      "StdevMs": 1.7
+    },
+    {
+      "Label": "physicalSchema.kind",
+      "SampleCount": 5,
+      "MeanMs": 34.2,
+      "StdevMs": 46.9
     },
     {
       "Label": "physicalSchema.ofCatalog",
       "SampleCount": 5,
-      "MeanMs": 677.0,
-      "StdevMs": 11.0
+      "MeanMs": 186.6,
+      "StdevMs": 6.1
     },
     {
       "Label": "physicalSchema.rows.hash",
       "SampleCount": 5,
-      "MeanMs": 294.0,
-      "StdevMs": 39.5
+      "MeanMs": 28.0,
+      "StdevMs": 1.6
     },
     {
       "Label": "physicalSchema.rows.hash.elements",
       "SampleCount": 5,
-      "MeanMs": 100000.0,
+      "MeanMs": 12500.0,
       "StdevMs": 0.0
+    },
+    {
+      "Label": "readside.buildAttribute",
+      "SampleCount": 5,
+      "MeanMs": 5.4,
+      "StdevMs": 0.5
     },
     {
       "Label": "readside.buildKind",
       "SampleCount": 5,
-      "MeanMs": 5.0,
-      "StdevMs": 0.0
+      "MeanMs": 9.0,
+      "StdevMs": 0.7
     },
     {
       "Label": "readside.kindGroup",
       "SampleCount": 5,
-      "MeanMs": 5.0,
-      "StdevMs": 0.0
+      "MeanMs": 9.6,
+      "StdevMs": 0.5
     },
     {
       "Label": "readside.read",
       "SampleCount": 5,
-      "MeanMs": 2998.4,
-      "StdevMs": 82.5
+      "MeanMs": 2004.0,
+      "StdevMs": 41.9
+    },
+    {
+      "Label": "readside.readCheckConstraints",
+      "SampleCount": 5,
+      "MeanMs": 42.4,
+      "StdevMs": 3.8
+    },
+    {
+      "Label": "readside.readComputedColumns",
+      "SampleCount": 5,
+      "MeanMs": 121.4,
+      "StdevMs": 8.7
+    },
+    {
+      "Label": "readside.readDefaultConstraints",
+      "SampleCount": 5,
+      "MeanMs": 83.0,
+      "StdevMs": 3.7
+    },
+    {
+      "Label": "readside.readExtendedProperties",
+      "SampleCount": 5,
+      "MeanMs": 55.4,
+      "StdevMs": 1.1
+    },
+    {
+      "Label": "readside.readIndexes",
+      "SampleCount": 5,
+      "MeanMs": 92.2,
+      "StdevMs": 2.7
     },
     {
       "Label": "readside.readRows",
       "SampleCount": 5,
-      "MeanMs": 1797.4,
-      "StdevMs": 38.8
+      "MeanMs": 532.2,
+      "StdevMs": 19.4
     },
     {
       "Label": "readside.readRowsStream.all",
       "SampleCount": 5,
-      "MeanMs": 992.0,
-      "StdevMs": 30.0
+      "MeanMs": 183.0,
+      "StdevMs": 16.1
     },
     {
       "Label": "readside.readRowsStream.all.elements",
       "SampleCount": 5,
-      "MeanMs": 100000.0,
+      "MeanMs": 12500.0,
       "StdevMs": 0.0
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_INDUSTRYCODE",
       "SampleCount": 5,
-      "MeanMs": 18.8,
-      "StdevMs": 0.8
+      "MeanMs": 19.0,
+      "StdevMs": 2.3
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_INDUSTRYCODE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_INDUSTRYCODE2",
-      "SampleCount": 5,
-      "MeanMs": 8.0,
-      "StdevMs": 1.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_INDUSTRYCODE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_REGIONCODE",
-      "SampleCount": 5,
-      "MeanMs": 8.8,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_REGIONCODE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_REGIONCODE2",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_REGIONCODE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD",
       "SampleCount": 5,
-      "MeanMs": 8.0,
-      "StdevMs": 1.0
+      "MeanMs": 5.0,
+      "StdevMs": 1.2
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD2",
-      "SampleCount": 5,
-      "MeanMs": 8.2,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD3",
-      "SampleCount": 5,
-      "MeanMs": 8.4,
-      "StdevMs": 1.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SHIPPINGMETHOD3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE",
-      "SampleCount": 5,
-      "MeanMs": 8.2,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE2",
-      "SampleCount": 5,
-      "MeanMs": 8.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE3",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_SIZECODE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS",
-      "SampleCount": 5,
-      "MeanMs": 7.8,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS2",
-      "SampleCount": 5,
-      "MeanMs": 98.6,
-      "StdevMs": 4.0
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS3",
-      "SampleCount": 5,
-      "MeanMs": 9.0,
-      "StdevMs": 1.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M01_STATUS3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY",
-      "SampleCount": 5,
-      "MeanMs": 8.4,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY2",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY3",
-      "SampleCount": 5,
-      "MeanMs": 6.8,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_COUNTRY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_JOBTITLE",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 0.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_JOBTITLE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_JOBTITLE2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 1.1
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_JOBTITLE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_PROVINCE",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 1.3
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_PROVINCE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_PROVINCE2",
-      "SampleCount": 5,
-      "MeanMs": 6.6,
-      "StdevMs": 0.9
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_PROVINCE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE",
-      "SampleCount": 5,
-      "MeanMs": 7.4,
-      "StdevMs": 0.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE3",
-      "SampleCount": 5,
-      "MeanMs": 8.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_TAXRATE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE",
-      "SampleCount": 5,
-      "MeanMs": 6.6,
-      "StdevMs": 0.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE2",
-      "SampleCount": 5,
-      "MeanMs": 7.4,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE3",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M02_UNITOFMEASURE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE",
-      "SampleCount": 5,
-      "MeanMs": 8.2,
-      "StdevMs": 1.1
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE3",
-      "SampleCount": 5,
-      "MeanMs": 6.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CHANNELTYPE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY",
-      "SampleCount": 5,
-      "MeanMs": 8.0,
-      "StdevMs": 0.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY2",
-      "SampleCount": 5,
-      "MeanMs": 7.8,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY3",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_CURRENCY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_DEPARTMENT",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_DEPARTMENT.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_DEPARTMENT2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_DEPARTMENT2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_POSTALREGION",
-      "SampleCount": 5,
-      "MeanMs": 7.4,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_POSTALREGION.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_POSTALREGION2",
-      "SampleCount": 5,
-      "MeanMs": 78.6,
-      "StdevMs": 3.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_POSTALREGION2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY",
-      "SampleCount": 5,
-      "MeanMs": 7.4,
-      "StdevMs": 0.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY2",
-      "SampleCount": 5,
-      "MeanMs": 6.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY3",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M03_PRIORITY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_COSTCENTER",
-      "SampleCount": 5,
-      "MeanMs": 6.6,
-      "StdevMs": 1.1
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_COSTCENTER.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_COSTCENTER2",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 1.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_COSTCENTER2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DIALINGCODE",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_DIALINGCODE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DIALINGCODE2",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.4
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DIALINGCODE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE2",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE3",
-      "SampleCount": 5,
-      "MeanMs": 6.6,
-      "StdevMs": 1.1
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_DOCUMENTTYPE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE",
-      "SampleCount": 5,
-      "MeanMs": 7.6,
-      "StdevMs": 1.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE3",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_LANGUAGE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 1.2
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY2",
-      "SampleCount": 5,
-      "MeanMs": 7.2,
-      "StdevMs": 1.3
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY3",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 1.2
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M04_SEVERITY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 1.2
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY2",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY3",
-      "SampleCount": 5,
-      "MeanMs": 11.0,
-      "StdevMs": 8.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_CATEGORY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_FILETYPE",
-      "SampleCount": 5,
-      "MeanMs": 6.4,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_FILETYPE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_FILETYPE2",
-      "SampleCount": 5,
-      "MeanMs": 6.0,
-      "StdevMs": 1.6
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_FILETYPE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_HOLIDAY",
-      "SampleCount": 5,
-      "MeanMs": 6.4,
-      "StdevMs": 1.1
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_HOLIDAY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_HOLIDAY2",
-      "SampleCount": 5,
-      "MeanMs": 5.4,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_HOLIDAY2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE",
-      "SampleCount": 5,
-      "MeanMs": 6.2,
-      "StdevMs": 1.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE2",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE3",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_LOCALE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_SKILLLEVEL",
-      "SampleCount": 5,
-      "MeanMs": 5.0,
-      "StdevMs": 0.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M05_SKILLLEVEL.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M05_SKILLLEVEL2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_EDUCATIONLEVEL",
-      "SampleCount": 5,
-      "MeanMs": 5.2,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_EDUCATIONLEVEL.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_EDUCATIONLEVEL2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_MIMETYPE",
-      "SampleCount": 5,
-      "MeanMs": 5.0,
-      "StdevMs": 1.0
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_MIMETYPE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_MIMETYPE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SEASON",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_SEASON.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SEASON2",
-      "SampleCount": 5,
-      "MeanMs": 5.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SEASON2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 1.5
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY2",
-      "SampleCount": 5,
-      "MeanMs": 5.4,
-      "StdevMs": 0.9
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY3",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_SUBCATEGORY3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 1.1
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE2",
-      "SampleCount": 5,
-      "MeanMs": 6.8,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE3",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M06_TIMEZONE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_EMPLOYMENTSTATUS",
-      "SampleCount": 5,
-      "MeanMs": 6.0,
-      "StdevMs": 1.2
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_EMPLOYMENTSTATUS.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_EMPLOYMENTSTATUS2",
-      "SampleCount": 5,
-      "MeanMs": 6.2,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_EMPLOYMENTSTATUS2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ENCODING",
-      "SampleCount": 5,
-      "MeanMs": 6.2,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_ENCODING.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ENCODING2",
-      "SampleCount": 5,
-      "MeanMs": 6.4,
-      "StdevMs": 0.9
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ENCODING2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.8
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS2",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS3",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 1.1
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_ORDERSTATUS3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_QUARTER",
-      "SampleCount": 5,
-      "MeanMs": 6.0,
-      "StdevMs": 0.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_QUARTER.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_QUARTER2",
-      "SampleCount": 5,
-      "MeanMs": 6.0,
-      "StdevMs": 0.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_QUARTER2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE",
-      "SampleCount": 5,
-      "MeanMs": 7.0,
-      "StdevMs": 1.7
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE2",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE3",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M07_TYPE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_CHARSET",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_CHARSET.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_CHARSET2",
-      "SampleCount": 5,
-      "MeanMs": 52.6,
-      "StdevMs": 63.9
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_CHARSET2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE",
-      "SampleCount": 5,
-      "MeanMs": 76.8,
-      "StdevMs": 65.1
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE2",
-      "SampleCount": 5,
-      "MeanMs": 9.6,
-      "StdevMs": 3.6
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE3",
-      "SampleCount": 5,
-      "MeanMs": 8.6,
-      "StdevMs": 1.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_COLORCODE3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_FISCALPERIOD",
-      "SampleCount": 5,
-      "MeanMs": 11.0,
-      "StdevMs": 1.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_FISCALPERIOD.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_FISCALPERIOD2",
-      "SampleCount": 5,
-      "MeanMs": 18.6,
-      "StdevMs": 9.7
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_FISCALPERIOD2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_MARITALSTATUS",
-      "SampleCount": 5,
-      "MeanMs": 11.0,
-      "StdevMs": 6.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_MARITALSTATUS.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_MARITALSTATUS2",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.8
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_MARITALSTATUS2.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD",
-      "SampleCount": 5,
-      "MeanMs": 5.8,
-      "StdevMs": 0.4
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD2",
-      "SampleCount": 5,
-      "MeanMs": 6.4,
-      "StdevMs": 0.9
     },
     {
       "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD2.elements",
       "SampleCount": 5,
-      "MeanMs": 1000.0,
-      "StdevMs": 0.0
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD3",
-      "SampleCount": 5,
-      "MeanMs": 5.6,
-      "StdevMs": 0.5
-    },
-    {
-      "Label": "readside.readRowsStream.dbo.OSUSR_M08_PAYMENTMETHOD3.elements",
-      "SampleCount": 5,
-      "MeanMs": 1000.0,
+      "MeanMs": 250.0,
       "StdevMs": 0.0
     },
     {
       "Label": "readside.readRowsStream.open",
       "SampleCount": 5,
-      "MeanMs": 216.0,
-      "StdevMs": 11.0
+      "MeanMs": 102.2,
+      "StdevMs": 0.8
     },
     {
       "Label": "readside.readSchemaCombined",
       "SampleCount": 5,
-      "MeanMs": 853.8,
-      "StdevMs": 39.3
+      "MeanMs": 836.6,
+      "StdevMs": 20.9
+    },
+    {
+      "Label": "readside.readSequences",
+      "SampleCount": 5,
+      "MeanMs": 19.8,
+      "StdevMs": 5.2
+    },
+    {
+      "Label": "readside.readTriggers",
+      "SampleCount": 5,
+      "MeanMs": 40.0,
+      "StdevMs": 1.4
     },
     {
       "Label": "render.statement",
       "SampleCount": 5,
-      "MeanMs": 112.6,
-      "StdevMs": 5.9
+      "MeanMs": 158.0,
+      "StdevMs": 17.5
     }
   ]
 }
