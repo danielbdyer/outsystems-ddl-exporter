@@ -47,23 +47,36 @@ seconds-to-minutes, not hours.
 
 ## The items
 
-- [x] **P0 corpus + BEFORE** — harness landed; baselines below. Three
-  findings already: local concurrency inversion (CPU-bound), the
-  measured 2.3× row-carrier tax, and emit as the local dominator
-  (~3MB/s ScriptDom) — the program's emphasis shifts accordingly:
-  P3 and emit-CPU reduction rank ABOVE P2's overlap at local scale;
-  P1 + concurrency remain the wire-dominated (remote) wins.
-- [ ] **P1 single-scan evidence unification** — derive `EvidenceCache` from
-  the hydrated rows: `CachedKind` built client-side from `StaticRow` cells
-  (RawValueCodec raw-form contract), row/null counts counted during the
-  walk, nullability from the landed batched reflection (one global query).
-  Per-kind SQL budget: 2 queries + 1 stream → **0 queries + the stream the
-  data lanes already paid for** (+1 global reflection per publish).
-  Gate: `profiler.provider = live` AND the data lanes hydrate the kind
-  (AllData bootstrap ∪ static grafts); kinds outside the hydrated set keep
-  the live 3-query discovery (named, counted). Value-identity law:
-  derived cache ≡ live-scan cache on the corpus (modulo the aggregate
-  query's exact-count vs streamed-count equivalence, which must be exact).
+- [x] **P0 corpus + BEFORE** — harness landed; baselines below. Findings,
+  as amended by the clean re-samples: ~~local concurrency inversion~~
+  **RETRACTED** (finding #1 was rule-13 contamination — two quiet-host
+  re-samples show c4 beating serial locally too, 5.2–5.4s vs 7.7–8.3s;
+  the BEFORE c4 sample ran under concurrent host load), the measured
+  2.3× row-carrier tax (stands — P3 thesis), and emit as the local
+  dominator (~3–4MB/s ScriptDom; stands) — so P3 and emit-CPU
+  reduction still rank ABOVE P2's overlap at local scale, while P1 +
+  concurrency are the wire-dominated (remote) wins.
+- [x] **P1 single-scan evidence unification** — LANDED. `EvidenceCache
+  .cachedKindOfRows` + `CachedValue.ofRaw` (Core, pure) derive a kind's
+  `CachedKind` from hydrated `StaticRow`s; `LiveProfiler
+  .captureEvidenceCacheDerived` partitions hydrated-vs-live kinds (named
+  Bench counters `profile.live.derived.kinds` / `.fallback`), one global
+  nullability reflection replaces per-kind reflection; the pipeline
+  threads `bootstrapRows` into the profile stage. Per-kind SQL budget:
+  2 queries + 1 stream → **0 queries** (+1 global reflection per
+  publish; corpus: 480 aggregate/reflection queries + 240 full streams
+  eliminated). Value-identity law held on BOTH corpus samples:
+  `Assert.Equal<Map<SsKey, CachedKind>>(liveCache.Kinds, derivedCache
+  .Kinds)` across 480k rows. Named equivalence caveats (docstring +
+  pure pins in `EvidenceCacheDerivationTests`): full hydration required
+  (sampled kinds keep live discovery), and the `""`≡NULL universal
+  sentinel (NM-18 / `Tolerance.EmptyTextNormalizedToNull`) means derived
+  evidence observes the IR plane (what publish ships) where live
+  observes the source plane — equal modulo that already-named erasure.
+  Local timing ~equal to the live scan (both ~3.5s — the derivation is
+  CPU-shaped like the scan it replaces); the wire win is structural:
+  the SECOND full-estate pass is gone, which on remote links is the
+  entire live-profile wall-clock, not a ratio of it.
 - [ ] **P2 acquire→emit pipelining** — per-kind MERGE render fires as its
   drain lands (bounded producer/consumer, `emission.dataReadConcurrency`
   workers + render on drain completion); assembly stays topo-ordered;
@@ -86,3 +99,8 @@ seconds-to-minutes, not hours.
 | 2026-07-02 | hydrate concurrent-4 (BEFORE) | 18,746 | **INVERSION**: local CPU-bound drains contend on 4 cores; the knob wins only when the wire dominates (remote estates) — corpus finding #1 |
 | 2026-07-02 | profile live-scan c4 (BEFORE) | 3,835 | full stream per kind, yet 2.3× cheaper per row than hydrate — the row-carrier tax measured (P3 thesis) — corpus finding #2 |
 | 2026-07-02 | emit data lane (BEFORE) | 32,326 | 480k rows → 100.4MB SQL ≈ 3MB/s through ScriptDom; emit is the local dominator — corpus finding #3 |
+| 2026-07-02 | hydrate serial (s2/s3) | 7,731 / 8,285 | quiet-host re-samples of the incumbent |
+| 2026-07-02 | hydrate concurrent-4 (s2/s3) | 5,206 / 5,419 | c4 < serial on a quiet host — finding #1 (the "inversion") RETRACTED: the BEFORE c4 sample was rule-13 contaminated by concurrent host load |
+| 2026-07-02 | profile live-scan c4 (s2/s3) | 4,515 / 3,696 | incumbent re-samples alongside the derived leg |
+| 2026-07-02 | profile single-scan derived (P1, s2/s3) | 3,461 / 3,459 | identical cache vs live asserted BOTH runs (480k rows); 480 per-kind queries + 240 full streams → 1 global reflection; local CPU ≈ the scan it replaces — the win is the eliminated second estate pass (wire) |
+| 2026-07-02 | emit data lane (s2/s3) | 28,243 / 23,308 | quiet-host re-samples; dominator verdict stands (~3.5–4.3MB/s) |

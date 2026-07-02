@@ -257,6 +257,23 @@ type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITes
                     this.Say (sprintf "[corpus] profile live-scan c4:  %6dms  (%d kinds, 2 queries + full stream each)"
                                 swP.ElapsedMilliseconds (Map.count liveCache.Kinds))
 
+                    // -- profile single-scan-derived (P1): evidence derives
+                    //    from the hydrated rows; VALUE IDENTITY against the
+                    //    live-scan cache is the law that lets the timing
+                    //    count (CachedValue.ofRaw's equivalence table,
+                    //    exact counts, aligned Values arrays).
+                    let swD = System.Diagnostics.Stopwatch.StartNew()
+                    let! derivedCacheR =
+                        LiveProfiler.captureEvidenceCacheDerived
+                            { SqlProfilerOptions.defaults with MaxConcurrency = 4 }
+                            openConnection serialRows catalog
+                    swD.Stop()
+                    let derivedCache = PerfCorpus.mustOk derivedCacheR
+                    Assert.Equal(Map.count liveCache.Kinds, Map.count derivedCache.Kinds)
+                    Assert.Equal<Map<SsKey, CachedKind>>(liveCache.Kinds, derivedCache.Kinds)
+                    this.Say (sprintf "[corpus] profile single-scan:   %6dms  (derived from hydrated rows; identical cache; 1 global query)"
+                                swD.ElapsedMilliseconds)
+
                     // -- emit data lane (grafted corpus)
                     let staticCatalog =
                         catalog

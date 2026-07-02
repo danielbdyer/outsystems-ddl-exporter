@@ -1322,16 +1322,28 @@ module Compose =
 
     let private profileFromLiveConnection
         (maxConcurrency: int)
+        (hydratedRows: Map<SsKey, StaticRow list>)
         (connectionString: string)
         (catalog: Catalog)
         : Task<Result<Profile>> =
         task {
             try
-                // `profiler.maxConcurrency` — bounded parallel per-kind
-                // discovery, each on its own pooled connection. `1` keeps the
-                // strictly serial single-connection path.
+                // Single-scan unification: when the data lanes already
+                // hydrated rows, the evidence DERIVES from them
+                // (`attachDerived` — one global reflection query; a counted
+                // live fallback covers kinds outside the hydrated set).
+                // With no hydrated rows (data lanes off / file-sourced), the
+                // live scan paths stand: `profiler.maxConcurrency` bounded
+                // per-kind discovery, `1` = strictly serial.
                 let capped = max 1 maxConcurrency
-                if capped = 1 then
+                if not (Map.isEmpty hydratedRows) then
+                    let options =
+                        { Projection.Adapters.Sql.SqlProfilerOptions.defaults with
+                            MaxConcurrency = capped }
+                    return!
+                        Projection.Adapters.Sql.LiveProfiler.attachDerived
+                            options (openProfilerConnection connectionString) hydratedRows catalog Profile.empty
+                elif capped = 1 then
                     use cnn = new SqlConnection(connectionString)
                     do! cnn.OpenAsync()
                     return! Projection.Adapters.Sql.LiveProfiler.attach cnn catalog Profile.empty
@@ -1360,7 +1372,7 @@ module Compose =
     /// from the renamed catalog. Any other provider carries `Profile.empty`
     /// forward as the no-evidence base case; a `"live"` provider with a
     /// missing connection is a named failure.
-    let private acquireProfile (cfg: Config.Config) (catalog: Catalog) : Task<Result<Profile>> =
+    let private acquireProfile (cfg: Config.Config) (hydratedRows: Map<SsKey, StaticRow list>) (catalog: Catalog) : Task<Result<Profile>> =
         task {
             match cfg.Profiler.Provider with
             | Config.ProfilerProvider.Fixture ->
@@ -1382,7 +1394,7 @@ module Compose =
                                     Config.LiveProfilerProvider
                                     Config.SourceConnectionStringEnvVar))
                 else
-                    return! profileFromLiveConnection cfg.Profiler.MaxConcurrency connectionString catalog
+                    return! profileFromLiveConnection cfg.Profiler.MaxConcurrency hydratedRows connectionString catalog
         }
 
     /// Synchronous core for `runWithConfig`. Extracted from the `task { }`
@@ -1798,7 +1810,9 @@ module Compose =
                                 // §7.3 profile — live SQL probing (Profile.empty
                                 // for the SnapshotJson path; a real probe for the
                                 // live provider).
-                                let! profileResult = acquireProfile cfg catalog
+                                // Single-scan: the bootstrap rows hydrated in
+                                // the extract stage feed evidence derivation.
+                                let! profileResult = acquireProfile cfg bootstrapRows catalog
                                 emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
                                 return profileResult
                             })

@@ -226,8 +226,15 @@ module EvidenceCache =
     /// holds ONLY for a FULLY hydrated kind — `RowCount` and `NullCounts`
     /// are exact because the rows are all of them (the live path's
     /// aggregate query is exact even under sampling, so a sampled kind
-    /// must keep live discovery; callers gate on full hydration). Cell
-    /// projection rides `CachedValue.ofRaw`'s equivalence table; per-row
+    /// must keep live discovery; callers gate on full hydration) — and
+    /// MODULO the IR's universal NULL sentinel (NM-18): a stored empty
+    /// Text cell arrives in raw form as `""` and derives as `NullValue`,
+    /// where the live reader observes `StringValue ""` at the source.
+    /// That is not a new erasure — it is the named, witnessed
+    /// `Tolerance.EmptyTextNormalizedToNull` surfacing on the evidence
+    /// plane: derived evidence describes the data as PUBLISHED (the data
+    /// lane emits NULL for both), live evidence the source as stored.
+    /// Cell projection rides `CachedValue.ofRaw`'s equivalence table; per-row
     /// order is the reader's PK order on both paths, so `Values` arrays
     /// align positionally for single-column-PK kinds (derivations are
     /// order-insensitive regardless). Attribute-less kinds yield `None`
