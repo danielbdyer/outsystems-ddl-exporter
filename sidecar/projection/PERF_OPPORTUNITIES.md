@@ -60,6 +60,70 @@ cost it sits beside. Recs 3 and 4 — adjudicated against, above.
 6. **Synchronous whole-body artifact writes + `WriteIndented` full-catalog JSON** (`Pipeline.writeAllToStaging`) — bounded-parallel writes + streaming `Utf8JsonWriter`. **MEDIUM.**
 7. **~20 full-catalog immutable rewrites in the pass chain** — bounded at ~3k attributes; sum the pass-tier Bench samples before investing. **MEDIUM-LOW.**
 8. **`toBundle` transient list copies** — confirmed NO O(n²) (all joins Map-indexed); only transient-allocation trimming remains. **LOW.**
+### CORRECTION (2026-07-02, operator adjudication) — V1 DID ship the all-data Bootstrap; the reconciliation re-based
+
+An earlier comparison in this arc claimed V1 "moves rows only for static
+tables." **That is wrong.** Verified in the V1 source: the deprecated
+step is only the per-module dynamic INSERT emission
+(`BuildSsdtDynamicInsertStep`); the dataset itself flows into
+`BuildSsdtBootstrapSnapshotStep` — "ALL entities (static + regular) in
+global topological order" — acquired by `SqlDynamicEntityDataProvider`:
+ONE connection, a strictly serial per-table queue, OFFSET/FETCH paging
+at 1,000 rows/batch, whole-estate in-memory materialization
+(`SqlDynamicEntityDataProvider.cs:36,95-165,585-657`;
+`BuildSsdtBootstrapSnapshotStep.cs:19-56`;
+`BuildSsdtApplicationService.cs:159-243`). V1's model-extraction result
+never carries data (`SqlModelExtractionService.cs:129-135` — always
+`DynamicEntityDataset.Empty`).
+
+**Re-based reconciliation of the V2-vs-V1 gap.** Both editions read the
+whole estate's rows for Bootstrap. The differences that remain are:
+(1) **V2 reads the estate a SECOND time** — the live profiler's
+full-row-scan per non-static kind, a pass V1 never made (its default
+profiler was fixture/no-DB; its live profiler used aggregates +
+sampling); (2) **V2 pays more per row on each pass** — `StaticRow` =
+`Map<Name,string>` + a minted SsKey per row, `CachedValue` columns on
+the profile pass, ScriptDom AST-per-row on emit, vs V1's raw
+`GetValue`→normalize into arrays and StringBuilder appends; (3) **V2
+emits more artifacts** (dacpac, snapshot, fidelity, distributions,
+lifecycle store). V1's reader was NOT smarter — serial, paged (more
+round trips than V2's one stream per table), single-connection; V2's
+read concurrency already beats it per pass. The gap is therefore
+"two heavy passes + heavier rows + more artifacts" vs "one lean pass",
+NOT a volume-vs-nothing story.
+
+### THE PROGRAM — one estate scan, everything derives, emission overlaps
+
+North star: a publish's wall-clock floor is `max(bytes-over-wire, render
+CPU)` — not their sum, and not ×2 passes.
+
+1. **Single-Scan Evidence Unification (the headline).** The profiler's
+   full row-stream reads the SAME rows Bootstrap hydrates. Derive BOTH
+   from one bounded-parallel scan: the hydrated rows feed
+   `EvidenceCache` construction client-side (null counts and row counts
+   are countable while streaming — the per-kind aggregate query is
+   redundant under a full scan), and the batched reflection (landed)
+   already covers nullability. Per-kind query budget: was 3+1 stream,
+   now 2+1 stream, becomes **one stream per kind + one global query per
+   publish**. Estate scans: 2 → 1. Combined with the landed
+   concurrency-4, extract+profile at operator scale should approach
+   parity with V1's single serial pass — while KEEPING full live
+   evidence V1 never had.
+2. **Acquire→emit pipelining.** Render each kind's MERGE artifact the
+   moment its drain completes (bounded producer/consumer); emit CPU
+   hides inside network wait. Deterministic: per-kind rendering is pure;
+   assembly stays topo-ordered.
+3. **Row-carrier slimming.** The per-row `Map` + minted SsKey is the GC
+   tax on every pass; a positional cells carrier with one per-kind
+   header (the Q2 carrier note already points here) removes most
+   row-grain allocation. Measure via `readside.rowstream.materializeIr`.
+4. **Evidence tiering as operator intent.** Full-scan evidence where
+   tightening needs it; `TOP (N)` + aggregates for named table classes
+   (audit/log) — the `MaxRowsPerKind` machinery exists; make it
+   per-kind policy rather than global.
+5. **Wire efficiency.** `SequentialAccess` + packet-size tuning on the
+   drain connections for remote links.
+
 9. **Emit-stage "regression" note:** the slight emit slowdown observed alongside the halved extract/profile is most consistent with GC/ThreadPool spillover from the now-parallel stages (survival rule 13 — a verdict under concurrent load is void); re-measure `stage.emit` solo with a forced GC between stages before optimizing.
 
 ## 🎯 PERF-SWEEP ARC RESULTS (2026-05-19)
