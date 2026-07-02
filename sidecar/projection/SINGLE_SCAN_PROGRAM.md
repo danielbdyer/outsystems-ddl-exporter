@@ -93,18 +93,32 @@ seconds-to-minutes, not hours.
   memory caps at `concurrency` kinds instead of the estate. Identity
   laws held: per-kind rendered text byte-equals the two-phase artifact;
   drain-derived evidence equals the live-scan cache.
-  **Production wiring (the follow-on slice, gates named):** the chain's
-  catalog-rewriting steps are all profile-INDEPENDENT (`catalogStep`
-  builds with `fun _ _`; profile feeds only decision passes), so the
-  post-chain catalog is computable BEFORE the wire opens. The
-  drain-time render needs three pre-drain facts: the post-chain catalog
-  (always available — profile-independent), `CdcAwareness` (a
-  reflection, obtainable pre-drain like the nullability batch), and the
-  `UserRemapContext` (profile-dependent via `UserFkReflowPass` — gate:
-  pipeline only when the remap is empty/config-known; otherwise the
-  named refusal keeps the two-phase path). Restructuring
-  `runWithConfigCore` to split catalog-steps-pre-drain from
-  decision-steps-post-profile is the slice boundary.
+  **Production wiring — LANDED (2026-07-02, DECISIONS same date).**
+  `runWithConfig` now carries a gated PIPELINED arm
+  (`emission.pipelinedBootstrap`, default true; gate = data on ∧
+  OSSYS-sourced ∧ live profiler ∧ connection present; any miss falls
+  back to the two-phase schedule). The three pre-drain facts resolved
+  as verified, not assumed: the chain SPLITS at the registry
+  (`RegisteredTransforms.chainStepsSplitWithPins` — prefix = catalog
+  rewrites + `TopologicalOrderPass`, profile-INVARIANT; suffix =
+  decision passes, catalog-PRESERVING; both pinned behaviorally in
+  `DataEmissionComposerTests`), `CdcAwareness` is NEVER populated on
+  the publish path (pre-drain value = `Profile.empty`'s — grep-verified
+  zero writers), and the publish composer already threads
+  `UserRemapContext.empty` (`toSurrogate` of the empty mapping IS
+  `SurrogateRemapContext.empty`, so the drain-time plan core matches).
+  Mechanism: extract stage = read + static graft + prefix compose +
+  ONE nullability reflection + `Hydration.collectBootstrapRenderedUsing`
+  (drain-time `renderLoad` against the prefix catalog's kinds +
+  `cachedKindOfRows` evidence, rows dropped per kind); profile stage =
+  `LiveProfiler.attachFromKinds` (cache assembly + the counted live
+  fallback for uncovered/sampled kinds); emit stage = the unchanged
+  core with `DataComposer.BootstrapLane.Prerendered` (the composer's
+  Bootstrap arm now takes a two-currency lane — `Rows` renders at
+  compose, `Prerendered` assembles drain-time scripts). Equivalence
+  witnessed END-TO-END: `PipelinedBootstrapEquivalenceTests` publishes
+  the OSSYS edge-case estate with the knob ON and OFF and byte-compares
+  every emitted file (docker pool).
 - [x] **P3 row-carrier slimming** — MEASURED then LANDED per the item's own
   law. The corpus put the IR rebuild (per-row `Map<Name,string>` mint +
   row-identity synthesis) at **3.35×** the raw positional drain (8,023–

@@ -163,6 +163,23 @@ module RegisteredTransforms =
     /// The canonical chain — no physical-rename pins (byte-identical default).
     let chainSteps : ChainStep list = chainStepsWithPins Set.empty
 
+    /// The chain split at the PROFILE boundary, from the same single
+    /// definition site: the PREFIX is every catalog-rewriting step plus
+    /// `TopologicalOrderPass` (all of whose `Build` closures ignore the
+    /// profile — the prefix is profile-INVARIANT, pinned by property
+    /// test), the SUFFIX is the profile-consuming decision/analytics/
+    /// tightening steps. An acquisition-overlapped runner composes the
+    /// prefix BEFORE the data drain (the post-prefix catalog and topology
+    /// are the render inputs) and the suffix after the drained evidence
+    /// yields the profile; `prefix @ suffix = chainStepsWithPins pins` by
+    /// construction, so the two-phase execution cannot drift from the
+    /// registry.
+    let chainStepsSplitWithPins (logicalEmissionPins: Set<SsKey>) : ChainStep list * ChainStep list =
+        let all = chainStepsWithPins logicalEmissionPins
+        let topoIx =
+            all |> List.findIndex (fun s -> s.Metadata.Name = "topologicalOrder")
+        List.splitAt (topoIx + 1) all
+
     /// The full Core metadata registry — every chain step's metadata
     /// (projected from `chainSteps`) plus the strategy registrations.
     /// `transform.registered`, the manifest emitter, and the A41 totality

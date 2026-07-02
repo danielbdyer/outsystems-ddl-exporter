@@ -323,6 +323,17 @@ module Config =
         /// to connection-pool pressure, server IO, or client memory. `1` is
         /// the strictly serial single-connection path.
         DataReadConcurrency   : int
+        /// `emission.pipelinedBootstrap` — the acquisition-overlapped publish
+        /// schedule for the Bootstrap data lane (live-OSSYS + live-profiler
+        /// runs only). `true` (the default) renders each eligible kind's
+        /// MERGE script and derives its profile evidence ON THE DRAIN WORKER
+        /// as its rows land, overlapping the remaining kinds' wire time and
+        /// capping live row memory at `dataReadConcurrency` kinds; `false`
+        /// keeps the two-phase schedule (drain the whole estate, then render
+        /// at compose time). The emitted bundle is identical either way —
+        /// the toggle is a SCHEDULE choice (equivalence pinned by test) and
+        /// exists as the named diagnostic opt-out.
+        PipelinedBootstrap    : bool
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -501,6 +512,9 @@ module Config =
         // prior hardcoded `stagingRowThreshold`).
         DataStaging = DataStagingPolicy.auto
         DataReadConcurrency = 4
+        // P2 production wiring — acquisition-overlapped Bootstrap render +
+        // evidence derivation on by default (identical bundle; schedule only).
+        PipelinedBootstrap = true
     }
 
     let private defaultPolicy : PolicySection = {
@@ -1337,6 +1351,9 @@ module Config =
                                                                 "emission.dataReadConcurrency.invalid"
                                                                 (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
                                                     | Ok dataReadConcurrency ->
+                                                    match read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap with
+                                                    | Error es -> Error es
+                                                    | Ok pipelinedBootstrap ->
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
@@ -1358,6 +1375,7 @@ module Config =
                                                         Tolerance = tolerance
                                                         DataStaging = dataStaging
                                                         DataReadConcurrency = dataReadConcurrency
+                                                        PipelinedBootstrap = pipelinedBootstrap
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

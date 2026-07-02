@@ -1,3 +1,24 @@
+# Handoff addendum — 2026-07-02 (third letter), THE PRODUCTION CASH-OUT: the rowsets JSON gate shipped (operator-approved donor change) and the pipelined publish arm is LIVE by default. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
+
+To the next agent.
+
+**Two of the second letter's named follow-ons landed this session (DECISIONS 2026-07-02, two entries):**
+
+1. **The OSSYS JSON-rowsets cut** — the operator signed off on the V1-donor change. The ten JSON aggregate temp tables gate on `SESSION_CONTEXT(N'OsmSkipJsonRowsets')` (flag absent = byte-identical V1 behavior, no new parameter; V2's `MetadataSnapshotRunner` sets it with one `sp_set_session_context` before the batch). Both copies of the script changed together (carbon-copy invariant; line pin now 1253). If you ever edit the rowsets SQL again: edit BOTH files, keep them byte-identical, update the pin in `MetadataExtractionSqlTests`.
+
+2. **P2 production wiring** — `runWithConfig` now has a gated PIPELINED arm, ON BY DEFAULT (`emission.pipelinedBootstrap`; gate = data on ∧ OSSYS-sourced ∧ live profiler ∧ connection present; any miss = the two-phase schedule, unchanged). Bootstrap MERGEs render and evidence derives ON THE DRAIN WORKERS as each kind's rows land; the composer's Bootstrap arm takes a two-currency `DataComposer.BootstrapLane` (`Rows` | `Prerendered`). The identity ladder you must not weaken:
+   - `RegisteredTransforms.chainStepsSplitWithPins` splits the chain at `topologicalOrder`; prefix profile-invariance AND suffix catalog-preservation are pinned BEHAVIORALLY in `DataEmissionComposerTests` — if you add a profile-consuming catalog rewrite before the topo pass, or a post-topo pass that rewrites the catalog, those tests fail and the pipelined arm's law is void until you re-derive it.
+   - `PipelinedBootstrapEquivalenceTests` (docker) publishes the edge-case OSSYS estate knob-ON and knob-OFF and byte-compares EVERY emitted file. It seeds deterministic rows into `OSUSR_DEF_CITY`/`OSUSR_ABC_CUSTOMER`/`OSUSR_REF_COUNTRY` test-locally (the seed fixture ships physical tables empty — do not add rows to the donor fixture).
+   - The evidence partition (eligible ∧ non-static ∧ unsampled derives at drain; everything else takes the counted live fallback) mirrors `captureEvidenceCacheDerived` exactly — `LiveProfiler.attachFromKinds` is the pipelined sibling of `attachDerived`, same bench counters.
+
+**Named cost, consciously kept:** the emit stage re-runs the ms-scale chain prefix inside `runWithConfigCore`. Threading the extract stage's composed prefix INTO the core is PL-1-adjacent (`PAY_ONCE_PLAN.md`) — do it there, not as a drive-by.
+
+**Still open from the second letter:** the P4 config surface (`profiler.sampling` parse + logical-ref binder); the quanta pass under a wire-dominated profile; the whole `PAY_ONCE_PLAN.md` ladder (PL-1 first — the document pair is the plan of record, approved as documents-only: do NOT execute it without the operator asking).
+
+**FS3511 scar (again):** the pipelined collect's task CE would not reduce with the pure pre-drain computation inline — `pipelinedDrainOf`/`splitCollected` hoisted it out (Pipeline.fs). The shape that survives Release: task bodies of `let! → match → let (simple) → let! → match → return`.
+
+Hold the spine.
+
 # Handoff addendum — 2026-07-02 (second letter), THE SINGLE-SCAN PROGRAM: one estate scan, everything derives, emission overlaps — P1–P5 landed with a 480k-row corpus adjudicating every leg. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
 
 To the next agent.

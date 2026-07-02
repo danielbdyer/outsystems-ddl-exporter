@@ -25897,3 +25897,107 @@ index-facing emitters (`*With` forms); the drain stream's probe pair
 fused into the pull (same labels, two fewer per-row Task layers); the
 `QueryHintPass` / `ModelFidelity` reference-and-attribute resolutions
 are keyed maps, not per-item catalog scans.
+
+---
+
+## 2026-07-02 — The OSSYS JSON aggregate rowsets gate on a session-context flag (operator-approved V1-donor change); V1 and every historical caller stay byte-identical
+
+**Decision.** The rowsets export's ten JSON aggregate temp tables
+(`#AttrCheckJson`, `#FkAttrMap`, `#FkColumnsJson`, `#IdxColsJson`,
+`#AttrJson`, `#RelJson`, `#IdxJson`, `#TriggerJson`, `#ModuleJson`, and
+their transitively-empty dependents) build only when a consumer will
+read them. The gate is a SESSION-CONTEXT flag, not a new command
+parameter:
+
+    DECLARE @SkipJsonRowsets bit =
+        ISNULL(TRY_CONVERT(bit, SESSION_CONTEXT(N'OsmSkipJsonRowsets')), 0);
+
+with `WHERE @SkipJsonRowsets = 0` startup filters on the nine root
+builds. Flag ABSENT (V1, SSMS, every historical caller): `0` — the
+script behaves byte-identically with no caller change. Flag SET (V2's
+`MetadataSnapshotRunner` issues one `sp_set_session_context` before the
+batch): the JSON aggregates return empty result sets; the reader's
+column-name-keyed rowset parse consumes the SAME tail SELECT shapes.
+`sp_reset_connection` clears session context, so the flag cannot leak
+across pooled connections.
+
+**Why session context.** The family is a CLOSED CLUSTER (consumed only
+by each other's builds and their own tail SELECTs — audited), but the
+script is the V1 editorial donor and the carbon-copy invariant requires
+the V2 embedded resource byte-equal V1's source. A parameter would
+change every caller's contract; a session flag changes none. This was
+the sweep-2 DECLINED item whose re-open trigger was OPERATOR sign-off
+on a V1-donor change — the sign-off was granted 2026-07-02, and the
+change shipped in both copies simultaneously (line pin updated to
+1253; `AdvancedSqlScriptTests` 4/4 on the V1 side; live extraction
+canaries produced identical snapshots).
+
+## 2026-07-02 — P2 production wiring: the publish pipeline's gated PIPELINED arm (`emission.pipelinedBootstrap`, default true); the Bootstrap lane becomes a two-currency `BootstrapLane`; the schedule changes, the bundle does not
+
+**Decision.** `Compose.runWithConfig` carries two schedules behind one
+gate. The PIPELINED arm (on by default) runs when the operator opted in
+(`emission.pipelinedBootstrap`) AND a data lane is on AND the model is
+OSSYS-sourced AND the profiler is live AND the source connection is
+present; any miss falls back to the established two-phase schedule
+unchanged. The arm reorders the SAME work the two-phase publish does:
+
+1. **Extract** — model read + static graft (unchanged), then the
+   profile-INVARIANT chain prefix composes over the hydrated catalog
+   (`RegisteredTransforms.chainStepsSplitWithPins` — the registry
+   itself splits at `topologicalOrder`, so the two-phase execution
+   cannot drift from the registry; prefix ++ suffix = whole by
+   construction), then ONE nullability reflection, then
+   `Hydration.collectBootstrapRenderedUsing`: each eligible kind's
+   MERGE script renders ON THE DRAIN WORKER as its rows land (the P2
+   projected drain, `Ingestion.collectInOrderForConcurrentWith`)
+   against the prefix catalog's kinds, its evidence derives from the
+   same rows (`EvidenceCache.cachedKindOfRows`), and the rows drop —
+   live row memory caps at `emission.dataReadConcurrency` kinds.
+2. **Profile** — `LiveProfiler.attachFromKinds`: assemble the cache
+   from the drain-time derivations; kinds outside the covered set
+   (non-hydrated, sampled — the evidence partition mirrors
+   `captureEvidenceCacheDerived` exactly) take the counted live gated
+   discovery.
+3. **Emit** — `runWithConfigCore` UNCHANGED except the Bootstrap row
+   source arrives as `DataComposer.BootstrapLane.Prerendered`: the
+   composer's Bootstrap arm now matches on a two-currency lane
+   (`Rows` = the established compose-time render; `Prerendered` =
+   assemble the drain-time scripts; kinds absent from the map take the
+   same `emptyScript` the batch build's empty loads render to, so the
+   T11 keyset and the `unionSiblings` partition assertion hold
+   unchanged).
+
+**The three pre-drain facts, verified not assumed.** (a) The chain
+prefix is profile-invariant AND the suffix is catalog-preserving —
+every post-topo step is a decision lift; both properties are pinned
+BEHAVIORALLY in `DataEmissionComposerTests` (compose the prefix under
+two profiles → same catalog + topology; compose the whole chain → same
+catalog + topology as the prefix), so a future profile-consuming
+catalog rewrite trips the law instead of silently skewing the drain
+targets. (b) `CdcAwareness` is never populated on the publish path
+(zero writers in `ProfileDerivation`/`LiveProfiler`), so the drain-time
+render's `Profile.empty.CdcAwareness` equals what the compose-time
+render reads off the attached profile. (c) The publish composer already
+threads `UserRemapContext.empty`, and `UserRemapContext.toSurrogate` of
+the empty mapping IS `SurrogateRemapContext.empty` — the drain-time
+`DataLoadPlan.loadFor` core equals the batch build's per-kind fold.
+
+**The knob is a SCHEDULE toggle, never a semantics toggle.** The
+equivalence is witnessed at three altitudes: the per-kind script
+identity is by construction (same `loadFor` core, same `renderLoad`,
+same delete-scope-suppressed lane posture); the composer-level
+`Prerendered ≡ Rows` bundle identity is pinned pure
+(`DataEmissionComposerTests`); and the whole-pipeline identity is
+pinned end-to-end (`PipelinedBootstrapEquivalenceTests` — the OSSYS
+edge-case estate with deterministic rows, knob ON and OFF, every
+emitted file byte-compared; docker pool). The corpus already measured
+the composed pass at **-21% to -39% wall-clock vs the two-phase sum**
+(SINGLE_SCAN_PROGRAM ledger); this entry is the production cash-out of
+that mechanism.
+
+**Named cost, consciously kept.** The emit stage re-runs the chain
+prefix inside `runWithConfigCore` (ms-scale pure work at estate scale)
+— threading the extract stage's composed prefix state INTO the core is
+the PL-1-adjacent follow-on (`PAY_ONCE_PLAN.md`), not this slice; the
+re-run is correct by the pinned profile-invariance and keeps the core's
+signature untouched for every other caller.

@@ -33,7 +33,7 @@ let private mkConfig (insertion: string) : Config.Config =
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true; BootstrapAllData = false
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto; DataReadConcurrency = 4
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto; DataReadConcurrency = 4; PipelinedBootstrap = true
         }
         Policy      = {
             Insertion       = insertion

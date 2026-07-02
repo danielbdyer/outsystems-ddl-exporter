@@ -742,14 +742,14 @@ module Compose =
     /// `LogicalTableEmission` chain step skips the pinned kinds so a physical-form
     /// `tableRenames` override survives into the emitted physical table.
     /// `Set.empty` is `projectWithState` (byte-identical default).
-    let projectWithStateWithPinsAndBootstrap
+    let projectWithStateWithPinsAndBootstrapLane
         (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
         (profile: Profile)
         (folders: EmissionFolders)
         (groups: TransformGroups)
         (migration: Projection.Targets.Data.MigrationDependencyContext)
-        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (bootstrapLane: DataComposer.BootstrapLane)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
@@ -800,9 +800,9 @@ module Compose =
                 let composed =
                     match finalState.TopologicalOrder with
                     | Some topo ->
-                        DataComposer.composeRenderedBundleWithBootstrapUsing topo fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
                     | None ->
-                        DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
                 match composed with
                 | Ok bundle ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
@@ -826,6 +826,24 @@ module Compose =
                     // fails the composer (the keyset is `Catalog.allKinds`).
                     invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRenderedBundle: %A" err)
         decorated, finalState
+
+    /// Rows-taking sibling of `projectWithStateWithPinsAndBootstrapLane` —
+    /// the established call shape for callers whose Bootstrap rows drain
+    /// pre-compose (the two-phase schedule); the pipelined publish arm
+    /// routes drain-time-rendered scripts through the lane form directly.
+    let projectWithStateWithPinsAndBootstrap
+        (logicalEmissionPins: Set<SsKey>)
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
+        (migration: Projection.Targets.Data.MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (catalog: Catalog)
+        : Outputs * ComposeState =
+        projectWithStateWithPinsAndBootstrapLane
+            logicalEmissionPins fullPolicy profile folders groups migration
+            (DataComposer.BootstrapLane.Rows bootstrapRows) catalog
 
     /// `projectWithStateWithPins` — no Bootstrap row source
     /// (`projectWithStateWithPinsAndBootstrap` with `Map.empty`; byte-identical
@@ -1417,7 +1435,7 @@ module Compose =
     let private runWithConfigCore
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
-        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (bootstrapLane: DataComposer.BootstrapLane)
         (migration: Projection.Targets.Data.MigrationDependencyContext)
         (profile: Profile)
         : Result<RunReport> =
@@ -1448,7 +1466,7 @@ module Compose =
                 match boundR with
                 | Ok (policy, overrides, folders, groups) ->
                     let outputs, finalState =
-                        projectWithStateWithPinsAndBootstrap pins policy profile folders groups migration bootstrapRows renamedCatalog
+                        projectWithStateWithPinsAndBootstrapLane pins policy profile folders groups migration bootstrapLane renamedCatalog
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
                     // emitted catalog the SSDT step projected (the post-chain
                     // catalog under the identical platform-auto-index filter —
@@ -1802,6 +1820,248 @@ module Compose =
                 Result.success finalState.Catalog
             | Error errors -> Result.failure errors
 
+    // -- P2 production wiring: the PIPELINED publish arm ---------------------
+    //
+    // The two-phase publish schedule drains the whole Bootstrap estate in the
+    // extract stage, derives evidence from the retained rows in the profile
+    // stage, and renders every kind's MERGE at compose time in the emit stage
+    // — three sequential passes over the same landed rows. The pipelined arm
+    // reorders the SAME work: the profile-invariant chain prefix (catalog
+    // rewrites + `TopologicalOrderPass`) composes BEFORE the drain, so each
+    // kind's MERGE renders and its evidence derives ON THE DRAIN WORKER the
+    // moment its rows land (`Ingestion.collectInOrderForConcurrentWith`),
+    // overlapping the remaining kinds' wire time; the rows drop per kind, so
+    // live row memory is capped at `dataReadConcurrency` kinds. The emitted
+    // bundle is IDENTICAL (equivalence pinned by the docker test): the same
+    // `DataLoadPlan.loadFor` core, the same `StaticSeedsEmitter.renderLoad`,
+    // the same evidence derivation — only the schedule differs.
+
+    /// What the pipelined extract stage hands the profile + emit stages.
+    type private PipelinedExtracted = {
+        Hydrated    : Catalog
+        Migration   : Projection.Targets.Data.MigrationDependencyContext
+        Prerendered : Map<SsKey, Projection.Targets.Data.DataInsertScript>
+        Covered     : Set<SsKey>
+        Derived     : CachedKind list
+        Nullability : Map<string, Map<string, bool>>
+    }
+
+    /// The pipelined-arm gate. Every condition is a fact the arm's schedule
+    /// depends on: the operator opted in (`emission.pipelinedBootstrap`,
+    /// default true), a data lane is on (there is a Bootstrap drain to
+    /// overlap), the model is OSSYS-sourced (there are live rows), the
+    /// profiler is live (there is evidence to derive at drain time), and the
+    /// profiler connection is present (the nullability reflection must run
+    /// BEFORE the drain). Any miss falls back to the two-phase schedule,
+    /// which then surfaces its own named failures at the established stages.
+    let private pipelinedPublishGate (cfg: Config.Config) (connectionString: string) : bool =
+        cfg.Emission.PipelinedBootstrap
+        && Hydration.emitDataOf cfg
+        && cfg.Model.Ossys.IsSome
+        && (match cfg.Profiler.Provider with
+            | Config.ProfilerProvider.Live -> true
+            | _ -> false)
+        && connectionString <> ""
+
+    /// Phase A of the pipelined arm: bind the run's shaping (the SAME
+    /// superset `runWithConfigCore` binds, so a binding failure surfaces the
+    /// same accumulated errors) and compose the PROFILE-INVARIANT chain
+    /// prefix over the hydrated catalog — the render-plane catalog +
+    /// topology the drain-time Bootstrap render targets. The emit stage
+    /// re-runs the full chain inside `runWithConfigCore` with the real
+    /// profile; the prefix's outputs are identical there BY profile-
+    /// invariance (property-pinned), so this pre-run buys the drain its
+    /// render targets without forking the chain. Pure + synchronous
+    /// (module-level; the caller's `task { }` stays statically compilable —
+    /// FS3511).
+    let private pipelinedPrefixState
+        (cfg: Config.Config)
+        (hydrated: Catalog)
+        : Result<Policy * ComposeState> =
+        let pins = physicalRenamePins cfg hydrated
+        match applyRenames cfg hydrated with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            let boundR =
+                validation {
+                    let! policy    = buildPolicyFromConfig cfg renamedCatalog
+                    and! overrides = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
+                    and! folders   = EmissionFoldersBinding.fromConfig renamedCatalog cfg
+                    and! groups    = TransformGroupsBinding.fromConfig cfg
+                    return (policy, overrides, folders, groups)
+                }
+            match boundR with
+            | Error errors -> Result.failure errors
+            | Ok (policy, _overrides, _folders, groups) ->
+                let prefixSteps, _suffix = RegisteredTransforms.chainStepsSplitWithPins pins
+                let prefixAdapters = prefixSteps |> List.map (ChainStep.build policy Profile.empty)
+                let filtered = filterChainByGroups groups prefixAdapters
+                let composed = PassChainAdapter.compose filtered (ComposeState.initial renamedCatalog)
+                Result.success (policy, LineageDiagnostics.payload composed)
+
+    /// The pure pre-drain computation of the pipelined arm, hoisted out of
+    /// the task CE (FS3511): the eligibility + evidence partitions and the
+    /// RENDER-plane inputs the drain-time projection needs. Returns
+    /// `(eligible, evidenceKinds, drain)` where `drain nullability` starts
+    /// the projected collect.
+    let private pipelinedDrainOf
+        (cfg: Config.Config)
+        (connSpec: string)
+        (migrationKinds: Set<SsKey>)
+        (hydrated: Catalog)
+        (sourceTopo: TopologicalOrder)
+        (policy: Policy)
+        (stateA: ComposeState)
+        : Set<SsKey> * (Map<string, Map<string, bool>> -> Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>>>) =
+        let profilerSampling = Projection.Adapters.Sql.SqlProfilerOptions.defaults.Sampling
+        let eligible = Hydration.bootstrapEligible migrationKinds cfg hydrated
+        let staticKeys = Hydration.staticKindKeys hydrated
+        // The evidence partition mirrors `captureEvidenceCacheDerived`:
+        // static kinds never derive; sampled kinds keep the live capped
+        // discovery (a full-row derivation would not be the sampled
+        // shape the operator asked for).
+        let evidenceKinds =
+            eligible
+            |> Set.filter (fun k ->
+                not (Set.contains k staticKeys)
+                && not (SamplingPolicy.isSampled k profilerSampling))
+        // The RENDER-plane targets: the post-prefix catalog's kinds
+        // (physical forms final — every post-topo step is a decision
+        // pass, catalog-preserving) and ITS topology's cycle members
+        // (the deferred-FK theory the batch plan reads).
+        let targetKinds = Catalog.kindIndex stateA.Catalog
+        let topoPrime =
+            match stateA.TopologicalOrder with
+            | Some t -> t
+            | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle stateA.Catalog).Value
+        let cycleMembers = TopologicalOrder.cycleMembers topoPrime
+        // The bootstrap lane's posture: the composer suppresses the
+        // delete arm on this lane regardless of `opts.DeleteScope`
+        // (the additive upsert lane) — mirror it at drain time.
+        let opts =
+            DataEmitOptions.withDeleteScope None
+                (DataEmitOptions.ofEmissionPolicy policy.Emission)
+        // CdcAwareness is never populated on the publish path (no
+        // ProfileDerivation / LiveProfiler axis writes it), so the
+        // drain-time value equals what the compose-time render reads
+        // off the attached profile.
+        let cdc = Profile.empty.CdcAwareness
+        let drain (nullability: Map<string, Map<string, bool>>) =
+            Hydration.collectBootstrapRenderedUsing
+                (max 1 cfg.Emission.DataReadConcurrency)
+                connSpec eligible hydrated targetKinds cycleMembers
+                opts cdc nullability evidenceKinds sourceTopo
+        evidenceKinds, drain
+
+    /// Project the drain's per-kind pairs into the two planes the profile +
+    /// emit stages consume (pure; hoisted out of the task CE — FS3511).
+    let private splitCollected
+        (collected: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>)
+        : Map<SsKey, Projection.Targets.Data.DataInsertScript> * CachedKind list =
+        let prerendered = collected |> Map.map (fun _ (script, _) -> script)
+        let derived =
+            collected
+            |> Map.toList
+            |> List.choose (fun (_, (_, evidence)) -> evidence)
+        prerendered, derived
+
+    /// The pipelined extract tail: reflect nullability ONCE (the pre-drain
+    /// global query the drain-time evidence derivations slice per kind),
+    /// then drain the Bootstrap-eligible kinds with drain-time render +
+    /// evidence. Hoisted to module level (FS3511).
+    let private pipelinedCollect
+        (cfg: Config.Config)
+        (connSpec: string)
+        (connectionString: string)
+        (migrationKinds: Set<SsKey>)
+        (hydrated: Catalog)
+        (sourceTopo: TopologicalOrder)
+        (policy: Policy)
+        (stateA: ComposeState)
+        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript> * Set<SsKey> * CachedKind list * Map<string, Map<string, bool>>>> =
+        task {
+            let! nullabilityR =
+                Projection.Adapters.Sql.LiveProfiler.reflectNullability
+                    (openProfilerConnection connectionString)
+            match nullabilityR with
+            | Error es -> return Result.failure es
+            | Ok nullability ->
+                let evidenceKinds, drain =
+                    pipelinedDrainOf cfg connSpec migrationKinds hydrated sourceTopo policy stateA
+                let! collectedR = drain nullability
+                match collectedR with
+                | Error es -> return Result.failure es
+                | Ok collected ->
+                    let prerendered, derived = splitCollected collected
+                    return Result.success (prerendered, evidenceKinds, derived, nullability)
+        }
+
+    /// The pipelined extract stage body — the extract-lite read (model +
+    /// migration binding + static graft; NO whole-estate Bootstrap collect),
+    /// phase A, then the drain-time-rendering collect. Module-level (FS3511).
+    let private pipelinedExtract
+        (cfg: Config.Config)
+        (connectionString: string)
+        : Task<Result<PipelinedExtracted>> =
+        task {
+            let! parsed = readConfigModel cfg
+            match parsed with
+            | Error es -> return Result.failure es
+            | Ok catalog ->
+                match MigrationDependenciesBinding.fromConfig catalog cfg with
+                | Error es -> return Result.failure es
+                | Ok migration ->
+                    match cfg.Model.Ossys with
+                    | None ->
+                        // Unreachable behind `pipelinedPublishGate`; named
+                        // rather than silently degraded.
+                        return
+                            Result.failureOf
+                                (ValidationError.create
+                                    "pipeline.pipelinedBootstrap.noOssysSource"
+                                    "the pipelined publish arm requires model.ossys (gate invariant).")
+                    | Some connSpec ->
+                        let sourceTopo =
+                            (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
+                        let! hydratedR = Hydration.hydrateCatalogUsing sourceTopo cfg catalog
+                        match hydratedR with
+                        | Error es -> return Result.failure es
+                        | Ok hydrated ->
+                            match pipelinedPrefixState cfg hydrated with
+                            | Error es -> return Result.failure es
+                            | Ok (policy, stateA) ->
+                                let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                                let! collectedR =
+                                    pipelinedCollect cfg connSpec connectionString migrationKinds hydrated sourceTopo policy stateA
+                                match collectedR with
+                                | Error es -> return Result.failure es
+                                | Ok (prerendered, covered, derived, nullability) ->
+                                    return
+                                        Result.success
+                                            { Hydrated = hydrated
+                                              Migration = migration
+                                              Prerendered = prerendered
+                                              Covered = covered
+                                              Derived = derived
+                                              Nullability = nullability }
+        }
+
+    /// The pipelined profile stage body: assemble the evidence cache from the
+    /// drain-time derivations (counted live fallback for uncovered kinds) and
+    /// compose the Profile axes — `attachDerived`'s equal, on the overlapped
+    /// schedule. Module-level (FS3511).
+    let private profileFromDrainDerived
+        (cfg: Config.Config)
+        (connectionString: string)
+        (ex: PipelinedExtracted)
+        : Task<Result<Profile>> =
+        let options =
+            { Projection.Adapters.Sql.SqlProfilerOptions.defaults with
+                MaxConcurrency = max 1 cfg.Profiler.MaxConcurrency }
+        Projection.Adapters.Sql.LiveProfiler.attachFromKinds
+            options (openProfilerConnection connectionString)
+            ex.Nullability ex.Covered ex.Derived ex.Hydrated Profile.empty
+
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             // Card S4a — the publish arc rides the spine. The `staged { }`
@@ -1815,48 +2075,94 @@ module Compose =
             // downstream arc instead of opening phantom failed stages (the
             // pre-spine stream closed `emit` as failed on a profile failure
             // that never reached it).
+            let sourceConnectionString =
+                System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
+                |> Option.ofObj
+                |> Option.defaultValue ""
             let! verdict =
-                staged Spines.pipeline {
-                    let! extracted =
-                        Staged.stage Stages.extract (fun () ->
-                            task {
-                                // §7.2 extract — OSSYS catalog read + WP6 step-4
-                                // data hydration (graft live static rows when
-                                // OSSYS-sourced + data on; identity otherwise) +
-                                // the Bootstrap lane's row source (Bootstrap-always).
-                                let! parsed = readAndHydrateConfigModel cfg
-                                match parsed with
-                                | Ok (catalog, bootRows, migration) ->
-                                    emitStageMarker LogSink.Extract "extract.completed" LogSink.End
-                                        (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                                    return Ok (catalog, bootRows, migration)
-                                | Error errors ->
-                                    return Error errors
-                            })
-                    let catalog, bootstrapRows, migration = extracted
-                    let! profile =
-                        Staged.stage Stages.profile (fun () ->
-                            task {
-                                // §7.3 profile — live SQL probing (Profile.empty
-                                // for the SnapshotJson path; a real probe for the
-                                // live provider).
-                                // Single-scan: the bootstrap rows hydrated in
-                                // the extract stage feed evidence derivation.
-                                let! profileResult = acquireProfile cfg bootstrapRows catalog
-                                emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
-                                return profileResult
-                            })
-                    let! report =
-                        Staged.stage Stages.emit (fun () ->
-                            task {
-                                // §7.5 emit — pass chain + sibling-Π emission +
-                                // artifact write.
-                                let result = runWithConfigCore cfg (Ok catalog) bootstrapRows migration profile
-                                emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
-                                return result
-                            })
-                    return report
-                }
+                if pipelinedPublishGate cfg sourceConnectionString then
+                    // P2 production wiring — the acquisition-overlapped
+                    // schedule: extract = read + static graft + chain prefix +
+                    // drain-time render/evidence; profile = cache assembly +
+                    // counted live fallback; emit = the unchanged core with
+                    // the prerendered Bootstrap lane.
+                    staged Spines.pipeline {
+                        let! extracted =
+                            Staged.stage Stages.extract (fun () ->
+                                task {
+                                    let! result = pipelinedExtract cfg sourceConnectionString
+                                    match result with
+                                    | Ok ex ->
+                                        emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                                            (Map.ofList [ "moduleCount", box (List.length ex.Hydrated.Modules) ])
+                                        return Ok ex
+                                    | Error errors ->
+                                        return Error errors
+                                })
+                        let! profile =
+                            Staged.stage Stages.profile (fun () ->
+                                task {
+                                    let! profileResult = profileFromDrainDerived cfg sourceConnectionString extracted
+                                    emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
+                                    return profileResult
+                                })
+                        let! report =
+                            Staged.stage Stages.emit (fun () ->
+                                task {
+                                    let result =
+                                        runWithConfigCore cfg (Ok extracted.Hydrated)
+                                            (DataComposer.BootstrapLane.Prerendered extracted.Prerendered)
+                                            extracted.Migration profile
+                                    emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
+                                    return result
+                                })
+                        return report
+                    }
+                else
+                    staged Spines.pipeline {
+                        let! extracted =
+                            Staged.stage Stages.extract (fun () ->
+                                task {
+                                    // §7.2 extract — OSSYS catalog read + WP6 step-4
+                                    // data hydration (graft live static rows when
+                                    // OSSYS-sourced + data on; identity otherwise) +
+                                    // the Bootstrap lane's row source (Bootstrap-always).
+                                    let! parsed = readAndHydrateConfigModel cfg
+                                    match parsed with
+                                    | Ok (catalog, bootRows, migration) ->
+                                        emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                                            (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
+                                        return Ok (catalog, bootRows, migration)
+                                    | Error errors ->
+                                        return Error errors
+                                })
+                        let catalog, bootstrapRows, migration = extracted
+                        let! profile =
+                            Staged.stage Stages.profile (fun () ->
+                                task {
+                                    // §7.3 profile — live SQL probing (Profile.empty
+                                    // for the SnapshotJson path; a real probe for the
+                                    // live provider).
+                                    // Single-scan: the bootstrap rows hydrated in
+                                    // the extract stage feed evidence derivation.
+                                    let! profileResult = acquireProfile cfg bootstrapRows catalog
+                                    emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
+                                    return profileResult
+                                })
+                        let! report =
+                            Staged.stage Stages.emit (fun () ->
+                                task {
+                                    // §7.5 emit — pass chain + sibling-Π emission +
+                                    // artifact write.
+                                    let result =
+                                        runWithConfigCore cfg (Ok catalog)
+                                            (DataComposer.BootstrapLane.Rows bootstrapRows)
+                                            migration profile
+                                    emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
+                                    return result
+                                })
+                        return report
+                    }
             return
                 match verdict.Disposition with
                 | RunCompleted report -> Result.success report

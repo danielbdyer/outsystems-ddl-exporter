@@ -866,3 +866,123 @@ let ``P2: LeveledDeploymentText.isEmpty parity — no seed statements ⇔ empty 
     Assert.True(System.String.IsNullOrWhiteSpace fused)
     Assert.True(DataEmissionComposer.LeveledDeploymentText.isEmpty leveled)
     Assert.True(DataEmissionComposer.LeveledDeploymentText.isEmpty DataEmissionComposer.LeveledDeploymentText.empty)
+
+// ---------------------------------------------------------------------------
+// P2 production wiring — the pipelined Bootstrap arm's identity laws.
+//
+// The pipelined publish schedule (Pipeline.runWithConfig's gated arm) rests
+// on three structural facts, each pinned here at the pure level so the
+// docker equivalence test is confirmation rather than the only witness:
+//   1. `chainStepsSplitWithPins` partitions the registry chain exactly at
+//      `TopologicalOrderPass` and `prefix @ suffix = whole` (the two-phase
+//      execution cannot drift from the registry).
+//   2. The prefix is PROFILE-INVARIANT and the suffix is CATALOG-PRESERVING
+//      (+ topology-preserving): the drain-time render targets computed from
+//      the prefix-with-`Profile.empty` equal what the full chain's final
+//      state carries under the real profile.
+//   3. `BootstrapLane.Prerendered` scripts produced by the drain-time
+//      projection (`DataLoadPlan.loadFor` + `StaticSeedsEmitter.renderLoad`
+//      under the delete-scope-suppressed lane posture) compose to the SAME
+//      bundle as the `Rows` arm over the same rows.
+// ---------------------------------------------------------------------------
+
+let private mkRegularCustomerKind () : Kind =
+    let country = mkCountryKind ()
+    { country with
+        SsKey    = mkKey ["TestModule"; "Customer"]
+        Name     = mkName "Customer"
+        Modality = []
+        Physical = mkTableId "dbo" "OSUSR_TEST_CUSTOMER"
+        Attributes =
+            country.Attributes
+            |> List.map (fun a ->
+                { a with SsKey = mkKey ["TestModule"; "Customer"; Name.value a.Name] }) }
+
+[<Fact>]
+let ``pipelined split: prefix ++ suffix = chainStepsWithPins and the prefix ends at topologicalOrder`` () =
+    let prefix, suffix = RegisteredTransforms.chainStepsSplitWithPins Set.empty
+    let whole = RegisteredTransforms.chainStepsWithPins Set.empty
+    let names (steps: ChainStep list) = steps |> List.map (fun s -> s.Metadata.Name)
+    Assert.Equal<string list>(names whole, names prefix @ names suffix)
+    Assert.Equal("topologicalOrder", (List.last prefix).Metadata.Name)
+    Assert.NotEmpty suffix
+
+[<Fact>]
+let ``pipelined split: the prefix is profile-INVARIANT and the suffix preserves catalog + topology`` () =
+    let catalog = mkCatalog [ mkCountryKind (); mkRegularCustomerKind () ]
+    let policy = policyWith AllRemaining
+    let probe =
+        ProbeStatus.create System.DateTimeOffset.UnixEpoch 2L Succeeded |> mustOk
+    let populatedProfile =
+        { Profile.empty with
+            Columns =
+                [ { AttributeKey = mkKey ["TestModule"; "Country"; "Code"]
+                    RowCount = 2L
+                    NullCount = 1L
+                    MaxObservedLength = None
+                    NullCountProbeStatus = probe } ] }
+    let prefix, _suffix = RegisteredTransforms.chainStepsSplitWithPins Set.empty
+    let composePrefix (profile: Profile) : ComposeState =
+        let adapters = prefix |> List.map (ChainStep.build policy profile)
+        PassChainAdapter.compose adapters (ComposeState.initial catalog)
+        |> LineageDiagnostics.payload
+    // Profile-invariance: the prefix's catalog + topology cannot depend on
+    // the profile (their Build closures ignore it by construction; this
+    // pins the property behaviorally so a future profile-consuming step
+    // added before the topo pass trips the pipelined arm's law).
+    let viaEmpty = composePrefix Profile.empty
+    let viaPopulated = composePrefix populatedProfile
+    Assert.Equal(viaEmpty.Catalog, viaPopulated.Catalog)
+    Assert.Equal(viaEmpty.TopologicalOrder, viaPopulated.TopologicalOrder)
+    // Suffix catalog-preservation: the FULL chain under the populated
+    // profile lands on the same catalog + topology the prefix computed —
+    // every post-topo step is a decision pass (writes ComposeState
+    // decisions, never replaces the catalog), so the drain-time render
+    // targets equal the compose-time ones.
+    let wholeState =
+        PassChainAdapter.compose
+            (RegisteredTransforms.allChainStepsFor policy populatedProfile)
+            (ComposeState.initial catalog)
+        |> LineageDiagnostics.payload
+    Assert.Equal(viaEmpty.Catalog, wholeState.Catalog)
+    Assert.Equal(viaEmpty.TopologicalOrder, wholeState.TopologicalOrder)
+
+[<Fact>]
+let ``BootstrapLane: Prerendered drain-time scripts compose the SAME bundle as the Rows arm`` () =
+    let country = mkCountryKind ()
+    let customer = mkRegularCustomerKind ()
+    let catalog = mkCatalog [ country; customer ]
+    let policy = policyWith AllRemaining
+    let topo =
+        (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+    let rows : Map<SsKey, StaticRow list> =
+        Map.ofList
+            [ customer.SsKey,
+              [ { Identifier = mkKey ["TestModule"; "Customer"; "Row"; "1"]
+                  Values = customer.Attributes |> List.map (fun a -> a.Name, "1") |> Map.ofList } ] ]
+    // The drain-time projection: the same `DataLoadPlan.loadFor` core the
+    // batch build folds + the same `renderLoad`, under the bootstrap
+    // lane's delete-scope-suppressed posture (what
+    // `Hydration.collectBootstrapRenderedUsing` runs per kind at drain).
+    let cycleMembers = TopologicalOrder.cycleMembers topo
+    let opts =
+        DataEmitOptions.withDeleteScope None
+            (DataEmitOptions.ofEmissionPolicy policy.Emission)
+    let prerendered =
+        rows
+        |> Map.map (fun key kindRows ->
+            let kind = Catalog.kindIndex catalog |> Map.find key
+            let load, _ = DataLoadPlan.loadFor cycleMembers SurrogateRemapContext.empty kind kindRows
+            StaticSeedsEmitter.renderLoad opts Profile.empty.CdcAwareness kind load)
+    let composeWith (lane: DataEmissionComposer.BootstrapLane) =
+        DataEmissionComposer.composeRenderedBundleWithBootstrapLaneUsing
+            topo policy catalog Profile.empty
+            MigrationDependencyContext.empty lane UserRemapContext.empty
+        |> mustOkEmit
+    let viaRows = composeWith (DataEmissionComposer.BootstrapLane.Rows rows)
+    let viaPrerendered = composeWith (DataEmissionComposer.BootstrapLane.Prerendered prerendered)
+    // Non-vacuous: the bootstrap lane really carries the customer MERGE.
+    Assert.Contains("MERGE", viaRows.Bootstrap)
+    Assert.Equal<string>(viaRows.Bootstrap, viaPrerendered.Bootstrap)
+    Assert.Equal<string>(viaRows.StaticSeeds, viaPrerendered.StaticSeeds)
+    Assert.Equal<string>(viaRows.MigrationData, viaPrerendered.MigrationData)

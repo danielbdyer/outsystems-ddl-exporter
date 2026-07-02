@@ -971,6 +971,12 @@ call sites before each edit.
   wire bytes — but the script is a byte-identical CARBON COPY of the V1
   donor, and V1 reads those rowsets in production. Not executed without
   operator sign-off on a donor change. Re-open with the operator.
+  **→ RE-OPENED AND SHIPPED 2026-07-02** (operator sign-off granted;
+  DECISIONS same date): the builds gate on
+  `SESSION_CONTEXT(N'OsmSkipJsonRowsets')` — no new parameter, flag
+  absent = byte-identical V1 behavior; V2's `MetadataSnapshotRunner`
+  sets the flag. Both script copies changed together (carbon-copy
+  invariant held).
 - **Streaming the lane files to disk per kind** (kill the ~100MB
   whole-lane strings): real memory win, but `Outputs.DataBundle :
   Map<string, string>` is the pipeline's output contract (writers,

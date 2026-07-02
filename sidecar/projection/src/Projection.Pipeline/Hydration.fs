@@ -218,6 +218,43 @@ module Hydration =
     /// (no migration file) is byte-identical to the prior Static-only exclusion.
     /// The caller-supplied-topo sibling of `hydrateBootstrapRowsExcluding`
     /// (see `hydrateCatalogUsing` — one order serves both hydration arms).
+    /// The Bootstrap lane's eligibility set — the ONE definition both the
+    /// row-collecting arm below and the pipelined drain-time-rendering arm
+    /// (`collectBootstrapRenderedUsing`'s Pipeline caller) read, so the two
+    /// execution schedules cannot disagree about which kinds the lane owns.
+    /// A kind carries rows worth bootstrapping only if it has columns to
+    /// write (PK-less / attribute-less artifacts have no MERGE); under
+    /// `AllRemaining`/`AllExceptStatic` the Static-marked and operator-
+    /// curated Migration kinds are excluded (the partition law); under
+    /// `AllData` Bootstrap owns everything data-bearing. Data-off ⇒ empty.
+    let bootstrapEligible
+        (migrationKinds: Set<SsKey>)
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Set<SsKey> =
+        if not (emitDataOf cfg) then Set.empty
+        else
+            let isDataBearing (k: Kind) = not (List.isEmpty k.Attributes)
+            let composition = Config.dataCompositionOf cfg
+            Catalog.allKinds catalog
+            |> List.filter (fun k ->
+                isDataBearing k
+                && (match composition with
+                    | AllData -> true
+                    | AllRemaining | AllExceptStatic ->
+                        not (isStaticKind k) && not (Set.contains k.SsKey migrationKinds)))
+            |> List.map (fun k -> k.SsKey)
+            |> Set.ofList
+
+    /// The Static-marked kind keyset — the pipelined publish arm's evidence
+    /// partition reads it (static kinds never enter evidence derivation,
+    /// mirroring `LiveProfiler`'s own non-static filter).
+    let staticKindKeys (catalog: Catalog) : Set<SsKey> =
+        Catalog.allKinds catalog
+        |> List.filter isStaticKind
+        |> List.map (fun k -> k.SsKey)
+        |> Set.ofList
+
     let hydrateBootstrapRowsExcludingUsing
         (topo: TopologicalOrder)
         (migrationKinds: Set<SsKey>)
@@ -228,20 +265,7 @@ module Hydration =
             if not (emitDataOf cfg) then
                 return Result.success Map.empty
             else
-                // A kind carries rows worth bootstrapping only if it has columns
-                // to write (PK-less / attribute-less artifacts have no MERGE).
-                let isDataBearing (k: Kind) = not (List.isEmpty k.Attributes)
-                let composition = Config.dataCompositionOf cfg
-                let eligible =
-                    Catalog.allKinds catalog
-                    |> List.filter (fun k ->
-                        isDataBearing k
-                        && (match composition with
-                            | AllData -> true
-                            | AllRemaining | AllExceptStatic ->
-                                not (isStaticKind k) && not (Set.contains k.SsKey migrationKinds)))
-                    |> List.map (fun k -> k.SsKey)
-                    |> Set.ofList
+                let eligible = bootstrapEligible migrationKinds cfg catalog
                 if Set.isEmpty eligible then
                     return Result.success Map.empty
                 else
@@ -283,6 +307,106 @@ module Hydration =
     /// routes through `…Excluding` with the resolved migration kinds.
     let hydrateBootstrapRows (cfg: Config.Config) (catalog: Catalog) : Task<Result<Map<SsKey, StaticRow list>>> =
         hydrateBootstrapRowsExcluding Set.empty cfg catalog
+
+    /// One kind's drain-time projection for the PIPELINED Bootstrap arm:
+    /// rows land → the kind's MERGE script renders immediately (against
+    /// its RENDER-CATALOG target kind — post-prefix-chain physical form)
+    /// and, when the kind is in the evidence partition, its evidence
+    /// cache derives from the same rows — then the rows drop. Hoisted to
+    /// module level (FS3511) and kept as the ONE projection body so the
+    /// per-kind cost the drain gate bounds is named in one place.
+    let private renderKindAtDrain
+        (targetKinds: Map<SsKey, Kind>)
+        (cycleMembers: Set<SsKey>)
+        (opts: DataEmitOptions)
+        (cdc: CdcAwareness)
+        (nullability: Map<string, Map<string, bool>>)
+        (evidenceKinds: Set<SsKey>)
+        (srcKind: Kind)
+        (rows: StaticRow list)
+        : Projection.Targets.Data.DataInsertScript * CachedKind option =
+        // Render against the TARGET kind (the post-prefix-chain catalog's
+        // physical form — same kind `emitWithTopo`'s batch plan resolves);
+        // a kind the chain dropped falls back to its source form (it then
+        // cannot be in the render catalog's keyset and the composer never
+        // reads its script).
+        let tgt =
+            Map.tryFind srcKind.SsKey targetKinds
+            |> Option.defaultValue srcKind
+        // The SAME per-kind plan core `DataLoadPlan.buildWith` folds
+        // (structural policy; the publish path's user remap is empty —
+        // `UserRemapContext.toSurrogate` of the empty mapping IS
+        // `SurrogateRemapContext.empty`), so the drain-time script equals
+        // the batch-built one by construction.
+        let load, _skipped =
+            DataLoadPlan.loadFor cycleMembers SurrogateRemapContext.empty tgt rows
+        let script =
+            Projection.Targets.Data.StaticSeedsEmitter.renderLoad opts cdc tgt load
+        // Evidence derives from the SOURCE kind over the same landed rows
+        // (the profile describes the source; physical names must match the
+        // live nullability reflection). Sampled / static kinds are outside
+        // the partition — their evidence stays with the live discovery.
+        let evidence =
+            if Set.contains srcKind.SsKey evidenceKinds then
+                EvidenceCache.cachedKindOfRows
+                    (LiveProfiler.nullabilityFor nullability srcKind)
+                    srcKind
+                    rows
+            else None
+        script, evidence
+
+    /// The PIPELINED Bootstrap collect (P2 production wiring): drain the
+    /// eligible kinds' rows from the live OSSYS source and, ON THE DRAIN
+    /// WORKER as each kind's rows land (inside the concurrency gate, after
+    /// the connection is pooled back — `Ingestion
+    /// .collectInOrderForConcurrentWith`), render that kind's Bootstrap
+    /// MERGE script and derive its evidence cache, dropping the rows. The
+    /// per-kind render + evidence cost OVERLAPS the remaining kinds' wire
+    /// time instead of serializing after the whole-estate drain, and live
+    /// row memory is capped at `concurrency` kinds rather than the estate.
+    ///
+    /// Identity contract (pinned by the pipelined-bootstrap equivalence
+    /// test): the returned scripts equal what `BootstrapEmitter
+    /// .emitWithTopo` renders at compose time from the same rows — same
+    /// `DataLoadPlan.loadFor` core, same `StaticSeedsEmitter.renderLoad`,
+    /// same delete-scope-suppressed `opts` (the CALLER passes the
+    /// bootstrap-lane posture: `DataEmitOptions.withDeleteScope None`) —
+    /// and the returned evidence equals `captureEvidenceCacheDerived`'s
+    /// per-kind derivation. `cycleMembers` MUST be the RENDER catalog's
+    /// (`TopologicalOrder.cycleMembers` of the post-prefix-chain topo);
+    /// `sourceTopo` only schedules the drain over the source catalog.
+    let collectBootstrapRenderedUsing
+        (concurrency: int)
+        (connSpec: string)
+        (eligible: Set<SsKey>)
+        (sourceCatalog: Catalog)
+        (targetKinds: Map<SsKey, Kind>)
+        (cycleMembers: Set<SsKey>)
+        (opts: DataEmitOptions)
+        (cdc: CdcAwareness)
+        (nullability: Map<string, Map<string, bool>>)
+        (evidenceKinds: Set<SsKey>)
+        (sourceTopo: TopologicalOrder)
+        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>>> =
+        task {
+            if Set.isEmpty eligible then
+                return Result.success Map.empty
+            else
+                // Resolve the spec ONCE; per-kind opens are pure pooled opens
+                // on the same connection string (mirrors the row-collecting
+                // Bootstrap arm).
+                match ConnectionSpec.openerFor "ossys-bootstrap-source" connSpec with
+                | Error es -> return Result.failure es
+                | Ok openConnection ->
+                    return!
+                        Ingestion.collectInOrderForConcurrentWith
+                            (renderKindAtDrain targetKinds cycleMembers opts cdc nullability evidenceKinds)
+                            (max 1 concurrency)
+                            openConnection
+                            eligible
+                            sourceCatalog
+                            sourceTopo
+        }
 
     /// Registry metadata (pillar 9). Read-only observation — DataIntent
     /// (mirrors the OSSYS `CatalogReader` / Transfer `Ingestion` adapters).
