@@ -89,12 +89,16 @@ module StagedMerge =
     /// to the `#temp`. `bench` is the caller's Bench scope label prefix (e.g.
     /// `"emit.staticSeeds"` / `"emit.migrationDeps"`) so the staged cost stays
     /// attributable to its lane.
+    /// `writable` (PL-3/S38) — the kind's writable attributes, threaded
+    /// from the caller's ONE `KindColumns.writableAttributes` derivation
+    /// (previously re-derived here for the `#temp` column defs).
     let renderStagedPhase1
         (bench: string)
         (verification: DataVerification)
         (bracketIdentity: bool)
         (withIndex: bool)
         (table: TableId)
+        (writable: Attribute list)
         (k: Kind)
         (args: MergeBuildArgs)
         : string =
@@ -133,7 +137,7 @@ module StagedMerge =
         // brackets, index) drop out cleanly via `List.choose id`.
         let inner =
             [ Some (up (ScriptDomBuild.buildDropTableIfExists tempName))
-              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf (KindColumns.writableAttributes k)))) ]
+              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf writable))) ]
             @ (ScriptDomBuild.buildInsertBatches tempName args.AllColumns args.Rows |> List.map (up >> Some))
             @ [ indexOpt
                 guardOpt

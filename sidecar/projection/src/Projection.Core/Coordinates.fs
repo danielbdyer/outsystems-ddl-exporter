@@ -307,6 +307,13 @@ module TableId =
         else
             Result.failure errors
 
+    /// PL-3 (S23) — the DEPLOY-target projection: the same coordinates
+    /// with the source catalog stripped (data-lane statements address the
+    /// sink's current database, never a cross-catalog name). Named once;
+    /// the data lane previously rebuilt this record inline at four sites.
+    let withoutCatalog (t: TableId) : TableId =
+        { Schema = t.Schema; Table = t.Table; Catalog = None }
+
     /// Boundary helper — pre-unwrapped schema text. Use at adapter /
     /// emitter / diagnostic-formatting boundaries that need the raw
     /// identifier string (SQL identifier encoding, sprintf "%s",
