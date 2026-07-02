@@ -755,12 +755,6 @@ module Transfer =
             // contract B). With no rename context, source and sink share the
             // schema and ingestion uses `catalog` directly (byte-identical).
             let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
-            let! rawRows = Ingestion.collectInOrder source ingestCatalog topo
-            let repointed =
-                match ingestion with
-                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
-                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
-                | _ -> rawRows
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // Item 5 — the declared table subset (golden data). Restrict the
             // load to the named kinds; the catalog stays whole (FK context),
@@ -770,11 +764,20 @@ module Transfer =
             // the plan zeroes them via `reclassifyReconciled` — so they remain
             // never-inserted while the user-FK re-key still resolves (golden:
             // exclude the User family from the copied set, re-key their FKs).
-            let rows =
+            // PL-10 (S08) — the subset scopes the INGEST itself
+            // (`collectInOrderFor` — the existing scoped collector), so a
+            // '--tables'-restricted transfer never streams the non-listed
+            // kinds' rows from the source only to discard them.
+            let ingestScope =
                 match writeOpts.LoadSet with
-                | Some loadSet ->
-                    repointed |> Map.filter (fun k _ -> Set.contains k loadSet || Set.contains k reconciledKinds)
-                | None -> repointed
+                | Some loadSet -> Set.union loadSet reconciledKinds
+                | None -> Set.ofList topo.Order
+            let! rawRows = Ingestion.collectInOrderFor ingestScope source ingestCatalog topo
+            let rows =
+                match ingestion with
+                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
+                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
+                | _ -> rawRows
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row

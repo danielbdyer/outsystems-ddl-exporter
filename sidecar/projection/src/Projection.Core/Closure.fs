@@ -181,12 +181,18 @@ module Closure =
                     match pkColumnName parent with
                     | None -> st, fetches
                     | Some parentPk ->
-                        let closed =
+                        // PL-10 (S44) — membership answers straight off the
+                        // backing row Map; no per-(target × step) Set copy of
+                        // the (growing) closed key set.
+                        let closedMap =
                             st.Rows |> Map.tryFind target |> Option.defaultValue Map.empty
-                            |> fun m -> m |> Map.toSeq |> Seq.map fst |> Set.ofSeq
                         let requested =
                             st.Requested |> Map.tryFind target |> Option.defaultValue Set.empty
-                        let fresh = Set.difference candidateKeys (Set.union closed requested)
+                        let fresh =
+                            candidateKeys
+                            |> Set.filter (fun key ->
+                                not (Map.containsKey key closedMap)
+                                && not (Set.contains key requested))
                         if Set.isEmpty fresh then st, fetches
                         else
                             let st' =
@@ -243,12 +249,6 @@ module Closure =
     let rowCount (state: ClosureState) : int =
         state.Rows |> Map.fold (fun n _ m -> n + Map.count m) 0
 
-    /// The PK values present for a kind in the closed set.
-    let private closedKeysOf (target: SsKey) (state: ClosureState) : Set<string> =
-        state.Rows
-        |> Map.tryFind target
-        |> Option.defaultValue Map.empty
-        |> fun m -> m |> Map.toSeq |> Seq.map fst |> Set.ofSeq
 
     /// Build the **closure report**: the per-kind census plus every dangling
     /// mandatory FK (the completeness invariant, FR3). Pure over the final
@@ -268,13 +268,19 @@ module Closure =
                     for r in kind.References do
                         match Kind.tryFindAttribute r.SourceAttribute kind with
                         | Some fkAttr when fkAttr.IsMandatory ->
-                            let parentKeys = closedKeysOf r.TargetKind state
+                            // PL-10 (S43) — membership answers straight off
+                            // the backing row Map (no per-reference Set
+                            // rebuild of the target kind's closed keys).
+                            let parentRows =
+                                state.Rows
+                                |> Map.tryFind r.TargetKind
+                                |> Option.defaultValue Map.empty
                             let orphans =
                                 rowsByPk
                                 |> Map.toSeq
                                 |> Seq.choose (fun (_, row) ->
                                     let v = StaticRow.valueOrEmpty fkAttr.Name row
-                                    if v <> "" && not (Set.contains v parentKeys) then Some v else None)
+                                    if v <> "" && not (Map.containsKey v parentRows) then Some v else None)
                                 |> Set.ofSeq
                             if not (Set.isEmpty orphans) then
                                 yield { Kind = kindKey

@@ -420,15 +420,16 @@ module SchemaMigrationEmitter =
         use _ = Bench.scope "emit.schemaMigration.emit"
         let sourceCatalog = CatalogDiff.source diff
         let targetCatalog = CatalogDiff.target diff
+        // PL-10 (S58) — per-kind pairs collect once, then concatenate once
+        // per channel (the prior `@`-append fold re-copied the accumulated
+        // prefix on every kind — O(N²) at estate scale).
         let foldByKind (diffs: Map<SsKey, 'd>) (f: SsKey -> 'd -> Statement list * DiagnosticEntry list) =
-            diffs
-            |> Map.toList
-            |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
-            |> List.fold
-                (fun (accStmts, accEntries) (kindKey, d) ->
-                    let stmts, entries = f kindKey d
-                    accStmts @ stmts, accEntries @ entries)
-                ([], [])
+            let perKind =
+                diffs
+                |> Map.toList
+                |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
+                |> List.map (fun (kindKey, d) -> f kindKey d)
+            perKind |> List.collect fst, perKind |> List.collect snd
         // Deploy order: sequences (schema objects referenced by DEFAULTs) →
         // column adds/alters → indexes → FKs (after their columns + target
         // tables exist). Refusals from every channel aggregate so a consumer

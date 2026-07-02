@@ -26160,3 +26160,174 @@ tightening pass suites, anomaly/parity tests — no pass added or removed,
 `registered ⇔ executed` untouched); docker pool green
 (LiveProfilerIntegrationTests exercise the widened index end-to-end). No
 goldens moved.
+
+## 2026-07-02 — PL-8 executed: live discovery is single-scan for unsampled kinds; the gate-plus-rows read rides one capped stream
+
+**Decision.** Pay-once item PL-8 (S03/S06):
+
+- **S03** — `LiveProfiler.discoverKind` paid TWO full server scans per
+  unsampled table: a `COUNT_BIG` aggregate (exact RowCount + per-column
+  NullCounts), then the full row stream. For the unsampled (default)
+  case those aggregate facts are a pure function of the streamed rows —
+  they now derive from the ONE drain via the new
+  `EvidenceCache.cachedKindOfColumns` (the third entry over the same
+  `cachedKindFromPerColumn` assembly tail as the named-row and quantum
+  derivations, so the three cannot drift). The aggregate scan survives
+  ONLY for SAMPLED kinds (`aggregateCountsFor`), where a capped stream
+  cannot yield exact whole-table counts (the P4 exactness contract) —
+  and it runs BEFORE the row stream (one connection, no MARS). One scan
+  is also the more consistent read: the two-query shape could observe a
+  concurrent write between scans. Every `discoverKind` consumer —
+  attach/attachConcurrent, `Preflight.tighteningViolations`,
+  `DataIntegrityChecker.compare`, the derived path's live fallback —
+  inherits the single scan.
+- **S06** — `ReadSide.readRows` probed `COUNT(*)` over a table it then
+  streamed in full. The stream core gains a server-side `TOP (n)` cap
+  over its existing deterministic `ORDER BY`
+  (`readRowsStreamCapped`), and `readRows` drains ONE maxRows+1-capped
+  stream: over-threshold ⇒ maxRows+1 rows ⇒ `None` (the reader closes
+  at its capped EOF — never a whole-table data drain); at-or-under ⇒
+  the full row set, same order, same minted row identities. The
+  count's two consumers (the `> maxRows` gate, the `= 0` shortcut)
+  derive from the one drain.
+
+**Identity gates.** The corpus's live-vs-derived cache equality
+assertions (`PerfCorpusMeasurementTests` — `derivedCache.Kinds =
+liveCache.Kinds`, the P1 law) now pin the single-scan discovery against
+the pure derivation; docker pool green (LiveProfiler integration,
+compare/preflight canaries, ReadSide roundtrip suites); pure pool green.
+Sampled-kind behavior unchanged by construction (the aggregate arm is
+byte-identical). Bench note: `profile.live.aggregate` samples now appear
+only for sampled kinds — an expected label-population change, not a
+regression.
+
+## 2026-07-02 — PL-4 executed: the SSDT FK lookup triple is a named threaded value; per-kind FK resolutions derive once; the keyset is CWT-cached
+
+**Decision.** Pay-once item PL-4 (S46/S47/S48/S37/S49/S28/S54/S56):
+
+- **S46** — `FkEmissionLookups` (AllKinds / TargetByKey / PkAttrByKey)
+  names the `buildLookups` triple; one publish previously rebuilt it
+  3–4×. The emit step and the flat stream compute it once per catalog
+  value; `runWithConfigCore`'s diagnostics assembly computes it ONCE
+  over `finalState.Catalog` and threads it to the three FK diagnostics
+  via `*Using` siblings (the E3 `emittedNamesForKind` precedent). The
+  emit step's interior lookups ride its own `EmittedCatalog` value —
+  K26's law: receipts match on the VALUE, not the function.
+- **S47** — `resolvedFksOf` derives each kind's deployable, non-dropped
+  FK resolutions ONCE, consumed by the CREATE TABLE inline FKs and the
+  NOCHECK alter pair; `fkResolutionsUsing` is the ONE resolution pass
+  shared by the drop witness and the name-collision tripwire (the
+  DropFk filter moves to the collision consumer — resolution is pure,
+  so filter-before ≡ filter-after). 4→1 resolutions per reference per
+  publish flow.
+- **S48** — `foreignKeyDefOfUsing lookups`; `SchemaMigrationEmitter`
+  builds the source + target lookup triples once per migration and
+  threads them through `kindReferenceMigration` (was a whole-catalog
+  build PER reference).
+- **S37/S49** — one `decisionOverlay` binding in the diagnostics
+  assembly (was two back-to-back `ofComposeState` projections; the emit
+  step's interior projection remains — same named-cost note as the P2
+  entry's kept prefix re-run).
+- **S28/S54** — `firstKindBySchemaOf` derives the per-(module, schema)
+  first-kind decision once per module (one group-by); `kindToSsdtFile`
+  consumes the map instead of a filter+sort per kind (O(K² log K) per
+  module retired).
+- **S56** — `Catalog.kindKeySet` (ConditionalWeakTable beside
+  `kindIndex`) replaces the per-construction Set rebuild in
+  `ArtifactByKind.create`; `ArtifactByKind.mapValues` carries the
+  proven keyset across key-preserving rewrites
+  (`applyEmissionFolderOverrides` loses its re-validation and its
+  unreachable error arm).
+
+**Identity gates.** All pure threading of identical values: DDL goldens
++ docker pool unchanged; the diagnostics' content byte-identical (same
+lookups, earlier); pure pool green. No goldens moved.
+
+## 2026-07-02 — PL-3 executed: the data lane's per-kind render vocabulary binds once (row count, writable set, match names, values projection, deploy target, the Phase-2 closure)
+
+**Decision.** Pay-once item PL-3 (S18/S19/S38/S20/S59/S23/S27/S57/S61 +
+the hand-ruled per-row Bench label) — one slice through
+`MergeRender`/`StagedMerge`/both emitters' `scriptOfTyped`:
+
+- `renderMerge` binds `rowCount` / `writable` / `matchNames` once at the
+  top (were: up to three O(n) length walks, three `writableAttributes`
+  derivations across the inline+staged paths, two `matchColumnNames`);
+  `renderStagedPhase1` takes the threaded `writable` for its `#temp`
+  column defs.
+- `renderUpdateForKind` (S27/S57 + the label receipt) — the per-kind
+  prebound Phase-2 renderer: Bench label, deploy target, SET/WHERE
+  attribute projections hoisted; the row loop threads only the typed
+  values (`renderStagedPhase2` already modeled this hoist — the two
+  Phase-2 arms now share the shape). `renderUpdate` stays as the one-row
+  compute-then-delegate form. The K13 kill correctly bounds this lane at
+  the ≤1000-row staging threshold — the win is shape as much as seconds,
+  and it is taken as such.
+- Both emitters bind `valueRows` (S61) and `rowCount` (S20/S59) once for
+  both phases, and Phase-2's `DataInsertRow` list IS Phase-1's when any
+  column is deferred (S18 — never a second identical build).
+- `TableId.withoutCatalog` (S23) names the deploy-target projection the
+  lane previously rebuilt inline at four sites.
+
+**Identity gate.** The pure factorization laws (`renderLoad ≡
+emitFromPlan`, `renderQuanta ≡ renderLoad`), the DataEmissionComposer
+partition law, and the docker data-lane canaries/goldens pass unchanged —
+no re-record. Bench label populations unchanged (same labels, same
+cardinalities).
+
+## 2026-07-02 — PL-10 executed: the small verb-state threadings (one lifecycle load per migrate record leg; scoped transfer ingest; Closure membership off the backing Map; one-pass migration folds; the Faker row-seed basis; per-kind qualifiedParts)
+
+**Decision.** Pay-once item PL-10, the batchable small threadings:
+
+- **S12** — `MigrationRun` gains `loadChain`/`nextCoordinateOfChain`/
+  `recordOnChain`; `recordVerified` (and the `executeWithDataAndRecordWith`
+  sibling) pay ONE `LifecycleStore.load` per record leg (was two full
+  parses). The public `nextCoordinate`/`record` stay as
+  compute-then-delegate forms.
+- **S08** — `runCore` with a declared `--tables` LoadSet scopes the
+  INGEST itself (`Ingestion.collectInOrderFor (loadSet ∪
+  reconciledKinds)` — the existing scoped collector) instead of
+  streaming every kind's rows and filtering them away. Repoint commutes
+  with the scope (per-kind `Map.map`), so the plan's input rows are
+  value-identical.
+- **S43/S44** — `Closure` answers closed-key membership straight off the
+  backing row Map (`Map.containsKey`) in both `nextFetches` and
+  `report`; the per-(target × step) and per-reference Set copies of the
+  growing closed set are gone (`closedKeysOf` retired — zero consumers).
+- **S58** — `SchemaMigrationEmitter.foldByKind` collects per-kind pairs
+  once and concatenates once per channel (the `@`-append fold re-copied
+  the accumulated prefix per kind — O(N²)).
+- **S34** — `FakerRealization` binds the row seed and the per-cell FNV
+  seed BASIS once per row (`rowSeedBasis` — the FNV-1a state over
+  `serialize rowKey + " "`); each fresh-draw cell CONTINUES the state
+  over the column name. FNV-1a is a streaming hash, so every seed value
+  is bit-identical to the prior per-cell concat+hash — the
+  deterministic-draw law's seeds are UNCHANGED (pinned by the synthetic
+  determinism tests).
+- **S21/S60** — `attachDefaults`/`attachComputed` hoist
+  `TableId.qualifiedParts` above the per-attribute map (the
+  `attachAnnotations` form).
+
+**Identity gates.** Lifecycle round-trip + migrate record suites,
+transfer fixtures (incl. the golden `--tables` subset test), closure
+oracle tests, migration emitter tests, synthetic determinism tests —
+all green unchanged; docker pool green. One named surface change: a
+store-READ failure inside `executeWithDataAndRecordWith` now surfaces
+as "reading the episode store failed" (its own step) rather than
+folded into the coordinate-derivation message.
+
+## 2026-07-02 — PL-11 executed: the four dead standalone ReadSide readers are deleted; the combined batch is the single definition site
+
+**Decision.** Pay-once item PL-11 (S07): `readColumnRows`,
+`readIdentityColumns`, `readPrimaryKeys`, and `readForeignKeys` each
+carried a private verbatim copy of SQL that `readSchemaCombined` embeds
+in its one batched command, and grep found zero call sites for any of
+the four (all `private`; `read` uses only the combined batch) — the
+reflection SQL was maintained twice, a dead twin free to drift silently
+from the live batch (flagged unresolved since AUDIT_2026_06_04). The
+dead-algebra retirement precedent (DECISIONS 2026-06-04) applies:
+deleted. The session-30 PK bench note (INFORMATION_SCHEMA beats the
+sys.indexes join by ~25% at canary scale) is relocated onto
+`readSchemaCombined`'s docstring — the knowledge survives its dead
+carrier. Gate: grep-proof of zero callers + pure pool; the one
+Skip-stub test string that cited `readForeignKeys` as a doc pointer now
+cites the combined batch.

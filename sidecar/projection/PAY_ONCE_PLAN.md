@@ -130,6 +130,13 @@ the graft-from-bootstrapRows variant is the correct arm, not the skip).
 
 ### PL-3 · Render-constant hoisting through the data lane
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-3 executed").
+> `renderMerge` top-bindings (rowCount/writable/matchNames);
+> `renderUpdateForKind` per-kind closure; `valueRows`/`phase2Rows = phase1Rows`
+> in both emitters; `TableId.withoutCatalog`; `renderStagedPhase1` takes the
+> threaded writable set. Gates: factorization laws + corpus byte-identity +
+> docker pool unchanged.
+
 **Findings:** S18 (Phase1Merges/Phase2Updates identical list built twice),
 S19/S38 (`matchColumnNames` ×2, `writableAttributes` ×3 per renderMerge),
 S20/S59 (`List.length typedRows` + staging verdict up to ×4 per kind), S23
@@ -170,6 +177,13 @@ altitude hygiene as wall-clock).
 shape. No law surfaces.
 
 ### PL-4 · SSDT emission lookups: derive once, thread everywhere
+
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-4 executed").
+> `FkEmissionLookups` + `fkResolutionsUsing` + `resolvedFksOf` +
+> `foreignKeyDefOfUsing` + `firstKindBySchemaOf` + `Catalog.kindKeySet`
+> (CWT) + `ArtifactByKind.mapValues`; one lookups/resolutions/overlay
+> binding in the diagnostics assembly. Gates: DDL goldens + docker pool
+> unchanged; pure pool green.
 
 **Findings:** S46 (`buildLookups` ×3 per publish + a 4th walk), S47 (`fkDef`
 resolves every reference ×4 per publish), S48 (`foreignKeyDefOf` pays a
@@ -332,6 +346,12 @@ consumers; pin with a test).
 
 ### PL-8 · Live discovery becomes single-scan (S03, S06)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-8 executed").
+> `EvidenceCache.cachedKindOfColumns` over the one drain (aggregate only
+> for sampled kinds, via `aggregateCountsFor`, run pre-stream — no MARS);
+> `readRowsStreamCapped` + a maxRows+1 drain replaces the COUNT probe.
+> Gates: corpus live≡derived cache equality (P1 law), pure + docker pools.
+
 **The fact paid twice.** `discoverKind` full-scans each unsampled table TWICE
 (COUNT_BIG aggregate, then the full row stream); `readRows` COUNT(*)-probes a
 table it immediately streams in full.
@@ -383,6 +403,11 @@ their prefetch overlap.
 
 ### PL-10 · Small verb-state threadings (batchable, each trivial)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-10 executed").
+> S12 loadChain/nextCoordinateOfChain/recordOnChain; S08 scoped ingest;
+> S43/S44 Map-membership; S58 one-pass folds; S34 rowSeedBasis (streaming
+> FNV — seeds unchanged); S21/S60 qualifiedParts hoists.
+
 **Findings + carriers, one line each:**
 - S12: `recordVerified` loads the lifecycle twice → thread one loaded chain
   (`nextCoordinateOfChain`/`recordOnChain`).
@@ -404,6 +429,10 @@ transfer fixtures, closure oracle tests, migration emitter tests, synthetic
 determinism tests). No goldens.
 
 ### PL-11 · Delete the dead standalone readers (S07)
+
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-11 executed").
+> All four deleted; the session-30 PK bench note relocated onto
+> `readSchemaCombined`. Grep-proof + pools green.
 
 Four standalone `ReadSide` readers duplicate `readSchemaCombined`'s SQL
 verbatim with ZERO callers — the reflection SQL is maintained twice. The
