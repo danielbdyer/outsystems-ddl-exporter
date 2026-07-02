@@ -79,15 +79,14 @@ module CentralityPass =
     /// convergence-test input. Dangling mass redistribution is the
     /// standard PageRank formulation: rank held by nodes with no
     /// out-links would otherwise leak between iterations.
-    let private pageRankStep (nodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (rank: Map<SsKey, decimal>) =
-        let nDecimal = decimal (List.length nodes)
+    /// PL-5 (S42) — the graph-CONSTANT facts (node count; the dangling
+    /// node set) are hoisted parameters computed once before the fixpoint
+    /// loop; only the rank-dependent dangling MASS re-derives per
+    /// iteration (it must — it reads the evolving rank vector).
+    let private pageRankStepWith (nodes: SsKey list) (nDecimal: decimal) (danglingNodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (rank: Map<SsKey, decimal>) =
         let danglingMass =
-            nodes
-            |> List.sumBy (fun u ->
-                let du = if outDegree.ContainsKey u then outDegree.[u] else 0
-                if du = 0 then
-                    Map.tryFind u rank |> Option.defaultValue 0.0m
-                else 0.0m)
+            danglingNodes
+            |> List.sumBy (fun u -> Map.tryFind u rank |> Option.defaultValue 0.0m)
         let newRank =
             nodes
             |> List.map (fun v ->
@@ -116,11 +115,18 @@ module CentralityPass =
     /// rank vector + the number of iterations actually run.
     let private runUntilConverged (nodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (initial: Map<SsKey, decimal>) =
         // recon #19 — the bounded fixed-point scheme, named once in `Fixpoint`.
-        // The step drives `pageRankStep` and reports convergence when the
-        // max-delta falls below `convergenceEps`.
+        // The step drives `pageRankStepWith` and reports convergence when the
+        // max-delta falls below `convergenceEps`. PL-5 (S42): node count and
+        // the dangling-node set are graph constants — computed HERE, once,
+        // not per iteration.
+        let nDecimal = decimal (List.length nodes)
+        let danglingNodes =
+            nodes
+            |> List.filter (fun u ->
+                (if outDegree.ContainsKey u then outDegree.[u] else 0) = 0)
         initial
         |> Fixpoint.iterate maxIterations (fun rank ->
-            let newRank, maxDelta = pageRankStep nodes outDegree revAdj rank
+            let newRank, maxDelta = pageRankStepWith nodes nDecimal danglingNodes outDegree revAdj rank
             newRank, maxDelta < convergenceEps)
 
     /// Sort the converged rank vector into a deterministic score list:

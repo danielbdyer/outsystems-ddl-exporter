@@ -26119,3 +26119,44 @@ publish; incumbent paid 2), Bootstrap.sql carries the static rows, no
 StaticSeeds.sql, and the two schedules' bundles byte-compare equal (the
 two independent single-drain arms cannot diverge silently). No goldens
 moved.
+
+## 2026-07-02 — PL-5 executed: Profile evidence indexes on the `ConditionalWeakTable` shape; the graph passes hoist their graph-constants; the FK target index widens to per-Reference
+
+**Decision.** Pay-once item PL-5 (S35/S36/S39/S40/S41/S42) — the
+tightening tier's O(attributes × profile-size) floor:
+
+- **S35** — `Profile.tryFindColumn` / `tryFindForeignKey` /
+  `tryFindForeignKeyCardinality` / `tryFindForeignKeySelectivity` /
+  `tryFindUnique` / `tryFindCategorical` / `tryFindNumeric` /
+  `tryFindDistribution` keep their signatures; their bodies consult
+  per-Profile indexes cached via `ConditionalWeakTable` keyed by the
+  Profile VALUE (the `Catalog.kindIndex` precedent — the one sanctioned
+  cache shape; passes thread one Profile value per chain run, so one
+  build serves every probe). The index folds are FIRST-WINS so
+  `List.tryFind`/`tryPick` semantics are preserved exactly on a
+  duplicate key (`Map.ofList` would be last-wins); the distribution
+  index carries the three probe shapes (first Categorical / first
+  Numeric / first ANY per key) from one pass over `Distributions`.
+- **S39** — `Catalog.sortedKinds` (CWT, same shape) is the shared spine
+  under `kindContexts`, so the four tightening passes stop re-paying the
+  whole-catalog collect+sort per pass.
+- **S36** — `ProfileDerivation.ForeignKeyTargetIndex` widens to key by
+  `Reference.SsKey` and carry the resolved target kind + single-PK
+  `Attribute` + typed `TargetKeySet option`: `Catalog.tryFindKind` +
+  `Kind.primaryKey` resolve once per reference per `attachFromCache`
+  flow (previously re-run inside both FK derivation passes); the key
+  set still builds once per distinct target pair.
+- **S40** — `ForeignKeyPass.opportunityEntry` resolves cardinality ONCE
+  per decision and threads it to the metadata + suggested-config
+  builders.
+- **S41** — `SchemaComplexityPass` cohesion classifies each edge in ONE
+  fold per module (intra/incident in the same walk).
+- **S42** — `CentralityPass` hoists node count + the dangling-node SET
+  before the fixpoint loop (`pageRankStepWith`); only the rank-dependent
+  dangling MASS re-derives per iteration, as it must.
+
+**Identity gates.** Pure pool green unchanged (ProfileTests, all four
+tightening pass suites, anomaly/parity tests — no pass added or removed,
+`registered ⇔ executed` untouched); docker pool green
+(LiveProfilerIntegrationTests exercise the widened index end-to-end). No
+goldens moved.

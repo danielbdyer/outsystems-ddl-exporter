@@ -1706,14 +1706,32 @@ module Catalog =
     /// pass drivers (four Tightening passes — Nullability / UniqueIndex
     /// / ForeignKey / CategoricalUniqueness — share this exact shape;
     /// the named primitive prevents per-pass open-coding).
+    /// PL-5 (S39) — the sorted kind spine underneath every `kindContexts`
+    /// call, cached per Catalog VALUE via `ConditionalWeakTable` (the
+    /// `kindIndex` precedent — the one sanctioned cache shape): the four
+    /// tightening passes each fan out over the same unchanged catalog in
+    /// one chain run, so the collect+sort was re-paid per pass.
+    let private sortedKindsCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Kind list>()
+
+    let sortedKinds (c: Catalog) : Kind list =
+        match sortedKindsCache.TryGetValue(c) with
+        | true, kinds -> kinds
+        | false, _ ->
+            let kinds =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.sortBy (fun k -> k.SsKey)
+            sortedKindsCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Kind list>.CreateValueCallback(fun _ -> kinds))
+
     let kindContexts
         (extract: Kind -> 'ctx list)
         (sortKey: 'ctx -> SsKey)
         (c: Catalog)
         : (Kind * 'ctx) list =
-        c.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
+        sortedKinds c
         |> List.collect (fun k ->
             extract k
             |> List.sortBy sortKey

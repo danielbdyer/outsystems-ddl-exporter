@@ -208,6 +208,14 @@ precedent already in the file.
 
 ### PL-5 · Profile evidence indexes (the tightening passes' O(n·m) floor)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-5 executed").
+> `Profile.tryFind*` bodies consult CWT-cached first-wins indexes;
+> `Catalog.sortedKinds` (CWT) under `kindContexts`; the FK target index
+> widened to per-Reference entries carrying the resolved PK attribute;
+> one cardinality resolution per FK decision; one-fold cohesion; PageRank
+> graph-constants hoisted (`pageRankStepWith`). Gates: pure + docker
+> pools green, no pass added/removed, no goldens.
+
 **Findings:** S35 (`Profile.tryFindColumn`/`tryFind*` are linear list scans
 paid per attribute × per pass), S36 (FK derivations re-resolve target kind +
 single-PK attribute per reference at 2+ sites), S39 (Nullability and
