@@ -320,30 +320,59 @@ module OssysTranslation =
                     (sprintf "DataType '%s' has no V2 PrimitiveType mapping yet." normalizedType))
 
     /// Full attribute-type resolution: semantic category + concrete
-    /// storage, with the optional `external_dbType` override applied.
-    /// V1's `TypeMappingPolicy.Resolve` priority is preserved — an
-    /// `external_dbType` SQL-type string overrides the OSSYS-derived
-    /// storage EXCEPT for `identifier` / `autonumber` / `longinteger`,
-    /// which force the runtime mapping (so a `longinteger` stays
-    /// `BIGINT` regardless of any external override).
+    /// storage, with two optional storage-evidence channels applied in
+    /// strict precedence:
+    ///
+    ///   1. `external_dbType` (the authored override). V1's
+    ///      `TypeMappingPolicy.Resolve` priority is preserved — an
+    ///      `external_dbType` SQL-type string overrides the OSSYS-derived
+    ///      storage EXCEPT for `identifier` / `autonumber` /
+    ///      `longinteger`, which force the runtime mapping (so a
+    ///      `longinteger` stays `BIGINT` regardless of any external
+    ///      override).
+    ///   2. `deployedStorage` (concrete `#ColumnReality` evidence) — for
+    ///      reference-shaped `bt*` attributes ONLY, and only when no
+    ///      explicit external type is present. The `bt*` → BIGINT
+    ///      reference convention is a default, not a law: an estate may
+    ///      deploy a reference over textual physical storage, and forcing
+    ///      such a column through an integer conversion corrupts row
+    ///      hydration. Ordinary logical types (e.g. `rtDate`) are NEVER
+    ///      widened by deployed storage — only an explicit external type
+    ///      may change them.
+    ///
+    /// When either channel overrides a reference-shaped attribute's
+    /// storage, the semantic `PrimitiveType` is re-projected from the
+    /// effective storage (`SqlStorageType.toPrimitiveType`) so the
+    /// `(Type, SqlStorage)` pair stays consistent and row hydration
+    /// formats values according to the actual deployed column storage.
+    /// Relationship identity is untouched — references still flow
+    /// through the OutSystems reference / `SS_Key` model.
     let resolveAttributeType
         (rawType: string)
         (length: int option)
         (precision: int option)
         (scale: int option)
         (externalDbType: string option)
+        (deployedStorage: SqlStorageType option)
         : Result<PrimitiveType * SqlStorageType> =
         let normalized = normalizeAttributeType rawType
+        // The `bt<EspaceSsKey>*<EntitySsKey>` binding-type encoding —
+        // exactly the shape `OssysTypeMapping.tryParse` resolves to the
+        // BIGINT reference convention.
+        let isBtReference =
+            normalized.StartsWith("bt", System.StringComparison.Ordinal)
+            && normalized.Contains "*"
         parseSemanticType normalized length precision scale
         |> Result.map (fun (pt, ossysStorage) ->
-            let storage =
+            let externalOverride =
                 match normalized with
-                | "identifier" | "autonumber" | "longinteger" -> ossysStorage
-                | _ ->
-                    match externalDbType |> Option.bind (fun raw -> SqlStorageType.ofSqlType raw None None None) with
-                    | Some overridden -> overridden
-                    | None -> ossysStorage
-            pt, storage)
+                | "identifier" | "autonumber" | "longinteger" -> None
+                | _ -> externalDbType |> Option.bind (fun raw -> SqlStorageType.ofSqlType raw None None None)
+            match externalOverride, deployedStorage with
+            | Some ext, _ when isBtReference -> SqlStorageType.toPrimitiveType ext, ext
+            | Some ext, _ -> pt, ext
+            | None, Some deployed when isBtReference -> SqlStorageType.toPrimitiveType deployed, deployed
+            | None, _ -> pt, ossysStorage)
 
     /// V1 reference_deleteRuleCode → V2 ReferenceAction. Mirrors the
     /// V1 mapping in `Osm.Smo/SmoEntityEmitter.cs`:

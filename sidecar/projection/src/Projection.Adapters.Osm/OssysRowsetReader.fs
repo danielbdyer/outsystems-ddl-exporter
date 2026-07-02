@@ -57,11 +57,13 @@ module OssysRowsetReader =
             | _ -> false
         // Resolve semantic category + concrete SQL Server storage from
         // the rowset's `Type` value (rt-prefix aware), the declared
-        // length / precision / scale, and any `ExternalColumnType`
-        // override. Same resolution as the JSON path.
+        // length / precision / scale, any `ExternalColumnType` override,
+        // and the deployed `#ColumnReality` storage evidence (consulted
+        // for reference-shaped `bt*` attributes only, behind an explicit
+        // external type). Same resolution as the JSON path.
         let typeEvidence =
             resolveAttributeType
-                row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType
+                row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType row.DeployedStorage
         let columnNameDU = ColumnName.create row.PhysicalCol
         match nameDU, key, typeEvidence, columnNameDU with
         | Ok n, Ok k, Ok (p, storage), Ok physicalColumnName ->

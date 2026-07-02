@@ -78,7 +78,8 @@ let private attrRow
       ComputedDefinition   = computedDef
       DefaultConstraintName = defaultConstraintName
       Order                = None
-      Collation            = None }
+      Collation            = None
+      DeployedStorage      = None }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with
@@ -179,3 +180,69 @@ let ``A.4.7'-prelude.row53-source-side: rowsetAggregateParsing Site classifies a
     Assert.Contains("ColumnReality", site.Rationale)
     Assert.Contains("IsComputed", site.Rationale)
     Assert.Contains("DefaultConstraintName", site.Rationale)
+
+// ---------------------------------------------------------------------------
+// Deployed-storage evidence for reference-shaped `bt*` attributes.
+// `#ColumnReality.SqlType` + facets parse into `AttributeRow.DeployedStorage`;
+// the type resolver consults that evidence ONLY for `bt*` reference tokens
+// (whose BIGINT storage is a convention, not a declaration) and only when no
+// explicit external type is present. When the evidence narrows the storage,
+// the semantic `PrimitiveType` re-projects from it so row hydration formats
+// values per the actual deployed column storage.
+// ---------------------------------------------------------------------------
+
+let private btAttr (attrId: int) (name: string) : OssysRowsetTypes.AttributeRow =
+    attrRow attrId name "btAAA*BBB" false None None
+
+[<Fact>]
+let ``deployed storage: a bt* reference over textual deployed storage types as Text, not BIGINT`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let officeRef = { btAttr 101 "OfficeId" with DeployedStorage = Some (SqlStorageType.NVarChar (Bounded 50)) }
+    let cat = parseToCatalog (buildBundle [ idAttr; officeRef ])
+    let attr = findAttribute cat "OfficeId"
+    Assert.Equal(Text, attr.Type)
+    Assert.Equal(Some (SqlStorageType.NVarChar (Bounded 50)), attr.SqlStorage)
+
+[<Fact>]
+let ``deployed storage: a bt* reference whose deployed storage agrees with the convention is unchanged`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let officeRef = { btAttr 101 "OfficeId" with DeployedStorage = Some SqlStorageType.BigInt }
+    let cat = parseToCatalog (buildBundle [ idAttr; officeRef ])
+    let attr = findAttribute cat "OfficeId"
+    Assert.Equal(Integer, attr.Type)
+    Assert.Equal(Some SqlStorageType.BigInt, attr.SqlStorage)
+
+[<Fact>]
+let ``deployed storage: without evidence the bt* -> BIGINT convention holds (never globally reinterpreted)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let officeRef = btAttr 101 "OfficeId"
+    let cat = parseToCatalog (buildBundle [ idAttr; officeRef ])
+    let attr = findAttribute cat "OfficeId"
+    Assert.Equal(Integer, attr.Type)
+    Assert.Equal(Some SqlStorageType.BigInt, attr.SqlStorage)
+
+[<Fact>]
+let ``deployed storage: an explicit external database type wins over deployed evidence`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let officeRef =
+        { btAttr 101 "OfficeId" with
+            ExternalDatabaseType = Some "varchar(20)"
+            DeployedStorage      = Some SqlStorageType.BigInt }
+    let cat = parseToCatalog (buildBundle [ idAttr; officeRef ])
+    let attr = findAttribute cat "OfficeId"
+    // The authored override is authoritative; the semantic primitive
+    // re-projects from it for reference-shaped attributes so the
+    // (Type, SqlStorage) pair stays consistent.
+    Assert.Equal(Text, attr.Type)
+    Assert.Equal(Some (SqlStorageType.VarChar (Bounded 20)), attr.SqlStorage)
+
+[<Fact>]
+let ``deployed storage: ordinary logical types are never widened by deployed storage (rtDate stays DATE)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let birthDate =
+        { attrRow 101 "BirthDate" "rtDate" false None None with
+            DeployedStorage = Some SqlStorageType.DateTime }
+    let cat = parseToCatalog (buildBundle [ idAttr; birthDate ])
+    let attr = findAttribute cat "BirthDate"
+    Assert.Equal(Date, attr.Type)
+    Assert.Equal(Some SqlStorageType.Date, attr.SqlStorage)

@@ -1126,6 +1126,18 @@ module MetadataSnapshotRunner =
                     match Map.tryFind a.AttrId columnRealityByAttrId with
                     | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName, cr.CollationName
                     | None    -> false, None, None, None
+                // Deployed storage evidence: `#ColumnReality.SqlType` +
+                // facets parsed into the typed channel the resolver
+                // consults for reference-shaped `bt*` attributes.
+                // `MaxLength` is already character-normalized by the
+                // rowsets SQL (nvarchar halved; -1 = MAX).
+                let realityStorage =
+                    match Map.tryFind a.AttrId columnRealityByAttrId with
+                    | Some cr ->
+                        cr.SqlType
+                        |> Option.bind (fun t ->
+                            SqlStorageType.ofSqlType t cr.MaxLength cr.Precision cr.Scale)
+                    | None -> None
                 {
                     AttrId               = a.AttrId
                     EntityId             = a.EntityId
@@ -1151,6 +1163,7 @@ module MetadataSnapshotRunner =
                     Order                 = a.Order
                     // F1 (audit 2026-06-17) — carry the deployed collation.
                     Collation             = realityCollation
+                    DeployedStorage       = realityStorage
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

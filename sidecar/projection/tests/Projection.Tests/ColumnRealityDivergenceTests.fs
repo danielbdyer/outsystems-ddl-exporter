@@ -141,3 +141,27 @@ let ``PK divergence: a flagged attribute with no entity key surfaces nothing (to
             [ entity 1 "User" None ]
             [ keyedAttr 100 "Id" (Some idKey) true ]
     Assert.Empty(MetadataSnapshotRunner.primaryKeyDivergences s)
+
+// ---------------------------------------------------------------------------
+// Deployed-storage lift — `#ColumnReality.SqlType` + facets parse into
+// `AttributeRow.DeployedStorage` at the snapshot boundary (the typed channel
+// the resolver consults for reference-shaped `bt*` attributes). MaxLength is
+// already character-normalized by the rowsets SQL.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``toBundle: ColumnReality SqlType and facets lift into AttributeRow.DeployedStorage`` () =
+    let s =
+        snapshotOf
+            [ attr 100 "OFFICEID" true false ]
+            [ { reality 100 "OFFICEID" false false with SqlType = Some "nvarchar"; MaxLength = Some 50 } ]
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Attributes |> List.find (fun a -> a.AttrId = 100)
+    Assert.Equal(Some (SqlStorageType.NVarChar (Bounded 50)), row.DeployedStorage)
+
+[<Fact>]
+let ``toBundle: no ColumnReality row means no DeployedStorage evidence`` () =
+    let s = snapshotOf [ attr 100 "OFFICEID" true false ] []
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Attributes |> List.find (fun a -> a.AttrId = 100)
+    Assert.Equal(None, row.DeployedStorage)

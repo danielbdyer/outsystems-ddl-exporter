@@ -160,6 +160,17 @@ module OssysRowsetTypes =
             /// reflection didn't fire. Threads to `ColumnRealization.Collation`
             /// so a fresh deploy re-emits the team's chosen `COLLATE`.
             Collation : string option
+            /// V1 `#ColumnReality.SqlType` + facets (`sys.columns` ⋈
+            /// `sys.types`), parsed at the snapshot boundary into the same
+            /// typed channel `external_dbType` resolves through. The
+            /// DEPLOYED storage of the column — concrete evidence the type
+            /// resolver may consult where the logical type is a
+            /// convention rather than a declaration (reference-shaped
+            /// `bt*` attributes whose deployed storage diverges from the
+            /// BIGINT reference convention). `None` when the deployed
+            /// reflection didn't fire or the deployed type is
+            /// unrecognized.
+            DeployedStorage : SqlStorageType option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

@@ -73,9 +73,12 @@ module OssysJsonReader =
             // semantic `PrimitiveType` stays canonical for the IR's
             // `Type` field; the concrete `SqlStorageType` carries the
             // emission evidence (`rtLongInteger` → BIGINT, etc.).
+            // The JSON projection does not carry parsed deployed-storage
+            // evidence (its `onDisk` sub-object is not lifted), so the
+            // deployed-storage channel is absent here.
             let typeEvidence =
                 resolveAttributeType
-                    rawDataType lengthOpt precisionOpt scaleOpt externalDatabaseType
+                    rawDataType lengthOpt precisionOpt scaleOpt externalDatabaseType None
             // Identity = isAutoNumber per V1 convention (only
             // primary-key columns marked isAutoNumber=true map to
             // SQL Server IDENTITY).

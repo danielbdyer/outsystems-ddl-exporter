@@ -87,6 +87,7 @@ let private idAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRo
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
@@ -112,6 +113,7 @@ let private emailAttrRow (sskey: System.Guid option) : OssysRowsetTypes.Attribut
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
@@ -479,6 +481,7 @@ let private accountIdRow (sskey: System.Guid option) : OssysRowsetTypes.Attribut
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
@@ -510,6 +513,7 @@ let private userAccountIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
@@ -755,6 +759,7 @@ let private billingAccountIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
@@ -932,6 +937,7 @@ let private systemAuditIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 
