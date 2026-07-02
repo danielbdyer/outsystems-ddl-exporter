@@ -26001,3 +26001,81 @@ prefix inside `runWithConfigCore` (ms-scale pure work at estate scale)
 the PL-1-adjacent follow-on (`PAY_ONCE_PLAN.md`), not this slice; the
 re-run is correct by the pinned profile-invariance and keeps the core's
 signature untouched for every other caller.
+
+## 2026-07-02 — PL-1 executed: one estate acquisition per combined verb (`EstateAcquisition` threaded through the load/store legs; one lifecycle load per store leg; the FTC fold retires from the recovery path)
+
+**Decision.** The pay-once program's Tier-1 item PL-1 (`PAY_ONCE_PLAN.md`;
+receipts S00/S45/S50/S05/S51/S53/S52/S13 in `PAY_ONCE_AUDIT.md`) is
+executed. The publish now RETURNS what it paid for: `runWithConfigCore`
+surfaces the post-chain `ComposeState`, and the new
+`Compose.runWithConfigAcquiring` returns `RunReport * EstateAcquisition`
+(read catalog, hydrated catalog, Bootstrap lane, migration context, final
+state — the named carrier of the naming theorem). The combined verbs
+thread it:
+
+- `runWithConfigAndLoad` → `projectSeedPlanUsing`: the seed plan renders
+  from the publish's `FinalState.Catalog` under its stored
+  `TopologicalOrder` and its own Bootstrap lane — no second model read, no
+  second full-estate hydration, no second chain run, no second Kahn/Tarjan
+  (the leveled composer gains the `*LaneUsing` topo-threaded core,
+  mirroring the bundle pair). `emittedSeedPlan cfg` remains the standalone
+  compute-then-delegate entry (`hydrateCatalogUsing` pattern) and is the
+  identity-gate witness.
+- `runWithConfigAndStore` → `storeLegFromAcquisition`: the emitted-schema
+  plane derives from `EstateAcquisition.ReadCatalog` by pure
+  `applyRenames` — the store leg's second `MetadataSnapshotRunner`
+  extraction is gone. `emittedSchema cfg` stays as the standalone witness.
+- `runStoreLeg` loads the lifecycle store ONCE (`loadStoreChain`) and
+  threads the chain through prior-schema / prior-refactorlog / coordinate
+  / record (S51: was four full deserializations of every episode's
+  catalog snapshot per leg).
+- **The FTC fold retires from the RECOVERY path** (S53): the prior schema
+  reads `(EpisodicLifecycle.latest chain)`'s stored snapshot directly —
+  exactly what `Episode.fs`'s own docstring prescribes ("recovery reads
+  the stored latest snapshot directly; the FTC fold earns its keep by
+  AGREEING with it"). The fold remains the executable verification law
+  (`6.H.2 reconstructLatestSchema` in `LifecycleStoreTests`, T12).
+- S13: migrate-with-data threads the schema leg's own
+  `artifacts.Plan.Diff` into the data leg (`Transfer.runWithRenamesUsing`
+  / `runReconcilingWithRenamesUsing`); the `*With` forms stay as
+  compute-then-delegate entries.
+- **S52 dissolves here, not separately**: `composePrefixState` (the
+  profile-invariant chain prefix, extracted from the pipelined arm's
+  `pipelinedPrefixState`) is the state-only chain runner —
+  `applyShapingToCatalog` (migrate/preview) and the standalone
+  `emittedSeedPlan` ride it, so the discarded whole-`Outputs` build (SSDT
+  render + manifest + JSON + snapshot + fidelity, per state-only consumer)
+  is gone. NM-02 (K23) is untouched: artifact-producing runs still fold
+  every emit step; only the REDUNDANT second projection disappeared.
+
+**Identity gates (all green before this entry).** Pure:
+`PayOnceCombinedVerbTests` (threaded seed plan ≡ standalone; data-off
+empty both ways; recorded episode schema ≡ fresh `emittedSchema`) plus the
+whole incumbent surface (`FullExportStoreTests`, `LifecycleStoreTests`,
+`DataEmissionComposerTests` partition law, migrate/preview suites) —
+unchanged, no golden moved. Docker: `PayOnceCombinedVerbDockerTests` — the
+content-bearing twin over the OSSYS edge-case estate (non-empty plan
+equality, live-estate episode plane equality) plus the WIRE RECEIPT: one
+`runWithConfigAndStore` records exactly ONE `adapter.osm.extract` Bench
+sample (was two).
+
+**Named alignment, consciously accepted (the plan's "watch" note).** The
+incumbent seed plan ran the chain WITHOUT the operator's physical-rename
+pins (and the incumbent store/load legs re-read the live estate at a
+LATER instant than the publish — a racing snapshot). The threaded forms
+consume the catalog the publish EMITTED, pins honored, one consistent
+snapshot — for every pin-free config this is value-identical (pinned by
+the gates; the chain suffix is catalog-preserving, so profile-invariance
+holds by the same law P2 pinned); for a physical-form `tableRenames`
+config the deployed seed now targets the SAME physical tables the bundle
+published, where the incumbent silently diverged from its own documented
+parity duty. That divergence-fix is deliberate and named here, not
+silent.
+
+**What did NOT move.** No goldens. No law surfaces. The pipelined arm's
+schedule and its equivalence law are untouched (its `PipelinedExtracted`
+gains the pre-hydration `ReadCatalog` it already had in hand). The
+"named cost, consciously kept" of the P2 entry above (the emit stage
+re-running the chain prefix inside `runWithConfigCore`) REMAINS kept —
+PL-1 removed the cross-verb re-acquisitions, not that intra-publish
+re-run.

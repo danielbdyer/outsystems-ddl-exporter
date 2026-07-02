@@ -22,6 +22,15 @@
 
 ### PL-1 · One estate acquisition per combined verb (the audit's biggest receipt)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry of the same date, "PL-1
+> executed"). Carrier landed as `Compose.EstateAcquisition` +
+> `runWithConfigAcquiring`; `projectSeedPlanUsing` / `storeLegFromAcquisition`
+> / `loadStoreChain`-threaded `runStoreLeg` / `composePrefixState` (S52) /
+> `Transfer.runWithRenamesUsing` + `runReconcilingWithRenamesUsing` (S13).
+> Identity gates: `PayOnceCombinedVerbTests` (pure) +
+> `PayOnceCombinedVerbDockerTests` (docker; wire receipt: ONE
+> `adapter.osm.extract` per combined store verb). No goldens moved.
+
 **Findings:** S00, S45, S50 (load leg), S05 (store leg), S51 (lifecycle ×4
 loads), S53 (diff chain ×2 + FTC re-derive), S52 (Outputs built and discarded
 by the seed-plan re-projection), S13 (migrate-with-data re-diff).

@@ -836,15 +836,17 @@ module MigrationRun =
                     let! transferResult =
                         // A5 — the data source is at A (`sinkSource`); re-point
                         // rows A→B through the rename-aware Transfer. The renameMap
-                        // derives from `CatalogDiff.between sinkSource target`; a
-                        // no-renames diff repoints by identity (== the straight load).
+                        // derives from the A→B `CatalogDiff` the schema leg already
+                        // computed (`artifacts.Plan.Diff` over the identical pair —
+                        // PL-1/S13, threaded not recomputed); a no-renames diff
+                        // repoints by identity (== the straight load).
                         if Map.isEmpty reconciliation then
-                            Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
+                            Transfer.runWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target
                         else
                             // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
                             // halt on the reconciling migrate-with-data path (the reconcile+migrate
                             // composition, AC-I7, is the follow-on; --allow-drops flows here then).
-                            Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
+                            Transfer.runReconcilingWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)
@@ -910,11 +912,12 @@ module MigrationRun =
                 | Ok baseline ->
                 let! transferResult =
                     // A5 — the data source is at A (`sinkSource`); re-point rows
-                    // A→B through the rename-aware Transfer (see `executeWithData`).
+                    // A→B through the rename-aware Transfer over the schema leg's
+                    // own diff (see `executeWithDataWith` — PL-1/S13).
                     if Map.isEmpty reconciliation then
-                        Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
+                        Transfer.runWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target
                     else
-                        Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
+                        Transfer.runReconcilingWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                 match transferResult with
                 | Error es -> return Error (DataTransferFailed es)
                 | Ok report ->

@@ -1141,6 +1141,27 @@ module Transfer =
     /// Slice C1 — the policy-bearing `runWithRenames`: a `FullRights` sink threads
     /// `IdentityPolicy.PreferPreservedKeys` so the populate preserves source keys
     /// (no capture/remap). `runWithRenames` fixes `Structural` (byte-identical).
+    /// PL-1 (S13) — the rename-aware transfer over a PRECOMPUTED A→B
+    /// displacement: migrate-with-data's schema leg already holds
+    /// `artifacts.Plan.Diff` over the identical (sinkSource, target) pair,
+    /// so the rename map derives from the threaded value instead of a
+    /// second whole-catalog `CatalogDiff.between`. Contract: `diff` MUST be
+    /// `CatalogDiff.between sourceContract sinkContract`; the diff-less
+    /// sibling below computes it and stays the safe entry.
+    let runWithRenamesUsing
+        (diff: CatalogDiff)
+        (identityPolicy: IdentityPolicy)
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        let renameMap =
+            RenameProjection.renames diff |> RenameProjection.renameMap
+        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+
     let runWithRenamesWith
         (identityPolicy: IdentityPolicy)
         (mode: Mode)
@@ -1150,12 +1171,9 @@ module Transfer =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         : Task<Result<TransferReport>> =
-        task {
-            let diff = CatalogDiff.between sourceContract sinkContract
-            let renameMap =
-                RenameProjection.renames diff |> RenameProjection.renameMap
-            return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
-        }
+        runWithRenamesUsing
+            (CatalogDiff.between sourceContract sinkContract)
+            identityPolicy mode allowCdc source sink sourceContract sinkContract
 
     let runWithRenames
         (mode: Mode)
@@ -1882,6 +1900,23 @@ module Transfer =
     /// Slice C1 — the policy-bearing `runReconcilingWithRenames`. A `FullRights`
     /// sink threads `PreferPreservedKeys`; `runReconcilingWithRenames` fixes
     /// `Structural` (byte-identical).
+    /// PL-1 (S13) — the reconciling sibling over a PRECOMPUTED displacement
+    /// (see `runWithRenamesUsing`; same contract on `diff`).
+    let runReconcilingWithRenamesUsing
+        (diff: CatalogDiff)
+        (identityPolicy: IdentityPolicy)
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        let renameMap =
+            RenameProjection.renames diff |> RenameProjection.renameMap
+        runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+
     let runReconcilingWithRenamesWith
         (identityPolicy: IdentityPolicy)
         (mode: Mode)
@@ -1892,12 +1927,9 @@ module Transfer =
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        task {
-            let diff = CatalogDiff.between sourceContract sinkContract
-            let renameMap =
-                RenameProjection.renames diff |> RenameProjection.renameMap
-            return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
-        }
+        runReconcilingWithRenamesUsing
+            (CatalogDiff.between sourceContract sinkContract)
+            identityPolicy mode allowCdc source sink sourceContract sinkContract reconciliation
 
     let runReconcilingWithRenames
         (mode: Mode)
