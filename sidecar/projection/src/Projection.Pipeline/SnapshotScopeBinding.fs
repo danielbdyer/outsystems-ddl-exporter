@@ -26,12 +26,26 @@ open Projection.Adapters.OssysSql
 /// module selection, and the include flags act only alongside it (the A7
 /// polarity decision, 2026-06-10).
 ///
-/// **`OnlyActiveAttributes` is deliberately NOT pushed down.** The
-/// in-memory filter does not filter attributes, so binding it would break
-/// the pushdown ≡ filter equivalence (`scopedRead(scope) ≡
-/// ModuleFilter.apply(scope) ∘ fullRead`) and would silently starve
-/// `InactiveAttributeDiagnostics` of its evidence. The dormant
-/// `model.onlyActiveAttributes` key keeps its standing deferral.
+/// **`OnlyActiveAttributes` is pushed down.** Inactive duplicate OSSYS
+/// attributes materialize as duplicate logical columns, duplicated FK
+/// constraints, duplicated index columns, and DacFx `SQL71508` /
+/// unresolved-reference failures downstream. The IR's attribute
+/// population must be scoped before naming, ordering, FK, index, and
+/// DDL logic runs: scope is query-time selection, not post-hoc
+/// de-duplication. The rowsets script filters `#Attr` at build time
+/// (`outsystems_metadata_rowsets.sql`, `@OnlyActiveAttributes`), and
+/// every dependent rowset (column reality, FK column pivots,
+/// index-column mappings, checks, JSON-compatibility) derives from
+/// `#Attr`, so none resurrect inactive attributes. Unlike the module
+/// pushdown, this axis is NOT gated on a declared module selection —
+/// attribute activity is orthogonal to module scope, and the config
+/// default (`onlyActiveAttributes = true`) requests active-only even
+/// for an unscoped export. There is no in-memory sibling seam for this
+/// axis (the pushdown ≡ filter equivalence law governs the
+/// module/entity axes only, with attribute activity held equal across
+/// both legs). When the operator asks to include inactive attributes
+/// (`onlyActiveAttributes = false`), they are preserved and later
+/// diagnostics explain any deploy conflicts.
 [<RequireQualifiedAccess>]
 module SnapshotScopeBinding =
 
@@ -63,7 +77,9 @@ module SnapshotScopeBinding =
     /// allow-list JSON, and the operator's include flags.
     let fromModel (model: Config.ModelSection) : MetadataSnapshotRunner.SnapshotParameters =
         match model.Modules with
-        | [] -> MetadataSnapshotRunner.defaultParameters
+        | [] ->
+            { MetadataSnapshotRunner.defaultParameters with
+                OnlyActiveAttributes = model.OnlyActiveAttributes }
         | selectors ->
             let names =
                 selectors
@@ -76,6 +92,6 @@ module SnapshotScopeBinding =
                 ModuleNames          = names
                 IncludeSystem        = model.IncludeSystemModules
                 IncludeInactive      = model.IncludeInactiveModules
-                OnlyActiveAttributes = false
+                OnlyActiveAttributes = model.OnlyActiveAttributes
                 EntityFilterJson     = entityFilterJson selectors
             }

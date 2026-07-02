@@ -320,6 +320,12 @@ let ``Slice 5.13.ossys-rowsets-cluster: triggers lift via rowset path (matrix ro
 // PURELY an extraction-cost reduction — never a semantics change.
 // Exercised against the 3-module edge-case seed (AppCore + Ops +
 // system-module SystemUsers) with entity narrowing on AppCore.
+//
+// The law governs the module/entity axes only. `OnlyActiveAttributes`
+// is a query-time selection axis with NO in-memory sibling seam
+// (`ModuleFilter.apply` does not filter attributes), so both legs bind
+// the same attribute-activity parameter — the axis is held equal, not
+// compensated post-hoc. Its own canary is below.
 // ---------------------------------------------------------------------
 
 let private scopedModel : Projection.Pipeline.Config.ModelSection =
@@ -343,7 +349,13 @@ let private extractEquivalencePair () : Task<Result<Catalog> * Result<Catalog>> 
                         LiveModelRead.fromConnectionWith
                             (SnapshotScopeBinding.fromModel scopedModel) cnn
                     // Leg 2 — the full read, narrowed by the semantic seam.
-                    let! full = LiveModelRead.fromConnection cnn
+                    // The attribute-activity axis is held equal to leg 1
+                    // (it has no in-memory seam to compensate through).
+                    let! full =
+                        LiveModelRead.fromConnectionWith
+                            { MetadataSnapshotRunner.defaultParameters with
+                                OnlyActiveAttributes = scopedModel.OnlyActiveAttributes }
+                            cnn
                     let filtered =
                         match full, ModuleFilterBinding.fromConfig scopedModel with
                         | Ok catalog, Ok opts -> ModuleFilter.apply opts catalog
@@ -389,3 +401,41 @@ let ``slice 4 equivalence: scoped pushdown read equals full read narrowed by Mod
                     "scoped catalog carries a dangling cross-scope reference"))
         | s, f ->
             failwithf "equivalence legs failed: scoped=%A filtered=%A" s f
+
+[<Fact>]
+let ``attribute-activity pushdown: onlyActiveAttributes excludes inactive attributes at query time`` () =
+    // `model.onlyActiveAttributes = true` (the config default) binds to
+    // `@OnlyActiveAttributes`, which filters `#Attr` at build time; every
+    // dependent rowset derives from `#Attr`, so inactive duplicate
+    // attributes never reach the IR — before naming, ordering, FK, index,
+    // and DDL logic runs. The seed's Customer carries LegacyCode with
+    // Is_Active = 0: it must be present on the permissive default read
+    // and absent under the bound model scope.
+    if skipIfNoDocker "ossys-only-active-attributes" then
+        let activeOnlyModel : Projection.Pipeline.Config.ModelSection =
+            { Path                   = None
+              Ossys                  = None
+              Modules                = []
+              IncludeSystemModules   = true
+              IncludeInactiveModules = true
+              OnlyActiveAttributes   = true }
+        let result =
+            TaskSync.run (fun () ->
+                task {
+                    let seed = MetadataExtractionSql.readEdgeCaseSeed()
+                    return!
+                        Deploy.withBootstrappedDatabase "OssysOnlyActiveAttrs" seed (fun cnn ->
+                            LiveModelRead.fromConnectionWith
+                                (SnapshotScopeBinding.fromModel activeOnlyModel) cnn)
+                })
+        match result with
+        | Error errors ->
+            Assert.Fail (sprintf "OSSYS active-only extraction failed: %A" errors)
+        | Ok catalog ->
+            let customer =
+                catalog.Modules
+                |> List.find (fun m -> Name.value m.Name = "AppCore")
+                |> fun m -> m.Kinds |> List.find (fun k -> Name.value k.Name = "Customer")
+            let attrNames = customer.Attributes |> List.map (fun a -> Name.value a.Name)
+            Assert.DoesNotContain("LegacyCode", attrNames)
+            Assert.Equal(5, List.length customer.Attributes)

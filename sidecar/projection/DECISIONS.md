@@ -25566,3 +25566,47 @@ opener).
 (e.g. a hardening pass reinstates D9 strictly), gate `openSpec` behind a
 `requireOutOfBand` flag for the OSSYS role rather than re-duplicating a second
 decode.
+
+## 2026-07-01 — `model.onlyActiveAttributes` pushes down to the OSSYS read (the standing deferral closes); the equivalence law holds the axis equal across both legs
+
+This entry AMENDS the 2026-06-13 slice-4 stance ("`OnlyActiveAttributes`
+is deliberately NOT pushed"). Inactive duplicate OSSYS attributes carried
+into a scoped live extraction materialize as duplicate logical columns,
+duplicated FK constraints, duplicated index columns, and DacFx `SQL71508`
+/ unresolved-reference failures at deploy validation. The IR's attribute
+population must be scoped before naming, ordering, FK, index, and DDL
+logic runs — scope is query-time selection, not post-hoc de-duplication
+in the emitter.
+
+**The wire.** `SnapshotScopeBinding.fromModel` now binds
+`model.OnlyActiveAttributes` into `SnapshotParameters.OnlyActiveAttributes`
+in BOTH arms — the axis is orthogonal to module scope, so it is NOT gated
+on a declared module selection (the config default,
+`onlyActiveAttributes = true`, requests active-only for an unscoped full
+export too). The rowsets script filters `#Attr` at build time
+(`@OnlyActiveAttributes`, `outsystems_metadata_rowsets.sql`); every
+dependent rowset (column reality, FK column pivots, index-column
+mappings, checks, JSON-compatibility) derives from `#Attr`, so none can
+resurrect a filtered attribute. `MetadataSnapshotRunner.defaultParameters`
+is unchanged (`false` — the permissive adapter default); the binding is
+where operator intent lands.
+
+**The law, restated.** `scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘
+fullRead` governs the module/entity axes only. The attribute-activity
+axis has NO in-memory sibling seam (`ModuleFilter.apply` does not filter
+attributes, and growing it one would be exactly the post-hoc
+de-duplication this decision rejects) — the equivalence canary therefore
+binds the same `OnlyActiveAttributes` value on both legs, and the axis
+gains its own Docker canary (an `Is_Active = 0` attribute present on the
+permissive default read, absent under the bound model scope).
+
+**Consequence, named.** With the default config,
+`InactiveAttributeDiagnostics` no longer sees inactive attributes — the
+operator asked for them to be excluded at the source. When the operator
+opts out (`onlyActiveAttributes = false`), inactive attributes are
+preserved end-to-end and later diagnostics explain any deploy conflicts.
+
+**Re-open trigger.** If a consumer needs inactive-attribute *evidence*
+alongside an active-only *emission* (diagnose-but-don't-emit), split the
+axes: a diagnostics-side unscoped read, not a weakening of the query-time
+pushdown.
