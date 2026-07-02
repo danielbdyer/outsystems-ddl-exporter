@@ -68,6 +68,46 @@ module CachedValue =
             | null -> NullValue
             | s    -> StringValue s
 
+    /// Project a V2 raw-form cell (the `RawValueCodec` contract — the
+    /// string shape `ReadSide.formatRawValue` emits and `StaticRow`
+    /// carries) into the SAME `CachedValue` that `ofReaderValue` yields
+    /// for the source column value. This equivalence table is the law
+    /// the single-scan evidence path stands on (the data lanes paid for
+    /// the stream; the evidence derives from it):
+    ///
+    ///   ""       → NullValue                    (the raw NULL sentinel)
+    ///   Integer  → IntValue (invariant int64 parse — int/bigint/smallint/tinyint)
+    ///   Boolean  → IntValue 0/1                 (NM-19: bit profiles as int)
+    ///   Decimal  → DecimalValue (invariant parse; scale survives because
+    ///              the raw form is the value's invariant ToString)
+    ///   DateTime → DateValue (exact `DateTimeFormat` parse; offset Zero —
+    ///              mirrors `ofReaderValue`'s DateTime arm)
+    ///   Date     → DateValue (exact `DateFormat` parse; offset Zero)
+    ///   Time     → StringValue raw              (a reader TimeSpan falls to
+    ///              `ToString()` = the "c" format = the raw form)
+    ///   Guid     → StringValue raw              (a reader Guid falls to
+    ///              `ToString()` "D" = `formatGuid`'s raw form)
+    ///   Text     → StringValue raw
+    ///   Binary   → BinaryValue (FromHexString)
+    let ofRaw (typ: PrimitiveType) (raw: string) : CachedValue =
+        if raw = "" then NullValue
+        else
+            let inv = System.Globalization.CultureInfo.InvariantCulture
+            match typ with
+            | Integer  -> IntValue (System.Int64.Parse(raw, inv))
+            | Boolean  -> IntValue (if RawValueCodec.parseBoolean raw then 1L else 0L)
+            | Decimal  -> DecimalValue (System.Decimal.Parse(raw, inv))
+            | DateTime ->
+                let dt = System.DateTime.ParseExact(raw, RawValueCodec.DateTimeFormat, inv)
+                DateValue (DateTimeOffset(dt, TimeSpan.Zero))
+            | Date ->
+                let dt = System.DateTime.ParseExact(raw, RawValueCodec.DateFormat, inv)
+                DateValue (DateTimeOffset(dt, TimeSpan.Zero))
+            | Time     -> StringValue raw
+            | Guid     -> StringValue raw
+            | Text     -> StringValue raw
+            | Binary   -> BinaryValue (System.Convert.FromHexString raw)
+
     /// True iff the value is a NullValue. Pure predicate; consumers
     /// pattern-match without re-walking the DU.
     let isNull (v: CachedValue) : bool =
@@ -175,6 +215,67 @@ module EvidenceCache =
     /// static kinds; sampling-policy exclusions).
     let tryFindKind (kindKey: SsKey) (cache: EvidenceCache) : CachedKind option =
         Map.tryFind kindKey cache.Kinds
+
+    /// **Single-scan derivation** — build one kind's `CachedKind` from
+    /// ALREADY-HYDRATED rows, with ZERO further per-kind SQL: the data
+    /// lanes paid for the row stream; the evidence derives from it.
+    /// Pure — the `Ingest` half already happened; this is a total
+    /// function of (kind, nullability reflection slice, rows).
+    ///
+    /// Exactness contract: equivalence with the live 3-query discovery
+    /// holds ONLY for a FULLY hydrated kind — `RowCount` and `NullCounts`
+    /// are exact because the rows are all of them (the live path's
+    /// aggregate query is exact even under sampling, so a sampled kind
+    /// must keep live discovery; callers gate on full hydration). Cell
+    /// projection rides `CachedValue.ofRaw`'s equivalence table; per-row
+    /// order is the reader's PK order on both paths, so `Values` arrays
+    /// align positionally for single-column-PK kinds (derivations are
+    /// order-insensitive regardless). Attribute-less kinds yield `None`
+    /// (the live discovery's own refusal shape).
+    let cachedKindOfRows
+        (nullability: Map<string, bool>)
+        (kind: Kind)
+        (rows: StaticRow list)
+        : CachedKind option =
+        if List.isEmpty kind.Attributes then None
+        else
+            let attrs = kind.Attributes
+            let attrCount = List.length attrs
+            let perColumn =
+                Array.init attrCount (fun _ -> System.Collections.Generic.List<CachedValue>())
+            for row in rows do
+                attrs
+                |> List.iteri (fun idx a ->
+                    let raw =
+                        Map.tryFind a.Name row.Values
+                        |> Option.defaultValue ""
+                    perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
+            let nullCounts =
+                attrs
+                |> List.mapi (fun idx a ->
+                    let nulls =
+                        let mutable n = 0L
+                        for v in perColumn.[idx] do
+                            if CachedValue.isNull v then n <- n + 1L
+                        n
+                    a.SsKey, nulls)
+                |> Map.ofList
+            let columns =
+                attrs
+                |> List.mapi (fun idx a ->
+                    { AttributeKey         = a.SsKey
+                      IsNullableInDatabase =
+                          Map.tryFind (ColumnRealization.columnNameText a.Column) nullability
+                          |> Option.defaultValue false
+                      Values               = perColumn.[idx].ToArray() })
+            let columnsByKey =
+                columns |> List.map (fun c -> c.AttributeKey, c) |> Map.ofList
+            Some
+                { KindKey      = kind.SsKey
+                  RowCount     = int64 (List.length rows)
+                  NullCounts   = nullCounts
+                  Columns      = columns
+                  ColumnsByKey = columnsByKey }
 
     /// Find a column within a kind by attribute SsKey. Returns
     /// `None` when the attribute exists in catalog but the cache
