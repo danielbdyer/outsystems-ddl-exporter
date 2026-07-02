@@ -145,10 +145,6 @@ module Render =
                 // resize-doubling on large catalogs.
                 max 65_536 (coll.Count * 120)
             | _ -> 65_536
-        let sb = StringBuilder(initialCapacity)
-        statements
-        |> Bench.streamProbe "render.toText.stream"
-        |> Seq.iter (toSql sb)
         // Slice D.2.a — terminal text-emission post-processor that
         // reformats ScriptDom-emitted column-inline constraints into
         // V1's multi-line elegant shape (PK + DEFAULT split across
@@ -164,7 +160,32 @@ module Render =
         // `applied-transforms` field. With `Disabled` the post-processor
         // passes ScriptDom's compact output through (the operator's
         // V1-parity / regression-bisect opt-out).
-        ConstraintFormatter.format mode (sb.ToString())
+        //
+        // PL-6 (S25): the Enabled arm formats PER STATEMENT into the ONE
+        // output builder (`ConstraintFormatter.formatInto`) — the line
+        // sequence is paid once, replacing the whole-artifact
+        // text → Split-per-line → second-builder → text round-trip (two
+        // extra full-artifact copies). The trailing newline mirrors the
+        // incumbent whole-text pass's final Split artifact (`format`
+        // documents the pin); the bytes are golden-locked unchanged.
+        match mode with
+        | ConstraintFormatter.Disabled ->
+            let sb = StringBuilder(initialCapacity)
+            statements
+            |> Bench.streamProbe "render.toText.stream"
+            |> Seq.iter (toSql sb)
+            sb.ToString()
+        | ConstraintFormatter.Enabled ->
+            let out = StringBuilder(initialCapacity)
+            let scratch = StringBuilder(512)
+            statements
+            |> Bench.streamProbe "render.toText.stream"
+            |> Seq.iter (fun s ->
+                scratch.Clear() |> ignore
+                toSql scratch s
+                ConstraintFormatter.formatInto out (scratch.ToString()))
+            out.Append('\n') |> ignore
+            out.ToString()
 
     /// Fold a statement stream into a single SQL-text artifact with the
     /// production-default `Enabled` constraint-rendering mode. The

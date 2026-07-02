@@ -265,6 +265,24 @@ reference-stable through a pass run (it is — passes thread one value).
 
 ### PL-6 · The text plane pays per byte once
 
+> **STATUS: EXECUTED 2026-07-02, S24 deferred by name to PL-9**
+> (DECISIONS entry "PL-6 executed"). S31 `JsonWriting.writtenBytes`
+> (live-buffer decode) + `ManifestEmitter.toJson` delegation; S30
+> `CatalogCodec.serializeUtf8` → `WriteRawValue(utf8)` (direct
+> `wCatalog` nesting REJECTED — depth re-indent would move stored
+> bytes); S29 the dead sort+Map-rebuild retired (the Map's own order
+> was always the emitted order); S32 serialized-once CDC keys; S33
+> `Render.toSql pendingDdl` direct; S14 `Deploy.executeSegments`
+> (pre-split; `alterSql` keeps the parser — `Render.toText` can carry
+> GO); S25 `ConstraintFormatter.formatInto` per-statement fold (the
+> trailing-newline Split artifact pinned; golden-scenario equivalence
+> fact); S26 (indent, trimmed) threaded once. S24 remains as PL-6c —
+> the emitters mint `Phase1/Phase2Segments` (the piece lists they
+> already concatenate; every GO frame flows through `renderDataBatch`)
+> and the parser split stays for text of unknown structure (a data
+> literal can carry an embedded GO line — line-folds mis-split it).
+> See the DECISIONS boundary paragraph.
+
 **Findings:** S25 (whole SSDT artifact built, then `ConstraintFormatter`
 split-and-rejoins it — two more full copies), S26 (`TrimStart`/keyword index
 per line ×2-3 across dispatch), S33 (`executeStreamWith` renders each

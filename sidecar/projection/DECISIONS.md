@@ -26395,3 +26395,100 @@ note: `readside.read` samples no longer appear on the
 transfer/slice-apply/capture paths (`readside.readSchema` +
 `profile.live.nullCountsFor` appear instead) — an expected
 label-population change, not a regression.
+
+## 2026-07-02 — PL-6 executed: the text plane pays per byte once (codec buffers in place; the store's UTF-8 raw embed; per-statement constraint formatting; pre-split deploy segments)
+
+**Decision.** Pay-once item PL-6, in two slices (S24 deferred BY NAME to
+PL-9 — see the boundary note at the end):
+
+- **S31** — `JsonWriting`'s three write→materialize forms decoded the
+  whole serialized artifact from a `ToArray()` COPY of the stream.
+  `writtenBytes` reads the flushed `MemoryStream`'s live buffer in
+  place (`TryGetBuffer`; the `ToArray` arms remain as never-taken
+  defensive fallbacks). `ManifestEmitter.toJson` — a byte-identical
+  inline duplicate of `renderNodeToString` — now delegates to it.
+- **S30** — `LifecycleStore.writeEpisode` embedded each episode's
+  catalog via `WriteRawValue(CatalogCodec.serialize e.Schema)`: UTF-8
+  bytes → UTF-16 string → re-scan/re-encode back to UTF-8, per episode
+  per save, on the store's largest payload. `CatalogCodec.serializeUtf8`
+  (over the new `JsonWriting.writeToUtf8`) hands `WriteRawValue` the
+  UTF-8 bytes directly. NAMED DEPARTURE from the audit's suggested
+  carrier: exposing `wCatalog` for direct nesting into the OUTER writer
+  was REJECTED — the writer indents by current depth, so nesting would
+  re-indent the embedded document and move every stored episode's bytes;
+  `WriteRawValue` preserves the incumbent level-0 indentation. Pinned
+  pure: `serializeUtf8 = UTF8(serialize)`.
+- **S29** — `CatalogCodec.wStaticRow` sorted the row's values and then
+  DISCARDED the sort by rebuilding a `Map` (whose own Name ordering —
+  identical to `r.Values`' — governed the enumeration). The row's Map
+  enumerates directly; the emitted order was always the Map's order, so
+  the bytes are unchanged by construction.
+- **S32** — `ProfileCodec.wCdc` serialized each SsKey twice (sort key +
+  written value). The serialized strings are computed once and are both;
+  `List.sort` over them is the same ordinal comparison `List.sortBy
+  SsKey.serialize` used and the form is injective, so order and bytes
+  are unchanged.
+- **S33** — `Deploy.executeStreamWith`'s `appendDdl` rendered each DDL
+  statement into a throwaway StringBuilder then copied it into
+  `pendingDdl`. `Render.toSql pendingDdl s` — the buffer IS the carrier.
+- **S14** — `Deploy.executeSegments`: realization of PRE-SPLIT segments
+  for callers that hold the batch structure they assembled from typed
+  statements moments earlier; the `TSql160Parser` re-parse to REDISCOVER
+  those boundaries is passed by construction. Semantics mirror the
+  splitter's output (per-segment Trim, empties dropped), and every
+  switched caller passes exactly the segment list the parser would have
+  produced from its GO-free text (the singleton for joined Phase-2
+  UPDATE lists / the wipe DELETE / the progress-marker DDL / each
+  migrate rename / the M22 envelope controls), so command texts and
+  round-trip counts are unchanged. `alterSql` deliberately KEEPS
+  `executeBatch` — it flows through `Render.toText`, which can carry
+  `GO` from `BatchSeparator`, so the parser split stays load-bearing
+  there, as it does for all text of unknown provenance.
+- **S25** — `Render.toTextWith`'s Enabled arm folded the whole artifact
+  into a builder, then `ConstraintFormatter.format` paid `ToString()` +
+  `Split` per line + a second builder + a second `ToString()` — two
+  extra whole-artifact copies. `ConstraintFormatter.formatInto`
+  formats each statement's rendered chunk into the ONE output builder.
+  THE BYTE TRAP, pinned: the whole-text pass's final `Split` element
+  (from the artifact's trailing `'\n'`) emitted one extra trailing
+  newline; a chunk's trailing separator artifact must be SKIPPED
+  per chunk and that one artifact-final newline re-added once —
+  `format` keeps the incumbent whole-text semantics and documents the
+  pin, and the golden-scenario equivalence fact asserts
+  per-statement ≡ whole-text byte-for-byte over the full corpus.
+- **S26** — `tryFormatLine` computes the (indent, trimmed) pair ONCE
+  and threads it into the shape formatters (`formatTableLevelTwoLine`,
+  `appendForeignKeySegment` directly for the table-level FK,
+  `renderColumnStack`'s indent) — the prior dispatch re-paid
+  `TrimStart` and `indentOf`'s allocate-to-measure per shape.
+
+**Identity gates.** Every golden byte-locked suite in the pure pool
+(golden emission scenarios, codec round-trips, lifecycle round-trips)
+green and unmoved; the new S25 equivalence fact
+(`GoldenEmissionTests`) and S30 bytes-equality fact
+(`CatalogCodecTests`); docker pool green over the switched
+transfer/migrate execute paths and the PL-2 bundle byte-identity
+witness. Bench note: `deploy.executeSegments*` labels appear where the
+switched call sites previously sampled `deploy.executeBatch*`, and the
+per-artifact `ssdt.constraintFormatter.format` sample no longer fires
+on the toText path (the whole-text `format` entry retains it) — named
+label-population changes, not regressions.
+
+**Boundary (S24 → PL-6c, the remaining slice).** The per-kind rendered
+data scripts' GO boundaries are still re-discovered by parse in
+`executeBatchParallel` (S24). Two load-bearing facts shape the right
+fix: (1) the parser split is NOT pure waste in general — a data literal
+carrying an embedded `\nGO\n` line would be mis-split by any line-fold
+over rendered text, so the split of text-of-unknown-structure must stay
+parser-grade; (2) every GO frame in the data lane flows through
+`ScriptDomGenerate.renderDataBatch` (its docstring: "the data lane's
+SINGLE terminal-text boundary"), so the emitters ALREADY build each
+member as a concatenation of segment-shaped pieces — the fix is minting
+`Phase1Segments`/`Phase2Segments : string list` at the emitters (the
+piece lists they concatenate today), deriving the joined text
+byte-identically by the same concat, and dispatching the segments
+directly. That is a pass over every emitter arm (plain merge, staged
+merge, per-row Phase-2, migration dependencies, bootstrap) gated by
+every publish golden — its own slice, executed separately against the
+PL-2 bundle-identity witness, the golden corpus, and the
+`executeLeveledSeed` docker witnesses.
