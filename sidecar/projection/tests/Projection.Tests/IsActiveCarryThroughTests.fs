@@ -316,6 +316,7 @@ let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName
         AttrName     = attrName
         PhysicalCol  = attrName.ToUpperInvariant()
         DataType     = "Identifier"
+        DefaultValue = None
         IsMandatory  = true
         IsIdentifier = true
         IsAutoNumber = true

@@ -25712,3 +25712,53 @@ batched INFORMATION_SCHEMA nullability reflection (one schema query
 instead of per-kind) as the next profile-stage cut; batch-aware row
 materialization for the largest tables if peak memory becomes the
 binding constraint.
+
+## 2026-07-02 — The rowset-contract DDL rules close: authored defaults lift on the rowset path; DB-default collation and [PRIMARY] placement suppress at the reflection boundary; DF__ auto-names never become the naming contract
+
+A contract sweep verified the eight canonical DDL-fidelity rules
+(authored attribute order; rtDate stays DATE; no UNIQUE promotion
+without operator intent; named-DEFAULT formatting; generated PK names —
+all IMPLEMENTED + PINNED) and found four gaps, all of the same class:
+**incidental properties of the deployed instance leaking into the
+emitted contract**. Output reflects the team's logical model plus
+INTENTIONAL physical choices — logical evidence for authored schema
+semantics, deployed evidence only where it prevents incorrect data
+handling or preserves intentional non-default configuration.
+
+**1. Authored `Default_Value` now lifts on the rowset path.** The
+extraction populated `#Attr.DefaultValue` and projected it at ordinal 8,
+but the runner skipped the ordinal and the reader hard-set
+`DefaultValue = None` — an estate-authored BIT `False` never emitted
+`DEFAULT 0` on the live path (the JSON path lifted it all along). The
+authored value now threads runner → bundle → reader, projected via
+`SqlLiteral.ofRaw` against the resolved primitive (`False` → `DEFAULT
+0`). No-op defaults are suppressed (absent / empty / whitespace — a
+nullable column's implicit NULL is normal SQL behavior, not a
+configured default). The REFLECTED `#ColumnReality.DefaultDefinition`
+expression channel stays un-lifted per matrix row 53's named trigger.
+
+**2. Reflected `DF__…` physical auto-names are filtered at the reader.**
+`DefaultConstraintName` lifts only authored-shaped names; SQL Server's
+double-underscore auto-names are incidental to the source instance and
+are dropped (the default emits unnamed). This was latent until #1 —
+the auto-name only surfaces when a `DefaultValue` accompanies it.
+Re-open trigger: if emitted defaults should carry GENERATED
+`DF_<Table>_<Column>` names (the PK/IX logical-vocabulary pattern), add
+that at the emitter as a naming policy — never by re-admitting
+reflected auto-names.
+
+**3. DB-default collation suppresses at query time.** `#ColumnReality
+.CollationName` is now `NULLIF(collation_name,
+DATABASEPROPERTYEX(DB_NAME(), 'Collation'))` — `sys.columns` names a
+collation for EVERY character column, so carrying it verbatim restated
+the database default on every emitted column. Only non-default
+collations are intentional configuration. One suppression site covers
+both paths (the JSON `onDisk` payload reads from `#ColumnReality`).
+Donor + embedded carbon copies synced; the line-count pin moved.
+
+**4. `[PRIMARY]` filegroup placement suppresses at the snapshot
+boundary.** `tryProjectDataSpace` maps a reflected `ROWS_FILEGROUP`
+named PRIMARY (case-insensitive) to `None`; non-primary filegroups and
+partition schemes carry as before. The emitter stays IR-faithful — an
+explicitly authored `Filegroup "PRIMARY"` still renders; reflection
+alone can no longer produce it.

@@ -90,7 +90,13 @@ let ``A.4.7'-prelude.row56-dataspace LR7 Filegroup: CREATE INDEX emits ON [fileg
     Assert.Contains ("ON [INDEX_FG]", body)
 
 [<Fact>]
-let ``A.4.7'-prelude.row56-dataspace LR7 Filegroup: PRIMARY filegroup name renders explicitly`` () =
+let ``A.4.7'-prelude.row56-dataspace LR7 Filegroup: an IR-carried PRIMARY filegroup still renders (emitter is IR-faithful)`` () =
+    // The emitter renders whatever the IR carries. The DEFAULT-[PRIMARY]
+    // suppression lives at the snapshot boundary
+    // (`MetadataSnapshotRunner.tryProjectDataSpace` maps a reflected
+    // ROWS_FILEGROUP named PRIMARY to None), so reflection alone never
+    // produces this shape — but an explicitly-authored IR value is
+    // honored, not second-guessed.
     let cat = dsCatalog (Some (DataSpace.Filegroup "PRIMARY"))
     let body = bodyOf dsKindKey cat
     Assert.Contains ("ON [PRIMARY]", body)

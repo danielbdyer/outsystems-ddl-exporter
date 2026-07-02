@@ -87,26 +87,40 @@ module OssysRowsetReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Slice A.4.7'-prelude.row53-source-side: V1's
-                  // `#ColumnReality.DefaultDefinition` carries the
-                  // expression text (e.g., `((0))`, `(getdate())`).
-                  // Parens-stripping + literal-vs-expression
-                  // disambiguation deferred per matrix row 53's named
+                  // Authored-default lift: the LOGICAL `Default_Value`
+                  // surface (an authored `False` says the team configured
+                  // a default — `SqlLiteral.ofRaw` projects it against the
+                  // resolved primitive, so BIT `False` emits `DEFAULT 0`).
+                  // No-op defaults are suppressed: an absent or
+                  // empty/whitespace authored value carries nothing (a
+                  // nullable column's implicit NULL is normal SQL
+                  // behavior, not a configured default). This is the
+                  // authored channel only — `#ColumnReality
+                  // .DefaultDefinition` (the reflected constraint
+                  // expression) stays un-lifted per matrix row 53's named
                   // trigger ("expression-shaped defaults flow via
                   // raw-string pass-through at the realization
-                  // boundary"). For now: rowset path leaves
-                  // DefaultValue = None; the JSON path's
-                  // `parseAttribute` populates from V1's `default`
-                  // field which V1 emits as the literal value.
-                  DefaultValue = None
+                  // boundary").
+                  DefaultValue =
+                      row.DefaultValue
+                      |> Option.bind (fun raw ->
+                          if System.String.IsNullOrWhiteSpace raw then None
+                          else Some (SqlLiteral.ofRaw p raw))
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for
-                  // round-trip parity with V1's `DF_<table>_<column>`
-                  // constraint identifier. `None` when no named
-                  // DEFAULT constraint exists at the deployed target.
+                  // round-trip parity with an AUTHORED
+                  // `DF_<table>_<column>` constraint identifier. `None`
+                  // when no named DEFAULT constraint exists at the
+                  // deployed target — and for SQL Server's `DF__…`
+                  // physical AUTO-names (double underscore + hex
+                  // suffix): a reflected auto-name is an incidental
+                  // property of the source instance, never the emitted
+                  // naming contract.
                   DefaultName  =
                       row.DefaultConstraintName
+                      |> Option.filter (fun raw ->
+                          not (raw.StartsWith("DF__", System.StringComparison.OrdinalIgnoreCase)))
                       |> Option.bind (fun raw ->
                           Name.create raw |> Result.toOption)
                   // Slice A.4.7'-prelude.row53-source-side (LR4 cash-

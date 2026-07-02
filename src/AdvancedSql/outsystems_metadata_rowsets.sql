@@ -401,7 +401,11 @@ SELECT
     END AS MaxLength,
     c.precision AS [Precision],
     c.scale AS [Scale],
-    c.collation_name AS CollationName,
+    -- Default-collation suppression: a collation equal to the DATABASE
+    -- default is an incidental property of the instance, not an
+    -- intentional choice; restating it couples emitted DDL to the source
+    -- instance. Only NON-default collations carry.
+    NULLIF(c.collation_name, CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128))) AS CollationName,
     CAST(c.is_identity AS bit) AS IsIdentity,
     CAST(COLUMNPROPERTY(c.object_id, c.[name], 'IsComputed') AS bit) AS IsComputed,
     cc.definition AS ComputedDefinition,

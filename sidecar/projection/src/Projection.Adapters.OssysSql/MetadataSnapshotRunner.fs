@@ -172,6 +172,13 @@ module MetadataSnapshotRunner =
           Length            : int option
           Precision         : int option
           Scale             : int option
+          /// Authored `ossys_Entity_Attr.Default_Value` — the LOGICAL
+          /// Service-Studio default (e.g. `False` for a BIT). Distinct
+          /// from `#ColumnReality.DefaultDefinition` (the reflected SQL
+          /// Server constraint expression): the authored surface says the
+          /// team CONFIGURED a default; the reflected one may merely
+          /// restate normal SQL behavior.
+          DefaultValue      : string option
           IsMandatory       : bool
           IsActive          : bool
           IsAutoNumber      : bool
@@ -480,8 +487,9 @@ module MetadataSnapshotRunner =
           Length         = readIntOpt r 5
           Precision      = readIntOpt r 6
           Scale          = readIntOpt r 7
-          // ordinal 8 is DefaultValue (string?) — not consumed by V2
-          // RowsetBundle today; skipped.
+          // ordinal 8 — authored Default_Value; carried so the rowset
+          // path emits authored defaults (e.g. BIT False -> DEFAULT 0).
+          DefaultValue   = readStringOpt r 8
           IsMandatory    = readBool r 9
           IsActive       = readBool r 10
           IsAutoNumber   = match readBoolOpt r 11 with Some b -> b | None -> false
@@ -954,7 +962,14 @@ module MetadataSnapshotRunner =
         | Some n, Some t when not (System.String.IsNullOrWhiteSpace n) ->
             match t.ToUpperInvariant() with
             | "ROWS_FILEGROUP" ->
-                Some (DataSpace.Filegroup n)
+                // Default-filegroup suppression: `[PRIMARY]` placement is
+                // SQL Server's default, not an intentional choice — lifting
+                // it would restate `ON [PRIMARY]` in emitted DDL. Only a
+                // NON-primary filegroup is intentional physical
+                // configuration; partition schemes always carry.
+                if System.String.Equals(n, "PRIMARY", System.StringComparison.OrdinalIgnoreCase)
+                then None
+                else Some (DataSpace.Filegroup n)
             | "PARTITION_SCHEME" ->
                 let cols =
                     partitionColumnsJson
@@ -1179,6 +1194,7 @@ module MetadataSnapshotRunner =
                     AttrName             = a.AttrName
                     PhysicalCol          = a.PhysicalCol
                     DataType             = match a.DataType with Some s -> s | None -> "Text"
+                    DefaultValue         = a.DefaultValue
                     IsMandatory          = a.IsMandatory
                     IsIdentifier         = a.IsIdentifier
                     IsAutoNumber         = a.IsAutoNumber

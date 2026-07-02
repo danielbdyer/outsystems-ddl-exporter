@@ -481,7 +481,7 @@ module ComprehensiveCanaryTests =
             let attrRow : OssysRowsetTypes.AttributeRow =
                 { AttrId = suppAttrId; EntityId = suppEntityId
                   AttrName = "Id"; PhysicalCol = "ID"
-                  DataType = "Integer"; IsMandatory = true
+                  DataType = "Integer"; DefaultValue = None; IsMandatory = true
                   IsIdentifier = true; IsAutoNumber = false
                   Length = None; Precision = None; Scale = None
                   AttrSsKey = None; IsActive = true

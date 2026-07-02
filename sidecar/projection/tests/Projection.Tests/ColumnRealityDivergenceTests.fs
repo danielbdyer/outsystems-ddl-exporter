@@ -15,6 +15,7 @@ open Projection.Adapters.OssysSql
 let private attr (attrId: int) (col: string) (isMandatory: bool) (isAutoNumber: bool) : MetadataSnapshotRunner.OssysAttributeRow =
     { AttrId = attrId; EntityId = 1; AttrName = col; AttrSsKey = None
       DataType = Some "Text"; Length = None; Precision = None; Scale = None
+      DefaultValue = None
       IsMandatory = isMandatory; IsActive = true; IsAutoNumber = isAutoNumber
       IsIdentifier = false; RefEntityId = None; OriginalName = None
       ExternalDbType = None; DeleteRule = None; PhysicalCol = col
@@ -195,3 +196,30 @@ let ``toBundle: no ColumnReality row means no DeployedStorage evidence`` () =
     let bundle = MetadataSnapshotRunner.toBundle s
     let row = bundle.Attributes |> List.find (fun a -> a.AttrId = 100)
     Assert.Equal(None, row.DeployedStorage)
+
+// ---------------------------------------------------------------------------
+// Default-dataspace suppression — `[PRIMARY]` filegroup placement is SQL
+// Server's default, not an intentional choice: the snapshot boundary lifts
+// only NON-primary filegroups (and partition schemes) into `DataSpace`, so
+// emitted DDL never restates `ON [PRIMARY]` from reflection alone.
+// ---------------------------------------------------------------------------
+
+let private idxRow (name: string) (dsName: string option) (dsType: string option) : MetadataSnapshotRunner.OssysAllIdxRow =
+    { EntityId = 1; ObjectId = 1; IndexId = 2; IndexName = name; IsUnique = false; IsPrimary = false
+      Kind = "INDEX"; FilterDefinition = None; IsDisabled = false; IsPadded = false; FillFactor = 0
+      IgnoreDupKey = false; AllowRowLocks = true; AllowPageLocks = true; NoRecompute = false
+      DataSpaceName = dsName; DataSpaceType = dsType; PartitionColumnsJson = None; DataCompressionJson = None }
+
+[<Fact>]
+let ``dataspace: reflected PRIMARY filegroup placement is suppressed at the snapshot boundary`` () =
+    let s = { snapshotOf [] [] with Indexes = [ idxRow "IX_T" (Some "PRIMARY") (Some "ROWS_FILEGROUP") ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
+    Assert.Equal(None, row.DataSpace)
+
+[<Fact>]
+let ``dataspace: a non-primary filegroup is intentional configuration and carries`` () =
+    let s = { snapshotOf [] [] with Indexes = [ idxRow "IX_T" (Some "INDEX_FG") (Some "ROWS_FILEGROUP") ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
+    Assert.Equal(Some (DataSpace.Filegroup "INDEX_FG"), row.DataSpace)

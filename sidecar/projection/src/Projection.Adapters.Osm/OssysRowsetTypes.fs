@@ -101,6 +101,13 @@ module OssysRowsetTypes =
             AttrName     : string
             PhysicalCol  : string
             DataType     : string
+            /// Authored `ossys_Entity_Attr.Default_Value` — the logical
+            /// Service-Studio default surface (`False` for BIT, etc.).
+            /// `None` when the estate authored no default. Projects via
+            /// `SqlLiteral.ofRaw` against the resolved `PrimitiveType`
+            /// into `Attribute.DefaultValue` (same shape as the JSON
+            /// path's `default` field).
+            DefaultValue : string option
             IsMandatory  : bool
             IsIdentifier : bool
             IsAutoNumber : bool

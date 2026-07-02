@@ -63,6 +63,7 @@ let private attrRow
       AttrName             = name
       PhysicalCol          = name.ToUpperInvariant()
       DataType             = dataType
+      DefaultValue         = None
       IsMandatory          = false
       IsIdentifier         = name = "Id"
       IsAutoNumber         = false
@@ -246,3 +247,50 @@ let ``deployed storage: ordinary logical types are never widened by deployed sto
     let attr = findAttribute cat "BirthDate"
     Assert.Equal(Date, attr.Type)
     Assert.Equal(Some SqlStorageType.Date, attr.SqlStorage)
+
+// ---------------------------------------------------------------------------
+// Authored-default lift (rowset path) — the LOGICAL `Default_Value`
+// surface carries into `Attribute.DefaultValue` typed against the resolved
+// primitive (an authored BIT `False` emits `DEFAULT 0`), while no-op
+// defaults (absent / empty / whitespace) are suppressed. Distinct from the
+// reflected `#ColumnReality.DefaultDefinition` channel, which stays
+// un-lifted. Reflected `DF__…` physical auto-names never become the
+// emitted naming contract.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``authored defaults: BIT False lifts to a typed BooleanLit false (emits DEFAULT 0)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let flag = { attrRow 101 "IsActive" "Boolean" false None None with DefaultValue = Some "False" }
+    let cat = parseToCatalog (buildBundle [ idAttr; flag ])
+    let attr = findAttribute cat "IsActive"
+    Assert.Equal(Some (SqlLiteral.BooleanLit false), attr.DefaultValue)
+
+[<Fact>]
+let ``authored defaults: a Text default lifts as a typed TextLit`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let status = { attrRow 101 "Status" "Text" false None None with DefaultValue = Some "Pending" }
+    let cat = parseToCatalog (buildBundle [ idAttr; status ])
+    let attr = findAttribute cat "Status"
+    Assert.Equal(Some (SqlLiteral.TextLit "Pending"), attr.DefaultValue)
+
+[<Fact>]
+let ``authored defaults: absent and empty authored values are suppressed (no-op defaults carry nothing)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let noDefault = attrRow 101 "Plain" "Text" false None None
+    let emptyDefault = { attrRow 102 "Blank" "Text" false None None with DefaultValue = Some "  " }
+    let cat = parseToCatalog (buildBundle [ idAttr; noDefault; emptyDefault ])
+    Assert.Equal(None, (findAttribute cat "Plain").DefaultValue)
+    Assert.Equal(None, (findAttribute cat "Blank").DefaultValue)
+
+[<Fact>]
+let ``default names: a reflected DF__ physical auto-name is never the emitted naming contract`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let autoNamed =
+        { attrRow 101 "IsActive" "Boolean" false None (Some "DF__OSUSR_ABC__ISACTIVE__1A2B3C4D") with
+            DefaultValue = Some "False" }
+    let cat = parseToCatalog (buildBundle [ idAttr; autoNamed ])
+    let attr = findAttribute cat "IsActive"
+    // The authored default value carries; the incidental auto-name does not.
+    Assert.Equal(Some (SqlLiteral.BooleanLit false), attr.DefaultValue)
+    Assert.Equal(None, attr.DefaultName)
