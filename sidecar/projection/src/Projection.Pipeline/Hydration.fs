@@ -106,6 +106,50 @@ module Hydration =
             return graftStaticPopulations rowsByKind catalog
         }
 
+    /// The bounded-concurrent static-graft arm, hoisted to module level so the
+    /// caller's `task { }` stays statically compilable in Release (FS3511 —
+    /// deeply nested match/match! inside one state machine is the named
+    /// failure shape; cf. `runWithConfigCore`).
+    let private hydrateStaticConcurrent
+        (concurrency: int)
+        (connSpec: string)
+        (catalog: Catalog)
+        : Task<Result<Catalog>> =
+        task {
+            let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+            let ownedStatic =
+                Catalog.allKinds catalog
+                |> List.filter isStaticKind
+                |> List.map (fun k -> k.SsKey)
+                |> Set.ofList
+            // Resolve the spec ONCE; per-kind opens are pure pooled opens on
+            // the same connection string.
+            match ConnectionSpec.openerFor "ossys-hydration-source" connSpec with
+            | Error es -> return Result.failure es
+            | Ok openConnection ->
+                match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
+                | Error es -> return Result.failure es
+                | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
+        }
+
+    /// The bounded-concurrent Bootstrap arm — same FS3511 hoist as
+    /// `hydrateStaticConcurrent`.
+    let private collectBootstrapConcurrent
+        (concurrency: int)
+        (connSpec: string)
+        (eligible: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, StaticRow list>>> =
+        task {
+            // Resolve the spec ONCE; per-kind opens are pure pooled opens on
+            // the same connection string.
+            match ConnectionSpec.openerFor "ossys-bootstrap-source" connSpec with
+            | Error es -> return Result.failure es
+            | Ok openConnection ->
+                return! Ingestion.collectInOrderForConcurrent concurrency openConnection eligible catalog topo
+        }
+
     /// Hydrate the catalog for a full-export run. No data emission ⇒ identity.
     /// No live OSSYS source (the model came from `model.path`) ⇒ identity (the
     /// skip is named in `diagnostics`, never silent). `model.ossys` present ⇒
@@ -135,20 +179,7 @@ module Hydration =
                             let! hydrated = streamAndGraft cnn catalog
                             return Result.success hydrated
                     else
-                        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-                        let ownedStatic =
-                            Catalog.allKinds catalog
-                            |> List.filter isStaticKind
-                            |> List.map (fun k -> k.SsKey)
-                            |> Set.ofList
-                        // Resolve the spec ONCE; per-kind opens are pure
-                        // pooled opens on the same connection string.
-                        match ConnectionSpec.openerFor "ossys-hydration-source" connSpec with
-                        | Error es -> return Result.failure es
-                        | Ok openConnection ->
-                            match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
-                            | Error es -> return Result.failure es
-                            | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
+                        return! hydrateStaticConcurrent concurrency connSpec catalog
         }
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
@@ -215,12 +246,7 @@ module Hydration =
                                 let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
                                 return Result.success rows
                         else
-                            // Resolve the spec ONCE; per-kind opens are pure
-                            // pooled opens on the same connection string.
-                            match ConnectionSpec.openerFor "ossys-bootstrap-source" connSpec with
-                            | Error es -> return Result.failure es
-                            | Ok openConnection ->
-                                return! Ingestion.collectInOrderForConcurrent concurrency openConnection eligible catalog topo
+                            return! collectBootstrapConcurrent concurrency connSpec eligible catalog topo
         }
 
     /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`
