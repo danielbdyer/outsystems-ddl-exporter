@@ -29,6 +29,27 @@ Row maps / evidence caches value-identical across all legs.
 | **4. Memoize/thread the topological order** | ❌ LOW PRIORITY — micro-win, real staleness hazard | ~5 recomputes/publish but each is sub-ms-to-low-ms at 300 kinds (Kahn/Tarjan already Dictionary-based). The sites legitimately differ: pre-transform vs post-chain vs emission-seam catalogs, and SSDT uses `SkipSelfEdges` while data uses `TreatAsCycle`. Only the chain-step → data-emit reuse is coherent, and it must first prove `UserFkReflowPass` never re-points FK edges after the topo step. Not worth the hazard today. |
 | **5. Bench granularity (gate wait / conn open / SQL read / materialization)** | ✅ VALID — the two phases the knob most affects are exactly the unmeasured ones | Gate wait (`gate.WaitAsync`) and connection open both precede the drain stopwatch — MISSING. SQL execute is covered (`readside.readRowsStream.open`) but the per-row `ReadAsync` wire fetch is only the residual of the stream-lifetime label — CONFLATED. Materialization is COVERED (`readside.rowstream.materialize` / `.materializeIr`). Minimal closure: `ingestion.rowDrain.gateWait` / `.connectionOpen`, `readside.rowstream.fetch`, and profiler mirrors + `profile.live.aggregate`. No new double-counting. |
 
+### Execution status (2026-07-02, same session)
+
+**Executed:** rec 1 (batched nullability reflection — ONE catalog-wide
+`INFORMATION_SCHEMA.COLUMNS` query in both capture paths, per-kind query
+retired, case-insensitive table keys; 3 → 2 queries/kind); rec 5 (the
+four-phase Bench labels); rec 2's real residual (`ConnectionSpec.openerFor`
+— resolve-once opener; per-open `file:` secret re-reads eliminated;
+`Min Pool Size` remains an operator connection-string knob, not forced);
+discovery #1 (typed per-column cell formatters in
+`ReadSide.readRowsStreamCore`, byte-identical formatting, generic
+fallback); discovery #4's options half (`Sql160ScriptGenerator` options
+memoized; the generator itself stays per-call — it holds render state).
+
+**Deferred with evidence:** discovery #2 — the per-row `Map` is NOT
+throwaway: it is retained as `DataInsertRow.Values` (the artifact
+carrier), so fusing saves one ordered re-walk per row while requiring a
+render-contract reshape across three emitters; do it with the #3
+artifact-streaming decision, not alone. Discovery #5 (composer lane
+skip) — a few hundred `Map.tryFind`s; noise next to the fused-string
+cost it sits beside. Recs 3 and 4 — adjudicated against, above.
+
 ### Next-wave discovery (ranked; the sharpest first)
 
 1. **`ReadSide.formatRawValue` per-cell box + `Convert` reparse** (`ReadSide.fs` pull loop) — `GetValue` boxes every scalar then `Convert.To*` re-dispatches, ×375k rows × N columns. Typed accessors (`GetInt64/GetDecimal/…` guarded by the known column type) remove both. Measure via `readside.rowstream.materialize` before/after. **HIGH.**
