@@ -73,6 +73,39 @@ module ConnectionSpec =
     /// are accepted uniformly: `env:` / `file:` resolve the secret through the
     /// canonical `ConnectionResolver` (D9: the secret is read there and only
     /// there); `live:<connStr>` and a bare connection string open directly.
+    /// Resolve `spec` to its in-memory connection string ONCE (the secret is
+    /// read here and only here — never logged, never persisted; D9's
+    /// out-of-band sourcing is about provenance, not about re-reading).
+    /// The bounded-concurrency drains open one connection per kind; a
+    /// per-open `openSpec` would re-read a `file:` secret (or env var)
+    /// hundreds of times per lane at estate scale.
+    let resolveSpec (label: string) (spec: string) : Result<string> =
+        if spec.StartsWith "env:" || spec.StartsWith "file:" then
+            parseConnectionSpec spec |> Result.bind (ConnectionResolver.resolve label)
+        else
+            Result.success (if spec.StartsWith "live:" then spec.Substring 5 else spec)
+
+    /// A resolve-once connection opener for the bounded-concurrency drains:
+    /// the spec resolves to its connection string a single time; every
+    /// `openConnection ()` after that is a pure pooled open on the SAME
+    /// string (one SqlClient pool bucket — physical connections reused).
+    let openerFor (label: string) (spec: string) : Result<unit -> Task<Result<SqlConnection>>> =
+        resolveSpec label spec
+        |> Result.map (fun connStr ->
+            fun () ->
+                task {
+                    try
+                        let cnn = new SqlConnection(connStr)
+                        do! cnn.OpenAsync()
+                        return Result.success cnn
+                    with ex ->
+                        return
+                            Result.failureOf
+                                (ValidationError.create
+                                    "connection.openFailed"
+                                    (sprintf "%s: %s" label ex.Message))
+                })
+
     let openSpec (role: SubstrateRole) (label: string) (spec: string) : Task<Result<SqlConnection>> =
         task {
             if spec.StartsWith "env:" || spec.StartsWith "file:" then

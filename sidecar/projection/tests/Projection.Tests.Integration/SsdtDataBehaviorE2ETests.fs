@@ -241,7 +241,9 @@ type SsdtDataBehaviorE2ETests(fixture: EphemeralContainerFixture) =
                         deploySchema connStr catalog
                         do! Deploy.executeBatch cnn seeds
                         // the unique index deployed on CODE
-                        let! isUnique = scalar cnn "SELECT CAST(i.is_unique AS INT) FROM sys.indexes i WHERE i.object_id = OBJECT_ID('dbo.OSUSR_E2E_COUPON') AND i.name = 'UQ_COUPON_CODE';"
+                        // The deployed name is the EMITTED logical form (IndexNaming):
+                        // UIX_<Kind>_<Column> for a unique index.
+                        let! isUnique = scalar cnn "SELECT CAST(i.is_unique AS INT) FROM sys.indexes i WHERE i.object_id = OBJECT_ID('dbo.OSUSR_E2E_COUPON') AND i.name = 'UIX_Coupon_Code';"
                         Assert.Equal("1", isUnique)
                         // and it is ENFORCED — a duplicate CODE is rejected
                         let! threw =

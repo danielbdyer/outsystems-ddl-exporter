@@ -813,6 +813,53 @@ module ReadSide =
                             (sprintf "ReadSide.Binary: unexpected runtime type %s" (other.GetType().FullName))
                 System.Convert.ToHexString bytes
 
+    /// Per-column typed cell formatter, chosen ONCE per stream from the
+    /// reader's actual field type (`GetFieldType`) + the attribute's
+    /// semantic primitive. The generic path (`GetValue` box →
+    /// `Convert.To*` re-dispatch → format) costs a box + dynamic convert
+    /// per CELL — at estate scale (hundreds of thousands of rows × N
+    /// columns) that is the dominant per-cell cost, so the expected
+    /// (type-matched) cases read through the typed accessors instead.
+    /// Byte-identical output: every fast path mirrors `formatRawValue`'s
+    /// exact `RawValueCodec` / invariant formatting; any unexpected
+    /// runtime field type falls back to `formatRawValue` untouched.
+    /// NULL handling stays in the row loop (`IsDBNull` → the empty-string
+    /// sentinel) — formatters see non-null cells only.
+    let private typedCellFormatter
+        (typ: PrimitiveType)
+        (fieldType: System.Type)
+        : SqlDataReader -> int -> string =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        match typ with
+        | Integer when fieldType = typeof<int64> ->
+            fun r i -> r.GetInt64(i).ToString(inv)
+        | Integer when fieldType = typeof<int32> ->
+            fun r i -> (int64 (r.GetInt32 i)).ToString(inv)
+        | Integer when fieldType = typeof<int16> ->
+            fun r i -> (int64 (r.GetInt16 i)).ToString(inv)
+        | Integer when fieldType = typeof<byte> ->
+            fun r i -> (int64 (r.GetByte i)).ToString(inv)
+        | Decimal when fieldType = typeof<decimal> ->
+            fun r i -> r.GetDecimal(i).ToString(inv)
+        | Boolean when fieldType = typeof<bool> ->
+            fun r i -> RawValueCodec.formatBoolean (r.GetBoolean i)
+        | DateTime when fieldType = typeof<System.DateTime> ->
+            fun r i -> RawValueCodec.formatDateTime (r.GetDateTime i)
+        | Date when fieldType = typeof<System.DateTime> ->
+            fun r i -> RawValueCodec.formatDate (r.GetDateTime i)
+        | Time when fieldType = typeof<System.TimeSpan> ->
+            fun r i -> RawValueCodec.formatTime (r.GetFieldValue<System.TimeSpan> i)
+        | Guid when fieldType = typeof<System.Guid> ->
+            fun r i -> RawValueCodec.formatGuid (r.GetGuid i)
+        | Text when fieldType = typeof<string> ->
+            fun r i -> r.GetString i
+        | Binary when fieldType = typeof<byte[]> ->
+            fun r i -> System.Convert.ToHexString (r.GetFieldValue<byte[]> i)
+        | _ ->
+            // Unexpected pairing (provider-specific surfacing, legacy
+            // storage) — the tolerant generic path is authoritative.
+            fun r i -> formatRawValue typ (r.GetValue i)
+
     /// Stream a table's rows as an `AsyncStream<RowQuantum>` — pull-
     /// based, bench-instrumented, positional against `Kind.rowBasis kind`
     /// (Q2: the in-flight carrier is the quantum; the typed Map vocabulary
@@ -877,6 +924,7 @@ module ReadSide =
         let attrs = List.toArray kind.Attributes
         let mutable cmdOpt : SqlCommand option = None
         let mutable readerOpt : SqlDataReader option = None
+        let mutable formatters : (SqlDataReader -> int -> string)[] = [||]
         let mutable disposed = false
         let dispose () =
             if not disposed then
@@ -901,6 +949,11 @@ module ReadSide =
                 cmdOpt <- Some cmd
                 let! reader = cmd.ExecuteReaderAsync()
                 readerOpt <- Some reader
+                // Per-column typed formatters, chosen once from the actual
+                // field types (available as soon as the reader opens).
+                formatters <-
+                    Array.init attrs.Length (fun i ->
+                        typedCellFormatter attrs.[i].Type (reader.GetFieldType i))
             }
         // PERF_HARNESS §3.6 label 1 accumulator: per-row carrier-build ticks,
         // recorded as ONE aggregated sample at EOF (a per-row Bench.scope
@@ -941,10 +994,9 @@ module ReadSide =
                             let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
                             let cells = Array.zeroCreate<string> attrs.Length
                             for i in 0 .. attrs.Length - 1 do
-                                let raw : obj | null =
-                                    if r.IsDBNull i then null
-                                    else r.GetValue i
-                                cells.[i] <- formatRawValue attrs.[i].Type raw
+                                cells.[i] <-
+                                    if r.IsDBNull i then ""
+                                    else formatters.[i] r i
                             materializeTicks <-
                                 materializeTicks
                                 + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)

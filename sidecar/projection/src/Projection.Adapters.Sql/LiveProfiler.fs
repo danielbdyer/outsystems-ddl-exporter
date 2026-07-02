@@ -127,47 +127,50 @@ module LiveProfiler =
                 else hasMore <- false
         }
 
-    /// Per-kind nullability reflection via `INFORMATION_SCHEMA.COLUMNS`.
-    /// Returns a `Map<ColumnName, IsNullable>` for the kind's deployed
-    /// table; one round-trip per kind regardless of column count.
-    /// Identifiers parameterize via SQL parameters (defense-in-depth
-    /// against injection though Coordinates.TableId structurally
-    /// excludes hostile input).
-    let private nullabilityReflectionSql : string =
-        "SELECT COLUMN_NAME, IS_NULLABLE \
+    /// The CATALOG-WIDE nullability reflection — one round trip replacing
+    /// N per-kind `INFORMATION_SCHEMA.COLUMNS` queries (the batched form;
+    /// at ~300 kinds this removes ~1/3 of profile-stage round trips). The
+    /// per-kind lookup key is upper-invariant `SCHEMA.TABLE`: the per-kind
+    /// query matched (schema, table) under the SERVER's collation
+    /// (typically case-insensitive), so the client-side re-match must be
+    /// case-insensitive too — an ordinal miss would silently default a
+    /// column to NOT NULL, a false tightening signal.
+    let private batchedNullabilityReflectionSql : string =
+        "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, IS_NULLABLE \
          FROM INFORMATION_SCHEMA.COLUMNS \
-         WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table"
+         WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')"
 
+    let private tableKeyOf (kind: Kind) : string =
+        System.String.Concat(TableId.schemaText kind.Physical, ".", TableId.tableText kind.Physical).ToUpperInvariant()  // LINT-ALLOW: case-insensitive lookup-key composition for the batched reflection map; the key IS a string primitive at the ADO.NET boundary
 
-    let private reflectNullability
+    let private reflectNullabilityAll
         (cnn: SqlConnection)
-        (kind: Kind)
-        : Task<Map<string, bool>> =
+        : Task<Map<string, Map<string, bool>>> =
         task {
-            use _ = Bench.scope "profile.live.reflectNullability"
+            use _ = Bench.scope "profile.live.reflectNullability.batched"
             use cmd = cnn.CreateCommand()
-            cmd.CommandText <- nullabilityReflectionSql
+            cmd.CommandText <- batchedNullabilityReflectionSql
             cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
-            // Slice 5 (lift): unwrap typed VOs to raw strings — ADO.NET
-            // doesn't bind `SchemaName` / `TableName` to SqlParameter
-            // (runtime: "No mapping exists from object type
-            // Projection.Core.SchemaName to a known managed provider
-            // native type"). Both sites need the pre-unwrapped string.
-            cmd.Parameters.AddWithValue("@schema", TableId.schemaText kind.Physical) |> ignore
-            cmd.Parameters.AddWithValue("@table",  TableId.tableText kind.Physical)  |> ignore
             use! reader = cmd.ExecuteReaderAsync()
-            let mutable acc : Map<string, bool> = Map.empty
+            let mutable acc : Map<string, Map<string, bool>> = Map.empty
             do!
                 drainReader reader (fun reader ->
-                    let colName = reader.GetString(0)
+                    let key =
+                        System.String.Concat(reader.GetString(0), ".", reader.GetString(1)).ToUpperInvariant()  // LINT-ALLOW: case-insensitive lookup-key composition (see tableKeyOf)
+                    let colName = reader.GetString(2)
                     let isNullable =
-                        System.String.Equals(
-                            reader.GetString(1),
-                            "YES",
-                            System.StringComparison.OrdinalIgnoreCase)
-                    acc <- Map.add colName isNullable acc)
+                        System.String.Equals(reader.GetString(3), "YES", System.StringComparison.OrdinalIgnoreCase)
+                    let perTable =
+                        Map.tryFind key acc |> Option.defaultValue Map.empty
+                    acc <- Map.add key (Map.add colName isNullable perTable) acc)
             return acc
         }
+
+    let private nullabilitySliceOf
+        (batched: Map<string, Map<string, bool>>)
+        (kind: Kind)
+        : Map<string, bool> =
+        Map.tryFind (tableKeyOf kind) batched |> Option.defaultValue Map.empty
 
     let private isStaticKind (k: Kind) : bool =
         k.Modality
@@ -255,6 +258,7 @@ module LiveProfiler =
     let private discoverKind
         (cnn: SqlConnection)
         (maxRows: int option)
+        (nullabilityMap: Map<string, bool>)
         (kind: Kind)
         : Task<CachedKind option> =
         task {
@@ -286,9 +290,9 @@ module LiveProfiler =
                             |> Map.ofList
                         return (rc, counts)
                 }
-                // 2. Reflection: per-column IsNullableInDatabase from
-                //    INFORMATION_SCHEMA. Returns Map<colName, bool>.
-                let! nullabilityMap = reflectNullability cnn kind
+                // 2. Reflection: per-column IsNullableInDatabase — the
+                //    caller's slice of the ONE batched INFORMATION_SCHEMA
+                //    query (previously a per-kind round trip here).
                 // 3. Row-stream: SELECT * → per-row CachedValue array.
                 //    Column-oriented final shape (transpose at end).
                 let perColumnValues =
@@ -352,9 +356,11 @@ module LiveProfiler =
                     catalog.Modules
                     |> List.collect (fun m -> m.Kinds)
                     |> List.filter (fun k -> not (isStaticKind k))
+                // ONE batched reflection round trip for the whole catalog.
+                let! batchedNullability = reflectNullabilityAll cnn
                 let mutable acc : Map<SsKey, CachedKind> = Map.empty
                 for kind in nonStaticKinds do
-                    let! result = discoverKind cnn options.MaxRowsPerKind kind
+                    let! result = discoverKind cnn options.MaxRowsPerKind (nullabilitySliceOf batchedNullability kind) kind
                     match result with
                     | Some cached -> acc <- Map.add cached.KindKey cached acc
                     | None        -> ()
@@ -385,6 +391,7 @@ module LiveProfiler =
         (gate: System.Threading.SemaphoreSlim)
         (openConnection: unit -> Task<Result<SqlConnection>>)
         (maxRows: int option)
+        (nullabilityMap: Map<string, bool>)
         (kind: Kind)
         : Task<Result<CachedKind option>> =
         task {
@@ -403,7 +410,7 @@ module LiveProfiler =
                     Bench.recordSample "profile.live.discoverKind.connectionOpen" swOpen.ElapsedMilliseconds
                     use cnn = cnn
                     let sw = System.Diagnostics.Stopwatch.StartNew()
-                    let! cached = discoverKind cnn maxRows kind
+                    let! cached = discoverKind cnn maxRows nullabilityMap kind
                     sw.Stop()
                     Bench.recordSample "profile.live.discoverKind.drain" sw.ElapsedMilliseconds
                     return Result.success cached
@@ -433,10 +440,26 @@ module LiveProfiler =
                     |> List.filter (fun k -> not (isStaticKind k))
                 let capped = max 1 options.MaxConcurrency
                 Bench.recordSample "profile.live.captureEvidenceCache.concurrency" (int64 capped)
+                // ONE batched reflection round trip up front (its own
+                // short-lived connection), sliced per kind below — under
+                // the concurrent form this also removes a per-kind query
+                // from every gated worker.
+                let! batchedNullabilityR = task {
+                    match! openConnection () with
+                    | Error es -> return Error es
+                    | Ok cnn ->
+                        use cnn = cnn
+                        let! batched = reflectNullabilityAll cnn
+                        return Ok batched
+                }
+                match batchedNullabilityR with
+                | Error es -> return Result.failure es
+                | Ok batchedNullability ->
                 use gate = new System.Threading.SemaphoreSlim(capped, capped)
                 let discoveries =
                     nonStaticKinds
-                    |> List.map (discoverKindGated gate openConnection options.MaxRowsPerKind)
+                    |> List.map (fun kind ->
+                        discoverKindGated gate openConnection options.MaxRowsPerKind (nullabilitySliceOf batchedNullability kind) kind)
                 let! results = Task.WhenAll(Array.ofList discoveries)
                 return
                     results

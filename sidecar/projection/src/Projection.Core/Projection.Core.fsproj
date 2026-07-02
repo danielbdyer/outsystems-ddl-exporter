@@ -104,6 +104,11 @@
     <Compile Include="QueryHints.fs" />
     <Compile Include="ComposeState.fs" />
     <Compile Include="DecisionOverlay.fs" />
+    <!-- IndexNaming sits between DecisionOverlay (the uniqueness decision it
+         consults) and PhysicalSchema (its second consumer): the ONE emitted
+         index-name derivation shared by the SSDT emitter and the deployed-
+         reality expectation, so emit/deploy/read-back agree by construction. -->
+    <Compile Include="IndexNaming.fs" />
     <!--
       THE VECTOR Wave 1 / M1 — PhysicalSchema.fs moved here (was compile-order
       ~58, before Tolerance.fs) so `PhysicalSchema.ofCatalogWith` can consume the

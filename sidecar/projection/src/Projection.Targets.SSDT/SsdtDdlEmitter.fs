@@ -427,39 +427,7 @@ module SsdtDdlEmitter =
     /// gain a deterministic 1-based ordinal suffix in SsKey order. Every
     /// generated name rides the identifier budget.
     let private emittedIndexNames (overlay: DecisionOverlay) (k: Kind) : Map<SsKey, string> =
-        let attrNameOf (columnSsKey: SsKey) : string =
-            match k.Attributes |> List.tryFind (fun a -> a.SsKey = columnSsKey) with
-            | Some a -> Name.value a.Name
-            | None ->
-                // Unreachable post-`Catalog.create` (referential integrity:
-                // every Index.Column resolves within its owning Kind).
-                invalidOp (sprintf "SsdtDdlEmitter.emittedIndexNames: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)
-        let baseNameOf (idx: Index) : string =
-            if IndexUniqueness.isPrimaryKey idx.Uniqueness then
-                System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical)  // LINT-ALLOW: V1 naming-convention PK constraint name (pkDef's shape); segments pre-unwrapped via TableId helpers
-            else
-                let isUnique =
-                    IndexUniqueness.isUnique idx.Uniqueness
-                    || Set.contains idx.SsKey overlay.EnforceUnique
-                let columnNames =
-                    idx.Columns |> List.map (fun c -> attrNameOf c.Attribute)
-                System.String.Concat(  // LINT-ALLOW: generated index-name convention (IX_/UIX_ + logical kind + logical columns); no BCL/ScriptDom primitive emits naming-convention identifiers; segments are typed Name values unwrapped via Name.value
-                    (if isUnique then "UIX_" else "IX_"),
-                    Name.value k.Name, "_", String.concat "_" columnNames)
-        k.Indexes
-        |> List.sortBy (fun idx -> idx.SsKey)
-        |> List.map (fun idx -> idx, baseNameOf idx)
-        |> List.groupBy snd
-        |> List.collect (fun (baseName, members) ->
-            match members with
-            | [ (only, _) ] -> [ only.SsKey, IdentifierBudget.fit baseName ]
-            | colliding ->
-                // Proof-triggered disambiguation: only names that actually
-                // collide gain the ordinal, in SsKey order (deterministic).
-                colliding
-                |> List.mapi (fun i (idx, _) ->
-                    idx.SsKey, IdentifierBudget.fit (System.String.Concat(baseName, "_", string (i + 1)))))  // LINT-ALLOW: deterministic collision ordinal on a generated identifier; terminal name construction
-        |> Map.ofList
+        IndexNaming.emittedNames overlay k
 
     /// Build the CREATE INDEX statements for a Kind's non-PK indexes.
     /// Per chapter pre-scope §8 slice 3: PK-marked indexes are

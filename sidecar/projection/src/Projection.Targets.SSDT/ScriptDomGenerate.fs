@@ -42,8 +42,6 @@ open Projection.Core
 module ScriptDomGenerate =
 
     /// Pinned `SqlScriptGeneratorOptions` for V2 SSDT emission.
-    /// Each call yields a fresh instance (the class is mutable;
-    /// sharing one instance would alias state across consumers).
     /// Every byte-affecting axis is set explicitly; defaults
     /// inherited from ScriptDom are documented in the field
     /// comment alongside the override.
@@ -89,6 +87,16 @@ module ScriptDomGenerate =
         opts.SqlEngineType <- SqlEngineType.All
         opts
 
+    /// The ONE shared pinned-options instance. The options object is
+    /// construction-set and read-only thereafter: no consumer in this
+    /// module mutates it post-construction, and the generator only READS
+    /// options during `GenerateScript` — so sharing removes a ~25-property
+    /// object build from EVERY rendered statement (and, on the data lane,
+    /// from every rendered per-row Phase-2 UPDATE) without aliasing
+    /// hazard. The GENERATOR stays per-call (it holds real per-render
+    /// state).
+    let private sharedPinnedOptions : SqlScriptGeneratorOptions = pinnedOptions ()
+
     /// ScriptDom's `Sql160ScriptGenerator.GenerateScript` emits the
     /// host's `Environment.NewLine` (CRLF on Windows, LF on Linux);
     /// `SqlScriptGeneratorOptions` exposes no newline-character axis.
@@ -118,7 +126,7 @@ module ScriptDomGenerate =
     /// post-call `Option.ofObj` projection converts to `string`
     /// (typed; non-null) by F#'s nullness annotation.
     let generateOne (stmt: TSqlStatement) : string =
-        let generator = Sql160ScriptGenerator(pinnedOptions ())
+        let generator = Sql160ScriptGenerator(sharedPinnedOptions)
         let mutable text : string | null = null
         generator.GenerateScript(stmt :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
@@ -142,7 +150,7 @@ module ScriptDomGenerate =
         for stmt in statements do
             batch.Statements.Add(stmt)
         script.Batches.Add(batch)
-        let generator = Sql160ScriptGenerator(pinnedOptions ())
+        let generator = Sql160ScriptGenerator(sharedPinnedOptions)
         let mutable text : string | null = null
         generator.GenerateScript(script :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
@@ -218,7 +226,7 @@ module ScriptDomGenerate =
     /// in the rollup table.
     let generateDataType (fragment: DataTypeReference) : string =
         use _ = Bench.scope "scriptDom.generateDataType"
-        let generator = Sql160ScriptGenerator(pinnedOptions ())
+        let generator = Sql160ScriptGenerator(sharedPinnedOptions)
         let mutable text : string | null = null
         generator.GenerateScript(fragment :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines

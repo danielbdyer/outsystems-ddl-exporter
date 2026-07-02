@@ -214,6 +214,31 @@ type ReadConcurrencyMeasurementTests(fixture: EphemeralContainerFixture, output:
                     Assert.Equal<Map<SsKey, CachedKind>>(serialCache.Kinds, parCache2.Kinds)
                     Assert.Equal<Map<SsKey, CachedKind>>(serialCache.Kinds, parCache8.Kinds)
 
+                    // -- Leg 5: the emit-stage data lane (pure CPU — no SQL).
+                    //    Graft the drained rows as Static populations and render
+                    //    the full MERGE artifact set: exercises
+                    //    rowToTypedValues -> SqlLiteral -> MergeRender ->
+                    //    ScriptDom AST build -> Sql160ScriptGenerator.
+                    let staticCatalog =
+                        catalog
+                        |> Catalog.mapKinds (fun k ->
+                            match Map.tryFind k.SsKey serialRows with
+                            | Some rows -> { k with Modality = [ Static rows ] }
+                            | None -> k)
+                    let swEmit = System.Diagnostics.Stopwatch.StartNew()
+                    let emitted =
+                        Projection.Targets.Data.StaticSeedsEmitter.emit
+                            DataEmitOptions.defaults staticCatalog Profile.empty
+                    swEmit.Stop()
+                    let emittedLen =
+                        match emitted with
+                        | Ok artifact ->
+                            ArtifactByKind.toMap artifact
+                            |> Map.fold (fun acc _ (s: Projection.Targets.Data.DataInsertScript) -> acc + s.Rendered.Length) 0
+                        | Error e -> failwithf "emit leg failed: %A" e
+                    this.Say (sprintf "[rc-bench] emit data lane:       %6dms  (%d rows -> %d chars of MERGE SQL)"
+                                swEmit.ElapsedMilliseconds rowTotal emittedLen)
+
                     this.Say (sprintf "[rc-bench] profile serial:       %6dms  (%d kinds x 3 queries)"
                                 swProfSerial.ElapsedMilliseconds ReadConcurrencyFixtures.tableCount)
                     this.Say (sprintf "[rc-bench] profile concurrent-2: %6dms  (identical evidence cache)"

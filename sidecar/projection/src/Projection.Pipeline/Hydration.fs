@@ -141,11 +141,14 @@ module Hydration =
                             |> List.filter isStaticKind
                             |> List.map (fun k -> k.SsKey)
                             |> Set.ofList
-                        let openConnection () =
-                            ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec
-                        match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
+                        // Resolve the spec ONCE; per-kind opens are pure
+                        // pooled opens on the same connection string.
+                        match ConnectionSpec.openerFor "ossys-hydration-source" connSpec with
                         | Error es -> return Result.failure es
-                        | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
+                        | Ok openConnection ->
+                            match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
+                            | Error es -> return Result.failure es
+                            | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
         }
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
@@ -212,9 +215,12 @@ module Hydration =
                                 let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
                                 return Result.success rows
                         else
-                            let openConnection () =
-                                ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec
-                            return! Ingestion.collectInOrderForConcurrent concurrency openConnection eligible catalog topo
+                            // Resolve the spec ONCE; per-kind opens are pure
+                            // pooled opens on the same connection string.
+                            match ConnectionSpec.openerFor "ossys-bootstrap-source" connSpec with
+                            | Error es -> return Result.failure es
+                            | Ok openConnection ->
+                                return! Ingestion.collectInOrderForConcurrent concurrency openConnection eligible catalog topo
         }
 
     /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`
