@@ -1671,6 +1671,29 @@ module Compose =
     /// stay disjoint (the partition law). No path ⇒ the empty context (no-op;
     /// byte-identical). A malformed / unresolvable file fails loud
     /// (`pipeline.migrationDependencies.*`).
+    /// PL-2 (S04) — the AllData hydration arm: ONE drain. Under AllData the
+    /// Bootstrap complement covers every data-bearing kind (the composer
+    /// dispatches the Static lane empty), so drain Bootstrap FIRST over the
+    /// ungrafted catalog (eligibility + column lists read marks/attributes,
+    /// never populations) and graft the static populations from the rows
+    /// already in hand. Module-level (FS3511).
+    let private hydrateAllDataArm
+        (cfg: Config.Config)
+        (topo: TopologicalOrder)
+        (migrationKinds: Set<SsKey>)
+        (catalog: Catalog)
+        : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
+        task {
+            let! bootRowsR = Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg catalog
+            match bootRowsR with
+            | Error es -> return Result.failure es
+            | Ok bootRows ->
+                let! hydratedR = Hydration.hydrateCatalogFromBootstrapRowsUsing topo cfg bootRows catalog
+                match hydratedR with
+                | Error es -> return Result.failure es
+                | Ok hydrated -> return Result.success (hydrated, bootRows)
+        }
+
     /// PL-1 — the first element is the READ catalog (pre-hydration, the value
     /// `readConfigModel` produced): the store leg's emitted-schema plane
     /// derives from it (`applyRenames` over the model as READ — static
@@ -1697,6 +1720,14 @@ module Compose =
                         if Hydration.emitDataOf cfg && cfg.Model.Ossys.IsSome then
                             Some ((Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value)
                         else None
+                    let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                    match hydrationTopo with
+                    | Some topo when Config.dataCompositionOf cfg = AllData ->
+                        // PL-2 (S04) — one drain: static graft rides the
+                        // Bootstrap rows (see `hydrateAllDataArm`).
+                        let! pairR = hydrateAllDataArm cfg topo migrationKinds catalog
+                        return pairR |> Result.map (fun (hydrated, bootRows) -> (catalog, hydrated, bootRows, migration))
+                    | _ ->
                     let! hydratedR =
                         match hydrationTopo with
                         | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
@@ -1704,7 +1735,6 @@ module Compose =
                     match hydratedR with
                     | Error es -> return Result.failure es
                     | Ok hydrated ->
-                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
                         let! bootRowsR =
                             match hydrationTopo with
                             | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
@@ -1942,10 +1972,18 @@ module Compose =
         (sourceTopo: TopologicalOrder)
         (policy: Policy)
         (stateA: ComposeState)
-        : Set<SsKey> * (Map<string, Map<string, bool>> -> Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>>>) =
+        : Set<SsKey> * (Map<string, Map<string, bool>> -> Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option>>>) =
         let profilerSampling = Projection.Adapters.Sql.SqlProfilerOptions.defaults.Sampling
         let eligible = Hydration.bootstrapEligible migrationKinds cfg hydrated
         let staticKeys = Hydration.staticKindKeys hydrated
+        // PL-2 (S04) — under AllData the static kinds ARE bootstrap-eligible
+        // and the pre-drain static graft is skipped (see `pipelinedExtract`);
+        // retain those kinds' rows at the drain worker so the graft rides
+        // this one drain. Other compositions retain nothing.
+        let retainRows =
+            match Config.dataCompositionOf cfg with
+            | AllData -> Set.intersect staticKeys eligible
+            | AllRemaining | AllExceptStatic -> Set.empty
         // The evidence partition mirrors `captureEvidenceCacheDerived`:
         // static kinds never derive; sampled kinds keep the live capped
         // discovery (a full-row derivation would not be the sampled
@@ -1980,20 +2018,27 @@ module Compose =
             Hydration.collectBootstrapRenderedUsing
                 (max 1 cfg.Emission.DataReadConcurrency)
                 connSpec eligible hydrated targetKinds cycleMembers
-                opts cdc nullability evidenceKinds sourceTopo
+                opts cdc nullability evidenceKinds retainRows sourceTopo
         evidenceKinds, drain
 
-    /// Project the drain's per-kind pairs into the two planes the profile +
-    /// emit stages consume (pure; hoisted out of the task CE — FS3511).
+    /// Project the drain's per-kind triples into the planes the profile +
+    /// emit stages consume — scripts, derived evidence, and the PL-2
+    /// retained rows (the AllData static graft's row source; empty on the
+    /// other compositions). Pure; hoisted out of the task CE (FS3511).
     let private splitCollected
-        (collected: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>)
-        : Map<SsKey, Projection.Targets.Data.DataInsertScript> * CachedKind list =
-        let prerendered = collected |> Map.map (fun _ (script, _) -> script)
+        (collected: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option>)
+        : Map<SsKey, Projection.Targets.Data.DataInsertScript> * CachedKind list * Map<SsKey, StaticRow list> =
+        let prerendered = collected |> Map.map (fun _ (script, _, _) -> script)
         let derived =
             collected
             |> Map.toList
-            |> List.choose (fun (_, (_, evidence)) -> evidence)
-        prerendered, derived
+            |> List.choose (fun (_, (_, evidence, _)) -> evidence)
+        let retained =
+            collected
+            |> Map.toList
+            |> List.choose (fun (key, (_, _, rows)) -> rows |> Option.map (fun r -> key, r))
+            |> Map.ofList
+        prerendered, derived, retained
 
     /// The pipelined extract tail: reflect nullability ONCE (the pre-drain
     /// global query the drain-time evidence derivations slice per kind),
@@ -2008,7 +2053,7 @@ module Compose =
         (sourceTopo: TopologicalOrder)
         (policy: Policy)
         (stateA: ComposeState)
-        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript> * Set<SsKey> * CachedKind list * Map<string, Map<string, bool>>>> =
+        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript> * Set<SsKey> * CachedKind list * Map<string, Map<string, bool>> * Map<SsKey, StaticRow list>>> =
         task {
             let! nullabilityR =
                 Projection.Adapters.Sql.LiveProfiler.reflectNullability
@@ -2022,8 +2067,8 @@ module Compose =
                 match collectedR with
                 | Error es -> return Result.failure es
                 | Ok collected ->
-                    let prerendered, derived = splitCollected collected
-                    return Result.success (prerendered, evidenceKinds, derived, nullability)
+                    let prerendered, derived, retained = splitCollected collected
+                    return Result.success (prerendered, evidenceKinds, derived, nullability, retained)
         }
 
     /// The pipelined extract stage body — the extract-lite read (model +
@@ -2053,23 +2098,42 @@ module Compose =
                     | Some connSpec ->
                         let sourceTopo =
                             (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
-                        let! hydratedR = Hydration.hydrateCatalogUsing sourceTopo cfg catalog
+                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                        let! hydratedR =
+                            // PL-2 (S04) — under AllData the static graft rides
+                            // the Bootstrap drain (rows retained at the worker,
+                            // grafted below); pre-graft only the residual
+                            // static kinds Bootstrap will not drain (normally
+                            // the empty set). The prefix state + drain consume
+                            // marks, attributes and FK edges — never
+                            // populations — so the deferred graft is invisible
+                            // to them.
+                            if Config.dataCompositionOf cfg = AllData then
+                                let residual =
+                                    Set.difference
+                                        (Hydration.staticKindKeys catalog)
+                                        (Hydration.bootstrapEligible migrationKinds cfg catalog)
+                                Hydration.hydrateStaticSubsetUsing residual sourceTopo cfg catalog
+                            else
+                                Hydration.hydrateCatalogUsing sourceTopo cfg catalog
                         match hydratedR with
                         | Error es -> return Result.failure es
                         | Ok hydrated ->
                             match pipelinedPrefixState cfg hydrated with
                             | Error es -> return Result.failure es
                             | Ok (policy, stateA) ->
-                                let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
                                 let! collectedR =
                                     pipelinedCollect cfg connSpec connectionString migrationKinds hydrated sourceTopo policy stateA
                                 match collectedR with
                                 | Error es -> return Result.failure es
-                                | Ok (prerendered, covered, derived, nullability) ->
+                                | Ok (prerendered, covered, derived, nullability, retained) ->
                                     return
                                         Result.success
                                             { ReadCatalog = catalog
-                                              Hydrated = hydrated
+                                              // PL-2 — graft the drain-retained
+                                              // static rows (identity when
+                                              // nothing was retained).
+                                              Hydrated = Hydration.graftStaticPopulations retained hydrated
                                               Migration = migration
                                               Prerendered = prerendered
                                               Covered = covered

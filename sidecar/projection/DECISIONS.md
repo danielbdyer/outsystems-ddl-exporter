@@ -26079,3 +26079,43 @@ gains the pre-hydration `ReadCatalog` it already had in hand). The
 re-running the chain prefix inside `runWithConfigCore`) REMAINS kept —
 PL-1 removed the cross-verb re-acquisitions, not that intra-publish
 re-run.
+
+## 2026-07-02 — PL-2 executed: the AllData static graft rides the ONE Bootstrap drain (both publish schedules); the graft-from-rows arm chosen over the skip
+
+**Decision.** Pay-once item PL-2 (S04): under `DataComposition.AllData`
+the composer dispatches the Static lane EMPTY while Bootstrap owns every
+data-bearing kind — yet hydration streamed every static table TWICE (the
+static-graft stream, then the Bootstrap drain of the same tables). Both
+publish schedules now drain each static table ONCE under AllData:
+
+- **Two-phase**: `readAndHydrateConfigModel` routes AllData through
+  `hydrateAllDataArm` — Bootstrap drains FIRST over the ungrafted catalog
+  (eligibility + column lists read marks/attributes, never populations),
+  then `Hydration.hydrateCatalogFromBootstrapRowsUsing` grafts the static
+  populations from the rows already in hand; only the residual
+  static-marked kinds Bootstrap never drains (attribute-less — normally
+  the empty set) keep a scoped stream (`hydrateStaticSubsetUsing`, now
+  the shared body of `hydrateCatalogUsing`).
+- **Pipelined**: the pre-drain static graft is skipped under AllData and
+  the drain worker RETAINS the static kinds' rows
+  (`renderKindAtDrain`/`collectBootstrapRenderedUsing` gain a
+  `retainRows` set; static estates are reference-data-small, so retention
+  is bounded); the graft applies post-drain.
+
+**Why the graft arm, not the skip.** The plan named two arms. The K26
+adjudication (fidelity's residual collector and the catalog snapshot
+plane read the HYDRATED catalog) decides it: skipping the graft would
+change the emitted catalog-plane bytes (populations vanish from the
+snapshot) — a moved artifact, i.e. a defect signal. Grafting from the
+drained rows keeps every emitted byte identical and removes only the
+second wire drain. The named schedule note rides
+`Hydration.diagnostics` (`data.hydration.staticGraftRidesBootstrapDrain`,
+Info, AllData + live source only) — never a silent skip.
+
+**Identity gates.** Pure + docker pools green;
+`PayOnceCombinedVerbDockerTests` gains the AllData fact: per-schedule
+wire receipt (`ingestion.rowDrain.dbo.OSUSR_REF_COUNTRY` count = 1 per
+publish; incumbent paid 2), Bootstrap.sql carries the static rows, no
+StaticSeeds.sql, and the two schedules' bundles byte-compare equal (the
+two independent single-drain arms cannot diverge silently). No goldens
+moved.

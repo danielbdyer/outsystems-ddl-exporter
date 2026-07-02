@@ -66,7 +66,19 @@ module Hydration =
         if not (emitDataOf cfg) then []
         else
             match cfg.Model.Ossys with
-            | Some _ -> []
+            | Some _ ->
+                // PL-2 (S04) — the named schedule note, never a silent skip:
+                // under AllData the static graft rides the Bootstrap drain
+                // (one stream), because the composer dispatches the Static
+                // lane empty and Bootstrap owns every data-bearing kind.
+                match Config.dataCompositionOf cfg with
+                | AllData ->
+                    [ DiagnosticEntry.create
+                        "data:hydration"
+                        DiagnosticSeverity.Info
+                        "data.hydration.staticGraftRidesBootstrapDrain"
+                        "Data composition is AllData: the Bootstrap lane drains every data-bearing kind (static entities included), so the static-entity populations graft from that one drain instead of a second stream of the same tables. The catalog's static populations and the emitted data lanes are unchanged; only the acquisition schedule differs." ]
+                | AllRemaining | AllExceptStatic -> []
             | None ->
                 match cfg.Model.Path with
                 | Some _ ->
@@ -91,44 +103,73 @@ module Hydration =
                         "data.hydration.skippedNoModelSource"
                         "data emission is on but the model declares no source at all (neither model.path nor model.ossys). The model read refuses this configuration upstream (pipeline.config.modelNoSource); if it is reached here, no rows can be hydrated and the data lanes emit nothing. Set model.ossys (to hydrate) or model.path (catalog-resident populations only)." ]
 
-    /// Stream the static-marked kinds' rows from an open OSSYS connection and
-    /// graft them. Scoped to the static kinds via `Ingestion.collectInOrderFor`
+    /// The Static-marked kind keyset — the full graft's owned set, the
+    /// pipelined publish arm's evidence partition, and PL-2's residual
+    /// computation all read it (static kinds never enter evidence
+    /// derivation, mirroring `LiveProfiler`'s own non-static filter).
+    let staticKindKeys (catalog: Catalog) : Set<SsKey> =
+        Catalog.allKinds catalog
+        |> List.filter isStaticKind
+        |> List.map (fun k -> k.SsKey)
+        |> Set.ofList
+
+    /// Stream an EXPLICIT owned subset's rows and graft them — the serial
+    /// single-connection arm. Scoped via `Ingestion.collectInOrderFor`
     /// (never the mark-everything `ReadSide.read`; survival rule 8).
-    let private streamAndGraft (topo: TopologicalOrder) (cnn: Microsoft.Data.SqlClient.SqlConnection) (catalog: Catalog) : Task<Catalog> =
+    let private streamAndGraftFor (owned: Set<SsKey>) (topo: TopologicalOrder) (cnn: Microsoft.Data.SqlClient.SqlConnection) (catalog: Catalog) : Task<Catalog> =
         task {
-            let ownedStatic =
-                Catalog.allKinds catalog
-                |> List.filter isStaticKind
-                |> List.map (fun k -> k.SsKey)
-                |> Set.ofList
-            let! rowsByKind = Ingestion.collectInOrderFor ownedStatic cnn catalog topo
+            let! rowsByKind = Ingestion.collectInOrderFor owned cnn catalog topo
             return graftStaticPopulations rowsByKind catalog
         }
 
-    /// The bounded-concurrent static-graft arm, hoisted to module level so the
-    /// caller's `task { }` stays statically compilable in Release (FS3511 —
-    /// deeply nested match/match! inside one state machine is the named
-    /// failure shape; cf. `runWithConfigCore`).
-    let private hydrateStaticConcurrent
+    /// The bounded-concurrent graft arm over an explicit owned subset,
+    /// hoisted to module level so the caller's `task { }` stays statically
+    /// compilable in Release (FS3511 — deeply nested match/match! inside one
+    /// state machine is the named failure shape; cf. `runWithConfigCore`).
+    let private hydrateStaticConcurrentFor
+        (owned: Set<SsKey>)
         (concurrency: int)
         (connSpec: string)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         : Task<Result<Catalog>> =
         task {
-            let ownedStatic =
-                Catalog.allKinds catalog
-                |> List.filter isStaticKind
-                |> List.map (fun k -> k.SsKey)
-                |> Set.ofList
             // Resolve the spec ONCE; per-kind opens are pure pooled opens on
             // the same connection string.
             match ConnectionSpec.openerFor "ossys-hydration-source" connSpec with
             | Error es -> return Result.failure es
             | Ok openConnection ->
-                match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
+                match! Ingestion.collectInOrderForConcurrent concurrency openConnection owned catalog topo with
                 | Error es -> return Result.failure es
                 | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
+        }
+
+    /// Hydrate an EXPLICIT subset of static-marked kinds (PL-2's residual
+    /// arm and the shared body of `hydrateCatalogUsing`). Same gates as the
+    /// full graft: data-off / no live OSSYS source / empty subset ⇒ identity.
+    let hydrateStaticSubsetUsing
+        (owned: Set<SsKey>)
+        (topo: TopologicalOrder)
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Task<Result<Catalog>> =
+        task {
+            if not (emitDataOf cfg) || Set.isEmpty owned then
+                return Result.success catalog
+            else
+                match cfg.Model.Ossys with
+                | None -> return Result.success catalog
+                | Some connSpec ->
+                    let concurrency = max 1 cfg.Emission.DataReadConcurrency
+                    if concurrency = 1 then
+                        match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec with
+                        | Error es -> return Result.failure es
+                        | Ok cnn ->
+                            use cnn = cnn
+                            let! hydrated = streamAndGraftFor owned topo cnn catalog
+                            return Result.success hydrated
+                    else
+                        return! hydrateStaticConcurrentFor owned concurrency connSpec topo catalog
         }
 
     /// The bounded-concurrent Bootstrap arm — same FS3511 hoist as
@@ -164,28 +205,11 @@ module Hydration =
     /// edges the order derives from). The topo-less sibling below
     /// computes it and stays the safe entry for standalone callers.
     let hydrateCatalogUsing (topo: TopologicalOrder) (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
-        task {
-            if not (emitDataOf cfg) then
-                return Result.success catalog
-            else
-                match cfg.Model.Ossys with
-                | None -> return Result.success catalog
-                | Some connSpec ->
-                    // `emission.dataReadConcurrency` — bounded parallel row
-                    // hydration, each kind on its own short-lived connection
-                    // through the ONE `ConnectionSpec.openSpec` opener.
-                    // `1` is the strictly serial single-connection path.
-                    let concurrency = max 1 cfg.Emission.DataReadConcurrency
-                    if concurrency = 1 then
-                        match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec with
-                        | Error es -> return Result.failure es
-                        | Ok cnn ->
-                            use cnn = cnn
-                            let! hydrated = streamAndGraft topo cnn catalog
-                            return Result.success hydrated
-                    else
-                        return! hydrateStaticConcurrent concurrency connSpec topo catalog
-        }
+        // `emission.dataReadConcurrency` — bounded parallel row hydration,
+        // each kind on its own short-lived connection through the ONE
+        // `ConnectionSpec.openSpec` opener; `1` is the strictly serial
+        // single-connection path (both arms inside the subset body).
+        hydrateStaticSubsetUsing (staticKindKeys catalog) topo cfg catalog
 
     let hydrateCatalog (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
         // Compute the order only past the same gates the Using form
@@ -194,6 +218,30 @@ module Hydration =
             Task.FromResult (Result.success catalog)
         else
             hydrateCatalogUsing (TopologicalOrderPass.runWith TreatAsCycle catalog).Value cfg catalog
+
+    /// PL-2 (S04) — the AllData static graft rides the Bootstrap drain.
+    /// Under `DataComposition.AllData` the Bootstrap arm drains EVERY
+    /// data-bearing kind (static included) while the composer dispatches
+    /// the Static lane EMPTY — so `hydrateCatalogUsing`'s separate static
+    /// stream was a second server drain of the same tables whose grafted
+    /// copy reached no data lane (it survives only into the catalog
+    /// snapshot plane). This grafts the static populations from the
+    /// Bootstrap rows ALREADY IN HAND, and streams only the residual
+    /// static-marked kinds the Bootstrap complement did not drain
+    /// (attribute-less kinds are never bootstrap-eligible; the incumbent
+    /// grafted their rows into the catalog plane, so identity keeps their
+    /// stream — normally the empty set, so normally zero extra wire).
+    let hydrateCatalogFromBootstrapRowsUsing
+        (topo: TopologicalOrder)
+        (cfg: Config.Config)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (catalog: Catalog)
+        : Task<Result<Catalog>> =
+        let grafted = graftStaticPopulations bootstrapRows catalog
+        let residual =
+            staticKindKeys catalog
+            |> Set.filter (fun k -> not (Map.containsKey k bootstrapRows))
+        hydrateStaticSubsetUsing residual topo cfg grafted
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
     /// the bootstrap-eligible kinds' rows from the live OSSYS source into the
@@ -245,15 +293,6 @@ module Hydration =
                         not (isStaticKind k) && not (Set.contains k.SsKey migrationKinds)))
             |> List.map (fun k -> k.SsKey)
             |> Set.ofList
-
-    /// The Static-marked kind keyset — the pipelined publish arm's evidence
-    /// partition reads it (static kinds never enter evidence derivation,
-    /// mirroring `LiveProfiler`'s own non-static filter).
-    let staticKindKeys (catalog: Catalog) : Set<SsKey> =
-        Catalog.allKinds catalog
-        |> List.filter isStaticKind
-        |> List.map (fun k -> k.SsKey)
-        |> Set.ofList
 
     let hydrateBootstrapRowsExcludingUsing
         (topo: TopologicalOrder)
@@ -322,9 +361,10 @@ module Hydration =
         (cdc: CdcAwareness)
         (nullability: Map<string, Map<string, bool>>)
         (evidenceKinds: Set<SsKey>)
+        (retainRows: Set<SsKey>)
         (srcKind: Kind)
         (rows: StaticRow list)
-        : Projection.Targets.Data.DataInsertScript * CachedKind option =
+        : Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option =
         // Render against the TARGET kind (the post-prefix-chain catalog's
         // physical form — same kind `emitWithTopo`'s batch plan resolves);
         // a kind the chain dropped falls back to its source form (it then
@@ -353,7 +393,14 @@ module Hydration =
                     srcKind
                     rows
             else None
-        script, evidence
+        // PL-2 — under AllData the static kinds' populations must survive
+        // into the catalog plane (the incumbent grafted them from a SECOND
+        // stream); retain those kinds' rows so the caller grafts from this
+        // one drain. Static estates are reference-data-small by nature, so
+        // the retention is bounded; every other kind's rows still drop here.
+        let retained =
+            if Set.contains srcKind.SsKey retainRows then Some rows else None
+        script, evidence, retained
 
     /// The PIPELINED Bootstrap collect (P2 production wiring): drain the
     /// eligible kinds' rows from the live OSSYS source and, ON THE DRAIN
@@ -375,6 +422,9 @@ module Hydration =
     /// per-kind derivation. `cycleMembers` MUST be the RENDER catalog's
     /// (`TopologicalOrder.cycleMembers` of the post-prefix-chain topo);
     /// `sourceTopo` only schedules the drain over the source catalog.
+    /// `retainRows` (PL-2) — kinds whose landed rows the projection returns
+    /// alongside the script (the AllData static graft rides this one drain);
+    /// `Set.empty` retains nothing (every kind's rows drop at the worker).
     let collectBootstrapRenderedUsing
         (concurrency: int)
         (connSpec: string)
@@ -386,8 +436,9 @@ module Hydration =
         (cdc: CdcAwareness)
         (nullability: Map<string, Map<string, bool>>)
         (evidenceKinds: Set<SsKey>)
+        (retainRows: Set<SsKey>)
         (sourceTopo: TopologicalOrder)
-        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>>> =
+        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option>>> =
         task {
             if Set.isEmpty eligible then
                 return Result.success Map.empty
@@ -400,7 +451,7 @@ module Hydration =
                 | Ok openConnection ->
                     return!
                         Ingestion.collectInOrderForConcurrentWith
-                            (renderKindAtDrain targetKinds cycleMembers opts cdc nullability evidenceKinds)
+                            (renderKindAtDrain targetKinds cycleMembers opts cdc nullability evidenceKinds retainRows)
                             (max 1 concurrency)
                             openConnection
                             eligible

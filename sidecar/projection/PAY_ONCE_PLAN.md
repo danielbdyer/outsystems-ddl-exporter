@@ -92,6 +92,15 @@ value the publish EMITTED (post-chain), not the pre-chain one — thread
 
 ### PL-2 · AllData publishes stream static kinds once (S04)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-2 executed"). The
+> graft-from-bootstrapRows arm, on BOTH schedules: two-phase
+> `hydrateAllDataArm` + `hydrateCatalogFromBootstrapRowsUsing`; pipelined
+> drain-worker row retention (`retainRows`). Named schedule note
+> `data.hydration.staticGraftRidesBootstrapDrain`. Gate:
+> `PayOnceCombinedVerbDockerTests` AllData fact — drain count 1/publish,
+> bundles byte-identical across schedules. K26 respected: the skip arm was
+> rejected because it would move the catalog-plane bytes.
+
 **The fact paid twice.** Under `DataComposition.AllData`, the static lane is
 dispatched EMPTY (`DataEmissionComposer.fs:122-124`), yet
 `hydrateCatalogUsing` still streams and grafts every static kind
