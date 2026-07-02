@@ -901,3 +901,97 @@ let ``NM-26: StaticPopulation and StaticSeeds agree on a non-identity kind (neit
     let catalog = mkCatalog [ country ]
     Assert.False (populationBrackets catalog)
     Assert.False (seedsBracket catalog country.SsKey)
+
+// ---------------------------------------------------------------------------
+// Row-identity match fallback — `KindColumns.matchColumnNames`. A kind with
+// no primary key (the explicitly acknowledged `allowMissingPrimaryKey`
+// population) falls back to its writable columns as the MERGE match
+// criteria (V1's static-seed fallback), excluding computed, identity, and
+// intentionally deferred columns. Data movement only — no synthetic PK is
+// claimed. All three data lanes share the one vocabulary, so Phase 1 and
+// Phase 2 always agree on row identity.
+// ---------------------------------------------------------------------------
+
+/// Acknowledged missing-PK static kind: rows but no primary-key attribute.
+/// Carries one identity column and one computed column so the fallback's
+/// exclusions are visible in the rendered ON-clause.
+let private mkHeapKind () : Kind =
+    let kindKey  = mkKey ["TestModule"; "Heap"]
+    let codeKey  = mkKey ["TestModule"; "Heap"; "Code"]
+    let labelKey = mkKey ["TestModule"; "Heap"; "Label"]
+    let seqKey   = mkKey ["TestModule"; "Heap"; "Seq"]
+    let calcKey  = mkKey ["TestModule"; "Heap"; "Calc"]
+    let row code label =
+        { Identifier = mkKey ["TestModule"; "Heap"; "Row"; code]
+          Values =
+              Map.ofList
+                  [ mkName "Code",  code
+                    mkName "Label", label ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Heap"
+        Origin   = Native
+        Modality = [ Static [ row "A" "Alpha"
+                              row "B" "Beta" ] ]
+        Physical = mkTableId "dbo" "OSUSR_TEST_HEAP"
+        Attributes =
+            [
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create seqKey (mkName "Seq") Integer with Column = ColumnRealization.create ("SEQ") (false) |> Result.value; IsMandatory = true; IsIdentity = true }
+                { Attribute.create calcKey (mkName "Calc") Integer with Column = ColumnRealization.create ("CALC") (true) |> Result.value; Computed = ComputedColumnConfig.create "([SEQ] * 2)" false |> Result.toOption }
+            ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+[<Fact>]
+let ``matchColumnNames: true primary keys win when present`` () =
+    let country = mkCountryKind ()
+    Assert.Equal<string list>([ "ID" ], KindColumns.matchColumnNames Set.empty country)
+
+[<Fact>]
+let ``matchColumnNames: a no-PK kind falls back to writable columns minus identity and computed`` () =
+    let heap = mkHeapKind ()
+    Assert.Equal<string list>([ "CODE"; "LABEL" ], KindColumns.matchColumnNames Set.empty heap)
+
+[<Fact>]
+let ``matchColumnNames: the fallback excludes intentionally deferred columns (Phase-2 row identity)`` () =
+    let heap = mkHeapKind ()
+    Assert.Equal<string list>([ "LABEL" ], KindColumns.matchColumnNames (Set.ofList [ mkName "Code" ]) heap)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit: an acknowledged no-PK kind renders a MERGE matched on its writable columns`` () =
+    // Previously an empty PK set aborted the render (`foldBool: empty
+    // term list`); the fallback restores V1's all-column match. The
+    // identity + computed columns never enter the ON-clause.
+    let heap = mkHeapKind ()
+    let catalog = mkCatalog [ heap ]
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let sql = normWs (ArtifactByKind.toMap artifact |> Map.find heap.SsKey).Rendered
+    Assert.Contains("MERGE INTO [dbo].[OSUSR_TEST_HEAP]", sql)
+    Assert.Contains("ON [Target].[CODE] = [Source].[CODE] AND [Target].[LABEL] = [Source].[LABEL]", sql)
+    Assert.DoesNotContain("[Target].[SEQ] = [Source].[SEQ]", sql)
+    Assert.DoesNotContain("[Target].[CALC] = [Source].[CALC]", sql)
+
+[<Fact>]
+let ``MergeRender.renderUpdate: a no-PK kind's Phase-2 row scope excludes the deferred columns`` () =
+    // The Phase-2 UPDATE must join back to the Phase-1 row whose deferred
+    // columns were intentionally nulled — matching on them would compare
+    // the staged real value against NULL and never find the row.
+    let heap = mkHeapKind ()
+    let deferred = Set.ofList [ mkName "Label" ]
+    let typedValues =
+        Map.ofList
+            [ mkName "Code",  SqlLiteral.ofRaw PrimitiveType.Text "A"
+              mkName "Label", SqlLiteral.ofRaw PrimitiveType.Text "Alpha" ]
+    let sql = normWs (MergeRender.renderUpdate "emit.test" false heap deferred typedValues)
+    Assert.Contains("SET [LABEL] = N'Alpha'", sql)
+    Assert.Contains("WHERE [CODE] = N'A'", sql)
+    Assert.DoesNotContain("WHERE [LABEL]", sql)
+    Assert.DoesNotContain("AND [LABEL]", sql)
