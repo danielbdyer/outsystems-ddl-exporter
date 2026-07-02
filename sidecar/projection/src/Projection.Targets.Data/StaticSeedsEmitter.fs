@@ -109,31 +109,30 @@ module StaticSeedsEmitter =
     /// globally interleave Phase-1 across all kinds before any
     /// Phase-2 — the per-kind `Rendered` is correct only as a
     /// compositional input under that orchestration.
-    /// Render one plan load. The plan carries POST-substitution rows
-    /// and the deferred-FK set; this function just type-lifts and
-    /// renders. `Disposition` selects realization semantics:
-    /// `ReconciledByRule` loads carry empty rows by plan-build and
-    /// produce empty scripts (target already holds the identities);
-    /// `PreservedFromSource` and `AssignedBySink` both render MERGE
-    /// over the supplied rows; the IDENTITY PK is KEPT for both (the
-    /// MERGE's `ON` joins on it). For `AssignedBySink` the Phase-1 MERGE
-    /// is bracketed with `SET IDENTITY_INSERT` (WP6 step 1) — the
-    /// slice-E "suppress the PK" note is overturned (HANDOFF, WP6).
-    let private kindToScript
+    /// The script value every no-rows path shares (also `emitFromPlan`'s
+    /// value for plan-absent kinds).
+    let private emptyScript : DataInsertScript =
+        { Phase1Merges  = []
+          Phase2Updates = []
+          RenderedPhase1 = ""
+          RenderedPhase2 = ""
+          Rendered      = "" }
+
+    /// The render core over ALREADY-TYPED rows — the one implementation
+    /// both row carriers project into (A40: the row source is the single
+    /// varying axis; the named-row and positional entries below cannot
+    /// drift on MERGE semantics).
+    let private scriptOfTyped
         (opts: DataEmitOptions)
         (cdc: CdcAwareness)
         (kind: Kind)
-        (load: DataLoadKind)
+        (deferred: Set<Name>)
+        (typedRows: (SsKey * Map<Name, SqlLiteral>) list)
         : DataInsertScript =
         let verification = opts.Verification
         let staging = opts.Staging
         let deleteScope = opts.DeleteScope
-        if List.isEmpty load.Rows then
-            { Phase1Merges  = []
-              Phase2Updates = []
-              RenderedPhase1 = ""
-              RenderedPhase2 = ""
-              Rendered      = "" }
+        if List.isEmpty typedRows then emptyScript
         else
             let cdcAware = CdcAwareness.isEnabled kind.SsKey cdc
             // AC-D7 — resolve the operator's scope against THIS kind: the
@@ -144,7 +143,6 @@ module StaticSeedsEmitter =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
                 |> Option.bind DeleteScope.create
-            let deferred = load.DeferredFkColumns
             // NM-26 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
             // whenever the kind carries ANY IDENTITY column, via the
             // single-sourced `IdentityDisposition.needsIdentityInsert`
@@ -158,16 +156,6 @@ module StaticSeedsEmitter =
             // the bracketing theory.
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
-            let typeLookup = KindColumns.columnTypeLookup kind
-            // Slice κ pillar 1 lift: project raw `Map<Name, string>`
-            // populations into typed `Map<Name, SqlLiteral>` once at
-            // construction time. Both Phase-1 MERGE rendering and
-            // Phase-2 UPDATE rendering consume the typed shape.
-            let typedRows =
-                load.Rows
-                |> List.map (fun row ->
-                    row.Identifier,
-                    KindColumns.rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
                 MergeRender.renderMerge "emit.staticSeeds" verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =
@@ -204,6 +192,63 @@ module StaticSeedsEmitter =
               RenderedPhase1 = renderedPhase1
               RenderedPhase2 = renderedPhase2
               Rendered       = rendered }
+
+    /// Render one plan load (the named-row carrier). The plan carries
+    /// POST-substitution rows and the deferred-FK set; this entry
+    /// type-lifts the rows once (slice κ pillar-1 lift) and delegates to
+    /// the shared core. `ReconciledByRule` loads carry empty rows by
+    /// plan-build and produce empty scripts; `PreservedFromSource` and
+    /// `AssignedBySink` both render MERGE over the supplied rows with the
+    /// IDENTITY PK kept (the MERGE's `ON` joins on it); NM-26 brackets
+    /// IDENTITY-bearing kinds regardless of disposition (see the core).
+    let private kindToScript
+        (opts: DataEmitOptions)
+        (cdc: CdcAwareness)
+        (kind: Kind)
+        (load: DataLoadKind)
+        : DataInsertScript =
+        if List.isEmpty load.Rows then emptyScript
+        else
+            let typeLookup = KindColumns.columnTypeLookup kind
+            let typedRows =
+                load.Rows
+                |> List.map (fun row ->
+                    row.Identifier,
+                    KindColumns.rowToTypedValues typeLookup kind.Attributes row)
+            scriptOfTyped opts cdc kind load.DeferredFkColumns typedRows
+
+    /// Render one kind's script straight from the positional in-flight
+    /// carrier (`RowQuantum`) — the slim-row sibling of `renderLoad`,
+    /// skipping the IR rebuild (no per-row `Map<Name, string>` mint): the
+    /// quantum's cells type-lift positionally
+    /// (`KindColumns.quantumToTypedValues`), and each row's identity mints
+    /// through the SAME `StaticRow.readsideIdentity` the IR-grain boundary
+    /// uses, so the output equals `renderLoad` over materialized rows at
+    /// FULL record grain, not just rendered text (pinned in the pure
+    /// pool). `deferred` is the topology-derived cycle-break set
+    /// (`TopologicalOrder.deferredFkColumns` — rows-independent, known
+    /// before acquisition). Caller gate: quanta carry POST-substitution
+    /// semantics only when no identity substitution applies (the empty
+    /// remap) — a populated `SurrogateRemapContext` needs the named-row
+    /// plan path.
+    let renderQuanta
+        (opts: DataEmitOptions)
+        (cdc: CdcAwareness)
+        (kind: Kind)
+        (deferred: Set<Name>)
+        (quanta: RowQuantum list)
+        : DataInsertScript =
+        if List.isEmpty quanta then emptyScript
+        else
+            let typeLookup = KindColumns.columnTypeLookup kind
+            let schemaText = TableId.schemaText kind.Physical
+            let tableText  = TableId.tableText kind.Physical
+            let typedRows =
+                quanta
+                |> List.mapi (fun idx q ->
+                    StaticRow.readsideIdentity schemaText tableText idx,
+                    KindColumns.quantumToTypedValues typeLookup kind.Attributes q)
+            scriptOfTyped opts cdc kind deferred typedRows
 
     /// Π_StaticSeeds emit (composer-facing). Per A18 amended
     /// (`Catalog × Profile`, never `Policy`) and T11 (every kind in
@@ -242,6 +287,24 @@ module StaticSeedsEmitter =
     /// / `…WithStaging` telescoping collapsed into the one options record.
     /// `DataEmitOptions.defaults` reproduces the pre-consolidation default
     /// (no delete arm, `Standard`, `auto` staging — byte-identical).
+    /// Render ONE plan load — the per-kind unit `emitFromPlan` maps over
+    /// the catalog keyset, exposed so an acquisition-overlapped realization
+    /// can render a kind's script the moment its rows land (per-kind MERGE
+    /// text depends only on the options, the kind's CDC membership, the
+    /// kind itself, and its own load — never on another kind's rows;
+    /// cross-kind order is the ASSEMBLY's concern and stays topological).
+    /// Byte-identity with the batch path is BY CONSTRUCTION: `emitFromPlan`
+    /// calls this same function per kind. An empty-`Rows` load renders the
+    /// empty script (the same value `emitFromPlan` uses for plan-absent
+    /// kinds).
+    let renderLoad
+        (opts: DataEmitOptions)
+        (cdc: CdcAwareness)
+        (kind: Kind)
+        (load: DataLoadKind)
+        : DataInsertScript =
+        kindToScript opts cdc kind load
+
     let emitFromPlan
         (opts: DataEmitOptions)
         (catalog: Catalog)
@@ -251,8 +314,6 @@ module StaticSeedsEmitter =
         use _ = Bench.scope "emit.staticSeeds.emitFromPlan"
         let cdc = profile.CdcAwareness
         let loadByKind = plan.Loads |> List.map (fun l -> l.Kind, l) |> Map.ofList
-        let emptyScript : DataInsertScript =
-            { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
         ArtifactByKind.perKindBenched "emit.staticSeeds.kind" catalog (fun k ->
             match Map.tryFind k.SsKey loadByKind with
             | Some load -> kindToScript opts cdc k load

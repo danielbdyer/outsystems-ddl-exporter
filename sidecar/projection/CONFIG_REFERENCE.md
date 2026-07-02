@@ -93,6 +93,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | `renderConstraintsElegant` | bool | `true` | `false` is the V1-parity-bisect opt-out: passes ScriptDom's compact column-inline constraints through raw instead of reformatting them into V1's elegant multi-line shape (NM-38) |
 | `includePlatformAutoIndexes` | bool | `true` | `false` prunes OutSystems platform-auto indexes from the SSDT bundle and the dacpac at the post-chain seam (reconciliation slice 2; V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`) |
 | `identityAnnotations` | bool | `true` | `false` is the NAMED DOWNGRADE (NM-70 / WP5): suppresses the `Projection.SsKey` / `Projection.LogicalName` identity extended properties so they are not written to the SSDT bundle. Other extended properties (Descriptions, authored properties) still emit. Identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip); the run records the `emission.identityAnnotations.omitted` Warning diagnostic. |
+| `dataReadConcurrency` | int | `4` | bounded parallelism for source row hydration (static-seed graft + Bootstrap row source): how many kinds may drain their row streams concurrently, each on its own pooled connection. Acquisition-only — the rendered load plan stays deterministic and dependency-ordered. `1` = strictly serial single-connection path. Keep low: past ~4 the bottleneck moves to connection-pool pressure / server IO |
 
 ### `policy` — the operator overlays
 
@@ -114,7 +115,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 | Section | Keys | Default |
 |---|---|---|
-| `profiler` | `provider` `"fixture"` \| `"live"` (live profiles the source DB via `PROJECTION_MSSQL_CONN_STR` — D9, never the config — so tightening has null-density evidence) | `{ provider: "fixture" }` |
+| `profiler` | `provider` `"fixture"` \| `"live"` (live profiles the source DB via `PROJECTION_MSSQL_CONN_STR` — D9, never the config — so tightening has null-density evidence); `maxConcurrency` int `4` — bounded parallelism for live profile capture (per-kind discovery on its own pooled connection; `1` = strictly serial; keep low — past ~4 the win flattens and can invert) | `{ provider: "fixture" }` |
 | `output` | `dir` | `out/` |
 
 **Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (none of `model.env` / `model.ossys` / `model.path`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`.

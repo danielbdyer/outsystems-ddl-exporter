@@ -325,11 +325,11 @@ let private rowsetWith (isExternal: bool) (espaceKind: string option) : OssysRow
           Description = None }
     let idRow : OssysRowsetTypes.AttributeRow =
         { AttrId = 111; EntityId = 11; AttrName = "Id"; PhysicalCol = "ID"
-          DataType = "Identifier"; IsMandatory = true; IsIdentifier = true
+          DataType = "Identifier"; DefaultValue = None; IsMandatory = true; IsIdentifier = true
           IsAutoNumber = true; Length = None; Precision = None; Scale = None
           AttrSsKey = None; IsActive = true; Description = None
           OriginalName = None; ExternalDatabaseType = None
-          IsComputed = false; ComputedDefinition = None; DefaultConstraintName = None; Order = None; Collation = None }
+          IsComputed = false; ComputedDefinition = None; DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None }
     { Modules = [ moduleRow ]; Kinds = [ kindRow ]
       Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
 

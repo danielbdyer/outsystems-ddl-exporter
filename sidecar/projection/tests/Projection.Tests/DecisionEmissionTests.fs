@@ -109,7 +109,10 @@ let ``A42 (2.3): an EnforceUnique decision emits the index as UNIQUE; unkeyed in
     Assert.False(baseline.["IX_Widget_Alpha"], "baseline: source index is non-unique")
     let overlay = { DecisionOverlay.empty with EnforceUnique = Set.singleton idxKey }
     let tightened = emittedIndexUnique overlay catalog
-    Assert.True(tightened.["IX_Widget_Alpha"], "EnforceUnique should emit the index UNIQUE")
+    // The overlay-adjusted uniqueness drives BOTH the UNIQUE keyword and
+    // the emitted name prefix (IX_ -> UIX_) — name and constraint agree.
+    Assert.True(tightened.["UIX_Widget_Alpha"], "EnforceUnique should emit the index UNIQUE")
+    Assert.False(tightened.ContainsKey "IX_Widget_Alpha", "the emitted name follows the uniqueness decision")
 
 // ---------------------------------------------------------------------
 // FsCheck — every EnforceNotNull decision NOT-NULLs the emitted column,

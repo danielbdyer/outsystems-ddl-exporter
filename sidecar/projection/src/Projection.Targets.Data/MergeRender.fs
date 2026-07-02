@@ -50,17 +50,33 @@ module MergeRender =
         // computed column is never an UPDATE target (a hard SQL error) and never
         // enters the change-detection predicate, so exclude it alongside PK +
         // deferred.
+        // The row-identity match columns (true PKs, or the writable-column
+        // fallback for an acknowledged no-PK kind). A column that IS the
+        // row identity is never an UPDATE target — for a PK kind that is
+        // the existing PK exclusion; for the no-PK fallback it empties the
+        // WHEN MATCHED arm entirely (matched rows are identical over every
+        // matchable column by construction, and `buildMergeStatement`
+        // skips the arm when UpdColumns is empty).
+        let matchColumns = KindColumns.matchColumnNames deferred k |> Set.ofList
         let updColumns =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
             |> List.filter (fun a -> a.Computed = None)
+            // An IDENTITY column can never be an UPDATE target (SQL error
+            // 8102 — `SET IDENTITY_INSERT` licenses inserts only, never
+            // updates); it reaches its value through the INSERT arm.
+            |> List.filter (fun a -> not a.IsIdentity)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+            |> List.filter (fun c -> not (Set.contains c matchColumns))
         let args : MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = KindColumns.orderedColumnNames k
-                PkColumns  = KindColumns.pkColumnNames k
+                // Row identity: true PKs, or the writable-column fallback
+                // for an acknowledged no-PK kind (never empty — an empty
+                // ON-term list is a hard `foldBool` refusal downstream).
+                PkColumns  = KindColumns.matchColumnNames deferred k
                 UpdColumns = updColumns
                 Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
@@ -125,9 +141,14 @@ module MergeRender =
             k.Attributes
             |> List.filter (fun a -> Set.contains a.Name deferred)
             |> List.map cellOf
+        // Row scope: true PKs, or the writable-column fallback for an
+        // acknowledged no-PK kind. The fallback EXCLUDES the deferred
+        // columns so the UPDATE can join back to the Phase-1 row whose
+        // deferred columns were intentionally nulled (matching on them
+        // would compare the staged real value against the Phase-1 NULL
+        // and never find the row).
         let whereCells =
-            k.Attributes
-            |> List.filter (fun a -> a.IsPrimaryKey)
+            KindColumns.matchAttributes deferred k
             |> List.map cellOf
         let args : UpdateBuildArgs =
             { Target     = table

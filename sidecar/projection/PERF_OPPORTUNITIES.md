@@ -7,6 +7,125 @@ this document is the queue for the **next** slice — a structural-perf
 sweep that ships fixes with before/after data on each affected bench
 label.
 
+## 🎯 READ-CONCURRENCY ARC (2026-07-02) — bounded hydrate/profile parallelism shipped; the five follow-ups adjudicated; next-wave discovery ranked
+
+**Shipped:** `emission.dataReadConcurrency` / `profiler.maxConcurrency` (both
+default 4) — `Ingestion.collectInOrderForConcurrent` +
+`LiveProfiler.captureEvidenceCacheConcurrent`, per-kind pooled connections
+behind a `SemaphoreSlim`; serial paths untouched as the concurrency-1 arm
+(DECISIONS 2026-07-01). **Measured** (`ReadConcurrencyMeasurementTests`,
+100 tables × 375 rows): hydrate ~46% faster and profile ~77% faster at
+concurrency 4 on the cold shape; the warm sweep flattens past 4 and the
+profile leg inverts at 8 — the evidence for the low explicit defaults.
+Row maps / evidence caches value-identical across all legs.
+
+### The five follow-up recommendations, adjudicated (validation fleet, 4 agents)
+
+| Recommendation | Verdict | Substance |
+|---|---|---|
+| **1. Batch nullability reflection into one schema query** | ✅ FEASIBLE, HIGH VALUE — the next profile-stage cut | Per-kind `INFORMATION_SCHEMA.COLUMNS` (`LiveProfiler.fs` `reflectNullability`, query 2-of-3 in `discoverKind`) becomes one catalog-wide query (the `ReadSide.readColumnRows` precedent — measured ~2× faster than the `sys.*` join). ~300-kind estate: 900 → 601 queries (~33% of profile round-trips). One must-fix hazard: the (schema, table) re-match moves client-side — key case-insensitively or a collation mismatch silently defaults a column to NOT NULL. |
+| **2. Pre-warm / rent a bounded connection pool** | ⚠️ SUBSTANTIALLY ALREADY SATISFIED — do only the trivial form | The opener closes over one stable conn string per lane → one SqlClient pool bucket; physical connections ARE reused after the first `concurrency` opens; every `ClearPool` site is test teardown. Residuals: cold-pool handshake burst per lane, per-open `file:` secret re-resolution (a file read per kind — resolve once), `Min Pool Size=0` decay between lanes. Cheapest fix: `Min Pool Size=<concurrency>` + a resolve-once opener. A rented `SqlConnection[]` is NOT justified. |
+| **3. Batch-aware row materialization** | ❌ AS STATED, LOW VALUE — the peak is set by the consumer, not the drain | `DataLoadPlan.Loads[].Rows : StaticRow list` and the rendered artifact hold the whole estate regardless; chunking the drain alone changes nothing. Determinism is NOT the blocker (static lane sorts in `NormalizeStaticPopulations`; bootstrap order is pinned by the reader's `ORDER BY <pk>`). The genuine lever is streaming emitters — which crosses the pure-Core boundary; estate-scale data already has the correct mechanism on the transfer leg (`writePlanStreaming`). Act only if peak memory becomes the binding constraint, and then via the streaming realization. |
+| **4. Memoize/thread the topological order** | ❌ LOW PRIORITY — micro-win, real staleness hazard | ~5 recomputes/publish but each is sub-ms-to-low-ms at 300 kinds (Kahn/Tarjan already Dictionary-based). The sites legitimately differ: pre-transform vs post-chain vs emission-seam catalogs, and SSDT uses `SkipSelfEdges` while data uses `TreatAsCycle`. Only the chain-step → data-emit reuse is coherent, and it must first prove `UserFkReflowPass` never re-points FK edges after the topo step. Not worth the hazard today. |
+| **5. Bench granularity (gate wait / conn open / SQL read / materialization)** | ✅ VALID — the two phases the knob most affects are exactly the unmeasured ones | Gate wait (`gate.WaitAsync`) and connection open both precede the drain stopwatch — MISSING. SQL execute is covered (`readside.readRowsStream.open`) but the per-row `ReadAsync` wire fetch is only the residual of the stream-lifetime label — CONFLATED. Materialization is COVERED (`readside.rowstream.materialize` / `.materializeIr`). Minimal closure: `ingestion.rowDrain.gateWait` / `.connectionOpen`, `readside.rowstream.fetch`, and profiler mirrors + `profile.live.aggregate`. No new double-counting. |
+
+### Execution status (2026-07-02, same session)
+
+**Executed:** rec 1 (batched nullability reflection — ONE catalog-wide
+`INFORMATION_SCHEMA.COLUMNS` query in both capture paths, per-kind query
+retired, case-insensitive table keys; 3 → 2 queries/kind); rec 5 (the
+four-phase Bench labels); rec 2's real residual (`ConnectionSpec.openerFor`
+— resolve-once opener; per-open `file:` secret re-reads eliminated;
+`Min Pool Size` remains an operator connection-string knob, not forced);
+discovery #1 (typed per-column cell formatters in
+`ReadSide.readRowsStreamCore`, byte-identical formatting, generic
+fallback); discovery #4's options half (`Sql160ScriptGenerator` options
+memoized; the generator itself stays per-call — it holds render state).
+
+**Deferred with evidence:** discovery #2 — the per-row `Map` is NOT
+throwaway: it is retained as `DataInsertRow.Values` (the artifact
+carrier), so fusing saves one ordered re-walk per row while requiring a
+render-contract reshape across three emitters; do it with the #3
+artifact-streaming decision, not alone. Discovery #5 (composer lane
+skip) — a few hundred `Map.tryFind`s; noise next to the fused-string
+cost it sits beside. Recs 3 and 4 — adjudicated against, above.
+
+### Next-wave discovery (ranked; the sharpest first)
+
+1. **`ReadSide.formatRawValue` per-cell box + `Convert` reparse** (`ReadSide.fs` pull loop) — `GetValue` boxes every scalar then `Convert.To*` re-dispatches, ×375k rows × N columns. Typed accessors (`GetInt64/GetDecimal/…` guarded by the known column type) remove both. Measure via `readside.rowstream.materialize` before/after. **HIGH.**
+2. **`KindColumns.rowToTypedValues` throwaway `Map` per row** — builds a `Map<Name, SqlLiteral>` that `typedValuesToSqlLiterals` immediately re-reads in the same attribute order; two tree builds + N lookups + per-cell DU allocs per row. Fuse into one ordered array walk. **HIGH.**
+3. **Whole-seed fused in-memory string + retained typed scripts** (`DataEmissionComposer.renderArtifactInTopoOrder` → `File.WriteAllText`) — full typed rows AND full rendered T-SQL held simultaneously; stream per-kind chunks to a `StreamWriter` instead. **HIGH (memory) / MEDIUM (wall).**
+4. **Per-call `Sql160ScriptGenerator` + `pinnedOptions()`** — allocated per statement across the SSDT lane and PER ROW on the below-threshold Phase-2 UPDATE path; memoize the options object (generator stays per-call). **MEDIUM-HIGH.**
+5. **`composeRenderedBundleWithBootstrap` renders 4 lanes ×2 topo walks** even when 2 lanes are empty under `AllData`; skip empty artifacts, reuse one `toMap`. **MEDIUM.**
+6. **Synchronous whole-body artifact writes + `WriteIndented` full-catalog JSON** (`Pipeline.writeAllToStaging`) — bounded-parallel writes + streaming `Utf8JsonWriter`. **MEDIUM.**
+7. **~20 full-catalog immutable rewrites in the pass chain** — bounded at ~3k attributes; sum the pass-tier Bench samples before investing. **MEDIUM-LOW.**
+8. **`toBundle` transient list copies** — confirmed NO O(n²) (all joins Map-indexed); only transient-allocation trimming remains. **LOW.**
+### CORRECTION (2026-07-02, operator adjudication) — V1 DID ship the all-data Bootstrap; the reconciliation re-based
+
+An earlier comparison in this arc claimed V1 "moves rows only for static
+tables." **That is wrong.** Verified in the V1 source: the deprecated
+step is only the per-module dynamic INSERT emission
+(`BuildSsdtDynamicInsertStep`); the dataset itself flows into
+`BuildSsdtBootstrapSnapshotStep` — "ALL entities (static + regular) in
+global topological order" — acquired by `SqlDynamicEntityDataProvider`:
+ONE connection, a strictly serial per-table queue, OFFSET/FETCH paging
+at 1,000 rows/batch, whole-estate in-memory materialization
+(`SqlDynamicEntityDataProvider.cs:36,95-165,585-657`;
+`BuildSsdtBootstrapSnapshotStep.cs:19-56`;
+`BuildSsdtApplicationService.cs:159-243`). V1's model-extraction result
+never carries data (`SqlModelExtractionService.cs:129-135` — always
+`DynamicEntityDataset.Empty`).
+
+**Re-based reconciliation of the V2-vs-V1 gap.** Both editions read the
+whole estate's rows for Bootstrap. The differences that remain are:
+(1) **V2 reads the estate a SECOND time** — the live profiler's
+full-row-scan per non-static kind, a pass V1 never made (its default
+profiler was fixture/no-DB; its live profiler used aggregates +
+sampling); (2) **V2 pays more per row on each pass** — `StaticRow` =
+`Map<Name,string>` + a minted SsKey per row, `CachedValue` columns on
+the profile pass, ScriptDom AST-per-row on emit, vs V1's raw
+`GetValue`→normalize into arrays and StringBuilder appends; (3) **V2
+emits more artifacts** (dacpac, snapshot, fidelity, distributions,
+lifecycle store). V1's reader was NOT smarter — serial, paged (more
+round trips than V2's one stream per table), single-connection; V2's
+read concurrency already beats it per pass. The gap is therefore
+"two heavy passes + heavier rows + more artifacts" vs "one lean pass",
+NOT a volume-vs-nothing story.
+
+### THE PROGRAM — one estate scan, everything derives, emission overlaps
+
+North star: a publish's wall-clock floor is `max(bytes-over-wire, render
+CPU)` — not their sum, and not ×2 passes.
+
+1. **Single-Scan Evidence Unification (the headline).** The profiler's
+   full row-stream reads the SAME rows Bootstrap hydrates. Derive BOTH
+   from one bounded-parallel scan: the hydrated rows feed
+   `EvidenceCache` construction client-side (null counts and row counts
+   are countable while streaming — the per-kind aggregate query is
+   redundant under a full scan), and the batched reflection (landed)
+   already covers nullability. Per-kind query budget: was 3+1 stream,
+   now 2+1 stream, becomes **one stream per kind + one global query per
+   publish**. Estate scans: 2 → 1. Combined with the landed
+   concurrency-4, extract+profile at operator scale should approach
+   parity with V1's single serial pass — while KEEPING full live
+   evidence V1 never had.
+2. **Acquire→emit pipelining.** Render each kind's MERGE artifact the
+   moment its drain completes (bounded producer/consumer); emit CPU
+   hides inside network wait. Deterministic: per-kind rendering is pure;
+   assembly stays topo-ordered.
+3. **Row-carrier slimming.** The per-row `Map` + minted SsKey is the GC
+   tax on every pass; a positional cells carrier with one per-kind
+   header (the Q2 carrier note already points here) removes most
+   row-grain allocation. Measure via `readside.rowstream.materializeIr`.
+4. **Evidence tiering as operator intent.** Full-scan evidence where
+   tightening needs it; `TOP (N)` + aggregates for named table classes
+   (audit/log) — the `MaxRowsPerKind` machinery exists; make it
+   per-kind policy rather than global.
+5. **Wire efficiency.** `SequentialAccess` + packet-size tuning on the
+   drain connections for remote links.
+
+9. **Emit-stage "regression" note:** the slight emit slowdown observed alongside the halved extract/profile is most consistent with GC/ThreadPool spillover from the now-parallel stages (survival rule 13 — a verdict under concurrent load is void); re-measure `stage.emit` solo with a forced GC between stages before optimizing.
+
 ## 🎯 PERF-SWEEP ARC RESULTS (2026-05-19)
 
 **Status: top-leverage findings SHIPPED; canary wall-time 3:34 → 2:22 (~34% reduction).**
@@ -766,3 +885,114 @@ canary must:
 Once that canary lands and reaches a stable baseline, the perf-sweep
 slice can pick from this menu with confidence that the bench surface
 will show its wins.
+
+---
+
+## Sweep 2 (2026-07-02) — survey-driven collapses across the rest of the codebase
+
+Six information-gathering agents mapped the data-lane text assembly, the
+MERGE render interior, the profile-derivation loops, the OSSYS snapshot
+round-trips, the AsyncStream per-row overhead, the repeated catalog
+walks, and the canary/transfer read paths. Adjudication and execution
+stayed here. Facts referenced below are from those maps, verified at the
+call sites before each edit.
+
+### Executed
+
+1. **The fused data bundle is no longer materialized** (`RenderedDataBundle`
+   drops `Fused`). Its ONE production consumer was an is-anything-there
+   gate at the write site, yet producing it re-concatenated every
+   per-kind Phase-1/Phase-2 string into a second whole-estate copy
+   (~the sum of the three lanes, ~100MB at estate scale) on every
+   publish, held ALONGSIDE the lanes. The gate now reads the lanes;
+   `composeRenderedFull` remains the on-demand fused surface; the
+   partition-law assertion (`unionSiblings`) still runs on the bundle
+   path. (Related non-finding: the per-kind `Rendered` "third copy" is
+   NOT real for non-deferred kinds — `String.Concat(p1, "")` returns
+   `p1`'s reference.)
+
+2. **Profile derivation sheds its per-cell string bridge.**
+   - `deriveAttributeRealities`: null-presence + duplicate detection
+     fused into ONE typed pass (`scanColumnValues`) — the old loop
+     allocated a fresh `"prefix:" + ToString` key per non-null cell and
+     kept iterating after the verdict; per-case `HashSet`s allocate no
+     key at all for numeric/temporal cells. Verdicts unchanged (the
+     prefix only ever separated cases; binary stays coarse).
+   - FK realities/orphans: the target index is a typed
+     `TargetKeySet` — `HashSet<int64>` for integer PKs (the OutSystems-
+     dominant case; O(1) probes, no key strings) with the string bridge
+     as fallback; orphan counting is a single in-place pass (was: two
+     materialized arrays + a tree-set probe per value).
+   - FK cardinalities/selectivities: typed tallies
+     (`nonNullGroupCounts` / `tallyPrefixedEntries`) — key strings render
+     once per DISTINCT value (byte-identical `cacheValueKey` form on the
+     output surface) instead of once per cell.
+3. **The drain stream's two probe wrappers fused into the pull**
+   (`ReadSide.readRowsStreamCore`): two `task { }` layers — two Task +
+   option allocations PER ROW — carried only a stopwatch and a counter;
+   the pull now records the same four labels (per-table + `.all`, wall
+   time + `.elements`) itself at EOF. Corpus: quanta serial drain
+   2,295ms (best sample; prior 2,377–2,455).
+4. **Two quadratic lookup shapes indexed**: `QueryHintPass` resolved
+   each high-selectivity Reference by scanning every kind
+   (O(selectivities × kinds)); `ModelFidelity.aggregateUniquenessCandidates`
+   resolved each decision's attribute the same way (O(decisions ×
+   attributes)). Both now build one keyed map (and fidelity's only when
+   decisions exist).
+5. **One Kahn/Tarjan per catalog value** (E2): the publish's data-bundle
+   composer now consumes the CHAIN's stored `ComposeState
+   .TopologicalOrder` (`composeRenderedBundleWithBootstrapUsing`) — same
+   post-chain catalog, so re-deriving it was pure repetition — and the
+   two hydration arms share one order computed in
+   `readAndHydrateConfigModel` (`hydrateCatalogUsing` /
+   `hydrateBootstrapRowsExcludingUsing`; the graft changes `Modality`
+   only, never the FK edges). Remaining per-publish computes: the chain's
+   own (canonical), `SsdtDdlEmitter.statements` (dacpac path — a
+   different consumer shape, ms-scale), the store-leg's separate run.
+6. **`emittedIndexNames` derived once per kind** (E3): the three
+   index-facing consumers (CREATE INDEX / ALTER … DISABLE / index
+   extended properties) each recomputed the sort+group+collision map per
+   kind on BOTH emit paths; one binding now feeds all three.
+
+### Adjudicated and DECLINED (with reasons — re-open triggers named)
+
+- **`rowToTypedValues` → `typedValuesToSqlLiterals` fusion (the sweep-1
+  HIGH item), re-adjudicated DOWN.** The per-row `Map<Name, SqlLiteral>`
+  is not throwaway: it is the A35 typed-row carrier
+  (`DataInsertRow.Values` in `Phase1Merges`/`Phase2Updates`) and
+  Phase-2's by-name source. The fusible portion is Stage B's re-walk
+  (~C tree lookups + one list per row) — order ~2% of the emit leg
+  against surgery on the MERGE path. Re-open if the typed-row carrier
+  ever gains a positional representation (then the whole Stage-A map
+  disappears with it).
+- **OSSYS export JSON rowsets (10 of 23 result sets drained unread by
+  V2).** Emptying them for V2 (a script parameter keeping 23 result
+  sets and V1's default behavior) would cut server JSON-build CPU and
+  wire bytes — but the script is a byte-identical CARBON COPY of the V1
+  donor, and V1 reads those rowsets in production. Not executed without
+  operator sign-off on a donor change. Re-open with the operator.
+  **→ RE-OPENED AND SHIPPED 2026-07-02** (operator sign-off granted;
+  DECISIONS same date): the builds gate on
+  `SESSION_CONTEXT(N'OsmSkipJsonRowsets')` — no new parameter, flag
+  absent = byte-identical V1 behavior; V2's `MetadataSnapshotRunner`
+  sets the flag. Both script copies changed together (carbon-copy
+  invariant held).
+- **Streaming the lane files to disk per kind** (kill the ~100MB
+  whole-lane strings): real memory win, but `Outputs.DataBundle :
+  Map<string, string>` is the pipeline's output contract (writers,
+  tests, staging). Re-open as its own slice with the contract change
+  designed first.
+- **Manifest built twice per publish** (seed manifest overwritten by
+  the SSDT step's `buildFull`): tens of ms; the fix needs the emit-step
+  fold to know its successors. Not worth the coupling today.
+- **`ModelFidelity` re-deriving violations from `profile` instead of the
+  chain's decision sets**: an architectural unification, not a perf
+  edit — the decision sets and the report currently agree by
+  construction of shared inputs; collapsing them changes report
+  provenance. Belongs to a fidelity-report slice, not this sweep.
+- **`AsyncStream.toList`'s `List.ofSeq` copy / list-vs-array carriers**:
+  contract churn across every consumer for one alloc per row already
+  dwarfed by the row itself.
+- **Canary row hashing (`hashRowBytes` per-row sort)**: canary-verb
+  only, already `Array.Parallel`, quantum sibling already exists for
+  streams. Not on the publish path.

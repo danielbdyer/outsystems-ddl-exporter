@@ -1,3 +1,81 @@
+# Handoff addendum — 2026-07-02 (third letter), THE PRODUCTION CASH-OUT: the rowsets JSON gate shipped (operator-approved donor change) and the pipelined publish arm is LIVE by default. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
+
+To the next agent.
+
+**Two of the second letter's named follow-ons landed this session (DECISIONS 2026-07-02, two entries):**
+
+1. **The OSSYS JSON-rowsets cut** — the operator signed off on the V1-donor change. The ten JSON aggregate temp tables gate on `SESSION_CONTEXT(N'OsmSkipJsonRowsets')` (flag absent = byte-identical V1 behavior, no new parameter; V2's `MetadataSnapshotRunner` sets it with one `sp_set_session_context` before the batch). Both copies of the script changed together (carbon-copy invariant; line pin now 1253). If you ever edit the rowsets SQL again: edit BOTH files, keep them byte-identical, update the pin in `MetadataExtractionSqlTests`.
+
+2. **P2 production wiring** — `runWithConfig` now has a gated PIPELINED arm, ON BY DEFAULT (`emission.pipelinedBootstrap`; gate = data on ∧ OSSYS-sourced ∧ live profiler ∧ connection present; any miss = the two-phase schedule, unchanged). Bootstrap MERGEs render and evidence derives ON THE DRAIN WORKERS as each kind's rows land; the composer's Bootstrap arm takes a two-currency `DataComposer.BootstrapLane` (`Rows` | `Prerendered`). The identity ladder you must not weaken:
+   - `RegisteredTransforms.chainStepsSplitWithPins` splits the chain at `topologicalOrder`; prefix profile-invariance AND suffix catalog-preservation are pinned BEHAVIORALLY in `DataEmissionComposerTests` — if you add a profile-consuming catalog rewrite before the topo pass, or a post-topo pass that rewrites the catalog, those tests fail and the pipelined arm's law is void until you re-derive it.
+   - `PipelinedBootstrapEquivalenceTests` (docker) publishes the edge-case OSSYS estate knob-ON and knob-OFF and byte-compares EVERY emitted file. It seeds deterministic rows into `OSUSR_DEF_CITY`/`OSUSR_ABC_CUSTOMER`/`OSUSR_REF_COUNTRY` test-locally (the seed fixture ships physical tables empty — do not add rows to the donor fixture).
+   - The evidence partition (eligible ∧ non-static ∧ unsampled derives at drain; everything else takes the counted live fallback) mirrors `captureEvidenceCacheDerived` exactly — `LiveProfiler.attachFromKinds` is the pipelined sibling of `attachDerived`, same bench counters.
+
+**Named cost, consciously kept:** the emit stage re-runs the ms-scale chain prefix inside `runWithConfigCore`. Threading the extract stage's composed prefix INTO the core is PL-1-adjacent (`PAY_ONCE_PLAN.md`) — do it there, not as a drive-by.
+
+**Still open from the second letter:** the P4 config surface (`profiler.sampling` parse + logical-ref binder); the quanta pass under a wire-dominated profile; the whole `PAY_ONCE_PLAN.md` ladder (PL-1 first — the document pair is the plan of record, approved as documents-only: do NOT execute it without the operator asking).
+
+**FS3511 scar (again):** the pipelined collect's task CE would not reduce with the pure pre-drain computation inline — `pipelinedDrainOf`/`splitCollected` hoisted it out (Pipeline.fs). The shape that survives Release: task bodies of `let! → match → let (simple) → let! → match → return`.
+
+Hold the spine.
+
+# Handoff addendum — 2026-07-02 (second letter), THE SINGLE-SCAN PROGRAM: one estate scan, everything derives, emission overlaps — P1–P5 landed with a 480k-row corpus adjudicating every leg. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
+
+To the next agent.
+
+**The program and its law.** `SINGLE_SCAN_PROGRAM.md` is the durable plan + measurement ledger — read it before touching any of this. The law that governed every landing: *no optimization's timing counts until a VALUE-IDENTITY assertion against the incumbent path holds on the corpus* (~480k rows / 240 variegated tables, `PERF_CORPUS=1`; add `PERF_CORPUS_DURABLE=1` to reuse the seeded `PerfCorpusDurable` database — the seed is ~4.5min you should not repay per iteration).
+
+**What landed (DECISIONS 2026-07-02, single-scan entry, has the full inventory):**
+- **P1** — the profile stage derives its evidence cache from the rows the data lanes already hydrated (`EvidenceCache.cachedKindOfRows`, `LiveProfiler.captureEvidenceCacheDerived`, pipeline threading). The SECOND full-estate pass is gone: 480 per-kind queries + 240 streams → 1 global nullability reflection. Identity asserted across the corpus repeatedly. Know the named caveat: `""` ≡ NULL (NM-18 / `Tolerance.EmptyTextNormalizedToNull`) — derived evidence observes the IR plane (what publish ships), live observes the source.
+- **P2** — the plan build, the MERGE render, and the drain all factor per kind (`DataLoadPlan.loadForWith`, `StaticSeedsEmitter.renderLoad`, `Ingestion.collectInOrderForConcurrentWith`); a drain-time projection runs inside the gate after the connection pools back. The composed pass (drain+render+derive per kind on 4 workers) beat the two-phase sum by 21–39% and the serial emit alone — the drain workers parallelize render CPU as a byproduct. Row memory caps at `concurrency` kinds.
+- **P3** — the corpus measured the IR row-carrier tax at **3.35×** (8.0–8.1s materialized vs 2.4s positional; ~70% of hydrate wall-clock is Map mint + identity synthesis, not wire). Positional twins landed (`quantumToTypedValues`, `cachedKindOfQuanta`, `renderQuanta`, `collectQuantaForConcurrentWith`); row identity mints through the ONE shared `StaticRow.readsideIdentity`, so the quanta pass equals the named-row pass at FULL record grain. On the render-CPU-saturated composed pass its wall-clock is at parity (the tax's win is drain-side + allocation); its home is wire-dominated and memory-pressured contexts.
+- **P4** — `SqlProfilerOptions.Sampling : SamplingPolicy` (Core; default + per-kind pins; explicit `None` pin = exemption) replaced the global `MaxRowsPerKind`. Exact aggregates never trade; sampled kinds keep live capped discovery and are excluded from derivation; every downgrade named (`SamplingDiagnostics.emit`). Corpus: capping the 10 wide kinds at 2000 rows cut the live profile **5,183 → 1,027ms (-80%)** with exact counts preserved and `derived∘tiered ≡ all-live tiered`. The CONFIG surface (profiler.sampling with logical `{module, entity}` refs) is the named follow-on.
+- **P5** — the drain reader opens `CommandBehavior.SequentialAccess` (the pull loop is strictly ordinal-ascending, single-visit). No regression at corpus widths; the win grows with row width; all identity laws held under it.
+
+**Your next moves:**
+- **P2 production wiring** (the biggest unrealized win): the post-chain catalog is profile-INDEPENDENT (`catalogStep` builds with `fun _ _` — verified), so the catalog can fix BEFORE the wire opens. Gates named in the program doc: CDC reflection pre-drain, empty/config-known remap; the slice is splitting `runWithConfigCore`'s catalog steps (pre-drain) from decision steps (post-profile).
+- **P4 config surface**: `profiler.sampling` parse + logical-ref binder resolution (`CatalogResolution.tryKindByLogical`) + threading `SamplingDiagnostics.emit` into the run diagnostics.
+- The quanta pass deserves a second look under a WIRE-dominated profile (remote/throttled link) where its drain-side savings should move wall-clock, not just CPU accounting.
+- **Sweep 2 landed after this letter's first writing** (PERF_OPPORTUNITIES § Sweep 2 + DECISIONS same date): the fused bundle is on-demand, derivations are typed not stringly, one Kahn/Tarjan per catalog value, `emittedIndexNames` once per kind, probe pair fused into the pull, two quadratic resolutions indexed. Read the DECLINED list there before re-proposing any of its items — each carries its re-open trigger (the OSSYS JSON-rowsets cut needs OPERATOR sign-off on a V1-donor change; the lane-streaming write needs the `Outputs.DataBundle` contract redesigned first).
+
+**Scars (this session):**
+- FS3511 bit twice more: a tuple-pattern `for` AND a `for…do!` both had to leave the corpus test's `task { }` (module-level tail-recursive continuations — `PerfCorpus.seedFrom` is the shape). The corpus test had never been Release-built before (test.sh builds Debug); it is now clean both ways.
+- SQL Server name-binds EVERY object in a statement at compile time — a `CASE WHEN OBJECT_ID(...) IS NOT NULL THEN (SELECT … FROM that_table)` still fails on a fresh database. Two round trips (`PerfCorpus.corpusComplete`).
+- Cross-run absolute timings on the warm container drift ±30% with host state (emit swung 23.3–35.7s); within-run ratios are the verdict. The BEFORE "hydrate concurrency inversion" finding was RETRACTED on exactly this ground (rule-13 contamination).
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-07-02, FULL-EXPORT FIDELITY + READ-CONCURRENCY ARC: nine fixes across the extraction→emission spine (scope pushdown, PK recovery, no-PK MERGE fallback, deployed-storage evidence for bt* references, logical index names, authored-default lift + incidental-reflection suppression, lifecycle-store self-preparing writes, aggregate nullability diagnostics) + bounded hydrate/profile parallelism with a measured harness. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
+
+To the next agent.
+
+**What this session shipped (ten commits on PR #648; pure pool 4000/3790 green, 210 skipped; docker pool green modulo the environment's unrunnable CDC fixtures — Testcontainers ryuk image unpullable here, infrastructural, pre-existing):**
+
+- **Extraction scope**: `model.onlyActiveAttributes` binds through `SnapshotScopeBinding.fromModel` in BOTH arms (the axis is orthogonal to module scope). The pushdown ≡ filter equivalence canary now holds the attribute axis equal across legs — there is deliberately NO in-memory attribute seam (scope is query-time selection, not post-hoc de-dup). DECISIONS 2026-07-01 closes the old deferral.
+- **PK identity**: the rowset reader recovers `IsPrimaryKey` from `ossys_Entity.PrimaryKey_SS_Key` when no attribute carries `Is_Identifier`; the fallback is SUPPRESSED whenever any explicit flag exists (no invented composites) and a flag/entity-key contradiction surfaces as `adapter.ossys.primaryKey.divergence`.
+- **Data lanes**: `KindColumns.matchAttributes/matchColumnNames` is the ONE row-identity vocabulary (true PKs, else writable minus computed/identity/deferred) shared by static seeds, migration dependencies, and staged Phase-2 — the V1 all-column fallback for acknowledged no-PK kinds. Phase-2 excludes deferred columns from the match (it must re-join the Phase-1 row whose deferred FKs were NULLed). Bonus fix: IDENTITY columns are never WHEN-MATCHED UPDATE targets (SQL error 8102), and match columns never are either.
+- **Type evidence**: `#ColumnReality` storage now parses into `AttributeRow.DeployedStorage` (typed, char-normalized facets). `resolveAttributeType` consults it for `bt*` reference tokens ONLY, behind an explicit external type; the semantic primitive re-projects from the effective storage so hydration formats per deployed reality. `rtDate` can never be widened by deployed storage.
+- **Emitted names**: `SsdtDdlEmitter.emittedIndexNames` — `IX_/UIX_<Kind>_<Attr…>` from typed logical IR + the overlay-adjusted uniqueness, budget-capped, one map feeding create/disable/extended-property surfaces; proof-triggered SsKey-ordered ordinals only for genuine collisions. Goldens re-recorded once for this (DECISIONS entry). PK-backing indexes take the PK constraint name.
+- **DDL contract sweep** (DECISIONS 2026-07-02): authored `Default_Value` now LIFTS on the rowset path (BIT `False` → `DEFAULT 0`; no-op defaults suppressed; the reflected `DefaultDefinition` expression channel stays un-lifted per row 53's trigger); reflected `DF__` auto-names are filtered at the reader; `#ColumnReality.CollationName` NULLIFs against the DB default at query time (donor + embedded SQL synced — remember the byte-identity pin at `MetadataExtractionSqlTests`); `tryProjectDataSpace` suppresses reflected `[PRIMARY]` placement (the emitter stays IR-faithful for authored values). Verified already-pinned: authored attribute order, rtDate, no-UNIQUE-without-intent, named-DEFAULT formatting, generated PK names.
+- **Read concurrency** (DECISIONS 2026-07-01): `emission.dataReadConcurrency` / `profiler.maxConcurrency` (both default 4, `<1` refused by name) → `Ingestion.collectInOrderForConcurrent` / `LiveProfiler.captureEvidenceCacheConcurrent`, per-kind pooled connections behind a `SemaphoreSlim`; the serial functions are UNTOUCHED and remain the concurrency-1 arm. Acquisition may be parallel; emission stays deterministic and dependency-ordered — that two-order split is the invariant to defend.
+- **Measured** (`ReadConcurrencyMeasurementTests`, docker pool, 100 tables × 375 rows): hydrate ~46% / profile ~77% faster at concurrency 4 on the cold shape; the warm sweep flattens past 4 and the profile leg INVERTS at 8 — that inversion is the argument for the low default; expect host-load variance run to run. Four-phase Bench attribution landed with it: `ingestion.rowDrain.gateWait/.connectionOpen`, `readside.rowstream.fetch`, `profile.live.aggregate` + profiler mirrors.
+
+**Your next moves (adjudicated in `PERF_OPPORTUNITIES.md` § read-concurrency arc — read that section first):**
+- **Batched nullability reflection** is the next profile-stage cut: one catalog-wide `INFORMATION_SCHEMA.COLUMNS` query replaces the per-kind reflection (~33% of profile round-trips at estate scale; the `ReadSide.readColumnRows` form is the proven template). ONE must-fix hazard: the (schema, table) re-match moves client-side — key case-insensitively or a collation mismatch silently defaults a column to NOT NULL.
+- The discovery sweep ranked the next wave: per-cell boxing in `ReadSide.formatRawValue` (typed accessors), the throwaway per-row `Map` in `KindColumns.rowToTypedValues`→`typedValuesToSqlLiterals` (fuse to one ordered walk), the fused whole-seed string in `DataEmissionComposer` (stream per-kind chunks). All measured-first per the bench protocol.
+- NOT worth doing as stated: pool pre-warm beyond `Min Pool Size` (SqlClient pooling already covers it), drain-side batch materialization (the peak lives in the consumer; the streaming transfer realization is the correct lever), topo memoization (micro-win, real staleness hazard vs `UserFkReflowPass`).
+
+**Scars (this session):**
+- The rowsets SQL is a CARBON COPY with a byte-identity test against the repo-root donor (`src/AdvancedSql/…`) AND a line-count pin — any edit must sync both files and the pin, or the pure pool trips.
+- `scripts/test.sh focus` runs the INTEGRATION assembly only; a pure-class focus goes through `fast` (or plain `dotnet test --filter` on the pure fsproj).
+- Perf legs on the warm container show real run-to-run variance under host load; treat single runs as shape, not verdict (survival rule 13 generalizes).
+
+Hold the spine.
+
+---
+
 # Handoff addendum — 2026-06-20, DELTA-GRADE DIFF: POLISHED + SCALE-INTENTIONAL + DISPLAYNAME FINISHED + THE L1 FILTER (eleven slices) — the migrate-preview surface is sharper, safer, scopable, intentional at ~310 tables, legible everywhere, AND the interactive at-scale toolkit is complete (orient · scope · drill · filter): FK retarget names tables (a GUID-wall DEFECT fixed), structural channels carry before/after, a data-risk callout that GROUPS BY RISK CATEGORY at scale + an honest statement, `--only`/`--module` scope, a per-module rollup, a navigable module-grouped move-lane (built from Disclosures, so the Navigator digs it with ZERO Navigator change), a shared `Catalog.nameIndex` so every face reads tables by `Name`, and the `/`-filter (a projection of the tree, never a copy). Branch `claude/delta-grade-polish` off `main` `6027c0d4`, NOT pushed
 
 To the next agent.

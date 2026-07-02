@@ -201,6 +201,7 @@ let private mkAttrRow
         AttrName            = attrName
         PhysicalCol         = attrName.ToUpperInvariant()
         DataType            = "Text"
+        DefaultValue = None
         IsMandatory         = true
         IsIdentifier        = false
         IsAutoNumber        = false
@@ -215,6 +216,7 @@ let private mkAttrRow
         IsComputed           = false
         ComputedDefinition   = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order                = None
     }
 

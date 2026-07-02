@@ -124,6 +124,8 @@
     <Compile Include="HydrationTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileTests.fs" />
+    <Compile Include="EvidenceCacheDerivationTests.fs" />
+    <Compile Include="SamplingPolicyTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="SyntheticDataTests.fs" />
     <Compile Include="SyntheticCorrectionTests.fs" />

@@ -142,6 +142,15 @@ module Config =
 
     type ProfilerSection = {
         Provider   : ProfilerProvider
+        /// Bounded parallelism for live profile capture — how many kinds may
+        /// run their per-kind discovery (aggregate + nullability reflection +
+        /// row stream) concurrently, each on its own pooled connection.
+        /// Acquisition-only concurrency: derived Profile axes stay pure and
+        /// deterministic regardless of completion order. Keep low and
+        /// explicit — too much parallelism moves the bottleneck to
+        /// connection-pool pressure, server IO, or client memory. `1` is the
+        /// strictly serial single-connection path.
+        MaxConcurrency : int
     }
 
     /// D9 (secret-free by construction): the connection string for live
@@ -304,6 +313,27 @@ module Config =
         /// accepts the ~30k ceiling); `tempTable` always stages. Threads to
         /// `EmissionPolicy.DataStaging`.
         DataStaging : DataStagingPolicy
+        /// `emission.dataReadConcurrency` — bounded parallelism for source
+        /// row hydration (the static-seed graft + the Bootstrap row source).
+        /// How many kinds may drain their row streams concurrently, each on
+        /// its own pooled connection. Acquisition-only concurrency: the
+        /// rendered load plan stays deterministic and dependency-ordered
+        /// (topological order governs emission; only the row READS overlap).
+        /// Keep low and explicit — too much parallelism moves the bottleneck
+        /// to connection-pool pressure, server IO, or client memory. `1` is
+        /// the strictly serial single-connection path.
+        DataReadConcurrency   : int
+        /// `emission.pipelinedBootstrap` — the acquisition-overlapped publish
+        /// schedule for the Bootstrap data lane (live-OSSYS + live-profiler
+        /// runs only). `true` (the default) renders each eligible kind's
+        /// MERGE script and derives its profile evidence ON THE DRAIN WORKER
+        /// as its rows land, overlapping the remaining kinds' wire time and
+        /// capping live row memory at `dataReadConcurrency` kinds; `false`
+        /// keeps the two-phase schedule (drain the whole estate, then render
+        /// at compose time). The emitted bundle is identical either way —
+        /// the toggle is a SCHEDULE choice (equivalence pinned by test) and
+        /// exists as the named diagnostic opt-out.
+        PipelinedBootstrap    : bool
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -433,7 +463,8 @@ module Config =
     }
 
     let private defaultProfiler : ProfilerSection = {
-        Provider   = ProfilerProvider.Fixture
+        Provider       = ProfilerProvider.Fixture
+        MaxConcurrency = 4
     }
 
     let private defaultOverrides : OverridesSection = {
@@ -480,6 +511,10 @@ module Config =
         // 2026-06-25 — absent ⇒ stage above 1000 rows (byte-identical to the
         // prior hardcoded `stagingRowThreshold`).
         DataStaging = DataStagingPolicy.auto
+        DataReadConcurrency = 4
+        // P2 production wiring — acquisition-overlapped Bootstrap render +
+        // evidence derivation on by default (identical bundle; schedule only).
+        PipelinedBootstrap = true
     }
 
     let private defaultPolicy : PolicySection = {
@@ -880,19 +915,29 @@ module Config =
         match tryGetProperty root "profiler" with
         | None -> Result.success defaultProfiler
         | Some element ->
-            match getOptionalString element "provider" with
+            match getIntOr element "maxConcurrency" defaultProfiler.MaxConcurrency with
             | Error es -> Error es
-            | Ok None -> Result.success defaultProfiler
-            | Ok (Some s) ->
-                match ProfilerProvider.ofToken s with
-                | Some p -> Result.success { Provider = p }
-                | None ->
-                    Result.failureOf (
-                        configError
-                            "profiler.provider.unknown"
-                            (sprintf
-                                "profiler.provider \"%s\" is not recognized; expected \"%s\" or \"%s\"."
-                                s LiveProfilerProvider FixtureProfilerProvider))
+            | Ok maxConcurrency when maxConcurrency < 1 ->
+                Result.failureOf (
+                    configError
+                        "profiler.maxConcurrency.invalid"
+                        (sprintf
+                            "profiler.maxConcurrency must be >= 1; got %d."
+                            maxConcurrency))
+            | Ok maxConcurrency ->
+                match getOptionalString element "provider" with
+                | Error es -> Error es
+                | Ok None -> Result.success { defaultProfiler with MaxConcurrency = maxConcurrency }
+                | Ok (Some s) ->
+                    match ProfilerProvider.ofToken s with
+                    | Some p -> Result.success { Provider = p; MaxConcurrency = maxConcurrency }
+                    | None ->
+                        Result.failureOf (
+                            configError
+                                "profiler.provider.unknown"
+                                (sprintf
+                                    "profiler.provider \"%s\" is not recognized; expected \"%s\" or \"%s\"."
+                                    s LiveProfilerProvider FixtureProfilerProvider))
 
     let private parsePhysicalName (element: JsonElement) : Result<PhysicalName> =
         match getString element "schema" with
@@ -1298,6 +1343,17 @@ module Config =
                                                     match parseDataStaging element with
                                                     | Error es -> Error es
                                                     | Ok dataStaging ->
+                                                    match getIntOr element "dataReadConcurrency" defaultEmission.DataReadConcurrency with
+                                                    | Error es -> Error es
+                                                    | Ok c when c < 1 ->
+                                                        Result.failureOf (
+                                                            configError
+                                                                "emission.dataReadConcurrency.invalid"
+                                                                (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
+                                                    | Ok dataReadConcurrency ->
+                                                    match read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap with
+                                                    | Error es -> Error es
+                                                    | Ok pipelinedBootstrap ->
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
@@ -1318,6 +1374,8 @@ module Config =
                                                         DataVerification = dataVerification
                                                         Tolerance = tolerance
                                                         DataStaging = dataStaging
+                                                        DataReadConcurrency = dataReadConcurrency
+                                                        PipelinedBootstrap = pipelinedBootstrap
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

@@ -481,14 +481,14 @@ module ComprehensiveCanaryTests =
             let attrRow : OssysRowsetTypes.AttributeRow =
                 { AttrId = suppAttrId; EntityId = suppEntityId
                   AttrName = "Id"; PhysicalCol = "ID"
-                  DataType = "Integer"; IsMandatory = true
+                  DataType = "Integer"; DefaultValue = None; IsMandatory = true
                   IsIdentifier = true; IsAutoNumber = false
                   Length = None; Precision = None; Scale = None
                   AttrSsKey = None; IsActive = true
                   Description = None; OriginalName = None
                   ExternalDatabaseType = None
                   IsComputed = false; ComputedDefinition = None
-                  DefaultConstraintName = None; Order = None; Collation = None }
+                  DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None }
             let checkRow : OssysRowsetTypes.ColumnCheckRow =
                 { AttrId = suppAttrId
                   ConstraintName = "CHK_SUPP"

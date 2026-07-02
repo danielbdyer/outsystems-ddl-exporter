@@ -92,6 +92,15 @@ let private idxScalar (col: string) (indexName: string) : string =
         "SELECT CAST(%s AS NVARCHAR(128)) FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.%s') AND name = '%s';"
         col tableName indexName
 
+// Deployed index names are the EMITTED logical form (`IndexNaming`), not the
+// authored fixture names; resolve authored -> emitted through the same
+// derivation the emitter uses (several fixture indexes share the Status key
+// column, so the collision ordinals apply).
+let private emittedNameOf (catalog: Catalog) (authored: string) : string =
+    let kind = catalog.Modules |> List.collect (fun m -> m.Kinds) |> List.head
+    let idx = kind.Indexes |> List.find (fun i -> Name.value i.Name = authored)
+    IndexNaming.emittedNames DecisionOverlay.empty kind |> Map.find idx.SsKey
+
 [<Xunit.Collection("Docker-SqlServer")>]
 type IndexPhysicalMetadataDeployE2ETests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
@@ -114,52 +123,52 @@ type IndexPhysicalMetadataDeployE2ETests(fixture: EphemeralContainerFixture) =
                         do! Deploy.executeBatch cnn schema
 
                         // FILLFACTOR / PAD_INDEX (PAD has its own FILLFACTOR=60).
-                        let! fill = scalar cnn (idxScalar "fill_factor" "IX_FILL")
+                        let! fill = scalar cnn (idxScalar "fill_factor" (emittedNameOf catalog "IX_FILL"))
                         Assert.Equal("70", fill)
-                        let! padded = scalar cnn (idxScalar "is_padded" "IX_PAD")
+                        let! padded = scalar cnn (idxScalar "is_padded" (emittedNameOf catalog "IX_PAD"))
                         Assert.Equal("1", padded)
 
                         // Lock options OFF.
-                        let! rowLocks = scalar cnn (idxScalar "allow_row_locks" "IX_NOROWLOCK")
+                        let! rowLocks = scalar cnn (idxScalar "allow_row_locks" (emittedNameOf catalog "IX_NOROWLOCK"))
                         Assert.Equal("0", rowLocks)
-                        let! pageLocks = scalar cnn (idxScalar "allow_page_locks" "IX_NOPAGELOCK")
+                        let! pageLocks = scalar cnn (idxScalar "allow_page_locks" (emittedNameOf catalog "IX_NOPAGELOCK"))
                         Assert.Equal("0", pageLocks)
 
                         // IGNORE_DUP_KEY ON (a unique index).
-                        let! ignoreDup = scalar cnn (idxScalar "ignore_dup_key" "IX_IGNOREDUP")
+                        let! ignoreDup = scalar cnn (idxScalar "ignore_dup_key" (emittedNameOf catalog "IX_IGNOREDUP"))
                         Assert.Equal("1", ignoreDup)
 
                         // The disabled index actually deployed disabled.
-                        let! disabled = scalar cnn (idxScalar "is_disabled" "IX_DISABLED")
+                        let! disabled = scalar cnn (idxScalar "is_disabled" (emittedNameOf catalog "IX_DISABLED"))
                         Assert.Equal("1", disabled)
 
                         // Filtered index: has_filter + the predicate references STATUS.
-                        let! hasFilter = scalar cnn (idxScalar "has_filter" "IX_FILTERED")
+                        let! hasFilter = scalar cnn (idxScalar "has_filter" (emittedNameOf catalog "IX_FILTERED"))
                         Assert.Equal("1", hasFilter)
-                        let! filterDef = scalar cnn (idxScalar "filter_definition" "IX_FILTERED")
+                        let! filterDef = scalar cnn (idxScalar "filter_definition" (emittedNameOf catalog "IX_FILTERED"))
                         Assert.Contains("STATUS", filterDef)
 
                         // STATISTICS_NORECOMPUTE → the index's auto-stat carries no_recompute.
                         let! noRecompute =
                             scalar cnn
                                 (sprintf
-                                    "SELECT CAST(no_recompute AS NVARCHAR(8)) FROM sys.stats WHERE object_id = OBJECT_ID('dbo.%s') AND name = 'IX_NORECOMPUTE';"
-                                    tableName)
+                                    "SELECT CAST(no_recompute AS NVARCHAR(8)) FROM sys.stats WHERE object_id = OBJECT_ID('dbo.%s') AND name = '%s';"
+                                    tableName (emittedNameOf catalog "IX_NORECOMPUTE"))
                         Assert.Equal("1", noRecompute)
 
                         // DATA_COMPRESSION = PAGE → the index partition is PAGE-compressed.
                         let! compression =
                             scalar cnn
                                 (sprintf
-                                    "SELECT p.data_compression_desc FROM sys.partitions p JOIN sys.indexes i ON p.object_id = i.object_id AND p.index_id = i.index_id WHERE i.object_id = OBJECT_ID('dbo.%s') AND i.name = 'IX_COMPRESS';"
-                                    tableName)
+                                    "SELECT p.data_compression_desc FROM sys.partitions p JOIN sys.indexes i ON p.object_id = i.object_id AND p.index_id = i.index_id WHERE i.object_id = OBJECT_ID('dbo.%s') AND i.name = '%s';"
+                                    tableName (emittedNameOf catalog "IX_COMPRESS"))
                         Assert.Equal("PAGE", compression)
 
                         // INCLUDE columns → exactly one included column on IX_INCLUDED (Label).
                         let! includedCount =
                             scalar cnn
                                 (sprintf
-                                    "SELECT COUNT(*) FROM sys.index_columns ic JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id WHERE i.object_id = OBJECT_ID('dbo.%s') AND i.name = 'IX_INCLUDED' AND ic.is_included_column = 1;"
-                                    tableName)
+                                    "SELECT COUNT(*) FROM sys.index_columns ic JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id WHERE i.object_id = OBJECT_ID('dbo.%s') AND i.name = '%s' AND ic.is_included_column = 1;"
+                                    tableName (emittedNameOf catalog "IX_INCLUDED"))
                         Assert.Equal("1", includedCount)
                     }))

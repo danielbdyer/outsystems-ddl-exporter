@@ -505,6 +505,12 @@ module PhysicalSchema =
             k.Attributes
             |> List.map (fun a -> a.SsKey, ColumnRealization.columnNameText a.Column)
             |> Map.ofList
+        // The deployed index name is the EMITTED name (`IndexNaming` — the
+        // same derivation `SsdtDdlEmitter` renders), not the source-side
+        // `Index.Name`: the read-back leg recovers `sys.indexes.name`, so
+        // the expectation must project the name the emission introduced or
+        // every round-trip diff reports phantom index drift.
+        let emittedNames = IndexNaming.emittedNames overlay k
         k.Indexes
         |> List.map (fun idx ->
             let keyColumns =
@@ -517,7 +523,7 @@ module PhysicalSchema =
             {
                 Schema = schemaStr
                 Table = tableStr
-                Name = Name.value idx.Name
+                Name = Map.find idx.SsKey emittedNames
                 IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
                 KeyColumns = keyColumns
             })

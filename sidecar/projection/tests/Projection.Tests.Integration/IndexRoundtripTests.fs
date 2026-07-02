@@ -48,21 +48,31 @@ let ``E1: a UNIQUE/filtered index survives emit/deploy/ReadSide and is reflected
     Assert.True(report.SourceReport.Ok, sprintf "source deploy: %A" report.SourceReport.Errors)
     Assert.True(report.TargetReport.Ok, sprintf "target deploy: %A" report.TargetReport.Errors)
 
-    // Reflection (discriminating): the source reconstruction actually carries
-    // the two non-PK indexes, by name + uniqueness + ordered key columns — so
-    // the empty diff below is not vacuous.
+    // Reflection (discriminating), at two grains:
+    //   - IR grain: ReadSide reflects the DEPLOYED index names verbatim
+    //     (`Index.Name` is the deployed identity of a read-back catalog);
+    //   - projection grain: `PhysicalSchema.ofCatalog` is the EMISSION
+    //     expectation (the adjunction law: `ofCatalog c ≡
+    //     ofStatementStream (statements c)`), so it carries the emitted
+    //     logical names (`IndexNaming`) — for this legacy-named deploy the
+    //     derivation renames, which is exactly what a V2 re-publish would do.
+    let sourceKind = Catalog.allKinds report.Source |> List.head
+    let irNames = sourceKind.Indexes |> List.map (fun i -> Name.value i.Name) |> Set.ofList
+    Assert.True(Set.contains "UX_WIDGET_CODE" irNames, sprintf "ReadSide lost the deployed unique index name; got %A" irNames)
+    Assert.True(Set.contains "IX_WIDGET_REGION_CODE" irNames, sprintf "ReadSide lost the deployed index name; got %A" irNames)
+
     let sourceIndexes = (PhysicalSchema.ofCatalog report.Source).Indexes
     let byName n = sourceIndexes |> Set.filter (fun (i: PhysicalIndex) -> i.Name = n) |> Set.toList
-    match byName "UX_WIDGET_CODE" with
+    match byName "UIX_OSUSR_E1_WIDGET_CODE" with
     | [ ux ] ->
         Assert.True(ux.IsUnique)
         Assert.Equal("[CODE:ASC]", ux.KeyColumns)
-    | other -> failwithf "expected exactly one UX_WIDGET_CODE index, got %A" other
-    match byName "IX_WIDGET_REGION_CODE" with
+    | other -> failwithf "expected exactly one UIX_OSUSR_E1_WIDGET_CODE index, got %A" other
+    match byName "IX_OSUSR_E1_WIDGET_REGION_CODE" with
     | [ ix ] ->
         Assert.False(ix.IsUnique)
         Assert.Equal("[REGION:ASC][CODE:ASC]", ix.KeyColumns)
-    | other -> failwithf "expected exactly one IX_WIDGET_REGION_CODE index, got %A" other
+    | other -> failwithf "expected exactly one IX_OSUSR_E1_WIDGET_REGION_CODE index, got %A" other
 
     // Survives emit/deploy/ReadSide: the index axis (and every other) round-trips.
     Assert.True(

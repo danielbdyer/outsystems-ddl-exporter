@@ -613,7 +613,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch cnn schemaSql
                 do! Deploy.executeBatch cnn seedSql
                 let options =
-                    { SqlProfilerOptions.defaults with MaxRowsPerKind = Some 2 }
+                    { SqlProfilerOptions.defaults with Sampling = SamplingPolicy.uniform (Some 2) }
                 let! result = LiveProfiler.captureEvidenceCacheWith options cnn itemsCatalog
                 return mustOk result
             })).GetAwaiter().GetResult()

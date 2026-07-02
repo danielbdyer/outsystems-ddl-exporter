@@ -901,3 +901,155 @@ let ``NM-26: StaticPopulation and StaticSeeds agree on a non-identity kind (neit
     let catalog = mkCatalog [ country ]
     Assert.False (populationBrackets catalog)
     Assert.False (seedsBracket catalog country.SsKey)
+
+// ---------------------------------------------------------------------------
+// Row-identity match fallback — `KindColumns.matchColumnNames`. A kind with
+// no primary key (the explicitly acknowledged `allowMissingPrimaryKey`
+// population) falls back to its writable columns as the MERGE match
+// criteria (V1's static-seed fallback), excluding computed, identity, and
+// intentionally deferred columns. Data movement only — no synthetic PK is
+// claimed. All three data lanes share the one vocabulary, so Phase 1 and
+// Phase 2 always agree on row identity.
+// ---------------------------------------------------------------------------
+
+/// Acknowledged missing-PK static kind: rows but no primary-key attribute.
+/// Carries one identity column and one computed column so the fallback's
+/// exclusions are visible in the rendered ON-clause.
+let private mkHeapKind () : Kind =
+    let kindKey  = mkKey ["TestModule"; "Heap"]
+    let codeKey  = mkKey ["TestModule"; "Heap"; "Code"]
+    let labelKey = mkKey ["TestModule"; "Heap"; "Label"]
+    let seqKey   = mkKey ["TestModule"; "Heap"; "Seq"]
+    let calcKey  = mkKey ["TestModule"; "Heap"; "Calc"]
+    let row code label =
+        { Identifier = mkKey ["TestModule"; "Heap"; "Row"; code]
+          Values =
+              Map.ofList
+                  [ mkName "Code",  code
+                    mkName "Label", label ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Heap"
+        Origin   = Native
+        Modality = [ Static [ row "A" "Alpha"
+                              row "B" "Beta" ] ]
+        Physical = mkTableId "dbo" "OSUSR_TEST_HEAP"
+        Attributes =
+            [
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create seqKey (mkName "Seq") Integer with Column = ColumnRealization.create ("SEQ") (false) |> Result.value; IsMandatory = true; IsIdentity = true }
+                { Attribute.create calcKey (mkName "Calc") Integer with Column = ColumnRealization.create ("CALC") (true) |> Result.value; Computed = ComputedColumnConfig.create "([SEQ] * 2)" false |> Result.toOption }
+            ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+[<Fact>]
+let ``matchColumnNames: true primary keys win when present`` () =
+    let country = mkCountryKind ()
+    Assert.Equal<string list>([ "ID" ], KindColumns.matchColumnNames Set.empty country)
+
+[<Fact>]
+let ``matchColumnNames: a no-PK kind falls back to writable columns minus identity and computed`` () =
+    let heap = mkHeapKind ()
+    Assert.Equal<string list>([ "CODE"; "LABEL" ], KindColumns.matchColumnNames Set.empty heap)
+
+[<Fact>]
+let ``matchColumnNames: the fallback excludes intentionally deferred columns (Phase-2 row identity)`` () =
+    let heap = mkHeapKind ()
+    Assert.Equal<string list>([ "LABEL" ], KindColumns.matchColumnNames (Set.ofList [ mkName "Code" ]) heap)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit: an acknowledged no-PK kind renders a MERGE matched on its writable columns`` () =
+    // Previously an empty PK set aborted the render (`foldBool: empty
+    // term list`); the fallback restores V1's all-column match. The
+    // identity + computed columns never enter the ON-clause.
+    let heap = mkHeapKind ()
+    let catalog = mkCatalog [ heap ]
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let sql = normWs (ArtifactByKind.toMap artifact |> Map.find heap.SsKey).Rendered
+    Assert.Contains("MERGE INTO [dbo].[OSUSR_TEST_HEAP]", sql)
+    Assert.Contains("ON [Target].[CODE] = [Source].[CODE] AND [Target].[LABEL] = [Source].[LABEL]", sql)
+    Assert.DoesNotContain("[Target].[SEQ] = [Source].[SEQ]", sql)
+    Assert.DoesNotContain("[Target].[CALC] = [Source].[CALC]", sql)
+
+[<Fact>]
+let ``MergeRender.renderUpdate: a no-PK kind's Phase-2 row scope excludes the deferred columns`` () =
+    // The Phase-2 UPDATE must join back to the Phase-1 row whose deferred
+    // columns were intentionally nulled — matching on them would compare
+    // the staged real value against NULL and never find the row.
+    let heap = mkHeapKind ()
+    let deferred = Set.ofList [ mkName "Label" ]
+    let typedValues =
+        Map.ofList
+            [ mkName "Code",  SqlLiteral.ofRaw PrimitiveType.Text "A"
+              mkName "Label", SqlLiteral.ofRaw PrimitiveType.Text "Alpha" ]
+    let sql = normWs (MergeRender.renderUpdate "emit.test" false heap deferred typedValues)
+    Assert.Contains("SET [LABEL] = N'Alpha'", sql)
+    Assert.Contains("WHERE [CODE] = N'A'", sql)
+    Assert.DoesNotContain("WHERE [LABEL]", sql)
+    Assert.DoesNotContain("AND [LABEL]", sql)
+
+// ---------------------------------------------------------------------------
+// Acquisition-overlap factorization law — `renderLoad` (the per-kind unit)
+// reproduces every script `emitFromPlan` (the batch map) produces. This is
+// what lets an overlapped realization render a kind's MERGE the moment its
+// rows land: per-kind text depends only on (options, CDC membership, the
+// kind, its own load); cross-kind order is assembly's concern.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``renderLoad ≡ emitFromPlan per kind: the per-kind render unit reproduces the batch scripts`` () =
+    let country = mkCountryKind ()
+    let regular = mkRegularKind ()
+    let catalog = mkCatalog [ country; regular ]
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+    let rawRows =
+        Catalog.allKinds catalog
+        |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
+        |> Map.ofList
+    let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
+    let artifact =
+        StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan
+        |> mustOkEmit
+    let batch = ArtifactByKind.toMap artifact
+    for load in plan.Loads do
+        let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
+        let perKind =
+            StaticSeedsEmitter.renderLoad DataEmitOptions.defaults Profile.empty.CdcAwareness kind load
+        Assert.Equal<DataInsertScript>(Map.find load.Kind batch, perKind)
+
+[<Fact>]
+let ``renderQuanta ≡ renderLoad over materialized rows at FULL record grain (the positional-render law)`` () =
+    // Quanta in attribute order (Id, Code, Label), materialized through
+    // the SAME boundary the reader leg uses (`StaticRow.ofQuantum` +
+    // `StaticRow.readsideIdentity`) — the two render paths must agree on
+    // the whole DataInsertScript (identifiers included), not just text.
+    let country = mkCountryKind ()
+    let basis = Kind.rowBasis country
+    let schemaText = TableId.schemaText country.Physical
+    let tableText  = TableId.tableText country.Physical
+    let quanta : RowQuantum list =
+        [ { Cells = [| "1"; "US"; "United States" |] }
+          { Cells = [| "2"; "CA"; "Canada" |] } ]
+    let rows =
+        quanta
+        |> List.mapi (fun i q ->
+            StaticRow.ofQuantum basis (StaticRow.readsideIdentity schemaText tableText i) q)
+    for deferred in [ Set.empty; Set.singleton (mkName "Label") ] do
+        let load : DataLoadKind =
+            { Kind              = country.SsKey
+              Disposition       = IdentityDisposition.PreservedFromSource
+              DeferredFkColumns = deferred
+              Rows              = rows }
+        let viaRows =
+            StaticSeedsEmitter.renderLoad DataEmitOptions.defaults Profile.empty.CdcAwareness country load
+        let viaQuanta =
+            StaticSeedsEmitter.renderQuanta DataEmitOptions.defaults Profile.empty.CdcAwareness country deferred quanta
+        Assert.Equal<DataInsertScript>(viaRows, viaQuanta)

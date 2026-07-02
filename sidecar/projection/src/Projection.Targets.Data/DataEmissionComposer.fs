@@ -82,6 +82,27 @@ module DataEmissionComposer =
     let private emptyArtifact (catalog: Catalog) : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         ArtifactByKind.perKind catalog (fun _ -> emptyScript)
 
+    /// The Bootstrap lane's row source, in one of two currencies.
+    /// `Rows` is the established shape: the hydration step's drained
+    /// `Map<SsKey, StaticRow list>`, rendered HERE via
+    /// `BootstrapEmitter.emitWithTopo` (plan-build + MERGE render at
+    /// compose time). `Prerendered` is the pipelined shape: each
+    /// eligible kind's `DataInsertScript` was rendered AT DRAIN TIME
+    /// (as the kind's rows landed, before the reader moved on), so the
+    /// composer only assembles — the per-kind render cost has already
+    /// been paid, overlapped with acquisition I/O. The two arms MUST
+    /// produce identical artifacts for the same underlying rows: the
+    /// drain-time renderer is the same `StaticSeedsEmitter.renderLoad`
+    /// over the same `DataLoadPlan.loadFor` core `emitWithTopo`'s
+    /// batch build folds, under the same delete-scope-suppressed
+    /// options (pinned by the pipelined-bootstrap equivalence test).
+    /// Prerendered scripts keep their `Phase1Merges` rows populated so
+    /// the `unionSiblings` partition assertion sees real coverage.
+    [<RequireQualifiedAccess>]
+    type BootstrapLane =
+        | Rows of Map<SsKey, StaticRow list>
+        | Prerendered of Map<SsKey, DataInsertScript>
+
     /// Run the three sibling emitters per the policy's data-
     /// composition variant. Per pre-scope §3.4 + §3.2:
     ///   - `AllRemaining`     → Static fires; Migration fires;
@@ -102,7 +123,7 @@ module DataEmissionComposer =
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
-        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (bootstrapLane: BootstrapLane)
         (userRemap: UserRemapContext)
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
@@ -130,7 +151,16 @@ module DataEmissionComposer =
             | AllData         -> emptyArtifact catalog
         let bootstrap =
             use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"
-            BootstrapEmitter.emitWithTopo opts topo catalog profile bootstrapRows userRemap
+            match bootstrapLane with
+            | BootstrapLane.Rows bootstrapRows ->
+                BootstrapEmitter.emitWithTopo opts topo catalog profile bootstrapRows userRemap
+            | BootstrapLane.Prerendered scripts ->
+                // Drain-time-rendered scripts: assemble only. Kinds absent
+                // from the map were not bootstrap-eligible — they take the
+                // same `emptyScript` the batch build's empty-rows loads
+                // render to (T11 keyset preserved either way).
+                ArtifactByKind.perKind catalog (fun k ->
+                    Map.tryFind k.SsKey scripts |> Option.defaultValue emptyScript)
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
             Ok { StaticSeeds = s; MigrationDependencies = m; Bootstrap = b }
@@ -224,7 +254,7 @@ module DataEmissionComposer =
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
+            match dispatchSiblings composition opts topo catalog profile migration (BootstrapLane.Rows Map.empty) userRemap with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -335,25 +365,28 @@ module DataEmissionComposer =
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
-        match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
+        match dispatchSiblings composition opts topo catalog profile migration (BootstrapLane.Rows Map.empty) userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e   -> Error e
             | Ok artifact -> Ok (renderArtifactInTopoOrder topo artifact)
 
-    /// The fused global seed plus the three per-lane renderings, all from
-    /// ONE dispatch (WP6 step 3). `Fused` is the deploy artifact
-    /// (`Data/seed.sql`) — the union walked global-phase; the per-lane
-    /// strings are each sibling walked the same way (`Data/StaticSeeds.sql`
-    /// / `Data/MigrationData.sql` / `Data/Bootstrap.sql`). A lane with no
-    /// owned rows renders the empty string. When exactly one lane is
-    /// non-empty, `Fused` is byte-equal to that lane (nothing to interleave),
-    /// so the pipeline omits the redundant per-lane files; they carry
-    /// information only when ≥2 lanes contribute.
+    /// The three per-lane renderings from ONE dispatch (WP6 step 3):
+    /// `Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
+    /// `Data/Bootstrap.sql`, each sibling walked global-phase in
+    /// topological order. A lane with no owned rows renders the empty
+    /// string. The FUSED cross-lane seed is deliberately NOT a bundle
+    /// field: its one production consumer was an is-anything-there gate,
+    /// yet materializing it re-concatenated every per-kind string into a
+    /// second whole-estate copy (~the sum of the lanes) on every publish.
+    /// Callers that need the fused text (the single-artifact deploy shape)
+    /// take `composeRenderedFull` — the same union render, produced only
+    /// when asked for. The partition law (`OverlappingEmitterCoverage`)
+    /// still holds on the bundle path: `unionSiblings` runs for its
+    /// assertion; only the union's RENDER is skipped.
     type RenderedDataBundle =
         {
-            Fused         : string
             StaticSeeds   : string
             MigrationData : string
             Bootstrap     : string
@@ -392,14 +425,17 @@ module DataEmissionComposer =
         let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
         let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
-        match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
+        match dispatchSiblings composition opts topo catalog profile migration (BootstrapLane.Rows Map.empty) userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e   -> Error e
-            | Ok union ->
-                Ok { Fused         = renderArtifactInTopoOrder topo union
-                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+            | Ok _union ->
+                // `_union` exists for `unionSiblings`' partition-law
+                // assertion only — rendering it would re-concatenate the
+                // whole estate's per-kind text a second time (the fused
+                // surface is `composeRenderedFull`, on demand).
+                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
                      MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
                      Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
 
@@ -424,6 +460,58 @@ module DataEmissionComposer =
     /// non-hydrated path). The non-Docker data-lane golden supplies an
     /// in-memory `bootstrapRows`; the Docker golden supplies the live-hydrated
     /// one — the same entry, the same render, differing only in the row source.
+    /// `composeRenderedBundleWithBootstrap` with a CALLER-SUPPLIED
+    /// topological order — the publish pipeline threads the chain's
+    /// stored `ComposeState.TopologicalOrder` (the chain's
+    /// `TopologicalOrderPass` already ran Kahn/Tarjan over the SAME
+    /// post-chain catalog this composer receives) instead of re-running
+    /// it here. Contract: `topo` MUST derive from `catalog`; the
+    /// topo-less sibling below computes it and stays the safe entry for
+    /// callers without a chain state.
+    /// The lane-general core: the Bootstrap row source arrives as a
+    /// `BootstrapLane` — either the drained rows (rendered here) or the
+    /// drain-time-prerendered per-kind scripts (assembled here). The
+    /// rows-taking sibling below delegates with `BootstrapLane.Rows`;
+    /// the pipelined publish arm calls this directly with
+    /// `BootstrapLane.Prerendered`.
+    let composeRenderedBundleWithBootstrapLaneUsing
+        (topo: TopologicalOrder)
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapLane: BootstrapLane)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        use _ = Bench.scope "compose.data.composeRenderedBundleWithBootstrap"
+        let composition = policy.Emission.DataComposition
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
+        match dispatchSiblings composition opts topo catalog profile migration bootstrapLane userRemap with
+        | Error e -> Error e
+        | Ok siblings ->
+            match unionSiblings catalog siblings with
+            | Error e -> Error e
+            | Ok _union ->
+                // `_union` exists for `unionSiblings`' partition-law
+                // assertion only — rendering it would re-concatenate the
+                // whole estate's per-kind text a second time (the fused
+                // surface is `composeRenderedFull`, on demand).
+                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
+                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+
+    let composeRenderedBundleWithBootstrapUsing
+        (topo: TopologicalOrder)
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        composeRenderedBundleWithBootstrapLaneUsing
+            topo policy catalog profile migration (BootstrapLane.Rows bootstrapRows) userRemap
+
     let composeRenderedBundleWithBootstrap
         (policy: Policy)
         (catalog: Catalog)
@@ -432,21 +520,22 @@ module DataEmissionComposer =
         (bootstrapRows: Map<SsKey, StaticRow list>)
         (userRemap: UserRemapContext)
         : Result<RenderedDataBundle, EmitError> =
-        use _ = Bench.scope "compose.data.composeRenderedBundleWithBootstrap"
-        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
-        let topo = topoLineage.Value
-        let composition = policy.Emission.DataComposition
-        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
-        match dispatchSiblings composition opts topo catalog profile migration bootstrapRows userRemap with
-        | Error e -> Error e
-        | Ok siblings ->
-            match unionSiblings catalog siblings with
-            | Error e -> Error e
-            | Ok union ->
-                Ok { Fused         = renderArtifactInTopoOrder topo union
-                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
-                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
-                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        composeRenderedBundleWithBootstrapUsing topo policy catalog profile migration bootstrapRows userRemap
+
+    /// Topo-less sibling of `composeRenderedBundleWithBootstrapLaneUsing`
+    /// (computes the order here) — the safe entry for callers without a
+    /// chain state, mirroring the rows-taking pair above.
+    let composeRenderedBundleWithBootstrapLane
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapLane: BootstrapLane)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        composeRenderedBundleWithBootstrapLaneUsing topo policy catalog profile migration bootstrapLane userRemap
 
     /// Per-level rendered scripts for parallel-safe deployment. Each
     /// `ParallelSafe<string>` group carries one kind's rendered SQL per
@@ -510,7 +599,7 @@ module DataEmissionComposer =
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
-        match dispatchSiblings composition opts topo catalog profile migration bootstrapRows userRemap with
+        match dispatchSiblings composition opts topo catalog profile migration (BootstrapLane.Rows bootstrapRows) userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with

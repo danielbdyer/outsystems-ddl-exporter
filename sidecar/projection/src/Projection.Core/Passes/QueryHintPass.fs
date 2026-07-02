@@ -48,17 +48,21 @@ module QueryHintPass =
         // quick index lookup.
         let kindByKey : Map<SsKey, Kind> = Catalog.kindIndex catalog
 
+        // Reference lookup built ONCE — the per-selectivity full-catalog
+        // `tryPick` was an O(selectivities × kinds) scan at estate scale.
+        // Reference SsKeys are unique across the catalog, so the keyed map
+        // resolves identically.
+        let referenceIndex : Map<SsKey, Kind * Reference> =
+            allKinds
+            |> List.collect (fun k -> k.References |> List.map (fun r -> r.SsKey, (k, r)))
+            |> Map.ofList
+
         let suggestions =
             profile.ForeignKeySelectivities
             |> List.filter (fun sel -> sel.DistinctCount >= highSelectivityThreshold)
             |> List.choose (fun sel ->
                 // Find the Reference in the catalog.
-                let refOpt =
-                    allKinds
-                    |> List.tryPick (fun k ->
-                        k.References
-                        |> List.tryFind (fun r -> r.SsKey = sel.ReferenceKey)
-                        |> Option.map (fun r -> k, r))
+                let refOpt = Map.tryFind sel.ReferenceKey referenceIndex
                 match refOpt with
                 | None -> None
                 | Some (sourceKind, ref_) ->

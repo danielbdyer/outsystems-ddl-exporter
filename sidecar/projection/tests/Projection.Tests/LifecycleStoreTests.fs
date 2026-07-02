@@ -65,6 +65,21 @@ let ``6.H.2: save then load round-trips a durable-faithful chain exactly`` () =
         Assert.Equal<EpisodicLifecycle>(chain, loaded))
 
 [<Fact>]
+let ``save creates missing parent directories (self-preparing output location, parent grain only)`` () =
+    // A store path under a not-yet-existing nested directory (the fresh
+    // checkout shape, e.g. `<out>/lifecycle/full-export.json`) must not
+    // require manual directory setup; the write itself still fails loudly
+    // once the directory exists.
+    let root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "lifecycle-nested-%s" (Guid.NewGuid().ToString "N"))
+    let path = System.IO.Path.Combine(root, "store", "lifecycle", "full-export.json")
+    try
+        LifecycleStore.save path chain |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        Assert.Equal<EpisodicLifecycle>(chain, loaded)
+    finally
+        if System.IO.Directory.Exists root then System.IO.Directory.Delete(root, true)
+
+[<Fact>]
 let ``6.H.2: reconstructLatestSchema over the persisted chain reproduces the stored latest schema (FTC, durable)`` () =
     withTempFile (fun path ->
         LifecycleStore.save path chain |> mustStoreOk

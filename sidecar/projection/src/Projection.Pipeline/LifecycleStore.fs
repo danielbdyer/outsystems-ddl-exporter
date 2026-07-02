@@ -162,8 +162,18 @@ module LifecycleStore =
 
     /// Persist the lifecycle to `path`, overwriting. Determinism + typed-AST per
     /// the disciplines; failures surface as `WriteFailure`.
+    ///
+    /// The store's output location is self-preparing at the PARENT-DIRECTORY
+    /// grain only: a store path under a not-yet-existing directory (e.g. a
+    /// `lifecycle/` subdirectory on a fresh checkout) creates that directory
+    /// before writing. This never creates missing *input* paths, and a write
+    /// failure after the directory exists still fails loudly as
+    /// `WriteFailure`.
     let save (path: string) (lifecycle: EpisodicLifecycle) : Result<unit, LifecycleStoreError> =
         try
+            match System.IO.Path.GetDirectoryName path with
+            | null | "" -> ()
+            | parent -> System.IO.Directory.CreateDirectory parent |> ignore
             System.IO.File.WriteAllBytes(path, serialize lifecycle)
             Ok ()
         with ex ->

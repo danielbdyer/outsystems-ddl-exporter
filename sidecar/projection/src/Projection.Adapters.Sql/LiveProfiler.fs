@@ -11,10 +11,13 @@ open Microsoft.Data.SqlClient
 open Projection.Core
 
 /// Operator-supplied profile-capture options. Surfaces:
-///   - `MaxRowsPerKind` — optional sampling cap. `None` = full-scan
-///     (default); `Some N` = `SELECT TOP (N)` capped at extraction time.
-///     Sampling is **deterministic** when the kind has a single-column PK
-///     (the cache stream uses `ORDER BY <pk>` for repeatable extraction).
+///   - `Sampling` — the per-kind evidence-tiering policy (`SamplingPolicy`,
+///     Core). A kind whose resolved cap is `Some N` extracts its cell
+///     stream `SELECT TOP (N)`-capped; row/null counts stay EXACT (the
+///     aggregate query is never capped). Sampling is **deterministic**
+///     when the kind has a single-column PK (the cache stream uses
+///     `ORDER BY <pk>` for repeatable extraction). `SamplingPolicy
+///     .fullScan` (the default) caps nothing.
 ///   - `EnvironmentTag` — operator-supplied label for the environment being
 ///     profiled (dev / qa / uat / prod), used by the multi-env orchestrator
 ///     to label profiles before merge.
@@ -25,17 +28,29 @@ open Projection.Core
 /// Core (`EvidenceCache`); these capture options are the adapter's own,
 /// so they stay here at the boundary where the SQL runs.
 type SqlProfilerOptions = {
-    MaxRowsPerKind  : int option
+    Sampling        : SamplingPolicy
     EnvironmentTag  : string option
+    /// Bounded parallelism for the per-kind discovery when the caller uses
+    /// the connection-factory form (`captureEvidenceCacheConcurrent`) — how
+    /// many kinds may run their 3-query discovery concurrently, each on its
+    /// own pooled connection (`profiler.maxConcurrency`). Acquisition-only
+    /// concurrency: the cache is keyed and every derived Profile axis is
+    /// pure, so results never depend on completion order. The single-open-
+    /// connection entry points (`captureEvidenceCacheWith` / `attach`)
+    /// remain strictly serial regardless of this value.
+    MaxConcurrency  : int
 }
 
 [<RequireQualifiedAccess>]
 module SqlProfilerOptions =
 
-    /// Default options: full-scan (no sampling cap), no environment tag.
+    /// Default options: full-scan (no sampling anywhere), no environment
+    /// tag, discovery concurrency 4 (low and explicit — the factory form
+    /// only).
     let defaults : SqlProfilerOptions = {
-        MaxRowsPerKind  = None
+        Sampling        = SamplingPolicy.fullScan
         EnvironmentTag  = None
+        MaxConcurrency  = 4
     }
 
 /// Live-SQL adapter that captures `Profile.AttributeRealities` by
@@ -116,47 +131,77 @@ module LiveProfiler =
                 else hasMore <- false
         }
 
-    /// Per-kind nullability reflection via `INFORMATION_SCHEMA.COLUMNS`.
-    /// Returns a `Map<ColumnName, IsNullable>` for the kind's deployed
-    /// table; one round-trip per kind regardless of column count.
-    /// Identifiers parameterize via SQL parameters (defense-in-depth
-    /// against injection though Coordinates.TableId structurally
-    /// excludes hostile input).
-    let private nullabilityReflectionSql : string =
-        "SELECT COLUMN_NAME, IS_NULLABLE \
+    /// The CATALOG-WIDE nullability reflection — one round trip replacing
+    /// N per-kind `INFORMATION_SCHEMA.COLUMNS` queries (the batched form;
+    /// at ~300 kinds this removes ~1/3 of profile-stage round trips). The
+    /// per-kind lookup key is upper-invariant `SCHEMA.TABLE`: the per-kind
+    /// query matched (schema, table) under the SERVER's collation
+    /// (typically case-insensitive), so the client-side re-match must be
+    /// case-insensitive too — an ordinal miss would silently default a
+    /// column to NOT NULL, a false tightening signal.
+    let private batchedNullabilityReflectionSql : string =
+        "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, IS_NULLABLE \
          FROM INFORMATION_SCHEMA.COLUMNS \
-         WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table"
+         WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')"
 
+    let private tableKeyOf (kind: Kind) : string =
+        System.String.Concat(TableId.schemaText kind.Physical, ".", TableId.tableText kind.Physical).ToUpperInvariant()  // LINT-ALLOW: case-insensitive lookup-key composition for the batched reflection map; the key IS a string primitive at the ADO.NET boundary
 
-    let private reflectNullability
+    let private reflectNullabilityAll
         (cnn: SqlConnection)
-        (kind: Kind)
-        : Task<Map<string, bool>> =
+        : Task<Map<string, Map<string, bool>>> =
         task {
-            use _ = Bench.scope "profile.live.reflectNullability"
+            use _ = Bench.scope "profile.live.reflectNullability.batched"
             use cmd = cnn.CreateCommand()
-            cmd.CommandText <- nullabilityReflectionSql
+            cmd.CommandText <- batchedNullabilityReflectionSql
             cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
-            // Slice 5 (lift): unwrap typed VOs to raw strings — ADO.NET
-            // doesn't bind `SchemaName` / `TableName` to SqlParameter
-            // (runtime: "No mapping exists from object type
-            // Projection.Core.SchemaName to a known managed provider
-            // native type"). Both sites need the pre-unwrapped string.
-            cmd.Parameters.AddWithValue("@schema", TableId.schemaText kind.Physical) |> ignore
-            cmd.Parameters.AddWithValue("@table",  TableId.tableText kind.Physical)  |> ignore
             use! reader = cmd.ExecuteReaderAsync()
-            let mutable acc : Map<string, bool> = Map.empty
+            let mutable acc : Map<string, Map<string, bool>> = Map.empty
             do!
                 drainReader reader (fun reader ->
-                    let colName = reader.GetString(0)
+                    let key =
+                        System.String.Concat(reader.GetString(0), ".", reader.GetString(1)).ToUpperInvariant()  // LINT-ALLOW: case-insensitive lookup-key composition (see tableKeyOf)
+                    let colName = reader.GetString(2)
                     let isNullable =
-                        System.String.Equals(
-                            reader.GetString(1),
-                            "YES",
-                            System.StringComparison.OrdinalIgnoreCase)
-                    acc <- Map.add colName isNullable acc)
+                        System.String.Equals(reader.GetString(3), "YES", System.StringComparison.OrdinalIgnoreCase)
+                    let perTable =
+                        Map.tryFind key acc |> Option.defaultValue Map.empty
+                    acc <- Map.add key (Map.add colName isNullable perTable) acc)
             return acc
         }
+
+    let private nullabilitySliceOf
+        (batched: Map<string, Map<string, bool>>)
+        (kind: Kind)
+        : Map<string, bool> =
+        Map.tryFind (tableKeyOf kind) batched |> Option.defaultValue Map.empty
+
+    /// The catalog-wide nullability reflection through a caller-supplied
+    /// opener — the ONE pre-acquisition global query an overlapped
+    /// realization runs before its drains start, slicing per kind via
+    /// `nullabilityFor` as each kind's rows land. Owns the connection for
+    /// exactly the reflection's lifetime.
+    let reflectNullability
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        : Task<Result<Map<string, Map<string, bool>>>> =
+        task {
+            match! openConnection () with
+            | Error es -> return Result.failure es
+            | Ok cnn ->
+                use cnn = cnn
+                let! batched = reflectNullabilityAll cnn
+                return Result.success batched
+        }
+
+    /// Per-kind slice of the batched reflection (upper-invariant
+    /// `SCHEMA.TABLE` key; a table absent from the reflection yields the
+    /// empty map — every column then defaults to NOT-NULL-reflected, the
+    /// same posture the per-kind query took for a dropped table).
+    let nullabilityFor
+        (batched: Map<string, Map<string, bool>>)
+        (kind: Kind)
+        : Map<string, bool> =
+        nullabilitySliceOf batched kind
 
     let private isStaticKind (k: Kind) : bool =
         k.Modality
@@ -244,6 +289,7 @@ module LiveProfiler =
     let private discoverKind
         (cnn: SqlConnection)
         (maxRows: int option)
+        (nullabilityMap: Map<string, bool>)
         (kind: Kind)
         : Task<CachedKind option> =
         task {
@@ -251,7 +297,10 @@ module LiveProfiler =
             if List.isEmpty kind.Attributes then return None
             else
                 // 1. Aggregate: exact RowCount + per-attribute NullCount.
+                //    Own scope so aggregate / reflection / row-stream are
+                //    individually attributable within `discoverKind`.
                 let! (rowCount, nullCounts) = task {
+                    use _ = Bench.scope "profile.live.aggregate"
                     use cmd = cnn.CreateCommand()
                     cmd.CommandText <- cacheAggregateSql kind
                     cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
@@ -272,9 +321,9 @@ module LiveProfiler =
                             |> Map.ofList
                         return (rc, counts)
                 }
-                // 2. Reflection: per-column IsNullableInDatabase from
-                //    INFORMATION_SCHEMA. Returns Map<colName, bool>.
-                let! nullabilityMap = reflectNullability cnn kind
+                // 2. Reflection: per-column IsNullableInDatabase — the
+                //    caller's slice of the ONE batched INFORMATION_SCHEMA
+                //    query (previously a per-kind round trip here).
                 // 3. Row-stream: SELECT * → per-row CachedValue array.
                 //    Column-oriented final shape (transpose at end).
                 let perColumnValues =
@@ -338,9 +387,11 @@ module LiveProfiler =
                     catalog.Modules
                     |> List.collect (fun m -> m.Kinds)
                     |> List.filter (fun k -> not (isStaticKind k))
+                // ONE batched reflection round trip for the whole catalog.
+                let! batchedNullability = reflectNullabilityAll cnn
                 let mutable acc : Map<SsKey, CachedKind> = Map.empty
                 for kind in nonStaticKinds do
-                    let! result = discoverKind cnn options.MaxRowsPerKind kind
+                    let! result = discoverKind cnn (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind
                     match result with
                     | Some cached -> acc <- Map.add cached.KindKey cached acc
                     | None        -> ()
@@ -361,6 +412,307 @@ module LiveProfiler =
         (catalog: Catalog)
         : Task<Result<EvidenceCache>> =
         captureEvidenceCacheWith SqlProfilerOptions.defaults cnn catalog
+
+    /// Discovery for one kind on its OWN connection, gated by the shared
+    /// semaphore. Hoisted to module level (no local closures inside a
+    /// Release `task { }` — FS3511). The gate bounds in-flight discoveries;
+    /// the connection is short-lived (SqlClient pooling reuses physical
+    /// connections underneath).
+    let private discoverKindGated
+        (gate: System.Threading.SemaphoreSlim)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (maxRows: int option)
+        (nullabilityMap: Map<string, bool>)
+        (kind: Kind)
+        : Task<Result<CachedKind option>> =
+        task {
+            // Phase labels: gate wait and connection open are OUTSIDE the
+            // drain stopwatch (a 0 sample means uncontended/pooled).
+            let swGate = System.Diagnostics.Stopwatch.StartNew()
+            do! gate.WaitAsync()
+            swGate.Stop()
+            Bench.recordSample "profile.live.discoverKind.gateWait" swGate.ElapsedMilliseconds
+            try
+                let swOpen = System.Diagnostics.Stopwatch.StartNew()
+                match! openConnection () with
+                | Error es -> return Result.failure es
+                | Ok cnn ->
+                    swOpen.Stop()
+                    Bench.recordSample "profile.live.discoverKind.connectionOpen" swOpen.ElapsedMilliseconds
+                    use cnn = cnn
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    let! cached = discoverKind cnn maxRows nullabilityMap kind
+                    sw.Stop()
+                    Bench.recordSample "profile.live.discoverKind.drain" sw.ElapsedMilliseconds
+                    return Result.success cached
+            finally
+                gate.Release() |> ignore
+        }
+
+    /// Bounded-parallel sibling of `captureEvidenceCacheWith` — the
+    /// operator's `profiler.maxConcurrency` knob. Each non-static kind runs
+    /// its 3-query discovery on its own short-lived connection, at most
+    /// `options.MaxConcurrency` in flight. **Acquisition-only concurrency**:
+    /// the cache is a keyed `Map` and every downstream Profile axis derives
+    /// purely from it (`ProfileDerivation`), so the result never depends on
+    /// completion order. Any per-kind open or probe failure fails the whole
+    /// capture loudly.
+    let captureEvidenceCacheConcurrent
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        task {
+            use _ = Bench.scope "profile.live.captureEvidenceCache.concurrent"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let capped = max 1 options.MaxConcurrency
+                Bench.recordSample "profile.live.captureEvidenceCache.concurrency" (int64 capped)
+                // ONE batched reflection round trip up front (its own
+                // short-lived connection), sliced per kind below — under
+                // the concurrent form this also removes a per-kind query
+                // from every gated worker.
+                let! batchedNullabilityR = reflectNullability openConnection
+                match batchedNullabilityR with
+                | Error es -> return Result.failure es
+                | Ok batchedNullability ->
+                use gate = new System.Threading.SemaphoreSlim(capped, capped)
+                let discoveries =
+                    nonStaticKinds
+                    |> List.map (fun kind ->
+                        discoverKindGated gate openConnection (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind)
+                let! results = Task.WhenAll(Array.ofList discoveries)
+                return
+                    results
+                    |> Array.toList
+                    |> Result.aggregate
+                    |> Result.map (fun cachedKinds ->
+                        let kinds =
+                            cachedKinds
+                            |> List.choose id
+                            |> List.map (fun c -> c.KindKey, c)
+                            |> Map.ofList
+                        { Kinds = kinds })
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureEvidenceCacheFailed"
+                            (System.String.Concat("LiveProfiler.captureEvidenceCacheConcurrent failed: ", ex.Message)))
+        }
+
+    /// **Single-scan capture** — derive each hydrated kind's evidence from
+    /// the rows the data lanes ALREADY pulled
+    /// (`EvidenceCache.cachedKindOfRows`); the ONE global nullability
+    /// reflection is the only SQL a fully-hydrated publish pays here.
+    /// Per-kind budget: was 2 queries + a full row stream; becomes ZERO
+    /// (the stream was the data lanes'). Kinds OUTSIDE the hydrated set
+    /// (lane composition excludes them; attribute-less) keep the live
+    /// gated discovery — the fallback is counted
+    /// (`profile.live.derived.kinds` / `.fallback`), never silent.
+    /// Sampling is a PER-KIND exclusion (`SamplingPolicy`): a kind whose
+    /// resolved cap is finite keeps the live capped discovery — the live
+    /// aggregate is exact even under a sampled stream, and a derived
+    /// cache from full rows would not be the sampled shape the operator
+    /// asked for. Unsampled hydrated kinds still derive; the tiering
+    /// partition is counted (`profile.live.sampled`), never silent.
+    let captureEvidenceCacheDerived
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (hydratedRows: Map<SsKey, StaticRow list>)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        task {
+            use _ = Bench.scope "profile.live.captureEvidenceCache.derived"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let! batchedNullabilityR = reflectNullability openConnection
+                match batchedNullabilityR with
+                | Error es -> return Result.failure es
+                | Ok batchedNullability ->
+                let derivable, live =
+                    nonStaticKinds
+                    |> List.partition (fun k ->
+                        Map.containsKey k.SsKey hydratedRows
+                        && not (SamplingPolicy.isSampled k.SsKey options.Sampling))
+                let sampledCount =
+                    nonStaticKinds
+                    |> List.filter (fun k -> SamplingPolicy.isSampled k.SsKey options.Sampling)
+                    |> List.length
+                let derivedKinds =
+                    derivable
+                    |> List.choose (fun k ->
+                        EvidenceCache.cachedKindOfRows
+                            (nullabilitySliceOf batchedNullability k)
+                            k
+                            (Map.find k.SsKey hydratedRows))
+                Bench.recordSample "profile.live.derived.kinds" (int64 (List.length derivedKinds))
+                Bench.recordSample "profile.live.derived.fallback" (int64 (List.length live))
+                Bench.recordSample "profile.live.sampled" (int64 sampledCount)
+                let derivedMap =
+                    derivedKinds |> List.map (fun c -> c.KindKey, c) |> Map.ofList
+                if List.isEmpty live then
+                    return Result.success { Kinds = derivedMap }
+                else
+                    let capped = max 1 options.MaxConcurrency
+                    use gate = new System.Threading.SemaphoreSlim(capped, capped)
+                    let discoveries =
+                        live
+                        |> List.map (fun kind ->
+                            discoverKindGated gate openConnection (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind)
+                    let! results = Task.WhenAll(Array.ofList discoveries)
+                    return
+                        results
+                        |> Array.toList
+                        |> Result.aggregate
+                        |> Result.map (fun cachedKinds ->
+                            let kinds =
+                                cachedKinds
+                                |> List.choose id
+                                |> List.fold (fun acc c -> Map.add c.KindKey c acc) derivedMap
+                            { Kinds = kinds })
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureEvidenceCacheFailed"
+                            (System.String.Concat("LiveProfiler.captureEvidenceCacheDerived failed: ", ex.Message)))
+        }
+
+    /// **Drain-time-derived capture** — the pipelined sibling of
+    /// `captureEvidenceCacheDerived`: the per-kind evidence was ALREADY
+    /// derived as each kind's rows drained (`EvidenceCache
+    /// .cachedKindOfRows` at the acquisition site, overlapped with the
+    /// wire), so this entry only assembles the cache and runs the SAME
+    /// counted live fallback for kinds outside the covered set. The
+    /// caller supplies the ONE global nullability reflection it already
+    /// paid before the drain (`reflectNullability` — the drain-time
+    /// derivations sliced it per kind). `covered` is the set of kinds
+    /// whose evidence derivation was ATTEMPTED at drain time (eligible ∧
+    /// unsampled) — a covered kind whose derivation refused (attribute-
+    /// less ⇒ `None`) stays absent from the cache, exactly as the
+    /// batch-derived path leaves it; only kinds OUTSIDE `covered` take
+    /// the live gated discovery (non-hydrated, or sampled — the live
+    /// capped aggregate is exact where a full-row derivation would not
+    /// be the sampled shape the operator asked for).
+    let captureEvidenceCacheFromKinds
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (batchedNullability: Map<string, Map<string, bool>>)
+        (covered: Set<SsKey>)
+        (derived: CachedKind list)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        task {
+            use _ = Bench.scope "profile.live.captureEvidenceCache.fromKinds"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let live =
+                    nonStaticKinds
+                    |> List.filter (fun k -> not (Set.contains k.SsKey covered))
+                let sampledCount =
+                    nonStaticKinds
+                    |> List.filter (fun k -> SamplingPolicy.isSampled k.SsKey options.Sampling)
+                    |> List.length
+                Bench.recordSample "profile.live.derived.kinds" (int64 (List.length derived))
+                Bench.recordSample "profile.live.derived.fallback" (int64 (List.length live))
+                Bench.recordSample "profile.live.sampled" (int64 sampledCount)
+                let derivedMap =
+                    derived |> List.map (fun c -> c.KindKey, c) |> Map.ofList
+                if List.isEmpty live then
+                    return Result.success { Kinds = derivedMap }
+                else
+                    let capped = max 1 options.MaxConcurrency
+                    use gate = new System.Threading.SemaphoreSlim(capped, capped)
+                    let discoveries =
+                        live
+                        |> List.map (fun kind ->
+                            discoverKindGated gate openConnection (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind)
+                    let! results = Task.WhenAll(Array.ofList discoveries)
+                    return
+                        results
+                        |> Array.toList
+                        |> Result.aggregate
+                        |> Result.map (fun cachedKinds ->
+                            let kinds =
+                                cachedKinds
+                                |> List.choose id
+                                |> List.fold (fun acc c -> Map.add c.KindKey c acc) derivedMap
+                            { Kinds = kinds })
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureEvidenceCacheFailed"
+                            (System.String.Concat("LiveProfiler.captureEvidenceCacheFromKinds failed: ", ex.Message)))
+        }
+
+    /// Pipelined sibling of `attachDerived`: assemble the cache from
+    /// drain-time-derived kinds (live fallback for uncovered kinds),
+    /// then compose every Profile axis purely via `attachFromCache` —
+    /// the same evidence, the same derivations; only the acquisition
+    /// schedule differs (per-kind derivation overlapped the drain).
+    let attachFromKinds
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (batchedNullability: Map<string, Map<string, bool>>)
+        (covered: Set<SsKey>)
+        (derived: CachedKind list)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Task<Result<Profile>> =
+        task {
+            let! cacheResult = captureEvidenceCacheFromKinds options openConnection batchedNullability covered derived catalog
+            match cacheResult with
+            | Error errors -> return Result.failure errors
+            | Ok cache    -> return Result.success (ProfileDerivation.attachFromCache cache catalog profile)
+        }
+
+    /// Single-scan sibling of `attach`: derive the cache from hydrated
+    /// rows (live fallback for uncovered kinds), then compose every
+    /// Profile axis purely via `attachFromCache`.
+    let attachDerived
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (hydratedRows: Map<SsKey, StaticRow list>)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Task<Result<Profile>> =
+        task {
+            let! cacheResult = captureEvidenceCacheDerived options openConnection hydratedRows catalog
+            match cacheResult with
+            | Error errors -> return Result.failure errors
+            | Ok cache    -> return Result.success (ProfileDerivation.attachFromCache cache catalog profile)
+        }
+
+    /// Connection-factory sibling of `attach`: capture the EvidenceCache
+    /// with bounded per-kind parallelism, then compose every derived
+    /// Profile axis purely via `attachFromCache` — same evidence, same
+    /// derivations, different acquisition schedule.
+    let attachConcurrent
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Task<Result<Profile>> =
+        task {
+            let! cacheResult = captureEvidenceCacheConcurrent options openConnection catalog
+            match cacheResult with
+            | Error errors -> return Result.failure errors
+            | Ok cache    -> return Result.success (ProfileDerivation.attachFromCache cache catalog profile)
+        }
 
 
 

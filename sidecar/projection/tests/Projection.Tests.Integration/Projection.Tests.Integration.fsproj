@@ -43,6 +43,8 @@
     <Compile Include="SsdtDataBehaviorE2ETests.fs" />
     <Compile Include="StagedMergeDeployE2ETests.fs" />
     <Compile Include="MergeScaleMeasurement.fs" />
+    <Compile Include="ReadConcurrencyMeasurementTests.fs" />
+    <Compile Include="PerfCorpusMeasurementTests.fs" />
     <Compile Include="CanaryDeployTests.fs" />
     <Compile Include="UnifiedShapingFlowTests.fs" />
     <Compile Include="CanaryRoundTripTests.fs" />

@@ -139,3 +139,44 @@ let ``DataLoadPlan: reclassifyReconciled overrides only the named kinds to Recon
     // ofKind-derived dispositions on the other kinds are untouched.
     Assert.Equal(IdentityDisposition.AssignedBySink, (loadFor invoiceKey plan).Disposition)
     Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor aKey plan).Disposition)
+
+// ---------------------------------------------------------------------------
+// Acquisition-overlap factorization law — the plan factors per kind: no
+// load field depends on another kind's rows (order, cycle membership, and
+// the remap are fixed before acquisition), so `loadForWith` (the per-kind
+// unit) reproduces every batch-built load. This is what lets an overlapped
+// realization construct a kind's load the moment its rows land.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``DataLoadPlan.loadForWith ≡ buildWith per kind: the per-kind unit reproduces every batch load (both policies)`` () =
+    let rows =
+        Map.ofList
+            [ customerKey, [ rowOf "c1" [ "ID", "1" ]; rowOf "c2" [ "ID", "2" ] ]
+              invoiceKey,  [ rowOf "i1" [ "ID", "10" ] ]
+              aKey,        [ rowOf "a1" [ "ID", "1"; "B_ID", "2" ] ]
+              bKey,        [ rowOf "b1" [ "ID", "2"; "A_ID", "1" ] ] ]
+    let members = TopologicalOrder.cycleMembers topo
+    for policy in [ IdentityPolicy.Structural; IdentityPolicy.PreferPreservedKeys ] do
+        let plan = DataLoadPlan.buildWith policy catalog topo rows SurrogateRemapContext.empty
+        for load in plan.Loads do
+            let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
+            let raw  = Map.tryFind load.Kind rows |> Option.defaultValue []
+            let perKind, skipped =
+                DataLoadPlan.loadForWith policy members SurrogateRemapContext.empty kind raw
+            Assert.Equal<DataLoadKind>(load, perKind)
+            // Empty remap ⇒ no skipped references on either path.
+            Assert.Empty skipped
+    // And the plan's aggregate skip list is the concatenation of the
+    // per-kind skips — empty here on both sides.
+    let plan = build rows
+    Assert.Empty plan.SkippedReferences
+
+[<Fact>]
+let ``DataLoadPlan.loadFor: the Structural per-kind default mirrors build (deferred columns included)`` () =
+    let plan = build Map.empty
+    let members = TopologicalOrder.cycleMembers topo
+    for load in plan.Loads do
+        let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
+        let perKind, _ = DataLoadPlan.loadFor members SurrogateRemapContext.empty kind []
+        Assert.Equal<DataLoadKind>(load, perKind)

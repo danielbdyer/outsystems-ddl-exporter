@@ -36,17 +36,34 @@ module OssysRowsetReader =
     let private parseAttributeRow
         (moduleName: string)
         (entityName: string)
+        (entityPrimaryKeySsKey: System.Guid option)
         (row: AttributeRow)
         : Result<Attribute> =
         let nameDU    = Name.create row.AttrName
         let key       = attributeSsKeyFromRow moduleName entityName row
+        // Primary-key identity from either OSSYS source: the explicit
+        // attribute-level `Is_Identifier` flag when the estate exposes it,
+        // or the entity-level `ossys_Entity.PrimaryKey_SS_Key` fallback —
+        // some estates project attribute rows without `Is_Identifier`, and
+        // without the fallback their entities reach the data lanes with
+        // rows but no primary-key columns. The caller suppresses the
+        // fallback (passes None) whenever ANY attribute of the entity
+        // carries the explicit flag, so a disagreement between the two
+        // sources can never mint a composite key here; the live path
+        // names that disagreement as a divergence diagnostic instead.
+        let matchesEntityPrimaryKey =
+            match row.AttrSsKey, entityPrimaryKeySsKey with
+            | Some attrKey, Some pkKey -> attrKey = pkKey
+            | _ -> false
         // Resolve semantic category + concrete SQL Server storage from
         // the rowset's `Type` value (rt-prefix aware), the declared
-        // length / precision / scale, and any `ExternalColumnType`
-        // override. Same resolution as the JSON path.
+        // length / precision / scale, any `ExternalColumnType` override,
+        // and the deployed `#ColumnReality` storage evidence (consulted
+        // for reference-shaped `bt*` attributes only, behind an explicit
+        // external type). Same resolution as the JSON path.
         let typeEvidence =
             resolveAttributeType
-                row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType
+                row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType row.DeployedStorage
         let columnNameDU = ColumnName.create row.PhysicalCol
         match nameDU, key, typeEvidence, columnNameDU with
         | Ok n, Ok k, Ok (p, storage), Ok physicalColumnName ->
@@ -62,7 +79,7 @@ module OssysRowsetReader =
                                    IsNullable = not row.IsMandatory
                                    Collation  = row.Collation
                                    Identity   = None }
-                  IsPrimaryKey = row.IsIdentifier
+                  IsPrimaryKey = row.IsIdentifier || matchesEntityPrimaryKey
                   IsMandatory  = row.IsMandatory
                   Length       = row.Length
                   Precision    = row.Precision
@@ -70,26 +87,40 @@ module OssysRowsetReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Slice A.4.7'-prelude.row53-source-side: V1's
-                  // `#ColumnReality.DefaultDefinition` carries the
-                  // expression text (e.g., `((0))`, `(getdate())`).
-                  // Parens-stripping + literal-vs-expression
-                  // disambiguation deferred per matrix row 53's named
+                  // Authored-default lift: the LOGICAL `Default_Value`
+                  // surface (an authored `False` says the team configured
+                  // a default — `SqlLiteral.ofRaw` projects it against the
+                  // resolved primitive, so BIT `False` emits `DEFAULT 0`).
+                  // No-op defaults are suppressed: an absent or
+                  // empty/whitespace authored value carries nothing (a
+                  // nullable column's implicit NULL is normal SQL
+                  // behavior, not a configured default). This is the
+                  // authored channel only — `#ColumnReality
+                  // .DefaultDefinition` (the reflected constraint
+                  // expression) stays un-lifted per matrix row 53's named
                   // trigger ("expression-shaped defaults flow via
                   // raw-string pass-through at the realization
-                  // boundary"). For now: rowset path leaves
-                  // DefaultValue = None; the JSON path's
-                  // `parseAttribute` populates from V1's `default`
-                  // field which V1 emits as the literal value.
-                  DefaultValue = None
+                  // boundary").
+                  DefaultValue =
+                      row.DefaultValue
+                      |> Option.bind (fun raw ->
+                          if System.String.IsNullOrWhiteSpace raw then None
+                          else Some (SqlLiteral.ofRaw p raw))
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for
-                  // round-trip parity with V1's `DF_<table>_<column>`
-                  // constraint identifier. `None` when no named
-                  // DEFAULT constraint exists at the deployed target.
+                  // round-trip parity with an AUTHORED
+                  // `DF_<table>_<column>` constraint identifier. `None`
+                  // when no named DEFAULT constraint exists at the
+                  // deployed target — and for SQL Server's `DF__…`
+                  // physical AUTO-names (double underscore + hex
+                  // suffix): a reflected auto-name is an incidental
+                  // property of the source instance, never the emitted
+                  // naming contract.
                   DefaultName  =
                       row.DefaultConstraintName
+                      |> Option.filter (fun raw ->
+                          not (raw.StartsWith("DF__", System.StringComparison.OrdinalIgnoreCase)))
                       |> Option.bind (fun raw ->
                           Name.create raw |> Result.toOption)
                   // Slice A.4.7'-prelude.row53-source-side (LR4 cash-
@@ -533,9 +564,20 @@ module OssysRowsetReader =
         let attrRows =
             Map.tryFind kindRow.EntityId ctx.AttributesByEntity
             |> Option.defaultValue []
+        // Entity-level primary-key fallback: `KindRow.PrimaryKeySsKey`
+        // recovers PK identity on estates whose attribute rows lack
+        // `Is_Identifier`. This is a recovery rule for missing metadata,
+        // not a second PK-selection policy — whenever ANY attribute
+        // carries the explicit flag, the fallback is suppressed so the
+        // two sources can never compose into an invented composite key
+        // (a disagreement is surfaced by the live path's divergence
+        // diagnostics, not resolved here).
+        let entityPrimaryKeySsKey =
+            if attrRows |> List.exists (fun r -> r.IsIdentifier) then None
+            else kindRow.PrimaryKeySsKey
         let attrResults =
             attrRows
-            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName entityPrimaryKeySsKey)
         let foldedAttrs = Result.aggregate attrResults
         let refResults =
             attrRows

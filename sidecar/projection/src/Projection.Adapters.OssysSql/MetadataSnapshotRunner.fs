@@ -172,6 +172,13 @@ module MetadataSnapshotRunner =
           Length            : int option
           Precision         : int option
           Scale             : int option
+          /// Authored `ossys_Entity_Attr.Default_Value` — the LOGICAL
+          /// Service-Studio default (e.g. `False` for a BIT). Distinct
+          /// from `#ColumnReality.DefaultDefinition` (the reflected SQL
+          /// Server constraint expression): the authored surface says the
+          /// team CONFIGURED a default; the reflected one may merely
+          /// restate normal SQL behavior.
+          DefaultValue      : string option
           IsMandatory       : bool
           IsActive          : bool
           IsAutoNumber      : bool
@@ -480,8 +487,9 @@ module MetadataSnapshotRunner =
           Length         = readIntOpt r 5
           Precision      = readIntOpt r 6
           Scale          = readIntOpt r 7
-          // ordinal 8 is DefaultValue (string?) — not consumed by V2
-          // RowsetBundle today; skipped.
+          // ordinal 8 — authored Default_Value; carried so the rowset
+          // path emits authored defaults (e.g. BIT False -> DEFAULT 0).
+          DefaultValue   = readStringOpt r 8
           IsMandatory    = readBool r 9
           IsActive       = readBool r 10
           IsAutoNumber   = match readBoolOpt r 11 with Some b -> b | None -> false
@@ -653,6 +661,18 @@ module MetadataSnapshotRunner =
         task {
             use _ = Bench.scope "adapter.osm.extract"
             try
+                // This runner ingests the TYPED rowsets and drains the JSON
+                // aggregate rowsets unread (result sets 7, 13–16, 18–22) —
+                // opt out of BUILDING them server-side. The flag rides
+                // SESSION context (not a command parameter) so the script
+                // stays byte-identical with the V1 donor and a context-less
+                // caller gets the historical full build; all 23 rowsets are
+                // still returned in order with their columns (the skipped
+                // ones empty), so `ExpectedResultSets` and the reader walk
+                // are untouched. Pool-reset clears session context, so the
+                // flag never leaks to another logical connection.
+                use flagCommand = new SqlCommand("EXEC sp_set_session_context @key = N'OsmSkipJsonRowsets', @value = 1;", cnn)
+                let! _ = flagCommand.ExecuteNonQueryAsync()
                 let script = MetadataExtractionSql.read()
                 use command = new SqlCommand(script, cnn)
                 command.CommandType <- CommandType.Text
@@ -954,7 +974,14 @@ module MetadataSnapshotRunner =
         | Some n, Some t when not (System.String.IsNullOrWhiteSpace n) ->
             match t.ToUpperInvariant() with
             | "ROWS_FILEGROUP" ->
-                Some (DataSpace.Filegroup n)
+                // Default-filegroup suppression: `[PRIMARY]` placement is
+                // SQL Server's default, not an intentional choice — lifting
+                // it would restate `ON [PRIMARY]` in emitted DDL. Only a
+                // NON-primary filegroup is intentional physical
+                // configuration; partition schemes always carry.
+                if System.String.Equals(n, "PRIMARY", System.StringComparison.OrdinalIgnoreCase)
+                then None
+                else Some (DataSpace.Filegroup n)
             | "PARTITION_SCHEME" ->
                 let cols =
                     partitionColumnsJson
@@ -969,46 +996,119 @@ module MetadataSnapshotRunner =
     /// (`IsMandatory` → nullability, `IsAutoNumber` → identity); the SAME snapshot
     /// fetched the DEPLOYED `#ColumnReality` (`cr.IsNullable`, `cr.IsIdentity`),
     /// which `toBundle` reads for collation/computed/default but never compares
-    /// for nullability/identity. This pure pass surfaces each divergence as an
-    /// operator-facing `Warning` — the carried value is UNCHANGED (the audit's
+    /// for nullability/identity. The carried value is UNCHANGED (the audit's
     /// "operator call": the operator decides which source is authoritative, the
     /// engine does not auto-resolve). Deterministic — ordered by attribute id.
+    ///
+    /// Two grains, deliberately different:
+    ///   - **identity divergences stay per-column `Warning`s** — each names a
+    ///     concrete column whose IDENTITY facet disagrees, individually
+    ///     actionable;
+    ///   - **nullability divergences aggregate into ONE informational
+    ///     summary** (counts per direction + a small sample). Estates commonly
+    ///     use logical mandatory semantics over physically nullable columns at
+    ///     scale — a per-column warning flood buries the actionable signals
+    ///     without adding information. This is a schema-reality observation
+    ///     ("does the deployed column allow NULL?"); the separate question
+    ///     "does current data contain NULL where the logical model forbids
+    ///     it?" is a cutover blocker and stays itemized in the data-fidelity
+    ///     diagnostics.
     let columnRealityDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
         let realityByAttrId =
             snapshot.ColumnReality |> List.map (fun cr -> cr.AttrId, cr) |> Map.ofList
-        snapshot.Attributes
-        |> List.sortBy (fun a -> a.AttrId)
-        |> List.collect (fun a ->
-            match Map.tryFind a.AttrId realityByAttrId with
+        let paired =
+            snapshot.Attributes
+            |> List.sortBy (fun a -> a.AttrId)
+            |> List.choose (fun a ->
+                Map.tryFind a.AttrId realityByAttrId |> Option.map (fun cr -> a, cr))
+        let identityDivergences =
+            paired
+            |> List.choose (fun (a, cr) ->
+                if a.IsAutoNumber <> cr.IsIdentity then
+                    Some
+                        { DiagnosticEntry.create
+                            "adapter:OSSYS" DiagnosticSeverity.Warning
+                            "adapter.ossys.columnReality.identityDivergence"
+                            (sprintf "Column %s (attr %d): the logical OSSYS model declares identity=%b but the deployed schema has identity=%b. The engine carries the LOGICAL value."
+                                a.PhysicalCol a.AttrId a.IsAutoNumber cr.IsIdentity)
+                          with Metadata =
+                                Map.ofList
+                                    [ "attrId", string a.AttrId
+                                      "physicalColumn", a.PhysicalCol
+                                      "logicalIdentity", string a.IsAutoNumber
+                                      "deployedIdentity", string cr.IsIdentity ] }
+                else None)
+        let nullabilityDiverged =
+            paired
+            |> List.filter (fun (a, cr) -> (not a.IsMandatory) <> cr.IsNullable)
+        let nullabilitySummary =
+            match nullabilityDiverged with
+            | [] -> []
+            | diverged ->
+                let mandatoryButNullable =
+                    diverged |> List.filter (fun (a, cr) -> a.IsMandatory && cr.IsNullable)
+                let nullableButNotNull =
+                    diverged |> List.filter (fun (a, cr) -> not a.IsMandatory && not cr.IsNullable)
+                let sample =
+                    diverged
+                    |> List.truncate 5
+                    |> List.map (fun (a, _) -> a.PhysicalCol)
+                let sampleMeta =
+                    sample
+                    |> List.mapi (fun i col -> sprintf "sample.%d" i, col)
+                [ { DiagnosticEntry.create
+                      "adapter:OSSYS" DiagnosticSeverity.Info
+                      "adapter.ossys.columnReality.nullabilityDivergence"
+                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). The engine carries the LOGICAL value for emitted schema; rows that actually violate the logical model are itemized separately in the data-fidelity diagnostics."
+                          (List.length diverged)
+                          (List.length mandatoryButNullable)
+                          (List.length nullableButNotNull)
+                          (String.concat ", " sample))
+                    with Metadata =
+                          Map.ofList
+                              ([ "count", string (List.length diverged)
+                                 "logicalMandatoryDeployedNullable", string (List.length mandatoryButNullable)
+                                 "logicalNullableDeployedNotNull", string (List.length nullableButNotNull) ]
+                               @ sampleMeta) } ]
+        identityDivergences @ nullabilitySummary
+
+    /// NAME the attribute-flag-vs-entity-key primary-key divergences. OSSYS
+    /// carries PK identity twice: per-attribute (`Is_Identifier`) and
+    /// per-entity (`ossys_Entity.PrimaryKey_SS_Key`). The rowset reader
+    /// treats the entity key as a RECOVERY source only (it fires when no
+    /// attribute of the entity carries the explicit flag), so a
+    /// disagreement — both sources present, naming different attributes —
+    /// is never resolved by the engine: the explicit flag wins the carried
+    /// value and this pure pass surfaces the contradiction as an
+    /// operator-facing `Warning`. Deterministic — ordered by entity id.
+    let primaryKeyDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let attrsByEntity =
+            snapshot.Attributes |> List.groupBy (fun a -> a.EntityId) |> Map.ofList
+        snapshot.Entities
+        |> List.sortBy (fun e -> e.EntityId)
+        |> List.collect (fun e ->
+            match e.PrimaryKeySsKey with
             | None -> []
-            | Some cr ->
-                let logicalNullable = not a.IsMandatory
-                [ if logicalNullable <> cr.IsNullable then
-                    { DiagnosticEntry.create
-                        "adapter:OSSYS" DiagnosticSeverity.Warning
-                        "adapter.ossys.columnReality.nullabilityDivergence"
-                        (sprintf "Column %s (attr %d): the logical OSSYS model declares it %s but the deployed schema is %s. The engine carries the LOGICAL value; remediate the source or confirm which is authoritative."
-                            a.PhysicalCol a.AttrId
-                            (if logicalNullable then "nullable" else "NOT NULL")
-                            (if cr.IsNullable then "nullable" else "NOT NULL"))
-                      with Metadata =
-                            Map.ofList
-                                [ "attrId", string a.AttrId
-                                  "physicalColumn", a.PhysicalCol
-                                  "logicalNullable", string logicalNullable
-                                  "deployedNullable", string cr.IsNullable ] }
-                  if a.IsAutoNumber <> cr.IsIdentity then
-                    { DiagnosticEntry.create
-                        "adapter:OSSYS" DiagnosticSeverity.Warning
-                        "adapter.ossys.columnReality.identityDivergence"
-                        (sprintf "Column %s (attr %d): the logical OSSYS model declares identity=%b but the deployed schema has identity=%b. The engine carries the LOGICAL value."
-                            a.PhysicalCol a.AttrId a.IsAutoNumber cr.IsIdentity)
-                      with Metadata =
-                            Map.ofList
-                                [ "attrId", string a.AttrId
-                                  "physicalColumn", a.PhysicalCol
-                                  "logicalIdentity", string a.IsAutoNumber
-                                  "deployedIdentity", string cr.IsIdentity ] } ])
+            | Some pkKey ->
+                let attrs = Map.tryFind e.EntityId attrsByEntity |> Option.defaultValue []
+                let flagged = attrs |> List.filter (fun a -> a.IsIdentifier)
+                let flagMatchesEntityKey =
+                    flagged |> List.exists (fun a -> a.AttrSsKey = Some pkKey)
+                if List.isEmpty flagged || flagMatchesEntityKey then []
+                else
+                    [ { DiagnosticEntry.create
+                          "adapter:OSSYS" DiagnosticSeverity.Warning
+                          "adapter.ossys.primaryKey.divergence"
+                          (sprintf "Entity %s (id %d): Is_Identifier marks attribute(s) %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
+                              e.EntityName e.EntityId
+                              (flagged |> List.map (fun a -> a.AttrName) |> String.concat ", ")
+                              pkKey)
+                        with Metadata =
+                              Map.ofList
+                                  [ "entityId", string e.EntityId
+                                    "entityName", e.EntityName
+                                    "flaggedAttributes", (flagged |> List.map (fun a -> a.AttrName) |> String.concat ",")
+                                    "primaryKeySsKey", string pkKey ] } ])
 
     let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
@@ -1088,12 +1188,25 @@ module MetadataSnapshotRunner =
                     match Map.tryFind a.AttrId columnRealityByAttrId with
                     | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName, cr.CollationName
                     | None    -> false, None, None, None
+                // Deployed storage evidence: `#ColumnReality.SqlType` +
+                // facets parsed into the typed channel the resolver
+                // consults for reference-shaped `bt*` attributes.
+                // `MaxLength` is already character-normalized by the
+                // rowsets SQL (nvarchar halved; -1 = MAX).
+                let realityStorage =
+                    match Map.tryFind a.AttrId columnRealityByAttrId with
+                    | Some cr ->
+                        cr.SqlType
+                        |> Option.bind (fun t ->
+                            SqlStorageType.ofSqlType t cr.MaxLength cr.Precision cr.Scale)
+                    | None -> None
                 {
                     AttrId               = a.AttrId
                     EntityId             = a.EntityId
                     AttrName             = a.AttrName
                     PhysicalCol          = a.PhysicalCol
                     DataType             = match a.DataType with Some s -> s | None -> "Text"
+                    DefaultValue         = a.DefaultValue
                     IsMandatory          = a.IsMandatory
                     IsIdentifier         = a.IsIdentifier
                     IsAutoNumber         = a.IsAutoNumber
@@ -1113,6 +1226,7 @@ module MetadataSnapshotRunner =
                     Order                 = a.Order
                     // F1 (audit 2026-06-17) — carry the deployed collation.
                     Collation             = realityCollation
+                    DeployedStorage       = realityStorage
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

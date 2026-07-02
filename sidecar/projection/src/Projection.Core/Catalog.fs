@@ -187,6 +187,20 @@ module StaticRow =
         { Identifier = identifier
           Values = RowQuantum.toValues basis q }
 
+    /// The reader-leg row identity — `READSIDE_ROW` synthesized over
+    /// `<schema>.<table>.<rowIdx>`. Named ONCE so the IR-materialization
+    /// boundary (`ReadSide.materializeStream`) and the positional (quanta)
+    /// realizations mint IDENTICAL identities for the same stream position:
+    /// their outputs must agree at full-record grain, not just rendered
+    /// text. Total: `SsKey.synthesized` refuses only blank input, and the
+    /// composed text is non-blank for any inputs (the literal dots).
+    let readsideIdentity (schemaText: string) (tableText: string) (rowIdx: int) : SsKey =
+        let basisText = sprintf "%s.%s.%d" schemaText tableText rowIdx
+        match SsKey.synthesized "READSIDE_ROW" basisText with
+        | Ok k -> k
+        | Error _ ->
+            invalidOp (sprintf "StaticRow.readsideIdentity: unreachable blank basis '%s'" basisText)
+
 
 /// SQL Server "extended property" — a named string annotation attached to
 /// a schema object. V1 source: `sys.extended_properties` (carried as

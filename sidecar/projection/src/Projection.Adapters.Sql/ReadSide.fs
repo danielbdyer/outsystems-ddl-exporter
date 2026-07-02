@@ -813,6 +813,53 @@ module ReadSide =
                             (sprintf "ReadSide.Binary: unexpected runtime type %s" (other.GetType().FullName))
                 System.Convert.ToHexString bytes
 
+    /// Per-column typed cell formatter, chosen ONCE per stream from the
+    /// reader's actual field type (`GetFieldType`) + the attribute's
+    /// semantic primitive. The generic path (`GetValue` box →
+    /// `Convert.To*` re-dispatch → format) costs a box + dynamic convert
+    /// per CELL — at estate scale (hundreds of thousands of rows × N
+    /// columns) that is the dominant per-cell cost, so the expected
+    /// (type-matched) cases read through the typed accessors instead.
+    /// Byte-identical output: every fast path mirrors `formatRawValue`'s
+    /// exact `RawValueCodec` / invariant formatting; any unexpected
+    /// runtime field type falls back to `formatRawValue` untouched.
+    /// NULL handling stays in the row loop (`IsDBNull` → the empty-string
+    /// sentinel) — formatters see non-null cells only.
+    let private typedCellFormatter
+        (typ: PrimitiveType)
+        (fieldType: System.Type)
+        : SqlDataReader -> int -> string =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        match typ with
+        | Integer when fieldType = typeof<int64> ->
+            fun r i -> r.GetInt64(i).ToString(inv)
+        | Integer when fieldType = typeof<int32> ->
+            fun r i -> (int64 (r.GetInt32 i)).ToString(inv)
+        | Integer when fieldType = typeof<int16> ->
+            fun r i -> (int64 (r.GetInt16 i)).ToString(inv)
+        | Integer when fieldType = typeof<byte> ->
+            fun r i -> (int64 (r.GetByte i)).ToString(inv)
+        | Decimal when fieldType = typeof<decimal> ->
+            fun r i -> r.GetDecimal(i).ToString(inv)
+        | Boolean when fieldType = typeof<bool> ->
+            fun r i -> RawValueCodec.formatBoolean (r.GetBoolean i)
+        | DateTime when fieldType = typeof<System.DateTime> ->
+            fun r i -> RawValueCodec.formatDateTime (r.GetDateTime i)
+        | Date when fieldType = typeof<System.DateTime> ->
+            fun r i -> RawValueCodec.formatDate (r.GetDateTime i)
+        | Time when fieldType = typeof<System.TimeSpan> ->
+            fun r i -> RawValueCodec.formatTime (r.GetFieldValue<System.TimeSpan> i)
+        | Guid when fieldType = typeof<System.Guid> ->
+            fun r i -> RawValueCodec.formatGuid (r.GetGuid i)
+        | Text when fieldType = typeof<string> ->
+            fun r i -> r.GetString i
+        | Binary when fieldType = typeof<byte[]> ->
+            fun r i -> System.Convert.ToHexString (r.GetFieldValue<byte[]> i)
+        | _ ->
+            // Unexpected pairing (provider-specific surfacing, legacy
+            // storage) — the tolerant generic path is authoritative.
+            fun r i -> formatRawValue typ (r.GetValue i)
+
     /// Stream a table's rows as an `AsyncStream<RowQuantum>` — pull-
     /// based, bench-instrumented, positional against `Kind.rowBasis kind`
     /// (Q2: the in-flight carrier is the quantum; the typed Map vocabulary
@@ -877,6 +924,7 @@ module ReadSide =
         let attrs = List.toArray kind.Attributes
         let mutable cmdOpt : SqlCommand option = None
         let mutable readerOpt : SqlDataReader option = None
+        let mutable formatters : (SqlDataReader -> int -> string)[] = [||]
         let mutable disposed = false
         let dispose () =
             if not disposed then
@@ -899,8 +947,23 @@ module ReadSide =
                 | Some (_, addParams) -> addParams cmd
                 | None -> ()
                 cmdOpt <- Some cmd
-                let! reader = cmd.ExecuteReaderAsync()
+                // `SequentialAccess`: the provider streams column data
+                // instead of buffering whole rows. The pull loop below is
+                // the reader's ONLY cell-access site and it is strictly
+                // ordinal-ascending with a single visit per column
+                // (`IsDBNull i` then `formatters.[i] r i`), which is
+                // exactly the access contract SequentialAccess requires;
+                // `GetFieldType` in the formatter setup reads metadata,
+                // not row data. Wide nvarchar cells stop being row-
+                // buffered twice — the win grows with row width and is
+                // measured on the corpus (SINGLE_SCAN_PROGRAM ledger).
+                let! reader = cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess)
                 readerOpt <- Some reader
+                // Per-column typed formatters, chosen once from the actual
+                // field types (available as soon as the reader opens).
+                formatters <-
+                    Array.init attrs.Length (fun i ->
+                        typedCellFormatter attrs.[i].Type (reader.GetFieldType i))
             }
         // PERF_HARNESS §3.6 label 1 accumulator: per-row carrier-build ticks,
         // recorded as ONE aggregated sample at EOF (a per-row Bench.scope
@@ -911,6 +974,23 @@ module ReadSide =
         // (`materializeStream`), which carries its own label — the label
         // rides the carrier build wherever it lives (the attribution rule).
         let mutable materializeTicks = 0L
+        // Phase-3 attribution sibling: per-row `ReadAsync` (the wire
+        // row-fetch) ticks, recorded as ONE aggregated sample at EOF —
+        // previously only visible as the residual of the stream-lifetime
+        // label minus open minus materialize.
+        let mutable fetchTicks = 0L
+        // Stream-lifetime probe state, FUSED into the pull itself (this
+        // stream previously stacked two `AsyncStream.probe` wrappers on
+        // top — two extra `task { }` layers, i.e. two extra Task + option
+        // allocations PER ROW at estate scale, just to carry a stopwatch
+        // and a counter the pull can carry itself). The labels and their
+        // semantics are unchanged: wall time from stream construction to
+        // EOF plus an `.elements` row count, once per stream, for both
+        // the per-table label and the `.all` aggregate.
+        let swStream = System.Diagnostics.Stopwatch.StartNew()
+        let mutable rowCount = 0L
+        let perTableLabel =
+            sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
         let pull () : Task<RowQuantum option> =
             task {
                 if disposed then return None
@@ -918,32 +998,42 @@ module ReadSide =
                     try
                         if Option.isNone readerOpt then do! openReader ()
                         let r = Option.get readerOpt
+                        let tFetch = System.Diagnostics.Stopwatch.GetTimestamp()
                         let! more = r.ReadAsync()
+                        fetchTicks <-
+                            fetchTicks
+                            + (System.Diagnostics.Stopwatch.GetTimestamp() - tFetch)
                         if not more then
                             Bench.recordSample
                                 "readside.rowstream.materialize"
                                 (materializeTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
+                            Bench.recordSample
+                                "readside.rowstream.fetch"
+                                (fetchTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
+                            swStream.Stop()
+                            Bench.recordSample perTableLabel swStream.ElapsedMilliseconds
+                            Bench.recordSample (sprintf "%s.elements" perTableLabel) rowCount
+                            Bench.recordSample "readside.readRowsStream.all" swStream.ElapsedMilliseconds
+                            Bench.recordSample "readside.readRowsStream.all.elements" rowCount
                             dispose ()
                             return None
                         else
                             let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
                             let cells = Array.zeroCreate<string> attrs.Length
                             for i in 0 .. attrs.Length - 1 do
-                                let raw : obj | null =
-                                    if r.IsDBNull i then null
-                                    else r.GetValue i
-                                cells.[i] <- formatRawValue attrs.[i].Type raw
+                                cells.[i] <-
+                                    if r.IsDBNull i then ""
+                                    else formatters.[i] r i
                             materializeTicks <-
                                 materializeTicks
                                 + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
+                            rowCount <- rowCount + 1L
                             return Some { Cells = cells }
                     with ex ->
                         dispose ()
                         return raise ex
             }
         pull
-        |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical))
-        |> AsyncStream.probe "readside.readRowsStream.all"
 
     /// Stream a table's full row set, positional against `Kind.rowBasis kind`.
     /// Thin wrapper over `readRowsStreamCore` with no predicate — byte-
@@ -1001,6 +1091,8 @@ module ReadSide =
     /// wherever it lives).
     let materializeStream (kind: Kind) (stream: AsyncStream<RowQuantum>) : AsyncStream<StaticRow> =
         let basis = Kind.rowBasis kind
+        let schemaText = TableId.schemaText kind.Physical
+        let tableText  = TableId.tableText kind.Physical
         let mutable rowIdx = 0
         let mutable irTicks = 0L
         fun () ->
@@ -1013,22 +1105,15 @@ module ReadSide =
                     return None
                 | Some q ->
                     let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
-                    let rowBasisText =
-                        sprintf
-                            "%s.%s.%d"
-                            (TableId.schemaText kind.Physical)
-                            (TableId.tableText kind.Physical)
-                            rowIdx
+                    // The row identity mints through the ONE shared
+                    // `StaticRow.readsideIdentity` (`READSIDE_ROW` over
+                    // `<schema>.<table>.<rowIdx>`) so positional (quanta)
+                    // realizations reproduce it exactly.
+                    let rowKey = StaticRow.readsideIdentity schemaText tableText rowIdx
                     rowIdx <- rowIdx + 1
-                    match SsKey.synthesized "READSIDE_ROW" rowBasisText with
-                    | Ok rowKey ->
-                        let row = StaticRow.ofQuantum basis rowKey q
-                        irTicks <- irTicks + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
-                        return Some row
-                    | Error _ ->
-                        // SsKey.synthesized only fails on blank input;
-                        // rowBasisText is non-blank by construction.
-                        return None
+                    let row = StaticRow.ofQuantum basis rowKey q
+                    irTicks <- irTicks + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
+                    return Some row
             }
 
     /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain

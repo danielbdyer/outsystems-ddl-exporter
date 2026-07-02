@@ -25566,3 +25566,438 @@ opener).
 (e.g. a hardening pass reinstates D9 strictly), gate `openSpec` behind a
 `requireOutOfBand` flag for the OSSYS role rather than re-duplicating a second
 decode.
+
+## 2026-07-01 — `model.onlyActiveAttributes` pushes down to the OSSYS read (the standing deferral closes); the equivalence law holds the axis equal across both legs
+
+This entry AMENDS the 2026-06-13 slice-4 stance ("`OnlyActiveAttributes`
+is deliberately NOT pushed"). Inactive duplicate OSSYS attributes carried
+into a scoped live extraction materialize as duplicate logical columns,
+duplicated FK constraints, duplicated index columns, and DacFx `SQL71508`
+/ unresolved-reference failures at deploy validation. The IR's attribute
+population must be scoped before naming, ordering, FK, index, and DDL
+logic runs — scope is query-time selection, not post-hoc de-duplication
+in the emitter.
+
+**The wire.** `SnapshotScopeBinding.fromModel` now binds
+`model.OnlyActiveAttributes` into `SnapshotParameters.OnlyActiveAttributes`
+in BOTH arms — the axis is orthogonal to module scope, so it is NOT gated
+on a declared module selection (the config default,
+`onlyActiveAttributes = true`, requests active-only for an unscoped full
+export too). The rowsets script filters `#Attr` at build time
+(`@OnlyActiveAttributes`, `outsystems_metadata_rowsets.sql`); every
+dependent rowset (column reality, FK column pivots, index-column
+mappings, checks, JSON-compatibility) derives from `#Attr`, so none can
+resurrect a filtered attribute. `MetadataSnapshotRunner.defaultParameters`
+is unchanged (`false` — the permissive adapter default); the binding is
+where operator intent lands.
+
+**The law, restated.** `scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘
+fullRead` governs the module/entity axes only. The attribute-activity
+axis has NO in-memory sibling seam (`ModuleFilter.apply` does not filter
+attributes, and growing it one would be exactly the post-hoc
+de-duplication this decision rejects) — the equivalence canary therefore
+binds the same `OnlyActiveAttributes` value on both legs, and the axis
+gains its own Docker canary (an `Is_Active = 0` attribute present on the
+permissive default read, absent under the bound model scope).
+
+**Consequence, named.** With the default config,
+`InactiveAttributeDiagnostics` no longer sees inactive attributes — the
+operator asked for them to be excluded at the source. When the operator
+opts out (`onlyActiveAttributes = false`), inactive attributes are
+preserved end-to-end and later diagnostics explain any deploy conflicts.
+
+**Re-open trigger.** If a consumer needs inactive-attribute *evidence*
+alongside an active-only *emission* (diagnose-but-don't-emit), split the
+axes: a diagnostics-side unscoped read, not a weakening of the query-time
+pushdown.
+
+## 2026-07-01 — Emitted index names derive from the logical vocabulary (IX_/UIX_ + Kind + Attributes); goldens re-recorded
+
+Table and column SSDT targets were already logicalized
+(`LogicalTableEmission` / `LogicalColumnEmission`), and generated PK/FK
+constraint names rebuilt from the logicalized coordinates — but index
+identifiers still passed the source-side physical OSSYS index name
+through verbatim (`Name.value idx.Name` at the CREATE INDEX, ALTER
+INDEX … DISABLE, and index extended-property surfaces). The emitted
+shape was half-human-readable: `ON [dbo].[LogicalTable]
+([LogicalColumn])` correct, `CREATE INDEX [OSIDX_…]` physical.
+
+**The policy.** `SsdtDdlEmitter.emittedIndexNames` computes each
+index's emitted name BEFORE ScriptDom rendering, from typed logical IR
+only — `Index.Columns` → `Attribute.Name`, `Kind.Name`, and the
+overlay-adjusted uniqueness decision (the same
+`isUnique || EnforceUnique` disjunction the CREATE INDEX emission uses,
+so name and constraint agree): `IX_<Kind>_<Attr…>` / `UIX_<Kind>_<Attr…>`,
+identifier-budget capped (`IdentifierBudget.fit`). PK-backing indexes
+take the PK constraint-name convention so an index-level extended
+property follows the emitted constraint. The SAME map feeds all three
+surfaces (create / disable / extended property). No SQL-text parsing,
+no acceptance of SQL Server physical auto-names. This is an
+emitted-NAME policy, not identity — `SsKey` stays durable; generated
+SQL names are presentation identifiers.
+
+**Collision handling is proof-triggered.** Names start concise; only
+names that actually collide within the kind's per-table index namespace
+gain a deterministic 1-based ordinal (SsKey order). Indexes differing
+only in INCLUDE columns / filters / on-disk options therefore collide
+deliberately — the key-column vocabulary is the name; the ordinal is
+the honest tiebreak.
+
+**Migration lane.** `SchemaMigrationEmitter` inherits the policy for
+CREATEs through the shared `createIndexStatements`; DROP INDEX keeps
+the SOURCE catalog's name (the deployed identifier is what a drop must
+reference).
+
+**Goldens re-recorded under this entry** (`GOLDEN_RECORD=1`): the
+`ScalarGallery` stress fixture stacks several same-key-column indexes,
+so its goldens now show the ordinal form; the physical
+`OSIDX_GOLD_SCALAR_GALLERY_TALLY` emits as its logical name.
+
+**Re-open trigger.** If an estate needs authored index names preserved
+end-to-end (operator-curated names rather than the generated
+convention), add an explicit override axis (e.g. an
+`overrides.indexNames` surface) rather than re-admitting source
+physical names by default.
+
+## 2026-07-01 — Bounded read concurrency for the full-export data lanes (`emission.dataReadConcurrency` / `profiler.maxConcurrency`); acquisition may be parallel, emission stays deterministic
+
+The all-data publish wall clock was dominated by hundreds of INDEPENDENT
+per-table operations executed strictly serially: one row-stream drain per
+kind (`Ingestion.collectInOrderFor`, one open reader at a time) and one
+3-query live discovery per non-static kind
+(`LiveProfiler.captureEvidenceCacheWith`, a serial `for`). The OSSYS
+metadata rowset batch was NOT the cost — it already runs as one command
+with multiple result sets.
+
+**The two orders, named.** Acquisition may be parallel and bounded;
+emission must stay deterministic and dependency-aware. The new sibling
+functions (`Ingestion.collectInOrderForConcurrent`,
+`LiveProfiler.captureEvidenceCacheConcurrent` / `attachConcurrent`) drain
+each kind on its OWN short-lived connection (SqlClient pooling reuses
+physical connections), gated by a `SemaphoreSlim` — the
+`Deploy.executeBatchParallel` precedent. Results are keyed `Map`s, so the
+value is completion-order-independent by construction; topological order
+still governs the rendered load plan downstream. The serial functions are
+UNCHANGED (byte-identical pre-fix paths) and remain the `1`-concurrency
+arm.
+
+**The knobs.** `emission.dataReadConcurrency` (default 4) binds the
+static-graft + Bootstrap hydration; `profiler.maxConcurrency` (default 4)
+binds live profile capture. Both are low and explicit by default; `< 1`
+is a named config refusal.
+
+**Measured** (`ReadConcurrencyMeasurementTests`, warm container, 100
+tables × 375 rows = 37.5k rows — roughly a tenth of a
+hundreds-of-tables estate; the measured legs run the exact serial
+functions as "before"):
+
+- cold shape (two samples): hydrate 429→236 ms / 464→250 ms at
+  concurrency 4 (~46% faster); profile 567→119 ms / 516→125 ms (~77%)
+- warm sweep: hydrate 290 / 221 / 194 / 190 ms at 1 / 2 / 4 / 8;
+  profile 229 / 137 / 77 / 112 ms — scaling flattens past 4 and the
+  profile leg INVERTS at 8 (the bottleneck moves to pool/server
+  pressure), which is why the defaults stay at 4
+- row maps and evidence caches value-identical across every leg
+  (acquisition-only concurrency; coverage unchanged)
+
+Local per-table latency understates a remote source's, so the remote win
+is at least this shape. New Bench labels separate queue/lifetime from
+actual drain cost: `ingestion.rowDrain` (+ per-table + `.rows`) and
+`profile.live.discoverKind.drain` vs the stream-LIFETIME
+`readside.readRowsStream.*` labels.
+
+**Re-open triggers.** A pre-warmed bounded connection pool (instead of
+per-kind transient opens) if pool churn shows up in the drain labels;
+batched INFORMATION_SCHEMA nullability reflection (one schema query
+instead of per-kind) as the next profile-stage cut; batch-aware row
+materialization for the largest tables if peak memory becomes the
+binding constraint.
+
+## 2026-07-02 — The rowset-contract DDL rules close: authored defaults lift on the rowset path; DB-default collation and [PRIMARY] placement suppress at the reflection boundary; DF__ auto-names never become the naming contract
+
+A contract sweep verified the eight canonical DDL-fidelity rules
+(authored attribute order; rtDate stays DATE; no UNIQUE promotion
+without operator intent; named-DEFAULT formatting; generated PK names —
+all IMPLEMENTED + PINNED) and found four gaps, all of the same class:
+**incidental properties of the deployed instance leaking into the
+emitted contract**. Output reflects the team's logical model plus
+INTENTIONAL physical choices — logical evidence for authored schema
+semantics, deployed evidence only where it prevents incorrect data
+handling or preserves intentional non-default configuration.
+
+**1. Authored `Default_Value` now lifts on the rowset path.** The
+extraction populated `#Attr.DefaultValue` and projected it at ordinal 8,
+but the runner skipped the ordinal and the reader hard-set
+`DefaultValue = None` — an estate-authored BIT `False` never emitted
+`DEFAULT 0` on the live path (the JSON path lifted it all along). The
+authored value now threads runner → bundle → reader, projected via
+`SqlLiteral.ofRaw` against the resolved primitive (`False` → `DEFAULT
+0`). No-op defaults are suppressed (absent / empty / whitespace — a
+nullable column's implicit NULL is normal SQL behavior, not a
+configured default). The REFLECTED `#ColumnReality.DefaultDefinition`
+expression channel stays un-lifted per matrix row 53's named trigger.
+
+**2. Reflected `DF__…` physical auto-names are filtered at the reader.**
+`DefaultConstraintName` lifts only authored-shaped names; SQL Server's
+double-underscore auto-names are incidental to the source instance and
+are dropped (the default emits unnamed). This was latent until #1 —
+the auto-name only surfaces when a `DefaultValue` accompanies it.
+Re-open trigger: if emitted defaults should carry GENERATED
+`DF_<Table>_<Column>` names (the PK/IX logical-vocabulary pattern), add
+that at the emitter as a naming policy — never by re-admitting
+reflected auto-names.
+
+**3. DB-default collation suppresses at query time.** `#ColumnReality
+.CollationName` is now `NULLIF(collation_name,
+DATABASEPROPERTYEX(DB_NAME(), 'Collation'))` — `sys.columns` names a
+collation for EVERY character column, so carrying it verbatim restated
+the database default on every emitted column. Only non-default
+collations are intentional configuration. One suppression site covers
+both paths (the JSON `onDisk` payload reads from `#ColumnReality`).
+Donor + embedded carbon copies synced; the line-count pin moved.
+
+**4. `[PRIMARY]` filegroup placement suppresses at the snapshot
+boundary.** `tryProjectDataSpace` maps a reflected `ROWS_FILEGROUP`
+named PRIMARY (case-insensitive) to `None`; non-primary filegroups and
+partition schemes carry as before. The emitter stays IR-faithful — an
+explicitly authored `Filegroup "PRIMARY"` still renders; reflection
+alone can no longer produce it.
+
+## 2026-07-02 — Perf-gate retargeted at the Integration assembly; the canary baseline re-recorded (the floor legitimately moved)
+
+The 2026-07-01 assembly split moved every Docker/SQL test — including
+the operator-reality canary (`GeneratorScaleTests`) — into
+`Projection.Tests.Integration`, but `scripts/perf-gate.sh` still built
+and filtered the PURE `Projection.Tests` assembly. Consequence: the
+gate's `FullyQualifiedName~Operator-reality` filter matched ZERO tests,
+no bench snapshot was written, and the gate has been verdict-blind
+since the split. The script now targets the Integration assembly.
+
+**Why the baseline is re-recorded (`PERF_GATE_RECORD=1`).** The prior
+floor was recorded 2026-05-20 against a DIFFERENT canary population —
+its `emit.staticPopulation.statements.stream.elements` mean was 50,000
+vs the current canary's 6,250 (the canary was deliberately slimmed to
+the 6.25k × 150 stop-hook shape; the test's own docstring records the
+larger shape as "inappropriate for stop hooks"). Because the gate was
+snapshot-blind from the split until now, the floor was never re-based
+to the slimmed canary. Comparing today's runs against the 2026-05-20
+floor therefore compares different populations, not code drift — the
+"regressions" it reported on first re-run were (a) the population
+mismatch on the bytes label and (b) the survival-rule-13 concurrent-
+load false-trip on `emit.staticPopulation.statements.stream` (two gate
+runs raced; the label is the rule's own worked example). The new floor
+is recorded on a quiet host, 5 runs, 95 labels; the per-segment bytes
+label is deterministic across all 5 runs (σ = 0).
+
+**Guard going forward.** The gate's building/filter target and the
+test's assembly must move together — a filter that matches nothing now
+fails loudly at the no-snapshot check, which is what surfaced this.
+
+## 2026-07-02 — The single-scan program: evidence derives from the data lanes' rows; the plan/render factor per kind; carriers stay positional to the render; sampling tiers per kind
+
+Four related landings (SINGLE_SCAN_PROGRAM.md carries the measured
+ledger; every leg's timing counted only after a VALUE-IDENTITY
+assertion against the incumbent path held on the ~480k-row corpus):
+
+**1. Single-scan evidence (P1).** When the data lanes hydrate rows,
+the profile stage DERIVES the evidence cache from them
+(`EvidenceCache.cachedKindOfRows` over `CachedValue.ofRaw`'s raw-form
+equivalence table; `LiveProfiler.captureEvidenceCacheDerived`
+partitions derived-vs-live with counted Bench labels; ONE global
+nullability reflection replaces per-kind reflection). The second
+full-estate pass is gone. Equivalence caveats are NAMED in the
+docstrings and pinned in `EvidenceCacheDerivationTests`: full
+hydration required (sampled kinds keep live discovery), and `""` ≡
+NULL per the universal sentinel (NM-18 /
+`Tolerance.EmptyTextNormalizedToNull`) — derived evidence observes the
+IR plane (what publish ships), live observes the source plane.
+
+**2. Per-kind factorization (P2).** `DataLoadPlan.loadForWith`/
+`loadFor`, `StaticSeedsEmitter.renderLoad`, and the projected drains
+(`Ingestion.collectInOrderForConcurrentWith` /
+`collectQuantaForConcurrentWith`) expose the per-kind units the batch
+paths FOLD — equivalence by construction, pinned in the pure pool. A
+drain-time projection runs inside the concurrency gate AFTER the
+connection pools back: bounded row memory (`concurrency` kinds, not
+the estate), render CPU parallelized across drain workers. The
+composed corpus pass (drain+render+derive) beat the two-phase sum by
+21–39% and the serial emit leg alone. Production wiring gates are
+named in the program doc (post-chain catalog is profile-independent —
+`catalogStep` ignores profile; CDC reflection pre-drain; empty/config-
+known remap).
+
+**3. Positional carriers to the render (P3).** The corpus measured the
+IR rebuild (per-row Map mint + row-identity synthesis) at 3.35× the
+raw positional drain (8,141ms vs 2,429ms — ~70% of hydrate wall-clock
+is carrier construction, not wire). `KindColumns.quantumToTypedValues`,
+`EvidenceCache.cachedKindOfQuanta`, and `StaticSeedsEmitter
+.renderQuanta` consume `RowQuantum` cells positionally (`Cells.[i]` ↔
+`Attributes.[i]` — `Kind.rowBasis` order); row identities mint through
+the ONE shared `StaticRow.readsideIdentity` (also now used by
+`ReadSide.materializeStream`), so the quanta pass equals the named-row
+pass at FULL record grain, not just rendered text. Gate: quanta render
+requires the empty remap (identity substitution needs named rows).
+
+**4. Evidence tiering (P4) + wire posture (P5).**
+`SqlProfilerOptions.MaxRowsPerKind` is replaced by
+`Sampling : SamplingPolicy` (Core; default + per-kind pins; explicit
+`None` pin = full-scan exemption). Under any cap, RowCount/NullCounts
+stay EXACT (the aggregate is never capped); sampled kinds are excluded
+from single-scan derivation and every downgrade is NAMED
+(`SamplingDiagnostics.emit`, code `profiler.evidence.sampled`, one
+Info per sampled kind — operator-requested, so Info not Warning; the
+config-surface binding is the named follow-on in the program doc).
+The drain reader (`ReadSide.readRowsStreamCore`) now opens with
+`CommandBehavior.SequentialAccess` — its pull loop is strictly
+ordinal-ascending with single visits, the exact access contract;
+corpus legs measured no regression at corpus row widths (the win
+grows with width) and all identity laws held under it.
+
+**Corpus harness addendum.** `PERF_CORPUS_DURABLE=1` seeds a fixed
+`PerfCorpusDurable` database once (sentinel-verified: table count +
+exact last-table row count; wipe-and-reseed on mismatch) and never
+drops it — measurement iterations stop repaying the ~4.5min seed.
+Reclaim manually with `DROP DATABASE PerfCorpusDurable` if the warm
+instance's memory pool degrades (survival-rule-2 family).
+
+## 2026-07-02 — Sweep 2: the fused bundle is on-demand; derivations shed the per-cell string bridge; one Kahn/Tarjan per catalog value
+
+Survey-driven (six information-gathering maps; adjudication in
+PERF_OPPORTUNITIES.md § Sweep 2, including the DECLINED items with
+re-open triggers). Behavior-visible decisions:
+
+**1. `RenderedDataBundle` no longer carries `Fused`.** The bundle path
+renders the three lanes only; `unionSiblings` still runs for the
+partition-law assertion; `composeRenderedFull` is the fused surface,
+produced when asked for. The pipeline's is-anything-there gate reads
+the lanes. Rationale: the fused string's one production consumer was
+that gate, and producing it duplicated the whole estate's rendered
+text on every publish.
+
+**2. Derivation equivalences are typed, not stringly.** Duplicate
+detection (`scanColumnValues`), the FK target index (`TargetKeySet`:
+`HashSet<int64>` for integer PKs, string bridge otherwise/fallback),
+and the cardinality/selectivity tallies key on the VALUES' own types;
+key strings render only where they reach an output surface, once per
+distinct value, in the same `cacheValueKey` byte form. Verdict
+equivalence is argued in the docstrings (cases never cross-matched
+under the prefixes) with one named conservative nuance (scale-twin
+decimals now count as duplicates — refuses tightenings, never mints).
+
+**3. A topological order is computed once per catalog VALUE and
+threaded** — never memoized (the staleness refusal stands): the chain's
+stored order feeds the data composer
+(`composeRenderedBundleWithBootstrapUsing`); one order feeds both
+hydration arms (`hydrateCatalogUsing` /
+`hydrateBootstrapRowsExcludingUsing` — grafting changes `Modality`,
+never edges). Topo-less siblings remain the safe standalone entries.
+
+**4. `emittedIndexNames` derives once per kind** and feeds all three
+index-facing emitters (`*With` forms); the drain stream's probe pair
+fused into the pull (same labels, two fewer per-row Task layers); the
+`QueryHintPass` / `ModelFidelity` reference-and-attribute resolutions
+are keyed maps, not per-item catalog scans.
+
+---
+
+## 2026-07-02 — The OSSYS JSON aggregate rowsets gate on a session-context flag (operator-approved V1-donor change); V1 and every historical caller stay byte-identical
+
+**Decision.** The rowsets export's ten JSON aggregate temp tables
+(`#AttrCheckJson`, `#FkAttrMap`, `#FkColumnsJson`, `#IdxColsJson`,
+`#AttrJson`, `#RelJson`, `#IdxJson`, `#TriggerJson`, `#ModuleJson`, and
+their transitively-empty dependents) build only when a consumer will
+read them. The gate is a SESSION-CONTEXT flag, not a new command
+parameter:
+
+    DECLARE @SkipJsonRowsets bit =
+        ISNULL(TRY_CONVERT(bit, SESSION_CONTEXT(N'OsmSkipJsonRowsets')), 0);
+
+with `WHERE @SkipJsonRowsets = 0` startup filters on the nine root
+builds. Flag ABSENT (V1, SSMS, every historical caller): `0` — the
+script behaves byte-identically with no caller change. Flag SET (V2's
+`MetadataSnapshotRunner` issues one `sp_set_session_context` before the
+batch): the JSON aggregates return empty result sets; the reader's
+column-name-keyed rowset parse consumes the SAME tail SELECT shapes.
+`sp_reset_connection` clears session context, so the flag cannot leak
+across pooled connections.
+
+**Why session context.** The family is a CLOSED CLUSTER (consumed only
+by each other's builds and their own tail SELECTs — audited), but the
+script is the V1 editorial donor and the carbon-copy invariant requires
+the V2 embedded resource byte-equal V1's source. A parameter would
+change every caller's contract; a session flag changes none. This was
+the sweep-2 DECLINED item whose re-open trigger was OPERATOR sign-off
+on a V1-donor change — the sign-off was granted 2026-07-02, and the
+change shipped in both copies simultaneously (line pin updated to
+1253; `AdvancedSqlScriptTests` 4/4 on the V1 side; live extraction
+canaries produced identical snapshots).
+
+## 2026-07-02 — P2 production wiring: the publish pipeline's gated PIPELINED arm (`emission.pipelinedBootstrap`, default true); the Bootstrap lane becomes a two-currency `BootstrapLane`; the schedule changes, the bundle does not
+
+**Decision.** `Compose.runWithConfig` carries two schedules behind one
+gate. The PIPELINED arm (on by default) runs when the operator opted in
+(`emission.pipelinedBootstrap`) AND a data lane is on AND the model is
+OSSYS-sourced AND the profiler is live AND the source connection is
+present; any miss falls back to the established two-phase schedule
+unchanged. The arm reorders the SAME work the two-phase publish does:
+
+1. **Extract** — model read + static graft (unchanged), then the
+   profile-INVARIANT chain prefix composes over the hydrated catalog
+   (`RegisteredTransforms.chainStepsSplitWithPins` — the registry
+   itself splits at `topologicalOrder`, so the two-phase execution
+   cannot drift from the registry; prefix ++ suffix = whole by
+   construction), then ONE nullability reflection, then
+   `Hydration.collectBootstrapRenderedUsing`: each eligible kind's
+   MERGE script renders ON THE DRAIN WORKER as its rows land (the P2
+   projected drain, `Ingestion.collectInOrderForConcurrentWith`)
+   against the prefix catalog's kinds, its evidence derives from the
+   same rows (`EvidenceCache.cachedKindOfRows`), and the rows drop —
+   live row memory caps at `emission.dataReadConcurrency` kinds.
+2. **Profile** — `LiveProfiler.attachFromKinds`: assemble the cache
+   from the drain-time derivations; kinds outside the covered set
+   (non-hydrated, sampled — the evidence partition mirrors
+   `captureEvidenceCacheDerived` exactly) take the counted live gated
+   discovery.
+3. **Emit** — `runWithConfigCore` UNCHANGED except the Bootstrap row
+   source arrives as `DataComposer.BootstrapLane.Prerendered`: the
+   composer's Bootstrap arm now matches on a two-currency lane
+   (`Rows` = the established compose-time render; `Prerendered` =
+   assemble the drain-time scripts; kinds absent from the map take the
+   same `emptyScript` the batch build's empty loads render to, so the
+   T11 keyset and the `unionSiblings` partition assertion hold
+   unchanged).
+
+**The three pre-drain facts, verified not assumed.** (a) The chain
+prefix is profile-invariant AND the suffix is catalog-preserving —
+every post-topo step is a decision lift; both properties are pinned
+BEHAVIORALLY in `DataEmissionComposerTests` (compose the prefix under
+two profiles → same catalog + topology; compose the whole chain → same
+catalog + topology as the prefix), so a future profile-consuming
+catalog rewrite trips the law instead of silently skewing the drain
+targets. (b) `CdcAwareness` is never populated on the publish path
+(zero writers in `ProfileDerivation`/`LiveProfiler`), so the drain-time
+render's `Profile.empty.CdcAwareness` equals what the compose-time
+render reads off the attached profile. (c) The publish composer already
+threads `UserRemapContext.empty`, and `UserRemapContext.toSurrogate` of
+the empty mapping IS `SurrogateRemapContext.empty` — the drain-time
+`DataLoadPlan.loadFor` core equals the batch build's per-kind fold.
+
+**The knob is a SCHEDULE toggle, never a semantics toggle.** The
+equivalence is witnessed at three altitudes: the per-kind script
+identity is by construction (same `loadFor` core, same `renderLoad`,
+same delete-scope-suppressed lane posture); the composer-level
+`Prerendered ≡ Rows` bundle identity is pinned pure
+(`DataEmissionComposerTests`); and the whole-pipeline identity is
+pinned end-to-end (`PipelinedBootstrapEquivalenceTests` — the OSSYS
+edge-case estate with deterministic rows, knob ON and OFF, every
+emitted file byte-compared; docker pool). The corpus already measured
+the composed pass at **-21% to -39% wall-clock vs the two-phase sum**
+(SINGLE_SCAN_PROGRAM ledger); this entry is the production cash-out of
+that mechanism.
+
+**Named cost, consciously kept.** The emit stage re-runs the chain
+prefix inside `runWithConfigCore` (ms-scale pure work at estate scale)
+— threading the extract stage's composed prefix state INTO the core is
+the PL-1-adjacent follow-on (`PAY_ONCE_PLAN.md`), not this slice; the
+re-run is correct by the pinned profile-invariance and keeps the core's
+signature untouched for every other caller.

@@ -101,6 +101,13 @@ module OssysRowsetTypes =
             AttrName     : string
             PhysicalCol  : string
             DataType     : string
+            /// Authored `ossys_Entity_Attr.Default_Value` — the logical
+            /// Service-Studio default surface (`False` for BIT, etc.).
+            /// `None` when the estate authored no default. Projects via
+            /// `SqlLiteral.ofRaw` against the resolved `PrimitiveType`
+            /// into `Attribute.DefaultValue` (same shape as the JSON
+            /// path's `default` field).
+            DefaultValue : string option
             IsMandatory  : bool
             IsIdentifier : bool
             IsAutoNumber : bool
@@ -160,6 +167,17 @@ module OssysRowsetTypes =
             /// reflection didn't fire. Threads to `ColumnRealization.Collation`
             /// so a fresh deploy re-emits the team's chosen `COLLATE`.
             Collation : string option
+            /// V1 `#ColumnReality.SqlType` + facets (`sys.columns` ⋈
+            /// `sys.types`), parsed at the snapshot boundary into the same
+            /// typed channel `external_dbType` resolves through. The
+            /// DEPLOYED storage of the column — concrete evidence the type
+            /// resolver may consult where the logical type is a
+            /// convention rather than a declaration (reference-shaped
+            /// `bt*` attributes whose deployed storage diverges from the
+            /// BIGINT reference convention). `None` when the deployed
+            /// reflection didn't fire or the deployed type is
+            /// unrecognized.
+            DeployedStorage : SqlStorageType option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

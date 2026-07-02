@@ -462,10 +462,13 @@ let ``Slice 3: SsdtDdlEmitter emits CREATE INDEX for non-PK indexes`` () =
         | None ->
             Assert.Fail "expected slice for indexedKind"
             ""
-    // Non-unique index name appears in body.
-    Assert.Contains ("IX_OSUSR_X_INDEXED_LOOKUP", body)
+    // Emitted index names derive from the LOGICAL Kind/Attribute IR
+    // (IX_/UIX_ + kind + columns), not the source physical names.
+    Assert.Contains ("IX_Indexed_Lookup", body)
+    Assert.DoesNotContain ("IX_OSUSR_X_INDEXED_LOOKUP", body)
     // Unique index name appears in body; UNIQUE keyword is present.
-    Assert.Contains ("UIX_OSUSR_X_INDEXED_CODE", body)
+    Assert.Contains ("UIX_Indexed_Code", body)
+    Assert.DoesNotContain ("UIX_OSUSR_X_INDEXED_CODE", body)
     Assert.Contains ("UNIQUE", body)
     // PK-marked index is skipped — its name does NOT appear as a
     // CREATE INDEX statement (it's inlined in CREATE TABLE; the
@@ -489,8 +492,8 @@ let ``Slice 3: SsdtDdlEmitter index emission is sorted by SsKey for determinism`
         | None ->
             Assert.Fail "expected slice for indexedKind"
             ""
-    let nonUniqueIdx = body.IndexOf "IX_OSUSR_X_INDEXED_LOOKUP"
-    let uniqueIdx = body.IndexOf "UIX_OSUSR_X_INDEXED_CODE"
+    let nonUniqueIdx = body.IndexOf "IX_Indexed_Lookup"
+    let uniqueIdx = body.IndexOf "UIX_Indexed_Code"
     Assert.True (nonUniqueIdx > 0, "expected IX_*_LOOKUP in body")
     Assert.True (uniqueIdx > 0, "expected UIX_*_CODE in body")
     // Non-unique (idxKey ["Indexed";"NonUnique"]) sorts before
@@ -1185,12 +1188,14 @@ let ``Slice 5.13.index-features-emit: IsDisabled = true emits post-CREATE-INDEX 
     let enriched = enrich (idxFeaturesCatalog false true None)
     let body = (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find idxFeaturesKindKey).Body
     // V1 emission shape: ALTER INDEX [name] ON [Schema].[Table] DISABLE.
-    Assert.Contains ("ALTER INDEX [IX_Widget_Name]", body)
+    // The emitted name is the logical UIX_ form (the index is UNIQUE) and
+    // the ALTER references the SAME emitted name the CREATE introduced.
+    Assert.Contains ("ALTER INDEX [UIX_Widget_Name]", body)
     Assert.Contains ("DISABLE", body)
     // ALTER comes after CREATE INDEX so the named index exists when
     // the ALTER references it.
-    let createIdx = body.IndexOf "CREATE UNIQUE INDEX [IX_Widget_Name]"
-    let alterIdx  = body.IndexOf "ALTER INDEX [IX_Widget_Name]"
+    let createIdx = body.IndexOf "CREATE UNIQUE INDEX [UIX_Widget_Name]"
+    let alterIdx  = body.IndexOf "ALTER INDEX [UIX_Widget_Name]"
     Assert.True (createIdx >= 0)
     Assert.True (alterIdx > createIdx, "ALTER INDEX must come after CREATE INDEX")
 
@@ -1202,3 +1207,95 @@ let ``Slice 5.13.index-features-emit: T1 byte-determinism holds across the new i
     let b1 = (ArtifactByKind.toMap a1 |> Map.find idxFeaturesKindKey).Body
     let b2 = (ArtifactByKind.toMap a2 |> Map.find idxFeaturesKindKey).Body
     Assert.Equal (b1, b2)
+
+// ---------------------------------------------------------------------------
+// Emitted index names — logical vocabulary, consistent across surfaces.
+// Non-PK index identifiers derive from typed logical IR (Kind.Name +
+// Attribute.Name + overlay-adjusted uniqueness) BEFORE ScriptDom rendering:
+// IX_/UIX_<Kind>_<Column...>, identifier-budget capped. SS_Key stays the
+// durable identity; these are presentation identifiers. Collision handling
+// is proof-triggered: only colliding names gain a deterministic ordinal.
+// ---------------------------------------------------------------------------
+
+let private namedIdxKind (indexes: Index list) : Kind =
+    let attr (label: string) : Attribute =
+        { Attribute.create (attrKey ["Named"; label]) (mkName label) Text with
+            Column = ColumnRealization.create (label.ToUpperInvariant()) true |> Result.value }
+    { Kind.create (kindKey ["Named"]) (mkName "Named") (mkTableId "dbo" "OSUSR_N_NAMED")
+        [ { attr "Id" with Type = Integer; Column = ColumnRealization.create "ID" false |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+          attr "Alpha"
+          attr "Beta" ]
+      with Indexes = indexes }
+
+let private namedIdxCatalog (indexes: Index list) : Catalog =
+    { Modules = [ IRBuilders.mkModule (modKey "NamedModule") (mkName "NamedModule") [ namedIdxKind indexes ] ]
+      Sequences = [] }
+
+let private namedIdxBody (indexes: Index list) : string =
+    let enriched = enrich (namedIdxCatalog indexes)
+    (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices enriched |> mustOk) |> Map.find (kindKey ["Named"])).Body
+
+[<Fact>]
+let ``emitted index names: a multi-column index joins its logical column names in declared order`` () =
+    let body =
+        namedIdxBody
+            [ Index.ofKeyColumns (idxKey ["Named"; "AB"]) (mkName "IX_OSIDX_PHYSICAL_NAME_1234")
+                [ attrKey ["Named"; "Alpha"]; attrKey ["Named"; "Beta"] ] ]
+    Assert.Contains ("IX_Named_Alpha_Beta", body)
+    Assert.DoesNotContain ("IX_OSIDX_PHYSICAL_NAME_1234", body)
+
+[<Fact>]
+let ``emitted index names: collisions gain a deterministic ordinal; non-colliding names stay concise`` () =
+    // Two indexes over the SAME column set (e.g. differing only in
+    // physical on-disk options at the source) collide on the concise
+    // logical name; each gains a 1-based ordinal in SsKey order. A third
+    // index over a different column set stays concise.
+    let body =
+        namedIdxBody
+            [ Index.ofKeyColumns (idxKey ["Named"; "A1"]) (mkName "IX_PHYS_A") [ attrKey ["Named"; "Alpha"] ]
+              Index.ofKeyColumns (idxKey ["Named"; "A2"]) (mkName "IX_PHYS_B") [ attrKey ["Named"; "Alpha"] ]
+              Index.ofKeyColumns (idxKey ["Named"; "B"])  (mkName "IX_PHYS_C") [ attrKey ["Named"; "Beta"] ] ]
+    Assert.Contains ("IX_Named_Alpha_1", body)
+    Assert.Contains ("IX_Named_Alpha_2", body)
+    Assert.Contains ("IX_Named_Beta", body)
+    Assert.DoesNotContain ("[IX_Named_Alpha]", body)
+    Assert.DoesNotContain ("IX_Named_Beta_1", body)
+
+[<Fact>]
+let ``emitted index names: an index extended property follows the emitted name, not the physical one`` () =
+    let body =
+        namedIdxBody
+            [ { Index.ofKeyColumns (idxKey ["Named"; "A"]) (mkName "IX_PHYS_A") [ attrKey ["Named"; "Alpha"] ] with
+                  ExtendedProperties = [ { Name = "MS_Description"; Value = Some "lookup path" } ] } ]
+    Assert.Contains ("IX_Named_Alpha", body)
+    Assert.DoesNotContain ("IX_PHYS_A", body)
+
+[<Fact>]
+let ``emitted index names: the identifier budget caps an over-long generated name`` () =
+    // A very long kind/attribute vocabulary must still produce a <=128
+    // char identifier (115-char head + '_' + 12-hex hash).
+    // The logical NAME is over-long; the physical column stays short (a
+    // valid SQL identifier) — the budget applies to the GENERATED name.
+    let longLabel = String.replicate 6 "VeryLongAttributeName"
+    let attr (label: string) (col: string) : Attribute =
+        { Attribute.create (attrKey ["Long"; label]) (mkName label) Text with
+            Column = ColumnRealization.create col true |> Result.value }
+    let kind =
+        { Kind.create (kindKey ["Long"]) (mkName "Long") (mkTableId "dbo" "OSUSR_L_LONG")
+            [ { attr "Id" "ID" with Type = Integer; Column = ColumnRealization.create "ID" false |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+              attr longLabel "LONGCOL" ]
+          with Indexes = [ Index.ofKeyColumns (idxKey ["Long"; "A"]) (mkName "IX_PHYS") [ attrKey ["Long"; longLabel] ] ] }
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "LongModule") (mkName "LongModule") [ kind ] ]
+          Sequences = [] }
+    let enriched = enrich catalog
+    let statements = SsdtDdlEmitter.statementsWith DecisionOverlay.empty enriched
+    let idxNames =
+        statements
+        |> Seq.choose (function Statement.CreateIndex d -> Some d.Name | _ -> None)
+        |> List.ofSeq
+    match idxNames with
+    | [ name ] ->
+        Assert.True(name.Length <= 128, sprintf "expected budget-capped name; got %d chars" name.Length)
+        Assert.StartsWith("IX_Long_", name)
+    | other -> failwithf "expected one index, got %A" other

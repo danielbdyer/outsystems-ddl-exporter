@@ -86,6 +86,169 @@ module Ingestion =
         : Task<Map<SsKey, StaticRow list>> =
         collectInOrderFor (Set.ofList topo.Order) cnn catalog topo
 
+    /// Drain ONE kind's rows on its own connection, gated by the shared
+    /// semaphore. Hoisted to module level (never `let rec`/local closures
+    /// inside a Release `task { }` — FS3511). Records the actual per-table
+    /// row-drain cost — `ingestion.rowDrain` (+ the per-table label) and
+    /// `ingestion.rowDrain.rows` — as distinct from the stream-LIFETIME
+    /// labels `readside.readRowsStream.*` accumulate (under queuing, a
+    /// stream's lifetime includes gate wait; the drain label is the
+    /// SQL/read/materialization cost alone).
+    /// The connection-owning drain of ONE kind's stream (open → stream →
+    /// dispose), generic over the row grain (`streamOf` selects the
+    /// carrier: `streamKindRows` for the IR grain, `streamKind` for the
+    /// positional quantum grain). Hoisted from the gated wrapper so the
+    /// connection's `use` scope closes BEFORE any drain-time projection
+    /// runs — a projection computes over materialized rows and must not
+    /// hold a pooled connection hostage while it does.
+    let private drainKindRows
+        (streamOf: SqlConnection -> Kind -> AsyncStream<'row>)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (kind: Kind)
+        : Task<Result<'row list>> =
+        task {
+            let swOpen = System.Diagnostics.Stopwatch.StartNew()
+            match! openConnection () with
+            | Error es -> return Result.failure es
+            | Ok cnn ->
+                swOpen.Stop()
+                Bench.recordSample "ingestion.rowDrain.connectionOpen" swOpen.ElapsedMilliseconds
+                use cnn = cnn
+                let sw = System.Diagnostics.Stopwatch.StartNew()
+                let! rows = AsyncStream.toList (streamOf cnn kind)
+                sw.Stop()
+                Bench.recordSample "ingestion.rowDrain" sw.ElapsedMilliseconds
+                Bench.recordSample
+                    (System.String.Concat("ingestion.rowDrain.", TableId.schemaText kind.Physical, ".", TableId.tableText kind.Physical))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-table drain label); a label IS a string primitive
+                    sw.ElapsedMilliseconds
+                Bench.recordSample "ingestion.rowDrain.rows" (int64 (List.length rows))
+                return Result.success rows
+        }
+
+    let private drainKindGatedWith
+        (streamOf: SqlConnection -> Kind -> AsyncStream<'row>)
+        (project: Kind -> 'row list -> 'r)
+        (gate: System.Threading.SemaphoreSlim)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (key: SsKey)
+        (kind: Kind)
+        : Task<Result<SsKey * 'r>> =
+        task {
+            // Phase labels (the four-phase attribution): gate wait and
+            // connection open are OUTSIDE the drain stopwatch, so queue
+            // pressure under contention and pool/handshake cost are each
+            // separately visible — a 0 sample means uncontended/pooled,
+            // not unmeasured. The drain-time projection runs INSIDE the
+            // gate (its cost bounds the slot — that is the memory
+            // discipline: at most `concurrency` kinds' rows are live at
+            // once) but AFTER the connection is returned to the pool
+            // (`drainKindRows`' use-scope has closed), so a CPU-heavy
+            // projection never starves the pool of a physical connection.
+            let swGate = System.Diagnostics.Stopwatch.StartNew()
+            do! gate.WaitAsync()
+            swGate.Stop()
+            Bench.recordSample "ingestion.rowDrain.gateWait" swGate.ElapsedMilliseconds
+            try
+                match! drainKindRows streamOf openConnection kind with
+                | Error es -> return Result.failure es
+                | Ok rows ->
+                    let swProject = System.Diagnostics.Stopwatch.StartNew()
+                    let projected = project kind rows
+                    swProject.Stop()
+                    Bench.recordSample "ingestion.rowDrain.project" swProject.ElapsedMilliseconds
+                    return Result.success (key, projected)
+            finally
+                gate.Release() |> ignore
+        }
+
+    /// The PROJECTED bounded-parallel drain — `collectInOrderForConcurrent`
+    /// generalized over what each kind's landed rows become. `project` runs
+    /// on the drain worker the moment its kind's rows materialize (inside
+    /// the concurrency gate, after the connection is pooled back), so a
+    /// per-kind pure computation — a MERGE render, an evidence-cache
+    /// derivation — OVERLAPS the remaining kinds' wire time instead of
+    /// waiting for the whole estate. Acquisition-only concurrency still
+    /// holds: the result `Map` is key-ordered and each projection sees only
+    /// its own kind's rows, so nothing downstream can observe completion
+    /// order. A projection that retains only its result (dropping the rows)
+    /// caps live row memory at `concurrency` kinds rather than the estate.
+    let private collectForConcurrentWithCore
+        (streamOf: SqlConnection -> Kind -> AsyncStream<'row>)
+        (project: Kind -> 'row list -> 'r)
+        (concurrency: int)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (owned: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, 'r>>> =
+        task {
+            use _ = Bench.scope "ingestion.collect.concurrent"
+            let capped = max 1 concurrency
+            Bench.recordSample "ingestion.collect.concurrency" (int64 capped)
+            let kinds =
+                topo.Order
+                |> List.choose (fun key ->
+                    if Set.contains key owned then
+                        Catalog.tryFindKind key catalog |> Option.map (fun k -> key, k)
+                    else None)
+            use gate = new System.Threading.SemaphoreSlim(capped, capped)
+            let drains =
+                kinds |> List.map (fun (key, k) -> drainKindGatedWith streamOf project gate openConnection key k)
+            let! results = Task.WhenAll(Array.ofList drains)
+            return
+                results
+                |> Array.toList
+                |> Result.aggregate
+                |> Result.map Map.ofList
+        }
+
+    let collectInOrderForConcurrentWith
+        (project: Kind -> StaticRow list -> 'r)
+        (concurrency: int)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (owned: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, 'r>>> =
+        collectForConcurrentWithCore streamKindRows project concurrency openConnection owned catalog topo
+
+    /// The QUANTUM-grain projected drain — `collectInOrderForConcurrentWith`
+    /// over the slim positional carrier (`streamKind`; no per-row Map mint,
+    /// no row-identity synthesis — the measured 3.35× drain-side carrier
+    /// tax stays unpaid). For projections that consume cells positionally
+    /// (`EvidenceCache.cachedKindOfQuanta`,
+    /// `StaticSeedsEmitter.renderQuanta`); a projection needing the IR
+    /// grain takes the named-row sibling instead.
+    let collectQuantaForConcurrentWith
+        (project: Kind -> RowQuantum list -> 'r)
+        (concurrency: int)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (owned: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, 'r>>> =
+        collectForConcurrentWithCore streamKind project concurrency openConnection owned catalog topo
+
+    /// Bounded-parallel sibling of `collectInOrderFor` — the operator's
+    /// `emission.dataReadConcurrency` knob. Each owned kind drains its row
+    /// stream on its OWN short-lived connection (`openConnection`; SqlClient
+    /// pooling reuses physical connections underneath), at most `concurrency`
+    /// in flight. **Acquisition-only concurrency**: the result is the same
+    /// keyed `Map` the serial form produces (a `Map` is key-ordered; per-kind
+    /// row order is the reader's PK order on a single stream) — topological /
+    /// dependency order still governs the rendered load plan downstream, so
+    /// emitted semantics never depend on completion order. Any per-kind open
+    /// or read failure fails the whole collection loudly. The identity
+    /// projection of `collectInOrderForConcurrentWith`.
+    let collectInOrderForConcurrent
+        (concurrency: int)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (owned: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, StaticRow list>>> =
+        collectInOrderForConcurrentWith (fun _ rows -> rows) concurrency openConnection owned catalog topo
+
     /// Registry metadata (pillar 9). The ingestion adapter leg classifies
     /// entirely as `DataIntent` — lifting a substrate's rows is observation,
     /// not operator opinion (mirrors the OSSYS `CatalogReader` adapter).

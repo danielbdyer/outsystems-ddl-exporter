@@ -65,6 +65,40 @@ module KindColumns =
         |> List.filter (fun a -> not a.IsPrimaryKey)
         |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
+    /// Row-identity match attributes for the data-movement lanes (the
+    /// MERGE ON-clause / Phase-2 row scope). True primary keys when the
+    /// kind has them. A kind with NO primary key — the explicitly
+    /// acknowledged missing-PK population (`overrides.allowMissingPrimaryKey`;
+    /// unacknowledged kinds fail earlier at the diagnostics gate) — falls
+    /// back to its writable columns as a last-resort row identity, the V1
+    /// static-seed fallback. Excluded from the fallback:
+    ///   - computed columns (never written; `writableAttributes`),
+    ///   - identity columns (server-minted values cannot re-identify a row),
+    ///   - the intentionally deferred columns (Phase-1 NULLs them, Phase-2
+    ///     repairs them — a match over them could never re-join the
+    ///     Phase-1 row, and an idempotent redeploy would mis-match the
+    ///     already-repaired value against the staged NULL).
+    /// This is row identity for DATA MOVEMENT only, not a schema claim: no
+    /// synthetic primary key is emitted, the catalog's PK facts are
+    /// unchanged, and downstream FK construction never sees a
+    /// database-enforced key that does not exist.
+    let matchAttributes (deferred: Set<Name>) (k: Kind) : Attribute list =
+        match k.Attributes |> List.filter (fun a -> a.IsPrimaryKey) with
+        | [] ->
+            writableAttributes k
+            |> List.filter (fun a -> not a.IsIdentity)
+            |> List.filter (fun a -> not (Set.contains a.Name deferred))
+        | pks -> pks
+
+    /// `matchAttributes` projected to column names — the shape the
+    /// MERGE ON-clause and the staged Phase-2 join consume. All three
+    /// data lanes (static seeds, migration dependencies, staged Phase-2
+    /// updates) share this one definition of row identity, so Phase 1
+    /// and Phase 2 always agree on which columns define it.
+    let matchColumnNames (deferred: Set<Name>) (k: Kind) : string list =
+        matchAttributes deferred k
+        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+
     /// Project a raw `StaticRow` (the `DataLoadPlan`'s converged row
     /// carrier — both the static and migration row shapes fold into it)
     /// into the typed `Map<Name, SqlLiteral>` shape `DataInsertRow.Values`
@@ -81,6 +115,28 @@ module KindColumns =
             let raw =
                 Map.tryFind a.Name row.Values
                 |> Option.defaultValue ""
+            let typ =
+                Map.tryFind a.Name typeLookup
+                |> Option.defaultValue PrimitiveType.Text
+            a.Name, SqlLiteral.ofRaw typ raw)
+        |> Map.ofList
+
+    /// Positional sibling of `rowToTypedValues` — project a typed-Values
+    /// row straight from the in-flight quantum carrier. `Cells.[i]` is
+    /// positional against `Kind.rowBasis` = the kind's attribute order, so
+    /// the cell for attribute `i` reads by index (no per-row Map walk); a
+    /// short row's missing tail reads as the empty raw, exactly as the
+    /// by-name lookup defaults an absent key. Equal to `rowToTypedValues
+    /// typeLookup attributes (StaticRow.ofQuantum basis id q)` for any
+    /// total quantum (pinned in the pure pool).
+    let quantumToTypedValues
+        (typeLookup: Map<Name, PrimitiveType>)
+        (attributes: Attribute list)
+        (q: RowQuantum)
+        : Map<Name, SqlLiteral> =
+        attributes
+        |> List.mapi (fun idx a ->
+            let raw = if idx < q.Cells.Length then q.Cells.[idx] else ""
             let typ =
                 Map.tryFind a.Name typeLookup
                 |> Option.defaultValue PrimitiveType.Text

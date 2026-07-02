@@ -345,3 +345,123 @@ type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
         let boot = Map.find "Data/Bootstrap.sql" files
         Assert.Contains("OSUSR_TRIUM_WIDGET", boot)
         Assert.Contains("Sprocket", boot)
+
+// ---------------------------------------------------------------------------
+// P2 production wiring — the pipelined publish arm's END-TO-END equivalence
+// witness. `emission.pipelinedBootstrap` is a SCHEDULE toggle, never a
+// semantics toggle: the ON arm renders each Bootstrap kind's MERGE and
+// derives its evidence on the drain worker (acquisition-overlapped), the OFF
+// arm keeps the two-phase drain-then-render schedule — and the published
+// bundle must be byte-identical either way. The pure identity laws are
+// pinned in `DataEmissionComposerTests` (prefix profile-invariance, suffix
+// catalog-preservation, `BootstrapLane.Prerendered` ≡ `Rows`); this test is
+// the whole-pipeline confirmation over a real OSSYS estate: same edge-case
+// seed, same live profiler, two `runWithConfig` publishes into two output
+// dirs, every emitted file byte-compared.
+// ---------------------------------------------------------------------------
+
+[<Xunit.Collection("Docker-SqlServer")>]
+type PipelinedBootstrapEquivalenceTests(fixture: EphemeralContainerFixture) =
+
+    let mustOk (r: Result<'a>) : 'a =
+        match r with
+        | Ok v -> v
+        | Error es ->
+            let detail =
+                es
+                |> List.map (fun e -> System.String.Concat(e.Code, ": ", e.Message))
+                |> String.concat " | "
+            invalidOp (System.String.Concat("expected Ok; got: ", detail))
+
+    interface IClassFixture<EphemeralContainerFixture>
+
+    [<Fact>]
+    member _.``pipelined bootstrap: knob ON and OFF publish byte-identical bundles from a live OSSYS estate`` () =
+        if not (Deploy.Docker.ensureRunning ()) then
+            printfn "SKIP pipelined-bootstrap-equivalence: Docker daemon not reachable."
+        else
+        let envVar = "PROJECTION_TEST_PIPE_EQUIV_CONN"
+        let tempDir () =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                System.String.Concat("pipe_equiv_", System.Guid.NewGuid().ToString("N")))
+        let outOn = tempDir ()
+        let outOff = tempDir ()
+        (fixture.WithEphemeralDatabase "PipeEquiv" (fun cnn connStr ->
+            task {
+                // The self-contained OSSYS edge-case estate: ossys_* metadata
+                // + deployed OSUSR_* tables with deterministic rows — the
+                // same seed the live model-read canaries use.
+                do! Deploy.executeBatch cnn (Projection.Adapters.OssysSql.MetadataExtractionSql.readEdgeCaseSeed ())
+                // The seed ships the physical OSUSR_* tables EMPTY, so give
+                // the data lanes deterministic rows: City + Customer feed the
+                // Bootstrap drain (non-static `entity` kinds), Country feeds
+                // the StaticSeeds graft (`staticEntity`).
+                do!
+                    Deploy.executeBatch cnn
+                        ("SET IDENTITY_INSERT [dbo].[OSUSR_DEF_CITY] ON; " +
+                         "INSERT INTO [dbo].[OSUSR_DEF_CITY] ([ID],[NAME],[ISACTIVE]) " +
+                         "VALUES (1, N'Springfield', 1), (2, N'Shelbyville', 1); " +
+                         "SET IDENTITY_INSERT [dbo].[OSUSR_DEF_CITY] OFF;")
+                do!
+                    Deploy.executeBatch cnn
+                        ("SET IDENTITY_INSERT [dbo].[OSUSR_ABC_CUSTOMER] ON; " +
+                         "INSERT INTO [dbo].[OSUSR_ABC_CUSTOMER] ([ID],[EMAIL],[FIRSTNAME],[LASTNAME],[CITYID],[LEGACYCODE]) " +
+                         "VALUES (1, N'alice@example.com', N'Alice', N'Amber', 1, NULL), " +
+                         "(2, N'bob@example.com', N'Bob', N'Blue', 2, N'BC-7'); " +
+                         "SET IDENTITY_INSERT [dbo].[OSUSR_ABC_CUSTOMER] OFF;")
+                do!
+                    Deploy.executeBatch cnn
+                        ("SET IDENTITY_INSERT [dbo].[OSUSR_REF_COUNTRY] ON; " +
+                         "INSERT INTO [dbo].[OSUSR_REF_COUNTRY] ([ID],[CODE],[NAME]) " +
+                         "VALUES (1, N'ATL', N'Atlantis'); " +
+                         "SET IDENTITY_INSERT [dbo].[OSUSR_REF_COUNTRY] OFF;")
+                System.Environment.SetEnvironmentVariable(envVar, connStr)
+                let priorSource =
+                    System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
+                System.Environment.SetEnvironmentVariable(Config.SourceConnectionStringEnvVar, connStr)
+                try
+                    let cfgFor (outDir: string) (pipelined: bool) : Config.Config =
+                        { Config.defaultConfig with
+                            Model =
+                                { Config.defaultConfig.Model with
+                                    Ossys = Some ("env:" + envVar); Path = None }
+                            Output = { Dir = outDir }
+                            Profiler =
+                                { Config.defaultConfig.Profiler with
+                                    Provider = Config.ProfilerProvider.Live }
+                            Emission =
+                                { Config.defaultConfig.Emission with
+                                    PipelinedBootstrap = pipelined } }
+                    let! pipelinedR = Compose.runWithConfig (cfgFor outOn true)
+                    let! twoPhaseR = Compose.runWithConfig (cfgFor outOff false)
+                    let _ = mustOk pipelinedR
+                    let _ = mustOk twoPhaseR
+                    return ()
+                finally
+                    System.Environment.SetEnvironmentVariable(envVar, null)
+                    System.Environment.SetEnvironmentVariable(Config.SourceConnectionStringEnvVar, priorSource)
+            })).GetAwaiter().GetResult()
+        try
+            let filesOf (dir: string) : string list =
+                System.IO.Directory.GetFiles(dir, "*", System.IO.SearchOption.AllDirectories)
+                |> Array.map (fun p -> (System.IO.Path.GetRelativePath(dir, p)).Replace('\\', '/'))
+                |> Array.sort
+                |> Array.toList
+            let onFiles = filesOf outOn
+            let offFiles = filesOf outOff
+            Assert.Equal<string list>(offFiles, onFiles)
+            // Non-vacuous: the estate really exercised the Bootstrap lane —
+            // an all-empty data axis would make the equivalence trivial.
+            Assert.Contains(onFiles, fun f -> f.EndsWith("Bootstrap.sql"))
+            for rel in onFiles do
+                let a = System.IO.File.ReadAllBytes(System.IO.Path.Combine(outOn, rel))
+                let b = System.IO.File.ReadAllBytes(System.IO.Path.Combine(outOff, rel))
+                Assert.True(
+                    (a = b),
+                    sprintf "file '%s' differs between the pipelined and two-phase publishes" rel)
+        finally
+            for dir in [ outOn; outOff ] do
+                try
+                    if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+                with _ -> ()

@@ -28,6 +28,17 @@ DECLARE @OnlyActiveAttributes BIT = 1;
 DECLARE @EntityFilterJson NVARCHAR(MAX) = NULL; -- JSON: {"ServiceCenter": ["User"], "Employee_CS": ["Employee", "Supervisor"]}
 */
 
+-- Managed-orchestration consumers that ingest the TYPED rowsets and drain
+-- the JSON aggregate rowsets unread may opt out of BUILDING them: set the
+-- session-context flag below (EXEC sp_set_session_context
+-- N'OsmSkipJsonRowsets', 1) on the connection before running this script.
+-- With the flag unset (every historical caller), @SkipJsonRowsets is 0 and
+-- behavior is unchanged. All 23 export rowsets are ALWAYS returned in the
+-- same order with the same columns; under the flag the JSON aggregate
+-- rowsets are empty and their builds are skipped by startup filter.
+DECLARE @SkipJsonRowsets bit =
+    ISNULL(TRY_CONVERT(bit, SESSION_CONTEXT(N'OsmSkipJsonRowsets')), 0);
+
 /* --------------------------------------------------------------------------
    Phase 1: Collect & materialize metadata
 ----------------------------------------------------------------------------*/
@@ -401,7 +412,11 @@ SELECT
     END AS MaxLength,
     c.precision AS [Precision],
     c.scale AS [Scale],
-    c.collation_name AS CollationName,
+    -- Default-collation suppression: a collation equal to the DATABASE
+    -- default is an incidental property of the instance, not an
+    -- intentional choice; restating it couples emitted DDL to the source
+    -- instance. Only NON-default collations carry.
+    NULLIF(c.collation_name, CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128))) AS CollationName,
     CAST(c.is_identity AS bit) AS IsIdentity,
     CAST(COLUMNPROPERTY(c.object_id, c.[name], 'IsComputed') AS bit) AS IsComputed,
     cc.definition AS ComputedDefinition,
@@ -455,6 +470,7 @@ SELECT
   ), '[]') AS CheckJson
 INTO #AttrCheckJson
 FROM #ColumnCheckReality cc
+WHERE @SkipJsonRowsets = 0
 GROUP BY cc.AttrId;
 CREATE CLUSTERED INDEX IX_AttrCheckJson ON #AttrCheckJson(AttrId);
 
@@ -692,7 +708,8 @@ SELECT DISTINCT fc.ParentAttrId AS AttrId, fk.FkObjectId
 INTO #FkAttrMap
 FROM #FkColumns fc
 JOIN #FkReality fk ON fk.FkObjectId = fc.FkObjectId
-WHERE fc.ParentAttrId IS NOT NULL;
+WHERE fc.ParentAttrId IS NOT NULL
+  AND @SkipJsonRowsets = 0;
 CREATE CLUSTERED INDEX IX_FkAttrMap ON #FkAttrMap(AttrId, FkObjectId);
 
 -- 11d) Attribute-level actual FK existence
@@ -727,6 +744,7 @@ SELECT
   ), '[]') AS ColumnsJson
 INTO #FkColumnsJson
 FROM #FkColumns fc
+WHERE @SkipJsonRowsets = 0
 GROUP BY fc.FkObjectId;
 CREATE CLUSTERED INDEX IX_FkColumnsJson ON #FkColumnsJson(FkObjectId);
 
@@ -828,7 +846,8 @@ SELECT
     FOR JSON PATH
   ), '[]') AS AttributesJson
 INTO #AttrJson
-FROM #Ent en;
+FROM #Ent en
+WHERE @SkipJsonRowsets = 0;
 CREATE CLUSTERED INDEX IX_AttrJson ON #AttrJson(EntityId);
 
 -- Relationships JSON per entity
@@ -872,7 +891,8 @@ SELECT
     FOR JSON PATH
   ), '[]') AS RelationshipsJson
 INTO #RelJson
-FROM #Ent en;
+FROM #Ent en
+WHERE @SkipJsonRowsets = 0;
 CREATE CLUSTERED INDEX IX_RelJson ON #RelJson(EntityId);
 
 -- Index columns JSON
@@ -891,6 +911,7 @@ SELECT
   ), '[]') AS ColumnsJson
 INTO #IdxColsJson
 FROM #IdxColsMapped m
+WHERE @SkipJsonRowsets = 0
 GROUP BY m.EntityId, m.IndexName;
 CREATE CLUSTERED INDEX IX_IdxColsJson ON #IdxColsJson(EntityId, IndexName);
 
@@ -929,7 +950,8 @@ SELECT
     FOR JSON PATH
   ), '[]') AS IndexesJson
 INTO #IdxJson
-FROM #Ent en;
+FROM #Ent en
+WHERE @SkipJsonRowsets = 0;
 CREATE CLUSTERED INDEX IX_IdxJson ON #IdxJson(EntityId);
 
 -- Trigger JSON per entity
@@ -947,7 +969,8 @@ SELECT
     FOR JSON PATH
   ), '[]') AS TriggersJson
 INTO #TriggerJson
-FROM #Ent en;
+FROM #Ent en
+WHERE @SkipJsonRowsets = 0;
 CREATE CLUSTERED INDEX IX_TriggerJson ON #TriggerJson(EntityId);
 
 -- Module JSON (final assembly)
@@ -984,7 +1007,8 @@ SELECT
     FOR JSON PATH
   ), '[]') AS [module.entities]
 INTO #ModuleJson
-FROM #E e;
+FROM #E e
+WHERE @SkipJsonRowsets = 0;
 
 -- Export rowsets for managed orchestration
 SELECT

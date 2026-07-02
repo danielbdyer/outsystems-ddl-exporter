@@ -261,6 +261,7 @@ let private idAttrRowWith (description: string option) : OssysRowsetTypes.Attrib
         AttrName     = "Id"
         PhysicalCol  = "ID"
         DataType     = "Identifier"
+        DefaultValue = None
         IsMandatory  = true
         IsIdentifier = true
         IsAutoNumber = true
@@ -275,6 +276,7 @@ let private idAttrRowWith (description: string option) : OssysRowsetTypes.Attrib
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        DeployedStorage = None
         Order = None
     }
 

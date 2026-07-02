@@ -61,7 +61,11 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
 BASELINE_PATH="$BENCH_DIR/baseline-canary.json"
 TEST_FILTER="${PERF_GATE_TEST_FILTER:-FullyQualifiedName~Operator-reality}"
-TEST_PROJECT="$ROOT/tests/Projection.Tests/Projection.Tests.fsproj"
+# 2026-07-01 assembly split: the Docker/SQL tests (including the
+# operator-reality canary, GeneratorScaleTests) live in the
+# Projection.Tests.Integration assembly; the gate must target it or the
+# FullyQualifiedName filter matches nothing and no snapshot is written.
+TEST_PROJECT="$ROOT/tests/Projection.Tests.Integration/Projection.Tests.Integration.fsproj"
 K_SIGMA="${BENCH_K_SIGMA:-5.0}"
 RECORD="${PERF_GATE_RECORD:-0}"
 RECORD_RUNS="${BENCH_RECORD_RUNS:-5}"
@@ -150,9 +154,9 @@ fi
 # Build the test project if needed
 # ---------------------------------------------------------------------
 
-TEST_DLL="$ROOT/tests/Projection.Tests/bin/Release/net9.0/Projection.Tests.dll"
+TEST_DLL="$ROOT/tests/Projection.Tests.Integration/bin/Release/net9.0/Projection.Tests.Integration.dll"
 if [[ ! -f "$TEST_DLL" ]]; then
-    log "building Projection.Tests (Release)..."
+    log "building Projection.Tests.Integration (Release)..."
     if ! dotnet build "$TEST_PROJECT" -c Release --nologo >/tmp/perf-gate-build.log 2>&1; then
         log "FATAL: dotnet build failed; see /tmp/perf-gate-build.log"
         exit 1

@@ -86,12 +86,12 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             OnlyActiveAttributes   = true
         }
         Profile     = { Path = None }
-        Profiler    = { Provider = Config.ProfilerProvider.Fixture }
+        Profiler    = { Provider = Config.ProfilerProvider.Fixture; MaxConcurrency = 4 }
         Overrides   = overrides
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true; BootstrapAllData = false
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto; DataReadConcurrency = 4; PipelinedBootstrap = true
         }
         Policy      = {
             Insertion       = "SchemaOnly"

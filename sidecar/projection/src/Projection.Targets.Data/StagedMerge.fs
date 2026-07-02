@@ -163,10 +163,14 @@ module StagedMerge =
         : string =
         use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase2"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
         let tempName = fkStagedTempName k
-        let pkAttrs       = k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
+        // Row identity via the shared match vocabulary: true PKs, or the
+        // writable-column fallback (deferred columns excluded — the join
+        // must find the Phase-1 row whose deferred columns are NULL).
+        let pkAttrs       = KindColumns.matchAttributes deferred k
         let deferredAttrs = k.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)
-        // PK first, then the deferred columns — the `#fk` temp's column order;
-        // `buildUpdateFromTemp` joins on `pkCols` and SETs `setCols` by name.
+        // Match columns first, then the deferred columns — the `#fk` temp's
+        // column order; `buildUpdateFromTemp` joins on `pkCols` and SETs
+        // `setCols` by name.
         let narrowAttrs = pkAttrs @ deferredAttrs
         let colOf (a: Attribute) = ColumnRealization.columnNameText a.Column
         let pkCols  = pkAttrs       |> List.map colOf
