@@ -442,10 +442,61 @@ pure pool. (If any is test-referenced, the test moves to the combined read.)
 
 ---
 
-## Tier 3 — gap leads (UNVERIFIED — the critic's receipts, no skeptic pass yet)
+## Tier 3 — gap leads (ADJUDICATED 2026-07-02 — dual-lens skeptic pass run)
 
-Run these through the same verify → plan cycle before execution; receipts
-are concrete but unadjudicated:
+> The verify pass ran 2026-07-02 (two receipt gatherers over disjoint areas,
+> hand adjudication with the audit §4 lenses, refute-by-default). Verdicts:
+>
+> - **G1 — SPLIT.** The intra-`persist` double parse is CONFIRMED
+>   (`RelaxationStore.persist` parses `projection.json` twice back-to-back —
+>   `rootObjectOf` at RelaxationStore.fs:73 AND `read`→`rootObjectOf` at :77 —
+>   no intervening write; one parse threads through merge+write). The
+>   gate-check-vs-persist pair (Migrate.fs:335 vs persist) is KILLED: an
+>   interactive operator prompt sits between them, and the surgical-merge
+>   contract deliberately re-reads CURRENT disk state before writing. The
+>   CLI-parse-vs-`FullExportRun` re-parse pair is PLAUSIBLE but carries one
+>   unresolved axis: `Program.fs:346` parses `ProjectionConfig` (the CLI
+>   type) while `FullExportRun.fs:238` parses `Config` (the Pipeline type) —
+>   verify whether these are one parser before planning a threading carrier.
+>   The raw `File.ReadAllText` at FullExportRun.fs:210 is the input-DIGEST
+>   read (raw text IS the fact needed there — not a duplicate parse).
+> - **G2 — SURVIVES.** The same in-memory `GoldenDataset` is serialized to a
+>   temp file (SliceExtractRun.fs:118) and re-deserialized
+>   (SliceApplyRun.fs:134-140) inside one in-process flow; the docstring's
+>   "deliberate" is about chaining proven verbs, not needing the disk hop
+>   (no canary asserts the temp bytes; the codec round-trip is separately
+>   law-tested). Carrier: an `extractSpec` sibling RETURNING the dataset +
+>   an in-memory whole-flow apply entry (`mapToTarget`/`emit` are already
+>   public and dataset-taking); the path-taking entries stay for the
+>   standalone verbs.
+> - **G3 — SURVIVES.** Every visible envelope is serialized at emit
+>   (LogSink.fs:635) AND the retained TYPED accumulator is re-serialized at
+>   run capture (`serializedEnvelopes`, :720) — same immutable values, same
+>   deterministic serializer, two payments. Carrier: retain the emit-time
+>   line beside the typed envelope (the retained set equals the written set
+>   — pin that); `serializedEnvelopes` returns the retained lines. Gate:
+>   run.json byte-identity (Run round-trip tests) + `Watch.boardOfStored`.
+> - **G4 — SURVIVES** (materialization plane). `Run.list` fully parses every
+>   run.json — event bodies, artifact blobs, ledgers, bench — while its
+>   consumers (Inspect, RunHistory) read scalars + `List.length Events` +
+>   artifact KEYS only. Carrier: a `Run.listIndex` projection (count the
+>   events array without materializing strings; keys without blob values);
+>   the total `parse` STAYS as the codec — the `load ∘ save = run` law is
+>   untouched. Gate: index ≡ full-parse projection on fixtures.
+> - **G5 — SURVIVES** (small). `format` builds the summary, `ToString()`s,
+>   splits, \r-strips, filters — and its ONLY caller re-joins with "\n"
+>   (`formatText`); the string-list generality has zero external consumers.
+>   The split/strip is FUNCTIONAL (LF normalization for T1), so the carrier
+>   must keep the bytes: build with explicit LF appends (never AppendLine)
+>   and emit the text directly. Gate: `manifest.summary.txt` byte-identity.
+> - **G6 — SURVIVES** (tower), riding G3. `serializeEnvelope` hand-rolls the
+>   `MemoryStream → Utf8JsonWriter → ToArray → UTF-16 decode` seam
+>   `PinnedWriting` names as its single sanctioned home, once per visible
+>   envelope (twice counting the G3 re-serialize; G3's fix halves it). The
+>   pooled/reused-writer arm needs an emit-concurrency check first (the
+>   accumulator is lock-guarded; the serialize currently runs outside it).
+
+Original leads (receipts), for provenance:
 
 - **G1 (acquisition):** `projection.json` parsed up to FOUR times in one
   migrate leg (`Program.fs:341-346,477` + the tightening gate's re-read + …).

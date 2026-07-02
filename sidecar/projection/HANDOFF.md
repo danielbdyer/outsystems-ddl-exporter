@@ -1,3 +1,25 @@
+# Handoff addendum — 2026-07-02 (fourth letter), THE PAY-ONCE EXECUTION: eight of eleven plan items landed identity-gated (PL-1/2/3/4/5/8/10/11); Tier 3 adjudicated. Branch `claude/pay-once-program-86mevu`, PR #649
+
+To the next agent.
+
+**The operator authorized executing `PAY_ONCE_PLAN.md` this session.** Eight items landed, one commit per item, in the plan's dependency order, every one behind its identity gate (pure pool + docker pool + Release-FS3511 before each commit; NO golden moved anywhere). Each item's substance is in its DECISIONS entry (eight entries, 2026-07-02) and its STATUS block in the plan. The headline: a combined publish+load/store verb now pays for ONE estate acquisition — `Compose.runWithConfigAcquiring` returns `RunReport * EstateAcquisition` and the second legs thread it; the docker wire receipt (`PayOnceCombinedVerbDockerTests`) pins exactly one `adapter.osm.extract` per combined store verb, and one `ingestion.rowDrain` per static table per AllData publish, permanently.
+
+**What you must not weaken:**
+- `PayOnceCombinedVerbTests` (pure) + `PayOnceCombinedVerbDockerTests` (docker) are the PL-1/PL-2 identity gates: threaded-vs-standalone seed-plan equality, recorded-episode-plane ≡ fresh `emittedSchema`, the extract/drain count receipts, and pipelined≡two-phase byte identity under AllData. If one fails after your change, the books are unbalanced — do not re-record, find the second payment you re-introduced.
+- The suffix-catalog-preservation law now carries MORE weight: PL-1's `composePrefixState` (the state-only chain runner) serves `applyShapingToCatalog`, the standalone seed plan, AND the pipelined arm. A post-topo catalog-rewriting pass voids all three at once.
+- `Profile.tryFind*` and `Catalog.sortedKinds`/`kindKeySet` now ride ConditionalWeakTables keyed by the VALUE (the `kindIndex` precedent). The first-wins fold in Profile's indexes is load-bearing (duplicate keys must resolve like `List.tryFind`).
+
+**The three unexecuted Tier-1/2 items, with the traps I found for you:**
+- **PL-6 + PL-9's shared carrier (`Deploy.executeSegments`)**: the renderers frame their outputs with `;\nGO\n` (`renderDataBatch`), so a pre-split-segments API needs GO-FREE statement texts from the renderer, not the framed strings the callers currently hold — the carrier starts in `ScriptDomGenerate`, not `Deploy`. Do not just wrap the framed strings in a list; the server rejects `GO`.
+- **PL-7's `ReadSide.readSchema`**: the Static mark is minted ONLY by the row-lift loop in `read` (survival rule 8's seam). A rows-off read yields UNMARKED kinds — before landing, verify per consumer whether the transfer plan build / reconciliation read the mark (not just the populations). The audit's evidence says populations are unconsumed; it does not say the MARK is.
+- **PL-6's S25/S26 (ConstraintFormatter)**: byte-gated by every DDL golden; do it file-by-file with the corpus emit leg.
+
+**Tier 3 is now ADJUDICATED** (the plan's Tier-3 section carries the verdicts): G2/G3/G4/G5/G6 survive with named carriers and gates; G1 split (intra-`persist` double parse confirmed; the gate-vs-persist pair killed on the interactive-prompt freshness argument; the CLI-vs-FullExportRun pair needs a ProjectionConfig-vs-Config one-parser check before it's plannable). These are now ordinary plannable items — the skeptic pass is done, don't re-run it.
+
+**Measurement honesty:** the identity gates and wire-count receipts landed; the corpus TIMING legs for the combined verb did not (the corpus estate is raw tables, not OSSYS-shaped — a combined-verb timing leg needs the edge-case OSSYS estate at corpus scale, a fixture that doesn't exist yet). The wire receipts are the stronger claim anyway: the second acquisition is structurally gone, not merely faster.
+
+Hold the spine.
+
 # Handoff addendum — 2026-07-02 (third letter), THE PRODUCTION CASH-OUT: the rowsets JSON gate shipped (operator-approved donor change) and the pipelined publish arm is LIVE by default. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
 
 To the next agent.
