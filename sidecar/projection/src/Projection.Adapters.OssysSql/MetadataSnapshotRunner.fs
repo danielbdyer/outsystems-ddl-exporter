@@ -969,46 +969,81 @@ module MetadataSnapshotRunner =
     /// (`IsMandatory` → nullability, `IsAutoNumber` → identity); the SAME snapshot
     /// fetched the DEPLOYED `#ColumnReality` (`cr.IsNullable`, `cr.IsIdentity`),
     /// which `toBundle` reads for collation/computed/default but never compares
-    /// for nullability/identity. This pure pass surfaces each divergence as an
-    /// operator-facing `Warning` — the carried value is UNCHANGED (the audit's
+    /// for nullability/identity. The carried value is UNCHANGED (the audit's
     /// "operator call": the operator decides which source is authoritative, the
     /// engine does not auto-resolve). Deterministic — ordered by attribute id.
+    ///
+    /// Two grains, deliberately different:
+    ///   - **identity divergences stay per-column `Warning`s** — each names a
+    ///     concrete column whose IDENTITY facet disagrees, individually
+    ///     actionable;
+    ///   - **nullability divergences aggregate into ONE informational
+    ///     summary** (counts per direction + a small sample). Estates commonly
+    ///     use logical mandatory semantics over physically nullable columns at
+    ///     scale — a per-column warning flood buries the actionable signals
+    ///     without adding information. This is a schema-reality observation
+    ///     ("does the deployed column allow NULL?"); the separate question
+    ///     "does current data contain NULL where the logical model forbids
+    ///     it?" is a cutover blocker and stays itemized in the data-fidelity
+    ///     diagnostics.
     let columnRealityDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
         let realityByAttrId =
             snapshot.ColumnReality |> List.map (fun cr -> cr.AttrId, cr) |> Map.ofList
-        snapshot.Attributes
-        |> List.sortBy (fun a -> a.AttrId)
-        |> List.collect (fun a ->
-            match Map.tryFind a.AttrId realityByAttrId with
-            | None -> []
-            | Some cr ->
-                let logicalNullable = not a.IsMandatory
-                [ if logicalNullable <> cr.IsNullable then
-                    { DiagnosticEntry.create
-                        "adapter:OSSYS" DiagnosticSeverity.Warning
-                        "adapter.ossys.columnReality.nullabilityDivergence"
-                        (sprintf "Column %s (attr %d): the logical OSSYS model declares it %s but the deployed schema is %s. The engine carries the LOGICAL value; remediate the source or confirm which is authoritative."
-                            a.PhysicalCol a.AttrId
-                            (if logicalNullable then "nullable" else "NOT NULL")
-                            (if cr.IsNullable then "nullable" else "NOT NULL"))
-                      with Metadata =
-                            Map.ofList
-                                [ "attrId", string a.AttrId
-                                  "physicalColumn", a.PhysicalCol
-                                  "logicalNullable", string logicalNullable
-                                  "deployedNullable", string cr.IsNullable ] }
-                  if a.IsAutoNumber <> cr.IsIdentity then
-                    { DiagnosticEntry.create
-                        "adapter:OSSYS" DiagnosticSeverity.Warning
-                        "adapter.ossys.columnReality.identityDivergence"
-                        (sprintf "Column %s (attr %d): the logical OSSYS model declares identity=%b but the deployed schema has identity=%b. The engine carries the LOGICAL value."
-                            a.PhysicalCol a.AttrId a.IsAutoNumber cr.IsIdentity)
-                      with Metadata =
-                            Map.ofList
-                                [ "attrId", string a.AttrId
-                                  "physicalColumn", a.PhysicalCol
-                                  "logicalIdentity", string a.IsAutoNumber
-                                  "deployedIdentity", string cr.IsIdentity ] } ])
+        let paired =
+            snapshot.Attributes
+            |> List.sortBy (fun a -> a.AttrId)
+            |> List.choose (fun a ->
+                Map.tryFind a.AttrId realityByAttrId |> Option.map (fun cr -> a, cr))
+        let identityDivergences =
+            paired
+            |> List.choose (fun (a, cr) ->
+                if a.IsAutoNumber <> cr.IsIdentity then
+                    Some
+                        { DiagnosticEntry.create
+                            "adapter:OSSYS" DiagnosticSeverity.Warning
+                            "adapter.ossys.columnReality.identityDivergence"
+                            (sprintf "Column %s (attr %d): the logical OSSYS model declares identity=%b but the deployed schema has identity=%b. The engine carries the LOGICAL value."
+                                a.PhysicalCol a.AttrId a.IsAutoNumber cr.IsIdentity)
+                          with Metadata =
+                                Map.ofList
+                                    [ "attrId", string a.AttrId
+                                      "physicalColumn", a.PhysicalCol
+                                      "logicalIdentity", string a.IsAutoNumber
+                                      "deployedIdentity", string cr.IsIdentity ] }
+                else None)
+        let nullabilityDiverged =
+            paired
+            |> List.filter (fun (a, cr) -> (not a.IsMandatory) <> cr.IsNullable)
+        let nullabilitySummary =
+            match nullabilityDiverged with
+            | [] -> []
+            | diverged ->
+                let mandatoryButNullable =
+                    diverged |> List.filter (fun (a, cr) -> a.IsMandatory && cr.IsNullable)
+                let nullableButNotNull =
+                    diverged |> List.filter (fun (a, cr) -> not a.IsMandatory && not cr.IsNullable)
+                let sample =
+                    diverged
+                    |> List.truncate 5
+                    |> List.map (fun (a, _) -> a.PhysicalCol)
+                let sampleMeta =
+                    sample
+                    |> List.mapi (fun i col -> sprintf "sample.%d" i, col)
+                [ { DiagnosticEntry.create
+                      "adapter:OSSYS" DiagnosticSeverity.Info
+                      "adapter.ossys.columnReality.nullabilityDivergence"
+                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). The engine carries the LOGICAL value for emitted schema; rows that actually violate the logical model are itemized separately in the data-fidelity diagnostics."
+                          (List.length diverged)
+                          (List.length mandatoryButNullable)
+                          (List.length nullableButNotNull)
+                          (String.concat ", " sample))
+                    with Metadata =
+                          Map.ofList
+                              ([ "count", string (List.length diverged)
+                                 "logicalMandatoryDeployedNullable", string (List.length mandatoryButNullable)
+                                 "logicalNullableDeployedNotNull", string (List.length nullableButNotNull) ]
+                               @ sampleMeta) } ]
+        identityDivergences @ nullabilitySummary
 
     /// NAME the attribute-flag-vs-entity-key primary-key divergences. OSSYS
     /// carries PK identity twice: per-attribute (`Is_Identifier`) and

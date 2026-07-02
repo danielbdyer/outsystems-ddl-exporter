@@ -39,23 +39,53 @@ let private divergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnRealityDivergences s
 
 [<Fact>]
-let ``F9: a logical NOT NULL column deployed nullable surfaces a nullability divergence`` () =
-    // logical mandatory (NOT NULL) vs deployed nullable.
+let ``F9: a logical NOT NULL column deployed nullable surfaces ONE informational nullability summary`` () =
+    // logical mandatory (NOT NULL) vs deployed nullable. Nullability
+    // divergences aggregate (schema-reality observation at estate
+    // scale); identity divergences stay per-column.
     let s = snapshotOf [ attr 100 "NOTE" true false ] [ reality 100 "NOTE" true false ]
     match divergences s with
     | [ d ] ->
         Assert.Equal<string>("adapter.ossys.columnReality.nullabilityDivergence", d.Code)
-        Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
-        // F#'s `string (b: bool)` renders capitalized ("False"/"True").
-        Assert.Equal<string option>(Some "False", Map.tryFind "logicalNullable" d.Metadata)
-        Assert.Equal<string option>(Some "True", Map.tryFind "deployedNullable" d.Metadata)
-    | other -> Assert.Fail(sprintf "expected one nullability divergence, got %A" (other |> List.map (fun d -> d.Code)))
+        Assert.Equal(DiagnosticSeverity.Info, d.Severity)
+        Assert.Equal<string option>(Some "1", Map.tryFind "count" d.Metadata)
+        Assert.Equal<string option>(Some "1", Map.tryFind "logicalMandatoryDeployedNullable" d.Metadata)
+        Assert.Equal<string option>(Some "0", Map.tryFind "logicalNullableDeployedNotNull" d.Metadata)
+        Assert.Equal<string option>(Some "NOTE", Map.tryFind "sample.0" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one nullability summary, got %A" (other |> List.map (fun d -> d.Code)))
 
 [<Fact>]
-let ``F9: a logical autonumber deployed non-identity surfaces an identity divergence`` () =
+let ``F9: many nullability divergences still surface exactly one summary, with counts per direction and a capped sample`` () =
+    let attrs =
+        [ for i in 1 .. 8 -> attr (100 + i) (sprintf "COL%d" i) true false ]   // mandatory
+        @ [ attr 200 "LOOSE" false false ]                                     // nullable
+    let realities =
+        [ for i in 1 .. 8 -> reality (100 + i) (sprintf "COL%d" i) true false ] // deployed nullable
+        @ [ reality 200 "LOOSE" false false ]                                   // deployed NOT NULL
+    let s = snapshotOf attrs realities
+    match divergences s with
+    | [ d ] ->
+        Assert.Equal<string>("adapter.ossys.columnReality.nullabilityDivergence", d.Code)
+        Assert.Equal(DiagnosticSeverity.Info, d.Severity)
+        Assert.Equal<string option>(Some "9", Map.tryFind "count" d.Metadata)
+        Assert.Equal<string option>(Some "8", Map.tryFind "logicalMandatoryDeployedNullable" d.Metadata)
+        Assert.Equal<string option>(Some "1", Map.tryFind "logicalNullableDeployedNotNull" d.Metadata)
+        // The sample is capped at 5 (attribute-id order).
+        Assert.Equal<string option>(Some "COL5", Map.tryFind "sample.4" d.Metadata)
+        Assert.Equal<string option>(None, Map.tryFind "sample.5" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one nullability summary, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``F9: a logical autonumber deployed non-identity surfaces a PER-COLUMN identity warning`` () =
     let s = snapshotOf [ attr 100 "ID" true true ] [ reality 100 "ID" false false ]
-    let codes = divergences s |> List.map (fun d -> d.Code)
-    Assert.Contains("adapter.ossys.columnReality.identityDivergence", codes)
+    let identity =
+        divergences s
+        |> List.filter (fun d -> d.Code = "adapter.ossys.columnReality.identityDivergence")
+    match identity with
+    | [ d ] ->
+        Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+        Assert.Equal<string option>(Some "ID", Map.tryFind "physicalColumn" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one per-column identity warning, got %A" (other |> List.map (fun d -> d.Code)))
 
 [<Fact>]
 let ``F9: agreeing logical and deployed facets surface no divergence`` () =
@@ -68,7 +98,7 @@ let ``F9: an attribute with no deployed reality row surfaces no divergence (tota
     Assert.Empty(divergences s)
 
 [<Fact>]
-let ``F9: both facets diverging on one column surface two distinct diagnostics`` () =
+let ``F9: both facets diverging on one column surface a per-column identity warning plus the nullability summary`` () =
     // logical NOT NULL + autonumber; deployed nullable + non-identity.
     let s = snapshotOf [ attr 100 "ID" true true ] [ reality 100 "ID" true false ]
     let codes = divergences s |> List.map (fun d -> d.Code) |> List.sort
