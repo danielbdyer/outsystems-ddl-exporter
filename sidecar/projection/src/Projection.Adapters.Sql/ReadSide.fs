@@ -874,7 +874,11 @@ module ReadSide =
     /// `SqlCommand` and `SqlDataReader` open on first pull and
     /// dispose on EOF or exception. Callers must drain to `None`
     /// (or accept that abandoned streams clean up at GC).
-    let private readRowsStreamCore (cnn: SqlConnection) (kind: Kind) (extraWhere: (string * (SqlCommand -> unit)) option) : AsyncStream<RowQuantum> =
+    /// `top` (PL-8/S06) — an optional server-side `TOP (n)` cap over the
+    /// SAME deterministic `ORDER BY`, so a capped stream reaches its
+    /// natural EOF (and disposes its reader) after the prefix instead of
+    /// scanning the whole table; `None` is the full stream, byte-identical.
+    let private readRowsStreamCore (cnn: SqlConnection) (kind: Kind) (top: int option) (extraWhere: (string * (SqlCommand -> unit)) option) : AsyncStream<RowQuantum> =
         // Bracket-quoting flows through ScriptDom's
         // `Identifier.EncodeIdentifier` (canonical, vendor-supplied
         // SQL-identifier encoder). Eliminates the prior `sprintf
@@ -915,9 +919,13 @@ module ReadSide =
             match extraWhere with
             | Some (w, _) -> System.String.Concat(" WHERE ", w)  // LINT-ALLOW: terminal SQL-text boundary; w is built from encoded identifiers + parameter placeholders
             | None        -> ""
+        let topClause =
+            match top with
+            | Some n when n > 0 -> System.String.Concat("TOP (", string n, ") ")  // LINT-ALLOW: terminal SQL-text boundary; n is a typed int
+            | _ -> ""
         let cmdText =
             System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; columns/qualified/encode results are typed safe segments
-                "SELECT ", columns,
+                "SELECT ", topClause, columns,
                 " FROM ", qualified,
                 whereText,
                 " ORDER BY ", encode pkCol)
@@ -1039,7 +1047,14 @@ module ReadSide =
     /// Thin wrapper over `readRowsStreamCore` with no predicate — byte-
     /// identical to the pre-Slice-1b behaviour.
     let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
-        readRowsStreamCore cnn kind None
+        readRowsStreamCore cnn kind None None
+
+    /// PL-8 (S06) — the CAPPED stream: the server stops after the first
+    /// `top` rows of the same deterministic order, so the gate-plus-rows
+    /// read (`readRows`) rides ONE scan and the reader closes at its
+    /// natural (capped) EOF.
+    let private readRowsStreamCapped (top: int) (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
+        readRowsStreamCore cnn kind (Some top) None
 
     /// Slice 1b — the **key-scoped** read the closure oracle drives: stream
     /// only the rows of `kind` whose `keyColumn` (a logical attribute `Name`,
@@ -1070,7 +1085,7 @@ module ReadSide =
             keyArr
             |> Array.iteri (fun i k ->
                 cmd.Parameters.AddWithValue(System.String.Concat("@k", string i), box k) |> ignore)
-        readRowsStreamCore cnn kind (Some (whereSql, addParams))
+        readRowsStreamCore cnn kind None (Some (whereSql, addParams))
 
     /// Slice 3/4 — stream the rows of `kind` matching a caller-rendered `WHERE`
     /// fragment (with its parameter binder). The closure oracle renders a typed
@@ -1078,8 +1093,8 @@ module ReadSide =
     /// columns) and feeds the result here — the predicated ROOT read. An empty
     /// `whereSql` is the full table.
     let readRowsWhereStream (cnn: SqlConnection) (kind: Kind) (whereSql: string) (addParams: SqlCommand -> unit) : AsyncStream<RowQuantum> =
-        if whereSql = "" then readRowsStreamCore cnn kind None
-        else readRowsStreamCore cnn kind (Some (whereSql, addParams))
+        if whereSql = "" then readRowsStreamCore cnn kind None None
+        else readRowsStreamCore cnn kind None (Some (whereSql, addParams))
 
     /// The IR-grain boundary (Q2): rebuild `StaticRow`s from an in-flight
     /// quantum stream — the Map mint plus the `READSIDE_ROW` row identity
@@ -1116,10 +1131,16 @@ module ReadSide =
                     return Some row
             }
 
-    /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain
-    /// `readRowsStream` into a list. Above threshold, return `None`
-    /// without opening the row reader. Per session-34, this is the
-    /// existing-shape API for the per-row PhysicalSchema axis;
+    /// Buffered wrapper (PL-8/S06 — ONE scan carries both the gate and
+    /// the rows): drain the maxRows+1-CAPPED stream; a table over the
+    /// threshold yields maxRows+1 rows ⇒ `None` (the reader closed at its
+    /// capped EOF — never a whole-table drain), a table at-or-under
+    /// yields exactly its full row set (the cap covers it; same
+    /// deterministic ORDER BY, same minted row identities). The prior
+    /// `COUNT(*)` probe was a SECOND full scan of the same table whose
+    /// only consumers — the `> maxRows` gate and the `= 0` shortcut —
+    /// both derive from this one capped drain. Per session-34, this is
+    /// the existing-shape API for the per-row PhysicalSchema axis;
     /// large-table digesting goes through `readRowsStream` directly.
     let private readRows
         (cnn: SqlConnection)
@@ -1128,28 +1149,10 @@ module ReadSide =
         : Task<StaticRow list option> =
         task {
             use _ = Bench.scope "readside.readRows"
-            // Bracket-quoting flows through ScriptDom's
-            // `Identifier.EncodeIdentifier` to match `readRowsStream`
-            // (single source of truth for SQL identifier encoding;
-            // audit Section 4 consistency fix).
-            let encode = SqlIdentifier.quote   // recon #8 — the one Core quoter (≡ EncodeIdentifier, byte-verified)
-            let qualified =
-                System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
-                    ".",
-                    [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
-            use countCmd = cnn.CreateCommand()
-            countCmd.CommandText <-
-                System.String.Concat("SELECT COUNT(*) FROM ", qualified)  // LINT-ALLOW: terminal SQL-text-emission boundary; qualified is pre-encoded
-            let! countObj = countCmd.ExecuteScalarAsync()
-            let count = System.Convert.ToInt32 countObj
-            if count > maxRows then
-                return None
-            elif count = 0 then
-                return Some []
-            else
-                let stream = readRowsStream cnn kind |> materializeStream kind
-                let! rows = AsyncStream.toList stream
-                return Some rows
+            let stream = readRowsStreamCapped (maxRows + 1) cnn kind |> materializeStream kind
+            let! rows = AsyncStream.toList stream
+            if List.length rows > maxRows then return None
+            else return Some rows
         }
 
     /// Recover a kind's SsKey from the persisted `V2.SsKey` extended

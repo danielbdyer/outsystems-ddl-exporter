@@ -283,9 +283,54 @@ module LiveProfiler =
         System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
             "SELECT ", topClause, columnList, " FROM ", table, orderClause)
 
-    /// Discovery for one kind: 3 queries (aggregate + reflection +
-    /// row-stream); composes into a `CachedKind`. Slice 7 accepts
-    /// `maxRows` to opt into TOP-N sampling on the row-stream query.
+    /// The SAMPLED-kind aggregate scan: exact whole-table RowCount +
+    /// per-attribute NullCounts the capped row stream cannot yield (the
+    /// P4 exactness contract). `None` maxRows ⇒ no aggregate — PL-8's
+    /// single-scan arm derives the counts from the full stream instead.
+    /// Runs (and must run) BEFORE the row-stream reader opens: both ride
+    /// one connection, no MARS. Module-level (FS3511).
+    let private aggregateCountsFor
+        (cnn: SqlConnection)
+        (maxRows: int option)
+        (kind: Kind)
+        : Task<(int64 * Map<SsKey, int64>) option> =
+        match maxRows with
+        | None -> Task.FromResult None
+        | Some _ ->
+            task {
+                use _ = Bench.scope "profile.live.aggregate"
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- cacheAggregateSql kind
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                use! reader = cmd.ExecuteReaderAsync()
+                let! advanced = reader.ReadAsync()
+                if not advanced then
+                    return Some (0L, Map.empty)
+                else
+                    let rc =
+                        if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
+                    let counts =
+                        kind.Attributes
+                        |> List.mapi (fun idx attr ->
+                            let nc =
+                                if reader.IsDBNull(1 + idx) then 0L
+                                else reader.GetInt64(1 + idx)
+                            attr.SsKey, nc)
+                        |> Map.ofList
+                    return Some (rc, counts)
+            }
+
+    /// Discovery for one kind. PL-8 (S03) — the UNSAMPLED (default
+    /// full-scan) case pays ONE server scan: the row stream drains every
+    /// row, and the exact RowCount + per-attribute NullCounts derive
+    /// PURELY from the drained cells (`EvidenceCache.cachedKindOfColumns`
+    /// — the same assembly tail as the data-lane derivations, so the
+    /// single-scan facts equal the aggregate query's by construction over
+    /// an unchanged table; one scan is also the more CONSISTENT read —
+    /// the two-query shape could observe a concurrent write between
+    /// scans). The aggregate scan survives ONLY for SAMPLED kinds
+    /// (`aggregateCountsFor`). Reflection stays the caller's slice of the
+    /// ONE batched INFORMATION_SCHEMA query.
     let private discoverKind
         (cnn: SqlConnection)
         (maxRows: int option)
@@ -296,36 +341,11 @@ module LiveProfiler =
             use _ = Bench.scope "profile.live.discoverKind"
             if List.isEmpty kind.Attributes then return None
             else
-                // 1. Aggregate: exact RowCount + per-attribute NullCount.
-                //    Own scope so aggregate / reflection / row-stream are
-                //    individually attributable within `discoverKind`.
-                let! (rowCount, nullCounts) = task {
-                    use _ = Bench.scope "profile.live.aggregate"
-                    use cmd = cnn.CreateCommand()
-                    cmd.CommandText <- cacheAggregateSql kind
-                    cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
-                    use! reader = cmd.ExecuteReaderAsync()
-                    let! advanced = reader.ReadAsync()
-                    if not advanced then
-                        return (0L, Map.empty)
-                    else
-                        let rc =
-                            if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
-                        let counts =
-                            kind.Attributes
-                            |> List.mapi (fun idx attr ->
-                                let nc =
-                                    if reader.IsDBNull(1 + idx) then 0L
-                                    else reader.GetInt64(1 + idx)
-                                attr.SsKey, nc)
-                            |> Map.ofList
-                        return (rc, counts)
-                }
-                // 2. Reflection: per-column IsNullableInDatabase — the
-                //    caller's slice of the ONE batched INFORMATION_SCHEMA
-                //    query (previously a per-kind round trip here).
-                // 3. Row-stream: SELECT * → per-row CachedValue array.
-                //    Column-oriented final shape (transpose at end).
+                // Sampled kinds pay the aggregate FIRST (one connection, no
+                // MARS — it cannot run under the open row-stream reader).
+                let! aggregateOpt = aggregateCountsFor cnn maxRows kind
+                // Row-stream: SELECT * → per-row CachedValue array.
+                // Column-oriented final shape (transpose at end).
                 let perColumnValues =
                     Array.init (List.length kind.Attributes) (fun _ ->
                         System.Collections.Generic.List<CachedValue>())
@@ -339,26 +359,31 @@ module LiveProfiler =
                             let cellValue =
                                 CachedValue.ofReaderValue (reader.GetValue idx)
                             perColumnValues.[idx].Add cellValue)
-                let columns =
-                    kind.Attributes
-                    |> List.mapi (fun idx attr ->
-                        let isNullable =
-                            Map.tryFind (ColumnRealization.columnNameText attr.Column) nullabilityMap
-                            |> Option.defaultValue false
-                        { AttributeKey         = attr.SsKey
-                          IsNullableInDatabase = isNullable
-                          Values               = perColumnValues.[idx].ToArray() })
-                let columnsByKey =
-                    columns
-                    |> List.map (fun c -> c.AttributeKey, c)
-                    |> Map.ofList
-                return
-                    Some
-                        { KindKey      = kind.SsKey
-                          RowCount     = rowCount
-                          NullCounts   = nullCounts
-                          Columns      = columns
-                          ColumnsByKey = columnsByKey }
+                match aggregateOpt with
+                | None ->
+                    // Single-scan: exact counts derive from the one drain.
+                    return EvidenceCache.cachedKindOfColumns nullabilityMap kind (int64 perColumnValues.[0].Count) perColumnValues
+                | Some (rowCount, nullCounts) ->
+                    let columns =
+                        kind.Attributes
+                        |> List.mapi (fun idx attr ->
+                            let isNullable =
+                                Map.tryFind (ColumnRealization.columnNameText attr.Column) nullabilityMap
+                                |> Option.defaultValue false
+                            { AttributeKey         = attr.SsKey
+                              IsNullableInDatabase = isNullable
+                              Values               = perColumnValues.[idx].ToArray() })
+                    let columnsByKey =
+                        columns
+                        |> List.map (fun c -> c.AttributeKey, c)
+                        |> Map.ofList
+                    return
+                        Some
+                            { KindKey      = kind.SsKey
+                              RowCount     = rowCount
+                              NullCounts   = nullCounts
+                              Columns      = columns
+                              ColumnsByKey = columnsByKey }
         }
 
     /// Capture a complete EvidenceCache for the catalog. Walks every
