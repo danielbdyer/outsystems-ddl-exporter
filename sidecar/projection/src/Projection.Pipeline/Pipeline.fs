@@ -1694,6 +1694,33 @@ module Compose =
                 | Ok hydrated -> return Result.success (hydrated, bootRows)
         }
 
+    /// The default (non-AllData) hydration arm: static graft, then the
+    /// Bootstrap drain. Module-level so `readAndHydrateConfigModel`'s task
+    /// stays statically compilable in Release (FS3511 — a `let!` inside a
+    /// guarded match arm is the named failure shape).
+    let private hydrateDefaultArm
+        (cfg: Config.Config)
+        (hydrationTopo: TopologicalOrder option)
+        (migrationKinds: Set<SsKey>)
+        (catalog: Catalog)
+        : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
+        task {
+            let! hydratedR =
+                match hydrationTopo with
+                | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
+                | None      -> Hydration.hydrateCatalog cfg catalog
+            match hydratedR with
+            | Error es -> return Result.failure es
+            | Ok hydrated ->
+                let! bootRowsR =
+                    match hydrationTopo with
+                    | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
+                    | None      -> Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
+                match bootRowsR with
+                | Error es      -> return Result.failure es
+                | Ok bootRows   -> return Result.success (hydrated, bootRows)
+        }
+
     /// PL-1 — the first element is the READ catalog (pre-hydration, the value
     /// `readConfigModel` produced): the store leg's emitted-schema plane
     /// derives from it (`applyRenames` over the model as READ — static
@@ -1721,27 +1748,18 @@ module Compose =
                             Some ((Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value)
                         else None
                     let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
-                    match hydrationTopo with
-                    | Some topo when Config.dataCompositionOf cfg = AllData ->
-                        // PL-2 (S04) — one drain: static graft rides the
-                        // Bootstrap rows (see `hydrateAllDataArm`).
-                        let! pairR = hydrateAllDataArm cfg topo migrationKinds catalog
-                        return pairR |> Result.map (fun (hydrated, bootRows) -> (catalog, hydrated, bootRows, migration))
-                    | _ ->
-                    let! hydratedR =
+                    // The arm is SELECTED synchronously, then awaited once —
+                    // the FS3511-safe shape (`loadMeasureAndRecord` precedent).
+                    let arm =
                         match hydrationTopo with
-                        | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
-                        | None      -> Hydration.hydrateCatalog cfg catalog
-                    match hydratedR with
-                    | Error es -> return Result.failure es
-                    | Ok hydrated ->
-                        let! bootRowsR =
-                            match hydrationTopo with
-                            | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
-                            | None      -> Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
-                        match bootRowsR with
-                        | Error es      -> return Result.failure es
-                        | Ok bootRows   -> return Result.success (catalog, hydrated, bootRows, migration)
+                        | Some topo when Config.dataCompositionOf cfg = AllData ->
+                            // PL-2 (S04) — one drain: static graft rides the
+                            // Bootstrap rows (see `hydrateAllDataArm`).
+                            hydrateAllDataArm cfg topo migrationKinds catalog
+                        | _ ->
+                            hydrateDefaultArm cfg hydrationTopo migrationKinds catalog
+                    let! pairR = arm
+                    return pairR |> Result.map (fun (hydrated, bootRows) -> (catalog, hydrated, bootRows, migration))
         }
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
