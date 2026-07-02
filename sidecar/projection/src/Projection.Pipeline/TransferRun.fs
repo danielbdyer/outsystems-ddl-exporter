@@ -378,7 +378,10 @@ module Transfer =
                                 | _ -> remapped2.Rows
                             let updates = rowsForUpdate |> List.choose (TransferCellShaping.phase2UpdateSql kind load.DeferredFkColumns)
                             if not (List.isEmpty updates) then
-                                do! Deploy.executeBatch sink (String.concat "\n" updates)
+                                // PL-6 (S14): the joined UPDATE list is GO-free
+                                // typed output — ONE pre-split segment; no
+                                // parser re-parse to rediscover that.
+                                do! Deploy.executeSegments sink [ String.concat "\n" updates ]
 
                 return Ok ()
               }
@@ -432,7 +435,8 @@ module Transfer =
     /// it as a replay, not as freshly-observed drops).
     let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
-            do! Deploy.executeBatch sink TransferResume.progressTableSql
+            // PL-6 (S14): a fixed GO-free DDL literal — one pre-split segment.
+            do! Deploy.executeSegments sink [ TransferResume.progressTableSql ]
             let marker = TransferResume.planMarker catalog plan
             let! prior = TransferResume.markedDropCount sink marker
             match prior with
@@ -1523,7 +1527,10 @@ module Transfer =
                         | _ -> remapped2.Rows
                     let updates = rowsForUpdate |> List.choose renderUpdate
                     if not (List.isEmpty updates) then
-                        do! Deploy.executeBatch sink (String.concat "\n" updates)
+                        // PL-6 (S14): GO-free typed output — one pre-split
+                        // segment per chunk; the per-chunk parser re-parse
+                        // retires.
+                        do! Deploy.executeSegments sink [ String.concat "\n" updates ]
                     return! phase2Chunks kind load basis idAttr renderUpdate stream (List.rev newSkips @ skips)
             }
 

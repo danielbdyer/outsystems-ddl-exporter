@@ -527,7 +527,8 @@ module MigrationRun =
                     let mutable undone = 0
                     for stmt in undo do
                         try
-                            do! Deploy.executeBatch cnn stmt
+                            // PL-6 (S14): one GO-free rename — one pre-split segment.
+                            do! Deploy.executeSegments cnn [ stmt ]
                             undone <- undone + 1
                         with _ -> ()
                     match! ReadSide.read cnn with
@@ -648,11 +649,18 @@ module MigrationRun =
                                 // roll the whole transaction back automatically.
                                 let opened = atomic && hasDdl
                                 try
+                                    // PL-6 (S14): the envelope controls and each
+                                    // rename are GO-free typed renders — one
+                                    // pre-split segment apiece; `alterSql` keeps
+                                    // `executeBatch` (it flows through
+                                    // `Render.toText`, which CAN carry `GO` from
+                                    // `BatchSeparator`, so the parser split stays
+                                    // load-bearing there).
                                     if opened then
-                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderAtomicEnvelopeOpen ())
+                                        do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderAtomicEnvelopeOpen () ]
                                     let mutable applied = 0
                                     for stmt in renameSql do
-                                        do! Deploy.executeBatch cnn stmt
+                                        do! Deploy.executeSegments cnn [ stmt ]
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                                     if hasAlter then
@@ -660,7 +668,7 @@ module MigrationRun =
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                                     if opened then
-                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderCommitTransaction ())
+                                        do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderCommitTransaction () ]
                                     return Ok ()
                                 with ex ->
                                     // M22 — if the envelope is open, roll the whole deploy
@@ -673,7 +681,7 @@ module MigrationRun =
                                     // ride the groupoid inverse over the applied rename
                                     // prefix; refuse-don't-corrupt; never a silent partial.
                                     if opened then
-                                        try do! Deploy.executeBatch cnn (ScriptDomGenerate.renderRollbackIfActive ())
+                                        try do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderRollbackIfActive () ]
                                         with _ -> ()
                                     let! verdict = compensateToSource ex.Message source cnn
                                     return Error verdict

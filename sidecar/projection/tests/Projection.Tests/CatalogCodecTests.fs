@@ -227,6 +227,13 @@ let ``deserialize(serialize c) = Ok c for a comprehensive catalog`` () =
     assertRoundTrips "richCatalog" (richCatalog ())
 
 [<Fact>]
+let ``PL-6 S30: serializeUtf8 carries the SAME bytes as serialize (the lifecycle store's raw-embed contract)`` () =
+    let c = richCatalog ()
+    Assert.Equal<byte[]>(
+        System.Text.Encoding.UTF8.GetBytes(CatalogCodec.serialize c),
+        CatalogCodec.serializeUtf8 c)
+
+[<Fact>]
 let ``empty catalog round-trips`` () =
     assertRoundTrips "empty" (Catalog.create [] [] |> Result.value)
 

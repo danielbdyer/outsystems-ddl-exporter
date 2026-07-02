@@ -946,13 +946,12 @@ module ManifestEmitter =
     /// guarantee byte-identical output across repeat invocations.
     let toJson (manifest: Manifest) : string =
         use _ = Bench.scope "emit.manifest.toJson"
-        let doc = toNode manifest
-        use stream = new MemoryStream()
-        do
-            use writer = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
-            doc.WriteTo(writer)
-            writer.Flush()
-        Encoding.UTF8.GetString(stream.ToArray())
+        // PL-6 (S31): the node→indented-text seam is
+        // `JsonWriting.renderNodeToString` (same writer, same pinned
+        // options — this body was its byte-identical inline duplicate),
+        // which decodes the stream's live buffer instead of paying a
+        // full `ToArray()` copy of the artifact first.
+        JsonWriting.renderNodeToString (toNode manifest)
 
     /// Π port realization (chapter 4.1.A slice 9). Per A18 amended:
     /// Catalog only, no Profile, no Policy. Returns the typed

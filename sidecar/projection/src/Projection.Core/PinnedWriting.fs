@@ -54,6 +54,25 @@ module JsonOptions =
 [<RequireQualifiedAccess>]
 module JsonWriting =
 
+    /// The flushed stream's live buffer as `(array, offset, count)` —
+    /// PL-6 (S31): every `MemoryStream` here is the expandable,
+    /// publicly-visible-buffer form, so `TryGetBuffer` always succeeds
+    /// and the serialized bytes are read IN PLACE (the prior
+    /// `ToArray()` paid a full second copy of the whole artifact per
+    /// serialize). The `ToArray` arms are the defensive fallback for a
+    /// hypothetical non-exposable stream (and the nullable
+    /// `ArraySegment.Array` of a default segment), never taken by
+    /// these callers.
+    let private writtenBytes (stream: MemoryStream) : byte[] * int * int =
+        match stream.TryGetBuffer() with
+        | true, seg ->
+            match seg.Array with
+            | null -> let a = stream.ToArray() in a, 0, a.Length
+            | arr -> arr, seg.Offset, seg.Count
+        | false, _ ->
+            let a = stream.ToArray()
+            a, 0, a.Length
+
     /// Write imperatively to a `Utf8JsonWriter` over a `MemoryStream`
     /// under **compact** options, flush, then re-parse the bytes into
     /// a typed `JsonNode` via the `ReadOnlySpan<byte>` overload (no
@@ -68,36 +87,54 @@ module JsonWriting =
             use writer = new Utf8JsonWriter(stream, JsonOptions.compact ())
             write writer
             writer.Flush()
-        let bytes = stream.ToArray()
-        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
+        let arr, off, count = writtenBytes stream
+        match JsonNode.Parse(System.ReadOnlySpan<byte>(arr, off, count)) with
         | null -> invalidOp "JsonWriting.writeToNode: writer produced empty stream (unreachable; the imperative writer always emits an object)"
         | node -> node
 
     /// Render a typed `JsonNode` to text under **indented** options:
     /// `node.WriteTo` a `Utf8JsonWriter` over a `MemoryStream`, flush,
-    /// then `Encoding.UTF8.GetString(stream.ToArray())`. The terminal
-    /// interpreter for a typed-tree description (the document `emit`
-    /// whose body is a `JsonNode`).
+    /// then decode the stream's live buffer (S31 — no intermediate
+    /// byte-array copy). The terminal interpreter for a typed-tree
+    /// description (the document `emit` whose body is a `JsonNode`).
     let renderNodeToString (node: JsonNode) : string =
         use stream = new MemoryStream()
         do
             use writer = new Utf8JsonWriter(stream, JsonOptions.indented ())
             node.WriteTo(writer)
             writer.Flush()
-        Encoding.UTF8.GetString(stream.ToArray())
+        let arr, off, count = writtenBytes stream
+        Encoding.UTF8.GetString(arr, off, count)
 
     /// Write imperatively to a `Utf8JsonWriter` over a `MemoryStream`
-    /// under **indented** options, flush, then
-    /// `Encoding.UTF8.GetString(stream.ToArray())`. The codec/document
-    /// `serialize` path: imperative-write straight to indented text
-    /// with NO re-parse through a node (which would be wasteful).
+    /// under **indented** options, flush, then decode the stream's
+    /// live buffer (S31). The codec/document `serialize` path:
+    /// imperative-write straight to indented text with NO re-parse
+    /// through a node (which would be wasteful).
     let writeToString (write: Utf8JsonWriter -> unit) : string =
         use stream = new MemoryStream()
         do
             use writer = new Utf8JsonWriter(stream, JsonOptions.indented ())
             write writer
             writer.Flush()
-        Encoding.UTF8.GetString(stream.ToArray())
+        let arr, off, count = writtenBytes stream
+        Encoding.UTF8.GetString(arr, off, count)
+
+    /// The `writeToString` sibling that stays in UTF-8: the serialized
+    /// bytes, one copy, no UTF-16 string materialized. PL-6 (S30) —
+    /// for an embedder whose destination is itself a UTF-8 writer
+    /// (`Utf8JsonWriter.WriteRawValue(ReadOnlySpan<byte>)`), the
+    /// byte→string→byte transcode round-trip is pure waste; the bytes
+    /// ARE the carrier. Same writer, same indented options, so the
+    /// bytes equal `Encoding.UTF8.GetBytes(writeToString write)`
+    /// exactly.
+    let writeToUtf8 (write: Utf8JsonWriter -> unit) : byte[] =
+        use stream = new MemoryStream()
+        do
+            use writer = new Utf8JsonWriter(stream, JsonOptions.indented ())
+            write writer
+            writer.Flush()
+        stream.ToArray()
 
 /// Pinned `System.Xml.XmlWriterSettings` forms. Each call returns
 /// a fresh instance (XmlWriterSettings is a class — sharing one

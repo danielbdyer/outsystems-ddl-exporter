@@ -125,8 +125,11 @@ module LifecycleStore =
         writeCoordinate jw e.Coordinate
         // The schema plane: embed the codec's deterministic output as a nested
         // object (the codec is the single source of catalog wire-format truth).
+        // PL-6 (S30): the raw value rides as UTF-8 bytes — same bytes the
+        // string form carried, minus the UTF-8→UTF-16→UTF-8 transcode
+        // round-trip the store paid per episode on every save.
         jw.WritePropertyName "schema"
-        jw.WriteRawValue(CatalogCodec.serialize e.Schema)
+        jw.WriteRawValue(System.ReadOnlySpan<byte>(CatalogCodec.serializeUtf8 e.Schema))
         match e.RefactorLogRef with
         | Some r -> jw.WriteString("refactorLogRef", r)
         | None   -> jw.WriteNull("refactorLogRef")

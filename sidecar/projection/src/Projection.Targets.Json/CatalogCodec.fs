@@ -232,8 +232,14 @@ module CatalogCodec =
         wField jw "identifier" wSsKey r.Identifier
         jw.WritePropertyName "values"
         jw.WriteStartArray()
-        // Sorted by column name for T1 determinism (Map iteration order is unstable).
-        for KeyValue (name, value) in (r.Values |> Map.toSeq |> Seq.sortBy (fun (n, _) -> Name.value n) |> Map.ofSeq) do
+        // T1 determinism = the Map's own key order (F# Map enumerates
+        // sorted by key). PL-6 (S29): the prior `Map.toSeq |> Seq.sortBy
+        // (Name.value) |> Map.ofSeq` sorted the pairs and then DISCARDED
+        // that sort by rebuilding a Map whose own Name ordering governed
+        // the enumeration — i.e. the emitted order was always
+        // `r.Values`' order; the sort and the rebuild were dead work
+        // paid per static row of every catalog serialize.
+        for KeyValue (name, value) in r.Values do
             jw.WriteStartObject()
             jw.WriteString("name", Name.value name)
             jw.WriteString("value", value)
@@ -407,6 +413,21 @@ module CatalogCodec =
     let serialize (catalog: Catalog) : string =
         use _ = Bench.scope "codec.catalog.serialize"
         JsonWriting.writeToString (fun jw -> wCatalog jw catalog)
+
+    /// The UTF-8 bytes of `serialize` — same writer, same pinned
+    /// indented options, so `serializeUtf8 c =
+    /// Encoding.UTF8.GetBytes(serialize c)` exactly. PL-6 (S30): the
+    /// lifecycle store embeds each episode's catalog via
+    /// `Utf8JsonWriter.WriteRawValue`; handing it these bytes skips the
+    /// UTF-8→UTF-16→UTF-8 transcode round-trip the string form paid.
+    /// (Nesting `wCatalog` directly into the OUTER writer was
+    /// considered and REJECTED: the writer indents by its current
+    /// depth, so direct nesting would re-indent the embedded document
+    /// and move every stored episode's bytes — `WriteRawValue`
+    /// preserves the level-0 indentation the incumbent store pinned.)
+    let serializeUtf8 (catalog: Catalog) : byte[] =
+        use _ = Bench.scope "codec.catalog.serialize"
+        JsonWriting.writeToUtf8 (fun jw -> wCatalog jw catalog)
 
     // ======================================================================
     // DECODE — each `readX : JsonElement -> Result<X>` reads one JSON value.
