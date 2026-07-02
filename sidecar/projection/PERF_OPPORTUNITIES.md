@@ -7,6 +7,40 @@ this document is the queue for the **next** slice — a structural-perf
 sweep that ships fixes with before/after data on each affected bench
 label.
 
+## 🎯 READ-CONCURRENCY ARC (2026-07-02) — bounded hydrate/profile parallelism shipped; the five follow-ups adjudicated; next-wave discovery ranked
+
+**Shipped:** `emission.dataReadConcurrency` / `profiler.maxConcurrency` (both
+default 4) — `Ingestion.collectInOrderForConcurrent` +
+`LiveProfiler.captureEvidenceCacheConcurrent`, per-kind pooled connections
+behind a `SemaphoreSlim`; serial paths untouched as the concurrency-1 arm
+(DECISIONS 2026-07-01). **Measured** (`ReadConcurrencyMeasurementTests`,
+100 tables × 375 rows): hydrate ~46% faster and profile ~77% faster at
+concurrency 4 on the cold shape; the warm sweep flattens past 4 and the
+profile leg inverts at 8 — the evidence for the low explicit defaults.
+Row maps / evidence caches value-identical across all legs.
+
+### The five follow-up recommendations, adjudicated (validation fleet, 4 agents)
+
+| Recommendation | Verdict | Substance |
+|---|---|---|
+| **1. Batch nullability reflection into one schema query** | ✅ FEASIBLE, HIGH VALUE — the next profile-stage cut | Per-kind `INFORMATION_SCHEMA.COLUMNS` (`LiveProfiler.fs` `reflectNullability`, query 2-of-3 in `discoverKind`) becomes one catalog-wide query (the `ReadSide.readColumnRows` precedent — measured ~2× faster than the `sys.*` join). ~300-kind estate: 900 → 601 queries (~33% of profile round-trips). One must-fix hazard: the (schema, table) re-match moves client-side — key case-insensitively or a collation mismatch silently defaults a column to NOT NULL. |
+| **2. Pre-warm / rent a bounded connection pool** | ⚠️ SUBSTANTIALLY ALREADY SATISFIED — do only the trivial form | The opener closes over one stable conn string per lane → one SqlClient pool bucket; physical connections ARE reused after the first `concurrency` opens; every `ClearPool` site is test teardown. Residuals: cold-pool handshake burst per lane, per-open `file:` secret re-resolution (a file read per kind — resolve once), `Min Pool Size=0` decay between lanes. Cheapest fix: `Min Pool Size=<concurrency>` + a resolve-once opener. A rented `SqlConnection[]` is NOT justified. |
+| **3. Batch-aware row materialization** | ❌ AS STATED, LOW VALUE — the peak is set by the consumer, not the drain | `DataLoadPlan.Loads[].Rows : StaticRow list` and the rendered artifact hold the whole estate regardless; chunking the drain alone changes nothing. Determinism is NOT the blocker (static lane sorts in `NormalizeStaticPopulations`; bootstrap order is pinned by the reader's `ORDER BY <pk>`). The genuine lever is streaming emitters — which crosses the pure-Core boundary; estate-scale data already has the correct mechanism on the transfer leg (`writePlanStreaming`). Act only if peak memory becomes the binding constraint, and then via the streaming realization. |
+| **4. Memoize/thread the topological order** | ❌ LOW PRIORITY — micro-win, real staleness hazard | ~5 recomputes/publish but each is sub-ms-to-low-ms at 300 kinds (Kahn/Tarjan already Dictionary-based). The sites legitimately differ: pre-transform vs post-chain vs emission-seam catalogs, and SSDT uses `SkipSelfEdges` while data uses `TreatAsCycle`. Only the chain-step → data-emit reuse is coherent, and it must first prove `UserFkReflowPass` never re-points FK edges after the topo step. Not worth the hazard today. |
+| **5. Bench granularity (gate wait / conn open / SQL read / materialization)** | ✅ VALID — the two phases the knob most affects are exactly the unmeasured ones | Gate wait (`gate.WaitAsync`) and connection open both precede the drain stopwatch — MISSING. SQL execute is covered (`readside.readRowsStream.open`) but the per-row `ReadAsync` wire fetch is only the residual of the stream-lifetime label — CONFLATED. Materialization is COVERED (`readside.rowstream.materialize` / `.materializeIr`). Minimal closure: `ingestion.rowDrain.gateWait` / `.connectionOpen`, `readside.rowstream.fetch`, and profiler mirrors + `profile.live.aggregate`. No new double-counting. |
+
+### Next-wave discovery (ranked; the sharpest first)
+
+1. **`ReadSide.formatRawValue` per-cell box + `Convert` reparse** (`ReadSide.fs` pull loop) — `GetValue` boxes every scalar then `Convert.To*` re-dispatches, ×375k rows × N columns. Typed accessors (`GetInt64/GetDecimal/…` guarded by the known column type) remove both. Measure via `readside.rowstream.materialize` before/after. **HIGH.**
+2. **`KindColumns.rowToTypedValues` throwaway `Map` per row** — builds a `Map<Name, SqlLiteral>` that `typedValuesToSqlLiterals` immediately re-reads in the same attribute order; two tree builds + N lookups + per-cell DU allocs per row. Fuse into one ordered array walk. **HIGH.**
+3. **Whole-seed fused in-memory string + retained typed scripts** (`DataEmissionComposer.renderArtifactInTopoOrder` → `File.WriteAllText`) — full typed rows AND full rendered T-SQL held simultaneously; stream per-kind chunks to a `StreamWriter` instead. **HIGH (memory) / MEDIUM (wall).**
+4. **Per-call `Sql160ScriptGenerator` + `pinnedOptions()`** — allocated per statement across the SSDT lane and PER ROW on the below-threshold Phase-2 UPDATE path; memoize the options object (generator stays per-call). **MEDIUM-HIGH.**
+5. **`composeRenderedBundleWithBootstrap` renders 4 lanes ×2 topo walks** even when 2 lanes are empty under `AllData`; skip empty artifacts, reuse one `toMap`. **MEDIUM.**
+6. **Synchronous whole-body artifact writes + `WriteIndented` full-catalog JSON** (`Pipeline.writeAllToStaging`) — bounded-parallel writes + streaming `Utf8JsonWriter`. **MEDIUM.**
+7. **~20 full-catalog immutable rewrites in the pass chain** — bounded at ~3k attributes; sum the pass-tier Bench samples before investing. **MEDIUM-LOW.**
+8. **`toBundle` transient list copies** — confirmed NO O(n²) (all joins Map-indexed); only transient-allocation trimming remains. **LOW.**
+9. **Emit-stage "regression" note:** the slight emit slowdown observed alongside the halved extract/profile is most consistent with GC/ThreadPool spillover from the now-parallel stages (survival rule 13 — a verdict under concurrent load is void); re-measure `stage.emit` solo with a forced GC between stages before optimizing.
+
 ## 🎯 PERF-SWEEP ARC RESULTS (2026-05-19)
 
 **Status: top-leverage findings SHIPPED; canary wall-time 3:34 → 2:22 (~34% reduction).**

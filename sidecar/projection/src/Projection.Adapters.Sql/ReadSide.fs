@@ -911,6 +911,11 @@ module ReadSide =
         // (`materializeStream`), which carries its own label — the label
         // rides the carrier build wherever it lives (the attribution rule).
         let mutable materializeTicks = 0L
+        // Phase-3 attribution sibling: per-row `ReadAsync` (the wire
+        // row-fetch) ticks, recorded as ONE aggregated sample at EOF —
+        // previously only visible as the residual of the stream-lifetime
+        // label minus open minus materialize.
+        let mutable fetchTicks = 0L
         let pull () : Task<RowQuantum option> =
             task {
                 if disposed then return None
@@ -918,11 +923,18 @@ module ReadSide =
                     try
                         if Option.isNone readerOpt then do! openReader ()
                         let r = Option.get readerOpt
+                        let tFetch = System.Diagnostics.Stopwatch.GetTimestamp()
                         let! more = r.ReadAsync()
+                        fetchTicks <-
+                            fetchTicks
+                            + (System.Diagnostics.Stopwatch.GetTimestamp() - tFetch)
                         if not more then
                             Bench.recordSample
                                 "readside.rowstream.materialize"
                                 (materializeTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
+                            Bench.recordSample
+                                "readside.rowstream.fetch"
+                                (fetchTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
                             dispose ()
                             return None
                         else

@@ -101,11 +101,22 @@ module Ingestion =
         (kind: Kind)
         : Task<Result<SsKey * StaticRow list>> =
         task {
+            // Phase labels (the four-phase attribution): gate wait and
+            // connection open are OUTSIDE the drain stopwatch, so queue
+            // pressure under contention and pool/handshake cost are each
+            // separately visible — a 0 sample means uncontended/pooled,
+            // not unmeasured.
+            let swGate = System.Diagnostics.Stopwatch.StartNew()
             do! gate.WaitAsync()
+            swGate.Stop()
+            Bench.recordSample "ingestion.rowDrain.gateWait" swGate.ElapsedMilliseconds
             try
+                let swOpen = System.Diagnostics.Stopwatch.StartNew()
                 match! openConnection () with
                 | Error es -> return Result.failure es
                 | Ok cnn ->
+                    swOpen.Stop()
+                    Bench.recordSample "ingestion.rowDrain.connectionOpen" swOpen.ElapsedMilliseconds
                     use cnn = cnn
                     let sw = System.Diagnostics.Stopwatch.StartNew()
                     let! rows = AsyncStream.toList (streamKindRows cnn kind)

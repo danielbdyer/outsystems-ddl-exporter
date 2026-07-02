@@ -262,7 +262,10 @@ module LiveProfiler =
             if List.isEmpty kind.Attributes then return None
             else
                 // 1. Aggregate: exact RowCount + per-attribute NullCount.
+                //    Own scope so aggregate / reflection / row-stream are
+                //    individually attributable within `discoverKind`.
                 let! (rowCount, nullCounts) = task {
+                    use _ = Bench.scope "profile.live.aggregate"
                     use cmd = cnn.CreateCommand()
                     cmd.CommandText <- cacheAggregateSql kind
                     cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
@@ -385,11 +388,19 @@ module LiveProfiler =
         (kind: Kind)
         : Task<Result<CachedKind option>> =
         task {
+            // Phase labels: gate wait and connection open are OUTSIDE the
+            // drain stopwatch (a 0 sample means uncontended/pooled).
+            let swGate = System.Diagnostics.Stopwatch.StartNew()
             do! gate.WaitAsync()
+            swGate.Stop()
+            Bench.recordSample "profile.live.discoverKind.gateWait" swGate.ElapsedMilliseconds
             try
+                let swOpen = System.Diagnostics.Stopwatch.StartNew()
                 match! openConnection () with
                 | Error es -> return Result.failure es
                 | Ok cnn ->
+                    swOpen.Stop()
+                    Bench.recordSample "profile.live.discoverKind.connectionOpen" swOpen.ElapsedMilliseconds
                     use cnn = cnn
                     let sw = System.Diagnostics.Stopwatch.StartNew()
                     let! cached = discoverKind cnn maxRows kind
