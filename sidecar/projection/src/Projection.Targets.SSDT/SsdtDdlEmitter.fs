@@ -403,6 +403,64 @@ module SsdtDdlEmitter =
             // so the unreachability is structural.
             invalidOp (sprintf "SsdtDdlEmitter.resolveColumnName: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)
 
+    /// The emitted (presentation) names for a kind's indexes, keyed by
+    /// `SsKey` — derived BEFORE ScriptDom rendering from typed logical IR
+    /// (`Index.Columns` → `Attribute.Name`, `Kind.Name`, and the
+    /// overlay-adjusted uniqueness decision), never parsed back out of
+    /// rendered SQL and never inherited from SQL Server's physical
+    /// auto-names. Once table/column names are logicalized, every related
+    /// object name derives from the same logical vocabulary:
+    ///
+    ///   - non-PK indexes: `IX_<KindName>_<AttributeName...>`, or
+    ///     `UIX_...` when the source declares UNIQUE or the overlay's
+    ///     `EnforceUnique` decision applies (the same disjunction the
+    ///     CREATE INDEX emission uses, so name and constraint agree);
+    ///   - PK-marked indexes: the PK constraint-name convention
+    ///     (`PK_<Schema>_<Table>`, `pkDef`'s shape) so an extended
+    ///     property on the PK's backing index follows the emitted
+    ///     constraint name.
+    ///
+    /// This is an emitted-NAME policy, not an identity policy — `SsKey`
+    /// stays the durable identity; these are presentation identifiers.
+    /// Collision handling is proof-triggered: names start concise, and
+    /// only colliding names (within the kind's per-table index namespace)
+    /// gain a deterministic 1-based ordinal suffix in SsKey order. Every
+    /// generated name rides the identifier budget.
+    let private emittedIndexNames (overlay: DecisionOverlay) (k: Kind) : Map<SsKey, string> =
+        let attrNameOf (columnSsKey: SsKey) : string =
+            match k.Attributes |> List.tryFind (fun a -> a.SsKey = columnSsKey) with
+            | Some a -> Name.value a.Name
+            | None ->
+                // Unreachable post-`Catalog.create` (referential integrity:
+                // every Index.Column resolves within its owning Kind).
+                invalidOp (sprintf "SsdtDdlEmitter.emittedIndexNames: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)
+        let baseNameOf (idx: Index) : string =
+            if IndexUniqueness.isPrimaryKey idx.Uniqueness then
+                System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical)  // LINT-ALLOW: V1 naming-convention PK constraint name (pkDef's shape); segments pre-unwrapped via TableId helpers
+            else
+                let isUnique =
+                    IndexUniqueness.isUnique idx.Uniqueness
+                    || Set.contains idx.SsKey overlay.EnforceUnique
+                let columnNames =
+                    idx.Columns |> List.map (fun c -> attrNameOf c.Attribute)
+                System.String.Concat(  // LINT-ALLOW: generated index-name convention (IX_/UIX_ + logical kind + logical columns); no BCL/ScriptDom primitive emits naming-convention identifiers; segments are typed Name values unwrapped via Name.value
+                    (if isUnique then "UIX_" else "IX_"),
+                    Name.value k.Name, "_", String.concat "_" columnNames)
+        k.Indexes
+        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.map (fun idx -> idx, baseNameOf idx)
+        |> List.groupBy snd
+        |> List.collect (fun (baseName, members) ->
+            match members with
+            | [ (only, _) ] -> [ only.SsKey, IdentifierBudget.fit baseName ]
+            | colliding ->
+                // Proof-triggered disambiguation: only names that actually
+                // collide gain the ordinal, in SsKey order (deterministic).
+                colliding
+                |> List.mapi (fun i (idx, _) ->
+                    idx.SsKey, IdentifierBudget.fit (System.String.Concat(baseName, "_", string (i + 1)))))  // LINT-ALLOW: deterministic collision ordinal on a generated identifier; terminal name construction
+        |> Map.ofList
+
     /// Build the CREATE INDEX statements for a Kind's non-PK indexes.
     /// Per chapter pre-scope §8 slice 3: PK-marked indexes are
     /// skipped (PK is inlined in CREATE TABLE per V1 convention);
@@ -414,6 +472,7 @@ module SsdtDdlEmitter =
     // intervention decided `EnforceUnique`. A non-enforce decision never
     // un-uniques a source-unique index.
     let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
+        let emittedNames = emittedIndexNames overlay k
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -452,7 +511,12 @@ module SsdtDdlEmitter =
                         PartitionSchemeDataSpaceSql (name, cols))
             let indexDef : IndexDef =
                 {
-                    Name     = Name.value idx.Name
+                    // The emitted name derives from the logical IR
+                    // (`emittedIndexNames`), not the source-side physical
+                    // OSSYS index name — table/column targets are already
+                    // logicalized, so the index identifier follows the same
+                    // vocabulary.
+                    Name     = Map.find idx.SsKey emittedNames
                     Table    = toTableId k
                     Columns  = keyColumns
                     IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
@@ -479,12 +543,15 @@ module SsdtDdlEmitter =
     /// it. PK-marked indexes filter out at `indexStatements` (PK is
     /// always enforced; V1 invariant). Slice 5.13.index-features-emit
     /// (matrix row 55).
-    let private disabledIndexAlters (k: Kind) : Statement list =
+    let private disabledIndexAlters (overlay: DecisionOverlay) (k: Kind) : Statement list =
+        let emittedNames = emittedIndexNames overlay k
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness) && idx.IsDisabled)
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
-            Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
+            // Same emitted name as the CREATE INDEX — the ALTER must
+            // reference the identifier the CREATE introduced.
+            Statement.AlterIndexDisable (toTableId k, Map.find idx.SsKey emittedNames))
 
     /// Emit per trigger: a `Comment` line carrying trigger metadata
     /// (name + disabled state, mirroring V1's `-- Trigger: <name>
@@ -584,7 +651,7 @@ module SsdtDdlEmitter =
     /// back); the composition seam emits the
     /// `emission.identityAnnotations.omitted` diagnostic — this pure emitter
     /// only honors the gate.
-    let private extendedPropertyStatements (emitIdentityAnnotations: bool) (k: Kind) : Statement seq =
+    let private extendedPropertyStatements (emitIdentityAnnotations: bool) (overlay: DecisionOverlay) (k: Kind) : Statement seq =
         seq {
             let table = k.Physical
             match k.Description with
@@ -647,10 +714,14 @@ module SsdtDdlEmitter =
                     yield Statement.SetExtendedProperty (
                         ColumnProperty (table, columnName), ep.Name, ep.Value)
 
+            // Index extended-property owners follow the EMITTED index
+            // name (the identifier the CREATE INDEX / PK constraint
+            // introduced), never the source physical name.
+            let emittedNames = emittedIndexNames overlay k
             for idx in k.Indexes do
                 for ep in idx.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
-                        IndexProperty (table, Name.value idx.Name), ep.Name, ep.Value)
+                        IndexProperty (table, Map.find idx.SsKey emittedNames), ep.Name, ep.Value)
         }
 
     /// Render one Kind to a typed `SsdtFile`. The CREATE TABLE
@@ -720,8 +791,8 @@ module SsdtDdlEmitter =
                 // preserve the deployed target's index disable state.
                 // Emitted AFTER CREATE INDEX so the named index
                 // exists when the ALTER references it.
-                yield! disabledIndexAlters k
-                yield! extendedPropertyStatements emitIdentityAnnotations k
+                yield! disabledIndexAlters overlay k
+                yield! extendedPropertyStatements emitIdentityAnnotations overlay k
                 // H-019: triggers fire after the table + all indexes are
                 // deployed so the ON <table> reference resolves cleanly.
                 yield! triggerStatements k
@@ -874,7 +945,7 @@ module SsdtDdlEmitter =
                 yield! yieldAllWithSeparator (untrustedFkAlters overlay targetByKey pkAttrByKey k)
                 yield! yieldAllWithSeparator (indexStatements overlay k)
                 // Slice 5.13.index-features-emit (matrix row 55).
-                yield! yieldAllWithSeparator (disabledIndexAlters k)
+                yield! yieldAllWithSeparator (disabledIndexAlters overlay k)
                 // Slice D.1.c — match `kindToSsdtFile`'s per-kind
                 // emission order so the flat-stream surface carries
                 // the same SetExtendedProperty entries (including the
@@ -882,7 +953,7 @@ module SsdtDdlEmitter =
                 // roundtrip read). Without this, `Render.toText`-based
                 // deploys (Deploy.runWithReadback / runWithLoader) lose
                 // logical-name recovery and the M3 closure breaks.
-                yield! yieldAllWithSeparator (extendedPropertyStatements emitIdentityAnnotations k)
+                yield! yieldAllWithSeparator (extendedPropertyStatements emitIdentityAnnotations overlay k)
                 // H-019: triggers after table + indexes per kindToSsdtFile
                 // emission order (ON <table> must exist before the trigger).
                 yield! yieldAllWithSeparator (triggerStatements k)

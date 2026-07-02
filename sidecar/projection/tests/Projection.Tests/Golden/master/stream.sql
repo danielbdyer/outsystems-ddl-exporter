@@ -314,7 +314,7 @@ ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User
 
 GO
 
-CREATE INDEX [IX_Engagement_CreatedBy_UpdatedByDesc]
+CREATE INDEX [IX_Engagement_CreatedBy_UpdatedBy]
     ON [dbo].[Engagement]([CreatedBy], [UpdatedBy] DESC)
 
 GO
@@ -697,38 +697,38 @@ CREATE TABLE [dbo].[ScalarGallery] (
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Code_Covering]
+CREATE INDEX [IX_ScalarGallery_Code_1]
     ON [dbo].[ScalarGallery]([Code])
     INCLUDE([Amount])
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Tally_Desc]
+CREATE INDEX [IX_ScalarGallery_Tally_1]
     ON [dbo].[ScalarGallery]([Tally] DESC)
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Code_Disabled]
+CREATE INDEX [IX_ScalarGallery_Code_2]
     ON [dbo].[ScalarGallery]([Code])
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Tally_Filtered]
+CREATE INDEX [IX_ScalarGallery_Tally_2]
     ON [dbo].[ScalarGallery]([Tally]) WHERE ([Tally] IS NOT NULL)
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Code]
+CREATE INDEX [IX_ScalarGallery_Code_3]
     ON [dbo].[ScalarGallery]([Code])
 
 GO
 
-CREATE INDEX [OSIDX_GOLD_SCALAR_GALLERY_TALLY]
+CREATE INDEX [IX_ScalarGallery_Tally_3]
     ON [dbo].[ScalarGallery]([Tally])
 
 GO
 
-CREATE UNIQUE INDEX [UIX_ScalarGallery_Amount_Tuned]
+CREATE UNIQUE INDEX [UIX_ScalarGallery_Amount]
     ON [dbo].[ScalarGallery]([Amount]) WITH (FILLFACTOR = 80, PAD_INDEX = ON, IGNORE_DUP_KEY = ON, DATA_COMPRESSION = PAGE)
 
 GO
@@ -738,7 +738,7 @@ CREATE UNIQUE INDEX [UIX_ScalarGallery_Code]
 
 GO
 
-ALTER INDEX [IX_ScalarGallery_Code_Disabled]
+ALTER INDEX [IX_ScalarGallery_Code_2]
     ON [dbo].[ScalarGallery] DISABLE
 
 GO
@@ -946,7 +946,7 @@ GO
 EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'Descending scan support.',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
-    @level2type = N'INDEX', @level2name = N'IX_ScalarGallery_Tally_Desc'
+    @level2type = N'INDEX', @level2name = N'IX_ScalarGallery_Tally_1'
 
 GO
 

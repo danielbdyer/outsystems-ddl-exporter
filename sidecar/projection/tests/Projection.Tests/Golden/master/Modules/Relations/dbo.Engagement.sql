@@ -37,7 +37,7 @@ ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User
 
 GO
 
-CREATE INDEX [IX_Engagement_CreatedBy_UpdatedByDesc]
+CREATE INDEX [IX_Engagement_CreatedBy_UpdatedBy]
     ON [dbo].[Engagement]([CreatedBy], [UpdatedBy] DESC)
 
 GO

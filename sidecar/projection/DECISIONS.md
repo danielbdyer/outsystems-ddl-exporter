@@ -25610,3 +25610,51 @@ preserved end-to-end and later diagnostics explain any deploy conflicts.
 alongside an active-only *emission* (diagnose-but-don't-emit), split the
 axes: a diagnostics-side unscoped read, not a weakening of the query-time
 pushdown.
+
+## 2026-07-01 — Emitted index names derive from the logical vocabulary (IX_/UIX_ + Kind + Attributes); goldens re-recorded
+
+Table and column SSDT targets were already logicalized
+(`LogicalTableEmission` / `LogicalColumnEmission`), and generated PK/FK
+constraint names rebuilt from the logicalized coordinates — but index
+identifiers still passed the source-side physical OSSYS index name
+through verbatim (`Name.value idx.Name` at the CREATE INDEX, ALTER
+INDEX … DISABLE, and index extended-property surfaces). The emitted
+shape was half-human-readable: `ON [dbo].[LogicalTable]
+([LogicalColumn])` correct, `CREATE INDEX [OSIDX_…]` physical.
+
+**The policy.** `SsdtDdlEmitter.emittedIndexNames` computes each
+index's emitted name BEFORE ScriptDom rendering, from typed logical IR
+only — `Index.Columns` → `Attribute.Name`, `Kind.Name`, and the
+overlay-adjusted uniqueness decision (the same
+`isUnique || EnforceUnique` disjunction the CREATE INDEX emission uses,
+so name and constraint agree): `IX_<Kind>_<Attr…>` / `UIX_<Kind>_<Attr…>`,
+identifier-budget capped (`IdentifierBudget.fit`). PK-backing indexes
+take the PK constraint-name convention so an index-level extended
+property follows the emitted constraint. The SAME map feeds all three
+surfaces (create / disable / extended property). No SQL-text parsing,
+no acceptance of SQL Server physical auto-names. This is an
+emitted-NAME policy, not identity — `SsKey` stays durable; generated
+SQL names are presentation identifiers.
+
+**Collision handling is proof-triggered.** Names start concise; only
+names that actually collide within the kind's per-table index namespace
+gain a deterministic 1-based ordinal (SsKey order). Indexes differing
+only in INCLUDE columns / filters / on-disk options therefore collide
+deliberately — the key-column vocabulary is the name; the ordinal is
+the honest tiebreak.
+
+**Migration lane.** `SchemaMigrationEmitter` inherits the policy for
+CREATEs through the shared `createIndexStatements`; DROP INDEX keeps
+the SOURCE catalog's name (the deployed identifier is what a drop must
+reference).
+
+**Goldens re-recorded under this entry** (`GOLDEN_RECORD=1`): the
+`ScalarGallery` stress fixture stacks several same-key-column indexes,
+so its goldens now show the ordinal form; the physical
+`OSIDX_GOLD_SCALAR_GALLERY_TALLY` emits as its logical name.
+
+**Re-open trigger.** If an estate needs authored index names preserved
+end-to-end (operator-curated names rather than the generated
+convention), add an explicit override axis (e.g. an
+`overrides.indexNames` surface) rather than re-admitting source
+physical names by default.
