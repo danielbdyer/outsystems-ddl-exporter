@@ -1010,6 +1010,44 @@ module MetadataSnapshotRunner =
                                   "logicalIdentity", string a.IsAutoNumber
                                   "deployedIdentity", string cr.IsIdentity ] } ])
 
+    /// NAME the attribute-flag-vs-entity-key primary-key divergences. OSSYS
+    /// carries PK identity twice: per-attribute (`Is_Identifier`) and
+    /// per-entity (`ossys_Entity.PrimaryKey_SS_Key`). The rowset reader
+    /// treats the entity key as a RECOVERY source only (it fires when no
+    /// attribute of the entity carries the explicit flag), so a
+    /// disagreement — both sources present, naming different attributes —
+    /// is never resolved by the engine: the explicit flag wins the carried
+    /// value and this pure pass surfaces the contradiction as an
+    /// operator-facing `Warning`. Deterministic — ordered by entity id.
+    let primaryKeyDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let attrsByEntity =
+            snapshot.Attributes |> List.groupBy (fun a -> a.EntityId) |> Map.ofList
+        snapshot.Entities
+        |> List.sortBy (fun e -> e.EntityId)
+        |> List.collect (fun e ->
+            match e.PrimaryKeySsKey with
+            | None -> []
+            | Some pkKey ->
+                let attrs = Map.tryFind e.EntityId attrsByEntity |> Option.defaultValue []
+                let flagged = attrs |> List.filter (fun a -> a.IsIdentifier)
+                let flagMatchesEntityKey =
+                    flagged |> List.exists (fun a -> a.AttrSsKey = Some pkKey)
+                if List.isEmpty flagged || flagMatchesEntityKey then []
+                else
+                    [ { DiagnosticEntry.create
+                          "adapter:OSSYS" DiagnosticSeverity.Warning
+                          "adapter.ossys.primaryKey.divergence"
+                          (sprintf "Entity %s (id %d): Is_Identifier marks attribute(s) %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
+                              e.EntityName e.EntityId
+                              (flagged |> List.map (fun a -> a.AttrName) |> String.concat ", ")
+                              pkKey)
+                        with Metadata =
+                              Map.ofList
+                                  [ "entityId", string e.EntityId
+                                    "entityName", e.EntityName
+                                    "flaggedAttributes", (flagged |> List.map (fun a -> a.AttrName) |> String.concat ",")
+                                    "primaryKeySsKey", string pkKey ] } ])
+
     let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =

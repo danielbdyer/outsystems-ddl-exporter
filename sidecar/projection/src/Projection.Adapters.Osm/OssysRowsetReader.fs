@@ -36,10 +36,25 @@ module OssysRowsetReader =
     let private parseAttributeRow
         (moduleName: string)
         (entityName: string)
+        (entityPrimaryKeySsKey: System.Guid option)
         (row: AttributeRow)
         : Result<Attribute> =
         let nameDU    = Name.create row.AttrName
         let key       = attributeSsKeyFromRow moduleName entityName row
+        // Primary-key identity from either OSSYS source: the explicit
+        // attribute-level `Is_Identifier` flag when the estate exposes it,
+        // or the entity-level `ossys_Entity.PrimaryKey_SS_Key` fallback —
+        // some estates project attribute rows without `Is_Identifier`, and
+        // without the fallback their entities reach the data lanes with
+        // rows but no primary-key columns. The caller suppresses the
+        // fallback (passes None) whenever ANY attribute of the entity
+        // carries the explicit flag, so a disagreement between the two
+        // sources can never mint a composite key here; the live path
+        // names that disagreement as a divergence diagnostic instead.
+        let matchesEntityPrimaryKey =
+            match row.AttrSsKey, entityPrimaryKeySsKey with
+            | Some attrKey, Some pkKey -> attrKey = pkKey
+            | _ -> false
         // Resolve semantic category + concrete SQL Server storage from
         // the rowset's `Type` value (rt-prefix aware), the declared
         // length / precision / scale, and any `ExternalColumnType`
@@ -62,7 +77,7 @@ module OssysRowsetReader =
                                    IsNullable = not row.IsMandatory
                                    Collation  = row.Collation
                                    Identity   = None }
-                  IsPrimaryKey = row.IsIdentifier
+                  IsPrimaryKey = row.IsIdentifier || matchesEntityPrimaryKey
                   IsMandatory  = row.IsMandatory
                   Length       = row.Length
                   Precision    = row.Precision
@@ -533,9 +548,20 @@ module OssysRowsetReader =
         let attrRows =
             Map.tryFind kindRow.EntityId ctx.AttributesByEntity
             |> Option.defaultValue []
+        // Entity-level primary-key fallback: `KindRow.PrimaryKeySsKey`
+        // recovers PK identity on estates whose attribute rows lack
+        // `Is_Identifier`. This is a recovery rule for missing metadata,
+        // not a second PK-selection policy — whenever ANY attribute
+        // carries the explicit flag, the fallback is suppressed so the
+        // two sources can never compose into an invented composite key
+        // (a disagreement is surfaced by the live path's divergence
+        // diagnostics, not resolved here).
+        let entityPrimaryKeySsKey =
+            if attrRows |> List.exists (fun r -> r.IsIdentifier) then None
+            else kindRow.PrimaryKeySsKey
         let attrResults =
             attrRows
-            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName)
+            |> Bench.iterMap "adapter.osm.parse.rowsetAttribute" (parseAttributeRow moduleName kindRow.EntityName entityPrimaryKeySsKey)
         let foldedAttrs = Result.aggregate attrResults
         let refResults =
             attrRows

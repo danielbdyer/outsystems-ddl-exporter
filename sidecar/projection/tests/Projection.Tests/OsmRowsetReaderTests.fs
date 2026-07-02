@@ -1416,3 +1416,79 @@ let ``slice 5 parity: SsKey divergence axis — Guids change identity but not sh
     // unbounded).
     let rowsetUserSsKey = rowsetCat.Modules.[0].Kinds.[0].SsKey
     Assert.Equal<SsKey>(OssysOriginal userGuid, rowsetUserSsKey)
+
+// ---------------------------------------------------------------------------
+// Primary-key recovery — `KindRow.PrimaryKeySsKey` marks the matching
+// attribute as the primary key when NO attribute of the entity carries the
+// explicit `Is_Identifier` flag (some estates expose
+// `ossys_Entity.PrimaryKey_SS_Key` but project attribute rows without
+// `Is_Identifier`; without recovery those entities reach the data lanes
+// with rows but no primary-key columns). The entity key is a recovery
+// source only: whenever any attribute carries the explicit flag, the
+// fallback is suppressed, so a disagreement can never mint a composite key.
+// ---------------------------------------------------------------------------
+
+let private pkBundle (kinds: OssysRowsetTypes.KindRow list) (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
+    {
+        Modules    = [ moduleRow (Some appCoreGuid) ]
+        Kinds      = kinds
+        Attributes = attrs
+        References = []
+        Indexes      = []
+        IndexColumns = []
+        Triggers     = []
+        ColumnChecks = []
+    }
+
+let private parsedUserAttrs (bundle: OssysRowsetTypes.RowsetBundle) : Attribute list =
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> failwithf "expected Ok; got Error: %A" errors
+    | Ok catalog -> catalog.Modules.[0].Kinds.[0].Attributes
+
+[<Fact>]
+let ``PK recovery: entity PrimaryKey_SS_Key marks the matching attribute when Is_Identifier is absent`` () =
+    let bundle =
+        pkBundle
+            [ { userKindRow (Some userGuid) with PrimaryKeySsKey = Some idGuid } ]
+            [ { idAttrRow (Some idGuid) with IsIdentifier = false }
+              emailAttrRow (Some emailGuid) ]
+    let attrs = parsedUserAttrs bundle
+    let pks = attrs |> List.filter (fun a -> a.IsPrimaryKey) |> List.map (fun a -> Name.value a.Name)
+    Assert.Equal<string list>([ "Id" ], pks)
+
+[<Fact>]
+let ``PK recovery: an explicit Is_Identifier flag suppresses the entity-key fallback (no composite ever)`` () =
+    // Contradictory metadata: the flag marks Id; the entity key names
+    // Email. The carried value is the explicit flag alone — the fallback
+    // must not add Email (that would invent a composite the source never
+    // declared). The live path names this divergence separately.
+    let bundle =
+        pkBundle
+            [ { userKindRow (Some userGuid) with PrimaryKeySsKey = Some emailGuid } ]
+            [ idAttrRow (Some idGuid)
+              emailAttrRow (Some emailGuid) ]
+    let attrs = parsedUserAttrs bundle
+    let pks = attrs |> List.filter (fun a -> a.IsPrimaryKey) |> List.map (fun a -> Name.value a.Name)
+    Assert.Equal<string list>([ "Id" ], pks)
+
+[<Fact>]
+let ``PK recovery: no flag and no entity key yields no primary key (unchanged no-PK shape)`` () =
+    let bundle =
+        pkBundle
+            [ userKindRow (Some userGuid) ]
+            [ { idAttrRow (Some idGuid) with IsIdentifier = false }
+              emailAttrRow (Some emailGuid) ]
+    let attrs = parsedUserAttrs bundle
+    Assert.Empty(attrs |> List.filter (fun a -> a.IsPrimaryKey))
+
+[<Fact>]
+let ``PK recovery: the fallback requires a native attribute SS_Key to compare (synthesized keys never match)`` () =
+    // An attribute row without a Guid SS_Key cannot equal the entity's
+    // PrimaryKey_SS_Key — recovery only fires on native-identity rows.
+    let bundle =
+        pkBundle
+            [ { userKindRow (Some userGuid) with PrimaryKeySsKey = Some idGuid } ]
+            [ { idAttrRow None with IsIdentifier = false }
+              emailAttrRow None ]
+    let attrs = parsedUserAttrs bundle
+    Assert.Empty(attrs |> List.filter (fun a -> a.IsPrimaryKey))

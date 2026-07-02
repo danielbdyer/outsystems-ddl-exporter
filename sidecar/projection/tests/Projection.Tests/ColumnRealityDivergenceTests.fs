@@ -76,3 +76,68 @@ let ``F9: both facets diverging on one column surface two distinct diagnostics``
         [ "adapter.ossys.columnReality.identityDivergence"
           "adapter.ossys.columnReality.nullabilityDivergence" ],
         codes)
+
+// ---------------------------------------------------------------------------
+// Primary-key divergence — OSSYS carries PK identity twice (per-attribute
+// `Is_Identifier`; per-entity `PrimaryKey_SS_Key`). The reader uses the
+// entity key as RECOVERY only; a contradiction (both present, naming
+// different attributes) is surfaced by `primaryKeyDivergences`, never
+// resolved by the engine.
+// ---------------------------------------------------------------------------
+
+let private entity (entityId: int) (name: string) (pkSsKey: System.Guid option) : MetadataSnapshotRunner.OssysEntityRow =
+    { EntityId = entityId; EntityName = name; PhysicalTableName = name.ToUpperInvariant()
+      EspaceId = 1; IsActive = true; IsSystemEntity = false; IsExternal = false
+      DataKind = None; PrimaryKeySsKey = pkSsKey; EntitySsKey = None; Description = None }
+
+let private keyedAttr (attrId: int) (name: string) (ssKey: System.Guid option) (isIdentifier: bool) : MetadataSnapshotRunner.OssysAttributeRow =
+    { attr attrId name true false with AttrSsKey = ssKey; IsIdentifier = isIdentifier; AttrName = name }
+
+let private pkSnapshotOf
+    (entities: MetadataSnapshotRunner.OssysEntityRow list)
+    (attrs: MetadataSnapshotRunner.OssysAttributeRow list)
+    : MetadataSnapshotRunner.MetadataSnapshot =
+    { snapshotOf attrs [] with Entities = entities }
+
+let private idKey    = System.Guid.Parse("33333333-3333-4333-8333-333333333333")
+let private emailKey = System.Guid.Parse("44444444-4444-4444-8444-444444444444")
+
+[<Fact>]
+let ``PK divergence: flag and entity key naming different attributes surfaces a warning`` () =
+    let s =
+        pkSnapshotOf
+            [ entity 1 "User" (Some emailKey) ]
+            [ keyedAttr 100 "Id" (Some idKey) true
+              keyedAttr 101 "Email" (Some emailKey) false ]
+    match MetadataSnapshotRunner.primaryKeyDivergences s with
+    | [ d ] ->
+        Assert.Equal<string>("adapter.ossys.primaryKey.divergence", d.Code)
+        Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+        Assert.Equal<string option>(Some "Id", Map.tryFind "flaggedAttributes" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one PK divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``PK divergence: agreeing flag and entity key surface nothing`` () =
+    let s =
+        pkSnapshotOf
+            [ entity 1 "User" (Some idKey) ]
+            [ keyedAttr 100 "Id" (Some idKey) true
+              keyedAttr 101 "Email" (Some emailKey) false ]
+    Assert.Empty(MetadataSnapshotRunner.primaryKeyDivergences s)
+
+[<Fact>]
+let ``PK divergence: an entity key with no flagged attribute is the recovery shape, not a divergence`` () =
+    let s =
+        pkSnapshotOf
+            [ entity 1 "User" (Some idKey) ]
+            [ keyedAttr 100 "Id" (Some idKey) false
+              keyedAttr 101 "Email" (Some emailKey) false ]
+    Assert.Empty(MetadataSnapshotRunner.primaryKeyDivergences s)
+
+[<Fact>]
+let ``PK divergence: a flagged attribute with no entity key surfaces nothing (total)`` () =
+    let s =
+        pkSnapshotOf
+            [ entity 1 "User" None ]
+            [ keyedAttr 100 "Id" (Some idKey) true ]
+    Assert.Empty(MetadataSnapshotRunner.primaryKeyDivergences s)

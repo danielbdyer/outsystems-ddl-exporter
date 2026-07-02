@@ -43,6 +43,13 @@ module LiveModelRead =
                     // LINT-ALLOW: operator-facing boundary warning (channel 2),
                     // sibling to the tightening-relax acknowledgment.
                     eprintfn "%s: %s" d.Code d.Message
+                // PK identity carries twice in OSSYS (attribute flag +
+                // entity key); the reader recovers from a missing flag via
+                // the entity key but never resolves a contradiction — that
+                // is named here.
+                for d in MetadataSnapshotRunner.primaryKeyDivergences snapshot do
+                    // LINT-ALLOW: operator-facing boundary warning (channel 2).
+                    eprintfn "%s: %s" d.Code d.Message
                 let bundle = MetadataSnapshotRunner.toBundle snapshot
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
