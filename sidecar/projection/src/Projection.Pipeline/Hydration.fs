@@ -122,12 +122,30 @@ module Hydration =
                 match cfg.Model.Ossys with
                 | None -> return Result.success catalog
                 | Some connSpec ->
-                    match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec with
-                    | Error es -> return Result.failure es
-                    | Ok cnn ->
-                        use cnn = cnn
-                        let! hydrated = streamAndGraft cnn catalog
-                        return Result.success hydrated
+                    // `emission.dataReadConcurrency` — bounded parallel row
+                    // hydration, each kind on its own short-lived connection
+                    // through the ONE `ConnectionSpec.openSpec` opener.
+                    // `1` is the strictly serial single-connection path.
+                    let concurrency = max 1 cfg.Emission.DataReadConcurrency
+                    if concurrency = 1 then
+                        match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec with
+                        | Error es -> return Result.failure es
+                        | Ok cnn ->
+                            use cnn = cnn
+                            let! hydrated = streamAndGraft cnn catalog
+                            return Result.success hydrated
+                    else
+                        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                        let ownedStatic =
+                            Catalog.allKinds catalog
+                            |> List.filter isStaticKind
+                            |> List.map (fun k -> k.SsKey)
+                            |> Set.ofList
+                        let openConnection () =
+                            ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec
+                        match! Ingestion.collectInOrderForConcurrent concurrency openConnection ownedStatic catalog topo with
+                        | Error es -> return Result.failure es
+                        | Ok rowsByKind -> return Result.success (graftStaticPopulations rowsByKind catalog)
         }
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
@@ -180,13 +198,23 @@ module Hydration =
                     match cfg.Model.Ossys with
                     | None -> return Result.success Map.empty
                     | Some connSpec ->
-                        match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec with
-                        | Error es -> return Result.failure es
-                        | Ok cnn ->
-                            use cnn = cnn
-                            let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-                            let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
-                            return Result.success rows
+                        // `emission.dataReadConcurrency` — the Bootstrap lane
+                        // is the all-data row source, so the bounded parallel
+                        // drain is where the wall-clock win lives. `1` keeps
+                        // the strictly serial single-connection path.
+                        let concurrency = max 1 cfg.Emission.DataReadConcurrency
+                        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                        if concurrency = 1 then
+                            match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec with
+                            | Error es -> return Result.failure es
+                            | Ok cnn ->
+                                use cnn = cnn
+                                let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
+                                return Result.success rows
+                        else
+                            let openConnection () =
+                                ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec
+                            return! Ingestion.collectInOrderForConcurrent concurrency openConnection eligible catalog topo
         }
 
     /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`

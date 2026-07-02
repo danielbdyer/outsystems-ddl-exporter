@@ -25658,3 +25658,57 @@ end-to-end (operator-curated names rather than the generated
 convention), add an explicit override axis (e.g. an
 `overrides.indexNames` surface) rather than re-admitting source
 physical names by default.
+
+## 2026-07-01 — Bounded read concurrency for the full-export data lanes (`emission.dataReadConcurrency` / `profiler.maxConcurrency`); acquisition may be parallel, emission stays deterministic
+
+The all-data publish wall clock was dominated by hundreds of INDEPENDENT
+per-table operations executed strictly serially: one row-stream drain per
+kind (`Ingestion.collectInOrderFor`, one open reader at a time) and one
+3-query live discovery per non-static kind
+(`LiveProfiler.captureEvidenceCacheWith`, a serial `for`). The OSSYS
+metadata rowset batch was NOT the cost — it already runs as one command
+with multiple result sets.
+
+**The two orders, named.** Acquisition may be parallel and bounded;
+emission must stay deterministic and dependency-aware. The new sibling
+functions (`Ingestion.collectInOrderForConcurrent`,
+`LiveProfiler.captureEvidenceCacheConcurrent` / `attachConcurrent`) drain
+each kind on its OWN short-lived connection (SqlClient pooling reuses
+physical connections), gated by a `SemaphoreSlim` — the
+`Deploy.executeBatchParallel` precedent. Results are keyed `Map`s, so the
+value is completion-order-independent by construction; topological order
+still governs the rendered load plan downstream. The serial functions are
+UNCHANGED (byte-identical pre-fix paths) and remain the `1`-concurrency
+arm.
+
+**The knobs.** `emission.dataReadConcurrency` (default 4) binds the
+static-graft + Bootstrap hydration; `profiler.maxConcurrency` (default 4)
+binds live profile capture. Both are low and explicit by default; `< 1`
+is a named config refusal.
+
+**Measured** (`ReadConcurrencyMeasurementTests`, warm container, 100
+tables × 375 rows = 37.5k rows — roughly a tenth of a
+hundreds-of-tables estate; the measured legs run the exact serial
+functions as "before"):
+
+- cold shape (two samples): hydrate 429→236 ms / 464→250 ms at
+  concurrency 4 (~46% faster); profile 567→119 ms / 516→125 ms (~77%)
+- warm sweep: hydrate 290 / 221 / 194 / 190 ms at 1 / 2 / 4 / 8;
+  profile 229 / 137 / 77 / 112 ms — scaling flattens past 4 and the
+  profile leg INVERTS at 8 (the bottleneck moves to pool/server
+  pressure), which is why the defaults stay at 4
+- row maps and evidence caches value-identical across every leg
+  (acquisition-only concurrency; coverage unchanged)
+
+Local per-table latency understates a remote source's, so the remote win
+is at least this shape. New Bench labels separate queue/lifetime from
+actual drain cost: `ingestion.rowDrain` (+ per-table + `.rows`) and
+`profile.live.discoverKind.drain` vs the stream-LIFETIME
+`readside.readRowsStream.*` labels.
+
+**Re-open triggers.** A pre-warmed bounded connection pool (instead of
+per-kind transient opens) if pool churn shows up in the drain labels;
+batched INFORMATION_SCHEMA nullability reflection (one schema query
+instead of per-kind) as the next profile-stage cut; batch-aware row
+materialization for the largest tables if peak memory becomes the
+binding constraint.

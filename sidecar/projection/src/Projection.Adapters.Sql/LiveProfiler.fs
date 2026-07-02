@@ -27,15 +27,26 @@ open Projection.Core
 type SqlProfilerOptions = {
     MaxRowsPerKind  : int option
     EnvironmentTag  : string option
+    /// Bounded parallelism for the per-kind discovery when the caller uses
+    /// the connection-factory form (`captureEvidenceCacheConcurrent`) — how
+    /// many kinds may run their 3-query discovery concurrently, each on its
+    /// own pooled connection (`profiler.maxConcurrency`). Acquisition-only
+    /// concurrency: the cache is keyed and every derived Profile axis is
+    /// pure, so results never depend on completion order. The single-open-
+    /// connection entry points (`captureEvidenceCacheWith` / `attach`)
+    /// remain strictly serial regardless of this value.
+    MaxConcurrency  : int
 }
 
 [<RequireQualifiedAccess>]
 module SqlProfilerOptions =
 
-    /// Default options: full-scan (no sampling cap), no environment tag.
+    /// Default options: full-scan (no sampling cap), no environment tag,
+    /// discovery concurrency 4 (low and explicit — the factory form only).
     let defaults : SqlProfilerOptions = {
         MaxRowsPerKind  = None
         EnvironmentTag  = None
+        MaxConcurrency  = 4
     }
 
 /// Live-SQL adapter that captures `Profile.AttributeRealities` by
@@ -361,6 +372,97 @@ module LiveProfiler =
         (catalog: Catalog)
         : Task<Result<EvidenceCache>> =
         captureEvidenceCacheWith SqlProfilerOptions.defaults cnn catalog
+
+    /// Discovery for one kind on its OWN connection, gated by the shared
+    /// semaphore. Hoisted to module level (no local closures inside a
+    /// Release `task { }` — FS3511). The gate bounds in-flight discoveries;
+    /// the connection is short-lived (SqlClient pooling reuses physical
+    /// connections underneath).
+    let private discoverKindGated
+        (gate: System.Threading.SemaphoreSlim)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (maxRows: int option)
+        (kind: Kind)
+        : Task<Result<CachedKind option>> =
+        task {
+            do! gate.WaitAsync()
+            try
+                match! openConnection () with
+                | Error es -> return Result.failure es
+                | Ok cnn ->
+                    use cnn = cnn
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    let! cached = discoverKind cnn maxRows kind
+                    sw.Stop()
+                    Bench.recordSample "profile.live.discoverKind.drain" sw.ElapsedMilliseconds
+                    return Result.success cached
+            finally
+                gate.Release() |> ignore
+        }
+
+    /// Bounded-parallel sibling of `captureEvidenceCacheWith` — the
+    /// operator's `profiler.maxConcurrency` knob. Each non-static kind runs
+    /// its 3-query discovery on its own short-lived connection, at most
+    /// `options.MaxConcurrency` in flight. **Acquisition-only concurrency**:
+    /// the cache is a keyed `Map` and every downstream Profile axis derives
+    /// purely from it (`ProfileDerivation`), so the result never depends on
+    /// completion order. Any per-kind open or probe failure fails the whole
+    /// capture loudly.
+    let captureEvidenceCacheConcurrent
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (catalog: Catalog)
+        : Task<Result<EvidenceCache>> =
+        task {
+            use _ = Bench.scope "profile.live.captureEvidenceCache.concurrent"
+            try
+                let nonStaticKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                let capped = max 1 options.MaxConcurrency
+                Bench.recordSample "profile.live.captureEvidenceCache.concurrency" (int64 capped)
+                use gate = new System.Threading.SemaphoreSlim(capped, capped)
+                let discoveries =
+                    nonStaticKinds
+                    |> List.map (discoverKindGated gate openConnection options.MaxRowsPerKind)
+                let! results = Task.WhenAll(Array.ofList discoveries)
+                return
+                    results
+                    |> Array.toList
+                    |> Result.aggregate
+                    |> Result.map (fun cachedKinds ->
+                        let kinds =
+                            cachedKinds
+                            |> List.choose id
+                            |> List.map (fun c -> c.KindKey, c)
+                            |> Map.ofList
+                        { Kinds = kinds })
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.captureEvidenceCacheFailed"
+                            (System.String.Concat("LiveProfiler.captureEvidenceCacheConcurrent failed: ", ex.Message)))
+        }
+
+    /// Connection-factory sibling of `attach`: capture the EvidenceCache
+    /// with bounded per-kind parallelism, then compose every derived
+    /// Profile axis purely via `attachFromCache` — same evidence, same
+    /// derivations, different acquisition schedule.
+    let attachConcurrent
+        (options: SqlProfilerOptions)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Task<Result<Profile>> =
+        task {
+            let! cacheResult = captureEvidenceCacheConcurrent options openConnection catalog
+            match cacheResult with
+            | Error errors -> return Result.failure errors
+            | Ok cache    -> return Result.success (ProfileDerivation.attachFromCache cache catalog profile)
+        }
 
 
 

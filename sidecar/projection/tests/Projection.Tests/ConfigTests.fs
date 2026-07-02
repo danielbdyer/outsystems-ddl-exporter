@@ -636,3 +636,35 @@ let ``Config.fromFile: D9 violation in file surfaces credentialPropertyForbidden
     let errors =
         withTempFile json (fun path -> Config.fromFile path |> mustFail)
     Assert.True(hasCode "pipeline.config.credentialPropertyForbidden" errors)
+
+// -----------------------------------------------------------------------
+// Read-concurrency knobs — `emission.dataReadConcurrency` and
+// `profiler.maxConcurrency`. Bounded ACQUISITION parallelism only (the
+// rendered load plan stays deterministic and dependency-ordered); both
+// default to a low, explicit 4; `1` selects the strictly serial
+// single-connection paths; values < 1 are a named refusal.
+// -----------------------------------------------------------------------
+
+[<Fact>]
+let ``Config.parse: dataReadConcurrency and profiler.maxConcurrency default to 4`` () =
+    let json = """{ "model": { "path": "m.json" } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Equal(4, cfg.Emission.DataReadConcurrency)
+    Assert.Equal(4, cfg.Profiler.MaxConcurrency)
+
+[<Fact>]
+let ``Config.parse: explicit read-concurrency values parse through`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "dataReadConcurrency": 8 }, "profiler": { "provider": "live", "maxConcurrency": 2 } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Equal(8, cfg.Emission.DataReadConcurrency)
+    Assert.Equal(2, cfg.Profiler.MaxConcurrency)
+    Assert.Equal(Config.ProfilerProvider.Live, cfg.Profiler.Provider)
+
+[<Fact>]
+let ``Config.parse: read-concurrency below 1 is a named refusal`` () =
+    let jsonEmission = """{ "model": { "path": "m.json" }, "emission": { "dataReadConcurrency": 0 } }"""
+    let errors = Config.parse jsonEmission |> mustFail
+    Assert.True(errors |> List.exists (fun e -> e.Code.Contains "emission.dataReadConcurrency.invalid"))
+    let jsonProfiler = """{ "model": { "path": "m.json" }, "profiler": { "maxConcurrency": -1 } }"""
+    let errors2 = Config.parse jsonProfiler |> mustFail
+    Assert.True(errors2 |> List.exists (fun e -> e.Code.Contains "profiler.maxConcurrency.invalid"))

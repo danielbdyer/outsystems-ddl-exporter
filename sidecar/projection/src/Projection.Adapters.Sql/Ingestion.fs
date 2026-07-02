@@ -86,6 +86,78 @@ module Ingestion =
         : Task<Map<SsKey, StaticRow list>> =
         collectInOrderFor (Set.ofList topo.Order) cnn catalog topo
 
+    /// Drain ONE kind's rows on its own connection, gated by the shared
+    /// semaphore. Hoisted to module level (never `let rec`/local closures
+    /// inside a Release `task { }` — FS3511). Records the actual per-table
+    /// row-drain cost — `ingestion.rowDrain` (+ the per-table label) and
+    /// `ingestion.rowDrain.rows` — as distinct from the stream-LIFETIME
+    /// labels `readside.readRowsStream.*` accumulate (under queuing, a
+    /// stream's lifetime includes gate wait; the drain label is the
+    /// SQL/read/materialization cost alone).
+    let private drainKindGated
+        (gate: System.Threading.SemaphoreSlim)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (key: SsKey)
+        (kind: Kind)
+        : Task<Result<SsKey * StaticRow list>> =
+        task {
+            do! gate.WaitAsync()
+            try
+                match! openConnection () with
+                | Error es -> return Result.failure es
+                | Ok cnn ->
+                    use cnn = cnn
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    let! rows = AsyncStream.toList (streamKindRows cnn kind)
+                    sw.Stop()
+                    Bench.recordSample "ingestion.rowDrain" sw.ElapsedMilliseconds
+                    Bench.recordSample
+                        (System.String.Concat("ingestion.rowDrain.", TableId.schemaText kind.Physical, ".", TableId.tableText kind.Physical))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-table drain label); a label IS a string primitive
+                        sw.ElapsedMilliseconds
+                    Bench.recordSample "ingestion.rowDrain.rows" (int64 (List.length rows))
+                    return Result.success (key, rows)
+            finally
+                gate.Release() |> ignore
+        }
+
+    /// Bounded-parallel sibling of `collectInOrderFor` — the operator's
+    /// `emission.dataReadConcurrency` knob. Each owned kind drains its row
+    /// stream on its OWN short-lived connection (`openConnection`; SqlClient
+    /// pooling reuses physical connections underneath), at most `concurrency`
+    /// in flight. **Acquisition-only concurrency**: the result is the same
+    /// keyed `Map` the serial form produces (a `Map` is key-ordered; per-kind
+    /// row order is the reader's PK order on a single stream) — topological /
+    /// dependency order still governs the rendered load plan downstream, so
+    /// emitted semantics never depend on completion order. Any per-kind open
+    /// or read failure fails the whole collection loudly.
+    let collectInOrderForConcurrent
+        (concurrency: int)
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        (owned: Set<SsKey>)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Result<Map<SsKey, StaticRow list>>> =
+        task {
+            use _ = Bench.scope "ingestion.collect.concurrent"
+            let capped = max 1 concurrency
+            Bench.recordSample "ingestion.collect.concurrency" (int64 capped)
+            let kinds =
+                topo.Order
+                |> List.choose (fun key ->
+                    if Set.contains key owned then
+                        Catalog.tryFindKind key catalog |> Option.map (fun k -> key, k)
+                    else None)
+            use gate = new System.Threading.SemaphoreSlim(capped, capped)
+            let drains =
+                kinds |> List.map (fun (key, k) -> drainKindGated gate openConnection key k)
+            let! results = Task.WhenAll(Array.ofList drains)
+            return
+                results
+                |> Array.toList
+                |> Result.aggregate
+                |> Result.map Map.ofList
+        }
+
     /// Registry metadata (pillar 9). The ingestion adapter leg classifies
     /// entirely as `DataIntent` — lifting a substrate's rows is observation,
     /// not operator opinion (mirrors the OSSYS `CatalogReader` adapter).

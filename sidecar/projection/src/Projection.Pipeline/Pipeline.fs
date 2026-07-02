@@ -1303,15 +1303,45 @@ module Compose =
     /// via the `LiveProfiler` adapter. An unreachable / malformed
     /// connection is a *named failure* (`pipeline.profiler.connectionFailed`),
     /// never a silent fallback to empty.
+    let private openProfilerConnection
+        (connectionString: string)
+        ()
+        : Task<Result<SqlConnection>> =
+        task {
+            try
+                let cnn = new SqlConnection(connectionString)
+                do! cnn.OpenAsync()
+                return Result.success cnn
+            with ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "pipeline.profiler.connectionFailed"
+                            (sprintf "live profiling could not reach the source database: %s" ex.Message))
+        }
+
     let private profileFromLiveConnection
+        (maxConcurrency: int)
         (connectionString: string)
         (catalog: Catalog)
         : Task<Result<Profile>> =
         task {
             try
-                use cnn = new SqlConnection(connectionString)
-                do! cnn.OpenAsync()
-                return! Projection.Adapters.Sql.LiveProfiler.attach cnn catalog Profile.empty
+                // `profiler.maxConcurrency` — bounded parallel per-kind
+                // discovery, each on its own pooled connection. `1` keeps the
+                // strictly serial single-connection path.
+                let capped = max 1 maxConcurrency
+                if capped = 1 then
+                    use cnn = new SqlConnection(connectionString)
+                    do! cnn.OpenAsync()
+                    return! Projection.Adapters.Sql.LiveProfiler.attach cnn catalog Profile.empty
+                else
+                    let options =
+                        { Projection.Adapters.Sql.SqlProfilerOptions.defaults with
+                            MaxConcurrency = capped }
+                    return!
+                        Projection.Adapters.Sql.LiveProfiler.attachConcurrent
+                            options (openProfilerConnection connectionString) catalog Profile.empty
             with ex ->
                 return
                     Result.failureOf
@@ -1352,7 +1382,7 @@ module Compose =
                                     Config.LiveProfilerProvider
                                     Config.SourceConnectionStringEnvVar))
                 else
-                    return! profileFromLiveConnection connectionString catalog
+                    return! profileFromLiveConnection cfg.Profiler.MaxConcurrency connectionString catalog
         }
 
     /// Synchronous core for `runWithConfig`. Extracted from the `task { }`
