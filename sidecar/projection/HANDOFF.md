@@ -1,3 +1,30 @@
+# Handoff addendum — 2026-07-02 (second letter), THE SINGLE-SCAN PROGRAM: one estate scan, everything derives, emission overlaps — P1–P5 landed with a 480k-row corpus adjudicating every leg. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
+
+To the next agent.
+
+**The program and its law.** `SINGLE_SCAN_PROGRAM.md` is the durable plan + measurement ledger — read it before touching any of this. The law that governed every landing: *no optimization's timing counts until a VALUE-IDENTITY assertion against the incumbent path holds on the corpus* (~480k rows / 240 variegated tables, `PERF_CORPUS=1`; add `PERF_CORPUS_DURABLE=1` to reuse the seeded `PerfCorpusDurable` database — the seed is ~4.5min you should not repay per iteration).
+
+**What landed (DECISIONS 2026-07-02, single-scan entry, has the full inventory):**
+- **P1** — the profile stage derives its evidence cache from the rows the data lanes already hydrated (`EvidenceCache.cachedKindOfRows`, `LiveProfiler.captureEvidenceCacheDerived`, pipeline threading). The SECOND full-estate pass is gone: 480 per-kind queries + 240 streams → 1 global nullability reflection. Identity asserted across the corpus repeatedly. Know the named caveat: `""` ≡ NULL (NM-18 / `Tolerance.EmptyTextNormalizedToNull`) — derived evidence observes the IR plane (what publish ships), live observes the source.
+- **P2** — the plan build, the MERGE render, and the drain all factor per kind (`DataLoadPlan.loadForWith`, `StaticSeedsEmitter.renderLoad`, `Ingestion.collectInOrderForConcurrentWith`); a drain-time projection runs inside the gate after the connection pools back. The composed pass (drain+render+derive per kind on 4 workers) beat the two-phase sum by 21–39% and the serial emit alone — the drain workers parallelize render CPU as a byproduct. Row memory caps at `concurrency` kinds.
+- **P3** — the corpus measured the IR row-carrier tax at **3.35×** (8.0–8.1s materialized vs 2.4s positional; ~70% of hydrate wall-clock is Map mint + identity synthesis, not wire). Positional twins landed (`quantumToTypedValues`, `cachedKindOfQuanta`, `renderQuanta`, `collectQuantaForConcurrentWith`); row identity mints through the ONE shared `StaticRow.readsideIdentity`, so the quanta pass equals the named-row pass at FULL record grain. On the render-CPU-saturated composed pass its wall-clock is at parity (the tax's win is drain-side + allocation); its home is wire-dominated and memory-pressured contexts.
+- **P4** — `SqlProfilerOptions.Sampling : SamplingPolicy` (Core; default + per-kind pins; explicit `None` pin = exemption) replaced the global `MaxRowsPerKind`. Exact aggregates never trade; sampled kinds keep live capped discovery and are excluded from derivation; every downgrade named (`SamplingDiagnostics.emit`). Corpus: capping the 10 wide kinds at 2000 rows cut the live profile **5,183 → 1,027ms (-80%)** with exact counts preserved and `derived∘tiered ≡ all-live tiered`. The CONFIG surface (profiler.sampling with logical `{module, entity}` refs) is the named follow-on.
+- **P5** — the drain reader opens `CommandBehavior.SequentialAccess` (the pull loop is strictly ordinal-ascending, single-visit). No regression at corpus widths; the win grows with row width; all identity laws held under it.
+
+**Your next moves:**
+- **P2 production wiring** (the biggest unrealized win): the post-chain catalog is profile-INDEPENDENT (`catalogStep` builds with `fun _ _` — verified), so the catalog can fix BEFORE the wire opens. Gates named in the program doc: CDC reflection pre-drain, empty/config-known remap; the slice is splitting `runWithConfigCore`'s catalog steps (pre-drain) from decision steps (post-profile).
+- **P4 config surface**: `profiler.sampling` parse + logical-ref binder resolution (`CatalogResolution.tryKindByLogical`) + threading `SamplingDiagnostics.emit` into the run diagnostics.
+- The quanta pass deserves a second look under a WIRE-dominated profile (remote/throttled link) where its drain-side savings should move wall-clock, not just CPU accounting.
+
+**Scars (this session):**
+- FS3511 bit twice more: a tuple-pattern `for` AND a `for…do!` both had to leave the corpus test's `task { }` (module-level tail-recursive continuations — `PerfCorpus.seedFrom` is the shape). The corpus test had never been Release-built before (test.sh builds Debug); it is now clean both ways.
+- SQL Server name-binds EVERY object in a statement at compile time — a `CASE WHEN OBJECT_ID(...) IS NOT NULL THEN (SELECT … FROM that_table)` still fails on a fresh database. Two round trips (`PerfCorpus.corpusComplete`).
+- Cross-run absolute timings on the warm container drift ±30% with host state (emit swung 23.3–35.7s); within-run ratios are the verdict. The BEFORE "hydrate concurrency inversion" finding was RETRACTED on exactly this ground (rule-13 contamination).
+
+Hold the spine.
+
+---
+
 # Handoff addendum — 2026-07-02, FULL-EXPORT FIDELITY + READ-CONCURRENCY ARC: nine fixes across the extraction→emission spine (scope pushdown, PK recovery, no-PK MERGE fallback, deployed-storage evidence for bt* references, logical index names, authored-default lift + incidental-reflection suppression, lifecycle-store self-preparing writes, aggregate nullability diagnostics) + bounded hydrate/profile parallelism with a measured harness. Branch `claude/first-run-full-export-fixes-b6t0ui`, PR #648
 
 To the next agent.

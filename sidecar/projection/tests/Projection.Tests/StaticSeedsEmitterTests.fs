@@ -995,3 +995,61 @@ let ``MergeRender.renderUpdate: a no-PK kind's Phase-2 row scope excludes the de
     Assert.Contains("WHERE [CODE] = N'A'", sql)
     Assert.DoesNotContain("WHERE [LABEL]", sql)
     Assert.DoesNotContain("AND [LABEL]", sql)
+
+// ---------------------------------------------------------------------------
+// Acquisition-overlap factorization law — `renderLoad` (the per-kind unit)
+// reproduces every script `emitFromPlan` (the batch map) produces. This is
+// what lets an overlapped realization render a kind's MERGE the moment its
+// rows land: per-kind text depends only on (options, CDC membership, the
+// kind, its own load); cross-kind order is assembly's concern.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``renderLoad ≡ emitFromPlan per kind: the per-kind render unit reproduces the batch scripts`` () =
+    let country = mkCountryKind ()
+    let regular = mkRegularKind ()
+    let catalog = mkCatalog [ country; regular ]
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+    let rawRows =
+        Catalog.allKinds catalog
+        |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
+        |> Map.ofList
+    let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
+    let artifact =
+        StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan
+        |> mustOkEmit
+    let batch = ArtifactByKind.toMap artifact
+    for load in plan.Loads do
+        let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
+        let perKind =
+            StaticSeedsEmitter.renderLoad DataEmitOptions.defaults Profile.empty.CdcAwareness kind load
+        Assert.Equal<DataInsertScript>(Map.find load.Kind batch, perKind)
+
+[<Fact>]
+let ``renderQuanta ≡ renderLoad over materialized rows at FULL record grain (the positional-render law)`` () =
+    // Quanta in attribute order (Id, Code, Label), materialized through
+    // the SAME boundary the reader leg uses (`StaticRow.ofQuantum` +
+    // `StaticRow.readsideIdentity`) — the two render paths must agree on
+    // the whole DataInsertScript (identifiers included), not just text.
+    let country = mkCountryKind ()
+    let basis = Kind.rowBasis country
+    let schemaText = TableId.schemaText country.Physical
+    let tableText  = TableId.tableText country.Physical
+    let quanta : RowQuantum list =
+        [ { Cells = [| "1"; "US"; "United States" |] }
+          { Cells = [| "2"; "CA"; "Canada" |] } ]
+    let rows =
+        quanta
+        |> List.mapi (fun i q ->
+            StaticRow.ofQuantum basis (StaticRow.readsideIdentity schemaText tableText i) q)
+    for deferred in [ Set.empty; Set.singleton (mkName "Label") ] do
+        let load : DataLoadKind =
+            { Kind              = country.SsKey
+              Disposition       = IdentityDisposition.PreservedFromSource
+              DeferredFkColumns = deferred
+              Rows              = rows }
+        let viaRows =
+            StaticSeedsEmitter.renderLoad DataEmitOptions.defaults Profile.empty.CdcAwareness country load
+        let viaQuanta =
+            StaticSeedsEmitter.renderQuanta DataEmitOptions.defaults Profile.empty.CdcAwareness country deferred quanta
+        Assert.Equal<DataInsertScript>(viaRows, viaQuanta)

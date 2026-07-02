@@ -947,7 +947,17 @@ module ReadSide =
                 | Some (_, addParams) -> addParams cmd
                 | None -> ()
                 cmdOpt <- Some cmd
-                let! reader = cmd.ExecuteReaderAsync()
+                // `SequentialAccess`: the provider streams column data
+                // instead of buffering whole rows. The pull loop below is
+                // the reader's ONLY cell-access site and it is strictly
+                // ordinal-ascending with a single visit per column
+                // (`IsDBNull i` then `formatters.[i] r i`), which is
+                // exactly the access contract SequentialAccess requires;
+                // `GetFieldType` in the formatter setup reads metadata,
+                // not row data. Wide nvarchar cells stop being row-
+                // buffered twice — the win grows with row width and is
+                // measured on the corpus (SINGLE_SCAN_PROGRAM ledger).
+                let! reader = cmd.ExecuteReaderAsync(System.Data.CommandBehavior.SequentialAccess)
                 readerOpt <- Some reader
                 // Per-column typed formatters, chosen once from the actual
                 // field types (available as soon as the reader opens).
@@ -1065,6 +1075,8 @@ module ReadSide =
     /// wherever it lives).
     let materializeStream (kind: Kind) (stream: AsyncStream<RowQuantum>) : AsyncStream<StaticRow> =
         let basis = Kind.rowBasis kind
+        let schemaText = TableId.schemaText kind.Physical
+        let tableText  = TableId.tableText kind.Physical
         let mutable rowIdx = 0
         let mutable irTicks = 0L
         fun () ->
@@ -1077,22 +1089,15 @@ module ReadSide =
                     return None
                 | Some q ->
                     let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
-                    let rowBasisText =
-                        sprintf
-                            "%s.%s.%d"
-                            (TableId.schemaText kind.Physical)
-                            (TableId.tableText kind.Physical)
-                            rowIdx
+                    // The row identity mints through the ONE shared
+                    // `StaticRow.readsideIdentity` (`READSIDE_ROW` over
+                    // `<schema>.<table>.<rowIdx>`) so positional (quanta)
+                    // realizations reproduce it exactly.
+                    let rowKey = StaticRow.readsideIdentity schemaText tableText rowIdx
                     rowIdx <- rowIdx + 1
-                    match SsKey.synthesized "READSIDE_ROW" rowBasisText with
-                    | Ok rowKey ->
-                        let row = StaticRow.ofQuantum basis rowKey q
-                        irTicks <- irTicks + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
-                        return Some row
-                    | Error _ ->
-                        // SsKey.synthesized only fails on blank input;
-                        // rowBasisText is non-blank by construction.
-                        return None
+                    let row = StaticRow.ofQuantum basis rowKey q
+                    irTicks <- irTicks + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
+                    return Some row
             }
 
     /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain

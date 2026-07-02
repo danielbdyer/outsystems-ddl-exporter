@@ -86,6 +86,68 @@ module DataLoadPlan =
     /// so the whole capture/remap/FK-repoint machinery is skipped downstream
     /// (it already branches on `PreservedFromSource`). `reclassifyReconciled`
     /// still composes on top.
+    /// The remap's target-kind keyset — precomputed once per build (or once
+    /// per acquisition, for the per-kind entry below) so the per-kind
+    /// substitution gate is a set lookup, not a Map walk.
+    let private remapTargetsOf (remap: SurrogateRemapContext) : Set<SsKey> =
+        remap.Assignments |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+
+    let private substituteWith
+        (remapTargets: Set<SsKey>)
+        (remap: SurrogateRemapContext)
+        (k: Kind)
+        (raw: StaticRow list)
+        : RemappedRows =
+        if Set.isEmpty remapTargets || List.isEmpty raw then { Rows = raw; Skipped = [] }
+        else
+            let fkTargets = SurrogateRemap.fkColumnsTargeting remapTargets k
+            if Map.isEmpty fkTargets then { Rows = raw; Skipped = [] }
+            else SurrogateRemap.remapRowFks fkTargets remap raw
+
+    let private loadForCore
+        (policy: IdentityPolicy)
+        (cycleMembers: Set<SsKey>)
+        (remapTargets: Set<SsKey>)
+        (remap: SurrogateRemapContext)
+        (k: Kind)
+        (raw: StaticRow list)
+        : DataLoadKind * (SsKey * UnresolvedReference) list =
+        let remapped = substituteWith remapTargets remap k raw
+        let load =
+            { Kind              = k.SsKey
+              Disposition       = IdentityDisposition.byPolicy policy k
+              DeferredFkColumns = TopologicalOrder.deferredFkColumns cycleMembers k
+              Rows              = remapped.Rows }
+        load, (remapped.Skipped |> List.map (fun u -> k.SsKey, u))
+
+    /// Build ONE kind's load (+ its skipped-reference diagnostics) — the
+    /// per-kind unit `buildWith` folds over the topological order, exposed
+    /// so an acquisition-overlapped realization can construct a kind's load
+    /// the moment its rows land (the plan factors per kind: no load field
+    /// depends on another kind's rows — order, cycle membership, and the
+    /// remap are all fixed before acquisition). Equivalence with the batch
+    /// build is BY CONSTRUCTION: `buildWith` folds the same core this
+    /// function wraps. `cycleMembers` is `TopologicalOrder.cycleMembers
+    /// topo`, hoisted by the caller (once per plan, not once per kind).
+    let loadForWith
+        (policy: IdentityPolicy)
+        (cycleMembers: Set<SsKey>)
+        (remap: SurrogateRemapContext)
+        (k: Kind)
+        (raw: StaticRow list)
+        : DataLoadKind * (SsKey * UnresolvedReference) list =
+        loadForCore policy cycleMembers (remapTargetsOf remap) remap k raw
+
+    /// The structural-policy per-kind build — `loadForWith` under
+    /// `IdentityPolicy.Structural`, mirroring the `build`/`buildWith` pair.
+    let loadFor
+        (cycleMembers: Set<SsKey>)
+        (remap: SurrogateRemapContext)
+        (k: Kind)
+        (raw: StaticRow list)
+        : DataLoadKind * (SsKey * UnresolvedReference) list =
+        loadForWith IdentityPolicy.Structural cycleMembers remap k raw
+
     let buildWith
         (policy: IdentityPolicy)
         (catalog: Catalog)
@@ -94,14 +156,7 @@ module DataLoadPlan =
         (remap: SurrogateRemapContext)
         : DataLoadPlan =
         let members = TopologicalOrder.cycleMembers topo
-        let remapTargets =
-            remap.Assignments |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let substitute (k: Kind) (raw: StaticRow list) : RemappedRows =
-            if Set.isEmpty remapTargets || List.isEmpty raw then { Rows = raw; Skipped = [] }
-            else
-                let fkTargets = SurrogateRemap.fkColumnsTargeting remapTargets k
-                if Map.isEmpty fkTargets then { Rows = raw; Skipped = [] }
-                else SurrogateRemap.remapRowFks fkTargets remap raw
+        let remapTargets = remapTargetsOf remap
 
         let loadAndSkipped =
             topo.Order
@@ -109,14 +164,7 @@ module DataLoadPlan =
                 Catalog.tryFindKind key catalog
                 |> Option.map (fun k ->
                     let raw = Map.tryFind key rawRowsByKind |> Option.defaultValue []
-                    let remapped = substitute k raw
-                    let load =
-                        { Kind              = key
-                          Disposition       = IdentityDisposition.byPolicy policy k
-                          DeferredFkColumns = TopologicalOrder.deferredFkColumns members k
-                          Rows              = remapped.Rows }
-                    let owned = remapped.Skipped |> List.map (fun u -> key, u)
-                    load, owned))
+                    loadForCore policy members remapTargets remap k raw))
 
         let loads   = loadAndSkipped |> List.map fst
         let skipped = loadAndSkipped |> List.collect snd

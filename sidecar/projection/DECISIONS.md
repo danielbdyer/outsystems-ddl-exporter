@@ -25792,3 +25792,70 @@ label is deterministic across all 5 runs (σ = 0).
 **Guard going forward.** The gate's building/filter target and the
 test's assembly must move together — a filter that matches nothing now
 fails loudly at the no-snapshot check, which is what surfaced this.
+
+## 2026-07-02 — The single-scan program: evidence derives from the data lanes' rows; the plan/render factor per kind; carriers stay positional to the render; sampling tiers per kind
+
+Four related landings (SINGLE_SCAN_PROGRAM.md carries the measured
+ledger; every leg's timing counted only after a VALUE-IDENTITY
+assertion against the incumbent path held on the ~480k-row corpus):
+
+**1. Single-scan evidence (P1).** When the data lanes hydrate rows,
+the profile stage DERIVES the evidence cache from them
+(`EvidenceCache.cachedKindOfRows` over `CachedValue.ofRaw`'s raw-form
+equivalence table; `LiveProfiler.captureEvidenceCacheDerived`
+partitions derived-vs-live with counted Bench labels; ONE global
+nullability reflection replaces per-kind reflection). The second
+full-estate pass is gone. Equivalence caveats are NAMED in the
+docstrings and pinned in `EvidenceCacheDerivationTests`: full
+hydration required (sampled kinds keep live discovery), and `""` ≡
+NULL per the universal sentinel (NM-18 /
+`Tolerance.EmptyTextNormalizedToNull`) — derived evidence observes the
+IR plane (what publish ships), live observes the source plane.
+
+**2. Per-kind factorization (P2).** `DataLoadPlan.loadForWith`/
+`loadFor`, `StaticSeedsEmitter.renderLoad`, and the projected drains
+(`Ingestion.collectInOrderForConcurrentWith` /
+`collectQuantaForConcurrentWith`) expose the per-kind units the batch
+paths FOLD — equivalence by construction, pinned in the pure pool. A
+drain-time projection runs inside the concurrency gate AFTER the
+connection pools back: bounded row memory (`concurrency` kinds, not
+the estate), render CPU parallelized across drain workers. The
+composed corpus pass (drain+render+derive) beat the two-phase sum by
+21–39% and the serial emit leg alone. Production wiring gates are
+named in the program doc (post-chain catalog is profile-independent —
+`catalogStep` ignores profile; CDC reflection pre-drain; empty/config-
+known remap).
+
+**3. Positional carriers to the render (P3).** The corpus measured the
+IR rebuild (per-row Map mint + row-identity synthesis) at 3.35× the
+raw positional drain (8,141ms vs 2,429ms — ~70% of hydrate wall-clock
+is carrier construction, not wire). `KindColumns.quantumToTypedValues`,
+`EvidenceCache.cachedKindOfQuanta`, and `StaticSeedsEmitter
+.renderQuanta` consume `RowQuantum` cells positionally (`Cells.[i]` ↔
+`Attributes.[i]` — `Kind.rowBasis` order); row identities mint through
+the ONE shared `StaticRow.readsideIdentity` (also now used by
+`ReadSide.materializeStream`), so the quanta pass equals the named-row
+pass at FULL record grain, not just rendered text. Gate: quanta render
+requires the empty remap (identity substitution needs named rows).
+
+**4. Evidence tiering (P4) + wire posture (P5).**
+`SqlProfilerOptions.MaxRowsPerKind` is replaced by
+`Sampling : SamplingPolicy` (Core; default + per-kind pins; explicit
+`None` pin = full-scan exemption). Under any cap, RowCount/NullCounts
+stay EXACT (the aggregate is never capped); sampled kinds are excluded
+from single-scan derivation and every downgrade is NAMED
+(`SamplingDiagnostics.emit`, code `profiler.evidence.sampled`, one
+Info per sampled kind — operator-requested, so Info not Warning; the
+config-surface binding is the named follow-on in the program doc).
+The drain reader (`ReadSide.readRowsStreamCore`) now opens with
+`CommandBehavior.SequentialAccess` — its pull loop is strictly
+ordinal-ascending with single visits, the exact access contract;
+corpus legs measured no regression at corpus row widths (the win
+grows with width) and all identity laws held under it.
+
+**Corpus harness addendum.** `PERF_CORPUS_DURABLE=1` seeds a fixed
+`PerfCorpusDurable` database once (sentinel-verified: table count +
+exact last-table row count; wipe-and-reseed on mismatch) and never
+drops it — measurement iterations stop repaying the ~4.5min seed.
+Reclaim manually with `DROP DATABASE PerfCorpusDurable` if the warm
+instance's memory pool degrades (survival-rule-2 family).

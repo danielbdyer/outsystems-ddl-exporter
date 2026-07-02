@@ -239,6 +239,44 @@ module EvidenceCache =
     /// align positionally for single-column-PK kinds (derivations are
     /// order-insensitive regardless). Attribute-less kinds yield `None`
     /// (the live discovery's own refusal shape).
+    /// Shared assembly tail for the two derivation entries below: exact
+    /// null counts, catalog-order columns, and the `ColumnsByKey`
+    /// correspondence, from already-projected per-column cell lists. One
+    /// implementation so the named-row and positional entries cannot
+    /// drift.
+    let private cachedKindFromPerColumn
+        (nullability: Map<string, bool>)
+        (kind: Kind)
+        (rowCount: int64)
+        (perColumn: System.Collections.Generic.List<CachedValue>[])
+        : CachedKind =
+        let attrs = kind.Attributes
+        let nullCounts =
+            attrs
+            |> List.mapi (fun idx a ->
+                let nulls =
+                    let mutable n = 0L
+                    for v in perColumn.[idx] do
+                        if CachedValue.isNull v then n <- n + 1L
+                    n
+                a.SsKey, nulls)
+            |> Map.ofList
+        let columns =
+            attrs
+            |> List.mapi (fun idx a ->
+                { AttributeKey         = a.SsKey
+                  IsNullableInDatabase =
+                      Map.tryFind (ColumnRealization.columnNameText a.Column) nullability
+                      |> Option.defaultValue false
+                  Values               = perColumn.[idx].ToArray() })
+        let columnsByKey =
+            columns |> List.map (fun c -> c.AttributeKey, c) |> Map.ofList
+        { KindKey      = kind.SsKey
+          RowCount     = rowCount
+          NullCounts   = nullCounts
+          Columns      = columns
+          ColumnsByKey = columnsByKey }
+
     let cachedKindOfRows
         (nullability: Map<string, bool>)
         (kind: Kind)
@@ -257,32 +295,36 @@ module EvidenceCache =
                         Map.tryFind a.Name row.Values
                         |> Option.defaultValue ""
                     perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
-            let nullCounts =
+            Some (cachedKindFromPerColumn nullability kind (int64 (List.length rows)) perColumn)
+
+    /// Positional sibling of `cachedKindOfRows` — derive a kind's evidence
+    /// straight from the in-flight quantum carrier, skipping the IR rebuild
+    /// entirely (no per-row Map mint, no row-identity synthesis; evidence
+    /// never needed either). `Cells.[i]` is positional against
+    /// `Kind.rowBasis`, which IS `kind.Attributes` order, so the cell for
+    /// attribute `i` reads by index; a short row's missing tail reads as
+    /// the empty raw (the same total-row default the by-name lookup takes
+    /// for an absent key). Same exactness contract and the same `""` ≡ NULL
+    /// sentinel note as the named-row entry; equal to it over
+    /// `StaticRow.ofQuantum`-materialized rows BY CONSTRUCTION of the
+    /// shared assembly tail (pinned in the pure pool).
+    let cachedKindOfQuanta
+        (nullability: Map<string, bool>)
+        (kind: Kind)
+        (quanta: RowQuantum list)
+        : CachedKind option =
+        if List.isEmpty kind.Attributes then None
+        else
+            let attrs = kind.Attributes
+            let attrCount = List.length attrs
+            let perColumn =
+                Array.init attrCount (fun _ -> System.Collections.Generic.List<CachedValue>())
+            for q in quanta do
                 attrs
-                |> List.mapi (fun idx a ->
-                    let nulls =
-                        let mutable n = 0L
-                        for v in perColumn.[idx] do
-                            if CachedValue.isNull v then n <- n + 1L
-                        n
-                    a.SsKey, nulls)
-                |> Map.ofList
-            let columns =
-                attrs
-                |> List.mapi (fun idx a ->
-                    { AttributeKey         = a.SsKey
-                      IsNullableInDatabase =
-                          Map.tryFind (ColumnRealization.columnNameText a.Column) nullability
-                          |> Option.defaultValue false
-                      Values               = perColumn.[idx].ToArray() })
-            let columnsByKey =
-                columns |> List.map (fun c -> c.AttributeKey, c) |> Map.ofList
-            Some
-                { KindKey      = kind.SsKey
-                  RowCount     = int64 (List.length rows)
-                  NullCounts   = nullCounts
-                  Columns      = columns
-                  ColumnsByKey = columnsByKey }
+                |> List.iteri (fun idx a ->
+                    let raw = if idx < q.Cells.Length then q.Cells.[idx] else ""
+                    perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
+            Some (cachedKindFromPerColumn nullability kind (int64 (List.length quanta)) perColumn)
 
     /// Find a column within a kind by attribute SsKey. Returns
     /// `None` when the attribute exists in catalog but the cache

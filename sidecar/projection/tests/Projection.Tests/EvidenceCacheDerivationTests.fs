@@ -259,3 +259,42 @@ let ``cachedKindOfRows: zero rows yields an exact-zero CachedKind, not a refusal
         Assert.Empty c.Values
     for KeyValue(_, n) in ck.NullCounts do
         Assert.Equal(0L, n)
+
+// ---------------------------------------------------------------------------
+// Positional-carrier law (row-carrier slimming) — the quanta entry equals
+// the named-row entry over IR-materialized rows, and the shared row
+// identity mints identically on both paths.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``cachedKindOfQuanta ≡ cachedKindOfRows over materialized rows (the positional-carrier law)`` () =
+    let kind = mkAccountKind ()
+    let basis = Kind.rowBasis kind
+    let quanta : RowQuantum list =
+        [ { Cells = [| "1"; "alpha"; "true";  "10.50" |] }
+          { Cells = [| "2"; "";      "false"; ""      |] }
+          { Cells = [| "3"; "gamma"; "1";     "0.25"  |] } ]
+    let nullability = Map.ofList [ "NAME", true ]
+    let rows =
+        quanta
+        |> List.mapi (fun i q ->
+            StaticRow.ofQuantum basis (StaticRow.readsideIdentity "dbo" "OSUSR_TEST_ACCOUNT" i) q)
+    Assert.Equal<CachedKind option>(
+        EvidenceCache.cachedKindOfRows nullability kind rows,
+        EvidenceCache.cachedKindOfQuanta nullability kind quanta)
+
+[<Fact>]
+let ``cachedKindOfQuanta: a short row's missing tail reads as the empty raw (NULL)`` () =
+    let kind = mkAccountKind ()
+    let quanta : RowQuantum list = [ { Cells = [| "1"; "alpha" |] } ]
+    let ck =
+        EvidenceCache.cachedKindOfQuanta Map.empty kind quanta
+        |> Option.defaultWith (fun () -> invalidOp "expected Some CachedKind")
+    let amount = kind.Attributes |> List.find (fun a -> a.Name = mkName "Amount")
+    Assert.Equal<CachedValue>(NullValue, (Map.find amount.SsKey ck.ColumnsByKey).Values.[0])
+    Assert.Equal(1L, Map.find amount.SsKey ck.NullCounts)
+
+[<Fact>]
+let ``StaticRow.readsideIdentity mints the exact READSIDE_ROW identity the IR boundary synthesizes`` () =
+    let expected = SsKey.synthesized "READSIDE_ROW" "dbo.OSUSR_X.7" |> mustOk
+    Assert.Equal(expected, StaticRow.readsideIdentity "dbo" "OSUSR_X" 7)

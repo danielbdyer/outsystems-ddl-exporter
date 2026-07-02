@@ -11,10 +11,13 @@ open Microsoft.Data.SqlClient
 open Projection.Core
 
 /// Operator-supplied profile-capture options. Surfaces:
-///   - `MaxRowsPerKind` — optional sampling cap. `None` = full-scan
-///     (default); `Some N` = `SELECT TOP (N)` capped at extraction time.
-///     Sampling is **deterministic** when the kind has a single-column PK
-///     (the cache stream uses `ORDER BY <pk>` for repeatable extraction).
+///   - `Sampling` — the per-kind evidence-tiering policy (`SamplingPolicy`,
+///     Core). A kind whose resolved cap is `Some N` extracts its cell
+///     stream `SELECT TOP (N)`-capped; row/null counts stay EXACT (the
+///     aggregate query is never capped). Sampling is **deterministic**
+///     when the kind has a single-column PK (the cache stream uses
+///     `ORDER BY <pk>` for repeatable extraction). `SamplingPolicy
+///     .fullScan` (the default) caps nothing.
 ///   - `EnvironmentTag` — operator-supplied label for the environment being
 ///     profiled (dev / qa / uat / prod), used by the multi-env orchestrator
 ///     to label profiles before merge.
@@ -25,7 +28,7 @@ open Projection.Core
 /// Core (`EvidenceCache`); these capture options are the adapter's own,
 /// so they stay here at the boundary where the SQL runs.
 type SqlProfilerOptions = {
-    MaxRowsPerKind  : int option
+    Sampling        : SamplingPolicy
     EnvironmentTag  : string option
     /// Bounded parallelism for the per-kind discovery when the caller uses
     /// the connection-factory form (`captureEvidenceCacheConcurrent`) — how
@@ -41,10 +44,11 @@ type SqlProfilerOptions = {
 [<RequireQualifiedAccess>]
 module SqlProfilerOptions =
 
-    /// Default options: full-scan (no sampling cap), no environment tag,
-    /// discovery concurrency 4 (low and explicit — the factory form only).
+    /// Default options: full-scan (no sampling anywhere), no environment
+    /// tag, discovery concurrency 4 (low and explicit — the factory form
+    /// only).
     let defaults : SqlProfilerOptions = {
-        MaxRowsPerKind  = None
+        Sampling        = SamplingPolicy.fullScan
         EnvironmentTag  = None
         MaxConcurrency  = 4
     }
@@ -171,6 +175,33 @@ module LiveProfiler =
         (kind: Kind)
         : Map<string, bool> =
         Map.tryFind (tableKeyOf kind) batched |> Option.defaultValue Map.empty
+
+    /// The catalog-wide nullability reflection through a caller-supplied
+    /// opener — the ONE pre-acquisition global query an overlapped
+    /// realization runs before its drains start, slicing per kind via
+    /// `nullabilityFor` as each kind's rows land. Owns the connection for
+    /// exactly the reflection's lifetime.
+    let reflectNullability
+        (openConnection: unit -> Task<Result<SqlConnection>>)
+        : Task<Result<Map<string, Map<string, bool>>>> =
+        task {
+            match! openConnection () with
+            | Error es -> return Result.failure es
+            | Ok cnn ->
+                use cnn = cnn
+                let! batched = reflectNullabilityAll cnn
+                return Result.success batched
+        }
+
+    /// Per-kind slice of the batched reflection (upper-invariant
+    /// `SCHEMA.TABLE` key; a table absent from the reflection yields the
+    /// empty map — every column then defaults to NOT-NULL-reflected, the
+    /// same posture the per-kind query took for a dropped table).
+    let nullabilityFor
+        (batched: Map<string, Map<string, bool>>)
+        (kind: Kind)
+        : Map<string, bool> =
+        nullabilitySliceOf batched kind
 
     let private isStaticKind (k: Kind) : bool =
         k.Modality
@@ -360,7 +391,7 @@ module LiveProfiler =
                 let! batchedNullability = reflectNullabilityAll cnn
                 let mutable acc : Map<SsKey, CachedKind> = Map.empty
                 for kind in nonStaticKinds do
-                    let! result = discoverKind cnn options.MaxRowsPerKind (nullabilitySliceOf batchedNullability kind) kind
+                    let! result = discoverKind cnn (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind
                     match result with
                     | Some cached -> acc <- Map.add cached.KindKey cached acc
                     | None        -> ()
@@ -444,14 +475,7 @@ module LiveProfiler =
                 // short-lived connection), sliced per kind below — under
                 // the concurrent form this also removes a per-kind query
                 // from every gated worker.
-                let! batchedNullabilityR = task {
-                    match! openConnection () with
-                    | Error es -> return Error es
-                    | Ok cnn ->
-                        use cnn = cnn
-                        let! batched = reflectNullabilityAll cnn
-                        return Ok batched
-                }
+                let! batchedNullabilityR = reflectNullability openConnection
                 match batchedNullabilityR with
                 | Error es -> return Result.failure es
                 | Ok batchedNullability ->
@@ -459,7 +483,7 @@ module LiveProfiler =
                 let discoveries =
                     nonStaticKinds
                     |> List.map (fun kind ->
-                        discoverKindGated gate openConnection options.MaxRowsPerKind (nullabilitySliceOf batchedNullability kind) kind)
+                        discoverKindGated gate openConnection (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind)
                 let! results = Task.WhenAll(Array.ofList discoveries)
                 return
                     results
@@ -490,10 +514,12 @@ module LiveProfiler =
     /// (lane composition excludes them; attribute-less) keep the live
     /// gated discovery — the fallback is counted
     /// (`profile.live.derived.kinds` / `.fallback`), never silent.
-    /// Sampling (`MaxRowsPerKind = Some _`) disables derivation entirely:
-    /// the live aggregate is exact even under a sampled stream, and a
-    /// derived cache from full rows would not be the sampled shape the
-    /// operator asked for.
+    /// Sampling is a PER-KIND exclusion (`SamplingPolicy`): a kind whose
+    /// resolved cap is finite keeps the live capped discovery — the live
+    /// aggregate is exact even under a sampled stream, and a derived
+    /// cache from full rows would not be the sampled shape the operator
+    /// asked for. Unsampled hydrated kinds still derive; the tiering
+    /// partition is counted (`profile.live.sampled`), never silent.
     let captureEvidenceCacheDerived
         (options: SqlProfilerOptions)
         (openConnection: unit -> Task<Result<SqlConnection>>)
@@ -507,22 +533,19 @@ module LiveProfiler =
                     catalog.Modules
                     |> List.collect (fun m -> m.Kinds)
                     |> List.filter (fun k -> not (isStaticKind k))
-                let! batchedNullabilityR = task {
-                    match! openConnection () with
-                    | Error es -> return Error es
-                    | Ok cnn ->
-                        use cnn = cnn
-                        let! batched = reflectNullabilityAll cnn
-                        return Ok batched
-                }
+                let! batchedNullabilityR = reflectNullability openConnection
                 match batchedNullabilityR with
                 | Error es -> return Result.failure es
                 | Ok batchedNullability ->
                 let derivable, live =
-                    if options.MaxRowsPerKind.IsSome then [], nonStaticKinds
-                    else
-                        nonStaticKinds
-                        |> List.partition (fun k -> Map.containsKey k.SsKey hydratedRows)
+                    nonStaticKinds
+                    |> List.partition (fun k ->
+                        Map.containsKey k.SsKey hydratedRows
+                        && not (SamplingPolicy.isSampled k.SsKey options.Sampling))
+                let sampledCount =
+                    nonStaticKinds
+                    |> List.filter (fun k -> SamplingPolicy.isSampled k.SsKey options.Sampling)
+                    |> List.length
                 let derivedKinds =
                     derivable
                     |> List.choose (fun k ->
@@ -532,6 +555,7 @@ module LiveProfiler =
                             (Map.find k.SsKey hydratedRows))
                 Bench.recordSample "profile.live.derived.kinds" (int64 (List.length derivedKinds))
                 Bench.recordSample "profile.live.derived.fallback" (int64 (List.length live))
+                Bench.recordSample "profile.live.sampled" (int64 sampledCount)
                 let derivedMap =
                     derivedKinds |> List.map (fun c -> c.KindKey, c) |> Map.ofList
                 if List.isEmpty live then
@@ -542,7 +566,7 @@ module LiveProfiler =
                     let discoveries =
                         live
                         |> List.map (fun kind ->
-                            discoverKindGated gate openConnection options.MaxRowsPerKind (nullabilitySliceOf batchedNullability kind) kind)
+                            discoverKindGated gate openConnection (SamplingPolicy.capFor kind.SsKey options.Sampling) (nullabilitySliceOf batchedNullability kind) kind)
                     let! results = Task.WhenAll(Array.ofList discoveries)
                     return
                         results

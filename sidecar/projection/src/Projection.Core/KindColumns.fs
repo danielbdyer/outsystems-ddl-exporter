@@ -121,6 +121,28 @@ module KindColumns =
             a.Name, SqlLiteral.ofRaw typ raw)
         |> Map.ofList
 
+    /// Positional sibling of `rowToTypedValues` — project a typed-Values
+    /// row straight from the in-flight quantum carrier. `Cells.[i]` is
+    /// positional against `Kind.rowBasis` = the kind's attribute order, so
+    /// the cell for attribute `i` reads by index (no per-row Map walk); a
+    /// short row's missing tail reads as the empty raw, exactly as the
+    /// by-name lookup defaults an absent key. Equal to `rowToTypedValues
+    /// typeLookup attributes (StaticRow.ofQuantum basis id q)` for any
+    /// total quantum (pinned in the pure pool).
+    let quantumToTypedValues
+        (typeLookup: Map<Name, PrimitiveType>)
+        (attributes: Attribute list)
+        (q: RowQuantum)
+        : Map<Name, SqlLiteral> =
+        attributes
+        |> List.mapi (fun idx a ->
+            let raw = if idx < q.Cells.Length then q.Cells.[idx] else ""
+            let typ =
+                Map.tryFind a.Name typeLookup
+                |> Option.defaultValue PrimitiveType.Text
+            a.Name, SqlLiteral.ofRaw typ raw)
+        |> Map.ofList
+
     /// Project a typed-Values row into the ordered `SqlLiteral list` the MERGE's
     /// `Rows` (the VALUES projection) expects, iterating the kind's attributes in
     /// declared order. Slice δ: columns named in `deferred` emit

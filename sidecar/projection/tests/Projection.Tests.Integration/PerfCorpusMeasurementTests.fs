@@ -192,6 +192,163 @@ module private PerfCorpus =
     let totalOf (rows: Map<SsKey, StaticRow list>) : int =
         rows |> Map.fold (fun acc _ rs -> acc + List.length rs) 0
 
+    /// Seed every corpus table — hoisted to module level and restructured
+    /// as the tail-recursive task continuation (never loop-with-`do!` or a
+    /// tuple-pattern `for` inside a Release `task { }` — FS3511; the same
+    /// posture as `Ingestion.collectInOrderFor`).
+    let rec private seedFrom (cnn: SqlConnection) (remaining: (Family * int) list) : Task<unit> =
+        task {
+            match remaining with
+            | [] -> return ()
+            | entry :: rest ->
+                do! seedTable cnn (fst entry) (snd entry)
+                do! seedFrom cnn rest
+        }
+
+    let seedAll (cnn: SqlConnection) : Task<unit> =
+        seedFrom cnn allTables
+
+    // -- durable-corpus mode (PERF_CORPUS_DURABLE=1) -------------------------
+    //
+    // The seed is ~4.5min of a ~6min run; measurement ITERATIONS should not
+    // repay it. Durable mode seeds a fixed database on the shared instance
+    // once and reuses it across runs: existence is judged by the table count
+    // plus the SENTINEL table's exact row count (the LAST table seeded —
+    // seeding is strictly ordered, so a complete sentinel implies a complete
+    // corpus); any mismatch drops every corpus table and reseeds from
+    // scratch. The database is NEVER dropped here — reclaim manually with
+    // `DROP DATABASE PerfCorpusDurable` if the warm instance's memory pool
+    // degrades (the survival-rule-2 family).
+
+    let durableEnabled () : bool =
+        System.Environment.GetEnvironmentVariable "PERF_CORPUS_DURABLE" = "1"
+
+    [<Literal>]
+    let private DurableDbName : string = "PerfCorpusDurable"
+
+    /// (sentinel table name, its expected exact row count).
+    let private sentinel : string * int =
+        let entry = List.last allTables
+        tableName (fst entry) (snd entry), (fst entry).Rows
+
+    /// Create the durable database if absent; return its connection string.
+    let ensureDurableDb (masterConn: string) : Task<string> =
+        task {
+            use cnnMaster = new SqlConnection(masterConn)
+            do! cnnMaster.OpenAsync()
+            do! Deploy.executeBatch cnnMaster
+                    (sprintf "IF DB_ID(N'%s') IS NULL CREATE DATABASE [%s];" DurableDbName DurableDbName)
+            return Deploy.ConnectionString.buildPerDb masterConn DurableDbName
+        }
+
+    let private corpusComplete (cnn: SqlConnection) : Task<bool> =
+        task {
+            // Two round trips ON PURPOSE: SQL Server name-binds every
+            // object in a statement at COMPILE time, so a single CASE
+            // guarding the sentinel COUNT still fails with "invalid
+            // object name" on a fresh database.
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                sprintf
+                    "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.tables WHERE name LIKE 'PC[_]%%') = %d \
+                     AND OBJECT_ID(N'dbo.%s') IS NOT NULL THEN 1 ELSE 0 END"
+                    (List.length allTables) (fst sentinel)
+            let! present = cmd.ExecuteScalarAsync()
+            if (present :?> int) <> 1 then return false
+            else
+                use cmd2 = cnn.CreateCommand()
+                cmd2.CommandText <- sprintf "SELECT COUNT_BIG(*) FROM dbo.[%s]" (fst sentinel)
+                let! rows = cmd2.ExecuteScalarAsync()
+                return (rows :?> int64) = int64 (snd sentinel)
+        }
+
+    let private dropAllTables (cnn: SqlConnection) : Task<unit> =
+        task {
+            let drops =
+                allTables
+                |> List.map (fun entry -> sprintf "DROP TABLE IF EXISTS [dbo].[%s];" (tableName (fst entry) (snd entry)))
+                |> String.concat " "
+            do! Deploy.executeBatch cnn drops
+        }
+
+    /// Seed-if-absent: reuse a verified-complete corpus, else wipe + reseed.
+    /// Works identically in ephemeral mode (verification always fails on a
+    /// fresh database → seeds).
+    let ensureSeeded (say: string -> unit) (cnn: SqlConnection) : Task<unit> =
+        task {
+            let! complete = corpusComplete cnn
+            if complete then
+                say (sprintf "[corpus] seed: reusing durable corpus (%d tables; sentinel %s verified)"
+                        (List.length allTables) (fst sentinel))
+            else
+                let sw = System.Diagnostics.Stopwatch.StartNew()
+                do! dropAllTables cnn
+                do! seedAll cnn
+                sw.Stop()
+                say (sprintf "[corpus] seed: %d tables / %d rows in %dms"
+                        (List.length allTables) totalRows sw.ElapsedMilliseconds)
+        }
+
+    /// P3 probe — drain every kind's RAW quantum stream (positional cells;
+    /// no Map mint, no row-identity synthesis) on one connection in
+    /// topological order. Same wire, same connection as the materialized
+    /// hydrate leg, so the delta between the two IS the row-carrier tax
+    /// the program's P3 item slims. Tail-recursive task continuation
+    /// (FS3511 posture).
+    let rec private drainQuantaFrom (cnn: SqlConnection) (acc: int) (remaining: Kind list) : Task<int> =
+        task {
+            match remaining with
+            | [] -> return acc
+            | kind :: rest ->
+                let! quanta = AsyncStream.toList (Ingestion.streamKind cnn kind)
+                return! drainQuantaFrom cnn (acc + List.length quanta) rest
+        }
+
+    let drainQuantaSerial (cnn: SqlConnection) (catalog: Catalog) (topo: TopologicalOrder) : Task<int> =
+        let kinds = topo.Order |> List.choose (fun key -> Catalog.tryFindKind key catalog)
+        drainQuantaFrom cnn 0 kinds
+
+    /// The tiered leg's identity laws (P4), hoisted out of the task CE
+    /// (FS3511): a capped kind keeps EXACT RowCount + NullCounts (the
+    /// aggregate is never capped) with Values truncated to the cap; an
+    /// uncapped kind is IDENTICAL to the full-scan cache.
+    let assertTieredIdentity
+        (sampledKeys: Set<SsKey>)
+        (cap: int)
+        (full: EvidenceCache)
+        (tiered: EvidenceCache)
+        : unit =
+        Assert.Equal(Map.count full.Kinds, Map.count tiered.Kinds)
+        for KeyValue(key, t) in tiered.Kinds do
+            let f = Map.find key full.Kinds
+            if Set.contains key sampledKeys then
+                Assert.Equal(f.RowCount, t.RowCount)
+                Assert.Equal<Map<SsKey, int64>>(f.NullCounts, t.NullCounts)
+                for c in t.Columns do
+                    Assert.Equal(cap, c.Values.Length)
+            else
+                Assert.Equal<CachedKind>(f, t)
+
+    /// The pipelined leg's two identity laws, hoisted OUT of the test's
+    /// `task { }` (a tuple-pattern `for` inside a Release task CE is the
+    /// FS3511 failure shape — survival rule 5): every kind's drain-rendered
+    /// text byte-equals the two-phase artifact, and the drain-derived
+    /// evidence equals the live-scan cache.
+    let assertPipedIdentity
+        (incumbentScripts: Map<SsKey, Projection.Targets.Data.DataInsertScript>)
+        (liveKinds: Map<SsKey, CachedKind>)
+        (piped: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>)
+        : unit =
+        for KeyValue(key, (script, _)) in piped do
+            Assert.Equal((Map.find key incumbentScripts).Rendered, script.Rendered)
+        let pipedCache =
+            piped
+            |> Map.toList
+            |> List.choose (fun (_, (_, c)) -> c)
+            |> List.map (fun c -> c.KindKey, c)
+            |> Map.ofList
+        Assert.Equal<Map<SsKey, CachedKind>>(liveKinds, pipedCache)
+
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITestOutputHelper) =
@@ -204,15 +361,27 @@ type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITes
     [<Fact>]
     member this.``corpus measurement: hydrate / profile / emit at ~480k rows x 240 tables`` () =
         if not (PerfCorpus.skipUnlessEnabled "perf-corpus") then () else
-        TaskSync.run (fun () ->
-            fixture.WithEphemeralDatabase "PerfCorpus" (fun cnn perDbConn ->
+        if PerfCorpus.durableEnabled () then
+            // Durable mode: fixed database on the shared instance,
+            // seed-if-absent, never dropped — measurement iterations
+            // skip the ~4.5min seed.
+            TaskSync.run (fun () ->
                 task {
-                    let sw = System.Diagnostics.Stopwatch.StartNew()
-                    for fam, i in PerfCorpus.allTables do
-                        do! PerfCorpus.seedTable cnn fam i
-                    sw.Stop()
-                    this.Say (sprintf "[corpus] seed: %d tables / %d rows in %dms"
-                                (List.length PerfCorpus.allTables) PerfCorpus.totalRows sw.ElapsedMilliseconds)
+                    let! perDbConn = PerfCorpus.ensureDurableDb fixture.MasterConnectionString
+                    use cnn = new SqlConnection(perDbConn)
+                    do! cnn.OpenAsync()
+                    do! this.RunLegs cnn perDbConn
+                })
+        else
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "PerfCorpus" (fun cnn perDbConn ->
+                    this.RunLegs cnn perDbConn))
+
+    /// The measurement legs over an already-provisioned corpus database
+    /// (ephemeral or durable): seed-if-absent, then the ledger legs.
+    member private this.RunLegs (cnn: SqlConnection) (perDbConn: string) : Task<unit> =
+                task {
+                    do! PerfCorpus.ensureSeeded (fun s -> this.Say s) cnn
 
                     let catalog = PerfCorpus.catalog
                     let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
@@ -236,6 +405,16 @@ type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITes
                     Assert.Equal(PerfCorpus.totalRows, rowTotal)
                     this.Say (sprintf "[corpus] hydrate serial:        %6dms  (%d rows / %d tables)"
                                 swH.ElapsedMilliseconds rowTotal (Map.count serialRows))
+
+                    // -- drain quanta only (P3 probe): the slim positional
+                    //    carrier without the IR rebuild; the delta against
+                    //    hydrate serial is the measured row-carrier tax.
+                    let swQ = System.Diagnostics.Stopwatch.StartNew()
+                    let! quantaCount = PerfCorpus.drainQuantaSerial cnn catalog topo
+                    swQ.Stop()
+                    Assert.Equal(PerfCorpus.totalRows, quantaCount)
+                    this.Say (sprintf "[corpus] drain quanta serial:   %6dms  (positional cells, no IR rebuild)"
+                                swQ.ElapsedMilliseconds)
 
                     // -- hydrate concurrent-4
                     let swHC = System.Diagnostics.Stopwatch.StartNew()
@@ -294,4 +473,105 @@ type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITes
                         | Error e -> failwithf "emit leg failed: %A" e
                     this.Say (sprintf "[corpus] emit data lane:        %6dms  (%d rows -> %d chars)"
                                 swE.ElapsedMilliseconds rowTotal emittedLen)
-                }))
+
+                    // -- acquire+emit+evidence pipelined single pass (P2 ∘ P1):
+                    //    each kind's MERGE renders AND its evidence derives on
+                    //    the drain worker the moment its rows land (inside the
+                    //    concurrency gate; rows dropped after projection — live
+                    //    row memory caps at 4 kinds, not the estate). Laws
+                    //    before timing: rendered text byte-equals the two-phase
+                    //    artifact per kind; derived evidence equals the
+                    //    live-scan cache.
+                    let incumbentScripts =
+                        match emitted with
+                        | Ok artifact -> ArtifactByKind.toMap artifact
+                        | Error e -> failwithf "emit leg failed: %A" e
+                    let cycleMembers = TopologicalOrder.cycleMembers topo
+                    let! nullabilityR = LiveProfiler.reflectNullability openConnection
+                    let nullability = PerfCorpus.mustOk nullabilityR
+                    let swPipe = System.Diagnostics.Stopwatch.StartNew()
+                    let! pipedR =
+                        Ingestion.collectInOrderForConcurrentWith
+                            (fun kind rows ->
+                                let load, _skipped =
+                                    DataLoadPlan.loadFor cycleMembers SurrogateRemapContext.empty kind rows
+                                let script =
+                                    Projection.Targets.Data.StaticSeedsEmitter.renderLoad
+                                        DataEmitOptions.defaults Profile.empty.CdcAwareness kind load
+                                let derived =
+                                    EvidenceCache.cachedKindOfRows
+                                        (LiveProfiler.nullabilityFor nullability kind) kind rows
+                                script, derived)
+                            4 openConnection owned catalog topo
+                    swPipe.Stop()
+                    let piped = PerfCorpus.mustOk pipedR
+                    PerfCorpus.assertPipedIdentity incumbentScripts liveCache.Kinds piped
+                    let twoPhaseMs =
+                        swHC.ElapsedMilliseconds + swD.ElapsedMilliseconds + swE.ElapsedMilliseconds
+                    this.Say (sprintf "[corpus] pipelined single pass: %6dms  (drain+render+derive on 4 workers; vs %dms two-phase sum; byte-identical scripts; identical cache)"
+                                swPipe.ElapsedMilliseconds twoPhaseMs)
+
+                    // -- pipelined single pass over QUANTA (P3 ∘ P2 ∘ P1):
+                    //    the drain stays on the slim positional carrier —
+                    //    no per-row Map mint, no row-identity synthesis on
+                    //    the drain path (identities mint inside the render,
+                    //    through the same shared formula) — and the render
+                    //    + evidence both consume cells positionally. Same
+                    //    identity laws as the named-row pass: byte-identical
+                    //    scripts, identical evidence cache.
+                    let swPipeQ = System.Diagnostics.Stopwatch.StartNew()
+                    let! pipedQR =
+                        Ingestion.collectQuantaForConcurrentWith
+                            (fun kind quanta ->
+                                let deferred = TopologicalOrder.deferredFkColumns cycleMembers kind
+                                let script =
+                                    Projection.Targets.Data.StaticSeedsEmitter.renderQuanta
+                                        DataEmitOptions.defaults Profile.empty.CdcAwareness kind deferred quanta
+                                let derived =
+                                    EvidenceCache.cachedKindOfQuanta
+                                        (LiveProfiler.nullabilityFor nullability kind) kind quanta
+                                script, derived)
+                            4 openConnection owned catalog topo
+                    swPipeQ.Stop()
+                    let pipedQ = PerfCorpus.mustOk pipedQR
+                    PerfCorpus.assertPipedIdentity incumbentScripts liveCache.Kinds pipedQ
+                    this.Say (sprintf "[corpus] pipelined quanta pass: %6dms  (positional carrier end-to-end; vs %dms named-row pass; byte-identical scripts; identical cache)"
+                                swPipeQ.ElapsedMilliseconds swPipe.ElapsedMilliseconds)
+
+                    // -- profile tiered (P4): the sampling policy caps the 10
+                    //    WID kinds at 2,000 rows (their 20,000-row streams are
+                    //    the live scan's bulk); NAR/MED stay exhaustive. Laws:
+                    //    exact counts preserved under the cap, Values truncated
+                    //    to it, uncapped kinds identical, downgrades named
+                    //    (one diagnostic per sampled kind), and the derived
+                    //    partition excludes exactly the sampled kinds.
+                    let widKeys =
+                        Catalog.allKinds catalog
+                        |> List.filter (fun k -> (TableId.tableText k.Physical).StartsWith "PC_WID")
+                        |> List.map (fun k -> k.SsKey)
+                    let tieredPolicy =
+                        { SamplingPolicy.fullScan with
+                            Overrides = widKeys |> List.map (fun k -> k, Some 2000) |> Map.ofList }
+                    let tieredDiags = SamplingDiagnostics.emit catalog tieredPolicy
+                    Assert.Equal(List.length widKeys, List.length tieredDiags)
+                    let swT = System.Diagnostics.Stopwatch.StartNew()
+                    let! tieredR =
+                        LiveProfiler.captureEvidenceCacheConcurrent
+                            { SqlProfilerOptions.defaults with MaxConcurrency = 4; Sampling = tieredPolicy }
+                            openConnection catalog
+                    swT.Stop()
+                    let tiered = PerfCorpus.mustOk tieredR
+                    PerfCorpus.assertTieredIdentity (Set.ofList widKeys) 2000 liveCache tiered
+                    // Derived + tiered compose: sampled kinds keep the live
+                    // capped discovery (deterministic TOP-N under ORDER BY pk),
+                    // unsampled hydrated kinds derive — the union equals the
+                    // all-live tiered cache exactly.
+                    let! derivedTieredR =
+                        LiveProfiler.captureEvidenceCacheDerived
+                            { SqlProfilerOptions.defaults with MaxConcurrency = 4; Sampling = tieredPolicy }
+                            openConnection serialRows catalog
+                    let derivedTiered = PerfCorpus.mustOk derivedTieredR
+                    Assert.Equal<Map<SsKey, CachedKind>>(tiered.Kinds, derivedTiered.Kinds)
+                    this.Say (sprintf "[corpus] profile tiered c4:     %6dms  (%d WID kinds capped at 2000 of 20000; exact counts preserved; %d named downgrades; derived∘tiered identical)"
+                                swT.ElapsedMilliseconds (List.length widKeys) (List.length tieredDiags))
+                }
