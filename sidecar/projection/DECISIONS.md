@@ -25859,3 +25859,41 @@ exact last-table row count; wipe-and-reseed on mismatch) and never
 drops it — measurement iterations stop repaying the ~4.5min seed.
 Reclaim manually with `DROP DATABASE PerfCorpusDurable` if the warm
 instance's memory pool degrades (survival-rule-2 family).
+
+## 2026-07-02 — Sweep 2: the fused bundle is on-demand; derivations shed the per-cell string bridge; one Kahn/Tarjan per catalog value
+
+Survey-driven (six information-gathering maps; adjudication in
+PERF_OPPORTUNITIES.md § Sweep 2, including the DECLINED items with
+re-open triggers). Behavior-visible decisions:
+
+**1. `RenderedDataBundle` no longer carries `Fused`.** The bundle path
+renders the three lanes only; `unionSiblings` still runs for the
+partition-law assertion; `composeRenderedFull` is the fused surface,
+produced when asked for. The pipeline's is-anything-there gate reads
+the lanes. Rationale: the fused string's one production consumer was
+that gate, and producing it duplicated the whole estate's rendered
+text on every publish.
+
+**2. Derivation equivalences are typed, not stringly.** Duplicate
+detection (`scanColumnValues`), the FK target index (`TargetKeySet`:
+`HashSet<int64>` for integer PKs, string bridge otherwise/fallback),
+and the cardinality/selectivity tallies key on the VALUES' own types;
+key strings render only where they reach an output surface, once per
+distinct value, in the same `cacheValueKey` byte form. Verdict
+equivalence is argued in the docstrings (cases never cross-matched
+under the prefixes) with one named conservative nuance (scale-twin
+decimals now count as duplicates — refuses tightenings, never mints).
+
+**3. A topological order is computed once per catalog VALUE and
+threaded** — never memoized (the staleness refusal stands): the chain's
+stored order feeds the data composer
+(`composeRenderedBundleWithBootstrapUsing`); one order feeds both
+hydration arms (`hydrateCatalogUsing` /
+`hydrateBootstrapRowsExcludingUsing` — grafting changes `Modality`,
+never edges). Topo-less siblings remain the safe standalone entries.
+
+**4. `emittedIndexNames` derives once per kind** and feeds all three
+index-facing emitters (`*With` forms); the drain stream's probe pair
+fused into the pull (same labels, two fewer per-row Task layers); the
+`QueryHintPass` / `ModelFidelity` reference-and-attribute resolutions
+are keyed maps, not per-item catalog scans.

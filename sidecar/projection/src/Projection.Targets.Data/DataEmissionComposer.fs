@@ -342,18 +342,21 @@ module DataEmissionComposer =
             | Error e   -> Error e
             | Ok artifact -> Ok (renderArtifactInTopoOrder topo artifact)
 
-    /// The fused global seed plus the three per-lane renderings, all from
-    /// ONE dispatch (WP6 step 3). `Fused` is the deploy artifact
-    /// (`Data/seed.sql`) — the union walked global-phase; the per-lane
-    /// strings are each sibling walked the same way (`Data/StaticSeeds.sql`
-    /// / `Data/MigrationData.sql` / `Data/Bootstrap.sql`). A lane with no
-    /// owned rows renders the empty string. When exactly one lane is
-    /// non-empty, `Fused` is byte-equal to that lane (nothing to interleave),
-    /// so the pipeline omits the redundant per-lane files; they carry
-    /// information only when ≥2 lanes contribute.
+    /// The three per-lane renderings from ONE dispatch (WP6 step 3):
+    /// `Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
+    /// `Data/Bootstrap.sql`, each sibling walked global-phase in
+    /// topological order. A lane with no owned rows renders the empty
+    /// string. The FUSED cross-lane seed is deliberately NOT a bundle
+    /// field: its one production consumer was an is-anything-there gate,
+    /// yet materializing it re-concatenated every per-kind string into a
+    /// second whole-estate copy (~the sum of the lanes) on every publish.
+    /// Callers that need the fused text (the single-artifact deploy shape)
+    /// take `composeRenderedFull` — the same union render, produced only
+    /// when asked for. The partition law (`OverlappingEmitterCoverage`)
+    /// still holds on the bundle path: `unionSiblings` runs for its
+    /// assertion; only the union's RENDER is skipped.
     type RenderedDataBundle =
         {
-            Fused         : string
             StaticSeeds   : string
             MigrationData : string
             Bootstrap     : string
@@ -397,9 +400,12 @@ module DataEmissionComposer =
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e   -> Error e
-            | Ok union ->
-                Ok { Fused         = renderArtifactInTopoOrder topo union
-                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+            | Ok _union ->
+                // `_union` exists for `unionSiblings`' partition-law
+                // assertion only — rendering it would re-concatenate the
+                // whole estate's per-kind text a second time (the fused
+                // surface is `composeRenderedFull`, on demand).
+                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
                      MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
                      Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
 
@@ -424,7 +430,16 @@ module DataEmissionComposer =
     /// non-hydrated path). The non-Docker data-lane golden supplies an
     /// in-memory `bootstrapRows`; the Docker golden supplies the live-hydrated
     /// one — the same entry, the same render, differing only in the row source.
-    let composeRenderedBundleWithBootstrap
+    /// `composeRenderedBundleWithBootstrap` with a CALLER-SUPPLIED
+    /// topological order — the publish pipeline threads the chain's
+    /// stored `ComposeState.TopologicalOrder` (the chain's
+    /// `TopologicalOrderPass` already ran Kahn/Tarjan over the SAME
+    /// post-chain catalog this composer receives) instead of re-running
+    /// it here. Contract: `topo` MUST derive from `catalog`; the
+    /// topo-less sibling below computes it and stays the safe entry for
+    /// callers without a chain state.
+    let composeRenderedBundleWithBootstrapUsing
+        (topo: TopologicalOrder)
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
@@ -433,8 +448,6 @@ module DataEmissionComposer =
         (userRemap: UserRemapContext)
         : Result<RenderedDataBundle, EmitError> =
         use _ = Bench.scope "compose.data.composeRenderedBundleWithBootstrap"
-        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
-        let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
         let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
         match dispatchSiblings composition opts topo catalog profile migration bootstrapRows userRemap with
@@ -442,11 +455,25 @@ module DataEmissionComposer =
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e -> Error e
-            | Ok union ->
-                Ok { Fused         = renderArtifactInTopoOrder topo union
-                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+            | Ok _union ->
+                // `_union` exists for `unionSiblings`' partition-law
+                // assertion only — rendering it would re-concatenate the
+                // whole estate's per-kind text a second time (the fused
+                // surface is `composeRenderedFull`, on demand).
+                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
                      MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
                      Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+
+    let composeRenderedBundleWithBootstrap
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        composeRenderedBundleWithBootstrapUsing topo policy catalog profile migration bootstrapRows userRemap
 
     /// Per-level rendered scripts for parallel-safe deployment. Each
     /// `ParallelSafe<string>` group carries one kind's rendered SQL per

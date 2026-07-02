@@ -101,6 +101,41 @@ module ProfileDerivation =
     /// catalog.IsActive AND nullabilityMap-presence (the
     /// existing slice A.4.7'-prelude.live-profiler logic, now
     /// cache-resident).
+    /// ONE pass over a column's values: null-presence and duplicate
+    /// detection together, with duplicate keys TYPED per value case. The
+    /// prior string bridge allocated a fresh `"prefix:" + ToString` key
+    /// per non-null cell (the dominant allocation of the whole realities
+    /// derivation at estate scale); the per-case sets allocate no key at
+    /// all for the numeric/temporal cases and reuse the raw string for
+    /// text. Verdicts are unchanged: the type prefix only ever separated
+    /// CASES, and separate per-case sets separate them identically;
+    /// binary stays deliberately coarse (any second non-null binary is a
+    /// duplicate — the old constant `"b"` key's behavior). One nuance,
+    /// conservative by direction: scale-twin decimals (`1.0m` vs `1.00m`)
+    /// stringified differently but are numerically equal — the typed set
+    /// counts them as duplicates, which can only REFUSE a uniqueness
+    /// tightening, never mint one (and a SQL decimal column's fixed scale
+    /// makes the case unreachable from column evidence).
+    let private scanColumnValues (values: CachedValue[]) : bool * bool =
+        let mutable nulls = false
+        let mutable dup = false
+        let ints  = System.Collections.Generic.HashSet<int64>()
+        let decs  = System.Collections.Generic.HashSet<decimal>()
+        let strs  = System.Collections.Generic.HashSet<string>()
+        let dates = System.Collections.Generic.HashSet<int64>()
+        let mutable binarySeen = false
+        for v in values do
+            match v with
+            | NullValue      -> nulls <- true
+            | IntValue i     -> if not dup && not (ints.Add i) then dup <- true
+            | DecimalValue d -> if not dup && not (decs.Add d) then dup <- true
+            | StringValue s  -> if not dup && not (strs.Add s) then dup <- true
+            | DateValue dto  -> if not dup && not (dates.Add dto.UtcTicks) then dup <- true
+            | BinaryValue _  ->
+                if not dup && binarySeen then dup <- true
+                binarySeen <- true
+        nulls, dup
+
     let deriveAttributeRealities
         (cache: EvidenceCache)
         (catalog: Catalog)
@@ -114,31 +149,7 @@ module ProfileDerivation =
             | Some cached ->
                 cached.Columns
                 |> List.map (fun column ->
-                    let hasNulls =
-                        column.Values
-                        |> Array.exists CachedValue.isNull
-                    // HasDuplicates: ignore nulls; check whether
-                    // any non-null value repeats. Use Set for
-                    // O(n log n) detection on string projection
-                    // (best-effort across heterogeneous types).
-                    let hasDuplicates =
-                        let seen = System.Collections.Generic.HashSet<string>()
-                        let mutable found = false
-                        for v in column.Values do
-                            if not found then
-                                match v with
-                                | NullValue -> ()
-                                | _ ->
-                                    let key =
-                                        match v with
-                                        | IntValue i -> "i:" + i.ToString System.Globalization.CultureInfo.InvariantCulture
-                                        | DecimalValue d -> "d:" + d.ToString System.Globalization.CultureInfo.InvariantCulture
-                                        | StringValue s -> "s:" + s
-                                        | DateValue dto -> "t:" + dto.UtcTicks.ToString System.Globalization.CultureInfo.InvariantCulture
-                                        | BinaryValue _ -> "b"  // binary-equality coarse
-                                        | NullValue -> "n"
-                                    if not (seen.Add key) then found <- true
-                        found
+                    let hasNulls, hasDuplicates = scanColumnValues column.Values
                     let attr =
                         Kind.tryFindAttribute column.AttributeKey kind
                     let isPresentButInactive =
@@ -415,6 +426,56 @@ module ProfileDerivation =
         | DateValue dto -> Some ("t:" + dto.UtcTicks.ToString System.Globalization.CultureInfo.InvariantCulture)
         | BinaryValue _ -> Some "b"
 
+    /// The typed membership set for one target PK column — the FK join's
+    /// right side. An INTEGER PK column (the OutSystems-dominant case)
+    /// gets a `HashSet<int64>` — no per-value key-string allocation and
+    /// O(1) probes replace the balanced-tree `Set<string>` with its
+    /// per-probe string comparisons; every other shape keeps the
+    /// heterogeneous string-key bridge (also as the fallback if a column
+    /// ever carried mixed cases). Join SEMANTICS are unchanged: values
+    /// of different `CachedValue` cases never matched under the prefixed
+    /// keys (`"i:1"` ≠ `"s:1"`), and they don't here (a non-int source
+    /// value probed against `IntKeys` is an orphan by construction).
+    type TargetKeySet =
+        private
+        | IntKeys    of System.Collections.Generic.HashSet<int64>
+        | StringKeys of System.Collections.Generic.HashSet<string>
+
+    [<RequireQualifiedAccess>]
+    module TargetKeySet =
+
+        let ofValues (values: CachedValue[]) : TargetKeySet =
+            let ints = System.Collections.Generic.HashSet<int64>()
+            let mutable homogeneousInts = true
+            let mutable i = 0
+            while homogeneousInts && i < values.Length do
+                (match values.[i] with
+                 | IntValue v  -> ints.Add v |> ignore
+                 | NullValue   -> ()
+                 | _           -> homogeneousInts <- false)
+                i <- i + 1
+            if homogeneousInts then IntKeys ints
+            else
+                let strs = System.Collections.Generic.HashSet<string>()
+                for v in values do
+                    match cacheValueKey v with
+                    | Some k -> strs.Add k |> ignore
+                    | None   -> ()
+                StringKeys strs
+
+        /// Membership of one (non-null) source value. `NullValue` is
+        /// never a member (FK probes filter `IS NOT NULL`; callers skip
+        /// nulls before probing).
+        let contains (v: CachedValue) (set: TargetKeySet) : bool =
+            match set, v with
+            | _, NullValue            -> false
+            | IntKeys hs, IntValue i  -> hs.Contains i
+            | IntKeys _,  _           -> false
+            | StringKeys hs, v        ->
+                match cacheValueKey v with
+                | Some k -> hs.Contains k
+                | None   -> false
+
     /// Pre-built FK target PK sets, keyed by (targetKindKey,
     /// targetPkAttrKey). Built once per `attachFromCache` call;
     /// shared between `deriveForeignKeyRealities` and
@@ -422,7 +483,7 @@ module ProfileDerivation =
     /// duplicate Set construction when N references share a
     /// target AND eliminates 2x duplicate work across the two
     /// FK derivation passes (slice 6b Big-O audit).
-    type private ForeignKeyTargetIndex = Map<SsKey * SsKey, Set<string>>
+    type private ForeignKeyTargetIndex = Map<SsKey * SsKey, TargetKeySet>
 
     let buildForeignKeyTargetIndex
         (cache: EvidenceCache)
@@ -430,7 +491,7 @@ module ProfileDerivation =
         : ForeignKeyTargetIndex =
         use _ = Bench.scope "profile.cache.buildForeignKeyTargetIndex"
         // Collect distinct (targetKind, targetPkAttr) pairs that any
-        // Reference points at; build the Set per pair once.
+        // Reference points at; build the typed set per pair once.
         let pairs =
             catalog
             |> Catalog.allKinds
@@ -450,11 +511,7 @@ module ProfileDerivation =
             match EvidenceCache.tryFindColumn kindKey attrKey cache with
             | None -> None
             | Some col ->
-                let pkSet =
-                    col.Values
-                    |> Array.choose cacheValueKey
-                    |> Set.ofArray
-                Some ((kindKey, attrKey), pkSet))
+                Some ((kindKey, attrKey), TargetKeySet.ofValues col.Values))
         |> Map.ofList
 
     /// Derive `ForeignKeyReality` per Reference. Cross-table
@@ -500,12 +557,17 @@ module ProfileDerivation =
                                 Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
                             match srcColumn, targetSetOpt with
                             | Some sCol, Some targetSet ->
+                                // Single in-place pass: no key-string per
+                                // value, no intermediate arrays — count
+                                // the non-null values absent from the
+                                // typed target set.
                                 let orphanCount =
-                                    sCol.Values
-                                    |> Array.choose cacheValueKey
-                                    |> Array.filter (fun k -> not (Set.contains k targetSet))
-                                    |> Array.length
-                                    |> int64
+                                    let mutable n = 0L
+                                    for v in sCol.Values do
+                                        if not (CachedValue.isNull v)
+                                           && not (TargetKeySet.contains v targetSet) then
+                                            n <- n + 1L
+                                    n
                                 let rowCount =
                                     match Map.tryFind srcKind.SsKey cache.Kinds with
                                     | Some k -> k.RowCount
@@ -575,12 +637,15 @@ module ProfileDerivation =
                                 Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
                             match srcAttr, srcColumn, targetSetOpt with
                             | Some srcAttr, Some sCol, Some targetSet ->
-                                // targetSet pre-built; no per-Reference Set.ofArray.
+                                // targetSet pre-built (typed; no per-Reference
+                                // Set.ofArray) — display strings render only
+                                // for the ORPHANS, never per probed value.
                                 let orphanValues =
                                     sCol.Values
                                     |> Array.choose (fun cv ->
-                                        match cacheValueKey cv with
-                                        | Some k when not (Set.contains k targetSet) ->
+                                        if CachedValue.isNull cv
+                                           || TargetKeySet.contains cv targetSet then None
+                                        else
                                             // Render the orphan value as a
                                             // string for the diagnostic
                                             // payload (typed-to-string per
@@ -593,8 +658,7 @@ module ProfileDerivation =
                                                 | DateValue dto -> dto.ToString System.Globalization.CultureInfo.InvariantCulture
                                                 | BinaryValue _ -> "<binary>"
                                                 | NullValue -> "<null>"
-                                            Some display
-                                        | _ -> None)
+                                            Some display)
                                 if orphanValues.Length = 0 then None
                                 else
                                     // Deterministic ordering (A1): sort
@@ -664,6 +728,77 @@ module ProfileDerivation =
     /// values by their target-PK value; per-parent child count
     /// = group size. Summarize the count distribution via
     /// `NumericDistribution.create` + `withMoments`.
+    /// Frequency tally of a (case-homogeneous) FK source column's
+    /// non-null values, typed: the integer-dominant case tallies raw
+    /// `int64` keys — no `"i:" + ToString` string per CELL — and every
+    /// other case (or a mixed column) keeps the `cacheValueKey` string
+    /// bridge. Returns (non-null value count, per-distinct-value
+    /// occurrence counts). Group ORDER is unspecified (the consumers
+    /// sort or aggregate order-free).
+    let private nonNullGroupCounts (values: CachedValue[]) : int * decimal[] =
+        let ints = System.Collections.Generic.Dictionary<int64, int>()
+        let mutable nonNull = 0
+        let mutable homogeneousInts = true
+        let mutable i = 0
+        while homogeneousInts && i < values.Length do
+            (match values.[i] with
+             | IntValue v ->
+                 nonNull <- nonNull + 1
+                 match ints.TryGetValue v with
+                 | true, c  -> ints.[v] <- c + 1
+                 | false, _ -> ints.[v] <- 1
+             | NullValue -> ()
+             | _ -> homogeneousInts <- false)
+            i <- i + 1
+        if homogeneousInts then
+            nonNull, (ints.Values |> Seq.map decimal |> Seq.toArray)
+        else
+            let strs = System.Collections.Generic.Dictionary<string, int>()
+            let mutable nn = 0
+            for v in values do
+                match cacheValueKey v with
+                | Some k ->
+                    nn <- nn + 1
+                    match strs.TryGetValue k with
+                    | true, c  -> strs.[k] <- c + 1
+                    | false, _ -> strs.[k] <- 1
+                | None -> ()
+            nn, (strs.Values |> Seq.map decimal |> Seq.toArray)
+
+    /// Selectivity tally with the key string rendered once per DISTINCT
+    /// value instead of once per cell. The output keys are byte-identical
+    /// to `cacheValueKey`'s form (`"i:" + invariant int64` for the typed
+    /// arm), so the derived `ForeignKeySelectivity` entries — and their
+    /// count-desc/value-asc ordering — are unchanged.
+    let private tallyPrefixedEntries (values: CachedValue[]) : (string * int64)[] =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        let ints = System.Collections.Generic.Dictionary<int64, int64>()
+        let mutable homogeneousInts = true
+        let mutable i = 0
+        while homogeneousInts && i < values.Length do
+            (match values.[i] with
+             | IntValue v ->
+                 match ints.TryGetValue v with
+                 | true, c  -> ints.[v] <- c + 1L
+                 | false, _ -> ints.[v] <- 1L
+             | NullValue -> ()
+             | _ -> homogeneousInts <- false)
+            i <- i + 1
+        if homogeneousInts then
+            ints
+            |> Seq.map (fun kvp -> System.String.Concat("i:", kvp.Key.ToString inv), kvp.Value)  // LINT-ALLOW: the cacheValueKey prefixed-key form, rendered per DISTINCT value at the tally boundary
+            |> Seq.toArray
+        else
+            let strs = System.Collections.Generic.Dictionary<string, int64>()
+            for v in values do
+                match cacheValueKey v with
+                | Some k ->
+                    match strs.TryGetValue k with
+                    | true, c  -> strs.[k] <- c + 1L
+                    | false, _ -> strs.[k] <- 1L
+                | None -> ()
+            strs |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> Seq.toArray
+
     let deriveForeignKeyCardinalities
         (cache: EvidenceCache)
         (catalog: Catalog)
@@ -681,14 +816,9 @@ module ProfileDerivation =
                     match srcColumnOpt with
                     | None -> None
                     | Some sCol ->
-                        let nonNullKeys =
-                            sCol.Values |> Array.choose cacheValueKey
-                        if nonNullKeys.Length < 5 then None
+                        let nonNullCount, countsPerParent = nonNullGroupCounts sCol.Values
+                        if nonNullCount < 5 then None
                         else
-                            let countsPerParent =
-                                nonNullKeys
-                                |> Array.groupBy id
-                                |> Array.map (fun (_, occ) -> decimal occ.Length)
                             if countsPerParent.Length < 5 then None
                             else
                                 let sorted = countsPerParent |> Array.sort
@@ -753,21 +883,10 @@ module ProfileDerivation =
                     match srcColumnOpt with
                     | None -> None
                     | Some sCol ->
-                        let freq = System.Collections.Generic.Dictionary<string, int64>()
-                        for v in sCol.Values do
-                            match cacheValueKey v with
-                            | Some k ->
-                                match freq.TryGetValue k with
-                                | true, c  -> freq.[k] <- c + 1L
-                                | false, _ -> freq.[k] <- 1L
-                            | None -> ()
-                        if freq.Count = 0 then None
+                        let entries = tallyPrefixedEntries sCol.Values
+                        if entries.Length = 0 then None
                         else
-                            let distinctCount = int64 freq.Count
-                            let entries =
-                                freq
-                                |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
-                                |> Seq.toArray
+                            let distinctCount = int64 entries.Length
                             let sorted =
                                 entries
                                 |> Array.sortWith (fun (vA, cA) (vB, cB) ->

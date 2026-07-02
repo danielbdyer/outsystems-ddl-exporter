@@ -24,7 +24,7 @@ module Hydration =
     /// EmitData per `Compose.buildPolicyFromConfig` — any data-lane flag turns
     /// it on. Replicated here (config-shaped, not policy) so hydration can
     /// gate without building the full `Policy`.
-    let private emitDataOf (cfg: Config.Config) : bool =
+    let internal emitDataOf (cfg: Config.Config) : bool =
         cfg.Emission.StaticSeeds
         || cfg.Emission.MigrationDependencies
         || cfg.Emission.Bootstrap
@@ -94,9 +94,8 @@ module Hydration =
     /// Stream the static-marked kinds' rows from an open OSSYS connection and
     /// graft them. Scoped to the static kinds via `Ingestion.collectInOrderFor`
     /// (never the mark-everything `ReadSide.read`; survival rule 8).
-    let private streamAndGraft (cnn: Microsoft.Data.SqlClient.SqlConnection) (catalog: Catalog) : Task<Catalog> =
+    let private streamAndGraft (topo: TopologicalOrder) (cnn: Microsoft.Data.SqlClient.SqlConnection) (catalog: Catalog) : Task<Catalog> =
         task {
-            let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
             let ownedStatic =
                 Catalog.allKinds catalog
                 |> List.filter isStaticKind
@@ -113,10 +112,10 @@ module Hydration =
     let private hydrateStaticConcurrent
         (concurrency: int)
         (connSpec: string)
+        (topo: TopologicalOrder)
         (catalog: Catalog)
         : Task<Result<Catalog>> =
         task {
-            let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
             let ownedStatic =
                 Catalog.allKinds catalog
                 |> List.filter isStaticKind
@@ -158,7 +157,13 @@ module Hydration =
     /// opener (every spec form; `env:` / `file:` remain the recommended
     /// out-of-band ossys ref, neither special-cased nor deprecated). Mirrors
     /// `LiveModelRead.fromConnSpecWith`'s open template (the same one opener).
-    let hydrateCatalog (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
+    /// `hydrateCatalog` with a CALLER-SUPPLIED topological order over
+    /// `catalog` — the publish pipeline computes ONE order for both
+    /// hydration arms (static graft + bootstrap rows run over the same
+    /// pre-chain catalog; grafting changes `Modality` only, never the FK
+    /// edges the order derives from). The topo-less sibling below
+    /// computes it and stays the safe entry for standalone callers.
+    let hydrateCatalogUsing (topo: TopologicalOrder) (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
         task {
             if not (emitDataOf cfg) then
                 return Result.success catalog
@@ -176,11 +181,19 @@ module Hydration =
                         | Error es -> return Result.failure es
                         | Ok cnn ->
                             use cnn = cnn
-                            let! hydrated = streamAndGraft cnn catalog
+                            let! hydrated = streamAndGraft topo cnn catalog
                             return Result.success hydrated
                     else
-                        return! hydrateStaticConcurrent concurrency connSpec catalog
+                        return! hydrateStaticConcurrent concurrency connSpec topo catalog
         }
+
+    let hydrateCatalog (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
+        // Compute the order only past the same gates the Using form
+        // no-ops on — a data-off / file-sourced publish pays nothing.
+        if not (emitDataOf cfg) || cfg.Model.Ossys.IsNone then
+            Task.FromResult (Result.success catalog)
+        else
+            hydrateCatalogUsing (TopologicalOrderPass.runWith TreatAsCycle catalog).Value cfg catalog
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
     /// the bootstrap-eligible kinds' rows from the live OSSYS source into the
@@ -203,7 +216,10 @@ module Hydration =
     /// so the three lanes stay disjoint; under `AllData` the Migration lane is
     /// skipped (`dispatchSiblings`) so the exclusion does not apply. `Set.empty`
     /// (no migration file) is byte-identical to the prior Static-only exclusion.
-    let hydrateBootstrapRowsExcluding
+    /// The caller-supplied-topo sibling of `hydrateBootstrapRowsExcluding`
+    /// (see `hydrateCatalogUsing` — one order serves both hydration arms).
+    let hydrateBootstrapRowsExcludingUsing
+        (topo: TopologicalOrder)
         (migrationKinds: Set<SsKey>)
         (cfg: Config.Config)
         (catalog: Catalog)
@@ -237,7 +253,6 @@ module Hydration =
                         // drain is where the wall-clock win lives. `1` keeps
                         // the strictly serial single-connection path.
                         let concurrency = max 1 cfg.Emission.DataReadConcurrency
-                        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
                         if concurrency = 1 then
                             match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec with
                             | Error es -> return Result.failure es
@@ -248,6 +263,18 @@ module Hydration =
                         else
                             return! collectBootstrapConcurrent concurrency connSpec eligible catalog topo
         }
+
+    let hydrateBootstrapRowsExcluding
+        (migrationKinds: Set<SsKey>)
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Task<Result<Map<SsKey, StaticRow list>>> =
+        if not (emitDataOf cfg) || cfg.Model.Ossys.IsNone then
+            Task.FromResult (Result.success Map.empty)
+        else
+            hydrateBootstrapRowsExcludingUsing
+                (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                migrationKinds cfg catalog
 
     /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`
     /// with `Set.empty`) — byte-identical to the pre-migration-wiring behaviour.

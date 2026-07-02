@@ -645,12 +645,17 @@ let ``WP6 step 3: composeRenderedBundle splits the lanes (StaticSeeds vs Migrati
     Assert.True (Map.containsKey "Data/StaticSeeds.sql" files)
     Assert.True (Map.containsKey "Data/MigrationData.sql" files)
     Assert.False (Map.containsKey "Data/Bootstrap.sql" files)
-    // The fused arm is byte-identical to composeRenderedFull (one render).
+    // The fused surface (`composeRenderedFull`, the on-demand single render —
+    // the bundle deliberately no longer materializes it) interleaves BOTH
+    // lanes' content in topo order: every lane's statements appear in it.
     let fused =
         DataEmissionComposer.composeRenderedFull
             (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
         |> mustOkEmit
-    Assert.Equal<string> (fused, bundle.Fused)
+        |> normWsCmp
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY]", fused)
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_LEGACY_ORDER]", fused)
+    Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_LEGACY_ORDER]", fused)
 
 [<Fact>]
 let ``WP6 step 3: a single active lane makes the fused seed equal that lane (nonEmptyLaneCount = 1)`` () =
@@ -662,7 +667,15 @@ let ``WP6 step 3: a single active lane makes the fused seed equal that lane (non
         DataEmissionComposer.composeRenderedBundle (policyWith AllRemaining) catalog Profile.empty
         |> mustOkEmit
     Assert.Equal (1, DataEmissionComposer.RenderedDataBundle.nonEmptyLaneCount bundle)
-    Assert.Equal<string> (bundle.Fused, bundle.StaticSeeds)
+    // Cross-path law: with a single active lane there is nothing to
+    // interleave, so the on-demand fused render (`composeRenderedFull`)
+    // is byte-identical to that lane's bundle rendering.
+    let fused =
+        DataEmissionComposer.composeRenderedFull
+            (policyWith AllRemaining) catalog Profile.empty
+            MigrationDependencyContext.empty UserRemapContext.empty
+        |> mustOkEmit
+    Assert.Equal<string> (fused, bundle.StaticSeeds)
     Assert.True (System.String.IsNullOrWhiteSpace bundle.MigrationData)
     Assert.True (System.String.IsNullOrWhiteSpace bundle.Bootstrap)
 

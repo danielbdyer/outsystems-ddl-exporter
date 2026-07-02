@@ -439,8 +439,7 @@ module SsdtDdlEmitter =
     // source already declared it unique OR a registered UniqueIndex
     // intervention decided `EnforceUnique`. A non-enforce decision never
     // un-uniques a source-unique index.
-    let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
-        let emittedNames = emittedIndexNames overlay k
+    let private indexStatementsWith (emittedNames: Map<SsKey, string>) (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -511,8 +510,7 @@ module SsdtDdlEmitter =
     /// it. PK-marked indexes filter out at `indexStatements` (PK is
     /// always enforced; V1 invariant). Slice 5.13.index-features-emit
     /// (matrix row 55).
-    let private disabledIndexAlters (overlay: DecisionOverlay) (k: Kind) : Statement list =
-        let emittedNames = emittedIndexNames overlay k
+    let private disabledIndexAltersWith (emittedNames: Map<SsKey, string>) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness) && idx.IsDisabled)
         |> List.sortBy (fun idx -> idx.SsKey)
@@ -619,7 +617,7 @@ module SsdtDdlEmitter =
     /// back); the composition seam emits the
     /// `emission.identityAnnotations.omitted` diagnostic — this pure emitter
     /// only honors the gate.
-    let private extendedPropertyStatements (emitIdentityAnnotations: bool) (overlay: DecisionOverlay) (k: Kind) : Statement seq =
+    let private extendedPropertyStatementsWith (emittedNames: Map<SsKey, string>) (emitIdentityAnnotations: bool) (overlay: DecisionOverlay) (k: Kind) : Statement seq =
         seq {
             let table = k.Physical
             match k.Description with
@@ -685,7 +683,6 @@ module SsdtDdlEmitter =
             // Index extended-property owners follow the EMITTED index
             // name (the identifier the CREATE INDEX / PK constraint
             // introduced), never the source physical name.
-            let emittedNames = emittedIndexNames overlay k
             for idx in k.Indexes do
                 for ep in idx.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
@@ -738,6 +735,10 @@ module SsdtDdlEmitter =
         (k: Kind)
         : SsdtFile =
         use _ = Bench.scope "emit.ssdt.kindToSsdtFile"
+        // The emitted-index-name map derives ONCE per kind and feeds all
+        // three consumers (CREATE INDEX / ALTER … DISABLE / index
+        // extended properties) — previously each recomputed it.
+        let emittedNamesForKind = emittedIndexNames overlay k
         let statements =
             seq {
                 yield! moduleSchemaPropertyStatements m k
@@ -753,14 +754,14 @@ module SsdtDdlEmitter =
                 // structurally positioned for the rowset-path JOIN
                 // slice that wires `#FkReality.IsNoCheck`.
                 yield! untrustedFkAlters overlay targetByKey pkAttrByKey k
-                yield! indexStatements overlay k
+                yield! indexStatementsWith emittedNamesForKind overlay k
                 // Slice 5.13.index-features-emit (matrix row 55):
                 // post-CREATE-INDEX ALTER INDEX DISABLE statements
                 // preserve the deployed target's index disable state.
                 // Emitted AFTER CREATE INDEX so the named index
                 // exists when the ALTER references it.
-                yield! disabledIndexAlters overlay k
-                yield! extendedPropertyStatements emitIdentityAnnotations overlay k
+                yield! disabledIndexAltersWith emittedNamesForKind k
+                yield! extendedPropertyStatementsWith emittedNamesForKind emitIdentityAnnotations overlay k
                 // H-019: triggers fire after the table + all indexes are
                 // deployed so the ON <table> reference resolves cleanly.
                 yield! triggerStatements k
@@ -841,7 +842,8 @@ module SsdtDdlEmitter =
     /// A18-pure: it reproduces each index's own uniqueness, never a tightening
     /// decision). PK-backing indexes are skipped (inlined in CREATE TABLE).
     let createIndexStatements (k: Kind) (indexes: Index list) : Statement list =
-        indexStatements DecisionOverlay.empty { k with Indexes = indexes }
+        let substituted = { k with Indexes = indexes }
+        indexStatementsWith (emittedIndexNames DecisionOverlay.empty substituted) DecisionOverlay.empty substituted
 
     /// Catalog-wide typed statement stream. Per A35 (Π's canonical
     /// output is a typed deterministic statement stream): the same
@@ -905,15 +907,18 @@ module SsdtDdlEmitter =
             // DEFAULT constraints in CREATE TABLE statements.
             yield! yieldAllWithSeparator (sequenceStatements catalog)
             for k in orderedKinds do
+                // One emitted-index-name derivation per kind, shared by the
+                // three index-facing consumers below.
+                let emittedNamesForKind = emittedIndexNames overlay k
                 yield! yieldWithSeparator (createTableStatement overlay targetByKey pkAttrByKey k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
                 // ALTER for untrusted FKs, then indexes, then post-
                 // CREATE-INDEX ALTER for disabled indexes.
                 yield! yieldAllWithSeparator (untrustedFkAlters overlay targetByKey pkAttrByKey k)
-                yield! yieldAllWithSeparator (indexStatements overlay k)
+                yield! yieldAllWithSeparator (indexStatementsWith emittedNamesForKind overlay k)
                 // Slice 5.13.index-features-emit (matrix row 55).
-                yield! yieldAllWithSeparator (disabledIndexAlters overlay k)
+                yield! yieldAllWithSeparator (disabledIndexAltersWith emittedNamesForKind k)
                 // Slice D.1.c — match `kindToSsdtFile`'s per-kind
                 // emission order so the flat-stream surface carries
                 // the same SetExtendedProperty entries (including the
@@ -921,7 +926,7 @@ module SsdtDdlEmitter =
                 // roundtrip read). Without this, `Render.toText`-based
                 // deploys (Deploy.runWithReadback / runWithLoader) lose
                 // logical-name recovery and the M3 closure breaks.
-                yield! yieldAllWithSeparator (extendedPropertyStatements emitIdentityAnnotations overlay k)
+                yield! yieldAllWithSeparator (extendedPropertyStatementsWith emittedNamesForKind emitIdentityAnnotations overlay k)
                 // H-019: triggers after table + indexes per kindToSsdtFile
                 // emission order (ON <table> must exist before the trigger).
                 yield! yieldAllWithSeparator (triggerStatements k)

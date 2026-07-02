@@ -320,13 +320,20 @@ module ModelFidelity =
         (decisions: CategoricalUniquenessDecisionSet)
         : UniquenessCandidate list =
         // Resolve each decision's attribute identity to its operator-facing
-        // Entity.Column via the catalog (the decision carries only the SsKey).
-        let nameOf (attrKey: SsKey) : EntityColumn option =
+        // Entity.Column via the catalog (the decision carries only the
+        // SsKey). The index is built ONCE — the per-decision full-catalog
+        // `tryPick` was an O(decisions × attributes) scan at estate scale —
+        // and only when there are decisions to resolve.
+        if List.isEmpty decisions.Decisions then []
+        else
+        let attrIndex : Map<SsKey, EntityColumn> =
             catalog
             |> Catalog.allKinds
-            |> List.tryPick (fun kind ->
-                Kind.tryFindAttribute attrKey kind
-                |> Option.map (fun attr -> entityColumnOf kind attr))
+            |> List.collect (fun kind ->
+                kind.Attributes |> List.map (fun attr -> attr.SsKey, entityColumnOf kind attr))
+            |> Map.ofList
+        let nameOf (attrKey: SsKey) : EntityColumn option =
+            Map.tryFind attrKey attrIndex
         decisions.Decisions
         |> List.choose (fun decision ->
             match decision.Outcome with

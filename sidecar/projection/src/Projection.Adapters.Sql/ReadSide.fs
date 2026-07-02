@@ -979,6 +979,18 @@ module ReadSide =
         // previously only visible as the residual of the stream-lifetime
         // label minus open minus materialize.
         let mutable fetchTicks = 0L
+        // Stream-lifetime probe state, FUSED into the pull itself (this
+        // stream previously stacked two `AsyncStream.probe` wrappers on
+        // top — two extra `task { }` layers, i.e. two extra Task + option
+        // allocations PER ROW at estate scale, just to carry a stopwatch
+        // and a counter the pull can carry itself). The labels and their
+        // semantics are unchanged: wall time from stream construction to
+        // EOF plus an `.elements` row count, once per stream, for both
+        // the per-table label and the `.all` aggregate.
+        let swStream = System.Diagnostics.Stopwatch.StartNew()
+        let mutable rowCount = 0L
+        let perTableLabel =
+            sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
         let pull () : Task<RowQuantum option> =
             task {
                 if disposed then return None
@@ -998,6 +1010,11 @@ module ReadSide =
                             Bench.recordSample
                                 "readside.rowstream.fetch"
                                 (fetchTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
+                            swStream.Stop()
+                            Bench.recordSample perTableLabel swStream.ElapsedMilliseconds
+                            Bench.recordSample (sprintf "%s.elements" perTableLabel) rowCount
+                            Bench.recordSample "readside.readRowsStream.all" swStream.ElapsedMilliseconds
+                            Bench.recordSample "readside.readRowsStream.all.elements" rowCount
                             dispose ()
                             return None
                         else
@@ -1010,14 +1027,13 @@ module ReadSide =
                             materializeTicks <-
                                 materializeTicks
                                 + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
+                            rowCount <- rowCount + 1L
                             return Some { Cells = cells }
                     with ex ->
                         dispose ()
                         return raise ex
             }
         pull
-        |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical))
-        |> AsyncStream.probe "readside.readRowsStream.all"
 
     /// Stream a table's full row set, positional against `Kind.rowBasis kind`.
     /// Thin wrapper over `readRowsStreamCore` with no predicate — byte-

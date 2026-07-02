@@ -885,3 +885,108 @@ canary must:
 Once that canary lands and reaches a stable baseline, the perf-sweep
 slice can pick from this menu with confidence that the bench surface
 will show its wins.
+
+---
+
+## Sweep 2 (2026-07-02) — survey-driven collapses across the rest of the codebase
+
+Six information-gathering agents mapped the data-lane text assembly, the
+MERGE render interior, the profile-derivation loops, the OSSYS snapshot
+round-trips, the AsyncStream per-row overhead, the repeated catalog
+walks, and the canary/transfer read paths. Adjudication and execution
+stayed here. Facts referenced below are from those maps, verified at the
+call sites before each edit.
+
+### Executed
+
+1. **The fused data bundle is no longer materialized** (`RenderedDataBundle`
+   drops `Fused`). Its ONE production consumer was an is-anything-there
+   gate at the write site, yet producing it re-concatenated every
+   per-kind Phase-1/Phase-2 string into a second whole-estate copy
+   (~the sum of the three lanes, ~100MB at estate scale) on every
+   publish, held ALONGSIDE the lanes. The gate now reads the lanes;
+   `composeRenderedFull` remains the on-demand fused surface; the
+   partition-law assertion (`unionSiblings`) still runs on the bundle
+   path. (Related non-finding: the per-kind `Rendered` "third copy" is
+   NOT real for non-deferred kinds — `String.Concat(p1, "")` returns
+   `p1`'s reference.)
+
+2. **Profile derivation sheds its per-cell string bridge.**
+   - `deriveAttributeRealities`: null-presence + duplicate detection
+     fused into ONE typed pass (`scanColumnValues`) — the old loop
+     allocated a fresh `"prefix:" + ToString` key per non-null cell and
+     kept iterating after the verdict; per-case `HashSet`s allocate no
+     key at all for numeric/temporal cells. Verdicts unchanged (the
+     prefix only ever separated cases; binary stays coarse).
+   - FK realities/orphans: the target index is a typed
+     `TargetKeySet` — `HashSet<int64>` for integer PKs (the OutSystems-
+     dominant case; O(1) probes, no key strings) with the string bridge
+     as fallback; orphan counting is a single in-place pass (was: two
+     materialized arrays + a tree-set probe per value).
+   - FK cardinalities/selectivities: typed tallies
+     (`nonNullGroupCounts` / `tallyPrefixedEntries`) — key strings render
+     once per DISTINCT value (byte-identical `cacheValueKey` form on the
+     output surface) instead of once per cell.
+3. **The drain stream's two probe wrappers fused into the pull**
+   (`ReadSide.readRowsStreamCore`): two `task { }` layers — two Task +
+   option allocations PER ROW — carried only a stopwatch and a counter;
+   the pull now records the same four labels (per-table + `.all`, wall
+   time + `.elements`) itself at EOF. Corpus: quanta serial drain
+   2,295ms (best sample; prior 2,377–2,455).
+4. **Two quadratic lookup shapes indexed**: `QueryHintPass` resolved
+   each high-selectivity Reference by scanning every kind
+   (O(selectivities × kinds)); `ModelFidelity.aggregateUniquenessCandidates`
+   resolved each decision's attribute the same way (O(decisions ×
+   attributes)). Both now build one keyed map (and fidelity's only when
+   decisions exist).
+5. **One Kahn/Tarjan per catalog value** (E2): the publish's data-bundle
+   composer now consumes the CHAIN's stored `ComposeState
+   .TopologicalOrder` (`composeRenderedBundleWithBootstrapUsing`) — same
+   post-chain catalog, so re-deriving it was pure repetition — and the
+   two hydration arms share one order computed in
+   `readAndHydrateConfigModel` (`hydrateCatalogUsing` /
+   `hydrateBootstrapRowsExcludingUsing`; the graft changes `Modality`
+   only, never the FK edges). Remaining per-publish computes: the chain's
+   own (canonical), `SsdtDdlEmitter.statements` (dacpac path — a
+   different consumer shape, ms-scale), the store-leg's separate run.
+6. **`emittedIndexNames` derived once per kind** (E3): the three
+   index-facing consumers (CREATE INDEX / ALTER … DISABLE / index
+   extended properties) each recomputed the sort+group+collision map per
+   kind on BOTH emit paths; one binding now feeds all three.
+
+### Adjudicated and DECLINED (with reasons — re-open triggers named)
+
+- **`rowToTypedValues` → `typedValuesToSqlLiterals` fusion (the sweep-1
+  HIGH item), re-adjudicated DOWN.** The per-row `Map<Name, SqlLiteral>`
+  is not throwaway: it is the A35 typed-row carrier
+  (`DataInsertRow.Values` in `Phase1Merges`/`Phase2Updates`) and
+  Phase-2's by-name source. The fusible portion is Stage B's re-walk
+  (~C tree lookups + one list per row) — order ~2% of the emit leg
+  against surgery on the MERGE path. Re-open if the typed-row carrier
+  ever gains a positional representation (then the whole Stage-A map
+  disappears with it).
+- **OSSYS export JSON rowsets (10 of 23 result sets drained unread by
+  V2).** Emptying them for V2 (a script parameter keeping 23 result
+  sets and V1's default behavior) would cut server JSON-build CPU and
+  wire bytes — but the script is a byte-identical CARBON COPY of the V1
+  donor, and V1 reads those rowsets in production. Not executed without
+  operator sign-off on a donor change. Re-open with the operator.
+- **Streaming the lane files to disk per kind** (kill the ~100MB
+  whole-lane strings): real memory win, but `Outputs.DataBundle :
+  Map<string, string>` is the pipeline's output contract (writers,
+  tests, staging). Re-open as its own slice with the contract change
+  designed first.
+- **Manifest built twice per publish** (seed manifest overwritten by
+  the SSDT step's `buildFull`): tens of ms; the fix needs the emit-step
+  fold to know its successors. Not worth the coupling today.
+- **`ModelFidelity` re-deriving violations from `profile` instead of the
+  chain's decision sets**: an architectural unification, not a perf
+  edit — the decision sets and the report currently agree by
+  construction of shared inputs; collapsing them changes report
+  provenance. Belongs to a fidelity-report slice, not this sweep.
+- **`AsyncStream.toList`'s `List.ofSeq` copy / list-vs-array carriers**:
+  contract churn across every consumer for one alloc per row already
+  dwarfed by the row itself.
+- **Canary row hashing (`hashRowBytes` per-row sort)**: canary-verb
+  only, already `Array.Parallel`, quantum sibling already exists for
+  streams. Not on the publish path.

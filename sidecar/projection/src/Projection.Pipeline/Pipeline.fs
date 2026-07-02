@@ -792,8 +792,19 @@ module Compose =
                 // prior threading. The Bootstrap complement already excludes the
                 // migration kinds (`hydrateBootstrapRowsExcluding`), so the
                 // composer's `OverlappingEmitterCoverage` partition law holds.
-                match DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty with
-                | Ok bundle when not (System.String.IsNullOrWhiteSpace bundle.Fused) ->
+                // The chain's `TopologicalOrderPass` already ran Kahn/Tarjan
+                // over this exact catalog and stored the order — thread it
+                // instead of letting the composer re-derive it. A filtered
+                // chain without the pass falls back to the composer's own
+                // computation.
+                let composed =
+                    match finalState.TopologicalOrder with
+                    | Some topo ->
+                        DataComposer.composeRenderedBundleWithBootstrapUsing topo fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty
+                    | None ->
+                        DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty
+                match composed with
+                | Ok bundle ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
                     // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
                     // operator-facing data artifacts — each lane that carries
@@ -801,14 +812,15 @@ module Compose =
                     // decision: the per-lane files are the reviewed/applied
                     // artifacts; the prior ≥2-lane gate existed only to avoid
                     // byte-duplicating the fused file, which is no longer emitted).
-                    // The fused composition (`bundle.Fused`) stays IN-MEMORY for
-                    // the leveled deploy's cross-lane topo ordering (it is
-                    // re-projected as a `LeveledDeploymentText`, never read back
-                    // from a `Data/seed.sql` file) — so dropping the file does not
-                    // change deploy behaviour. The writer iterates `DataBundle`
-                    // generically (no writer change).
-                    { outputs with DataBundle = DataComposer.RenderedDataBundle.perLaneFiles bundle }
-                | Ok _ -> outputs   // no rows in scope ⇒ nothing to emit
+                    // The is-anything-there gate reads the LANES — the fused
+                    // cross-lane text is no longer materialized on this path
+                    // (it re-concatenated every per-kind string into a second
+                    // whole-estate copy; `composeRenderedFull` remains the
+                    // on-demand fused surface). An all-empty lane set ⇒ no
+                    // rows in scope ⇒ nothing to emit.
+                    let laneFiles = DataComposer.RenderedDataBundle.perLaneFiles bundle
+                    if Map.isEmpty laneFiles then outputs
+                    else { outputs with DataBundle = laneFiles }
                 | Error err ->
                     // Mirrors the SSDT-bundle invariant: a valid catalog never
                     // fails the composer (the keyset is `Catalog.allKinds`).
@@ -1648,11 +1660,29 @@ module Compose =
                 match MigrationDependenciesBinding.fromConfig catalog cfg with
                 | Error es -> return Result.failure es
                 | Ok migration ->
-                    match! Hydration.hydrateCatalog cfg catalog with
+                    // ONE topological order serves BOTH hydration arms: they
+                    // run over the same pre-chain catalog (the static graft
+                    // changes `Modality` only — never the FK edges the order
+                    // derives from), so the second Kahn/Tarjan run was pure
+                    // repetition. Data-off / file-sourced publishes compute
+                    // nothing.
+                    let hydrationTopo =
+                        if Hydration.emitDataOf cfg && cfg.Model.Ossys.IsSome then
+                            Some ((Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value)
+                        else None
+                    let! hydratedR =
+                        match hydrationTopo with
+                        | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
+                        | None      -> Hydration.hydrateCatalog cfg catalog
+                    match hydratedR with
                     | Error es -> return Result.failure es
                     | Ok hydrated ->
                         let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
-                        match! Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated with
+                        let! bootRowsR =
+                            match hydrationTopo with
+                            | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
+                            | None      -> Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
+                        match bootRowsR with
                         | Error es      -> return Result.failure es
                         | Ok bootRows   -> return Result.success (hydrated, bootRows, migration)
         }
