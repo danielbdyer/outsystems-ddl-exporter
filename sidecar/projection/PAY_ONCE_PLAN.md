@@ -312,6 +312,18 @@ individually committable. Execute file-by-file.
 
 ### PL-7 · Schema-only reads where rows were never the point
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-7 executed").
+> `ReadSide.readSchema` (one `readCore liftRows` body; ≡ `read >>
+> stripStaticPopulations` by construction, pinned content-bearing in
+> `PayOnceSchemaReadDockerTests`); transfer contract (S01), slice-apply
+> (S09), profile-capture (S02 — `readSchema + attach` chosen over the
+> recommended `attachDerived`: post-PL-8 both cost one scan/table and
+> the schema read drops the read-leg drain; a NAMED departure) switched;
+> `Source.ofLive.ReadCatalog` deliberately NOT switched (returns the
+> marked catalog downstream). S10: `LiveProfiler.nullCountsFor` scoped
+> `COUNT_BIG` probe + pure `Preflight.violationsOfNullCounts`; verdict
+> identity pinned live (docker) and pure (parity facts).
+
 **Findings:** S01 (transfer contract via `ReadSide.read` materializes ≤100k
 rows/table into `Modality.Static` the plan never consumes, then
 `collectInOrder` streams the SAME rows for the load), S09 (SliceApply reads

@@ -1742,9 +1742,13 @@ module ReadSide =
                             (sprintf "CDC capture-count probe failed (capture table absent or custom-named): %s" ex.Message))
         }
 
-    let read (cnn: SqlConnection) : Task<Result<Catalog>> =
+    /// The shared read body — the schema projection BOTH public readers
+    /// compute, with the ≤100k-row lift (the `Modality.Static` minting loop)
+    /// as the ONE `liftRows` difference. PL-7: rows enter the contract only
+    /// when a consumer reads them; the schema-only arm skips the per-table
+    /// drain entirely (no row wire cost, no Static marks minted).
+    let private readCore (liftRows: bool) (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
-            use _ = Bench.scope "readside.read"
             try
                 // Single round-trip via `readSchemaCombined` (chapter
                 // 3.6 quick-win optimization): 4 result sets returned
@@ -1809,7 +1813,12 @@ module ReadSide =
                         let maxRows = 100_000
                         let kindsWithRows = ResizeArray<Kind>(List.length kindsWithRefs)
                         for k in kindsWithRefs do
-                            let! rowsOpt = readRows cnn k maxRows
+                            // The Task is selected synchronously and awaited
+                            // once (FS3511); `liftRows = false` never touches
+                            // the table — `None` leaves the kind schema-only.
+                            let! rowsOpt =
+                                if liftRows then readRows cnn k maxRows
+                                else Task.FromResult None
                             let kindWithRows =
                                 match rowsOpt with
                                 | Some rows when not (List.isEmpty rows) ->
@@ -1854,4 +1863,30 @@ module ReadSide =
                         ValidationError.create
                             "readside.query.failed"
                             (sprintf "INFORMATION_SCHEMA query failed: %s" ex.Message))
+        }
+
+    /// The full contract read: schema + the ≤100k-row lift into
+    /// `Modality.Static` (the per-row PhysicalSchema axis). Publish-lane
+    /// consumers (hydration, compare) read the lifted populations.
+    let read (cnn: SqlConnection) : Task<Result<Catalog>> =
+        task {
+            use _ = Bench.scope "readside.read"
+            return! readCore true cnn
+        }
+
+    /// PL-7 — the rows-off contract read: the SAME schema projection `read`
+    /// computes (kinds, FKs, defaults, computed, annotations, indexes,
+    /// sequences) with NO per-table row drain and NO `Modality.Static`
+    /// minting. For consumers where rows were never the point: the transfer
+    /// contract (S01 — `collectInOrder` streams the load's rows itself),
+    /// slice-apply's target read (S09), and profile-capture (S02 — the
+    /// incumbent lifted rows only to strip them again, the 4.4 trap;
+    /// `LiveProfiler.attach` streams its own evidence). Authored marks
+    /// (TenantScoped / SoftDeletable / …) are untouched either way — `read`
+    /// mints ONLY the `Static` mark, so `readSchema` equals
+    /// `read >> Catalog.stripStaticPopulations` minus the wasted drain.
+    let readSchema (cnn: SqlConnection) : Task<Result<Catalog>> =
+        task {
+            use _ = Bench.scope "readside.readSchema"
+            return! readCore false cnn
         }

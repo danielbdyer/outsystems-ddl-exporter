@@ -11,19 +11,21 @@ open Projection.Targets.Json
 /// slow, once); the serialized Profile is the reviewable, editable hinge the
 /// synthetic flow replays.
 ///
-/// Capture = read the deployed catalog (`ReadSide.read`) → profile it
-/// (`LiveProfiler.attach`) → serialize (`ProfileCodec`). The one wrinkle:
-/// `ReadSide.read` marks every read kind `Modality=[Static rows]` (it lifts
-/// live rows for the per-row PhysicalSchema canary) and `LiveProfiler` skips
-/// static kinds — so the Static mark is stripped before profiling, since here
-/// the data lives in the DB, not the catalog.
+/// Capture = read the deployed catalog (`ReadSide.readSchema`) → profile it
+/// (`LiveProfiler.attach`) → serialize (`ProfileCodec`). PL-7 (S02): the
+/// schema-only read replaced the prior read-then-strip — `ReadSide.read`
+/// lifted ≤100k rows/table into `Modality=[Static rows]` only for
+/// `Catalog.stripStaticPopulations` to erase them on the next line (the 4.4
+/// trap paid in wire cost), because `LiveProfiler` streams its own evidence
+/// and skips static kinds. `readSchema` is that read-then-strip composition
+/// by construction, minus the wasted per-table drain.
 [<RequireQualifiedAccess>]
 module ProfileCaptureRun =
 
     /// Capture a full `Profile` from a live environment (read-only). Opens the
     /// connection in the `Source` role through the one `ConnectionSpec.openSpec`
     /// opener (recon #13 — `env:` / `file:` / `live:` / bare, uniform with
-    /// `transfer` / `slice`), reconstructs the catalog, strips the Static mark,
+    /// `transfer` / `slice`), reconstructs the catalog schema-only,
     /// and composes every Profile axis via `LiveProfiler.attach`.
     let capture (connSpec: string) : Task<Result<Profile>> =
         task {
@@ -31,9 +33,9 @@ module ProfileCaptureRun =
             | Error es -> return Result.failure es
             | Ok cnn ->
                 use cnn = cnn
-                match! ReadSide.read cnn with
+                match! ReadSide.readSchema cnn with
                 | Error es -> return Result.failure es
-                | Ok catalog -> return! LiveProfiler.attach cnn (Catalog.stripStaticPopulations catalog) Profile.empty
+                | Ok catalog -> return! LiveProfiler.attach cnn catalog Profile.empty
         }
 
     /// Capture and write the durable artifact to `outPath` (the `--out`

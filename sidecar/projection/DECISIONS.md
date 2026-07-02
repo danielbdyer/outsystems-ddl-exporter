@@ -26331,3 +26331,67 @@ sys.indexes join by ~25% at canary scale) is relocated onto
 carrier. Gate: grep-proof of zero callers + pure pool; the one
 Skip-stub test string that cited `readForeignKeys` as a doc pointer now
 cites the combined batch.
+
+## 2026-07-02 — PL-7 executed: schema-only reads where rows were never the point (`ReadSide.readSchema`); the preflight gate probes a scoped null-count aggregate
+
+**Decision.** Pay-once item PL-7 (S01/S09/S02/S10):
+
+- **The carrier** — `ReadSide.readSchema`: the SAME schema projection
+  `read` computes (one `readCore liftRows` body; kinds, FKs, defaults,
+  computed, annotations, indexes, sequences) with the ≤100k-row lift
+  loop — the ONE difference — off. `buildKind` mints `Modality = []`,
+  and `read`'s lift is the only Static-mark source on the readback
+  path, so `readSchema ≡ read >> Catalog.stripStaticPopulations`
+  exactly (authored marks untouched), minus the per-table drain. The
+  marking-semantics pin (survival rule 8's seam) asserts that equality
+  over an estate whose `read` genuinely mints Static, so neither reader
+  can silently change marking for downstream consumers.
+- **S01** — the transfer contract (`runThroughConnectionsResumable`)
+  read via `read`: ≤100k rows/table materialized into `Modality.Static`
+  that NOTHING on the transfer path consumes (grep-proof: zero
+  Modality/Static reads across DataLoadPlan/TransferRun/TransferResume/
+  TransferFkTrust — the load's rows stream separately via
+  `Ingestion.collectInOrderFor`). Now `readSchema`.
+- **S09** — slice-apply's target reads (`applyToFile`/`applyLive`):
+  `emit`/`mapToTarget`/`runGoldenApply` consume attributes + the
+  golden's own rows, never the target's lifted rows. Now `readSchema`.
+- **S02** — profile-capture (`ProfileCaptureRun.capture`) lifted rows
+  only to STRIP them on the next line (the 4.4 trap paid in wire cost)
+  before `LiveProfiler.attach` streamed its own evidence. Now
+  `readSchema` + attach, and the strip line retires. NAMED DEPARTURE
+  from the plan's recommended arm: the plan (pre-PL-8) recommended
+  `attachDerived` over the lifted populations; after PL-8 both arms
+  cost one row-scan per table, and `readSchema + attach` additionally
+  removes the read-leg drain and is value-identical to the incumbent by
+  construction (same live evidence path) — so it is both the cheaper
+  AND the lower-risk arm. `Source.ofLive.ReadCatalog` is deliberately
+  NOT switched: that capability RETURNS the marked catalog to
+  downstream consumers (compare flows read the lifted populations).
+- **S10** — `Preflight.tighteningViolations` captured a FULL
+  `EvidenceCache` (per-kind row streams + value arrays across the whole
+  catalog) to read a handful of `NullCounts`. New scoped probe
+  `LiveProfiler.nullCountsFor`: ONE narrow
+  `COUNT_BIG(CASE WHEN col IS NULL …)` aggregate per non-static kind
+  carrying a tightened attribute, nothing anywhere else; the pure
+  assembly (`Preflight.violationsOfNullCounts`) mirrors
+  `dataViolatesTightening` (same members, counts, sort). Exactness is
+  unconditional (`COUNT_BIG`), so the verdict cannot drift under any
+  sampling policy. Both verb callers already skip the gate on an empty
+  overlay, so the probe's zero-query empty case is unreachable wire.
+
+**Identity gates.** Docker: `PayOnceSchemaReadDockerTests` — (1)
+`readSchema = stripStaticPopulations(read)` with content-bearing Static
+assertions (read mints, readSchema doesn't), plus the capture verb
+end-to-end both ways (`ProfileCaptureRun.capture` ≡ incumbent
+read→strip→attach, Profile value-equal); (2) the preflight verdict on a
+NULL-bearing + clean two-column tightening: full-cache arm ≡ wired
+scoped gate, exactly one violation, exact count. Pure:
+`PreflightTests` PL-7 S10 parity facts (`violationsOfNullCounts` ≡
+`dataViolatesTightening` over the scoped restriction; zero-count
+filter; determinism). Transfer/slice-apply value-identity follows
+structurally from the pinned reader equality + the grep-proven
+mark-blind consumers; both suites stay green in the docker pool. Bench
+note: `readside.read` samples no longer appear on the
+transfer/slice-apply/capture paths (`readside.readSchema` +
+`profile.live.nullCountsFor` appear instead) — an expected
+label-population change, not a regression.

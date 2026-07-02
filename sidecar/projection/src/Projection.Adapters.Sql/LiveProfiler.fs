@@ -438,6 +438,110 @@ module LiveProfiler =
         : Task<Result<EvidenceCache>> =
         captureEvidenceCacheWith SqlProfilerOptions.defaults cnn catalog
 
+    /// Scoped null-count SQL: one narrow aggregate projecting exact NULL
+    /// counts for ONLY the named columns (positional alignment with the
+    /// `scoped` list) — `cacheAggregateSql`'s shape minus the row count and
+    /// minus every unrequested column.
+    let private scopedNullCountSql (kind: Kind) (scoped: Attribute list) : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+                ".",
+                [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
+        let selectList =
+            scoped
+            |> List.mapi (fun idx attr ->
+                System.String.Concat(  // LINT-ALLOW: terminal SQL-text boundary; segments are typed (encode-quoted column name + integer column index)
+                    "COUNT_BIG(CASE WHEN ", encode (ColumnRealization.columnNameText attr.Column), " IS NULL THEN 1 END) AS [c", string idx, "]"))
+            |> String.concat ", "  // LINT-ALLOW: terminal SQL select-list comma joiner over typed per-column segments
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+            "SELECT ", selectList, " FROM ", table)
+
+    /// One kind's scoped probe: exact NULL counts for the scoped attributes
+    /// (the pair's second), keyed by the kind's SsKey in the result so the
+    /// caller's loop stays a bare `let!` (FS3511 — no tuple pattern, no
+    /// pre-`let!` bindings in a task `for` body). `COUNT_BIG(CASE …)` over
+    /// an empty table yields 0 per column (a one-row result), so the no-row
+    /// arm is the defensive mirror. Module-level (FS3511).
+    let private probeScopedNullCounts
+        (cnn: SqlConnection)
+        (pair: Kind * Attribute list)
+        : Task<SsKey * Map<SsKey, int64>> =
+        task {
+            use _ = Bench.scope "profile.live.nullCountsFor.kind"
+            let kind = fst pair
+            let scoped = snd pair
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- scopedNullCountSql kind scoped
+            cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+            use! reader = cmd.ExecuteReaderAsync()
+            let! advanced = reader.ReadAsync()
+            if not advanced then
+                return kind.SsKey, (scoped |> List.map (fun a -> a.SsKey, 0L) |> Map.ofList)
+            else
+                return
+                    kind.SsKey,
+                    (scoped
+                     |> List.mapi (fun idx a ->
+                         a.SsKey, (if reader.IsDBNull idx then 0L else reader.GetInt64 idx))
+                     |> Map.ofList)
+        }
+
+    /// The scoped probe's walk: one kind at a time, accumulating keyed
+    /// counts. Module-level recursion (the `task { }` `for`-loop form is not
+    /// statically compilable here — FS3511; same shape as
+    /// `Preflight.readGrantRows`).
+    let rec private probeScopedKinds
+        (cnn: SqlConnection)
+        (remaining: (Kind * Attribute list) list)
+        (acc: Map<SsKey, Map<SsKey, int64>>)
+        : Task<Map<SsKey, Map<SsKey, int64>>> =
+        task {
+            match remaining with
+            | [] -> return acc
+            | pair :: rest ->
+                let! keyed = probeScopedNullCounts cnn pair
+                return! probeScopedKinds cnn rest (Map.add (fst keyed) (snd keyed) acc)
+        }
+
+    /// PL-7 (S10) — the tightening pre-flight's SCOPED probe: exact NULL
+    /// counts for ONLY the named attributes, one narrow aggregate per
+    /// non-static kind that carries any of them (the same kind scope the
+    /// full capture walks) and NO query anywhere else. The incumbent gate
+    /// captured a FULL `EvidenceCache` — per-kind row streams + value
+    /// arrays across the whole catalog — to read a handful of `NullCounts`.
+    /// `COUNT_BIG` is exact regardless of sampling policy, so the probe's
+    /// counts equal the full-scan capture's by construction. Returns
+    /// kind-key → (attribute-key → exact null count); an attribute in
+    /// `attrKeys` absent from every kind simply does not appear (the gate's
+    /// `Added`-column case — no source rows to violate). Same fail-loud
+    /// envelope as the full capture.
+    let nullCountsFor
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (attrKeys: Set<SsKey>)
+        : Task<Result<Map<SsKey, Map<SsKey, int64>>>> =
+        task {
+            use _ = Bench.scope "profile.live.nullCountsFor"
+            try
+                let scopedKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                    |> List.choose (fun k ->
+                        match k.Attributes |> List.filter (fun a -> Set.contains a.SsKey attrKeys) with
+                        | [] -> None
+                        | scoped -> Some (k, scoped))
+                let! probed = probeScopedKinds cnn scopedKinds Map.empty
+                return Result.success probed
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.nullCountProbeFailed"
+                            (System.String.Concat("LiveProfiler.nullCountsFor failed: ", ex.Message)))
+        }
+
     /// Discovery for one kind on its OWN connection, gated by the shared
     /// semaphore. Hoisted to module level (no local closures inside a
     /// Release `task { }` — FS3511). The gate bounds in-flight discoveries;

@@ -110,7 +110,9 @@ module SliceApplyRun =
                     | Error es -> return Error es
                     | Ok cnn ->
                         use cnn = cnn
-                        match! ReadSide.read cnn with
+                        // PL-7 (S09): schema-only — `emit` consumes the
+                        // target's attributes, never lifted rows.
+                        match! ReadSide.readSchema cnn with
                         | Error es -> return Error es
                         | Ok catalog ->
                             match emit catalog golden deleteScope with
@@ -144,7 +146,10 @@ module SliceApplyRun =
                     | Error es -> return Error es
                     | Ok cnn ->
                         use cnn = cnn
-                        match! ReadSide.read cnn with
+                        // PL-7 (S09): schema-only — `mapToTarget` and the
+                        // golden apply consume attributes + the golden's own
+                        // rows, never the target's lifted rows.
+                        match! ReadSide.readSchema cnn with
                         | Error es -> return Error es
                         | Ok catalog ->
                             match mapToTarget catalog golden with

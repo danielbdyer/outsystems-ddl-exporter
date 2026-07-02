@@ -2004,7 +2004,12 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    match! ReadSide.read source with
+                    // PL-7 (S01): the contract read is schema-only — `read`
+                    // materialized ≤100k rows/table into `Modality.Static`
+                    // that nothing on the transfer path consumes (the load's
+                    // rows stream via `Ingestion.collectInOrderFor`), so the
+                    // per-table drain was pure wire waste.
+                    match! ReadSide.readSchema source with
                     | Error es -> return Result.failure es
                     | Ok contract ->
                         match resolveLoadSet contract tables with
