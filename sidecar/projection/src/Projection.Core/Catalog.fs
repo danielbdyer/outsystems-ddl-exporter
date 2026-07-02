@@ -1818,6 +1818,22 @@ module Catalog =
                 c,
                 System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>.CreateValueCallback(fun _ -> idx))
 
+    /// PL-4 (S56) — the catalog's kind KEYSET, cached beside `kindIndex`
+    /// (same `ConditionalWeakTable` shape): every `ArtifactByKind.create`
+    /// rebuilt this Set per construction — several sibling emitters per
+    /// compose over one unchanged catalog value.
+    let private kindKeySetCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Set<SsKey>>()
+
+    let kindKeySet (c: Catalog) : Set<SsKey> =
+        match kindKeySetCache.TryGetValue(c) with
+        | true, keys -> keys
+        | false, _ ->
+            let keys = foldKinds (fun _ k acc -> Set.add k.SsKey acc) Set.empty c
+            kindKeySetCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Set<SsKey>>.CreateValueCallback(fun _ -> keys))
+
     /// Find a kind anywhere in the catalog by SsKey. Returns `None` if
     /// absent. A4: lookup is by identity, never by name.
     let tryFindKind (ssKey: SsKey) (c: Catalog) : Kind option =

@@ -329,25 +329,17 @@ module Compose =
         if EmissionFolders.isEmpty folders then files
         else
             use _ = Bench.scope "compose.applyEmissionFolderOverrides"
-            let rewritten =
-                files
-                |> ArtifactByKind.toMap
-                |> Map.map (fun key file ->
-                    match Map.tryFind key folders.ByKind with
-                    | None        -> file
-                    | Some folder ->
-                        let segments = file.RelativePath.Split('/')
-                        let basename = segments.[segments.Length - 1]
-                        { file with
-                            RelativePath = System.String.Concat(folder, "/", basename) })
-            match ArtifactByKind.create catalog rewritten with
-            | Ok a -> a
-            | Error err ->
-                // Unreachable: we Map.map preserving keys; the input
-                // keyset equals Catalog.allKinds by construction
-                // (input came from SsdtDdlEmitter.emitSlices which
-                // smart-constructed against the same catalog).
-                invalidOp (sprintf "Compose.applyEmissionFolderOverrides: %A" err)
+            // PL-4 (S56) — key-preserving rewrite: the proven keyset carries
+            // over via `mapValues`; no re-validation, no unreachable arm.
+            files
+            |> ArtifactByKind.mapValues (fun key file ->
+                match Map.tryFind key folders.ByKind with
+                | None        -> file
+                | Some folder ->
+                    let segments = file.RelativePath.Split('/')
+                    let basename = segments.[segments.Length - 1]
+                    { file with
+                        RelativePath = System.String.Concat(folder, "/", basename) })
 
     /// Chapter C slice C.4 — filter the pass chain by operator-supplied
     /// `TransformGroups`. Each chain entry's name is looked up against
@@ -1512,6 +1504,20 @@ module Compose =
                                 else Some (PostDeployEmitter.renderIncludes postDeployLanes)
                             let sqlproj = SqlprojEmitter.emit dataLanes (Option.isSome postDeploy)
                             { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
+                    // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
+                    // per-reference resolutions, and the decision overlay
+                    // each derive ONCE here and thread to the three FK
+                    // diagnostics siblings (previously: three lookup
+                    // rebuilds, a fourth allKinds walk, per-reference
+                    // re-resolution at two sites, and two back-to-back
+                    // `ofComposeState` projections over the same state).
+                    // These derive over finalState.Catalog — the DIAGNOSTIC
+                    // plane's value; the emit step's interior lookups ride
+                    // its own EmittedCatalog value (K26: receipts match on
+                    // the VALUE, not the function).
+                    let fkLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog finalState.Catalog
+                    let fkResolutions = SsdtDdlEmitter.fkResolutionsUsing fkLookups
+                    let decisionOverlay = DecisionOverlay.ofComposeState finalState
                     let diagnostics =
                         // A7 (no-silent-drop) — surface the inert module-filter
                         // flags on the structured diagnostic stream.
@@ -1530,7 +1536,7 @@ module Compose =
                         // Wave-2 slice 2.5(b) — the FK silent-drop witness over
                         // the emitted catalog (slice-μ retired). Pure sibling of
                         // the emitter port; A18 holds.
-                        @ SsdtDdlEmitter.foreignKeyDropDiagnostics finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyDropDiagnosticsUsing fkLookups fkResolutions
                         // 6.A.9 — the DECISION-driven FK-drop audit trail. A
                         // tightening Decision that drops an FK the source
                         // enforced is a safety change; surface one Warning per
@@ -1539,14 +1545,14 @@ module Compose =
                         // `decision.fkDropped` only when the source really
                         // enforced it; Info `decision.fkNotIntroduced` for
                         // logical-only references.)
-                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics
-                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnosticsUsing
+                            decisionOverlay fkLookups.AllKinds
                         // Reconciliation slice 1 — the FK-name collision
                         // tripwire (schema-scoped constraint-name uniqueness;
                         // one Error per participating reference, never a
                         // silent dedupe).
-                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics
-                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
+                            decisionOverlay fkResolutions
                         // NM-70 (WP5) — the named downgrade. When the operator
                         // omits the identity annotations, the `Projection.*`
                         // extended properties are NOT written, so identity
