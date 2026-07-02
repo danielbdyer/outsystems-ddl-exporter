@@ -661,6 +661,18 @@ module MetadataSnapshotRunner =
         task {
             use _ = Bench.scope "adapter.osm.extract"
             try
+                // This runner ingests the TYPED rowsets and drains the JSON
+                // aggregate rowsets unread (result sets 7, 13–16, 18–22) —
+                // opt out of BUILDING them server-side. The flag rides
+                // SESSION context (not a command parameter) so the script
+                // stays byte-identical with the V1 donor and a context-less
+                // caller gets the historical full build; all 23 rowsets are
+                // still returned in order with their columns (the skipped
+                // ones empty), so `ExpectedResultSets` and the reader walk
+                // are untouched. Pool-reset clears session context, so the
+                // flag never leaks to another logical connection.
+                use flagCommand = new SqlCommand("EXEC sp_set_session_context @key = N'OsmSkipJsonRowsets', @value = 1;", cnn)
+                let! _ = flagCommand.ExecuteNonQueryAsync()
                 let script = MetadataExtractionSql.read()
                 use command = new SqlCommand(script, cnn)
                 command.CommandType <- CommandType.Text

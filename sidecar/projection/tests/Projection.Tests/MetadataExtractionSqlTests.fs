@@ -35,13 +35,14 @@ let private v1SourcePath : string =
 [<Fact>]
 let ``Slice α: embedded SQL resource loads with expected line count`` () =
     let sql = MetadataExtractionSql.read()
-    // V1's donor file is 1234 lines after the default-collation
-    // suppression joined the NM-72 Order_Num threading (the donor + the
-    // V2 embedded copy stay byte-identical per the carbon-copy invariant;
-    // both are synced on every edit).
+    // V1's donor file is 1253 lines after the @SkipJsonRowsets
+    // session-context gate joined the default-collation suppression and
+    // the NM-72 Order_Num threading (the donor + the V2 embedded copy
+    // stay byte-identical per the carbon-copy invariant; both are synced
+    // on every edit).
     let lineCount = sql.Split('\n').Length
     // Be tolerant of trailing-newline variations.
-    Assert.InRange(lineCount, 1234, 1236)
+    Assert.InRange(lineCount, 1253, 1255)
 
 [<Fact>]
 let ``Slice α: embedded SQL declares the five expected parameters`` () =
