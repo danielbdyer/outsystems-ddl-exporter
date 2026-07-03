@@ -792,9 +792,9 @@ module Compose =
                 let composed =
                     match finalState.TopologicalOrder with
                     | Some topo ->
-                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                     | None ->
-                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                 match composed with
                 | Ok bundle ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
@@ -2403,7 +2403,7 @@ module Compose =
                             topo policy renderCatalog Profile.empty
                             acquired.Migration
                             acquired.BootstrapLane
-                            UserRemapContext.empty
+                            (acquired.FinalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                     with
                     | Ok plan -> Result.success (emitted, plan)
                     | Error err ->
