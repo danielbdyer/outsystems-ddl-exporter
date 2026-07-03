@@ -253,11 +253,10 @@ module ConstraintFormatter =
                 sb.Append(trailingComma).Append(newLine) |> ignore
             true
 
-    let private formatTableLevelForeignKey
-        (sb: StringBuilder)
-        (line: string)
-        : bool =
-        appendForeignKeySegment sb (indentOf line) (line.TrimStart())
+    // PL-6 (S26): the table-level FK line rides `appendForeignKeySegment`
+    // directly from `tryFormatLine`'s already-computed (indent, trimmed)
+    // pair — the prior wrapper re-paid `indentOf` + `TrimStart` on the
+    // same line.
 
     // ---------------------------------------------------------------
     // Table-level two-line constraint split, parameterised by the
@@ -274,13 +273,16 @@ module ConstraintFormatter =
     // share the same two-line split semantic (constraint name on
     // its own line at `indent`; constraint body at indent + 4).
     // ---------------------------------------------------------------
+    // PL-6 (S26): takes `tryFormatLine`'s already-computed (indent,
+    // trimmed) pair — the prior form re-paid `indentOf` (which itself
+    // allocates a trimmed copy just to measure it) and `TrimStart` on
+    // the same unchanged line.
     let private formatTableLevelTwoLine
         (sb: StringBuilder)
-        (line: string)
+        (indent: string)
+        (trimmed: string)
         (bodyKeyword: string)
         : bool =
-        let indent = indentOf line
-        let trimmed = line.TrimStart()
         let withoutComma, trailingComma = splitTrailingComma trimmed
         let bodyIdx =
             indexAfterBracketedName withoutComma bodyKeyword
@@ -293,18 +295,6 @@ module ConstraintFormatter =
             sb.Append(indent).Append(constraintName).Append(newLine) |> ignore
             sb.Append(bodyIndent).Append(constraintBody).Append(trailingComma).Append(newLine) |> ignore
             true
-
-    let private formatTableLevelPrimaryKey
-        (sb: StringBuilder)
-        (line: string)
-        : bool =
-        formatTableLevelTwoLine sb line "PRIMARY KEY"
-
-    let private formatTableLevelCheck
-        (sb: StringBuilder)
-        (line: string)
-        : bool =
-        formatTableLevelTwoLine sb line "CHECK"
 
     // ---------------------------------------------------------------
     // EXECUTE sys.sp_addextendedproperty multi-line formatting:
@@ -440,8 +430,12 @@ module ConstraintFormatter =
     /// / body +8 / clauses +12 via `appendForeignKeySegment`; DEFAULT /
     /// CHECK named-or-anonymous: one wrapped line at +4). The trailing
     /// comma closes the LAST segment only.
-    let private renderColumnStack (sb: StringBuilder) (line: string) : bool =
-        let columnIndent = indentOf line
+    // PL-6 (S26): `columnIndent` arrives from `tryFormatLine`'s one
+    // (indent, trimmed) computation. The stack splitter still works on
+    // the FULL line (its head keeps the original indent and the
+    // boundary indexes are line-relative), so only the indent probe
+    // retires here.
+    let private renderColumnStack (sb: StringBuilder) (columnIndent: string) (line: string) : bool =
         let withoutComma, comma = splitTrailingComma (line.TrimEnd())
         match splitColumnStack withoutComma with
         | None -> false
@@ -470,6 +464,9 @@ module ConstraintFormatter =
     /// Detect which constraint shape, if any, the line carries; format
     /// accordingly into the StringBuilder. Returns true on
     /// reformat, false when the line passes through unchanged.
+    /// PL-6 (S26): TrimStart runs ONCE here; the (indent, trimmed)
+    /// pair threads into the shape formatters (the prior dispatch
+    /// re-paid the trim and the indent probe per shape).
     let private tryFormatLine (sb: StringBuilder) (line: string) : bool =
         let trimmed = line.TrimStart()
         if startsWithColumnIdentifier trimmed then
@@ -477,18 +474,19 @@ module ConstraintFormatter =
             // subsumes the prior per-kind single-constraint splitters
             // (PK / FK / CHECK / DEFAULT, named or anonymous, in any
             // combination on one column line).
-            renderColumnStack sb line
+            renderColumnStack sb (line.Substring(0, line.Length - trimmed.Length)) line
         elif startsWithConstraint trimmed then
             // Table-level constraint dispatch. FK has REFERENCES;
             // composite PK has PRIMARY KEY without REFERENCES;
             // CHECK has CHECK without PRIMARY KEY or FOREIGN KEY.
+            let indent = line.Substring(0, line.Length - trimmed.Length)
             if indexAfterBracketedName trimmed "FOREIGN KEY" > 0
                && indexAfterBracketedName trimmed "REFERENCES" > 0 then
-                formatTableLevelForeignKey sb line
+                appendForeignKeySegment sb indent trimmed
             elif indexAfterBracketedName trimmed "PRIMARY KEY" > 0 then
-                formatTableLevelPrimaryKey sb line
+                formatTableLevelTwoLine sb indent trimmed "PRIMARY KEY"
             elif indexAfterBracketedName trimmed "CHECK" > 0 then
-                formatTableLevelCheck sb line
+                formatTableLevelTwoLine sb indent trimmed "CHECK"
             else
                 false
         elif trimmed.StartsWith("EXECUTE [sys].[sp_addextendedproperty]", StringComparison.OrdinalIgnoreCase)
@@ -497,25 +495,55 @@ module ConstraintFormatter =
         else
             false
 
+    /// PL-6 (S25) — format one rendered CHUNK's lines into the CALLER's
+    /// StringBuilder: the per-statement carrier that replaces the
+    /// whole-artifact text→lines→text round-trip (`Render.toTextWith`
+    /// folds each statement's rendered text through here, so the line
+    /// sequence is paid once and the final text materializes once).
+    ///
+    /// Split semantics mirror the whole-text pass EXACTLY over a
+    /// concatenation of newline-terminated chunks: a chunk's trailing
+    /// `'\n'` yields one empty final split element that is the
+    /// SEPARATOR's artifact, not a line — it is skipped here, because
+    /// in the whole-text pass an interior chunk boundary never yields
+    /// an empty element (only the artifact's final `'\n'` does, and
+    /// `format`/the toText fold re-add that one trailing newline
+    /// themselves). An empty chunk contributes nothing. A non-empty
+    /// final element (a chunk NOT newline-terminated — unreachable
+    /// from `Render.toSql`, whose every arm newline-terminates) is
+    /// processed as a line.
+    let formatInto (sb: StringBuilder) (chunk: string) : unit =
+        if chunk.Length > 0 then
+            let lines = chunk.Split([| '\n' |], StringSplitOptions.None)
+            let lastIdx = lines.Length - 1
+            for i in 0 .. lastIdx do
+                let raw = lines.[i]
+                if i = lastIdx && raw.Length = 0 then ()
+                else
+                    // Normalize CR before the LF was stripped (handles \r\n input).
+                    let line =
+                        if raw.Length > 0 && raw.[raw.Length - 1] = '\r' then
+                            raw.Substring(0, raw.Length - 1)
+                        else
+                            raw
+                    if not (tryFormatLine sb line) then
+                        sb.Append(line).Append(newLine) |> ignore
+
     /// Format a rendered T-SQL script. When `mode = Enabled`,
     /// reformats CREATE TABLE inline constraints into V1's multi-line
     /// elegant shape; when `mode = Disabled`, returns the input
     /// unchanged (operator opt-out for diagnostic / V1-parity-bisect
-    /// reasons).
+    /// reasons). The whole-text form — delegates to `formatInto` plus
+    /// the one trailing newline the incumbent Split loop emitted for
+    /// the artifact's final `'\n'` (or for an empty script), so the
+    /// output bytes are pinned unchanged.
     let format (mode: Mode) (script: string) : string =
         use _ = Bench.scope "ssdt.constraintFormatter.format"
         match mode with
         | Disabled -> script
         | Enabled ->
-            let lines = script.Split([| '\n' |], StringSplitOptions.None)
             let sb = StringBuilder(script.Length + 256)
-            for raw in lines do
-                // Normalize CR before the LF was stripped (handles \r\n input).
-                let line =
-                    if raw.Length > 0 && raw.[raw.Length - 1] = '\r' then
-                        raw.Substring(0, raw.Length - 1)
-                    else
-                        raw
-                if not (tryFormatLine sb line) then
-                    sb.Append(line).Append(newLine) |> ignore
+            formatInto sb script
+            if script.Length = 0 || script.EndsWith("\n", StringComparison.Ordinal) then
+                sb.Append(newLine) |> ignore
             sb.ToString()

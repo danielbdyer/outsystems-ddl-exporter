@@ -80,10 +80,10 @@ module ArtifactByKind =
     /// the keyset, including the "no extras" half.
     let create (catalog: Catalog) (slices: Map<SsKey, 'a>)
         : Result<ArtifactByKind<'a>, EmitError> =
-        let required =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> k.SsKey)
-            |> Set.ofList
+        // PL-4 (S56) — the required keyset is the CWT-cached
+        // `Catalog.kindKeySet` (one build per catalog value, not one per
+        // sibling-emitter construction).
+        let required = Catalog.kindKeySet catalog
         let provided =
             slices |> Map.toSeq |> Seq.map fst |> Set.ofSeq
         let missing = Set.difference required provided
@@ -123,6 +123,15 @@ module ArtifactByKind =
         |> Bench.iterMap label (fun k -> k.SsKey, render k)
         |> Map.ofList
         |> create catalog
+
+    /// Key-preserving value rewrite (PL-4/S56): `Map.map` can neither add
+    /// nor remove keys, so the PROVEN keyset carries over without a second
+    /// validation pass — the smart-constructor invariant holds by
+    /// construction. The rewrite-then-`create` shape this replaces
+    /// re-derived the whole keyset (and carried an unreachable error arm)
+    /// per rewrite.
+    let mapValues (f: SsKey -> 'a -> 'b) (ArtifactByKind m) : ArtifactByKind<'b> =
+        ArtifactByKind (Map.map f m)
 
     /// Project the underlying `Map<SsKey, 'a>`. Read-only; callers
     /// must not reconstruct an `ArtifactByKind` from this — the smart

@@ -54,6 +54,7 @@
     <Compile Include="CapabilitySurveyTotalityTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
     <Compile Include="FullExportStoreTests.fs" />
+    <Compile Include="PayOnceCombinedVerbTests.fs" />
     <Compile Include="SsKeyTests.fs" />
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="ConfigTests.fs" />

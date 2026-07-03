@@ -26001,3 +26001,570 @@ prefix inside `runWithConfigCore` (ms-scale pure work at estate scale)
 the PL-1-adjacent follow-on (`PAY_ONCE_PLAN.md`), not this slice; the
 re-run is correct by the pinned profile-invariance and keeps the core's
 signature untouched for every other caller.
+
+## 2026-07-02 — PL-1 executed: one estate acquisition per combined verb (`EstateAcquisition` threaded through the load/store legs; one lifecycle load per store leg; the FTC fold retires from the recovery path)
+
+**Decision.** The pay-once program's Tier-1 item PL-1 (`PAY_ONCE_PLAN.md`;
+receipts S00/S45/S50/S05/S51/S53/S52/S13 in `PAY_ONCE_AUDIT.md`) is
+executed. The publish now RETURNS what it paid for: `runWithConfigCore`
+surfaces the post-chain `ComposeState`, and the new
+`Compose.runWithConfigAcquiring` returns `RunReport * EstateAcquisition`
+(read catalog, hydrated catalog, Bootstrap lane, migration context, final
+state — the named carrier of the naming theorem). The combined verbs
+thread it:
+
+- `runWithConfigAndLoad` → `projectSeedPlanUsing`: the seed plan renders
+  from the publish's `FinalState.Catalog` under its stored
+  `TopologicalOrder` and its own Bootstrap lane — no second model read, no
+  second full-estate hydration, no second chain run, no second Kahn/Tarjan
+  (the leveled composer gains the `*LaneUsing` topo-threaded core,
+  mirroring the bundle pair). `emittedSeedPlan cfg` remains the standalone
+  compute-then-delegate entry (`hydrateCatalogUsing` pattern) and is the
+  identity-gate witness.
+- `runWithConfigAndStore` → `storeLegFromAcquisition`: the emitted-schema
+  plane derives from `EstateAcquisition.ReadCatalog` by pure
+  `applyRenames` — the store leg's second `MetadataSnapshotRunner`
+  extraction is gone. `emittedSchema cfg` stays as the standalone witness.
+- `runStoreLeg` loads the lifecycle store ONCE (`loadStoreChain`) and
+  threads the chain through prior-schema / prior-refactorlog / coordinate
+  / record (S51: was four full deserializations of every episode's
+  catalog snapshot per leg).
+- **The FTC fold retires from the RECOVERY path** (S53): the prior schema
+  reads `(EpisodicLifecycle.latest chain)`'s stored snapshot directly —
+  exactly what `Episode.fs`'s own docstring prescribes ("recovery reads
+  the stored latest snapshot directly; the FTC fold earns its keep by
+  AGREEING with it"). The fold remains the executable verification law
+  (`6.H.2 reconstructLatestSchema` in `LifecycleStoreTests`, T12).
+- S13: migrate-with-data threads the schema leg's own
+  `artifacts.Plan.Diff` into the data leg (`Transfer.runWithRenamesUsing`
+  / `runReconcilingWithRenamesUsing`); the `*With` forms stay as
+  compute-then-delegate entries.
+- **S52 dissolves here, not separately**: `composePrefixState` (the
+  profile-invariant chain prefix, extracted from the pipelined arm's
+  `pipelinedPrefixState`) is the state-only chain runner —
+  `applyShapingToCatalog` (migrate/preview) and the standalone
+  `emittedSeedPlan` ride it, so the discarded whole-`Outputs` build (SSDT
+  render + manifest + JSON + snapshot + fidelity, per state-only consumer)
+  is gone. NM-02 (K23) is untouched: artifact-producing runs still fold
+  every emit step; only the REDUNDANT second projection disappeared.
+
+**Identity gates (all green before this entry).** Pure:
+`PayOnceCombinedVerbTests` (threaded seed plan ≡ standalone; data-off
+empty both ways; recorded episode schema ≡ fresh `emittedSchema`) plus the
+whole incumbent surface (`FullExportStoreTests`, `LifecycleStoreTests`,
+`DataEmissionComposerTests` partition law, migrate/preview suites) —
+unchanged, no golden moved. Docker: `PayOnceCombinedVerbDockerTests` — the
+content-bearing twin over the OSSYS edge-case estate (non-empty plan
+equality, live-estate episode plane equality) plus the WIRE RECEIPT: one
+`runWithConfigAndStore` records exactly ONE `adapter.osm.extract` Bench
+sample (was two).
+
+**Named alignment, consciously accepted (the plan's "watch" note).** The
+incumbent seed plan ran the chain WITHOUT the operator's physical-rename
+pins (and the incumbent store/load legs re-read the live estate at a
+LATER instant than the publish — a racing snapshot). The threaded forms
+consume the catalog the publish EMITTED, pins honored, one consistent
+snapshot — for every pin-free config this is value-identical (pinned by
+the gates; the chain suffix is catalog-preserving, so profile-invariance
+holds by the same law P2 pinned); for a physical-form `tableRenames`
+config the deployed seed now targets the SAME physical tables the bundle
+published, where the incumbent silently diverged from its own documented
+parity duty. That divergence-fix is deliberate and named here, not
+silent.
+
+**What did NOT move.** No goldens. No law surfaces. The pipelined arm's
+schedule and its equivalence law are untouched (its `PipelinedExtracted`
+gains the pre-hydration `ReadCatalog` it already had in hand). The
+"named cost, consciously kept" of the P2 entry above (the emit stage
+re-running the chain prefix inside `runWithConfigCore`) REMAINS kept —
+PL-1 removed the cross-verb re-acquisitions, not that intra-publish
+re-run.
+
+## 2026-07-02 — PL-2 executed: the AllData static graft rides the ONE Bootstrap drain (both publish schedules); the graft-from-rows arm chosen over the skip
+
+**Decision.** Pay-once item PL-2 (S04): under `DataComposition.AllData`
+the composer dispatches the Static lane EMPTY while Bootstrap owns every
+data-bearing kind — yet hydration streamed every static table TWICE (the
+static-graft stream, then the Bootstrap drain of the same tables). Both
+publish schedules now drain each static table ONCE under AllData:
+
+- **Two-phase**: `readAndHydrateConfigModel` routes AllData through
+  `hydrateAllDataArm` — Bootstrap drains FIRST over the ungrafted catalog
+  (eligibility + column lists read marks/attributes, never populations),
+  then `Hydration.hydrateCatalogFromBootstrapRowsUsing` grafts the static
+  populations from the rows already in hand; only the residual
+  static-marked kinds Bootstrap never drains (attribute-less — normally
+  the empty set) keep a scoped stream (`hydrateStaticSubsetUsing`, now
+  the shared body of `hydrateCatalogUsing`).
+- **Pipelined**: the pre-drain static graft is skipped under AllData and
+  the drain worker RETAINS the static kinds' rows
+  (`renderKindAtDrain`/`collectBootstrapRenderedUsing` gain a
+  `retainRows` set; static estates are reference-data-small, so retention
+  is bounded); the graft applies post-drain.
+
+**Why the graft arm, not the skip.** The plan named two arms. The K26
+adjudication (fidelity's residual collector and the catalog snapshot
+plane read the HYDRATED catalog) decides it: skipping the graft would
+change the emitted catalog-plane bytes (populations vanish from the
+snapshot) — a moved artifact, i.e. a defect signal. Grafting from the
+drained rows keeps every emitted byte identical and removes only the
+second wire drain. The named schedule note rides
+`Hydration.diagnostics` (`data.hydration.staticGraftRidesBootstrapDrain`,
+Info, AllData + live source only) — never a silent skip.
+
+**Identity gates.** Pure + docker pools green;
+`PayOnceCombinedVerbDockerTests` gains the AllData fact: per-schedule
+wire receipt (`ingestion.rowDrain.dbo.OSUSR_REF_COUNTRY` count = 1 per
+publish; incumbent paid 2), Bootstrap.sql carries the static rows, no
+StaticSeeds.sql, and the two schedules' bundles byte-compare equal (the
+two independent single-drain arms cannot diverge silently). No goldens
+moved.
+
+## 2026-07-02 — PL-5 executed: Profile evidence indexes on the `ConditionalWeakTable` shape; the graph passes hoist their graph-constants; the FK target index widens to per-Reference
+
+**Decision.** Pay-once item PL-5 (S35/S36/S39/S40/S41/S42) — the
+tightening tier's O(attributes × profile-size) floor:
+
+- **S35** — `Profile.tryFindColumn` / `tryFindForeignKey` /
+  `tryFindForeignKeyCardinality` / `tryFindForeignKeySelectivity` /
+  `tryFindUnique` / `tryFindCategorical` / `tryFindNumeric` /
+  `tryFindDistribution` keep their signatures; their bodies consult
+  per-Profile indexes cached via `ConditionalWeakTable` keyed by the
+  Profile VALUE (the `Catalog.kindIndex` precedent — the one sanctioned
+  cache shape; passes thread one Profile value per chain run, so one
+  build serves every probe). The index folds are FIRST-WINS so
+  `List.tryFind`/`tryPick` semantics are preserved exactly on a
+  duplicate key (`Map.ofList` would be last-wins); the distribution
+  index carries the three probe shapes (first Categorical / first
+  Numeric / first ANY per key) from one pass over `Distributions`.
+- **S39** — `Catalog.sortedKinds` (CWT, same shape) is the shared spine
+  under `kindContexts`, so the four tightening passes stop re-paying the
+  whole-catalog collect+sort per pass.
+- **S36** — `ProfileDerivation.ForeignKeyTargetIndex` widens to key by
+  `Reference.SsKey` and carry the resolved target kind + single-PK
+  `Attribute` + typed `TargetKeySet option`: `Catalog.tryFindKind` +
+  `Kind.primaryKey` resolve once per reference per `attachFromCache`
+  flow (previously re-run inside both FK derivation passes); the key
+  set still builds once per distinct target pair.
+- **S40** — `ForeignKeyPass.opportunityEntry` resolves cardinality ONCE
+  per decision and threads it to the metadata + suggested-config
+  builders.
+- **S41** — `SchemaComplexityPass` cohesion classifies each edge in ONE
+  fold per module (intra/incident in the same walk).
+- **S42** — `CentralityPass` hoists node count + the dangling-node SET
+  before the fixpoint loop (`pageRankStepWith`); only the rank-dependent
+  dangling MASS re-derives per iteration, as it must.
+
+**Identity gates.** Pure pool green unchanged (ProfileTests, all four
+tightening pass suites, anomaly/parity tests — no pass added or removed,
+`registered ⇔ executed` untouched); docker pool green
+(LiveProfilerIntegrationTests exercise the widened index end-to-end). No
+goldens moved.
+
+## 2026-07-02 — PL-8 executed: live discovery is single-scan for unsampled kinds; the gate-plus-rows read rides one capped stream
+
+**Decision.** Pay-once item PL-8 (S03/S06):
+
+- **S03** — `LiveProfiler.discoverKind` paid TWO full server scans per
+  unsampled table: a `COUNT_BIG` aggregate (exact RowCount + per-column
+  NullCounts), then the full row stream. For the unsampled (default)
+  case those aggregate facts are a pure function of the streamed rows —
+  they now derive from the ONE drain via the new
+  `EvidenceCache.cachedKindOfColumns` (the third entry over the same
+  `cachedKindFromPerColumn` assembly tail as the named-row and quantum
+  derivations, so the three cannot drift). The aggregate scan survives
+  ONLY for SAMPLED kinds (`aggregateCountsFor`), where a capped stream
+  cannot yield exact whole-table counts (the P4 exactness contract) —
+  and it runs BEFORE the row stream (one connection, no MARS). One scan
+  is also the more consistent read: the two-query shape could observe a
+  concurrent write between scans. Every `discoverKind` consumer —
+  attach/attachConcurrent, `Preflight.tighteningViolations`,
+  `DataIntegrityChecker.compare`, the derived path's live fallback —
+  inherits the single scan.
+- **S06** — `ReadSide.readRows` probed `COUNT(*)` over a table it then
+  streamed in full. The stream core gains a server-side `TOP (n)` cap
+  over its existing deterministic `ORDER BY`
+  (`readRowsStreamCapped`), and `readRows` drains ONE maxRows+1-capped
+  stream: over-threshold ⇒ maxRows+1 rows ⇒ `None` (the reader closes
+  at its capped EOF — never a whole-table data drain); at-or-under ⇒
+  the full row set, same order, same minted row identities. The
+  count's two consumers (the `> maxRows` gate, the `= 0` shortcut)
+  derive from the one drain.
+
+**Identity gates.** The corpus's live-vs-derived cache equality
+assertions (`PerfCorpusMeasurementTests` — `derivedCache.Kinds =
+liveCache.Kinds`, the P1 law) now pin the single-scan discovery against
+the pure derivation; docker pool green (LiveProfiler integration,
+compare/preflight canaries, ReadSide roundtrip suites); pure pool green.
+Sampled-kind behavior unchanged by construction (the aggregate arm is
+byte-identical). Bench note: `profile.live.aggregate` samples now appear
+only for sampled kinds — an expected label-population change, not a
+regression.
+
+## 2026-07-02 — PL-4 executed: the SSDT FK lookup triple is a named threaded value; per-kind FK resolutions derive once; the keyset is CWT-cached
+
+**Decision.** Pay-once item PL-4 (S46/S47/S48/S37/S49/S28/S54/S56):
+
+- **S46** — `FkEmissionLookups` (AllKinds / TargetByKey / PkAttrByKey)
+  names the `buildLookups` triple; one publish previously rebuilt it
+  3–4×. The emit step and the flat stream compute it once per catalog
+  value; `runWithConfigCore`'s diagnostics assembly computes it ONCE
+  over `finalState.Catalog` and threads it to the three FK diagnostics
+  via `*Using` siblings (the E3 `emittedNamesForKind` precedent). The
+  emit step's interior lookups ride its own `EmittedCatalog` value —
+  K26's law: receipts match on the VALUE, not the function.
+- **S47** — `resolvedFksOf` derives each kind's deployable, non-dropped
+  FK resolutions ONCE, consumed by the CREATE TABLE inline FKs and the
+  NOCHECK alter pair; `fkResolutionsUsing` is the ONE resolution pass
+  shared by the drop witness and the name-collision tripwire (the
+  DropFk filter moves to the collision consumer — resolution is pure,
+  so filter-before ≡ filter-after). 4→1 resolutions per reference per
+  publish flow.
+- **S48** — `foreignKeyDefOfUsing lookups`; `SchemaMigrationEmitter`
+  builds the source + target lookup triples once per migration and
+  threads them through `kindReferenceMigration` (was a whole-catalog
+  build PER reference).
+- **S37/S49** — one `decisionOverlay` binding in the diagnostics
+  assembly (was two back-to-back `ofComposeState` projections; the emit
+  step's interior projection remains — same named-cost note as the P2
+  entry's kept prefix re-run).
+- **S28/S54** — `firstKindBySchemaOf` derives the per-(module, schema)
+  first-kind decision once per module (one group-by); `kindToSsdtFile`
+  consumes the map instead of a filter+sort per kind (O(K² log K) per
+  module retired).
+- **S56** — `Catalog.kindKeySet` (ConditionalWeakTable beside
+  `kindIndex`) replaces the per-construction Set rebuild in
+  `ArtifactByKind.create`; `ArtifactByKind.mapValues` carries the
+  proven keyset across key-preserving rewrites
+  (`applyEmissionFolderOverrides` loses its re-validation and its
+  unreachable error arm).
+
+**Identity gates.** All pure threading of identical values: DDL goldens
++ docker pool unchanged; the diagnostics' content byte-identical (same
+lookups, earlier); pure pool green. No goldens moved.
+
+## 2026-07-02 — PL-3 executed: the data lane's per-kind render vocabulary binds once (row count, writable set, match names, values projection, deploy target, the Phase-2 closure)
+
+**Decision.** Pay-once item PL-3 (S18/S19/S38/S20/S59/S23/S27/S57/S61 +
+the hand-ruled per-row Bench label) — one slice through
+`MergeRender`/`StagedMerge`/both emitters' `scriptOfTyped`:
+
+- `renderMerge` binds `rowCount` / `writable` / `matchNames` once at the
+  top (were: up to three O(n) length walks, three `writableAttributes`
+  derivations across the inline+staged paths, two `matchColumnNames`);
+  `renderStagedPhase1` takes the threaded `writable` for its `#temp`
+  column defs.
+- `renderUpdateForKind` (S27/S57 + the label receipt) — the per-kind
+  prebound Phase-2 renderer: Bench label, deploy target, SET/WHERE
+  attribute projections hoisted; the row loop threads only the typed
+  values (`renderStagedPhase2` already modeled this hoist — the two
+  Phase-2 arms now share the shape). `renderUpdate` stays as the one-row
+  compute-then-delegate form. The K13 kill correctly bounds this lane at
+  the ≤1000-row staging threshold — the win is shape as much as seconds,
+  and it is taken as such.
+- Both emitters bind `valueRows` (S61) and `rowCount` (S20/S59) once for
+  both phases, and Phase-2's `DataInsertRow` list IS Phase-1's when any
+  column is deferred (S18 — never a second identical build).
+- `TableId.withoutCatalog` (S23) names the deploy-target projection the
+  lane previously rebuilt inline at four sites.
+
+**Identity gate.** The pure factorization laws (`renderLoad ≡
+emitFromPlan`, `renderQuanta ≡ renderLoad`), the DataEmissionComposer
+partition law, and the docker data-lane canaries/goldens pass unchanged —
+no re-record. Bench label populations unchanged (same labels, same
+cardinalities).
+
+## 2026-07-02 — PL-10 executed: the small verb-state threadings (one lifecycle load per migrate record leg; scoped transfer ingest; Closure membership off the backing Map; one-pass migration folds; the Faker row-seed basis; per-kind qualifiedParts)
+
+**Decision.** Pay-once item PL-10, the batchable small threadings:
+
+- **S12** — `MigrationRun` gains `loadChain`/`nextCoordinateOfChain`/
+  `recordOnChain`; `recordVerified` (and the `executeWithDataAndRecordWith`
+  sibling) pay ONE `LifecycleStore.load` per record leg (was two full
+  parses). The public `nextCoordinate`/`record` stay as
+  compute-then-delegate forms.
+- **S08** — `runCore` with a declared `--tables` LoadSet scopes the
+  INGEST itself (`Ingestion.collectInOrderFor (loadSet ∪
+  reconciledKinds)` — the existing scoped collector) instead of
+  streaming every kind's rows and filtering them away. Repoint commutes
+  with the scope (per-kind `Map.map`), so the plan's input rows are
+  value-identical.
+- **S43/S44** — `Closure` answers closed-key membership straight off the
+  backing row Map (`Map.containsKey`) in both `nextFetches` and
+  `report`; the per-(target × step) and per-reference Set copies of the
+  growing closed set are gone (`closedKeysOf` retired — zero consumers).
+- **S58** — `SchemaMigrationEmitter.foldByKind` collects per-kind pairs
+  once and concatenates once per channel (the `@`-append fold re-copied
+  the accumulated prefix per kind — O(N²)).
+- **S34** — `FakerRealization` binds the row seed and the per-cell FNV
+  seed BASIS once per row (`rowSeedBasis` — the FNV-1a state over
+  `serialize rowKey + " "`); each fresh-draw cell CONTINUES the state
+  over the column name. FNV-1a is a streaming hash, so every seed value
+  is bit-identical to the prior per-cell concat+hash — the
+  deterministic-draw law's seeds are UNCHANGED (pinned by the synthetic
+  determinism tests).
+- **S21/S60** — `attachDefaults`/`attachComputed` hoist
+  `TableId.qualifiedParts` above the per-attribute map (the
+  `attachAnnotations` form).
+
+**Identity gates.** Lifecycle round-trip + migrate record suites,
+transfer fixtures (incl. the golden `--tables` subset test), closure
+oracle tests, migration emitter tests, synthetic determinism tests —
+all green unchanged; docker pool green. One named surface change: a
+store-READ failure inside `executeWithDataAndRecordWith` now surfaces
+as "reading the episode store failed" (its own step) rather than
+folded into the coordinate-derivation message.
+
+## 2026-07-02 — PL-11 executed: the four dead standalone ReadSide readers are deleted; the combined batch is the single definition site
+
+**Decision.** Pay-once item PL-11 (S07): `readColumnRows`,
+`readIdentityColumns`, `readPrimaryKeys`, and `readForeignKeys` each
+carried a private verbatim copy of SQL that `readSchemaCombined` embeds
+in its one batched command, and grep found zero call sites for any of
+the four (all `private`; `read` uses only the combined batch) — the
+reflection SQL was maintained twice, a dead twin free to drift silently
+from the live batch (flagged unresolved since AUDIT_2026_06_04). The
+dead-algebra retirement precedent (DECISIONS 2026-06-04) applies:
+deleted. The session-30 PK bench note (INFORMATION_SCHEMA beats the
+sys.indexes join by ~25% at canary scale) is relocated onto
+`readSchemaCombined`'s docstring — the knowledge survives its dead
+carrier. Gate: grep-proof of zero callers + pure pool; the one
+Skip-stub test string that cited `readForeignKeys` as a doc pointer now
+cites the combined batch.
+
+## 2026-07-02 — PL-7 executed: schema-only reads where rows were never the point (`ReadSide.readSchema`); the preflight gate probes a scoped null-count aggregate
+
+**Decision.** Pay-once item PL-7 (S01/S09/S02/S10):
+
+- **The carrier** — `ReadSide.readSchema`: the SAME schema projection
+  `read` computes (one `readCore liftRows` body; kinds, FKs, defaults,
+  computed, annotations, indexes, sequences) with the ≤100k-row lift
+  loop — the ONE difference — off. `buildKind` mints `Modality = []`,
+  and `read`'s lift is the only Static-mark source on the readback
+  path, so `readSchema ≡ read >> Catalog.stripStaticPopulations`
+  exactly (authored marks untouched), minus the per-table drain. The
+  marking-semantics pin (survival rule 8's seam) asserts that equality
+  over an estate whose `read` genuinely mints Static, so neither reader
+  can silently change marking for downstream consumers.
+- **S01** — the transfer contract (`runThroughConnectionsResumable`)
+  read via `read`: ≤100k rows/table materialized into `Modality.Static`
+  that NOTHING on the transfer path consumes (grep-proof: zero
+  Modality/Static reads across DataLoadPlan/TransferRun/TransferResume/
+  TransferFkTrust — the load's rows stream separately via
+  `Ingestion.collectInOrderFor`). Now `readSchema`.
+- **S09** — slice-apply's target reads (`applyToFile`/`applyLive`):
+  `emit`/`mapToTarget`/`runGoldenApply` consume attributes + the
+  golden's own rows, never the target's lifted rows. Now `readSchema`.
+- **S02** — profile-capture (`ProfileCaptureRun.capture`) lifted rows
+  only to STRIP them on the next line (the 4.4 trap paid in wire cost)
+  before `LiveProfiler.attach` streamed its own evidence. Now
+  `readSchema` + attach, and the strip line retires. NAMED DEPARTURE
+  from the plan's recommended arm: the plan (pre-PL-8) recommended
+  `attachDerived` over the lifted populations; after PL-8 both arms
+  cost one row-scan per table, and `readSchema + attach` additionally
+  removes the read-leg drain and is value-identical to the incumbent by
+  construction (same live evidence path) — so it is both the cheaper
+  AND the lower-risk arm. `Source.ofLive.ReadCatalog` is deliberately
+  NOT switched: that capability RETURNS the marked catalog to
+  downstream consumers (compare flows read the lifted populations).
+- **S10** — `Preflight.tighteningViolations` captured a FULL
+  `EvidenceCache` (per-kind row streams + value arrays across the whole
+  catalog) to read a handful of `NullCounts`. New scoped probe
+  `LiveProfiler.nullCountsFor`: ONE narrow
+  `COUNT_BIG(CASE WHEN col IS NULL …)` aggregate per non-static kind
+  carrying a tightened attribute, nothing anywhere else; the pure
+  assembly (`Preflight.violationsOfNullCounts`) mirrors
+  `dataViolatesTightening` (same members, counts, sort). Exactness is
+  unconditional (`COUNT_BIG`), so the verdict cannot drift under any
+  sampling policy. Both verb callers already skip the gate on an empty
+  overlay, so the probe's zero-query empty case is unreachable wire.
+
+**Identity gates.** Docker: `PayOnceSchemaReadDockerTests` — (1)
+`readSchema = stripStaticPopulations(read)` with content-bearing Static
+assertions (read mints, readSchema doesn't), plus the capture verb
+end-to-end both ways (`ProfileCaptureRun.capture` ≡ incumbent
+read→strip→attach, Profile value-equal); (2) the preflight verdict on a
+NULL-bearing + clean two-column tightening: full-cache arm ≡ wired
+scoped gate, exactly one violation, exact count. Pure:
+`PreflightTests` PL-7 S10 parity facts (`violationsOfNullCounts` ≡
+`dataViolatesTightening` over the scoped restriction; zero-count
+filter; determinism). Transfer/slice-apply value-identity follows
+structurally from the pinned reader equality + the grep-proven
+mark-blind consumers; both suites stay green in the docker pool. Bench
+note: `readside.read` samples no longer appear on the
+transfer/slice-apply/capture paths (`readside.readSchema` +
+`profile.live.nullCountsFor` appear instead) — an expected
+label-population change, not a regression.
+
+## 2026-07-02 — PL-6 executed: the text plane pays per byte once (codec buffers in place; the store's UTF-8 raw embed; per-statement constraint formatting; pre-split deploy segments)
+
+**Decision.** Pay-once item PL-6, in two slices (S24 deferred BY NAME to
+PL-9 — see the boundary note at the end):
+
+- **S31** — `JsonWriting`'s three write→materialize forms decoded the
+  whole serialized artifact from a `ToArray()` COPY of the stream.
+  `writtenBytes` reads the flushed `MemoryStream`'s live buffer in
+  place (`TryGetBuffer`; the `ToArray` arms remain as never-taken
+  defensive fallbacks). `ManifestEmitter.toJson` — a byte-identical
+  inline duplicate of `renderNodeToString` — now delegates to it.
+- **S30** — `LifecycleStore.writeEpisode` embedded each episode's
+  catalog via `WriteRawValue(CatalogCodec.serialize e.Schema)`: UTF-8
+  bytes → UTF-16 string → re-scan/re-encode back to UTF-8, per episode
+  per save, on the store's largest payload. `CatalogCodec.serializeUtf8`
+  (over the new `JsonWriting.writeToUtf8`) hands `WriteRawValue` the
+  UTF-8 bytes directly. NAMED DEPARTURE from the audit's suggested
+  carrier: exposing `wCatalog` for direct nesting into the OUTER writer
+  was REJECTED — the writer indents by current depth, so nesting would
+  re-indent the embedded document and move every stored episode's bytes;
+  `WriteRawValue` preserves the incumbent level-0 indentation. Pinned
+  pure: `serializeUtf8 = UTF8(serialize)`.
+- **S29** — `CatalogCodec.wStaticRow` sorted the row's values and then
+  DISCARDED the sort by rebuilding a `Map` (whose own Name ordering —
+  identical to `r.Values`' — governed the enumeration). The row's Map
+  enumerates directly; the emitted order was always the Map's order, so
+  the bytes are unchanged by construction.
+- **S32** — `ProfileCodec.wCdc` serialized each SsKey twice (sort key +
+  written value). The serialized strings are computed once and are both;
+  `List.sort` over them is the same ordinal comparison `List.sortBy
+  SsKey.serialize` used and the form is injective, so order and bytes
+  are unchanged.
+- **S33** — `Deploy.executeStreamWith`'s `appendDdl` rendered each DDL
+  statement into a throwaway StringBuilder then copied it into
+  `pendingDdl`. `Render.toSql pendingDdl s` — the buffer IS the carrier.
+- **S14** — `Deploy.executeSegments`: realization of PRE-SPLIT segments
+  for callers that hold the batch structure they assembled from typed
+  statements moments earlier; the `TSql160Parser` re-parse to REDISCOVER
+  those boundaries is passed by construction. Semantics mirror the
+  splitter's output (per-segment Trim, empties dropped), and every
+  switched caller passes exactly the segment list the parser would have
+  produced from its GO-free text (the singleton for joined Phase-2
+  UPDATE lists / the wipe DELETE / the progress-marker DDL / each
+  migrate rename / the M22 envelope controls), so command texts and
+  round-trip counts are unchanged. `alterSql` deliberately KEEPS
+  `executeBatch` — it flows through `Render.toText`, which can carry
+  `GO` from `BatchSeparator`, so the parser split stays load-bearing
+  there, as it does for all text of unknown provenance.
+- **S25** — `Render.toTextWith`'s Enabled arm folded the whole artifact
+  into a builder, then `ConstraintFormatter.format` paid `ToString()` +
+  `Split` per line + a second builder + a second `ToString()` — two
+  extra whole-artifact copies. `ConstraintFormatter.formatInto`
+  formats each statement's rendered chunk into the ONE output builder.
+  THE BYTE TRAP, pinned: the whole-text pass's final `Split` element
+  (from the artifact's trailing `'\n'`) emitted one extra trailing
+  newline; a chunk's trailing separator artifact must be SKIPPED
+  per chunk and that one artifact-final newline re-added once —
+  `format` keeps the incumbent whole-text semantics and documents the
+  pin, and the golden-scenario equivalence fact asserts
+  per-statement ≡ whole-text byte-for-byte over the full corpus.
+- **S26** — `tryFormatLine` computes the (indent, trimmed) pair ONCE
+  and threads it into the shape formatters (`formatTableLevelTwoLine`,
+  `appendForeignKeySegment` directly for the table-level FK,
+  `renderColumnStack`'s indent) — the prior dispatch re-paid
+  `TrimStart` and `indentOf`'s allocate-to-measure per shape.
+
+**Identity gates.** Every golden byte-locked suite in the pure pool
+(golden emission scenarios, codec round-trips, lifecycle round-trips)
+green and unmoved; the new S25 equivalence fact
+(`GoldenEmissionTests`) and S30 bytes-equality fact
+(`CatalogCodecTests`); docker pool green over the switched
+transfer/migrate execute paths and the PL-2 bundle byte-identity
+witness. Bench note: `deploy.executeSegments*` labels appear where the
+switched call sites previously sampled `deploy.executeBatch*`, and the
+per-artifact `ssdt.constraintFormatter.format` sample no longer fires
+on the toText path (the whole-text `format` entry retains it) — named
+label-population changes, not regressions.
+
+**Boundary (S24 → PL-6c, the remaining slice).** The per-kind rendered
+data scripts' GO boundaries are still re-discovered by parse in
+`executeBatchParallel` (S24). Two load-bearing facts shape the right
+fix: (1) the parser split is NOT pure waste in general — a data literal
+carrying an embedded `\nGO\n` line would be mis-split by any line-fold
+over rendered text, so the split of text-of-unknown-structure must stay
+parser-grade; (2) every GO frame in the data lane flows through
+`ScriptDomGenerate.renderDataBatch` (its docstring: "the data lane's
+SINGLE terminal-text boundary"), so the emitters ALREADY build each
+member as a concatenation of segment-shaped pieces — the fix is minting
+`Phase1Segments`/`Phase2Segments : string list` at the emitters (the
+piece lists they concatenate today), deriving the joined text
+byte-identically by the same concat, and dispatching the segments
+directly. That is a pass over every emitter arm (plain merge, staged
+merge, per-row Phase-2, migration dependencies, bootstrap) gated by
+every publish golden — its own slice, executed separately against the
+PL-2 bundle-identity witness, the golden corpus, and the
+`executeLeveledSeed` docker witnesses.
+
+## 2026-07-03 — PL-9 executed: the streaming transfer's per-kind constants stage once; phase 2 streams only the columns it consumes
+
+**Decision.** Pay-once item PL-9 (S15/S16/S17/S22/S11; S14 landed with
+PL-6):
+
+- **S15** — `SurrogateCapture.CaptureKindSql` (`stageKind`): the capture
+  lane's rendered SQL texts (staging DDL, both capture-MERGE rungs, the
+  keymap staging/select, the drops) and the insert-column vocabulary are
+  pure functions of `(kind, identityAttr)`, yet EVERY 50k-row chunk
+  re-ran the ScriptDom build + `generateOne` render (thousands of chunks
+  per kind at estate scale). Staged once per kind; the per-chunk
+  temp-table EXECUTION is unchanged — only the text generation moves.
+  The staged texts (all GO-free single-statement renders) dispatch as
+  pre-split segments (PL-6's S14 carrier), so the capture transport's
+  per-chunk `TSql160Parser` re-parses retire with them. Both transfer
+  paths stage: the materialized `captureChunks` (now a staging wrapper
+  over the `captureChunksOn` fold) and the streaming `writeChunk`.
+- **S16** — `KindWriteLane`: the streaming loop's chunk-invariant
+  machinery stages once per kind before the chunk loop — the FK
+  re-point (`repointFor`: target-column set + basis ordinals, each
+  ordinal an O(width) scan the incumbent re-paid per chunk), the two
+  quantum cell projections (per-attribute getters), the staged
+  descending capture, and phase 2's PK re-key closure. The Q3
+  docstrings' "once per kind" claim is now structurally true.
+  `quantumCellRows*` / `captureCells` gained `*Staged` forms; the
+  incumbents delegate (stage-then-apply-once).
+- **S17** — `phase2UpdateSqlStaged`: the StaticRow twin of the quantum
+  sibling — the kind's PK/deferred attribute walks and per-attribute
+  column texts resolve once per kind, not per row, on the materialized
+  Phase 2. The incumbent delegates.
+- **S22** — `basisByKind`: each load-kind's renamed row basis derives
+  ONCE (phase 2 recomputed it from the same inputs in the same run).
+  NUANCE once S11 landed: the shared map serves phase 1's full-width
+  stream; phase 2's basis became the PROJECTION's own basis — a
+  different fact, still derived once per kind.
+- **S11** — phase 2 consumes ONLY the PK cells (the WHERE key,
+  remap-re-keyed) and the deferred FK cells (the SET values); the
+  incumbent re-streamed the kind's FULL width a second time, every
+  other column crossing the wire unconsumed. The re-stream now pulls a
+  PROJECTED ingest kind (PK ∪ deferred, resolved through the rename
+  map). NAMED DEPARTURE from the plan's `ReadSide.readRowsProjectedStream`
+  carrier: a filtered Kind through the ONE stream core needs no second
+  reader definition site for the same read. Adjudicated edge: the
+  projected basis scopes the re-point (`fkOrdinalsTargeting` drops
+  basis-absent columns), so a NON-deferred FK's unresolvable value no
+  longer drops a row in phase 2 — that skip was filtered from the
+  phase-2 report anyway, and the row it dropped was already dropped
+  AND reported by phase 1 at insert (same source row, same repoint,
+  wider scope), so the surviving no-op UPDATE changes no sink row and
+  no report line. An empty projection (unmatched rename — defensive)
+  falls back to the incumbent full-width stream.
+
+**FS3511 note (recorded for the next reader).** The F# optimizer
+INLINES a small non-`rec` wrapper whose body is a `task { }` into its
+caller's resumable code — the staged-closure allocation then lands
+inside the caller's state machine and fails reduction (the error's
+reported span points at an unrelated line of the CALLER). The
+materialized `captureChunks` wrapper is marked `rec` (a `rec` binding
+is never inlined). Also confirmed again: a task-level `let` of a
+staged closure inside a loop body defeats reduction — apply staged
+renderers inline as the chooser argument instead.
+
+**Identity gates.** Docker pool green — the transfer round-trip,
+reverse-leg (canary/scale/streaming), keymap-spill, and resume/journal
+suites all exercise the staged lanes and the projected phase-2 stream
+against sink-state assertions; pure pool green (3831). Journal
+fingerprints are computed from the SAME chunk quanta as before
+(phase-1 stream untouched), so resume compatibility holds. Bench note:
+`deploy.executeSegments*` labels replace `deploy.executeBatch*` on the
+capture transport — a named label-population change.
+
+**Measurement note.** S11's wire cut is proportional to
+(width − pk − deferred)/width on cycle kinds; the reverse-leg scale
+suite is the measuring surface (its wall-clock rides the same docker
+pool run).

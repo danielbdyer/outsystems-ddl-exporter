@@ -193,13 +193,25 @@ module ProfileCodec =
     let private wCdc (jw: Utf8JsonWriter) (c: CdcAwareness) : unit =
         jw.WriteStartObject()
         // Sorted for T1 determinism (Set/Map enumeration order is stable but
-        // serialize by sorted serialized-key regardless).
-        wList jw "enabled" wSsKeyVal (c.CdcEnabled |> Set.toList |> List.sortBy SsKey.serialize)
+        // serialize by sorted serialized-key regardless). PL-6 (S32): the
+        // serialized form is computed ONCE per element and is both the sort
+        // key and the written value — `SsKey.serialize` is injective and
+        // `List.sort` on the strings is the same ordinal comparison
+        // `List.sortBy SsKey.serialize` used, so the emitted order (and
+        // bytes) are unchanged.
+        let serializedEnabled =
+            c.CdcEnabled |> Set.toList |> List.map SsKey.serialize |> List.sort
+        wList jw "enabled" (fun jw (s: string) -> jw.WriteStringValue s) serializedEnabled
         jw.WritePropertyName "instances"
         jw.WriteStartArray()
-        for (k, instance) in (c.CdcInstance |> Map.toList |> List.sortBy (fst >> SsKey.serialize)) do
+        let serializedInstances =
+            c.CdcInstance
+            |> Map.toList
+            |> List.map (fun (k, instance) -> SsKey.serialize k, instance)
+            |> List.sortBy fst
+        for (serializedKey, instance) in serializedInstances do
             jw.WriteStartObject()
-            wField jw "key" wSsKeyVal k
+            jw.WriteString("key", serializedKey)
             jw.WriteString("instance", instance)
             jw.WriteEndObject()
         jw.WriteEndArray()

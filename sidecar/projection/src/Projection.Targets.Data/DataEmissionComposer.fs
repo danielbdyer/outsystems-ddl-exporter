@@ -576,30 +576,36 @@ module DataEmissionComposer =
     /// `unionSiblings` partition pipeline; the only differences from
     /// `composeRenderedFull` are (a) per-level grouping via
     /// `TopologicalOrder.levels`, (b) structured return type, (c)
-    /// empty-level dropping.
-    /// Level-aware sibling WITH the hydrated Bootstrap row source (Bootstrap-
-    /// always, 2026-06-14) — the store-leg counterpart of
-    /// `composeRenderedBundleWithBootstrap`, so the deployed leveled seed plan
-    /// carries the same Bootstrap rows the published bundle does (the parity
-    /// duty). Byte-identical to `composeRenderedLeveled` when
-    /// `bootstrapRows = Map.empty`.
-    let composeRenderedLeveledWithBootstrap
+    /// empty-level dropping. Carries the hydrated Bootstrap row source
+    /// (Bootstrap-always, 2026-06-14) — the store-leg counterpart of
+    /// `composeRenderedBundleWithBootstrap`, so the deployed leveled seed
+    /// plan carries the same Bootstrap rows the published bundle does (the
+    /// parity duty). Byte-identical to `composeRenderedLeveled` when the
+    /// Bootstrap lane is empty.
+    /// The lane-general leveled core with a CALLER-SUPPLIED topological
+    /// order — the leveled twin of `composeRenderedBundleWithBootstrapLane
+    /// Using` (PL-1): the publish pipeline threads the chain's stored
+    /// `ComposeState.TopologicalOrder` (Kahn/Tarjan already ran over the
+    /// SAME post-chain catalog) and its Bootstrap lane (drained rows or
+    /// drain-time-prerendered scripts) instead of re-deriving both here.
+    /// Contract: `topo` MUST derive from `catalog`; the topo-less siblings
+    /// below compute it and stay the safe entries.
+    let composeRenderedLeveledWithBootstrapLaneUsing
+        (topo: TopologicalOrder)
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
-        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (bootstrapLane: BootstrapLane)
         (userRemap: UserRemapContext)
         : Result<LeveledDeploymentText, EmitError> =
         use _ = Bench.scope "compose.data.composeRenderedLeveled"
-        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
-        let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
         // AC-D7 — the operator's convergent-delete scope (OperatorIntent of
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
-        match dispatchSiblings composition opts topo catalog profile migration (BootstrapLane.Rows bootstrapRows) userRemap with
+        match dispatchSiblings composition opts topo catalog profile migration bootstrapLane userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -634,6 +640,31 @@ module DataEmissionComposer =
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase1Levels" (int64 phase1.Length)
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase2Levels" (int64 phase2.Length)
                 Ok { Phase1Levels = phase1; Phase2Levels = phase2 }
+
+    /// Rows-taking leveled sibling with a caller-supplied order — mirrors
+    /// `composeRenderedBundleWithBootstrapUsing`.
+    let composeRenderedLeveledWithBootstrapUsing
+        (topo: TopologicalOrder)
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<LeveledDeploymentText, EmitError> =
+        composeRenderedLeveledWithBootstrapLaneUsing
+            topo policy catalog profile migration (BootstrapLane.Rows bootstrapRows) userRemap
+
+    let composeRenderedLeveledWithBootstrap
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<LeveledDeploymentText, EmitError> =
+        let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        composeRenderedLeveledWithBootstrapUsing topo policy catalog profile migration bootstrapRows userRemap
 
     /// Level-aware sibling of `composeRenderedFull` — no Bootstrap row source
     /// (`composeRenderedLeveledWithBootstrap` with `Map.empty`; byte-identical

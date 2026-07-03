@@ -326,6 +326,23 @@ module EvidenceCache =
                     perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
             Some (cachedKindFromPerColumn nullability kind (int64 (List.length quanta)) perColumn)
 
+    /// The drained-reader sibling of the two entries above (PL-8/S03):
+    /// derive a kind's evidence from per-column `CachedValue` lists an
+    /// adapter already materialized off ONE row stream — the unsampled
+    /// live discovery's single-scan arm, where the aggregate scan's exact
+    /// RowCount/NullCounts are a pure function of the full stream. Same
+    /// assembly tail (`cachedKindFromPerColumn`), so the three entries
+    /// cannot drift. Attribute-less kinds yield `None` (the live
+    /// discovery's own refusal shape).
+    let cachedKindOfColumns
+        (nullability: Map<string, bool>)
+        (kind: Kind)
+        (rowCount: int64)
+        (perColumn: System.Collections.Generic.List<CachedValue>[])
+        : CachedKind option =
+        if List.isEmpty kind.Attributes then None
+        else Some (cachedKindFromPerColumn nullability kind rowCount perColumn)
+
     /// Find a column within a kind by attribute SsKey. Returns
     /// `None` when the attribute exists in catalog but the cache
     /// has no column for it (e.g., column dropped from deployed

@@ -47,8 +47,9 @@ module TransferResume =
                 match Catalog.tryFindKind k catalog with
                 | None      -> ()
                 | Some kind ->
-                    do! Deploy.executeBatch sink
-                            (System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";"))  // LINT-ALLOW: terminal SQL-text boundary; table name is a validated TableId via Render.tableQualified
+                    // PL-6 (S14): one GO-free DELETE — one pre-split segment.
+                    do! Deploy.executeSegments sink
+                            [ System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";") ]  // LINT-ALLOW: terminal SQL-text boundary; table name is a validated TableId via Render.tableQualified
         }
 
     /// The durable phase-marker table — records which transfers completed, so a

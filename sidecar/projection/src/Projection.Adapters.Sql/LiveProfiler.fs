@@ -283,9 +283,54 @@ module LiveProfiler =
         System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
             "SELECT ", topClause, columnList, " FROM ", table, orderClause)
 
-    /// Discovery for one kind: 3 queries (aggregate + reflection +
-    /// row-stream); composes into a `CachedKind`. Slice 7 accepts
-    /// `maxRows` to opt into TOP-N sampling on the row-stream query.
+    /// The SAMPLED-kind aggregate scan: exact whole-table RowCount +
+    /// per-attribute NullCounts the capped row stream cannot yield (the
+    /// P4 exactness contract). `None` maxRows ⇒ no aggregate — PL-8's
+    /// single-scan arm derives the counts from the full stream instead.
+    /// Runs (and must run) BEFORE the row-stream reader opens: both ride
+    /// one connection, no MARS. Module-level (FS3511).
+    let private aggregateCountsFor
+        (cnn: SqlConnection)
+        (maxRows: int option)
+        (kind: Kind)
+        : Task<(int64 * Map<SsKey, int64>) option> =
+        match maxRows with
+        | None -> Task.FromResult None
+        | Some _ ->
+            task {
+                use _ = Bench.scope "profile.live.aggregate"
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- cacheAggregateSql kind
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                use! reader = cmd.ExecuteReaderAsync()
+                let! advanced = reader.ReadAsync()
+                if not advanced then
+                    return Some (0L, Map.empty)
+                else
+                    let rc =
+                        if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
+                    let counts =
+                        kind.Attributes
+                        |> List.mapi (fun idx attr ->
+                            let nc =
+                                if reader.IsDBNull(1 + idx) then 0L
+                                else reader.GetInt64(1 + idx)
+                            attr.SsKey, nc)
+                        |> Map.ofList
+                    return Some (rc, counts)
+            }
+
+    /// Discovery for one kind. PL-8 (S03) — the UNSAMPLED (default
+    /// full-scan) case pays ONE server scan: the row stream drains every
+    /// row, and the exact RowCount + per-attribute NullCounts derive
+    /// PURELY from the drained cells (`EvidenceCache.cachedKindOfColumns`
+    /// — the same assembly tail as the data-lane derivations, so the
+    /// single-scan facts equal the aggregate query's by construction over
+    /// an unchanged table; one scan is also the more CONSISTENT read —
+    /// the two-query shape could observe a concurrent write between
+    /// scans). The aggregate scan survives ONLY for SAMPLED kinds
+    /// (`aggregateCountsFor`). Reflection stays the caller's slice of the
+    /// ONE batched INFORMATION_SCHEMA query.
     let private discoverKind
         (cnn: SqlConnection)
         (maxRows: int option)
@@ -296,36 +341,11 @@ module LiveProfiler =
             use _ = Bench.scope "profile.live.discoverKind"
             if List.isEmpty kind.Attributes then return None
             else
-                // 1. Aggregate: exact RowCount + per-attribute NullCount.
-                //    Own scope so aggregate / reflection / row-stream are
-                //    individually attributable within `discoverKind`.
-                let! (rowCount, nullCounts) = task {
-                    use _ = Bench.scope "profile.live.aggregate"
-                    use cmd = cnn.CreateCommand()
-                    cmd.CommandText <- cacheAggregateSql kind
-                    cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
-                    use! reader = cmd.ExecuteReaderAsync()
-                    let! advanced = reader.ReadAsync()
-                    if not advanced then
-                        return (0L, Map.empty)
-                    else
-                        let rc =
-                            if reader.IsDBNull(0) then 0L else reader.GetInt64(0)
-                        let counts =
-                            kind.Attributes
-                            |> List.mapi (fun idx attr ->
-                                let nc =
-                                    if reader.IsDBNull(1 + idx) then 0L
-                                    else reader.GetInt64(1 + idx)
-                                attr.SsKey, nc)
-                            |> Map.ofList
-                        return (rc, counts)
-                }
-                // 2. Reflection: per-column IsNullableInDatabase — the
-                //    caller's slice of the ONE batched INFORMATION_SCHEMA
-                //    query (previously a per-kind round trip here).
-                // 3. Row-stream: SELECT * → per-row CachedValue array.
-                //    Column-oriented final shape (transpose at end).
+                // Sampled kinds pay the aggregate FIRST (one connection, no
+                // MARS — it cannot run under the open row-stream reader).
+                let! aggregateOpt = aggregateCountsFor cnn maxRows kind
+                // Row-stream: SELECT * → per-row CachedValue array.
+                // Column-oriented final shape (transpose at end).
                 let perColumnValues =
                     Array.init (List.length kind.Attributes) (fun _ ->
                         System.Collections.Generic.List<CachedValue>())
@@ -339,26 +359,31 @@ module LiveProfiler =
                             let cellValue =
                                 CachedValue.ofReaderValue (reader.GetValue idx)
                             perColumnValues.[idx].Add cellValue)
-                let columns =
-                    kind.Attributes
-                    |> List.mapi (fun idx attr ->
-                        let isNullable =
-                            Map.tryFind (ColumnRealization.columnNameText attr.Column) nullabilityMap
-                            |> Option.defaultValue false
-                        { AttributeKey         = attr.SsKey
-                          IsNullableInDatabase = isNullable
-                          Values               = perColumnValues.[idx].ToArray() })
-                let columnsByKey =
-                    columns
-                    |> List.map (fun c -> c.AttributeKey, c)
-                    |> Map.ofList
-                return
-                    Some
-                        { KindKey      = kind.SsKey
-                          RowCount     = rowCount
-                          NullCounts   = nullCounts
-                          Columns      = columns
-                          ColumnsByKey = columnsByKey }
+                match aggregateOpt with
+                | None ->
+                    // Single-scan: exact counts derive from the one drain.
+                    return EvidenceCache.cachedKindOfColumns nullabilityMap kind (int64 perColumnValues.[0].Count) perColumnValues
+                | Some (rowCount, nullCounts) ->
+                    let columns =
+                        kind.Attributes
+                        |> List.mapi (fun idx attr ->
+                            let isNullable =
+                                Map.tryFind (ColumnRealization.columnNameText attr.Column) nullabilityMap
+                                |> Option.defaultValue false
+                            { AttributeKey         = attr.SsKey
+                              IsNullableInDatabase = isNullable
+                              Values               = perColumnValues.[idx].ToArray() })
+                    let columnsByKey =
+                        columns
+                        |> List.map (fun c -> c.AttributeKey, c)
+                        |> Map.ofList
+                    return
+                        Some
+                            { KindKey      = kind.SsKey
+                              RowCount     = rowCount
+                              NullCounts   = nullCounts
+                              Columns      = columns
+                              ColumnsByKey = columnsByKey }
         }
 
     /// Capture a complete EvidenceCache for the catalog. Walks every
@@ -412,6 +437,110 @@ module LiveProfiler =
         (catalog: Catalog)
         : Task<Result<EvidenceCache>> =
         captureEvidenceCacheWith SqlProfilerOptions.defaults cnn catalog
+
+    /// Scoped null-count SQL: one narrow aggregate projecting exact NULL
+    /// counts for ONLY the named columns (positional alignment with the
+    /// `scoped` list) — `cacheAggregateSql`'s shape minus the row count and
+    /// minus every unrequested column.
+    let private scopedNullCountSql (kind: Kind) (scoped: Attribute list) : string =
+        let table =
+            System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+                ".",
+                [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
+        let selectList =
+            scoped
+            |> List.mapi (fun idx attr ->
+                System.String.Concat(  // LINT-ALLOW: terminal SQL-text boundary; segments are typed (encode-quoted column name + integer column index)
+                    "COUNT_BIG(CASE WHEN ", encode (ColumnRealization.columnNameText attr.Column), " IS NULL THEN 1 END) AS [c", string idx, "]"))
+            |> String.concat ", "  // LINT-ALLOW: terminal SQL select-list comma joiner over typed per-column segments
+        System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
+            "SELECT ", selectList, " FROM ", table)
+
+    /// One kind's scoped probe: exact NULL counts for the scoped attributes
+    /// (the pair's second), keyed by the kind's SsKey in the result so the
+    /// caller's loop stays a bare `let!` (FS3511 — no tuple pattern, no
+    /// pre-`let!` bindings in a task `for` body). `COUNT_BIG(CASE …)` over
+    /// an empty table yields 0 per column (a one-row result), so the no-row
+    /// arm is the defensive mirror. Module-level (FS3511).
+    let private probeScopedNullCounts
+        (cnn: SqlConnection)
+        (pair: Kind * Attribute list)
+        : Task<SsKey * Map<SsKey, int64>> =
+        task {
+            use _ = Bench.scope "profile.live.nullCountsFor.kind"
+            let kind = fst pair
+            let scoped = snd pair
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- scopedNullCountSql kind scoped
+            cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+            use! reader = cmd.ExecuteReaderAsync()
+            let! advanced = reader.ReadAsync()
+            if not advanced then
+                return kind.SsKey, (scoped |> List.map (fun a -> a.SsKey, 0L) |> Map.ofList)
+            else
+                return
+                    kind.SsKey,
+                    (scoped
+                     |> List.mapi (fun idx a ->
+                         a.SsKey, (if reader.IsDBNull idx then 0L else reader.GetInt64 idx))
+                     |> Map.ofList)
+        }
+
+    /// The scoped probe's walk: one kind at a time, accumulating keyed
+    /// counts. Module-level recursion (the `task { }` `for`-loop form is not
+    /// statically compilable here — FS3511; same shape as
+    /// `Preflight.readGrantRows`).
+    let rec private probeScopedKinds
+        (cnn: SqlConnection)
+        (remaining: (Kind * Attribute list) list)
+        (acc: Map<SsKey, Map<SsKey, int64>>)
+        : Task<Map<SsKey, Map<SsKey, int64>>> =
+        task {
+            match remaining with
+            | [] -> return acc
+            | pair :: rest ->
+                let! keyed = probeScopedNullCounts cnn pair
+                return! probeScopedKinds cnn rest (Map.add (fst keyed) (snd keyed) acc)
+        }
+
+    /// PL-7 (S10) — the tightening pre-flight's SCOPED probe: exact NULL
+    /// counts for ONLY the named attributes, one narrow aggregate per
+    /// non-static kind that carries any of them (the same kind scope the
+    /// full capture walks) and NO query anywhere else. The incumbent gate
+    /// captured a FULL `EvidenceCache` — per-kind row streams + value
+    /// arrays across the whole catalog — to read a handful of `NullCounts`.
+    /// `COUNT_BIG` is exact regardless of sampling policy, so the probe's
+    /// counts equal the full-scan capture's by construction. Returns
+    /// kind-key → (attribute-key → exact null count); an attribute in
+    /// `attrKeys` absent from every kind simply does not appear (the gate's
+    /// `Added`-column case — no source rows to violate). Same fail-loud
+    /// envelope as the full capture.
+    let nullCountsFor
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (attrKeys: Set<SsKey>)
+        : Task<Result<Map<SsKey, Map<SsKey, int64>>>> =
+        task {
+            use _ = Bench.scope "profile.live.nullCountsFor"
+            try
+                let scopedKinds =
+                    catalog.Modules
+                    |> List.collect (fun m -> m.Kinds)
+                    |> List.filter (fun k -> not (isStaticKind k))
+                    |> List.choose (fun k ->
+                        match k.Attributes |> List.filter (fun a -> Set.contains a.SsKey attrKeys) with
+                        | [] -> None
+                        | scoped -> Some (k, scoped))
+                let! probed = probeScopedKinds cnn scopedKinds Map.empty
+                return Result.success probed
+            with
+            | ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "profile.live.nullCountProbeFailed"
+                            (System.String.Concat("LiveProfiler.nullCountsFor failed: ", ex.Message)))
+        }
 
     /// Discovery for one kind on its OWN connection, gated by the shared
     /// semaphore. Hoisted to module level (no local closures inside a

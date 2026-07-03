@@ -97,6 +97,33 @@ let private emitScenario (cfg: Config.Config) (catalog: Catalog) : Map<string, s
     |> Map.fold (fun acc k v -> Map.add k v acc) dataFiles
     |> Map.add "stream.sql" stream
 
+[<Fact>]
+let ``PL-6 S25: per-statement constraint formatting equals the whole-text pass on every golden scenario`` () =
+    // The equivalence pin for the formatter's S25 carrier: the Enabled
+    // arm of `Render.toTextWith` now folds `ConstraintFormatter.formatInto`
+    // per statement; `ConstraintFormatter.format` retains the incumbent
+    // whole-text semantics (Split per line, one trailing newline for the
+    // final `'\n'`). Over every golden scenario's real statement stream
+    // (CREATE TABLE + constraint ladders + GO frames + extended
+    // properties), the two must agree byte-for-byte.
+    for (name, cfg, catalog) in scenarios do
+        let postChain = Compose.applyShapingToCatalog cfg catalog |> mustOk
+        let emitted =
+            EmissionPolicy.filterPlatformAutoIndexes
+                (EmissionPolicy.withIncludePlatformAutoIndexes
+                    cfg.Emission.IncludePlatformAutoIndexes
+                    EmissionPolicy.empty)
+                postChain
+        let statements = SsdtDdlEmitter.statements emitted |> List.ofSeq
+        let perStatement = Render.toTextWith ConstraintFormatter.Enabled statements
+        let wholeText =
+            ConstraintFormatter.format
+                ConstraintFormatter.Enabled
+                (Render.toTextWith ConstraintFormatter.Disabled statements)
+        Assert.True(
+            (wholeText = perStatement),
+            sprintf "scenario '%s': per-statement formatting diverged from the whole-text pass" name)
+
 let private listGoldenFiles (scenarioDir: string) : Map<string, string> =
     if not (Directory.Exists scenarioDir) then Map.empty
     else

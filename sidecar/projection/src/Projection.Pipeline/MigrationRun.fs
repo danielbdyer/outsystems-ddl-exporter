@@ -234,6 +234,41 @@ module MigrationRun =
     /// reference are supplied by the caller once the write lands. Fail-closed:
     /// a malformed store is a `StoreError`; a non-advancing version is
     /// `NonMonotonic` (the timeline never reorders).
+    /// PL-10 (S12) — the ONE durable read a record leg pays; `None` is
+    /// genesis (no file). The coordinate + append consumers below thread
+    /// the loaded chain instead of re-parsing the store.
+    let private loadChain (path: string) : Result<EpisodicLifecycle option, MigrationRecordError> =
+        if System.IO.File.Exists path then
+            match LifecycleStore.load path with
+            | Error e -> Error (StoreError e)
+            | Ok existing -> Ok (Some existing)
+        else Ok None
+
+    let private recordOnChain
+        (path: string)
+        (timeline: Timeline)
+        (chain: EpisodicLifecycle option)
+        (coordinate: EpisodeCoordinate)
+        (refactorLogRef: string option)
+        (data: DataObservation)
+        (artifacts: MigrationArtifacts)
+        : Result<EpisodicLifecycle, MigrationRecordError> =
+        let episode = Migration.toEpisode coordinate refactorLogRef data artifacts.Plan
+        let chainResult : Result<EpisodicLifecycle, MigrationRecordError> =
+            match chain with
+            | Some existing ->
+                match EpisodicLifecycle.append episode existing with
+                | Ok appended -> Ok appended
+                | Error errs -> Error (NonMonotonic (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+            | None ->
+                Ok (EpisodicLifecycle.genesis timeline episode)
+        match chainResult with
+        | Error e -> Error e
+        | Ok appended ->
+            match LifecycleStore.save path appended with
+            | Ok () -> Ok appended
+            | Error e -> Error (StoreError e)
+
     let record
         (path: string)
         (timeline: Timeline)
@@ -242,23 +277,9 @@ module MigrationRun =
         (data: DataObservation)
         (artifacts: MigrationArtifacts)
         : Result<EpisodicLifecycle, MigrationRecordError> =
-        let episode = Migration.toEpisode coordinate refactorLogRef data artifacts.Plan
-        let chainResult : Result<EpisodicLifecycle, MigrationRecordError> =
-            if System.IO.File.Exists path then
-                match LifecycleStore.load path with
-                | Error e -> Error (StoreError e)
-                | Ok existing ->
-                    match EpisodicLifecycle.append episode existing with
-                    | Ok chain -> Ok chain
-                    | Error errs -> Error (NonMonotonic (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
-            else
-                Ok (EpisodicLifecycle.genesis timeline episode)
-        match chainResult with
+        match loadChain path with
         | Error e -> Error e
-        | Ok chain ->
-            match LifecycleStore.save path chain with
-            | Ok () -> Ok chain
-            | Error e -> Error (StoreError e)
+        | Ok chain -> recordOnChain path timeline chain coordinate refactorLogRef data artifacts
 
     /// The next monotonic `EpisodeCoordinate` for the timeline persisted at
     /// `path`: ordinal 0 for a genesis (no file / unreadable-as-genesis), else
@@ -266,25 +287,27 @@ module MigrationRun =
     /// (Core holds no clock); the label is the ordinal's SemVer-ish stamp. This
     /// is the seam that lets the executor record without the operator hand-
     /// authoring a version — the timeline's own head dictates the next ordinal.
+    let private nextCoordinateOfChain
+        (chain: EpisodicLifecycle option)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Result<EpisodeCoordinate, MigrationRecordError> =
+        let ordinal =
+            match chain with
+            | Some existing -> Version.ordinal (Episode.version (EpisodicLifecycle.latest existing)) + 1
+            | None -> 0
+        match Version.create ordinal (sprintf "v%d" ordinal) with
+        | Ok version -> Ok (EpisodeCoordinate.create version environment at)
+        | Error errs -> Error (NonMonotonic (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+
     let nextCoordinate
         (path: string)
         (environment: Environment)
         (at: System.DateTimeOffset)
         : Result<EpisodeCoordinate, MigrationRecordError> =
-        let ordinalResult : Result<int, MigrationRecordError> =
-            if System.IO.File.Exists path then
-                match LifecycleStore.load path with
-                | Error e -> Error (StoreError e)
-                | Ok existing ->
-                    Ok (Version.ordinal (Episode.version (EpisodicLifecycle.latest existing)) + 1)
-            else
-                Ok 0
-        match ordinalResult with
+        match loadChain path with
         | Error e -> Error e
-        | Ok ordinal ->
-            match Version.create ordinal (sprintf "v%d" ordinal) with
-            | Ok version -> Ok (EpisodeCoordinate.create version environment at)
-            | Error errs -> Error (NonMonotonic (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+        | Ok chain -> nextCoordinateOfChain chain environment at
 
     /// **The record-leg of the composed CLI execute** — persist a *verified*
     /// migration `outcome`'s episode onto the timeline at `path`, deriving the
@@ -320,9 +343,14 @@ module MigrationRun =
         match admitted with
         | Error e -> Error e
         | Ok token ->
-            match nextCoordinate path environment at with
+            // PL-10 (S12) — ONE store load serves both the coordinate
+            // derivation and the append (was two full parses per record leg).
+            match loadChain path with
             | Error e -> Error e
-            | Ok coordinate -> record path timeline coordinate refactorLogRef data (Verified.value token).Artifacts
+            | Ok chain ->
+                match nextCoordinateOfChain chain environment at with
+                | Error e -> Error e
+                | Ok coordinate -> recordOnChain path timeline chain coordinate refactorLogRef data (Verified.value token).Artifacts
 
     // -- the live-execute leg (direct execution against a deployed DB) --------
 
@@ -499,7 +527,8 @@ module MigrationRun =
                     let mutable undone = 0
                     for stmt in undo do
                         try
-                            do! Deploy.executeBatch cnn stmt
+                            // PL-6 (S14): one GO-free rename — one pre-split segment.
+                            do! Deploy.executeSegments cnn [ stmt ]
                             undone <- undone + 1
                         with _ -> ()
                     match! ReadSide.read cnn with
@@ -620,11 +649,18 @@ module MigrationRun =
                                 // roll the whole transaction back automatically.
                                 let opened = atomic && hasDdl
                                 try
+                                    // PL-6 (S14): the envelope controls and each
+                                    // rename are GO-free typed renders — one
+                                    // pre-split segment apiece; `alterSql` keeps
+                                    // `executeBatch` (it flows through
+                                    // `Render.toText`, which CAN carry `GO` from
+                                    // `BatchSeparator`, so the parser split stays
+                                    // load-bearing there).
                                     if opened then
-                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderAtomicEnvelopeOpen ())
+                                        do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderAtomicEnvelopeOpen () ]
                                     let mutable applied = 0
                                     for stmt in renameSql do
-                                        do! Deploy.executeBatch cnn stmt
+                                        do! Deploy.executeSegments cnn [ stmt ]
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                                     if hasAlter then
@@ -632,7 +668,7 @@ module MigrationRun =
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                                     if opened then
-                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderCommitTransaction ())
+                                        do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderCommitTransaction () ]
                                     return Ok ()
                                 with ex ->
                                     // M22 — if the envelope is open, roll the whole deploy
@@ -645,7 +681,7 @@ module MigrationRun =
                                     // ride the groupoid inverse over the applied rename
                                     // prefix; refuse-don't-corrupt; never a silent partial.
                                     if opened then
-                                        try do! Deploy.executeBatch cnn (ScriptDomGenerate.renderRollbackIfActive ())
+                                        try do! Deploy.executeSegments cnn [ ScriptDomGenerate.renderRollbackIfActive () ]
                                         with _ -> ()
                                     let! verdict = compensateToSource ex.Message source cnn
                                     return Error verdict
@@ -836,15 +872,17 @@ module MigrationRun =
                     let! transferResult =
                         // A5 — the data source is at A (`sinkSource`); re-point
                         // rows A→B through the rename-aware Transfer. The renameMap
-                        // derives from `CatalogDiff.between sinkSource target`; a
-                        // no-renames diff repoints by identity (== the straight load).
+                        // derives from the A→B `CatalogDiff` the schema leg already
+                        // computed (`artifacts.Plan.Diff` over the identical pair —
+                        // PL-1/S13, threaded not recomputed); a no-renames diff
+                        // repoints by identity (== the straight load).
                         if Map.isEmpty reconciliation then
-                            Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
+                            Transfer.runWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target
                         else
                             // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
                             // halt on the reconciling migrate-with-data path (the reconcile+migrate
                             // composition, AC-I7, is the follow-on; --allow-drops flows here then).
-                            Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
+                            Transfer.runReconcilingWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)
@@ -879,6 +917,30 @@ module MigrationRun =
     /// `record` (coordinate from `nextCoordinate`), so the timeline carries the
     /// data-plane observation. Additive — `execute` (and its G9 gate) and
     /// `executeWithData` are untouched.
+    /// The synchronous record tail of `executeWithDataAndRecordWith` —
+    /// module-level so the caller's `task { }` stays statically compilable
+    /// in Release (FS3511). PL-10 (S12 sibling): ONE store load serves the
+    /// coordinate derivation and the append.
+    let private recordDataOutcome
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (data: DataObservation)
+        (schema: MigrationOutcome)
+        (report: Transfer.TransferReport)
+        : Result<MigrationDataOutcome * EpisodicLifecycle, MigrationError> =
+        match loadChain path with
+        | Error e -> Error (ExecutionFailed (sprintf "data load succeeded but reading the episode store failed: %A" e))
+        | Ok chain ->
+            match nextCoordinateOfChain chain environment at with
+            | Error e -> Error (ExecutionFailed (sprintf "data load succeeded but deriving the episode coordinate failed: %A" e))
+            | Ok coordinate ->
+                match recordOnChain path timeline chain coordinate refactorLogRef data schema.Artifacts with
+                | Ok appended -> Ok ({ Schema = schema; Transfer = report }, appended)
+                | Error e -> Error (ExecutionFailed (sprintf "data load succeeded but recording the episode failed: %A" e))
+
     let executeWithDataAndRecordWith
         (identityPolicy: IdentityPolicy)
         (atomic: bool)
@@ -910,11 +972,12 @@ module MigrationRun =
                 | Ok baseline ->
                 let! transferResult =
                     // A5 — the data source is at A (`sinkSource`); re-point rows
-                    // A→B through the rename-aware Transfer (see `executeWithData`).
+                    // A→B through the rename-aware Transfer over the schema leg's
+                    // own diff (see `executeWithDataWith` — PL-1/S13).
                     if Map.isEmpty reconciliation then
-                        Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
+                        Transfer.runWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target
                     else
-                        Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
+                        Transfer.runReconcilingWithRenamesUsing schema.Artifacts.Plan.Diff identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                 match transferResult with
                 | Error es -> return Error (DataTransferFailed es)
                 | Ok report ->
@@ -922,12 +985,9 @@ module MigrationRun =
                     | Error es -> return Error (SchemaReadFailed es)
                     | Ok post ->
                     let data = DataObservation.create (post - baseline) None
-                    match nextCoordinate path environment at with
-                    | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but deriving the episode coordinate failed: %A" e))
-                    | Ok coordinate ->
-                        match record path timeline coordinate refactorLogRef data schema.Artifacts with
-                        | Ok chain -> return Ok ({ Schema = schema; Transfer = report }, chain)
-                        | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but recording the episode failed: %A" e))
+                    // PL-10 (S12 sibling) — the record tail is one sync call
+                    // (module-level: FS3511) paying ONE store load.
+                    return recordDataOutcome path timeline environment at refactorLogRef data schema report
         }
 
     let executeWithDataAndRecord

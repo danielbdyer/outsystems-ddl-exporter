@@ -22,6 +22,15 @@
 
 ### PL-1 · One estate acquisition per combined verb (the audit's biggest receipt)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry of the same date, "PL-1
+> executed"). Carrier landed as `Compose.EstateAcquisition` +
+> `runWithConfigAcquiring`; `projectSeedPlanUsing` / `storeLegFromAcquisition`
+> / `loadStoreChain`-threaded `runStoreLeg` / `composePrefixState` (S52) /
+> `Transfer.runWithRenamesUsing` + `runReconcilingWithRenamesUsing` (S13).
+> Identity gates: `PayOnceCombinedVerbTests` (pure) +
+> `PayOnceCombinedVerbDockerTests` (docker; wire receipt: ONE
+> `adapter.osm.extract` per combined store verb). No goldens moved.
+
 **Findings:** S00, S45, S50 (load leg), S05 (store leg), S51 (lifecycle ×4
 loads), S53 (diff chain ×2 + FTC re-derive), S52 (Outputs built and discarded
 by the seed-plan re-projection), S13 (migrate-with-data re-diff).
@@ -83,6 +92,15 @@ value the publish EMITTED (post-chain), not the pre-chain one — thread
 
 ### PL-2 · AllData publishes stream static kinds once (S04)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-2 executed"). The
+> graft-from-bootstrapRows arm, on BOTH schedules: two-phase
+> `hydrateAllDataArm` + `hydrateCatalogFromBootstrapRowsUsing`; pipelined
+> drain-worker row retention (`retainRows`). Named schedule note
+> `data.hydration.staticGraftRidesBootstrapDrain`. Gate:
+> `PayOnceCombinedVerbDockerTests` AllData fact — drain count 1/publish,
+> bundles byte-identical across schedules. K26 respected: the skip arm was
+> rejected because it would move the catalog-plane bytes.
+
 **The fact paid twice.** Under `DataComposition.AllData`, the static lane is
 dispatched EMPTY (`DataEmissionComposer.fs:122-124`), yet
 `hydrateCatalogUsing` still streams and grafts every static kind
@@ -111,6 +129,13 @@ doesn't starve `emittedResidualCollector`'s tolerance witnesses; if it does,
 the graft-from-bootstrapRows variant is the correct arm, not the skip).
 
 ### PL-3 · Render-constant hoisting through the data lane
+
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-3 executed").
+> `renderMerge` top-bindings (rowCount/writable/matchNames);
+> `renderUpdateForKind` per-kind closure; `valueRows`/`phase2Rows = phase1Rows`
+> in both emitters; `TableId.withoutCatalog`; `renderStagedPhase1` takes the
+> threaded writable set. Gates: factorization laws + corpus byte-identity +
+> docker pool unchanged.
 
 **Findings:** S18 (Phase1Merges/Phase2Updates identical list built twice),
 S19/S38 (`matchColumnNames` ×2, `writableAttributes` ×3 per renderMerge),
@@ -153,6 +178,13 @@ shape. No law surfaces.
 
 ### PL-4 · SSDT emission lookups: derive once, thread everywhere
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-4 executed").
+> `FkEmissionLookups` + `fkResolutionsUsing` + `resolvedFksOf` +
+> `foreignKeyDefOfUsing` + `firstKindBySchemaOf` + `Catalog.kindKeySet`
+> (CWT) + `ArtifactByKind.mapValues`; one lookups/resolutions/overlay
+> binding in the diagnostics assembly. Gates: DDL goldens + docker pool
+> unchanged; pure pool green.
+
 **Findings:** S46 (`buildLookups` ×3 per publish + a 4th walk), S47 (`fkDef`
 resolves every reference ×4 per publish), S48 (`foreignKeyDefOf` pays a
 whole-catalog `buildLookups` PER FK in SchemaMigrationEmitter), S37/S49
@@ -190,6 +222,14 @@ precedent already in the file.
 
 ### PL-5 · Profile evidence indexes (the tightening passes' O(n·m) floor)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-5 executed").
+> `Profile.tryFind*` bodies consult CWT-cached first-wins indexes;
+> `Catalog.sortedKinds` (CWT) under `kindContexts`; the FK target index
+> widened to per-Reference entries carrying the resolved PK attribute;
+> one cardinality resolution per FK decision; one-fold cohesion; PageRank
+> graph-constants hoisted (`pageRankStepWith`). Gates: pure + docker
+> pools green, no pass added/removed, no goldens.
+
 **Findings:** S35 (`Profile.tryFindColumn`/`tryFind*` are linear list scans
 paid per attribute × per pass), S36 (FK derivations re-resolve target kind +
 single-PK attribute per reference at 2+ sites), S39 (Nullability and
@@ -224,6 +264,24 @@ tier.
 reference-stable through a pass run (it is — passes thread one value).
 
 ### PL-6 · The text plane pays per byte once
+
+> **STATUS: EXECUTED 2026-07-02, S24 deferred by name to PL-9**
+> (DECISIONS entry "PL-6 executed"). S31 `JsonWriting.writtenBytes`
+> (live-buffer decode) + `ManifestEmitter.toJson` delegation; S30
+> `CatalogCodec.serializeUtf8` → `WriteRawValue(utf8)` (direct
+> `wCatalog` nesting REJECTED — depth re-indent would move stored
+> bytes); S29 the dead sort+Map-rebuild retired (the Map's own order
+> was always the emitted order); S32 serialized-once CDC keys; S33
+> `Render.toSql pendingDdl` direct; S14 `Deploy.executeSegments`
+> (pre-split; `alterSql` keeps the parser — `Render.toText` can carry
+> GO); S25 `ConstraintFormatter.formatInto` per-statement fold (the
+> trailing-newline Split artifact pinned; golden-scenario equivalence
+> fact); S26 (indent, trimmed) threaded once. S24 remains as PL-6c —
+> the emitters mint `Phase1/Phase2Segments` (the piece lists they
+> already concatenate; every GO frame flows through `renderDataBatch`)
+> and the parser split stays for text of unknown structure (a data
+> literal can carry an embedded GO line — line-folds mis-split it).
+> See the DECISIONS boundary paragraph.
 
 **Findings:** S25 (whole SSDT artifact built, then `ConstraintFormatter`
 split-and-rejoins it — two more full copies), S26 (`TrimStart`/keyword index
@@ -272,6 +330,18 @@ individually committable. Execute file-by-file.
 
 ### PL-7 · Schema-only reads where rows were never the point
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-7 executed").
+> `ReadSide.readSchema` (one `readCore liftRows` body; ≡ `read >>
+> stripStaticPopulations` by construction, pinned content-bearing in
+> `PayOnceSchemaReadDockerTests`); transfer contract (S01), slice-apply
+> (S09), profile-capture (S02 — `readSchema + attach` chosen over the
+> recommended `attachDerived`: post-PL-8 both cost one scan/table and
+> the schema read drops the read-leg drain; a NAMED departure) switched;
+> `Source.ofLive.ReadCatalog` deliberately NOT switched (returns the
+> marked catalog downstream). S10: `LiveProfiler.nullCountsFor` scoped
+> `COUNT_BIG` probe + pure `Preflight.violationsOfNullCounts`; verdict
+> identity pinned live (docker) and pure (parity facts).
+
 **Findings:** S01 (transfer contract via `ReadSide.read` materializes ≤100k
 rows/table into `Modality.Static` the plan never consumes, then
 `collectInOrder` streams the SAME rows for the load), S09 (SliceApply reads
@@ -306,6 +376,12 @@ consumers; pin with a test).
 
 ### PL-8 · Live discovery becomes single-scan (S03, S06)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-8 executed").
+> `EvidenceCache.cachedKindOfColumns` over the one drain (aggregate only
+> for sampled kinds, via `aggregateCountsFor`, run pre-stream — no MARS);
+> `readRowsStreamCapped` + a maxRows+1 drain replaces the COUNT probe.
+> Gates: corpus live≡derived cache equality (P1 law), pure + docker pools.
+
 **The fact paid twice.** `discoverKind` full-scans each unsampled table TWICE
 (COUNT_BIG aggregate, then the full row stream); `readRows` COUNT(*)-probes a
 table it immediately streams in full.
@@ -328,6 +404,19 @@ unsampled kinds).
 **Effort/risk.** Small-medium; LiveProfiler-local.
 
 ### PL-9 · Streaming transfer: per-kind constants staged once (the lane the docstrings already promise)
+
+> **STATUS: EXECUTED 2026-07-03** (DECISIONS entry "PL-9 executed").
+> S15 `SurrogateCapture.CaptureKindSql`/`stageKind` (texts render once
+> per kind; staged texts dispatch as pre-split segments — the capture
+> transport's per-chunk parses retire); S16 `KindWriteLane` (repoint
+> ordinals + cell getters + capture + PK re-key staged before the chunk
+> loop); S17 `phase2UpdateSqlStaged`; S22 `basisByKind` (phase-1;
+> phase 2's basis became the S11 projection's own); S11 the phase-2
+> re-stream pulls a PROJECTED ingest kind (PK ∪ deferred) through the
+> ONE stream core — a NAMED departure from `readRowsProjectedStream`
+> (no second reader definition site). FS3511 traps recorded in the
+> DECISIONS entry. Gates: docker transfer/reverse-leg/resume suites +
+> pure pool + Release build.
 
 **Findings:** S15 (staging DDL / capture MERGE / keymap SQL re-rendered per
 50k chunk), S16 (cell getters + FK ordinals re-staged per chunk against the
@@ -357,6 +446,11 @@ their prefetch overlap.
 
 ### PL-10 · Small verb-state threadings (batchable, each trivial)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-10 executed").
+> S12 loadChain/nextCoordinateOfChain/recordOnChain; S08 scoped ingest;
+> S43/S44 Map-membership; S58 one-pass folds; S34 rowSeedBasis (streaming
+> FNV — seeds unchanged); S21/S60 qualifiedParts hoists.
+
 **Findings + carriers, one line each:**
 - S12: `recordVerified` loads the lifecycle twice → thread one loaded chain
   (`nextCoordinateOfChain`/`recordOnChain`).
@@ -379,6 +473,10 @@ determinism tests). No goldens.
 
 ### PL-11 · Delete the dead standalone readers (S07)
 
+> **STATUS: EXECUTED 2026-07-02** (DECISIONS entry "PL-11 executed").
+> All four deleted; the session-30 PK bench note relocated onto
+> `readSchemaCombined`. Grep-proof + pools green.
+
 Four standalone `ReadSide` readers duplicate `readSchemaCombined`'s SQL
 verbatim with ZERO callers — the reflection SQL is maintained twice. The
 dead-algebra precedent (DECISIONS 2026-06-04) says delete them; the combined
@@ -387,10 +485,61 @@ pure pool. (If any is test-referenced, the test moves to the combined read.)
 
 ---
 
-## Tier 3 — gap leads (UNVERIFIED — the critic's receipts, no skeptic pass yet)
+## Tier 3 — gap leads (ADJUDICATED 2026-07-02 — dual-lens skeptic pass run)
 
-Run these through the same verify → plan cycle before execution; receipts
-are concrete but unadjudicated:
+> The verify pass ran 2026-07-02 (two receipt gatherers over disjoint areas,
+> hand adjudication with the audit §4 lenses, refute-by-default). Verdicts:
+>
+> - **G1 — SPLIT.** The intra-`persist` double parse is CONFIRMED
+>   (`RelaxationStore.persist` parses `projection.json` twice back-to-back —
+>   `rootObjectOf` at RelaxationStore.fs:73 AND `read`→`rootObjectOf` at :77 —
+>   no intervening write; one parse threads through merge+write). The
+>   gate-check-vs-persist pair (Migrate.fs:335 vs persist) is KILLED: an
+>   interactive operator prompt sits between them, and the surgical-merge
+>   contract deliberately re-reads CURRENT disk state before writing. The
+>   CLI-parse-vs-`FullExportRun` re-parse pair is PLAUSIBLE but carries one
+>   unresolved axis: `Program.fs:346` parses `ProjectionConfig` (the CLI
+>   type) while `FullExportRun.fs:238` parses `Config` (the Pipeline type) —
+>   verify whether these are one parser before planning a threading carrier.
+>   The raw `File.ReadAllText` at FullExportRun.fs:210 is the input-DIGEST
+>   read (raw text IS the fact needed there — not a duplicate parse).
+> - **G2 — SURVIVES.** The same in-memory `GoldenDataset` is serialized to a
+>   temp file (SliceExtractRun.fs:118) and re-deserialized
+>   (SliceApplyRun.fs:134-140) inside one in-process flow; the docstring's
+>   "deliberate" is about chaining proven verbs, not needing the disk hop
+>   (no canary asserts the temp bytes; the codec round-trip is separately
+>   law-tested). Carrier: an `extractSpec` sibling RETURNING the dataset +
+>   an in-memory whole-flow apply entry (`mapToTarget`/`emit` are already
+>   public and dataset-taking); the path-taking entries stay for the
+>   standalone verbs.
+> - **G3 — SURVIVES.** Every visible envelope is serialized at emit
+>   (LogSink.fs:635) AND the retained TYPED accumulator is re-serialized at
+>   run capture (`serializedEnvelopes`, :720) — same immutable values, same
+>   deterministic serializer, two payments. Carrier: retain the emit-time
+>   line beside the typed envelope (the retained set equals the written set
+>   — pin that); `serializedEnvelopes` returns the retained lines. Gate:
+>   run.json byte-identity (Run round-trip tests) + `Watch.boardOfStored`.
+> - **G4 — SURVIVES** (materialization plane). `Run.list` fully parses every
+>   run.json — event bodies, artifact blobs, ledgers, bench — while its
+>   consumers (Inspect, RunHistory) read scalars + `List.length Events` +
+>   artifact KEYS only. Carrier: a `Run.listIndex` projection (count the
+>   events array without materializing strings; keys without blob values);
+>   the total `parse` STAYS as the codec — the `load ∘ save = run` law is
+>   untouched. Gate: index ≡ full-parse projection on fixtures.
+> - **G5 — SURVIVES** (small). `format` builds the summary, `ToString()`s,
+>   splits, \r-strips, filters — and its ONLY caller re-joins with "\n"
+>   (`formatText`); the string-list generality has zero external consumers.
+>   The split/strip is FUNCTIONAL (LF normalization for T1), so the carrier
+>   must keep the bytes: build with explicit LF appends (never AppendLine)
+>   and emit the text directly. Gate: `manifest.summary.txt` byte-identity.
+> - **G6 — SURVIVES** (tower), riding G3. `serializeEnvelope` hand-rolls the
+>   `MemoryStream → Utf8JsonWriter → ToArray → UTF-16 decode` seam
+>   `PinnedWriting` names as its single sanctioned home, once per visible
+>   envelope (twice counting the G3 re-serialize; G3's fix halves it). The
+>   pooled/reused-writer arm needs an emit-concurrency check first (the
+>   accumulator is lock-guarded; the serialize currently runs outside it).
+
+Original leads (receipts), for provenance:
 
 - **G1 (acquisition):** `projection.json` parsed up to FOUR times in one
   migrate leg (`Program.fs:341-346,477` + the tightening gate's re-read + …).

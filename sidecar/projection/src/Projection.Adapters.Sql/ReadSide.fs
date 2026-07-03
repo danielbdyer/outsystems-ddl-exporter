@@ -192,8 +192,8 @@ module ReadSide =
     /// NUMERIC_PRECISION, NUMERIC_SCALE so the V2 IR carries
     /// byte-faithful type declarations through the round-trip.
     /// Read a nullable integer column as `int option`, coercing the
-    /// common SQL integer CLR types. The body was previously duplicated
-    /// verbatim in `readColumnRows` and `readSchemaCombined`.
+    /// common SQL integer CLR types (the combined batch's column-row
+    /// projection reads through it).
     let private optIntOf (reader: SqlDataReader) (idx: int) : int option =
         if reader.IsDBNull idx then None
         else
@@ -227,108 +227,14 @@ module ReadSide =
                 else hasMore <- false
         }
 
-    let private readColumnRows (cnn: SqlConnection)
-        : Task<list<ColumnRow>> =
-        task {
-            use _ = Bench.scope "readside.readColumnRows"
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, \
-                        CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE \
-                 FROM INFORMATION_SCHEMA.COLUMNS \
-                 WHERE TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA') \
-                 ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
-            use! reader = cmd.ExecuteReaderAsync()
-            let rows = ResizeArray<ColumnRow>()
-            let optInt = optIntOf reader
-            do! drainRows reader (fun reader ->
-                    let lengthRaw = optInt 5
-                    let length =
-                        match lengthRaw with
-                        | Some -1 -> None  // SQL Server's MAX marker
-                        | other -> other
-                    rows.Add(
-                        {
-                            Schema = reader.GetString 0
-                            Table = reader.GetString 1
-                            Column = reader.GetString 2
-                            DataType = reader.GetString 3
-                            Nullable = (reader.GetString 4) = "YES"
-                            Length = length
-                            Precision = optInt 6
-                            Scale = optInt 7
-                        }))
-            // Defensive diagnostic (slice A.4.7'-prelude.defensive-
-            // hardening): zero column rows from INFORMATION_SCHEMA.COLUMNS
-            // is a SIGNAL not silence. Either (a) the user-schema is
-            // genuinely empty (rare in production), or (b) the
-            // VIEW DEFINITION permission is restricted (the user has
-            // db_datareader but cannot see metadata). Surface the
-            // signal so operators can diagnose; downstream emits an
-            // empty SSDT bundle otherwise.
-            if rows.Count = 0 then
-                eprintfn
-                    "readside.readColumnRows: zero rows from INFORMATION_SCHEMA.COLUMNS; verify VIEW DEFINITION permission on user schemas (Azure SQL least-privilege accounts may filter metadata)"
-            return List.ofSeq rows
-        }
-
-    /// Read the set of `(schema, table, column)` identifying IDENTITY
-    /// columns. Single round-trip; small result set (typically one
-    /// row per table). Per session-32.
-    let private readIdentityColumns (cnn: SqlConnection)
-        : Task<Set<string * string * string>> =
-        task {
-            use _ = Bench.scope "readside.readIdentityColumns"
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT SCHEMA_NAME(t.schema_id), t.name, c.name \
-                 FROM sys.columns c \
-                 JOIN sys.tables t ON t.object_id = c.object_id \
-                 WHERE c.is_identity = 1 \
-                   AND t.is_ms_shipped = 0"
-            use! reader = cmd.ExecuteReaderAsync()
-            let result = System.Collections.Generic.HashSet<string * string * string>()
-            do! drainRows reader (fun reader ->
-                    result.Add(
-                        reader.GetString 0,
-                        reader.GetString 1,
-                        reader.GetString 2) |> ignore)
-            return Set.ofSeq result
-        }
-
-    /// Read the set of `(schema, table, column)` tuples that are
-    /// part of a PRIMARY KEY constraint. Used to set
-    /// `Attribute.IsPrimaryKey`.
-    ///
-    /// **Bench note (session-30 Phase 3 lesson).** A sys.indexes +
-    /// sys.index_columns join was tried — slower than the
-    /// INFORMATION_SCHEMA path at canary scale (~25%). The
-    /// optimizer handles the INFORMATION_SCHEMA view's
-    /// CONSTRAINT_TYPE filter more efficiently than the
-    /// `is_primary_key = 1` predicate against all indexes. Reverted
-    /// per bench data. See companion docstring on `readColumnRows`.
-    let private readPrimaryKeys (cnn: SqlConnection)
-        : Task<Set<string * string * string>> =
-        task {
-            use _ = Bench.scope "readside.readPrimaryKeys"
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME \
-                 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc \
-                 JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu \
-                   ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME \
-                  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA \
-                 WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' \
-                   AND tc.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')"
-            use! reader = cmd.ExecuteReaderAsync()
-            let result = System.Collections.Generic.HashSet<string * string * string>()
-            do! drainRows reader (fun reader ->
-                    let schema = reader.GetString 0
-                    let table = reader.GetString 1
-                    let column = reader.GetString 2
-                    result.Add(schema, table, column) |> ignore)
-            return Set.ofSeq result
-        }
+    // PL-11 (S07) — the four standalone readers (`readColumnRows`,
+    // `readIdentityColumns`, `readPrimaryKeys`, `readForeignKeys`) are
+    // DELETED: each carried a private verbatim copy of SQL that
+    // `readSchemaCombined` embeds in its one batched command, and grep
+    // found zero call sites (the dead-algebra precedent, DECISIONS
+    // 2026-06-04 — a dead twin that can silently drift from the live
+    // batch). The combined batch is the single definition site; its
+    // docstring carries the relocated bench notes.
 
     /// Wave-1 slice 1.2 — read each column's DEFAULT-constraint definition
     /// from `sys.default_constraints`, keyed by `(schema, table, column)`.
@@ -337,7 +243,7 @@ module ReadSide =
     /// (in PhysicalSchema) strips the redundant outer-paren wrapping SQL
     /// Server adds so the read-back value compares equal to the emitter's
     /// `SqlLiteral.toString` form. Single round-trip; small result set;
-    /// mirrors `readIdentityColumns`.
+    /// single round-trip; small result set.
     let private readDefaultConstraints (cnn: SqlConnection)
         : Task<Map<string * string * string, string>> =
         task {
@@ -552,58 +458,10 @@ module ReadSide =
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
-    /// Read the set of FK relationships across every user table as typed
-    /// `FkRow`s (carrying the `WITH NOCHECK` trust state). Composite FKs
-    /// surface as multiple rows. Uses sys.* directly; REFERENTIAL_CONSTRAINTS
-    /// / KEY_COLUMN_USAGE shape is awkward for the source/target column-pair
-    /// join we need. The live readback path uses the combined `readSchemaCombined`
-    /// batch; this stand-alone reader mirrors that batch's FK SELECT for
-    /// out-of-band FK-metadata probing.
-    let private readForeignKeys (cnn: SqlConnection) : Task<FkRow list> =
-        task {
-            use _ = Bench.scope "readside.readForeignKeys"
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT \
-                    SCHEMA_NAME(t.schema_id), t.name, c.name, \
-                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name, \
-                    fk.is_not_trusted \
-                 FROM sys.foreign_keys fk \
-                 JOIN sys.foreign_key_columns fkc \
-                   ON fkc.constraint_object_id = fk.object_id \
-                 JOIN sys.tables t ON t.object_id = fk.parent_object_id \
-                 JOIN sys.columns c \
-                   ON c.object_id = t.object_id AND c.column_id = fkc.parent_column_id \
-                 JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id \
-                 JOIN sys.columns rc \
-                   ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id \
-                 WHERE t.is_ms_shipped = 0 \
-                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id"
-            use! reader = cmd.ExecuteReaderAsync()
-            let rows = ResizeArray<FkRow>()
-            // E2 (debrief G4): a NULL SCHEMA_NAME() (dropped schema /
-            // missing VIEW DEFINITION grant) is classified Unreadable and
-            // surfaces a NAMED diagnostic + skip — never a silent drop nor
-            // an opaque GetString cast failure.
-            let rawOpt i = if reader.IsDBNull i then None else Some (reader.GetString i)
-            do! drainRows reader (fun reader ->
-                    let isNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6
-                    match
-                        ForeignKeyReadback.classify
-                            (rawOpt 0) (rawOpt 1) (rawOpt 2) (rawOpt 3) (rawOpt 4) (rawOpt 5) isNotTrusted
-                        with
-                    | ForeignKeyReadback.Reconstructable c ->
-                        rows.Add(
-                            { SourceSchema = c.SourceSchema
-                              SourceTable  = c.SourceTable
-                              SourceColumn = c.SourceColumn
-                              TargetSchema = c.TargetSchema
-                              TargetTable  = c.TargetTable
-                              TargetColumn = c.TargetColumn
-                              IsNotTrusted = c.IsNotTrusted })
-                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason)
-            return List.ofSeq rows
-        }
+    // PL-11 (S07) — the standalone `readForeignKeys` is DELETED with its
+    // three siblings above: its sys.foreign_keys join byte-matched the
+    // combined batch's FK SELECT and it had zero callers. The combined
+    // batch (`readSchemaCombined`) is the single definition site.
 
     let private buildAttribute
         (columnLogicalNames: Map<string * string * string, string>)
@@ -874,7 +732,11 @@ module ReadSide =
     /// `SqlCommand` and `SqlDataReader` open on first pull and
     /// dispose on EOF or exception. Callers must drain to `None`
     /// (or accept that abandoned streams clean up at GC).
-    let private readRowsStreamCore (cnn: SqlConnection) (kind: Kind) (extraWhere: (string * (SqlCommand -> unit)) option) : AsyncStream<RowQuantum> =
+    /// `top` (PL-8/S06) — an optional server-side `TOP (n)` cap over the
+    /// SAME deterministic `ORDER BY`, so a capped stream reaches its
+    /// natural EOF (and disposes its reader) after the prefix instead of
+    /// scanning the whole table; `None` is the full stream, byte-identical.
+    let private readRowsStreamCore (cnn: SqlConnection) (kind: Kind) (top: int option) (extraWhere: (string * (SqlCommand -> unit)) option) : AsyncStream<RowQuantum> =
         // Bracket-quoting flows through ScriptDom's
         // `Identifier.EncodeIdentifier` (canonical, vendor-supplied
         // SQL-identifier encoder). Eliminates the prior `sprintf
@@ -915,9 +777,13 @@ module ReadSide =
             match extraWhere with
             | Some (w, _) -> System.String.Concat(" WHERE ", w)  // LINT-ALLOW: terminal SQL-text boundary; w is built from encoded identifiers + parameter placeholders
             | None        -> ""
+        let topClause =
+            match top with
+            | Some n when n > 0 -> System.String.Concat("TOP (", string n, ") ")  // LINT-ALLOW: terminal SQL-text boundary; n is a typed int
+            | _ -> ""
         let cmdText =
             System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; columns/qualified/encode results are typed safe segments
-                "SELECT ", columns,
+                "SELECT ", topClause, columns,
                 " FROM ", qualified,
                 whereText,
                 " ORDER BY ", encode pkCol)
@@ -1039,7 +905,14 @@ module ReadSide =
     /// Thin wrapper over `readRowsStreamCore` with no predicate — byte-
     /// identical to the pre-Slice-1b behaviour.
     let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
-        readRowsStreamCore cnn kind None
+        readRowsStreamCore cnn kind None None
+
+    /// PL-8 (S06) — the CAPPED stream: the server stops after the first
+    /// `top` rows of the same deterministic order, so the gate-plus-rows
+    /// read (`readRows`) rides ONE scan and the reader closes at its
+    /// natural (capped) EOF.
+    let private readRowsStreamCapped (top: int) (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
+        readRowsStreamCore cnn kind (Some top) None
 
     /// Slice 1b — the **key-scoped** read the closure oracle drives: stream
     /// only the rows of `kind` whose `keyColumn` (a logical attribute `Name`,
@@ -1070,7 +943,7 @@ module ReadSide =
             keyArr
             |> Array.iteri (fun i k ->
                 cmd.Parameters.AddWithValue(System.String.Concat("@k", string i), box k) |> ignore)
-        readRowsStreamCore cnn kind (Some (whereSql, addParams))
+        readRowsStreamCore cnn kind None (Some (whereSql, addParams))
 
     /// Slice 3/4 — stream the rows of `kind` matching a caller-rendered `WHERE`
     /// fragment (with its parameter binder). The closure oracle renders a typed
@@ -1078,8 +951,8 @@ module ReadSide =
     /// columns) and feeds the result here — the predicated ROOT read. An empty
     /// `whereSql` is the full table.
     let readRowsWhereStream (cnn: SqlConnection) (kind: Kind) (whereSql: string) (addParams: SqlCommand -> unit) : AsyncStream<RowQuantum> =
-        if whereSql = "" then readRowsStreamCore cnn kind None
-        else readRowsStreamCore cnn kind (Some (whereSql, addParams))
+        if whereSql = "" then readRowsStreamCore cnn kind None None
+        else readRowsStreamCore cnn kind None (Some (whereSql, addParams))
 
     /// The IR-grain boundary (Q2): rebuild `StaticRow`s from an in-flight
     /// quantum stream — the Map mint plus the `READSIDE_ROW` row identity
@@ -1116,10 +989,16 @@ module ReadSide =
                     return Some row
             }
 
-    /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain
-    /// `readRowsStream` into a list. Above threshold, return `None`
-    /// without opening the row reader. Per session-34, this is the
-    /// existing-shape API for the per-row PhysicalSchema axis;
+    /// Buffered wrapper (PL-8/S06 — ONE scan carries both the gate and
+    /// the rows): drain the maxRows+1-CAPPED stream; a table over the
+    /// threshold yields maxRows+1 rows ⇒ `None` (the reader closed at its
+    /// capped EOF — never a whole-table drain), a table at-or-under
+    /// yields exactly its full row set (the cap covers it; same
+    /// deterministic ORDER BY, same minted row identities). The prior
+    /// `COUNT(*)` probe was a SECOND full scan of the same table whose
+    /// only consumers — the `> maxRows` gate and the `= 0` shortcut —
+    /// both derive from this one capped drain. Per session-34, this is
+    /// the existing-shape API for the per-row PhysicalSchema axis;
     /// large-table digesting goes through `readRowsStream` directly.
     let private readRows
         (cnn: SqlConnection)
@@ -1128,28 +1007,10 @@ module ReadSide =
         : Task<StaticRow list option> =
         task {
             use _ = Bench.scope "readside.readRows"
-            // Bracket-quoting flows through ScriptDom's
-            // `Identifier.EncodeIdentifier` to match `readRowsStream`
-            // (single source of truth for SQL identifier encoding;
-            // audit Section 4 consistency fix).
-            let encode = SqlIdentifier.quote   // recon #8 — the one Core quoter (≡ EncodeIdentifier, byte-verified)
-            let qualified =
-                System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
-                    ".",
-                    [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
-            use countCmd = cnn.CreateCommand()
-            countCmd.CommandText <-
-                System.String.Concat("SELECT COUNT(*) FROM ", qualified)  // LINT-ALLOW: terminal SQL-text-emission boundary; qualified is pre-encoded
-            let! countObj = countCmd.ExecuteScalarAsync()
-            let count = System.Convert.ToInt32 countObj
-            if count > maxRows then
-                return None
-            elif count = 0 then
-                return Some []
-            else
-                let stream = readRowsStream cnn kind |> materializeStream kind
-                let! rows = AsyncStream.toList stream
-                return Some rows
+            let stream = readRowsStreamCapped (maxRows + 1) cnn kind |> materializeStream kind
+            let! rows = AsyncStream.toList stream
+            if List.length rows > maxRows then return None
+            else return Some rows
         }
 
     /// Recover a kind's SsKey from the persisted `V2.SsKey` extended
@@ -1339,10 +1200,12 @@ module ReadSide =
         (defaults: Map<string * string * string, string>)
         (k: Kind)
         : Kind =
+        // PL-10 (S21/S60) — qualifiedParts is per-KIND constant; hoisted
+        // above the per-attribute map (the attachAnnotations form).
+        let schemaStr, tableStr = TableId.qualifiedParts k.Physical
         let attrs =
             k.Attributes
             |> List.map (fun a ->
-                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                 let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
                 match Map.tryFind coord defaults with
                 | Some definition ->
@@ -1364,10 +1227,11 @@ module ReadSide =
         : Kind =
         // NM-30: walks uniformly (no empty-map early-out) — symmetric with the
         // other three `attach*` helpers.
+        // PL-10 (S21/S60) — the same hoist as attachDefaults.
+        let schemaStr, tableStr = TableId.qualifiedParts k.Physical
         let attrs =
             k.Attributes
             |> List.map (fun a ->
-                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                 let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
                 match Map.tryFind coord computed with
                 | Some (definition, isPersisted) ->
@@ -1492,8 +1356,16 @@ module ReadSide =
             | _ -> None)
 
     /// Combined-query variant of the five schema-readback queries
-    /// (`readColumnRows` + `readPrimaryKeys` + `readIdentityColumns`
-    /// + `readForeignKeys` + `readLogicalNameProperties`). Sends ONE
+    /// (column rows + primary keys + identity columns + foreign keys
+    /// + logical-name properties — PL-11/S07: this batch is the SINGLE
+    /// definition site; the standalone per-query readers that duplicated
+    /// these SELECTs verbatim were deleted as zero-caller dead twins).
+    /// **Bench note (session-30 Phase 3 lesson, relocated from the deleted
+    /// standalone PK reader):** a sys.indexes + sys.index_columns join was
+    /// tried for the PK SELECT — slower than the INFORMATION_SCHEMA path
+    /// at canary scale (~25%); the optimizer handles the view's
+    /// CONSTRAINT_TYPE filter better than `is_primary_key = 1` over all
+    /// indexes. Reverted per bench data. Sends ONE
     /// `SqlCommand` containing five SQL batches separated by `;`,
     /// then walks the five result sets via `NextResultAsync`.
     /// **Perf-implications (pillar 7):** eliminates 4 of the 5
@@ -1591,7 +1463,7 @@ module ReadSide =
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
 
-            // Result set 1: column rows (matches readColumnRows shape).
+            // Result set 1: column rows (the ColumnRow projection).
             let columnRows = ResizeArray<ColumnRow>()
             let optInt = optIntOf reader
             do! drainRows reader (fun reader ->
@@ -1870,9 +1742,13 @@ module ReadSide =
                             (sprintf "CDC capture-count probe failed (capture table absent or custom-named): %s" ex.Message))
         }
 
-    let read (cnn: SqlConnection) : Task<Result<Catalog>> =
+    /// The shared read body — the schema projection BOTH public readers
+    /// compute, with the ≤100k-row lift (the `Modality.Static` minting loop)
+    /// as the ONE `liftRows` difference. PL-7: rows enter the contract only
+    /// when a consumer reads them; the schema-only arm skips the per-table
+    /// drain entirely (no row wire cost, no Static marks minted).
+    let private readCore (liftRows: bool) (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
-            use _ = Bench.scope "readside.read"
             try
                 // Single round-trip via `readSchemaCombined` (chapter
                 // 3.6 quick-win optimization): 4 result sets returned
@@ -1937,7 +1813,12 @@ module ReadSide =
                         let maxRows = 100_000
                         let kindsWithRows = ResizeArray<Kind>(List.length kindsWithRefs)
                         for k in kindsWithRefs do
-                            let! rowsOpt = readRows cnn k maxRows
+                            // The Task is selected synchronously and awaited
+                            // once (FS3511); `liftRows = false` never touches
+                            // the table — `None` leaves the kind schema-only.
+                            let! rowsOpt =
+                                if liftRows then readRows cnn k maxRows
+                                else Task.FromResult None
                             let kindWithRows =
                                 match rowsOpt with
                                 | Some rows when not (List.isEmpty rows) ->
@@ -1982,4 +1863,30 @@ module ReadSide =
                         ValidationError.create
                             "readside.query.failed"
                             (sprintf "INFORMATION_SCHEMA query failed: %s" ex.Message))
+        }
+
+    /// The full contract read: schema + the ≤100k-row lift into
+    /// `Modality.Static` (the per-row PhysicalSchema axis). Publish-lane
+    /// consumers (hydration, compare) read the lifted populations.
+    let read (cnn: SqlConnection) : Task<Result<Catalog>> =
+        task {
+            use _ = Bench.scope "readside.read"
+            return! readCore true cnn
+        }
+
+    /// PL-7 — the rows-off contract read: the SAME schema projection `read`
+    /// computes (kinds, FKs, defaults, computed, annotations, indexes,
+    /// sequences) with NO per-table row drain and NO `Modality.Static`
+    /// minting. For consumers where rows were never the point: the transfer
+    /// contract (S01 — `collectInOrder` streams the load's rows itself),
+    /// slice-apply's target read (S09), and profile-capture (S02 — the
+    /// incumbent lifted rows only to strip them again, the 4.4 trap;
+    /// `LiveProfiler.attach` streams its own evidence). Authored marks
+    /// (TenantScoped / SoftDeletable / …) are untouched either way — `read`
+    /// mints ONLY the `Static` mark, so `readSchema` equals
+    /// `read >> Catalog.stripStaticPopulations` minus the wasted drain.
+    let readSchema (cnn: SqlConnection) : Task<Result<Catalog>> =
+        task {
+            use _ = Bench.scope "readside.readSchema"
+            return! readCore false cnn
         }

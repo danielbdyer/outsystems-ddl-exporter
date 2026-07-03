@@ -23,13 +23,24 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module FakerRealization =
 
+    /// FNV-1a continuation over a string — the streaming step both seed
+    /// derivations share. PL-10 (S34): FNV-1a is a streaming hash, so
+    /// `fnvContinue (fnvContinue init prefix) suffix` is bit-identical to
+    /// hashing `prefix + suffix` — the per-row basis below continues per
+    /// cell without re-hashing (or re-serializing) the row key, and every
+    /// seed value is UNCHANGED (the deterministic-draw law).
+    let private fnvContinue (state: uint32) (s: string) : uint32 =
+        let mutable h = state
+        for ch in s do h <- (h ^^^ uint32 (uint16 ch)) * 16777619u
+        h
+
+    [<Literal>]
+    let private fnvInit = 2166136261u
+
     /// A stable, host-independent `int` seed from an `SsKey` (FNV-1a over the
     /// serialized key, truncated). Deterministic — the realization replays.
     let private seedOf (key: SsKey) : int =
-        let s = SsKey.serialize key
-        let mutable h = 2166136261u
-        for ch in s do h <- (h ^^^ uint32 (uint16 ch)) * 16777619u
-        int h
+        int (fnvContinue fnvInit (SsKey.serialize key))
 
     /// A deterministically-seeded `Bogus.Faker` for one row. The global
     /// `Randomizer.Seed` is set immediately before construction; synthesis
@@ -117,14 +128,17 @@ module FakerRealization =
         try Bogus.Faker(locale)
         with _ -> Bogus.Faker()
 
-    /// A stable host-independent seed from (row identity, column name) (FNV-1a) —
-    /// the per-cell seed for FRESH-DRAW generators, so each cell depends only on
-    /// (row, column), independent of the order columns realize in.
-    let private seedOfCell (rowKey: SsKey) (column: Name) : int =
-        let s = SsKey.serialize rowKey + " " + Name.value column
-        let mutable h = 2166136261u
-        for ch in s do h <- (h ^^^ uint32 (uint16 ch)) * 16777619u
-        int h
+    /// The row's per-cell seed BASIS (PL-10/S34): the FNV-1a state over
+    /// `serialize rowKey + " "`, bound once per row; each fresh-draw cell
+    /// CONTINUES it over the column name. Bit-identical to the prior
+    /// per-cell `serialize rowKey + " " + column` hash (streaming FNV),
+    /// so each cell still depends only on (row, column), independent of
+    /// the order columns realize in.
+    let private rowSeedBasis (rowKey: SsKey) : uint32 =
+        fnvContinue fnvInit (SsKey.serialize rowKey + " ")  // LINT-ALLOW: seed-basis text (the historical hashed byte sequence; changing the composition would change every seed)
+
+    let private seedOfCellUsing (basis: uint32) (column: Name) : int =
+        int (fnvContinue basis (Name.value column))
 
     let private localeOf (spec: FakerSpec) : string = defaultArg spec.Locale "en"
 
@@ -181,12 +195,12 @@ module FakerRealization =
     /// A fresh-draw / mask / constant generator → the cell value. Self-contained:
     /// the faker is constructed, drawn, and discarded within this call (held
     /// across no other faker construction → Bogus global-seed-safe).
-    let private freshOrValue (rowKey: SsKey) (column: Name) (existing: string) (spec: FakerSpec) : string =
+    let private freshOrValue (rowSeedBasis: uint32) (column: Name) (existing: string) (spec: FakerSpec) : string =
         match spec.Generator with
         | FakerGenerator.Constant v -> v
         | FakerGenerator.Mask rule  -> applyMask rule existing
         | g ->
-            let f = fakerOfLocale (localeOf spec) (seedOfCell rowKey column)
+            let f = fakerOfLocale (localeOf spec) (seedOfCellUsing rowSeedBasis column)
             match g with
             | FakerGenerator.Country    -> f.Address.Country()
             | FakerGenerator.Company    -> f.Company.CompanyName()
@@ -214,19 +228,24 @@ module FakerRealization =
         let present = bindings |> List.filter (fun (n, _) -> Map.containsKey n values)
         if List.isEmpty present then values
         else
+            // PL-10 (S34) — the row's seed and cell-seed basis bind ONCE
+            // (the row key was previously re-serialized per locale group
+            // and per fresh-draw cell); every seed value is unchanged.
+            let rowSeed = seedOf rowKey
+            let basis = rowSeedBasis rowKey
             let afterPerson =
                 present
                 |> List.filter (fun (_, s) -> isPersonBased s.Generator)
                 |> List.groupBy (fun (_, s) -> localeOf s)
                 |> List.fold (fun (acc: Map<Name, string>) (locale, group) ->
-                    let f = fakerOfLocale locale (seedOf rowKey)
+                    let f = fakerOfLocale locale rowSeed
                     let p = f.Person  // materialize the coherent individual under the row seed
                     group |> List.fold (fun acc2 (colName, spec) ->
                         Map.add colName (personField p spec.Generator) acc2) acc) values
             present
             |> List.filter (fun (_, s) -> not (isPersonBased s.Generator))
             |> List.fold (fun (acc: Map<Name, string>) (colName, spec) ->
-                Map.add colName (freshOrValue rowKey colName acc.[colName] spec) acc) afterPerson
+                Map.add colName (freshOrValue basis colName acc.[colName] spec) acc) afterPerson
 
     /// FUZZING §5 — the coordinate-addressed Faker pass. Resolve each `Faker`
     /// binding → (owning kind SsKey, column Name) against the catalog (the

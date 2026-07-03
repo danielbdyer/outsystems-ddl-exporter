@@ -1706,14 +1706,32 @@ module Catalog =
     /// pass drivers (four Tightening passes — Nullability / UniqueIndex
     /// / ForeignKey / CategoricalUniqueness — share this exact shape;
     /// the named primitive prevents per-pass open-coding).
+    /// PL-5 (S39) — the sorted kind spine underneath every `kindContexts`
+    /// call, cached per Catalog VALUE via `ConditionalWeakTable` (the
+    /// `kindIndex` precedent — the one sanctioned cache shape): the four
+    /// tightening passes each fan out over the same unchanged catalog in
+    /// one chain run, so the collect+sort was re-paid per pass.
+    let private sortedKindsCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Kind list>()
+
+    let sortedKinds (c: Catalog) : Kind list =
+        match sortedKindsCache.TryGetValue(c) with
+        | true, kinds -> kinds
+        | false, _ ->
+            let kinds =
+                c.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.sortBy (fun k -> k.SsKey)
+            sortedKindsCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Kind list>.CreateValueCallback(fun _ -> kinds))
+
     let kindContexts
         (extract: Kind -> 'ctx list)
         (sortKey: 'ctx -> SsKey)
         (c: Catalog)
         : (Kind * 'ctx) list =
-        c.Modules
-        |> List.collect (fun m -> m.Kinds)
-        |> List.sortBy (fun k -> k.SsKey)
+        sortedKinds c
         |> List.collect (fun k ->
             extract k
             |> List.sortBy sortKey
@@ -1799,6 +1817,22 @@ module Catalog =
             kindOwnershipIndexCache.GetValue(
                 c,
                 System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Map<SsKey, Module>>.CreateValueCallback(fun _ -> idx))
+
+    /// PL-4 (S56) — the catalog's kind KEYSET, cached beside `kindIndex`
+    /// (same `ConditionalWeakTable` shape): every `ArtifactByKind.create`
+    /// rebuilt this Set per construction — several sibling emitters per
+    /// compose over one unchanged catalog value.
+    let private kindKeySetCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Set<SsKey>>()
+
+    let kindKeySet (c: Catalog) : Set<SsKey> =
+        match kindKeySetCache.TryGetValue(c) with
+        | true, keys -> keys
+        | false, _ ->
+            let keys = foldKinds (fun _ k acc -> Set.add k.SsKey acc) Set.empty c
+            kindKeySetCache.GetValue(
+                c,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Catalog, Set<SsKey>>.CreateValueCallback(fun _ -> keys))
 
     /// Find a kind anywhere in the catalog by SsKey. Returns `None` if
     /// absent. A4: lookup is by identity, never by name.

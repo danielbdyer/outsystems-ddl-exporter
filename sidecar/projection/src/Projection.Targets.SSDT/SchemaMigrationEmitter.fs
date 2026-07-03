@@ -202,11 +202,17 @@ module SchemaMigrationEmitter =
     // ALTER for those (DROP CONSTRAINT / DROP INDEX / ALTER SEQUENCE under an
     // explicit allow-drops) is the next follow-on.
 
-    /// Per-kind reference (FK) channel emission.
+    /// Per-kind reference (FK) channel emission. PL-4 (S48): the FK
+    /// lookup triples for BOTH catalogs are built ONCE per migration by
+    /// `emitWith` and threaded here — `foreignKeyDefOf` previously
+    /// rebuilt the whole-catalog triple PER individual reference inside
+    /// these folds (O(references × catalog)).
     let private kindReferenceMigration
         (allowDrops: bool)
         (sourceCatalog: Catalog)
         (targetCatalog: Catalog)
+        (sourceLookups: SsdtDdlEmitter.FkEmissionLookups)
+        (targetLookups: SsdtDdlEmitter.FkEmissionLookups)
         (kindKey: SsKey)
         (rd: ReferenceDiff)
         : Statement list * DiagnosticEntry list =
@@ -223,7 +229,7 @@ module SchemaMigrationEmitter =
             // The deployed constraint name of a SOURCE-side FK (for DROP).
             let sourceFkName (key: SsKey) : string option =
                 match sourceKind, Map.tryFind key sourceRefByKey with
-                | Some sk, Some r -> SsdtDdlEmitter.foreignKeyDefOf sourceCatalog sk r |> Option.map (fun fk -> fk.Name)
+                | Some sk, Some r -> SsdtDdlEmitter.foreignKeyDefOfUsing sourceLookups sk r |> Option.map (fun fk -> fk.Name)
                 | _ -> None
             let nocheckSteps (fk: ForeignKeyDef) =
                 [ Statement.AlterTableDisableConstraint (table, fk.Name)
@@ -235,7 +241,7 @@ module SchemaMigrationEmitter =
                 |> List.filter (fun r -> Set.contains r.SsKey rd.Added)
                 |> List.fold
                     (fun (stmts, refusals) r ->
-                        match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
+                        match SsdtDdlEmitter.foreignKeyDefOfUsing targetLookups targetKind r with
                         | Some fk ->
                             let trust = if not (Reference.isConstraintTrusted r) then nocheckSteps fk else []
                             stmts @ (Statement.AlterTableAddForeignKey (table, fk) :: trust), refusals
@@ -253,12 +259,12 @@ module SchemaMigrationEmitter =
                     (fun (stmts, refusals) (change: ReferenceChange) ->
                         match Map.tryFind change.ReferenceKey refByKey with
                         | Some r when change.Facets = Set.singleton ReferenceFacet.Trust && not (Reference.isConstraintTrusted r) ->
-                            match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
+                            match SsdtDdlEmitter.foreignKeyDefOfUsing targetLookups targetKind r with
                             | Some fk -> stmts @ nocheckSteps fk, refusals
                             | None -> stmts, refusals
                         | Some r when allowDrops ->
                             // DROP the old constraint (source name), ADD the new.
-                            match sourceFkName change.ReferenceKey, SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
+                            match sourceFkName change.ReferenceKey, SsdtDdlEmitter.foreignKeyDefOfUsing targetLookups targetKind r with
                             | Some oldName, Some newFk ->
                                 let trust = if not (Reference.isConstraintTrusted r) then nocheckSteps newFk else []
                                 stmts @ [ Statement.AlterTableDropConstraint (table, oldName); Statement.AlterTableAddForeignKey (table, newFk) ] @ trust, refusals
@@ -414,15 +420,16 @@ module SchemaMigrationEmitter =
         use _ = Bench.scope "emit.schemaMigration.emit"
         let sourceCatalog = CatalogDiff.source diff
         let targetCatalog = CatalogDiff.target diff
+        // PL-10 (S58) — per-kind pairs collect once, then concatenate once
+        // per channel (the prior `@`-append fold re-copied the accumulated
+        // prefix on every kind — O(N²) at estate scale).
         let foldByKind (diffs: Map<SsKey, 'd>) (f: SsKey -> 'd -> Statement list * DiagnosticEntry list) =
-            diffs
-            |> Map.toList
-            |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
-            |> List.fold
-                (fun (accStmts, accEntries) (kindKey, d) ->
-                    let stmts, entries = f kindKey d
-                    accStmts @ stmts, accEntries @ entries)
-                ([], [])
+            let perKind =
+                diffs
+                |> Map.toList
+                |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
+                |> List.map (fun (kindKey, d) -> f kindKey d)
+            perKind |> List.collect fst, perKind |> List.collect snd
         // Deploy order: sequences (schema objects referenced by DEFAULTs) →
         // column adds/alters → indexes → FKs (after their columns + target
         // tables exist). Refusals from every channel aggregate so a consumer
@@ -430,7 +437,11 @@ module SchemaMigrationEmitter =
         let seqStmts, seqEntries = sequenceMigration allowDrops sourceCatalog targetCatalog (CatalogDiff.sequenceDiff diff)
         let attrStmts, attrEntries = foldByKind (CatalogDiff.attributeDiffs diff) (kindMigration allowDrops sourceCatalog targetCatalog)
         let idxStmts, idxEntries = foldByKind (CatalogDiff.indexDiffs diff) (kindIndexMigration allowDrops sourceCatalog targetCatalog)
-        let refStmts, refEntries = foldByKind (CatalogDiff.referenceDiffs diff) (kindReferenceMigration allowDrops sourceCatalog targetCatalog)
+        // PL-4 (S48) — ONE lookup build per catalog per migration; the
+        // per-reference folds thread them.
+        let sourceLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog sourceCatalog
+        let targetLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog targetCatalog
+        let refStmts, refEntries = foldByKind (CatalogDiff.referenceDiffs diff) (kindReferenceMigration allowDrops sourceCatalog targetCatalog sourceLookups targetLookups)
         let statements = seqStmts @ attrStmts @ idxStmts @ refStmts
         let entries = seqEntries @ attrEntries @ idxEntries @ refEntries
         Diagnostics.tellMany entries (Diagnostics.ofValue statements)

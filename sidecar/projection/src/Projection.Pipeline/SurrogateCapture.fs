@@ -106,10 +106,11 @@ module SurrogateCapture =
     /// The staged chunk's cells: the source key first, then every insert
     /// column (deferred cycle columns as NULL — Phase 2 re-points them).
     /// Generic over the row carrier (Q3, A40): `getterOf` is STAGED — the
-    /// per-column accessor is resolved once per chunk, then applied per
-    /// row (a Map lookup for `StaticRow`, an ordinal index for
-    /// `RowQuantum`).
-    let private captureCells (getterOf: Attribute -> ('row -> string)) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) (rows: 'row list) : CellValue list list =
+    /// per-column accessor resolves BEFORE the returned closure (PL-9 /
+    /// S16: once per KIND when the caller stages once per kind), then
+    /// applies per row (a Map lookup for `StaticRow`, an ordinal index
+    /// for `RowQuantum`).
+    let private captureCellsStaged (getterOf: Attribute -> ('row -> string)) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) : 'row list -> CellValue list list =
         let idGet = getterOf identityAttr
         let colGets =
             insertCols
@@ -118,28 +119,76 @@ module SurrogateCapture =
                     if Set.contains a.Name deferred then (fun _ -> "")
                     else getterOf a
                 ColumnRealization.columnNameText a.Column, a.Type, get)
-        rows
-        |> List.map (fun row ->
-            { Column = "__SRC_KEY"
-              Type = identityAttr.Type
-              Raw = idGet row }
-            :: (colGets
-                |> List.map (fun (col, ty, get) ->
-                    { Column = col; Type = ty; Raw = get row })))
+        fun rows ->
+            rows
+            |> List.map (fun row ->
+                { Column = "__SRC_KEY"
+                  Type = identityAttr.Type
+                  Raw = idGet row }
+                :: (colGets
+                    |> List.map (fun (col, ty, get) ->
+                        { Column = col; Type = ty; Raw = get row })))
+
+    /// PL-9 (S15) — the capture lane's per-kind constants: the rendered
+    /// SQL texts and the insert-column vocabulary are pure functions of
+    /// the unchanged `(kind, identityAttr)`, yet each chunk re-ran the
+    /// ScriptDom build + render (thousands of chunks per kind at estate
+    /// scale). Staged ONCE per kind beside the sticky lane; the per-chunk
+    /// temp-table EXECUTION is unchanged — only the TEXT generation moves.
+    /// Every text is a GO-free single-statement render, so the chunk
+    /// realizers dispatch them as pre-split segments
+    /// (`Deploy.executeSegments`, PL-6 S14).
+    type CaptureKindSql =
+        { InsertCols       : Attribute list
+          StagingSql       : string
+          DropStagingSql   : string
+          MergeOutputSql   : string
+          KeymapStagingSql : string
+          MergeIntoSql     : string
+          KeymapSelectSql  : string
+          DropKeymapSql    : string }
+
+    /// Stage one kind's capture SQL + column vocabulary (PL-9 / S15).
+    /// The renders are EXACTLY the per-chunk incumbents' (same builders,
+    /// same explicit `;` on the MERGEs), so the SQL the sink sees is
+    /// byte-identical — only when it is generated changes.
+    let stageKind (kind: Kind) (identityAttr: Attribute) : CaptureKindSql =
+        let insertCols = insertColsOf kind
+        let insertColNames = insertCols |> List.map colName
+        let idCol = colName identityAttr
+        { InsertCols = insertCols
+          StagingSql =
+            ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildCaptureStaging StagingTempName kind.Physical idCol insertColNames)
+          DropStagingSql =
+            ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists StagingTempName)
+          MergeOutputSql =
+            ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName insertColNames idCol None)
+            + ";"
+          KeymapStagingSql =
+            ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildKeymapStaging KeymapTempName kind.Physical idCol)
+          MergeIntoSql =
+            ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName insertColNames idCol (Some KeymapTempName))
+            + ";"
+          KeymapSelectSql =
+            ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildSelectColumnsFromTemp [ ScriptDomBuild.captureSrcKeyColumn; ScriptDomBuild.captureAssignedColumn ] KeymapTempName)
+          DropKeymapSql =
+            ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists KeymapTempName) }
 
     /// Clone the staging table's column types FROM THE SINK TABLE
     /// (`SELECT TOP 0 … INTO`; ISNULL strips the IDENTITY property — a
     /// CASE wrapper constant-folds and the property PROPAGATES, silently
     /// minting staging keys; probed live 2026-06-10).
-    let private createStaging (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list) : Task<unit> =
-        Deploy.executeBatch sink
-            (ScriptDomGenerate.generateOne
-                (ScriptDomBuild.buildCaptureStaging StagingTempName kind.Physical (colName identityAttr) (insertCols |> List.map colName)))
+    let private createStaging (sink: SqlConnection) (staged: CaptureKindSql) : Task<unit> =
+        Deploy.executeSegments sink [ staged.StagingSql ]
 
-    let private dropStaging (sink: SqlConnection) : unit =
+    let private dropStaging (sink: SqlConnection) (staged: CaptureKindSql) : unit =
         try
-            (Deploy.executeBatch sink
-                (ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists StagingTempName)))
+            (Deploy.executeSegments sink [ staged.DropStagingSql ])
                 .GetAwaiter().GetResult()
         with _ -> ()
 
@@ -159,42 +208,31 @@ module SurrogateCapture =
         }
 
     let private mergeOutputChunk
-        (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list)
+        (sink: SqlConnection) (staged: CaptureKindSql)
         : Task<(string * string) list> =
         task {
             use cmd = sink.CreateCommand()
-            cmd.CommandText <-
-                ScriptDomGenerate.generateOne
-                    (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName (insertCols |> List.map colName) (colName identityAttr) None)
-                + ";"
+            cmd.CommandText <- staged.MergeOutputSql
             cmd.CommandTimeout <- 0
             use! reader = cmd.ExecuteReaderAsync()
             return! readPairs reader []
         }
 
     let private mergeOutputIntoChunk
-        (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list)
+        (sink: SqlConnection) (staged: CaptureKindSql)
         : Task<(string * string) list> =
         task {
-            do! Deploy.executeBatch sink
-                    (ScriptDomGenerate.generateOne
-                        (ScriptDomBuild.buildKeymapStaging KeymapTempName kind.Physical (colName identityAttr)))
+            do! Deploy.executeSegments sink [ staged.KeymapStagingSql ]
             try
-                do! Deploy.executeBatch sink
-                        (ScriptDomGenerate.generateOne
-                            (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName (insertCols |> List.map colName) (colName identityAttr) (Some KeymapTempName))
-                         + ";")
+                do! Deploy.executeSegments sink [ staged.MergeIntoSql ]
                 use cmd = sink.CreateCommand()
-                cmd.CommandText <-
-                    ScriptDomGenerate.generateOne
-                        (ScriptDomBuild.buildSelectColumnsFromTemp [ ScriptDomBuild.captureSrcKeyColumn; ScriptDomBuild.captureAssignedColumn ] KeymapTempName)
+                cmd.CommandText <- staged.KeymapSelectSql
                 cmd.CommandTimeout <- 0
                 use! reader = cmd.ExecuteReaderAsync()
                 return! readPairs reader []
             finally
                 try
-                    (Deploy.executeBatch sink
-                        (ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists KeymapTempName)))
+                    (Deploy.executeSegments sink [ staged.DropKeymapSql ])
                         .GetAwaiter().GetResult()
                 with _ -> ()
         }
@@ -236,8 +274,43 @@ module SurrogateCapture =
                 return! rowwiseChunk sink kind idGet litGets rest ((src, assigned) :: acc)
         }
 
-    /// Realize one chunk on ONE named rung. Staged rungs share the staging
+    /// Realize one chunk on ONE named rung, all per-kind constants staged
+    /// (PL-9 / S15+S16): the SQL texts arrive rendered, the cell getters
+    /// resolve before the returned closure. Staged rungs share the staging
     /// transport; the rowwise floor needs none.
+    let captureChunkStaged
+        (sink: SqlConnection)
+        (kind: Kind)
+        (getterOf: Attribute -> ('row -> string))
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (staged: CaptureKindSql)
+        : CaptureLane -> 'row list -> Task<(string * string) list> =
+        let idGet = getterOf identityAttr
+        let litGets =
+            staged.InsertCols
+            |> List.map (fun a ->
+                a, (if Set.contains a.Name deferred then (fun _ -> "") else getterOf a))
+        let stagedCells = captureCellsStaged getterOf identityAttr staged.InsertCols deferred
+        fun lane rows ->
+            task {
+                match lane with
+                | CaptureLane.RowwiseScopeIdentity ->
+                    return! rowwiseChunk sink kind idGet litGets rows []
+                | CaptureLane.StagedMergeOutput
+                | CaptureLane.StagedMergeOutputInto ->
+                    do! createStaging sink staged
+                    try
+                        do! Bulk.copyRowsSession sink StagingTable (stagedCells rows)
+                        match lane with
+                        | CaptureLane.StagedMergeOutput -> return! mergeOutputChunk sink staged
+                        | _                             -> return! mergeOutputIntoChunk sink staged
+                    finally
+                        dropStaging sink staged
+            }
+
+    /// Realize one chunk on ONE named rung — the stage-then-apply-once
+    /// form of `captureChunkStaged`; per-kind chunk loops stage instead.
     let captureChunk
         (sink: SqlConnection)
         (kind: Kind)
@@ -247,27 +320,7 @@ module SurrogateCapture =
         (lane: CaptureLane)
         (rows: 'row list)
         : Task<(string * string) list> =
-        task {
-            let insertCols = insertColsOf kind
-            match lane with
-            | CaptureLane.RowwiseScopeIdentity ->
-                let idGet = getterOf identityAttr
-                let litGets =
-                    insertCols
-                    |> List.map (fun a ->
-                        a, (if Set.contains a.Name deferred then (fun _ -> "") else getterOf a))
-                return! rowwiseChunk sink kind idGet litGets rows []
-            | CaptureLane.StagedMergeOutput
-            | CaptureLane.StagedMergeOutputInto ->
-                do! createStaging sink kind identityAttr insertCols
-                try
-                    do! Bulk.copyRowsSession sink StagingTable (captureCells getterOf identityAttr insertCols deferred rows)
-                    match lane with
-                    | CaptureLane.StagedMergeOutput -> return! mergeOutputChunk sink kind identityAttr insertCols
-                    | _                             -> return! mergeOutputIntoChunk sink kind identityAttr insertCols
-                finally
-                    dropStaging sink
-        }
+        captureChunkStaged sink kind getterOf identityAttr deferred (stageKind kind identityAttr) lane rows
 
     /// The CAPABILITY recognizer — the only errors that descend the
     /// ladder. 334: `OUTPUT` without `INTO` on a target with enabled
@@ -278,9 +331,47 @@ module SurrogateCapture =
         CapabilityRefusal.isRefusal Capability.OutputWithoutIntoOnTriggeredTarget ex
 
     /// Realize one chunk starting at `preferred`, descending the ladder on
-    /// a named capability refusal. Returns the pairs, the rung that
-    /// SUCCEEDED (the caller keeps it sticky for the kind's later chunks),
-    /// and every descent taken — each a named outcome for the report.
+    /// a named capability refusal, all per-kind constants staged (PL-9).
+    /// Returns the pairs, the rung that SUCCEEDED (the caller keeps it
+    /// sticky for the kind's later chunks), and every descent taken —
+    /// each a named outcome for the report.
+    let captureChunkDescendingStaged
+        (sink: SqlConnection)
+        (kind: Kind)
+        (kindKey: SsKey)
+        (getterOf: Attribute -> ('row -> string))
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (staged: CaptureKindSql)
+        : CaptureLane -> 'row list -> Task<(string * string) list * CaptureLane * LaneDescent list> =
+        let chunkOn = captureChunkStaged sink kind getterOf identityAttr deferred staged
+        fun preferred rows ->
+            let rec attempt (lanes: CaptureLane list) (descents: LaneDescent list) : Task<(string * string) list * CaptureLane * LaneDescent list> =
+                task {
+                    match lanes with
+                    | [] ->
+                        // Unreachable: the ladder's floor requires only INSERT,
+                        // and an INSERT failure is not a capability refusal.
+                        return invalidOp "capture ladder exhausted"
+                    | [ last ] ->
+                        let! pairs = chunkOn last rows
+                        return pairs, last, List.rev descents
+                    | lane :: (next :: _ as rest) ->
+                        try
+                            let! pairs = chunkOn lane rows
+                            return pairs, lane, List.rev descents
+                        with :? SqlException as ex when isCapabilityRefusal ex ->
+                            return!
+                                attempt rest
+                                    ({ Kind = kindKey; From = lane; To = next; SqlErrorNumber = ex.Number } :: descents)
+                }
+            // NM-49: position the descent at `preferred` via the TOTAL `ladderFrom`
+            // (an unknown preferred lane begins at the ladder head, never the empty
+            // tail that `attempt` would mislabel "capture ladder exhausted").
+            attempt (CaptureLane.ladderFrom preferred) []
+
+    /// The stage-then-apply-once form of `captureChunkDescendingStaged` —
+    /// per-kind chunk loops stage instead.
     let captureChunkDescending
         (sink: SqlConnection)
         (kind: Kind)
@@ -291,26 +382,4 @@ module SurrogateCapture =
         (preferred: CaptureLane)
         (rows: 'row list)
         : Task<(string * string) list * CaptureLane * LaneDescent list> =
-        let rec attempt (lanes: CaptureLane list) (descents: LaneDescent list) : Task<(string * string) list * CaptureLane * LaneDescent list> =
-            task {
-                match lanes with
-                | [] ->
-                    // Unreachable: the ladder's floor requires only INSERT,
-                    // and an INSERT failure is not a capability refusal.
-                    return invalidOp "capture ladder exhausted"
-                | [ last ] ->
-                    let! pairs = captureChunk sink kind getterOf identityAttr deferred last rows
-                    return pairs, last, List.rev descents
-                | lane :: (next :: _ as rest) ->
-                    try
-                        let! pairs = captureChunk sink kind getterOf identityAttr deferred lane rows
-                        return pairs, lane, List.rev descents
-                    with :? SqlException as ex when isCapabilityRefusal ex ->
-                        return!
-                            attempt rest
-                                ({ Kind = kindKey; From = lane; To = next; SqlErrorNumber = ex.Number } :: descents)
-            }
-        // NM-49: position the descent at `preferred` via the TOTAL `ladderFrom`
-        // (an unknown preferred lane begins at the ladder head, never the empty
-        // tail that `attempt` would mislabel "capture ladder exhausted").
-        attempt (CaptureLane.ladderFrom preferred) []
+        captureChunkDescendingStaged sink kind kindKey getterOf identityAttr deferred (stageKind kind identityAttr) preferred rows

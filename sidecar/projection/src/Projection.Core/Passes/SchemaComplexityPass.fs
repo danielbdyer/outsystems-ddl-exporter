@@ -79,16 +79,20 @@ module SchemaComplexityPass =
                 let fractions =
                     moduleKindSets
                     |> List.choose (fun kindSet ->
-                        let intra =
+                        // PL-5 (S41) — ONE edge walk per module: each edge's
+                        // two membership tests classify it as intra (both
+                        // endpoints in) / incident (either endpoint in) in a
+                        // single fold, instead of two full filters re-running
+                        // the same membership tests.
+                        let intra, total =
                             t.Edges
-                            |> List.filter (fun (src, tgt) ->
-                                Set.contains src kindSet && Set.contains tgt kindSet)
-                            |> List.length
-                        let total =
-                            t.Edges
-                            |> List.filter (fun (src, tgt) ->
-                                Set.contains src kindSet || Set.contains tgt kindSet)
-                            |> List.length
+                            |> List.fold
+                                (fun (intra, total) (src, tgt) ->
+                                    let srcIn = Set.contains src kindSet
+                                    let tgtIn = Set.contains tgt kindSet
+                                    (if srcIn && tgtIn then intra + 1 else intra),
+                                    (if srcIn || tgtIn then total + 1 else total))
+                                (0, 0)
                         if total = 0 then None
                         else Some (decimal intra / decimal total))
                 if List.isEmpty fractions then 1.0m

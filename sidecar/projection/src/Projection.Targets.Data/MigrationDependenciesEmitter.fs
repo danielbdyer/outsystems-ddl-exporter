@@ -219,21 +219,25 @@ module MigrationDependenciesEmitter =
             // rejection of the same family NM-25 closed for the PK case.
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
+            // PL-3 (S61/S20/S59) — mirror of StaticSeedsEmitter: the
+            // values-only projection and the row count bind ONCE for both
+            // phases.
+            let valueRows = typedRows |> List.map snd
+            let rowCount = List.length typedRows
             let renderedPhase1 =
-                MergeRender.renderMerge "emit.migrationDeps" verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
+                MergeRender.renderMerge "emit.migrationDeps" verification staging scopeForKind cdcAware deferred bracketIdentity kind valueRows
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
-                elif DataStagingPolicy.shouldStage staging (List.length typedRows) then
+                elif DataStagingPolicy.shouldStage staging rowCount then
                     // Set-based escalation above the SAME staging threshold (mirror
                     // of StaticSeedsEmitter): the N per-row UPDATEs collapse to ONE
                     // `UPDATE … FROM target JOIN #fk` via the shared StagedMerge.
-                    let table : TableId =
-                        { Schema = kind.Physical.Schema
-                          Table  = kind.Physical.Table; Catalog = None }
-                    StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware table kind deferred (typedRows |> List.map snd)
+                    StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred valueRows
                 else
+                    // PL-3 (S27/S57) — per-kind constants prebound once.
+                    let renderRow = MergeRender.renderUpdateForKind "emit.migrationDeps" cdcAware kind deferred
                     typedRows
-                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> MergeRender.renderUpdate "emit.migrationDeps" cdcAware kind deferred vs)
+                    |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderRow vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; mirror of StaticSeedsEmitter); both segments are typed-AST outputs already terminated by `;\nGO\n`
@@ -243,9 +247,10 @@ module MigrationDependenciesEmitter =
                   Values        = values
                   DeferredFkSet = deferred }
             let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+            // PL-3 (S18) — Phase-2's row list IS Phase-1's (mirror).
             let phase2Rows =
                 if Set.isEmpty deferred then []
-                else typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+                else phase1Rows
             { Phase1Merges   = phase1Rows
               Phase2Updates  = phase2Rows
               RenderedPhase1 = renderedPhase1

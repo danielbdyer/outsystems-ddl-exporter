@@ -156,11 +156,16 @@ module StaticSeedsEmitter =
             // the bracketing theory.
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
+            // PL-3 (S61/S20/S59) — the values-only projection and the row
+            // count bind ONCE and serve both phases (each was re-derived by
+            // the Phase-2 branch).
+            let valueRows = typedRows |> List.map snd
+            let rowCount = List.length typedRows
             let renderedPhase1 =
-                MergeRender.renderMerge "emit.staticSeeds" verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
+                MergeRender.renderMerge "emit.staticSeeds" verification staging scopeForKind cdcAware deferred bracketIdentity kind valueRows
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
-                elif DataStagingPolicy.shouldStage staging (List.length typedRows) then
+                elif DataStagingPolicy.shouldStage staging rowCount then
                     // Set-based escalation (Step 4): above the SAME staging
                     // threshold that routes Phase-1 through a `#temp`, Phase-2's
                     // N per-row UPDATEs collapse to ONE `UPDATE … FROM target
@@ -168,13 +173,13 @@ module StaticSeedsEmitter =
                     // by one threshold. The narrow `#fk` temp carries the real
                     // deferred-FK values; Phase-1 already inserted the rows with
                     // those columns NULLed.
-                    let table : TableId =
-                        { Schema = kind.Physical.Schema
-                          Table  = kind.Physical.Table; Catalog = None }
-                    StagedMerge.renderStagedPhase2 "emit.staticSeeds" cdcAware table kind deferred (typedRows |> List.map snd)
+                    StagedMerge.renderStagedPhase2 "emit.staticSeeds" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred valueRows
                 else
+                    // PL-3 (S27/S57) — the per-kind constants prebind once;
+                    // the row loop threads only the typed values.
+                    let renderRow = MergeRender.renderUpdateForKind "emit.staticSeeds" cdcAware kind deferred
                     typedRows
-                    |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> MergeRender.renderUpdate "emit.staticSeeds" cdcAware kind deferred vs)
+                    |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> renderRow vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
             let rendered =
                 System.String.Concat(renderedPhase1, renderedPhase2)  // LINT-ALLOW: terminal per-kind concatenation of ScriptDom-rendered Phase-1 + Phase-2 strings (chapter 4.1.B slice κ; same architectural shape as slice δ's per-kind rendering); both segments are typed-AST outputs already terminated by `;\nGO\n`
@@ -184,9 +189,11 @@ module StaticSeedsEmitter =
                   Values        = values
                   DeferredFkSet = deferred }
             let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+            // PL-3 (S18) — Phase-2's row list IS Phase-1's when any column
+            // deferred; never a second identical build.
             let phase2Rows =
                 if Set.isEmpty deferred then []
-                else typedRows |> List.map (fun (id, vs) -> mkRow id vs)
+                else phase1Rows
             { Phase1Merges   = phase1Rows
               Phase2Updates  = phase2Rows
               RenderedPhase1 = renderedPhase1

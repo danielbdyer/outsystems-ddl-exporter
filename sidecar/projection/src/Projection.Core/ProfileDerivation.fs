@@ -483,16 +483,27 @@ module ProfileDerivation =
     /// duplicate Set construction when N references share a
     /// target AND eliminates 2x duplicate work across the two
     /// FK derivation passes (slice 6b Big-O audit).
-    type private ForeignKeyTargetIndex = Map<SsKey * SsKey, TargetKeySet>
+    /// PL-5 (S36) — the WIDENED per-Reference entry: the resolved target
+    /// kind key + single-PK attribute + the typed target key set (when the
+    /// evidence cache holds the target column), keyed by `Reference.SsKey`
+    /// so every consumer resolves a reference ONCE. A reference absent
+    /// from the index does not resolve to a single-PK in-catalog target
+    /// (missing kind / composite or absent PK) — the consumers' ambiguous
+    /// arm. A present entry whose key set is `None` has no cache evidence
+    /// for the target column — also the ambiguous arm.
+    type private ForeignKeyTargetIndex = Map<SsKey, SsKey * Attribute * TargetKeySet option>
 
     let buildForeignKeyTargetIndex
         (cache: EvidenceCache)
         (catalog: Catalog)
         : ForeignKeyTargetIndex =
         use _ = Bench.scope "profile.cache.buildForeignKeyTargetIndex"
-        // Collect distinct (targetKind, targetPkAttr) pairs that any
-        // Reference points at; build the typed set per pair once.
-        let pairs =
+        // Resolve each reference's target ONCE (`Catalog.tryFindKind` +
+        // `Kind.primaryKey` — previously re-run inside each of the two FK
+        // derivation passes); the typed key set still builds once per
+        // DISTINCT (targetKind, targetPkAttr) pair and is shared across
+        // the references pointing at it.
+        let resolved =
             catalog
             |> Catalog.allKinds
             |> List.collect (fun srcKind ->
@@ -503,15 +514,21 @@ module ProfileDerivation =
                     | Some tgtKind ->
                         match Kind.primaryKey tgtKind with
                         | [ tgtPkAttr ] ->
-                            Some (tgtKind.SsKey, tgtPkAttr.SsKey)
+                            Some (reference.SsKey, (tgtKind.SsKey, tgtPkAttr))
                         | _ -> None))
+        let setsByPair =
+            resolved
+            |> List.map (fun (_, (kindKey, tgtPkAttr)) -> kindKey, tgtPkAttr.SsKey)
             |> List.distinct
-        pairs
-        |> List.choose (fun (kindKey, attrKey) ->
-            match EvidenceCache.tryFindColumn kindKey attrKey cache with
-            | None -> None
-            | Some col ->
-                Some ((kindKey, attrKey), TargetKeySet.ofValues col.Values))
+            |> List.choose (fun (kindKey, attrKey) ->
+                match EvidenceCache.tryFindColumn kindKey attrKey cache with
+                | None -> None
+                | Some col ->
+                    Some ((kindKey, attrKey), TargetKeySet.ofValues col.Values))
+            |> Map.ofList
+        resolved
+        |> List.map (fun (refKey, (kindKey, tgtPkAttr)) ->
+            refKey, (kindKey, tgtPkAttr, Map.tryFind (kindKey, tgtPkAttr.SsKey) setsByPair))
         |> Map.ofList
 
     /// Derive `ForeignKeyReality` per Reference. Cross-table
@@ -546,15 +563,13 @@ module ProfileDerivation =
                     let defaulted = ForeignKeyReality.create reference.SsKey
                     let ambiguous =
                         { defaulted with ProbeStatus = ProbeStatus.ambiguous }
-                    match Catalog.tryFindKind reference.TargetKind catalog with
+                    // PL-5 (S36) — one index probe replaces the per-pass
+                    // target-kind + primary-key re-resolution.
+                    match Map.tryFind reference.SsKey targetIndex with
                     | None -> ambiguous
-                    | Some tgtKind ->
-                        match Kind.primaryKey tgtKind with
-                        | [ tgtPkAttr ] ->
+                    | Some (_tgtKindKey, _tgtPkAttr, targetSetOpt) ->
                             let srcColumn =
                                 EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
-                            let targetSetOpt =
-                                Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
                             match srcColumn, targetSetOpt with
                             | Some sCol, Some targetSet ->
                                 // Single in-place pass: no key-string per
@@ -577,8 +592,7 @@ module ProfileDerivation =
                                   OrphanCount  = orphanCount
                                   IsNoCheck    = not (Reference.isConstraintTrusted reference)
                                   ProbeStatus  = ProbeStatus.observed rowCount }
-                            | _ -> ambiguous
-                        | _ -> ambiguous))
+                            | _ -> ambiguous))
 
     /// Public-surface entry point: builds the target-PK-set index
     /// per-call. `attachFromCache` uses the With-overload directly
@@ -624,17 +638,17 @@ module ProfileDerivation =
             else
                 srcKind.References
                 |> List.choose (fun reference ->
-                    match Catalog.tryFindKind reference.TargetKind catalog with
+                    // PL-5 (S36) — one index probe replaces the per-pass
+                    // target-kind + primary-key re-resolution; the widened
+                    // entry carries the resolved PK attribute the metadata
+                    // rendering below reads.
+                    match Map.tryFind reference.SsKey targetIndex with
                     | None -> None
-                    | Some tgtKind ->
-                        match Kind.primaryKey tgtKind with
-                        | [ tgtPkAttr ] ->
+                    | Some (_tgtKindKey, tgtPkAttr, targetSetOpt) ->
                             let srcAttr =
                                 Kind.tryFindAttribute reference.SourceAttribute srcKind
                             let srcColumn =
                                 EvidenceCache.tryFindColumn srcKind.SsKey reference.SourceAttribute cache
-                            let targetSetOpt =
-                                Map.tryFind (tgtKind.SsKey, tgtPkAttr.SsKey) targetIndex
                             match srcAttr, srcColumn, targetSetOpt with
                             | Some srcAttr, Some sCol, Some targetSet ->
                                 // targetSet pre-built (typed; no per-Reference
@@ -695,8 +709,7 @@ module ProfileDerivation =
                                           SsKey    = Some reference.SsKey
                                           Metadata = metadata
                                           SuggestedConfig = None }
-                            | _ -> None
-                        | _ -> None))
+                            | _ -> None))
 
     /// Public-surface entry point: builds the target-PK-set index
     /// per-call. `attachFromCache` uses the With-overload directly

@@ -206,18 +206,15 @@ module Transfer =
     [<Literal>]
     let private CaptureChunkSize = 50_000
 
-    /// Stage-and-capture every chunk of one kind's rows through the capture
-    /// LADDER (`SurrogateCapture.captureChunkDescending`), folding each
-    /// chunk's `(source → assigned)` pairs into the PACKED remap. The lane
-    /// is STICKY per kind: a rung the sink refused once is not re-attempted
-    /// on the kind's later chunks. Module-level tail-recursive task
-    /// continuation (FS3511 posture). Returns every descent taken — each a
-    /// named outcome for the report.
-    let rec private captureChunks
-        (sink: SqlConnection)
-        (kind: Kind)
-        (identityAttr: Attribute)
-        (deferred: Set<Name>)
+    /// The chunk fold over a STAGED capture closure (PL-9 / S15): the
+    /// per-kind SQL texts + cell getters were staged once by the caller;
+    /// each chunk only applies them. The lane is STICKY per kind: a rung
+    /// the sink refused once is not re-attempted on the kind's later
+    /// chunks. Module-level tail-recursive task continuation (FS3511
+    /// posture). Returns every descent taken — each a named outcome for
+    /// the report.
+    let rec private captureChunksOn
+        (capture: CaptureLane -> StaticRow list -> Task<(string * string) list * CaptureLane * LaneDescent list>)
         (kindKey: SsKey)
         (remap: PackedSurrogateRemap)
         (lane: CaptureLane)
@@ -234,13 +231,45 @@ module Transfer =
             | chunk :: rest ->
                 // Single-value bind then destructure — a tuple `let!` is not
                 // statically compilable under Release (FS3511).
-                let! outcome =
-                    SurrogateCapture.captureChunkDescending sink kind kindKey
-                        (fun (a: Attribute) -> StaticRow.valueOrEmpty a.Name)
-                        identityAttr deferred lane chunk
+                // Select the Task synchronously, await once (FS3511 —
+                // invoking the curried closure directly under `let!` defeats
+                // the static state machine).
+                let pending = capture lane chunk
+                let! outcome = pending
                 let pairs, succeededLane, newDescents = outcome
                 pairs |> List.iter (fun (srcVal, assignedVal) -> PackedSurrogateRemap.capture kindKey srcVal assignedVal remap)
-                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (List.rev newDescents @ descents) rest
+                return! captureChunksOn capture kindKey remap succeededLane (List.rev newDescents @ descents) rest
+        }
+
+    /// Stage-and-capture every chunk of one kind's rows through the capture
+    /// LADDER, folding each chunk's `(source → assigned)` pairs into the
+    /// PACKED remap. PL-9 (S15): the kind's rendered capture SQL + getters
+    /// stage ONCE here — the incumbent re-ran the ScriptDom builds on
+    /// every chunk of the same kind.
+    // `rec` (though not self-recursive): the F# optimizer INLINES small
+    // non-rec functions into their caller — here that would drop this
+    // wrapper's task construction (and the staged-closure allocation)
+    // into `loadBody`'s resumable code, which fails FS3511 reduction.
+    // A `rec` binding is never inlined.
+    let rec private captureChunks
+        (sink: SqlConnection)
+        (kind: Kind)
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (kindKey: SsKey)
+        (remap: PackedSurrogateRemap)
+        (lane: CaptureLane)
+        (descents: LaneDescent list)
+        (chunks: StaticRow list list)
+        : Task<LaneDescent list> =
+        task {
+            return!
+                captureChunksOn
+                    (SurrogateCapture.captureChunkDescendingStaged sink kind kindKey
+                        (fun (a: Attribute) -> StaticRow.valueOrEmpty a.Name)
+                        identityAttr deferred
+                        (SurrogateCapture.stageKind kind identityAttr))
+                    kindKey remap lane descents chunks
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -376,9 +405,16 @@ module Transfer =
                                                 { row with Values = Map.add idAttr.Name assigned row.Values })
                                         | _ -> None)
                                 | _ -> remapped2.Rows
-                            let updates = rowsForUpdate |> List.choose (TransferCellShaping.phase2UpdateSql kind load.DeferredFkColumns)
+                            // PL-9 (S17): the staged renderer — the kind's
+                            // PK/deferred walks + column texts resolve ONCE
+                            // (the chooser argument evaluates once); the row
+                            // loop only renders.
+                            let updates = rowsForUpdate |> List.choose (TransferCellShaping.phase2UpdateSqlStaged kind load.DeferredFkColumns)
                             if not (List.isEmpty updates) then
-                                do! Deploy.executeBatch sink (String.concat "\n" updates)
+                                // PL-6 (S14): the joined UPDATE list is GO-free
+                                // typed output — ONE pre-split segment; no
+                                // parser re-parse to rediscover that.
+                                do! Deploy.executeSegments sink [ String.concat "\n" updates ]
 
                 return Ok ()
               }
@@ -432,7 +468,8 @@ module Transfer =
     /// it as a replay, not as freshly-observed drops).
     let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
-            do! Deploy.executeBatch sink TransferResume.progressTableSql
+            // PL-6 (S14): a fixed GO-free DDL literal — one pre-split segment.
+            do! Deploy.executeSegments sink [ TransferResume.progressTableSql ]
             let marker = TransferResume.planMarker catalog plan
             let! prior = TransferResume.markedDropCount sink marker
             match prior with
@@ -755,12 +792,6 @@ module Transfer =
             // contract B). With no rename context, source and sink share the
             // schema and ingestion uses `catalog` directly (byte-identical).
             let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
-            let! rawRows = Ingestion.collectInOrder source ingestCatalog topo
-            let repointed =
-                match ingestion with
-                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
-                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
-                | _ -> rawRows
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // Item 5 — the declared table subset (golden data). Restrict the
             // load to the named kinds; the catalog stays whole (FK context),
@@ -770,11 +801,20 @@ module Transfer =
             // the plan zeroes them via `reclassifyReconciled` — so they remain
             // never-inserted while the user-FK re-key still resolves (golden:
             // exclude the User family from the copied set, re-key their FKs).
-            let rows =
+            // PL-10 (S08) — the subset scopes the INGEST itself
+            // (`collectInOrderFor` — the existing scoped collector), so a
+            // '--tables'-restricted transfer never streams the non-listed
+            // kinds' rows from the source only to discard them.
+            let ingestScope =
                 match writeOpts.LoadSet with
-                | Some loadSet ->
-                    repointed |> Map.filter (fun k _ -> Set.contains k loadSet || Set.contains k reconciledKinds)
-                | None -> repointed
+                | Some loadSet -> Set.union loadSet reconciledKinds
+                | None -> Set.ofList topo.Order
+            let! rawRows = Ingestion.collectInOrderFor ingestScope source ingestCatalog topo
+            let rows =
+                match ingestion with
+                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
+                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
+                | _ -> rawRows
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row
@@ -1141,6 +1181,27 @@ module Transfer =
     /// Slice C1 — the policy-bearing `runWithRenames`: a `FullRights` sink threads
     /// `IdentityPolicy.PreferPreservedKeys` so the populate preserves source keys
     /// (no capture/remap). `runWithRenames` fixes `Structural` (byte-identical).
+    /// PL-1 (S13) — the rename-aware transfer over a PRECOMPUTED A→B
+    /// displacement: migrate-with-data's schema leg already holds
+    /// `artifacts.Plan.Diff` over the identical (sinkSource, target) pair,
+    /// so the rename map derives from the threaded value instead of a
+    /// second whole-catalog `CatalogDiff.between`. Contract: `diff` MUST be
+    /// `CatalogDiff.between sourceContract sinkContract`; the diff-less
+    /// sibling below computes it and stays the safe entry.
+    let runWithRenamesUsing
+        (diff: CatalogDiff)
+        (identityPolicy: IdentityPolicy)
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        let renameMap =
+            RenameProjection.renames diff |> RenameProjection.renameMap
+        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+
     let runWithRenamesWith
         (identityPolicy: IdentityPolicy)
         (mode: Mode)
@@ -1150,12 +1211,9 @@ module Transfer =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         : Task<Result<TransferReport>> =
-        task {
-            let diff = CatalogDiff.between sourceContract sinkContract
-            let renameMap =
-                RenameProjection.renames diff |> RenameProjection.renameMap
-            return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
-        }
+        runWithRenamesUsing
+            (CatalogDiff.between sourceContract sinkContract)
+            identityPolicy mode allowCdc source sink sourceContract sinkContract
 
     let runWithRenames
         (mode: Mode)
@@ -1219,6 +1277,19 @@ module Transfer =
     type private StreamedKind =
         { Ingested : int
           Written  : int }
+
+    /// PL-9 (S15/S16) — one kind's CHUNK-INVARIANT write machinery, staged
+    /// once before the kind's chunk loop and applied per chunk: the FK
+    /// re-point (target-column set + basis ordinals resolved), the two
+    /// cell projections (per-attribute getters resolved), and — for an
+    /// IDENTITY-PK kind — the staged descending capture (rendered SQL
+    /// texts + getters). The incumbent re-staged every piece on every
+    /// 50k-row chunk, against the Q3 docstrings' "once per kind" claim.
+    type private KindWriteLane =
+        { RepointChunk    : RowQuantum list -> RemappedQuanta
+          CellRows        : RowQuantum list -> CellValue list list
+          CellRowsNoId    : RowQuantum list -> CellValue list list
+          IdentityCapture : (Attribute * (CaptureLane -> RowQuantum list -> Task<(string * string) list * CaptureLane * LaneDescent list>)) option }
 
     /// Phase 4 — the movement DryRun row-count estimate. The streaming
     /// realization ingests nothing on DryRun (the rows STREAM at write
@@ -1298,19 +1369,30 @@ module Transfer =
                 SurrogateRemapContext.tryFindAssigned kindKey (SourceKey.ofString sourceRaw) reconcileRemap
                 |> Option.map AssignedKey.value
 
-        // Q3: the re-point at the quantum grain — FK ordinals resolved
-        // against the stream's renamed basis once per call (cheap; the
-        // chunk behind it is 50k rows), cells re-pointed copy-on-write.
-        let repoint (basis: RowBasis) (excluding: Set<Name>) (kind: Kind) (rows: RowQuantum list) : RemappedQuanta =
+        // PL-9 (S22): each load-kind's renamed row basis derives ONCE and
+        // threads to BOTH phases — phase 2 recomputed it from the same
+        // (renameMap, ingestKind) inputs in the same run.
+        let basisByKind : Map<SsKey, RowBasis> =
+            plan.Loads
+            |> List.choose (fun l ->
+                Catalog.tryFindKind l.Kind ingestCatalog
+                |> Option.map (fun ik -> l.Kind, RowBasis.rename renameMap (Kind.rowBasis ik)))
+            |> Map.ofList
+
+        // Q3 + PL-9 (S16): the re-point at the quantum grain, STAGED per
+        // kind — the FK-target column set and the basis ordinals resolve
+        // once per (kind, excluding, basis); the chunks apply the closure
+        // (the incumbent re-resolved both on every 50k-row chunk). The
+        // surrogate lookup stays live — it reads the mutable remap at
+        // apply time, so staging early freezes nothing.
+        let repointFor (basis: RowBasis) (excluding: Set<Name>) (kind: Kind) : RowQuantum list -> RemappedQuanta =
             let fkTargets =
                 SurrogateRemap.fkColumnsTargeting remapTargetKinds kind
                 |> Map.filter (fun col _ -> not (Set.contains col excluding))
-            if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
+            if Map.isEmpty fkTargets then (fun rows -> { Rows = rows; Skipped = [] })
             else
-                SurrogateRemap.remapQuantumFksWith
-                    lookupAssigned
-                    (SurrogateRemap.fkOrdinalsTargeting basis fkTargets)
-                    rows
+                let ordinals = SurrogateRemap.fkOrdinalsTargeting basis fkTargets
+                fun rows -> SurrogateRemap.remapQuantumFksWith lookupAssigned ordinals rows
 
         // One chunk of one kind — a journal skip or a lane write, each
         // ending in a journal append so the chunk is durably done. The
@@ -1320,7 +1402,7 @@ module Transfer =
         // The journal fingerprint (first/last PK + raw count) is the same
         // bytes the Map-carried path produced — journals resume across
         // the carrier change.
-        let writeChunk (kind: Kind) (load: DataLoadKind) (basis: RowBasis) (pkOf: RowQuantum -> string) (lane: CaptureLane) (chunkIx: int) (chunkRaw: RowQuantum list)
+        let writeChunk (kind: Kind) (load: DataLoadKind) (wl: KindWriteLane) (pkOf: RowQuantum -> string) (lane: CaptureLane) (chunkIx: int) (chunkRaw: RowQuantum list)
             : Task<Result<int * LaneDescent list * (SsKey * UnresolvedReference) list * CaptureLane>> =
             task {
                 let firstPk = chunkRaw |> List.tryHead |> Option.map pkOf |> Option.defaultValue ""
@@ -1345,30 +1427,28 @@ module Transfer =
                     | Error drift ->
                         return Result.failureOf (sourceDriftRefusal load.Kind drift)
                 | None ->
-                    let remapped = repoint basis load.DeferredFkColumns kind chunkRaw
+                    // PL-9 (S16): every chunk-invariant piece below arrives
+                    // staged on the KindWriteLane; the chunk only applies.
+                    let remapped = wl.RepointChunk chunkRaw
                     let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
                     let! laneOutcome =
                         task {
                             match load.Disposition with
                             | IdentityDisposition.AssignedBySink ->
-                                match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                                match wl.IdentityCapture with
                                 | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
-                                    do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                            (TransferCellShaping.quantumCellRowsExcludingIdentity basis kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRowsSinkMinted sink kind.Physical (wl.CellRowsNoId remapped.Rows)
                                     return [], lane, []
-                                | Some idAttr ->
-                                    let! outcome =
-                                        SurrogateCapture.captureChunkDescending sink kind load.Kind
-                                            (fun (a: Attribute) -> RowQuantum.cellGetter basis a.Name)
-                                            idAttr load.DeferredFkColumns lane remapped.Rows
+                                | Some (_, capture) ->
+                                    let! outcome = capture lane remapped.Rows
                                     let pairs, succeeded, descents = outcome
                                     pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
                                     return pairs, succeeded, descents
                                 | None ->
-                                    do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                    do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
                                     return [], lane, []
                             | _ ->
-                                do! Bulk.copyRows sink kind.Physical (TransferCellShaping.quantumCellRows basis kind load.DeferredFkColumns remapped.Rows)
+                                do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
                                 return [], lane, []
                         }
                     let pairs, succeededLane, descents = laneOutcome
@@ -1391,7 +1471,7 @@ module Transfer =
         // the write await). On a refusal/crash the in-flight prefetch is
         // abandoned (its read completes or faults unobserved — harmless,
         // the source connection is read-only).
-        let rec loadKindChunks (kind: Kind) (load: DataLoadKind) (basis: RowBasis) (pkOf: RowQuantum -> string) (stream: Projection.Adapters.Sql.AsyncStream<RowQuantum>)
+        let rec loadKindChunks (kind: Kind) (load: DataLoadKind) (wl: KindWriteLane) (pkOf: RowQuantum -> string) (stream: Projection.Adapters.Sql.AsyncStream<RowQuantum>)
                                (pending: Task<RowQuantum list>)
                                (chunkIx: int) (lane: CaptureLane)
                                (ingested: int) (written: int)
@@ -1406,10 +1486,10 @@ module Transfer =
                     return Result.success ({ Ingested = ingested; Written = written }, List.rev skips, List.rev descents)
                 else
                     let nextPending = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
-                    match! writeChunk kind load basis pkOf lane chunkIx chunkRaw with
+                    match! writeChunk kind load wl pkOf lane chunkIx chunkRaw with
                     | Error es -> return Result.failure es
                     | Ok (written', newDescents, newSkips, lane') ->
-                        return! loadKindChunks kind load basis pkOf stream nextPending (chunkIx + 1) lane'
+                        return! loadKindChunks kind load wl pkOf stream nextPending (chunkIx + 1) lane'
                                     (ingested + List.length chunkRaw) (written + written')
                                     (List.rev newSkips @ skips) (List.rev newDescents @ descents)
             }
@@ -1444,11 +1524,30 @@ module Transfer =
                         // basis re-keys to sink names once per kind; the
                         // quanta are untouched (the streaming path's
                         // per-row rename walk is deleted, not ported).
-                        let basis = RowBasis.rename renameMap (Kind.rowBasis ingestKind)
+                        // PL-9 (S22): the basis threads from `basisByKind`
+                        // (derived once, shared with phase 2); this match
+                        // arm's `ingestKind` success is exactly the map's
+                        // membership condition.
+                        let basis = Map.find load.Kind basisByKind
                         let pkOf = RowQuantum.cellGetter basis pkName
+                        // PL-9 (S15/S16): the kind's chunk-invariant write
+                        // machinery stages ONCE before the chunk loop.
+                        let wl =
+                            { RepointChunk = repointFor basis load.DeferredFkColumns kind
+                              CellRows = TransferCellShaping.quantumCellRowsStaged basis kind load.DeferredFkColumns
+                              CellRowsNoId = TransferCellShaping.quantumCellRowsExcludingIdentityStaged basis kind load.DeferredFkColumns
+                              IdentityCapture =
+                                kind.Attributes
+                                |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
+                                |> Option.map (fun idAttr ->
+                                    idAttr,
+                                    SurrogateCapture.captureChunkDescendingStaged sink kind load.Kind
+                                        (fun (a: Attribute) -> RowQuantum.cellGetter basis a.Name)
+                                        idAttr load.DeferredFkColumns
+                                        (SurrogateCapture.stageKind kind idAttr)) }
                         let stream = Ingestion.streamKind source ingestKind
                         let firstChunk = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
-                        match! loadKindChunks kind load basis pkOf stream firstChunk 0 CaptureLane.StagedMergeOutput 0 0 [] [] with
+                        match! loadKindChunks kind load wl pkOf stream firstChunk 0 CaptureLane.StagedMergeOutput 0 0 [] [] with
                         | Error es -> return Result.failure es
                         | Ok (streamed, kindSkips, kindDescents) ->
                             LogSink.recordStageProgress "load" (loaded + 1) loadTotal loadSw.ElapsedMilliseconds
@@ -1462,7 +1561,11 @@ module Transfer =
         // lift: WHERE keyed on the ASSIGNED PK; an unresolved deferred
         // value is a NAMED erasure). UPDATEs are idempotent, so a resumed
         // run repeating them is harmless.
-        let rec phase2Chunks (kind: Kind) (load: DataLoadKind) (basis: RowBasis) (idAttr: Attribute option) (renderUpdate: RowQuantum -> string option)
+        // PL-9 (S16/S17): the chunk loop receives the kind's STAGED pieces
+        // (re-point closure, PK re-key closure, staged UPDATE renderer) —
+        // the incumbent re-resolved the FK ordinal set and the PK ordinal
+        // on every chunk.
+        let rec phase2Chunks (load: DataLoadKind) (repointChunk: RowQuantum list -> RemappedQuanta) (rekey: RowQuantum list -> RowQuantum list) (renderUpdate: RowQuantum -> string option)
                              (stream: Projection.Adapters.Sql.AsyncStream<RowQuantum>)
                              (skips: (SsKey * UnresolvedReference) list)
             : Task<(SsKey * UnresolvedReference) list> =
@@ -1472,38 +1575,19 @@ module Transfer =
                 // reversed once at the terminal — O(n), not the O(chunks²) of `@`.
                 if List.isEmpty chunkRaw then return List.rev skips
                 else
-                    let remapped2 = repoint basis Set.empty kind chunkRaw
+                    let remapped2 = repointChunk chunkRaw
                     let newSkips =
                         remapped2.Skipped
                         |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
                         |> List.map (fun u -> load.Kind, u)
-                    let rowsForUpdate =
-                        match load.Disposition, idAttr with
-                        | IdentityDisposition.AssignedBySink, Some idAttr ->
-                            // The PK cell re-keys to the ASSIGNED surrogate
-                            // (copy-on-write) so the UPDATE's WHERE hits the
-                            // sink row. A PK column absent from the basis
-                            // can carry no remappable source key — every
-                            // row drops, exactly as the Map-carried path's
-                            // absent-key lookup dropped them.
-                            match RowBasis.tryOrdinal idAttr.Name basis with
-                            | None -> []
-                            | Some idIx ->
-                                remapped2.Rows
-                                |> List.choose (fun q ->
-                                    match q.Cells.[idIx] with
-                                    | "" -> None
-                                    | srcVal ->
-                                        PackedSurrogateRemap.tryFind remap load.Kind srcVal
-                                        |> Option.map (fun assigned ->
-                                            let cells = Array.copy q.Cells
-                                            cells.[idIx] <- assigned
-                                            { Cells = cells }))
-                        | _ -> remapped2.Rows
+                    let rowsForUpdate = rekey remapped2.Rows
                     let updates = rowsForUpdate |> List.choose renderUpdate
                     if not (List.isEmpty updates) then
-                        do! Deploy.executeBatch sink (String.concat "\n" updates)
-                    return! phase2Chunks kind load basis idAttr renderUpdate stream (List.rev newSkips @ skips)
+                        // PL-6 (S14): GO-free typed output — one pre-split
+                        // segment per chunk; the per-chunk parser re-parse
+                        // retires.
+                        do! Deploy.executeSegments sink [ String.concat "\n" updates ]
+                    return! phase2Chunks load repointChunk rekey renderUpdate stream (List.rev newSkips @ skips)
             }
 
         let rec phase2 (loads: DataLoadKind list) (skips: (SsKey * UnresolvedReference) list)
@@ -1519,10 +1603,78 @@ module Transfer =
                         match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
                         | Some kind, Some ingestKind ->
                             let idAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
-                            let basis = RowBasis.rename renameMap (Kind.rowBasis ingestKind)
+                            // PL-9 (S11): phase 2 consumes ONLY the PK cells
+                            // (the WHERE key, remap-re-keyed) and the deferred
+                            // FK cells (the SET values) — the incumbent
+                            // re-pulled the kind's FULL width a second time,
+                            // every other column crossing the wire unconsumed.
+                            // The projection is a filtered ingest Kind through
+                            // the ONE stream core (a NAMED departure from the
+                            // plan's `readRowsProjectedStream` carrier: a
+                            // second reader entry point would be a new
+                            // definition site for the same read). The
+                            // projected basis scopes the re-point implicitly
+                            // (`fkOrdinalsTargeting` drops basis-absent
+                            // columns): a non-deferred FK's unresolvable value
+                            // no longer drops the row HERE — its skip was
+                            // filtered from the phase-2 report anyway, and
+                            // phase 1 already dropped (and reported) that row
+                            // at insert, so the no-op UPDATE changes no sink
+                            // row and no report line. An empty projection
+                            // (unmatched rename — defensive) keeps the
+                            // incumbent full-width stream.
+                            let neededSinkNames =
+                                kind.Attributes
+                                |> List.filter (fun a -> a.IsPrimaryKey)
+                                |> List.map (fun a -> a.Name)
+                                |> Set.ofList
+                                |> Set.union load.DeferredFkColumns
+                            let projectedIngest =
+                                match
+                                    ingestKind.Attributes
+                                    |> List.filter (fun a ->
+                                        Set.contains
+                                            (Map.tryFind a.Name renameMap |> Option.defaultValue a.Name)
+                                            neededSinkNames)
+                                with
+                                | [] -> ingestKind
+                                | projected -> { ingestKind with Attributes = projected }
+                            // The PROJECTED stream's renamed basis. (S22's
+                            // shared `basisByKind` serves phase 1's full-width
+                            // stream; phase 2's basis is the projection's own
+                            // — a DIFFERENT fact once S11 narrows the pull,
+                            // derived once per kind here.)
+                            let basis = RowBasis.rename renameMap (Kind.rowBasis projectedIngest)
                             let renderUpdate = TransferCellShaping.phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
-                            let stream = Ingestion.streamKind source ingestKind
-                            let! kindSkips = phase2Chunks kind load basis idAttr renderUpdate stream []
+                            // PL-9 (S16): re-point + PK re-key staged once per
+                            // kind. The re-key: the PK cell re-keys to the
+                            // ASSIGNED surrogate (copy-on-write) so the
+                            // UPDATE's WHERE hits the sink row; a PK column
+                            // absent from the basis can carry no remappable
+                            // source key — every row drops, exactly as the
+                            // Map-carried path's absent-key lookup dropped
+                            // them. The remap lookup stays live per row.
+                            let repointChunk = repointFor basis Set.empty kind
+                            let rekey : RowQuantum list -> RowQuantum list =
+                                match load.Disposition, idAttr with
+                                | IdentityDisposition.AssignedBySink, Some idAttr ->
+                                    match RowBasis.tryOrdinal idAttr.Name basis with
+                                    | None -> fun _ -> []
+                                    | Some idIx ->
+                                        fun rows ->
+                                            rows
+                                            |> List.choose (fun q ->
+                                                match q.Cells.[idIx] with
+                                                | "" -> None
+                                                | srcVal ->
+                                                    PackedSurrogateRemap.tryFind remap load.Kind srcVal
+                                                    |> Option.map (fun assigned ->
+                                                        let cells = Array.copy q.Cells
+                                                        cells.[idIx] <- assigned
+                                                        { Cells = cells }))
+                                | _ -> id
+                            let stream = Ingestion.streamKind source projectedIngest
+                            let! kindSkips = phase2Chunks load repointChunk rekey renderUpdate stream []
                             return! phase2 rest (skips @ kindSkips)
                         | _ -> return! phase2 rest skips
             }
@@ -1882,6 +2034,23 @@ module Transfer =
     /// Slice C1 — the policy-bearing `runReconcilingWithRenames`. A `FullRights`
     /// sink threads `PreferPreservedKeys`; `runReconcilingWithRenames` fixes
     /// `Structural` (byte-identical).
+    /// PL-1 (S13) — the reconciling sibling over a PRECOMPUTED displacement
+    /// (see `runWithRenamesUsing`; same contract on `diff`).
+    let runReconcilingWithRenamesUsing
+        (diff: CatalogDiff)
+        (identityPolicy: IdentityPolicy)
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        let renameMap =
+            RenameProjection.renames diff |> RenameProjection.renameMap
+        runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+
     let runReconcilingWithRenamesWith
         (identityPolicy: IdentityPolicy)
         (mode: Mode)
@@ -1892,12 +2061,9 @@ module Transfer =
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        task {
-            let diff = CatalogDiff.between sourceContract sinkContract
-            let renameMap =
-                RenameProjection.renames diff |> RenameProjection.renameMap
-            return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
-        }
+        runReconcilingWithRenamesUsing
+            (CatalogDiff.between sourceContract sinkContract)
+            identityPolicy mode allowCdc source sink sourceContract sinkContract reconciliation
 
     let runReconcilingWithRenames
         (mode: Mode)
@@ -1969,7 +2135,12 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    match! ReadSide.read source with
+                    // PL-7 (S01): the contract read is schema-only — `read`
+                    // materialized ≤100k rows/table into `Modality.Static`
+                    // that nothing on the transfer path consumes (the load's
+                    // rows stream via `Ingestion.collectInOrderFor`), so the
+                    // per-table drain was pure wire waste.
+                    match! ReadSide.readSchema source with
                     | Error es -> return Result.failure es
                     | Ok contract ->
                         match resolveLoadSet contract tables with

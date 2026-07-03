@@ -329,25 +329,17 @@ module Compose =
         if EmissionFolders.isEmpty folders then files
         else
             use _ = Bench.scope "compose.applyEmissionFolderOverrides"
-            let rewritten =
-                files
-                |> ArtifactByKind.toMap
-                |> Map.map (fun key file ->
-                    match Map.tryFind key folders.ByKind with
-                    | None        -> file
-                    | Some folder ->
-                        let segments = file.RelativePath.Split('/')
-                        let basename = segments.[segments.Length - 1]
-                        { file with
-                            RelativePath = System.String.Concat(folder, "/", basename) })
-            match ArtifactByKind.create catalog rewritten with
-            | Ok a -> a
-            | Error err ->
-                // Unreachable: we Map.map preserving keys; the input
-                // keyset equals Catalog.allKinds by construction
-                // (input came from SsdtDdlEmitter.emitSlices which
-                // smart-constructed against the same catalog).
-                invalidOp (sprintf "Compose.applyEmissionFolderOverrides: %A" err)
+            // PL-4 (S56) — key-preserving rewrite: the proven keyset carries
+            // over via `mapValues`; no re-validation, no unreachable arm.
+            files
+            |> ArtifactByKind.mapValues (fun key file ->
+                match Map.tryFind key folders.ByKind with
+                | None        -> file
+                | Some folder ->
+                    let segments = file.RelativePath.Split('/')
+                    let basename = segments.[segments.Length - 1]
+                    { file with
+                        RelativePath = System.String.Concat(folder, "/", basename) })
 
     /// Chapter C slice C.4 — filter the pass chain by operator-supplied
     /// `TransformGroups`. Each chain entry's name is looked up against
@@ -1432,13 +1424,17 @@ module Compose =
     /// compilation (avoids FS3511 — deeply nested matches inside `task { }`
     /// prevent static compilation of the resumable state machine). The
     /// acquired `Profile` is threaded in by the async caller.
+    /// PL-1 — returns the post-chain `ComposeState` beside the report so the
+    /// combined verbs' load/store legs consume the publish's own composed
+    /// state instead of re-deriving it (`runWithConfig` drops it for the
+    /// report-only callers).
     let private runWithConfigCore
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
         (bootstrapLane: DataComposer.BootstrapLane)
         (migration: Projection.Targets.Data.MigrationDependencyContext)
         (profile: Profile)
-        : Result<RunReport> =
+        : Result<RunReport * ComposeState> =
         match parsed with
         | Error errors -> Result.failure errors
         | Ok catalog ->
@@ -1508,6 +1504,20 @@ module Compose =
                                 else Some (PostDeployEmitter.renderIncludes postDeployLanes)
                             let sqlproj = SqlprojEmitter.emit dataLanes (Option.isSome postDeploy)
                             { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
+                    // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
+                    // per-reference resolutions, and the decision overlay
+                    // each derive ONCE here and thread to the three FK
+                    // diagnostics siblings (previously: three lookup
+                    // rebuilds, a fourth allKinds walk, per-reference
+                    // re-resolution at two sites, and two back-to-back
+                    // `ofComposeState` projections over the same state).
+                    // These derive over finalState.Catalog — the DIAGNOSTIC
+                    // plane's value; the emit step's interior lookups ride
+                    // its own EmittedCatalog value (K26: receipts match on
+                    // the VALUE, not the function).
+                    let fkLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog finalState.Catalog
+                    let fkResolutions = SsdtDdlEmitter.fkResolutionsUsing fkLookups
+                    let decisionOverlay = DecisionOverlay.ofComposeState finalState
                     let diagnostics =
                         // A7 (no-silent-drop) — surface the inert module-filter
                         // flags on the structured diagnostic stream.
@@ -1526,7 +1536,7 @@ module Compose =
                         // Wave-2 slice 2.5(b) — the FK silent-drop witness over
                         // the emitted catalog (slice-μ retired). Pure sibling of
                         // the emitter port; A18 holds.
-                        @ SsdtDdlEmitter.foreignKeyDropDiagnostics finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyDropDiagnosticsUsing fkLookups fkResolutions
                         // 6.A.9 — the DECISION-driven FK-drop audit trail. A
                         // tightening Decision that drops an FK the source
                         // enforced is a safety change; surface one Warning per
@@ -1535,14 +1545,14 @@ module Compose =
                         // `decision.fkDropped` only when the source really
                         // enforced it; Info `decision.fkNotIntroduced` for
                         // logical-only references.)
-                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics
-                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnosticsUsing
+                            decisionOverlay fkLookups.AllKinds
                         // Reconciliation slice 1 — the FK-name collision
                         // tripwire (schema-scoped constraint-name uniqueness;
                         // one Error per participating reference, never a
                         // silent dedupe).
-                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics
-                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
+                            decisionOverlay fkResolutions
                         // NM-70 (WP5) — the named downgrade. When the operator
                         // omits the identity annotations, the `Projection.*`
                         // extended properties are NOT written, so identity
@@ -1560,7 +1570,7 @@ module Compose =
                     // NM-34b (live) — `ReadCatalog = catalog`: the source model
                     // the run READ (pre-rename), surfaced so the run boundary can
                     // hash its canonical form into the live-path input digest.
-                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }
+                    | Ok paths    -> Result.success ({ Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }, finalState)
                     | Error errors -> Result.failure errors
                 | Error errors -> Result.failure errors
 
@@ -1667,9 +1677,64 @@ module Compose =
     /// stay disjoint (the partition law). No path ⇒ the empty context (no-op;
     /// byte-identical). A malformed / unresolvable file fails loud
     /// (`pipeline.migrationDependencies.*`).
+    /// PL-2 (S04) — the AllData hydration arm: ONE drain. Under AllData the
+    /// Bootstrap complement covers every data-bearing kind (the composer
+    /// dispatches the Static lane empty), so drain Bootstrap FIRST over the
+    /// ungrafted catalog (eligibility + column lists read marks/attributes,
+    /// never populations) and graft the static populations from the rows
+    /// already in hand. Module-level (FS3511).
+    let private hydrateAllDataArm
+        (cfg: Config.Config)
+        (topo: TopologicalOrder)
+        (migrationKinds: Set<SsKey>)
+        (catalog: Catalog)
+        : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
+        task {
+            let! bootRowsR = Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg catalog
+            match bootRowsR with
+            | Error es -> return Result.failure es
+            | Ok bootRows ->
+                let! hydratedR = Hydration.hydrateCatalogFromBootstrapRowsUsing topo cfg bootRows catalog
+                match hydratedR with
+                | Error es -> return Result.failure es
+                | Ok hydrated -> return Result.success (hydrated, bootRows)
+        }
+
+    /// The default (non-AllData) hydration arm: static graft, then the
+    /// Bootstrap drain. Module-level so `readAndHydrateConfigModel`'s task
+    /// stays statically compilable in Release (FS3511 — a `let!` inside a
+    /// guarded match arm is the named failure shape).
+    let private hydrateDefaultArm
+        (cfg: Config.Config)
+        (hydrationTopo: TopologicalOrder option)
+        (migrationKinds: Set<SsKey>)
+        (catalog: Catalog)
+        : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
+        task {
+            let! hydratedR =
+                match hydrationTopo with
+                | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
+                | None      -> Hydration.hydrateCatalog cfg catalog
+            match hydratedR with
+            | Error es -> return Result.failure es
+            | Ok hydrated ->
+                let! bootRowsR =
+                    match hydrationTopo with
+                    | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
+                    | None      -> Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
+                match bootRowsR with
+                | Error es      -> return Result.failure es
+                | Ok bootRows   -> return Result.success (hydrated, bootRows)
+        }
+
+    /// PL-1 — the first element is the READ catalog (pre-hydration, the value
+    /// `readConfigModel` produced): the store leg's emitted-schema plane
+    /// derives from it (`applyRenames` over the model as READ — static
+    /// populations are a data-lane graft, never part of the recorded schema
+    /// plane), so a combined publish+store verb pays for ONE model read.
     let readAndHydrateConfigModel
         (cfg: Config.Config)
-        : Task<Result<Catalog * Map<SsKey, StaticRow list> * Projection.Targets.Data.MigrationDependencyContext>> =
+        : Task<Result<Catalog * Catalog * Map<SsKey, StaticRow list> * Projection.Targets.Data.MigrationDependencyContext>> =
         task {
             let! parsed = readConfigModel cfg
             match parsed with
@@ -1688,21 +1753,19 @@ module Compose =
                         if Hydration.emitDataOf cfg && cfg.Model.Ossys.IsSome then
                             Some ((Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value)
                         else None
-                    let! hydratedR =
+                    let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                    // The arm is SELECTED synchronously, then awaited once —
+                    // the FS3511-safe shape (`loadMeasureAndRecord` precedent).
+                    let arm =
                         match hydrationTopo with
-                        | Some topo -> Hydration.hydrateCatalogUsing topo cfg catalog
-                        | None      -> Hydration.hydrateCatalog cfg catalog
-                    match hydratedR with
-                    | Error es -> return Result.failure es
-                    | Ok hydrated ->
-                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
-                        let! bootRowsR =
-                            match hydrationTopo with
-                            | Some topo -> Hydration.hydrateBootstrapRowsExcludingUsing topo migrationKinds cfg hydrated
-                            | None      -> Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
-                        match bootRowsR with
-                        | Error es      -> return Result.failure es
-                        | Ok bootRows   -> return Result.success (hydrated, bootRows, migration)
+                        | Some topo when Config.dataCompositionOf cfg = AllData ->
+                            // PL-2 (S04) — one drain: static graft rides the
+                            // Bootstrap rows (see `hydrateAllDataArm`).
+                            hydrateAllDataArm cfg topo migrationKinds catalog
+                        | _ ->
+                            hydrateDefaultArm cfg hydrationTopo migrationKinds catalog
+                    let! pairR = arm
+                    return pairR |> Result.map (fun (hydrated, bootRows) -> (catalog, hydrated, bootRows, migration))
         }
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
@@ -1786,17 +1849,41 @@ module Compose =
                         "pipeline.compose.manifestOnly.writeFailed"
                         (sprintf "manifest-only emit could not write '%s': %s" outputDir ex.Message)))
 
+    /// The PROFILE-INVARIANT chain prefix composed over a renamed catalog —
+    /// the post-chain catalog + topology WITHOUT the emit fold or the
+    /// profile-consuming suffix (every post-topo step is a decision pass,
+    /// catalog-preserving, so `(composePrefixState …).Catalog` equals the
+    /// full chain's `finalState.Catalog` for ANY profile). This is the
+    /// state-only chain runner (PL-1, dissolving S52): consumers that need
+    /// only the composed state pay no per-kind artifact build — the NM-02
+    /// registered⇔executed invariant is untouched because it governs
+    /// artifact-PRODUCING runs, which still fold every emit step. Pure +
+    /// synchronous (module-level; callers' `task { }` stay statically
+    /// compilable — FS3511).
+    let private composePrefixState
+        (pins: Set<SsKey>)
+        (policy: Policy)
+        (groups: TransformGroups)
+        (renamedCatalog: Catalog)
+        : ComposeState =
+        let prefixSteps, _suffix = RegisteredTransforms.chainStepsSplitWithPins pins
+        let prefixAdapters = prefixSteps |> List.map (ChainStep.build policy Profile.empty)
+        let filtered = filterChainByGroups groups prefixAdapters
+        let composed = PassChainAdapter.compose filtered (ComposeState.initial renamedCatalog)
+        LineageDiagnostics.payload composed
+
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the catalog-shaping overlay for the
     /// non-bundle destinations (live preview / migrate / migrate-with-data),
     /// which evolve a SINK's schema toward a target Catalog rather than emit a
-    /// file bundle. Applies `applyRenames` then runs the policy-aware pass
-    /// chain (`projectWithState`) and returns the post-chain
-    /// `ComposeState.Catalog` — the same shaped schema-B `runWithConfigCore`
-    /// publishes. The module filter is applied upstream at the shared
-    /// `Program.needCatalog` seam. `Config.defaultConfig` shaping yields
-    /// `projectWithState Policy.empty … catalog`'s catalog, which equals the
-    /// input catalog (the chain under `Policy.empty` is the skeleton — no
-    /// operator tightening), so the default migrate/preview is byte-identical.
+    /// file bundle. Applies `applyRenames` then runs the policy-aware chain
+    /// PREFIX (`composePrefixState` — the suffix is catalog-preserving and the
+    /// artifact fold was built-then-discarded here, S52) and returns the
+    /// post-chain `ComposeState.Catalog` — the same shaped schema-B
+    /// `runWithConfigCore` publishes. The module filter is applied upstream at
+    /// the shared `Program.needCatalog` seam. `Config.defaultConfig` shaping
+    /// yields the input catalog (the chain under `Policy.empty` is the
+    /// skeleton — no operator tightening), so the default migrate/preview is
+    /// byte-identical.
     let applyShapingToCatalog
         (shaping: Config.Config)
         (catalog: Catalog)
@@ -1814,10 +1901,8 @@ module Compose =
             // §6 — the SHARED triple bind-all (drift-proof with
             // `projectWithConfig`, which threads the identical set).
             match bindShapingTriple shaping renamedCatalog with
-            | Ok (policy, folders, groups) ->
-                let _, finalState =
-                    projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
-                Result.success finalState.Catalog
+            | Ok (policy, _folders, groups) ->
+                Result.success (composePrefixState pins policy groups renamedCatalog).Catalog
             | Error errors -> Result.failure errors
 
     // -- P2 production wiring: the PIPELINED publish arm ---------------------
@@ -1838,6 +1923,9 @@ module Compose =
 
     /// What the pipelined extract stage hands the profile + emit stages.
     type private PipelinedExtracted = {
+        /// The model as READ (pre-hydration) — the store leg's schema plane
+        /// derives from it (PL-1).
+        ReadCatalog : Catalog
         Hydrated    : Catalog
         Migration   : Projection.Targets.Data.MigrationDependencyContext
         Prerendered : Map<SsKey, Projection.Targets.Data.DataInsertScript>
@@ -1893,11 +1981,7 @@ module Compose =
             match boundR with
             | Error errors -> Result.failure errors
             | Ok (policy, _overrides, _folders, groups) ->
-                let prefixSteps, _suffix = RegisteredTransforms.chainStepsSplitWithPins pins
-                let prefixAdapters = prefixSteps |> List.map (ChainStep.build policy Profile.empty)
-                let filtered = filterChainByGroups groups prefixAdapters
-                let composed = PassChainAdapter.compose filtered (ComposeState.initial renamedCatalog)
-                Result.success (policy, LineageDiagnostics.payload composed)
+                Result.success (policy, composePrefixState pins policy groups renamedCatalog)
 
     /// The pure pre-drain computation of the pipelined arm, hoisted out of
     /// the task CE (FS3511): the eligibility + evidence partitions and the
@@ -1912,10 +1996,18 @@ module Compose =
         (sourceTopo: TopologicalOrder)
         (policy: Policy)
         (stateA: ComposeState)
-        : Set<SsKey> * (Map<string, Map<string, bool>> -> Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>>>) =
+        : Set<SsKey> * (Map<string, Map<string, bool>> -> Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option>>>) =
         let profilerSampling = Projection.Adapters.Sql.SqlProfilerOptions.defaults.Sampling
         let eligible = Hydration.bootstrapEligible migrationKinds cfg hydrated
         let staticKeys = Hydration.staticKindKeys hydrated
+        // PL-2 (S04) — under AllData the static kinds ARE bootstrap-eligible
+        // and the pre-drain static graft is skipped (see `pipelinedExtract`);
+        // retain those kinds' rows at the drain worker so the graft rides
+        // this one drain. Other compositions retain nothing.
+        let retainRows =
+            match Config.dataCompositionOf cfg with
+            | AllData -> Set.intersect staticKeys eligible
+            | AllRemaining | AllExceptStatic -> Set.empty
         // The evidence partition mirrors `captureEvidenceCacheDerived`:
         // static kinds never derive; sampled kinds keep the live capped
         // discovery (a full-row derivation would not be the sampled
@@ -1950,20 +2042,27 @@ module Compose =
             Hydration.collectBootstrapRenderedUsing
                 (max 1 cfg.Emission.DataReadConcurrency)
                 connSpec eligible hydrated targetKinds cycleMembers
-                opts cdc nullability evidenceKinds sourceTopo
+                opts cdc nullability evidenceKinds retainRows sourceTopo
         evidenceKinds, drain
 
-    /// Project the drain's per-kind pairs into the two planes the profile +
-    /// emit stages consume (pure; hoisted out of the task CE — FS3511).
+    /// Project the drain's per-kind triples into the planes the profile +
+    /// emit stages consume — scripts, derived evidence, and the PL-2
+    /// retained rows (the AllData static graft's row source; empty on the
+    /// other compositions). Pure; hoisted out of the task CE (FS3511).
     let private splitCollected
-        (collected: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option>)
-        : Map<SsKey, Projection.Targets.Data.DataInsertScript> * CachedKind list =
-        let prerendered = collected |> Map.map (fun _ (script, _) -> script)
+        (collected: Map<SsKey, Projection.Targets.Data.DataInsertScript * CachedKind option * StaticRow list option>)
+        : Map<SsKey, Projection.Targets.Data.DataInsertScript> * CachedKind list * Map<SsKey, StaticRow list> =
+        let prerendered = collected |> Map.map (fun _ (script, _, _) -> script)
         let derived =
             collected
             |> Map.toList
-            |> List.choose (fun (_, (_, evidence)) -> evidence)
-        prerendered, derived
+            |> List.choose (fun (_, (_, evidence, _)) -> evidence)
+        let retained =
+            collected
+            |> Map.toList
+            |> List.choose (fun (key, (_, _, rows)) -> rows |> Option.map (fun r -> key, r))
+            |> Map.ofList
+        prerendered, derived, retained
 
     /// The pipelined extract tail: reflect nullability ONCE (the pre-drain
     /// global query the drain-time evidence derivations slice per kind),
@@ -1978,7 +2077,7 @@ module Compose =
         (sourceTopo: TopologicalOrder)
         (policy: Policy)
         (stateA: ComposeState)
-        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript> * Set<SsKey> * CachedKind list * Map<string, Map<string, bool>>>> =
+        : Task<Result<Map<SsKey, Projection.Targets.Data.DataInsertScript> * Set<SsKey> * CachedKind list * Map<string, Map<string, bool>> * Map<SsKey, StaticRow list>>> =
         task {
             let! nullabilityR =
                 Projection.Adapters.Sql.LiveProfiler.reflectNullability
@@ -1992,8 +2091,8 @@ module Compose =
                 match collectedR with
                 | Error es -> return Result.failure es
                 | Ok collected ->
-                    let prerendered, derived = splitCollected collected
-                    return Result.success (prerendered, evidenceKinds, derived, nullability)
+                    let prerendered, derived, retained = splitCollected collected
+                    return Result.success (prerendered, evidenceKinds, derived, nullability, retained)
         }
 
     /// The pipelined extract stage body — the extract-lite read (model +
@@ -2023,22 +2122,42 @@ module Compose =
                     | Some connSpec ->
                         let sourceTopo =
                             (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
-                        let! hydratedR = Hydration.hydrateCatalogUsing sourceTopo cfg catalog
+                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                        let! hydratedR =
+                            // PL-2 (S04) — under AllData the static graft rides
+                            // the Bootstrap drain (rows retained at the worker,
+                            // grafted below); pre-graft only the residual
+                            // static kinds Bootstrap will not drain (normally
+                            // the empty set). The prefix state + drain consume
+                            // marks, attributes and FK edges — never
+                            // populations — so the deferred graft is invisible
+                            // to them.
+                            if Config.dataCompositionOf cfg = AllData then
+                                let residual =
+                                    Set.difference
+                                        (Hydration.staticKindKeys catalog)
+                                        (Hydration.bootstrapEligible migrationKinds cfg catalog)
+                                Hydration.hydrateStaticSubsetUsing residual sourceTopo cfg catalog
+                            else
+                                Hydration.hydrateCatalogUsing sourceTopo cfg catalog
                         match hydratedR with
                         | Error es -> return Result.failure es
                         | Ok hydrated ->
                             match pipelinedPrefixState cfg hydrated with
                             | Error es -> return Result.failure es
                             | Ok (policy, stateA) ->
-                                let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
                                 let! collectedR =
                                     pipelinedCollect cfg connSpec connectionString migrationKinds hydrated sourceTopo policy stateA
                                 match collectedR with
                                 | Error es -> return Result.failure es
-                                | Ok (prerendered, covered, derived, nullability) ->
+                                | Ok (prerendered, covered, derived, nullability, retained) ->
                                     return
                                         Result.success
-                                            { Hydrated = hydrated
+                                            { ReadCatalog = catalog
+                                              // PL-2 — graft the drain-retained
+                                              // static rows (identity when
+                                              // nothing was retained).
+                                              Hydrated = Hydration.graftStaticPopulations retained hydrated
                                               Migration = migration
                                               Prerendered = prerendered
                                               Covered = covered
@@ -2062,7 +2181,37 @@ module Compose =
             options (openProfilerConnection connectionString)
             ex.Nullability ex.Covered ex.Derived ex.Hydrated Profile.empty
 
-    let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
+    /// PL-1 — everything a combined verb's second leg consumes from the
+    /// publish, named so the second payment is visible: the estate is
+    /// ACQUIRED once (model read, static graft, Bootstrap drain, migration
+    /// binding) and COMPOSED once (the post-chain state); the load/store
+    /// legs thread these values instead of re-reading the live source and
+    /// re-running the chain they just rode.
+    type EstateAcquisition = {
+        /// The model as READ (pre-hydration, pre-rename) — the store leg's
+        /// emitted-schema plane derives from this value (static populations
+        /// are a data-lane graft, never part of the recorded schema plane).
+        ReadCatalog   : Catalog
+        /// The static-grafted catalog (the publish's chain input) — the load
+        /// leg's episode plane derives from this value (parity with the
+        /// published bundle's hydrated rows).
+        Hydrated      : Catalog
+        /// The Bootstrap lane as the publish carried it — drained rows on the
+        /// two-phase schedule, drain-time-prerendered scripts on the
+        /// pipelined arm (equal by the pinned pipelined-equivalence law).
+        BootstrapLane : DataComposer.BootstrapLane
+        Migration     : Projection.Targets.Data.MigrationDependencyContext
+        /// The post-chain `ComposeState` of the publish — the load leg
+        /// renders the seed plan against ITS catalog + topology, so the
+        /// deployed seed cannot drift from the published bundle.
+        FinalState    : ComposeState
+    }
+
+    /// The publish, returning the `EstateAcquisition` beside the report —
+    /// the combined verbs (`runWithConfigAndLoad` / `runWithConfigAndStore`)
+    /// ride this so one verb pays for ONE estate acquisition (PL-1).
+    /// `runWithConfig` is the report-only projection.
+    let runWithConfigAcquiring (cfg: Config.Config) : Task<Result<RunReport * EstateAcquisition>> =
         task {
             // Card S4a — the publish arc rides the spine. The `staged { }`
             // CE owns the "pipeline" umbrella root + the extract / profile /
@@ -2109,10 +2258,17 @@ module Compose =
                         let! report =
                             Staged.stage Stages.emit (fun () ->
                                 task {
+                                    let lane = DataComposer.BootstrapLane.Prerendered extracted.Prerendered
                                     let result =
                                         runWithConfigCore cfg (Ok extracted.Hydrated)
-                                            (DataComposer.BootstrapLane.Prerendered extracted.Prerendered)
-                                            extracted.Migration profile
+                                            lane extracted.Migration profile
+                                        |> Result.map (fun (report, finalState) ->
+                                            report,
+                                            { ReadCatalog = extracted.ReadCatalog
+                                              Hydrated = extracted.Hydrated
+                                              BootstrapLane = lane
+                                              Migration = extracted.Migration
+                                              FinalState = finalState })
                                     emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                     return result
                                 })
@@ -2129,14 +2285,14 @@ module Compose =
                                     // the Bootstrap lane's row source (Bootstrap-always).
                                     let! parsed = readAndHydrateConfigModel cfg
                                     match parsed with
-                                    | Ok (catalog, bootRows, migration) ->
+                                    | Ok (readCatalog, catalog, bootRows, migration) ->
                                         emitStageMarker LogSink.Extract "extract.completed" LogSink.End
                                             (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                                        return Ok (catalog, bootRows, migration)
+                                        return Ok (readCatalog, catalog, bootRows, migration)
                                     | Error errors ->
                                         return Error errors
                                 })
-                        let catalog, bootstrapRows, migration = extracted
+                        let readCatalog, catalog, bootstrapRows, migration = extracted
                         let! profile =
                             Staged.stage Stages.profile (fun () ->
                                 task {
@@ -2154,10 +2310,17 @@ module Compose =
                                 task {
                                     // §7.5 emit — pass chain + sibling-Π emission +
                                     // artifact write.
+                                    let lane = DataComposer.BootstrapLane.Rows bootstrapRows
                                     let result =
                                         runWithConfigCore cfg (Ok catalog)
-                                            (DataComposer.BootstrapLane.Rows bootstrapRows)
-                                            migration profile
+                                            lane migration profile
+                                        |> Result.map (fun (report, finalState) ->
+                                            report,
+                                            { ReadCatalog = readCatalog
+                                              Hydrated = catalog
+                                              BootstrapLane = lane
+                                              Migration = migration
+                                              FinalState = finalState })
                                     emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                     return result
                                 })
@@ -2165,7 +2328,7 @@ module Compose =
                     }
             return
                 match verdict.Disposition with
-                | RunCompleted report -> Result.success report
+                | RunCompleted acquired -> Result.success acquired
                 | RunStopped errors   -> Result.failure errors
                 | RunAborted (_, Some ex) ->
                     // The spine closed the books (the open stage + the root
@@ -2176,97 +2339,146 @@ module Compose =
                 | RunAborted (refusal, None) -> failwith refusal
         }
 
+    /// The report-only publish (`runWithConfigAcquiring` with the
+    /// acquisition dropped) — the established entry for callers without a
+    /// second leg.
+    let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
+        task {
+            let! acquired = runWithConfigAcquiring cfg
+            return acquired |> Result.map fst
+        }
+
     // -- Track W1-B (seam T2): the diff-vs-prior store leg -------------------
 
-    /// The emitted schema plane of a full-export run — `cfg.Model.Path`'s
-    /// catalog after the config-driven rewrites (`applyRenames`). This is the
+    /// The emitted schema plane of a full-export run — the config's model
+    /// after the config-driven rewrites (`applyRenames`). This is the
     /// **same** catalog `runWithConfigCore` projects to the CREATE files, so the
     /// displacement the store leg measures is the displacement the bundle
     /// publishes (B in `B ⊖ A`). Pure; no Profile dependence (the schema plane
     /// is profile-invariant — profiling only annotates the manifest).
-    let private emittedSchema (cfg: Config.Config) : Task<Result<Catalog>> =
+    /// PL-1: the combined verb derives this plane from the publish's OWN
+    /// `EstateAcquisition.ReadCatalog` (`applyRenames` is pure) — this
+    /// standalone reads fresh, and is the identity-gate witness the threaded
+    /// form is pinned against.
+    let emittedSchema (cfg: Config.Config) : Task<Result<Catalog>> =
         task {
             let! parsed = readConfigModel cfg
             return parsed |> Result.bind (applyRenames cfg)
         }
 
     /// AC-X1 (part B, leveled per card P2) — the emitted catalog + the LEVELED
-    /// seed plan for the live-load leg. Re-projects the config's model (genesis
-    /// profile shape; the seed rows are catalog-borne `Modality.Static`,
-    /// profile-independent) through the SAME chain the bundle rode, then renders
-    /// the per-kind seed scripts grouped by topological level
-    /// (`composeRenderedLeveled`). The plan is a faithful PARTITION of the
-    /// published `Data/seed.sql` — same `dispatchSiblings + unionSiblings`
-    /// artifact, same per-kind `RenderedPhase1`/`RenderedPhase2` strings the
-    /// fused bundle concatenates; nothing is re-rendered (the partition law is
-    /// property-witnessed in `DataEmissionComposerTests`). Empty plan when data
-    /// emission is off or the catalog projects no seed statements.
-    /// Synchronous core of `emittedSeedPlan` (extracted so the task surface is a
-    /// single `let!` + `return`, statically compilable in Release — FS3511).
-    let private projectSeedPlan
+    /// seed plan for the live-load leg, projected from the publish's OWN
+    /// `EstateAcquisition` (PL-1): the hydrated catalog, Bootstrap lane,
+    /// migration context and post-chain `ComposeState` are consumed as
+    /// threaded values — no second model read, no second row hydration, no
+    /// second chain run. The seed renders against `FinalState.Catalog` (the
+    /// catalog the publish EMITTED — post-chain, pins honored) under ITS
+    /// stored topology, so the deployed plan cannot drift from the published
+    /// bundle (the parity duty, now BY CONSTRUCTION). The plan remains a
+    /// faithful PARTITION of the published data lanes — same
+    /// `dispatchSiblings + unionSiblings` artifact, same per-kind
+    /// `RenderedPhase1`/`RenderedPhase2` strings (the partition law is
+    /// property-witnessed in `DataEmissionComposerTests`). Empty plan when
+    /// data emission is off or the catalog projects no seed statements.
+    let projectSeedPlanUsing
         (cfg: Config.Config)
-        (parsed: Result<Catalog>)
-        (bootstrapRows: Map<SsKey, StaticRow list>)
-        (migration: Projection.Targets.Data.MigrationDependencyContext)
+        (acquired: EstateAcquisition)
         : Result<Catalog * DataComposer.LeveledDeploymentText> =
-        match parsed |> Result.bind (applyRenames cfg) with
+        match applyRenames cfg acquired.Hydrated with
         | Error es -> Result.failure es
-        | Ok catalog ->
-            // §6 — the SHARED triple bind-all. The store-leg threads the SAME
+        | Ok emitted ->
+            // §6 — the SHARED triple bind-all. The load leg threads the SAME
             // policy/folders/groups set the publish path binds, so the deployed
             // leveled seed never drifts from the bundle (the parity duty).
-            match bindShapingTriple cfg catalog with
-            | Ok (policy, folders, groups) ->
-                let _, finalState =
-                    projectWithState policy Profile.empty folders groups catalog
+            match bindShapingTriple cfg emitted with
+            | Error errs -> Result.failure errs
+            | Ok (policy, _folders, _groups) ->
                 if not policy.Emission.EmitData then
-                    Result.success (catalog, DataComposer.LeveledDeploymentText.empty)
+                    Result.success (emitted, DataComposer.LeveledDeploymentText.empty)
                 else
+                    let renderCatalog = acquired.FinalState.Catalog
+                    // The chain's TopologicalOrderPass already ran Kahn/Tarjan
+                    // over this exact catalog — thread its order; a filtered
+                    // chain without the pass recomputes (mirrors the bundle
+                    // decoration's fallback).
+                    let topo =
+                        match acquired.FinalState.TopologicalOrder with
+                        | Some t -> t
+                        | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle renderCatalog).Value
                     match
-                        // Bootstrap-always — the store-leg threads the SAME
-                        // Bootstrap rows the publish path does (parity duty), so
-                        // the deployed leveled seed never drifts from the bundle.
-                        // Migration-context wiring (2026-06-15) — likewise the
-                        // SAME operator-curated Migration lane, for the same parity.
-                        DataComposer.composeRenderedLeveledWithBootstrap
-                            policy finalState.Catalog Profile.empty
-                            migration
-                            bootstrapRows
+                        DataComposer.composeRenderedLeveledWithBootstrapLaneUsing
+                            topo policy renderCatalog Profile.empty
+                            acquired.Migration
+                            acquired.BootstrapLane
                             UserRemapContext.empty
                     with
-                    | Ok plan -> Result.success (catalog, plan)
+                    | Ok plan -> Result.success (emitted, plan)
                     | Error err ->
                         // Mirrors the bundle decoration's invariant: a valid
                         // catalog never fails the composer (the keyset is
                         // `Catalog.allKinds`).
-                        invalidOp (sprintf "Compose.projectSeedPlan: DataEmissionComposer.composeRenderedLeveled: %A" err)
-            | Error errs -> Result.failure errs
+                        invalidOp (sprintf "Compose.projectSeedPlanUsing: DataEmissionComposer.composeRenderedLeveled: %A" err)
 
-    let private emittedSeedPlan (cfg: Config.Config) : Task<Result<Catalog * DataComposer.LeveledDeploymentText>> =
+    /// Standalone compute-then-delegate entry (the `hydrateCatalogUsing`
+    /// pattern): ONE model read + hydration from cfg, the profile-invariant
+    /// prefix state (no artifact fold — S52's carrier), then
+    /// `projectSeedPlanUsing`. The combined verb threads the publish's
+    /// acquisition instead (`runWithConfigAndLoad`); this entry serves
+    /// standalone seed-plan consumers and is the identity-gate witness the
+    /// threaded form is pinned against.
+    let emittedSeedPlan (cfg: Config.Config) : Task<Result<Catalog * DataComposer.LeveledDeploymentText>> =
         task {
-            // WP6 step 4 parity — hydrate the store-leg catalog the SAME way the
-            // publish path does (`readAndHydrateConfigModel`), so the deployed
-            // seed plan reflects the same hydrated rows the bundle published.
+            // WP6 step 4 parity — hydrate the standalone seed plan the SAME way
+            // the publish path does (`readAndHydrateConfigModel`), so the
+            // deployed seed plan reflects the same hydrated rows the bundle
+            // published.
             let! parsed = readAndHydrateConfigModel cfg
-            match parsed with
-            | Error es -> return Result.failure es
-            | Ok (catalog, bootRows, migration) -> return projectSeedPlan cfg (Ok catalog) bootRows migration
+            return
+                match parsed with
+                | Error es -> Result.failure es
+                | Ok (readCatalog, hydrated, bootRows, migration) ->
+                    match applyRenames cfg hydrated with
+                    | Error es -> Result.failure es
+                    | Ok renamed ->
+                        match bindShapingTriple cfg renamed with
+                        | Error errs -> Result.failure errs
+                        | Ok (policy, _folders, groups) ->
+                            // Pins resolve against the ORIGINAL (pre-rename)
+                            // catalog — same as `runWithConfigCore`.
+                            let pins = physicalRenamePins cfg hydrated
+                            projectSeedPlanUsing cfg
+                                { ReadCatalog = readCatalog
+                                  Hydrated = hydrated
+                                  BootstrapLane = DataComposer.BootstrapLane.Rows bootRows
+                                  Migration = migration
+                                  FinalState = composePrefixState pins policy groups renamed }
         }
 
-    /// State A — the prior emission's schema, reconstructed from the durable
-    /// `EpisodicLifecycle` at `path` (the FTC fold over the chain). A **missing
-    /// store is genesis**: A = ∅ (every kind `Add`, no `Remove`) — byte-faithful
-    /// to today's first-emission behavior. A malformed store is fail-closed
-    /// (`StoreReadFailed`), never silently treated as genesis.
-    let private priorSchemaFromStore (path: string) : Result<Catalog, FullExportStoreError> =
+    /// PL-1 (S51) — the ONE durable read per store leg. `None` is genesis (no
+    /// file yet); a malformed store is fail-closed (`StoreReadFailed`), never
+    /// silently treated as genesis. Every store-leg consumer below takes the
+    /// loaded chain, so one `runStoreLeg` pays `File.ReadAllText` +
+    /// `JsonDocument.Parse` + the per-episode `CatalogCodec.deserialize` +
+    /// the per-edge monotone verification exactly once (previously four
+    /// independent loads of the same file in one leg).
+    let private loadStoreChain (path: string) : Result<EpisodicLifecycle option, FullExportStoreError> =
         if System.IO.File.Exists path then
             match LifecycleStore.load path with
             | Error e -> Error (StoreReadFailed (string e))
-            | Ok chain ->
-                match EpisodicLifecycle.reconstructLatestSchema chain with
-                | Ok a    -> Ok a
-                | Error e -> Error (DisplacementFailed e)
-        else
+            | Ok chain -> Ok (Some chain)
+        else Ok None
+
+    /// State A — the prior emission's schema. A **missing store is genesis**:
+    /// A = ∅ (every kind `Add`, no `Remove`) — byte-faithful to today's
+    /// first-emission behavior. On a loaded chain the recovery reads the
+    /// stored latest snapshot directly (each episode carries FULL state —
+    /// `Episode.fs`'s own contract; the FTC fold over the edge diffs is the
+    /// VERIFICATION property, pinned by the `6.H.2 reconstructLatestSchema`
+    /// law test, not the recovery path — S53).
+    let private priorSchemaOfChain (chain: EpisodicLifecycle option) : Result<Catalog, FullExportStoreError> =
+        match chain with
+        | Some c -> Ok (Episode.schema (EpisodicLifecycle.latest c))
+        | None ->
             match Catalog.create [] [] with
             | Ok empty   -> Ok empty
             | Error errs -> Error (StoreReadFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
@@ -2274,76 +2486,73 @@ module Compose =
     /// The prior chain's **accumulated** `.refactorlog` — every rename the
     /// timeline has ever performed, folded over its per-edge schema diffs via
     /// `RefactorLogEmitter.emit` + `accumulate` (AC-P6, the cumulative document).
-    /// Genesis (no file / genesis-only chain) ⇒ empty. This is the prior the new
+    /// Genesis (no chain / genesis-only chain) ⇒ empty. This is the prior the new
     /// displacement's refactorlog accumulates against, so a rename already
-    /// committed is not re-emitted (deduped by `OperationKey`).
-    let private priorAccumulatedRefactorLog (path: string) : Result<RefactorLogEntry list, FullExportStoreError> =
-        if not (System.IO.File.Exists path) then Ok []
-        else
-            match LifecycleStore.load path with
-            | Error e -> Error (StoreReadFailed (string e))
-            | Ok chain ->
-                match EpisodicLifecycle.schemaEvolutionChain chain with
-                | Error e -> Error (DisplacementFailed e)
-                | Ok edgeDiffs ->
-                    // Fold each edge's refactorlog into the cumulative log, in
-                    // timeline order, deduping by OperationKey (prior wins).
-                    let rec loop acc remaining =
-                        match remaining with
-                        | [] -> Ok (acc : RefactorLogEntry list)
-                        | edge :: rest ->
-                            match RefactorLogEmitter.emit edge with
-                            | Error e -> Error (DisplacementFailed e)
-                            | Ok artifact ->
-                                loop (RefactorLogEmitter.accumulateArtifact acc artifact) rest
-                    loop [] edgeDiffs
+    /// committed is not re-emitted (deduped by `OperationKey`). The per-edge
+    /// diff chain is computed here ONCE per store leg (S53 — the second
+    /// computation lived in the retired FTC-fold recovery above).
+    let private priorAccumulatedRefactorLogOfChain
+        (chain: EpisodicLifecycle option)
+        : Result<RefactorLogEntry list, FullExportStoreError> =
+        match chain with
+        | None -> Ok []
+        | Some c ->
+            match EpisodicLifecycle.schemaEvolutionChain c with
+            | Error e -> Error (DisplacementFailed e)
+            | Ok edgeDiffs ->
+                // Fold each edge's refactorlog into the cumulative log, in
+                // timeline order, deduping by OperationKey (prior wins).
+                let rec loop acc remaining =
+                    match remaining with
+                    | [] -> Ok (acc : RefactorLogEntry list)
+                    | edge :: rest ->
+                        match RefactorLogEmitter.emit edge with
+                        | Error e -> Error (DisplacementFailed e)
+                        | Ok artifact ->
+                            loop (RefactorLogEmitter.accumulateArtifact acc artifact) rest
+                loop [] edgeDiffs
 
-    /// The next monotone `EpisodeCoordinate` for the timeline at `path` — ordinal
-    /// 0 for a genesis (no file), else the latest episode's ordinal + 1. Mirrors
-    /// the migrate path's coordinate derivation; the boundary supplies
+    /// The next monotone `EpisodeCoordinate` for the loaded timeline — ordinal
+    /// 0 for a genesis (no chain), else the latest episode's ordinal + 1.
+    /// Mirrors the migrate path's coordinate derivation; the boundary supplies
     /// `environment` + `at` (Core holds no clock).
-    let private nextStoreCoordinate
-        (path: string)
+    let private nextStoreCoordinateOfChain
+        (chain: EpisodicLifecycle option)
         (environment: Environment)
         (at: System.DateTimeOffset)
         : Result<EpisodeCoordinate, FullExportStoreError> =
-        let ordinalR : Result<int, FullExportStoreError> =
-            if System.IO.File.Exists path then
-                match LifecycleStore.load path with
-                | Error e -> Error (StoreReadFailed (string e))
-                | Ok chain -> Ok (Version.ordinal (Episode.version (EpisodicLifecycle.latest chain)) + 1)
-            else Ok 0
-        match ordinalR with
-        | Error e -> Error e
-        | Ok ordinal ->
-            match Version.create ordinal (sprintf "v%d" ordinal) with
-            | Ok version -> Ok (EpisodeCoordinate.create version environment at)
-            | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+        let ordinal =
+            match chain with
+            | Some c -> Version.ordinal (Episode.version (EpisodicLifecycle.latest c)) + 1
+            | None -> 0
+        match Version.create ordinal (sprintf "v%d" ordinal) with
+        | Ok version -> Ok (EpisodeCoordinate.create version environment at)
+        | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
 
     /// Record exactly ONE new episode (the run's emitted schema as the new
-    /// schema plane) onto the timeline at `path`. Genesis-opens on the first
-    /// run; load-and-appends thereafter. Fail-closed on a malformed store or a
-    /// non-monotone append. Reuses `LifecycleStore.load/save` + the
-    /// `EpisodicLifecycle` monotone-history invariant.
-    let private recordEpisode
+    /// schema plane) onto the loaded timeline, saving to `path`. Genesis-opens
+    /// on the first run; appends thereafter. Fail-closed on a non-monotone
+    /// append. Reuses `LifecycleStore.save` + the `EpisodicLifecycle`
+    /// monotone-history invariant (already re-verified per edge by the leg's
+    /// one load).
+    let private recordEpisodeOnChain
         (path: string)
         (timeline: Timeline)
         (episode: Episode)
+        (chain: EpisodicLifecycle option)
         : Result<EpisodicLifecycle, FullExportStoreError> =
         let chainR : Result<EpisodicLifecycle, FullExportStoreError> =
-            if System.IO.File.Exists path then
-                match LifecycleStore.load path with
-                | Error e -> Error (StoreReadFailed (string e))
-                | Ok existing ->
-                    match EpisodicLifecycle.append episode existing with
-                    | Ok chain  -> Ok chain
-                    | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
-            else Ok (EpisodicLifecycle.genesis timeline episode)
+            match chain with
+            | Some existing ->
+                match EpisodicLifecycle.append episode existing with
+                | Ok appended -> Ok appended
+                | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+            | None -> Ok (EpisodicLifecycle.genesis timeline episode)
         match chainR with
         | Error e -> Error e
-        | Ok chain ->
-            match LifecycleStore.save path chain with
-            | Ok ()   -> Ok chain
+        | Ok appended ->
+            match LifecycleStore.save path appended with
+            | Ok ()   -> Ok appended
             | Error e -> Error (StoreReadFailed (string e))
 
     /// The diff-vs-prior store leg for one full-export run (seam T2). Given the
@@ -2376,11 +2585,15 @@ module Compose =
         (appliedTransforms: (SsKey * OverlayAxis option) list)
         (emitted: Catalog)
         : Result<FullExportStoreLeg, FullExportStoreError> =
-        match priorSchemaFromStore path with
+        // PL-1 (S51) — ONE durable load; the four consumers below thread it.
+        match loadStoreChain path with
+        | Error e -> Error e
+        | Ok loaded ->
+        match priorSchemaOfChain loaded with
         | Error e -> Error e
         | Ok prior ->
             let displacement = CatalogDiff.between prior emitted
-            match priorAccumulatedRefactorLog path with
+            match priorAccumulatedRefactorLogOfChain loaded with
             | Error e -> Error e
             | Ok priorLog ->
                     match RefactorLogEmitter.emit displacement with
@@ -2388,7 +2601,7 @@ module Compose =
                     | Ok currentArtifact ->
                         let accumulated =
                             RefactorLogEmitter.accumulateArtifact priorLog currentArtifact
-                        match nextStoreCoordinate path environment at with
+                        match nextStoreCoordinateOfChain loaded environment at with
                         | Error e -> Error e
                         | Ok coordinate ->
                             // The emitted schema is the new episode's schema plane
@@ -2400,7 +2613,7 @@ module Compose =
                             let episode =
                                 Episode.create coordinate emitted Profile.empty refactorLogRef data
                                 |> Episode.withProvenance tolerances appliedTransforms
-                            match recordEpisode path timeline episode with
+                            match recordEpisodeOnChain path timeline episode loaded with
                             | Error e -> Error e
                             | Ok chain ->
                                 // The ChangeManifest of the edge prior → emitted.
@@ -2426,10 +2639,12 @@ module Compose =
         | DisplacementFailed e -> ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
         | RecordFailed m -> ValidationError.create "pipeline.fullExport.store.recordFailed" m
 
-    /// The diff-vs-prior store leg for a config, or `Ok None` when no store is
-    /// supplied. Extracted so `runWithConfigAndStore` keeps a two-level await
-    /// depth (the three-level `let!`-in-match nesting is not statically
-    /// compilable under Release — FS3511).
+    /// The diff-vs-prior store leg over the publish's own acquisition, or
+    /// `Ok None` when no store is supplied. PL-1: the emitted-schema plane
+    /// derives from `acquired.ReadCatalog` by the same pure `applyRenames`
+    /// the retired second read fed — no second `MetadataSnapshotRunner` run
+    /// against the live source. Pure/synchronous (no await — the acquisition
+    /// is already in hand).
     /// `appliedTransforms` is the run's §5.5 overlay enumeration, taken from
     /// `RunReport.Manifest.AppliedTransforms` (the composed run the caller
     /// already produced), threaded onto the recorded episode (NM-33). The
@@ -2437,28 +2652,25 @@ module Compose =
     /// available: the unified config carries no per-environment divergence axis
     /// and `Tolerance.parse` has no production caller, so a non-strict residual
     /// is not yet reachable at this site (FLAGGED on `runStoreLeg`).
-    let private storeLegFromConfig
+    let private storeLegFromAcquisition
         (cfg: Config.Config)
+        (acquired: EstateAcquisition)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
         (appliedTransforms: (SsKey * OverlayAxis option) list)
-        : Task<Result<FullExportStoreLeg option>> =
+        : Result<FullExportStoreLeg option> =
         match storePath with
-        | None -> Task.FromResult (Result.success None)
-        | Some p when System.String.IsNullOrWhiteSpace p -> Task.FromResult (Result.success None)
+        | None -> Result.success None
+        | Some p when System.String.IsNullOrWhiteSpace p -> Result.success None
         | Some path ->
-            task {
-                let! emittedR = emittedSchema cfg
-                return
-                    match emittedR with
-                    | Error errors -> Result.failure errors
-                    | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
-                        | Ok leg -> Result.success (Some leg)
-                        | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
-            }
+            match applyRenames cfg acquired.ReadCatalog with
+            | Error errors -> Result.failure errors
+            | Ok emitted ->
+                match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
+                | Ok leg -> Result.success (Some leg)
+                | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
 
     /// Track W1-B (seam T2) — `runWithConfig` with the **optional diff-vs-prior
     /// store leg**. Additive over the genesis path: when `storePath` is `None`
@@ -2485,12 +2697,15 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<RunReport * FullExportStoreLeg option>> =
         task {
-            let! reportResult = runWithConfig cfg
-            match reportResult with
-            | Error errors -> return Result.failure errors
-            | Ok report ->
-                let! legResult = storeLegFromConfig cfg storePath timeline environment at report.Manifest.AppliedTransforms
-                return legResult |> Result.map (fun legOpt -> report, legOpt)
+            // PL-1 — one estate acquisition: the store leg consumes the
+            // publish's own read catalog instead of re-extracting the model.
+            let! acquiredR = runWithConfigAcquiring cfg
+            return
+                match acquiredR with
+                | Error errors -> Result.failure errors
+                | Ok (report, acquired) ->
+                    storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms
+                    |> Result.map (fun legOpt -> report, legOpt)
         }
 
     /// AC-X1 (part B) — the **live data-load leg core**: load the idempotent
@@ -2622,28 +2837,25 @@ module Compose =
     /// deployed on the sink (the publication→deploy→load premise: the operator
     /// deploys the published DDL + enables CDC for the SSIS consumer, then the
     /// data lands).
-    /// Emit-then-load for a config: re-project the seed plan and load it.
-    /// Extracted so `runWithConfigAndLoad` keeps a two-level await depth
-    /// (FS3511-safe; the three-level `let!`-in-match nesting does not
-    /// statically compile).
-    let private loadFromConfig
+    /// Emit-then-load over the publish's own acquisition (PL-1): the seed
+    /// plan projects from threaded values (`projectSeedPlanUsing`) — no
+    /// second extract, hydration, or chain run — then loads. Sync dispatch
+    /// into the Task-returning load (FS3511-safe call shape).
+    let private loadFromAcquisition
         (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
+        (acquired: EstateAcquisition)
         (sink: SqlConnection)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
         : Task<Result<FullExportStoreLeg option * int>> =
-        task {
-            let! seedR = emittedSeedPlan cfg
-            return!
-                match seedR with
-                | Error errors -> Task.FromResult (Result.failure errors)
-                | Ok (emitted, plan) ->
-                    loadLeveledSeedAndRecord cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
-        }
+        match projectSeedPlanUsing cfg acquired with
+        | Error errors -> Task.FromResult (Result.failure errors)
+        | Ok (emitted, plan) ->
+            loadLeveledSeedAndRecord cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
 
     /// Card P2 re-threaded seam: the second argument is the LEVELED seed
     /// executor (`Deploy.executeLeveledSeed <connection string>` at the CLI
@@ -2660,10 +2872,13 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<RunReport * FullExportStoreLeg option * int>> =
         task {
-            let! reportResult = runWithConfig cfg
-            match reportResult with
+            // PL-1 — one estate acquisition: the load leg consumes the
+            // publish's extract triple + composed state instead of paying a
+            // second full publish (model read + hydration + chain + render).
+            let! acquiredR = runWithConfigAcquiring cfg
+            match acquiredR with
             | Error errors -> return Result.failure errors
-            | Ok report ->
-                let! loadResult = loadFromConfig cdcCaptureTotal executeLeveled cfg sink storePath timeline environment at
+            | Ok (report, acquired) ->
+                let! loadResult = loadFromAcquisition cdcCaptureTotal executeLeveled cfg acquired sink storePath timeline environment at
                 return loadResult |> Result.map (fun (leg, cdcDelta) -> report, leg, cdcDelta)
         }

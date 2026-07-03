@@ -116,11 +116,10 @@ module ForeignKeyPass =
     /// as `"meanChildCount"` in Metadata so downstream dashboard consumers
     /// can distinguish these regimes without re-running the profiler.
     let private cardinalityMetadata
-        (referenceKey: SsKey)
-        (profile: Profile)
+        (cardinality: ForeignKeyCardinality option)
         (baseMetadata: Map<string, string>)
         : Map<string, string> =
-        match Profile.tryFindForeignKeyCardinality referenceKey profile with
+        match cardinality with
         | None -> baseMetadata
         | Some card ->
             match card.ChildCountDistribution.Moments with
@@ -137,10 +136,9 @@ module ForeignKeyPass =
     /// evidence that the FK is actively used is a signal to re-enable.
     let private cardinalitySuggestedConfig
         (interventionId: string)
-        (referenceKey: SsKey)
-        (profile: Profile)
+        (cardinality: ForeignKeyCardinality option)
         : SuggestedConfig option =
-        match Profile.tryFindForeignKeyCardinality referenceKey profile with
+        match cardinality with
         | None -> None
         | Some card ->
             match card.ChildCountDistribution.Moments with
@@ -180,9 +178,12 @@ module ForeignKeyPass =
     ///
     /// Code namespace: `tightening.foreignKey.<reason>`.
     let private opportunityEntry (profile: Profile) (decision: ForeignKeyDecision) : DiagnosticEntry option =
+        // PL-5 (S40) — ONE cardinality resolution per decision, threaded to
+        // both the metadata and the suggested-config builders.
+        let cardinality = Profile.tryFindForeignKeyCardinality decision.ReferenceKey profile
         let baseMetadata =
             Map.ofList [ "interventionId", decision.InterventionId ]
-            |> cardinalityMetadata decision.ReferenceKey profile
+            |> cardinalityMetadata cardinality
         let mkEntry severity code message suggestedConfig =
             { Source          = passName
               Severity        = severity
@@ -213,7 +214,7 @@ module ForeignKeyPass =
                     "tightening.foreignKey.policyDisabled"
                     (Message.foreignKeyNotCreated
                         "Enable policy support before enforcement can proceed.")
-                    (cardinalitySuggestedConfig decision.InterventionId decision.ReferenceKey profile))
+                    (cardinalitySuggestedConfig decision.InterventionId cardinality))
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans orphanCount) ->
             Some (mkEntry
                     DiagnosticSeverity.Warning

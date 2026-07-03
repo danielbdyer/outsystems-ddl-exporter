@@ -37,12 +37,17 @@ module MergeRender =
         (typedRows: Map<Name, SqlLiteral> list)
         : string =
         use _ = Bench.scope (System.String.Concat(bench, ".renderMerge"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
+        // PL-3 (S19/S38/S20/S59) — the per-kind render vocabulary binds
+        // ONCE at the top: row count (was up to three O(n) length walks),
+        // writable attributes (was ×3 across the inline + staged paths),
+        // and the row-identity match names (was ×2).
+        let rowCount = List.length typedRows
+        let writable = KindColumns.writableAttributes k
+        let matchNames = KindColumns.matchColumnNames deferred k
         // PERF_HARNESS §3.6 label 2: rows per rendered MERGE — makes rows/sec
         // derivable from the <label>/<label>.rows pair in harness diffs.
-        Bench.recordSample (System.String.Concat(bench, ".renderMerge.rows")) (int64 typedRows.Length)  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
-        let table : TableId =
-            { Schema = k.Physical.Schema
-              Table  = k.Physical.Table; Catalog = None }
+        Bench.recordSample (System.String.Concat(bench, ".renderMerge.rows")) (int64 rowCount)  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
+        let table = TableId.withoutCatalog k.Physical
         // Slice 5.13.cdc-silence-cross-emitter: exclude deferred columns from the
         // WHEN MATCHED UPDATE's UpdColumns — they are Phase-2-owned; including
         // them makes an idempotent redeploy set the column to the Phase-1 NULL,
@@ -57,7 +62,7 @@ module MergeRender =
         // WHEN MATCHED arm entirely (matched rows are identical over every
         // matchable column by construction, and `buildMergeStatement`
         // skips the arm when UpdColumns is empty).
-        let matchColumns = KindColumns.matchColumnNames deferred k |> Set.ofList
+        let matchColumns = matchNames |> Set.ofList
         let updColumns =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
@@ -72,21 +77,21 @@ module MergeRender =
         let args : MergeBuildArgs =
             {
                 Target     = table
-                AllColumns = KindColumns.orderedColumnNames k
+                AllColumns = writable |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
                 // Row identity: true PKs, or the writable-column fallback
                 // for an acknowledged no-PK kind (never empty — an empty
                 // ON-term list is a hard `foldBool` refusal downstream).
-                PkColumns  = KindColumns.matchColumnNames deferred k
+                PkColumns  = matchNames
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
+                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred writable)
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 RowSource   = MergeRowSource.InlineValues
             }
-        if DataStagingPolicy.shouldStage staging (List.length typedRows) then
+        if DataStagingPolicy.shouldStage staging rowCount then
             Bench.recordSample (System.String.Concat(bench, ".staged")) 1L  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
             StagedMerge.renderStagedPhase1 bench verification bracketIdentity
-                (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
+                (DataStagingPolicy.shouldIndex staging rowCount) table writable k
                 args
         else
         Bench.recordSample (System.String.Concat(bench, ".inline")) 1L  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
@@ -116,11 +121,51 @@ module MergeRender =
             System.String.Concat(  // LINT-ALLOW: terminal guard-batch prefix (NM-73); the guard is the typed-AST parse-template render of V1's symmetric-EXCEPT THROW, framed as its own GO batch ahead of the MERGE; the V1 `GO` batch separator is the terminal-text literal; BCL `String.Concat` is the right primitive at this terminal-text boundary
                 guardText, "\nGO\n", mergeBatch)
 
-    /// Render one Phase-2 UPDATE for a row whose Phase-1 MERGE deferred its
+    /// Render Phase-2 UPDATEs for rows whose Phase-1 MERGE deferred their
     /// same-SCC FK columns to NULL. The UPDATE scopes by the row's PK
     /// (`whereCells`) and SETs each deferred column to its original value. Per the
     /// Tier-3 hard-requirement, the typed `ScriptDomBuild.buildUpdateStatement`
     /// flows through `ScriptDomGenerate.renderDataBatch`'s `;\nGO\n` framing.
+    /// PL-3 (S27/S57) — the per-KIND prebound renderer: the Bench label,
+    /// deploy target, and the SET/WHERE attribute projections are per-kind
+    /// constants (the staged sibling `renderStagedPhase2` already hoists the
+    /// same projections); the row loop threads only `typedValues`. The K13
+    /// kill bounds the per-row lane at the ≤1000-row staging threshold, so
+    /// this is as much the cleaner shape as it is wall-clock.
+    let renderUpdateForKind
+        (bench: string)
+        (cdcAware: bool)
+        (k: Kind)
+        (deferred: Set<Name>)
+        : Map<Name, SqlLiteral> -> string =
+        let label = System.String.Concat(bench, ".renderUpdate")  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
+        let table = TableId.withoutCatalog k.Physical
+        let setAttrs =
+            k.Attributes
+            |> List.filter (fun a -> Set.contains a.Name deferred)
+        // Row scope: true PKs, or the writable-column fallback for an
+        // acknowledged no-PK kind. The fallback EXCLUDES the deferred
+        // columns so the UPDATE can join back to the Phase-1 row whose
+        // deferred columns were intentionally nulled (matching on them
+        // would compare the staged real value against the Phase-1 NULL
+        // and never find the row).
+        let whereAttrs = KindColumns.matchAttributes deferred k
+        fun (typedValues: Map<Name, SqlLiteral>) ->
+            use _ = Bench.scope label
+            let cellOf (a: Attribute) : string * SqlLiteral =
+                let lit =
+                    Map.tryFind a.Name typedValues
+                    |> Option.defaultValue SqlLiteral.NullLit
+                ColumnRealization.columnNameText a.Column, lit
+            let args : UpdateBuildArgs =
+                { Target     = table
+                  SetCells   = setAttrs |> List.map cellOf
+                  WhereCells = whereAttrs |> List.map cellOf
+                  CdcAware   = cdcAware }
+            ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
+
+    /// The one-row compute-then-delegate form (single-shot callers; the
+    /// emitters' row loops prebind `renderUpdateForKind`).
     let renderUpdate
         (bench: string)
         (cdcAware: bool)
@@ -128,31 +173,4 @@ module MergeRender =
         (deferred: Set<Name>)
         (typedValues: Map<Name, SqlLiteral>)
         : string =
-        use _ = Bench.scope (System.String.Concat(bench, ".renderUpdate"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
-        let table : TableId =
-            { Schema = k.Physical.Schema
-              Table  = k.Physical.Table; Catalog = None }
-        let cellOf (a: Attribute) : string * SqlLiteral =
-            let lit =
-                Map.tryFind a.Name typedValues
-                |> Option.defaultValue SqlLiteral.NullLit
-            ColumnRealization.columnNameText a.Column, lit
-        let setCells =
-            k.Attributes
-            |> List.filter (fun a -> Set.contains a.Name deferred)
-            |> List.map cellOf
-        // Row scope: true PKs, or the writable-column fallback for an
-        // acknowledged no-PK kind. The fallback EXCLUDES the deferred
-        // columns so the UPDATE can join back to the Phase-1 row whose
-        // deferred columns were intentionally nulled (matching on them
-        // would compare the staged real value against the Phase-1 NULL
-        // and never find the row).
-        let whereCells =
-            KindColumns.matchAttributes deferred k
-            |> List.map cellOf
-        let args : UpdateBuildArgs =
-            { Target     = table
-              SetCells   = setCells
-              WhereCells = whereCells
-              CdcAware   = cdcAware }
-        ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
+        renderUpdateForKind bench cdcAware k deferred typedValues

@@ -223,6 +223,36 @@ module Deploy =
                 ()
         }
 
+    /// PL-6 (S14) — realization of PRE-SPLIT batch segments: the caller
+    /// holds the batch structure it assembled from typed statements
+    /// moments earlier (a joined Phase-2 UPDATE list, one wipe DELETE,
+    /// one rename), so the `TSql160Parser` re-parse `executeBatch` pays
+    /// to REDISCOVER those boundaries is passed by construction. Each
+    /// caller passes exactly the segment list the splitter would have
+    /// produced from its GO-free text (for the no-`GO` case: the
+    /// singleton), so the per-segment command texts and round-trip
+    /// count are unchanged. Semantics mirror the splitter's output
+    /// (per-segment `Trim`, whitespace-only segments dropped).
+    /// `executeBatch` remains the entry for text of unknown provenance
+    /// (operator-supplied scripts may carry `GO`).
+    let executeSegments (cnn: SqlConnection) (segments: string list) : Task<unit> =
+        task {
+            use _ = Bench.scope "deploy.executeSegments"
+            let cleaned =
+                segments
+                |> List.map (fun s -> s.Trim())
+                |> List.filter (fun s -> s <> "")
+            Bench.recordSample "deploy.executeSegments.segments" (int64 (List.length cleaned))
+            for segment in cleaned do
+                use _ = Bench.scope "deploy.executeSegments.segment"
+                Bench.recordSample "deploy.executeSegments.segment.bytes" (int64 segment.Length)
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <- segment
+                cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                let! _ = cmd.ExecuteNonQueryAsync()
+                ()
+        }
+
     /// X4 / X8 / X5 — the change-measure ‖·‖ (`WAVE_6_ALGEBRA.md`),
     /// physically the CDC capture count, as a deploy-time measurement
     /// primitive: force a synchronous capture pass, then sum the production
@@ -595,9 +625,11 @@ module Deploy =
                 }
 
             let appendDdl (s: Statement) =
-                let sb = System.Text.StringBuilder()
-                Render.toSql sb s
-                pendingDdl.Append(sb.ToString()) |> ignore
+                // PL-6 (S33): `Render.toSql` writes into any StringBuilder —
+                // the pending-DDL buffer IS the carrier (the prior throwaway
+                // local builder paid each statement's text two more times:
+                // ToString + Append).
+                Render.toSql pendingDdl s
 
             for s in Bench.streamProbe "deploy.executeStream.input" statements do
                 match s with

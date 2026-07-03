@@ -1053,53 +1053,142 @@ module Profile =
         && UserPopulation.isEmpty p.SourceUsers
         && UserPopulation.isEmpty p.TargetUsers
 
+    // --------------------------------------------------------------------
+    // PL-5 (S35) — per-Profile evidence indexes on the `Catalog.kindIndex`
+    // `ConditionalWeakTable` precedent (the ONE sanctioned cache shape:
+    // keyed by the immutable value itself, so staleness is impossible by
+    // construction). The tightening / anomaly passes probe these lookups
+    // per attribute × per pass over ONE threaded Profile value — the
+    // linear list scans made that O(attributes × profile-size) per chain
+    // run. The `tryFind*` signatures stay put; the bodies consult the
+    // index. FIRST-WINS folds preserve `List.tryFind`/`tryPick` semantics
+    // exactly on a duplicate key (`Map.ofList` would be last-wins).
+    // --------------------------------------------------------------------
+
+    let private firstWins (keyOf: 'a -> SsKey) (items: 'a list) : Map<SsKey, 'a> =
+        items
+        |> List.fold
+            (fun m item ->
+                let key = keyOf item
+                if Map.containsKey key m then m else Map.add key item m)
+            Map.empty
+
+    let private columnIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Profile, Map<SsKey, ColumnProfile>>()
+
+    let private foreignKeyIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Profile, Map<SsKey, ForeignKeyReality>>()
+
+    let private fkCardinalityIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Profile, Map<SsKey, ForeignKeyCardinality>>()
+
+    let private fkSelectivityIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Profile, Map<SsKey, ForeignKeySelectivity>>()
+
+    let private uniqueIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<Profile, Map<SsKey, UniqueCandidateProfile>>()
+
+    /// One pass over `Distributions` yields the three probe shapes:
+    /// first Categorical per key, first Numeric per key, first ANY per key.
+    let private distributionIndexCache =
+        System.Runtime.CompilerServices.ConditionalWeakTable<
+            Profile,
+            Map<SsKey, CategoricalDistribution> * Map<SsKey, NumericDistribution> * Map<SsKey, AttributeDistribution>>()
+
+    let private cachedIndex
+        (cache: System.Runtime.CompilerServices.ConditionalWeakTable<Profile, 'idx>)
+        (build: Profile -> 'idx)
+        (p: Profile)
+        : 'idx =
+        match cache.TryGetValue(p) with
+        | true, idx -> idx
+        | false, _ ->
+            let idx = build p
+            cache.GetValue(
+                p,
+                System.Runtime.CompilerServices.ConditionalWeakTable<Profile, 'idx>.CreateValueCallback(fun _ -> idx))
+
+    let private columnIndex (p: Profile) : Map<SsKey, ColumnProfile> =
+        cachedIndex columnIndexCache (fun p -> firstWins (fun (c: ColumnProfile) -> c.AttributeKey) p.Columns) p
+
+    let private foreignKeyIndex (p: Profile) : Map<SsKey, ForeignKeyReality> =
+        cachedIndex foreignKeyIndexCache (fun p -> firstWins (fun (fk: ForeignKeyReality) -> fk.ReferenceKey) p.ForeignKeys) p
+
+    let private fkCardinalityIndex (p: Profile) : Map<SsKey, ForeignKeyCardinality> =
+        cachedIndex fkCardinalityIndexCache (fun p -> firstWins (fun (c: ForeignKeyCardinality) -> c.ReferenceKey) p.ForeignKeyCardinalities) p
+
+    let private fkSelectivityIndex (p: Profile) : Map<SsKey, ForeignKeySelectivity> =
+        cachedIndex fkSelectivityIndexCache (fun p -> firstWins (fun (s: ForeignKeySelectivity) -> s.ReferenceKey) p.ForeignKeySelectivities) p
+
+    let private uniqueIndex (p: Profile) : Map<SsKey, UniqueCandidateProfile> =
+        cachedIndex uniqueIndexCache (fun p -> firstWins (fun (u: UniqueCandidateProfile) -> u.AttributeKey) p.UniqueCandidates) p
+
+    let private distributionIndex
+        (p: Profile)
+        : Map<SsKey, CategoricalDistribution> * Map<SsKey, NumericDistribution> * Map<SsKey, AttributeDistribution> =
+        cachedIndex
+            distributionIndexCache
+            (fun p ->
+                p.Distributions
+                |> List.fold
+                    (fun (cats, nums, any) d ->
+                        let cats =
+                            match d with
+                            | AttributeDistribution.Categorical cat when not (Map.containsKey cat.AttributeKey cats) ->
+                                Map.add cat.AttributeKey cat cats
+                            | _ -> cats
+                        let nums =
+                            match d with
+                            | AttributeDistribution.Numeric num when not (Map.containsKey num.AttributeKey nums) ->
+                                Map.add num.AttributeKey num nums
+                            | _ -> nums
+                        let anyKey =
+                            match d with
+                            | AttributeDistribution.Categorical cat -> cat.AttributeKey
+                            | AttributeDistribution.Numeric num -> num.AttributeKey
+                        let any =
+                            if Map.containsKey anyKey any then any else Map.add anyKey d any
+                        cats, nums, any)
+                    (Map.empty, Map.empty, Map.empty))
+            p
+
     /// Look up a column profile by attribute identity. `None` if absent.
     let tryFindColumn (attributeKey: SsKey) (p: Profile) : ColumnProfile option =
-        p.Columns |> List.tryFind (fun c -> c.AttributeKey = attributeKey)
+        Map.tryFind attributeKey (columnIndex p)
 
     /// Look up a foreign-key reality by reference identity. `None` if absent.
     let tryFindForeignKey (referenceKey: SsKey) (p: Profile) : ForeignKeyReality option =
-        p.ForeignKeys |> List.tryFind (fun fk -> fk.ReferenceKey = referenceKey)
+        Map.tryFind referenceKey (foreignKeyIndex p)
 
     /// Look up FK cardinality evidence by reference identity (H-024).
     /// Returns `None` when the LiveProfiler did not probe this reference
     /// or when `Profile.isEmpty` (the common non-profiled path).
     let tryFindForeignKeyCardinality (referenceKey: SsKey) (p: Profile) : ForeignKeyCardinality option =
-        p.ForeignKeyCardinalities |> List.tryFind (fun c -> c.ReferenceKey = referenceKey)
+        Map.tryFind referenceKey (fkCardinalityIndex p)
 
     /// Look up FK selectivity evidence by reference identity (H-025).
     let tryFindForeignKeySelectivity (referenceKey: SsKey) (p: Profile) : ForeignKeySelectivity option =
-        p.ForeignKeySelectivities |> List.tryFind (fun s -> s.ReferenceKey = referenceKey)
+        Map.tryFind referenceKey (fkSelectivityIndex p)
 
     /// Look up a single-column uniqueness probe by attribute identity.
     let tryFindUnique (attributeKey: SsKey) (p: Profile) : UniqueCandidateProfile option =
-        p.UniqueCandidates |> List.tryFind (fun u -> u.AttributeKey = attributeKey)
+        Map.tryFind attributeKey (uniqueIndex p)
 
     /// Look up a categorical distribution by attribute identity.
     /// Returns `None` if no distribution evidence is registered for
     /// the attribute, or if the registered evidence is a different
     /// variant (e.g., Numeric).
     let tryFindCategorical (attributeKey: SsKey) (p: Profile) : CategoricalDistribution option =
-        p.Distributions
-        |> List.tryPick (fun d ->
-            match d with
-            | AttributeDistribution.Categorical cat when cat.AttributeKey = attributeKey ->
-                Some cat
-            | AttributeDistribution.Categorical _ -> None
-            | AttributeDistribution.Numeric _ -> None)
+        let cats, _, _ = distributionIndex p
+        Map.tryFind attributeKey cats
 
     /// Look up a numeric distribution by attribute identity. Returns
     /// `None` if no distribution evidence is registered for the
     /// attribute, or if the registered evidence is a different
     /// variant (e.g., Categorical).
     let tryFindNumeric (attributeKey: SsKey) (p: Profile) : NumericDistribution option =
-        p.Distributions
-        |> List.tryPick (fun d ->
-            match d with
-            | AttributeDistribution.Numeric num when num.AttributeKey = attributeKey ->
-                Some num
-            | AttributeDistribution.Numeric _ -> None
-            | AttributeDistribution.Categorical _ -> None)
+        let _, nums, _ = distributionIndex p
+        Map.tryFind attributeKey nums
 
     /// Look up *any* distribution evidence for an attribute, regardless
     /// of variant. Returns the first registered distribution whose key
@@ -1113,14 +1202,9 @@ module Profile =
     /// match in `Distributions` order wins. Callers that care about
     /// a specific variant should use `tryFindCategorical` /
     /// `tryFindNumeric` instead.
-    let private distributionKey (d: AttributeDistribution) : SsKey =
-        match d with
-        | AttributeDistribution.Categorical cat -> cat.AttributeKey
-        | AttributeDistribution.Numeric num     -> num.AttributeKey
-
     let tryFindDistribution (attributeKey: SsKey) (p: Profile) : AttributeDistribution option =
-        p.Distributions
-        |> List.tryFind (fun d -> distributionKey d = attributeKey)
+        let _, _, any = distributionIndex p
+        Map.tryFind attributeKey any
 
     // --------------------------------------------------------------------
     // Slice B.3.7 — multi-environment merge.

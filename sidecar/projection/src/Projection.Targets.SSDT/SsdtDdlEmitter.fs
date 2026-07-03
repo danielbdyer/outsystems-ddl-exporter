@@ -221,6 +221,33 @@ module SsdtDdlEmitter =
         | SetNull  -> SetNullSql
         | Restrict -> NoActionSql
 
+    /// PL-4 (S46) — the FK-resolution lookup triple as a NAMED value (the
+    /// audit's naming theorem: a second payment is invisible until the
+    /// shared value has a name). One publish previously rebuilt it 3–4
+    /// times: the SSDT emit step, the FK drop witness, the name-collision
+    /// tripwire, plus a fourth `allKinds` walk in the decision-drop
+    /// sibling. Consumers compute it ONCE per catalog VALUE and thread it
+    /// (the E3 `emittedNamesForKind` precedent); `TargetByKey` rides the
+    /// CWT-cached `Catalog.kindIndex`.
+    type FkEmissionLookups =
+        { AllKinds    : Kind list
+          TargetByKey : Map<SsKey, Kind>
+          PkAttrByKey : Map<SsKey, Attribute> }
+
+    [<RequireQualifiedAccess>]
+    module FkEmissionLookups =
+        let ofCatalog (catalog: Catalog) : FkEmissionLookups =
+            let allKinds = Catalog.allKinds catalog
+            { AllKinds    = allKinds
+              TargetByKey = Catalog.kindIndex catalog
+              PkAttrByKey =
+                allKinds
+                |> List.choose (fun k ->
+                    k.Attributes
+                    |> List.tryFind (fun a -> a.IsPrimaryKey)
+                    |> Option.map (fun pk -> k.SsKey, pk))
+                |> Map.ofList }
+
     /// Resolve a `Reference` to a `ForeignKeyDef` for inline FK
     /// emission. Same shape as `RawTextEmitter.fkDef`; per the
     /// chapter-3.6 N=3-of-distinct-shapes refinement, two identical-
@@ -303,14 +330,19 @@ module SsdtDdlEmitter =
     /// resolved against pre-built lookup tables (see emitSlices); FKs
     /// whose target kind isn't in the catalog drop silently
     /// (cross-catalog territory; chapter 3.2).
-    let private createTableStatement
+    /// PL-4 (S47) — the kind's DEPLOYED FK resolutions, computed ONCE per
+    /// kind (deployable, non-dropped references through `fkDef`) and
+    /// threaded to the CREATE TABLE inline FKs and the NOCHECK alter pair
+    /// (previously each site re-resolved every reference; with the
+    /// diagnostics siblings one publish resolved each reference ×4). The
+    /// pair keeps the Reference beside its def — the alter pair reads the
+    /// overlay by `r.SsKey`.
+    let private resolvedFksOf
         (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
-        : Statement =
-        let columns = k.Attributes |> List.map (columnDef overlay)
-        let pk = pkDef k
+        : (Reference * ForeignKeyDef) list =
         // Wave-2 slice 2.4 — suppress the inline FK when the reference was
         // decided `DoNotEnforce` (overlay.DropFk). Additive-only on the drop
         // axis: a reference NOT in DropFk resolves exactly as before
@@ -321,11 +353,19 @@ module SsdtDdlEmitter =
         // FK_* names on the CreatedBy/UpdatedBy shape; PK-to-PK type
         // mismatches). Inverses are navigation edges; they never reach a
         // constraint-emission surface.
-        let fks =
-            k.References
-            |> List.filter Reference.isDeployable
-            |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
-            |> List.choose (fkDef targetByKey pkAttrByKey k)
+        k.References
+        |> List.filter Reference.isDeployable
+        |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+        |> List.choose (fun r -> fkDef targetByKey pkAttrByKey k r |> Option.map (fun fk -> r, fk))
+
+    let private createTableStatementUsing
+        (overlay: DecisionOverlay)
+        (resolvedFks: (Reference * ForeignKeyDef) list)
+        (k: Kind)
+        : Statement =
+        let columns = k.Attributes |> List.map (columnDef overlay)
+        let pk = pkDef k
+        let fks = resolvedFks |> List.map snd
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
         // rowset path lifting #ColumnCheckReality) through the
@@ -367,24 +407,21 @@ module SsdtDdlEmitter =
     // constraint to NOCHECK. The two FK overlay axes are mutually exclusive
     // by construction (DoNotEnforce vs EnforceConstraint), so the DropFk
     // exclusion only guards the defensive case.
-    let private untrustedFkAlters
+    let private untrustedFkAltersUsing
         (overlay: DecisionOverlay)
-        (targetByKey: Map<SsKey, Kind>)
-        (pkAttrByKey: Map<SsKey, Attribute>)
+        (resolvedFks: (Reference * ForeignKeyDef) list)
         (k: Kind)
         : Statement list =
-        k.References
-        // Deployable references only (DECISIONS 2026-06-12) — an inverse's
-        // inline FK is never created, so an ALTER pair against its phantom
-        // constraint name must never emit either.
-        |> List.filter Reference.isDeployable
-        |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
-        |> List.collect (fun r ->
-            match fkDef targetByKey pkAttrByKey k r with
-            | Some fk when not fk.IsConstraintTrusted || Set.contains r.SsKey overlay.NoCheckFk ->
+        // PL-4 (S47) — consumes the kind's ONE `resolvedFksOf` computation
+        // (same deployable/non-dropped set the CREATE TABLE inline FKs
+        // ride, so the alter pair can never reference a phantom constraint
+        // by construction).
+        resolvedFks
+        |> List.collect (fun (r, fk) ->
+            if not fk.IsConstraintTrusted || Set.contains r.SsKey overlay.NoCheckFk then
                 [ Statement.AlterTableDisableConstraint (toTableId k, fk.Name)
                   Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name) ]
-            | _ -> [])
+            else [])
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per
@@ -709,16 +746,26 @@ module SsdtDdlEmitter =
     /// properties emit exactly once per distinct schema the module
     /// occupies, even if the module spans multiple schemas. Chapter 4.9
     /// slice ε.
-    let private moduleSchemaPropertyStatements (m: Module) (k: Kind) : Statement seq =
+    /// PL-4 (S54) — the per-(module, schema)-CONSTANT fact "which kind is
+    /// alphabetically first in this schema", derived ONCE per module (one
+    /// group-by) instead of a filter+sort re-run for EVERY kind of the
+    /// module (O(K² log K) per module per publish).
+    let private firstKindBySchemaOf (m: Module) : Map<string, SsKey> =
+        m.Kinds
+        |> List.groupBy (fun k -> SchemaName.value k.Physical.Schema)
+        |> List.map (fun (schemaText, kinds) ->
+            schemaText, kinds |> List.map (fun k -> k.SsKey) |> List.min)
+        |> Map.ofList
+
+    let private moduleSchemaPropertyStatementsUsing
+        (firstKindBySchema: Map<string, SsKey>)
+        (m: Module)
+        (k: Kind)
+        : Statement seq =
         seq {
             let schema = k.Physical.Schema
-            let firstKindOfSchema =
-                m.Kinds
-                |> List.filter (fun candidate -> candidate.Physical.Schema = schema)
-                |> List.sortBy (fun candidate -> candidate.SsKey)
-                |> List.tryHead
-            match firstKindOfSchema with
-            | Some first when first.SsKey = k.SsKey ->
+            match Map.tryFind (SchemaName.value schema) firstKindBySchema with
+            | Some first when first = k.SsKey ->
                 for ep in m.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
                         SchemaProperty (SchemaName.value schema), ep.Name, ep.Value)
@@ -729,20 +776,23 @@ module SsdtDdlEmitter =
         (renderMode: ConstraintFormatter.Mode)
         (emitIdentityAnnotations: bool)
         (overlay: DecisionOverlay)
-        (targetByKey: Map<SsKey, Kind>)
-        (pkAttrByKey: Map<SsKey, Attribute>)
+        (lookups: FkEmissionLookups)
+        (firstKindBySchema: Map<string, SsKey>)
         (m: Module)
         (k: Kind)
         : SsdtFile =
         use _ = Bench.scope "emit.ssdt.kindToSsdtFile"
         // The emitted-index-name map derives ONCE per kind and feeds all
         // three consumers (CREATE INDEX / ALTER … DISABLE / index
-        // extended properties) — previously each recomputed it.
+        // extended properties) — previously each recomputed it. PL-4
+        // (S47): the kind's FK resolutions likewise derive once and feed
+        // the CREATE TABLE inline FKs + the NOCHECK alter pair.
         let emittedNamesForKind = emittedIndexNames overlay k
+        let resolvedFks = resolvedFksOf overlay lookups.TargetByKey lookups.PkAttrByKey k
         let statements =
             seq {
-                yield! moduleSchemaPropertyStatements m k
-                yield createTableStatement overlay targetByKey pkAttrByKey k
+                yield! moduleSchemaPropertyStatementsUsing firstKindBySchema m k
+                yield createTableStatementUsing overlay resolvedFks k
                 // Slice 5.13.fk-features-emit (matrix row 59):
                 // post-CREATE-TABLE ALTER statements preserve the
                 // deployed target's NOCHECK FK trust state. Emitted
@@ -753,7 +803,7 @@ module SsdtDdlEmitter =
                 // `IsConstraintTrusted = false`; this seam is
                 // structurally positioned for the rowset-path JOIN
                 // slice that wires `#FkReality.IsNoCheck`.
-                yield! untrustedFkAlters overlay targetByKey pkAttrByKey k
+                yield! untrustedFkAltersUsing overlay resolvedFks k
                 yield! indexStatementsWith emittedNamesForKind overlay k
                 // Slice 5.13.index-features-emit (matrix row 55):
                 // post-CREATE-INDEX ALTER INDEX DISABLE statements
@@ -810,32 +860,21 @@ module SsdtDdlEmitter =
     /// `Statement list`, Json `JsonNode`, Distributions `JsonNode`,
     /// SSDT-DDL `SsdtFile`); T11 sibling-Π commutativity is structural
     /// across all four, asserted by `SiblingEmitterContractTests.fs`.
-    /// Lifted FK-resolution lookups. Per session-35 (chapter 3.1) — O(1)
-    /// hash lookup per reference instead of O(K) catalog scan, shared
-    /// between the per-kind `emitSlices` realization and the catalog-
-    /// wide `statements` realization.
-    let private buildLookups
-        (catalog: Catalog)
-        : Kind list * Map<SsKey, Kind> * Map<SsKey, Attribute> =
-        let allKinds = Catalog.allKinds catalog
-        let targetByKey = Catalog.kindIndex catalog
-        let pkAttrByKey =
-            allKinds
-            |> List.choose (fun k ->
-                k.Attributes
-                |> List.tryFind (fun a -> a.IsPrimaryKey)
-                |> Option.map (fun pk -> k.SsKey, pk))
-            |> Map.ofList
-        allKinds, targetByKey, pkAttrByKey
-
     /// C1 emitter follow-on — resolve one `Reference` on `k` to a
-    /// `ForeignKeyDef` against `catalog` (the public surface over the private
-    /// `fkDef` + `buildLookups`). `None` when the target kind / its PK is not
-    /// in the catalog (cross-catalog FK) — the migration emitter then refuses
-    /// the add fail-loud rather than emitting a dangling constraint.
+    /// `ForeignKeyDef` against PRE-BUILT lookups (PL-4/S48: the migration
+    /// emitter previously paid a whole-catalog lookup build PER reference
+    /// through the catalog-taking form below; it now builds the source and
+    /// target lookups once per migration and threads them here). `None`
+    /// when the target kind / its PK is not in the catalog (cross-catalog
+    /// FK) — the migration emitter then refuses the add fail-loud rather
+    /// than emitting a dangling constraint.
+    let foreignKeyDefOfUsing (lookups: FkEmissionLookups) (k: Kind) (r: Reference) : ForeignKeyDef option =
+        fkDef lookups.TargetByKey lookups.PkAttrByKey k r
+
+    /// The catalog-taking compute-then-delegate form — for one-off
+    /// resolutions only; per-reference loops thread `FkEmissionLookups`.
     let foreignKeyDefOf (catalog: Catalog) (k: Kind) (r: Reference) : ForeignKeyDef option =
-        let _, targetByKey, pkAttrByKey = buildLookups catalog
-        fkDef targetByKey pkAttrByKey k r
+        foreignKeyDefOfUsing (FkEmissionLookups.ofCatalog catalog) k r
 
     /// C1 emitter follow-on — the `CreateIndex` statements for the given
     /// indexes of `k`, with NO operator overlay (the migration emitter is
@@ -875,7 +914,7 @@ module SsdtDdlEmitter =
         (catalog: Catalog)
         : seq<Statement> =
         use _ = Bench.scope "emit.ssdt.statements"
-        let _, targetByKey, pkAttrByKey = buildLookups catalog
+        let lookups = FkEmissionLookups.ofCatalog catalog
         // Topological order via `TopologicalOrderPass.runWith
         // SkipSelfEdges` (per A40 / chapter-3.1 SelfLoopPolicy
         // codification): FK targets emit before their referencers,
@@ -908,14 +947,16 @@ module SsdtDdlEmitter =
             yield! yieldAllWithSeparator (sequenceStatements catalog)
             for k in orderedKinds do
                 // One emitted-index-name derivation per kind, shared by the
-                // three index-facing consumers below.
+                // three index-facing consumers below; one FK resolution per
+                // kind shared by CREATE TABLE + the NOCHECK alters (PL-4).
                 let emittedNamesForKind = emittedIndexNames overlay k
-                yield! yieldWithSeparator (createTableStatement overlay targetByKey pkAttrByKey k)
+                let resolvedFks = resolvedFksOf overlay lookups.TargetByKey lookups.PkAttrByKey k
+                yield! yieldWithSeparator (createTableStatementUsing overlay resolvedFks k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
                 // ALTER for untrusted FKs, then indexes, then post-
                 // CREATE-INDEX ALTER for disabled indexes.
-                yield! yieldAllWithSeparator (untrustedFkAlters overlay targetByKey pkAttrByKey k)
+                yield! yieldAllWithSeparator (untrustedFkAltersUsing overlay resolvedFks k)
                 yield! yieldAllWithSeparator (indexStatementsWith emittedNamesForKind overlay k)
                 // Slice 5.13.index-features-emit (matrix row 55).
                 yield! yieldAllWithSeparator (disabledIndexAltersWith emittedNamesForKind k)
@@ -961,7 +1002,13 @@ module SsdtDdlEmitter =
         : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
-        let _allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        let lookups = FkEmissionLookups.ofCatalog catalog
+        // PL-4 (S54) — the per-(module, schema) first-kind decision derives
+        // once per module here, not per kind inside the render loop.
+        let firstKindBySchemaByModule =
+            catalog.Modules
+            |> List.map (fun m -> m.SsKey, firstKindBySchemaOf m)
+            |> Map.ofList
         // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
         // cost (the dominant emit.ssdt work at production scale is
         // proportional to the kind count). Slice A.4.7'-prelude
@@ -969,7 +1016,10 @@ module SsdtDdlEmitter =
         ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
             match Map.tryFind k.SsKey modules with
             | Some m ->
-                kindToSsdtFile renderMode emitIdentityAnnotations overlay targetByKey pkAttrByKey m k
+                let firstKindBySchema =
+                    Map.tryFind m.SsKey firstKindBySchemaByModule
+                    |> Option.defaultValue Map.empty
+                kindToSsdtFile renderMode emitIdentityAnnotations overlay lookups firstKindBySchema m k
             | None ->
                 // Unreachable: `Catalog.allKinds` walks
                 // `c.Modules |> List.collect (fun m -> m.Kinds)`;
@@ -1009,8 +1059,27 @@ module SsdtDdlEmitter =
     /// **Pure sibling output (A18 holds).** The `statements` / `emitSlices`
     /// Emitter port stays `Catalog`-only and byte-identical — the witness
     /// rides a separate `Diagnostics` channel, never a `Policy` parameter.
-    let foreignKeyDropDiagnostics (catalog: Catalog) : DiagnosticEntry list =
-        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+    /// PL-4 (S47) — ONE resolution pass over every deployable reference:
+    /// `(kind, reference, def option)`, shared by the drop witness (`None`
+    /// detection) and the name-collision tripwire (`Some` grouping). The
+    /// DropFk filter applies at the collision CONSUMER — resolution is
+    /// pure, so filter-before and filter-after agree. Deployable
+    /// references only (DECISIONS 2026-06-12): an inverse never attempts
+    /// an inline FK, so it is neither a drop to witness nor a collision
+    /// candidate.
+    let fkResolutionsUsing
+        (lookups: FkEmissionLookups)
+        : (Kind * Reference * ForeignKeyDef option) list =
+        lookups.AllKinds
+        |> List.collect (fun k ->
+            k.References
+            |> List.filter Reference.isDeployable
+            |> List.map (fun r -> k, r, fkDef lookups.TargetByKey lookups.PkAttrByKey k r))
+
+    let foreignKeyDropDiagnosticsUsing
+        (lookups: FkEmissionLookups)
+        (resolutions: (Kind * Reference * ForeignKeyDef option) list)
+        : DiagnosticEntry list =
         // Pillar 1 (data-structure-oriented): the structural detail rides the
         // typed `Metadata` map; the `Message` is a constant per reason. No
         // string composition at the diagnostic boundary.
@@ -1024,32 +1093,32 @@ module SsdtDdlEmitter =
                         [ "sourceSchema", TableId.schemaText k.Physical
                           "sourceTable", TableId.tableText k.Physical
                           "reference", Name.value r.Name ] }
-        allKinds
-        |> List.collect (fun k ->
-            k.References
-            // Deployable references only (DECISIONS 2026-06-12) — an
-            // inverse never attempts an inline FK, so its structural
-            // non-resolution is not a drop to witness.
-            |> List.filter Reference.isDeployable
-            |> List.choose (fun r ->
-                match fkDef targetByKey pkAttrByKey k r with
-                | Some _ -> None
+        resolutions
+        |> List.choose (fun (k, r, defOpt) ->
+            match defOpt with
+            | Some _ -> None
+            | None ->
+                match Map.tryFind r.TargetKind lookups.TargetByKey with
                 | None ->
-                    match Map.tryFind r.TargetKind targetByKey with
+                    Some (witness k r
+                            "emit.ssdt.foreignKey.unresolvedTargetDropped"
+                            "Foreign key dropped: its target kind is not present in the catalog (cross-catalog or dangling target). No inline FK constraint emitted.")
+                | Some _ ->
+                    // Target resolves; the drop is a missing PK (no column
+                    // to reference) — unless the source attribute itself is
+                    // missing, which `Catalog.create` forbids (unreachable).
+                    match Map.tryFind r.TargetKind lookups.PkAttrByKey with
                     | None ->
                         Some (witness k r
-                                "emit.ssdt.foreignKey.unresolvedTargetDropped"
-                                "Foreign key dropped: its target kind is not present in the catalog (cross-catalog or dangling target). No inline FK constraint emitted.")
-                    | Some _ ->
-                        // Target resolves; the drop is a missing PK (no column
-                        // to reference) — unless the source attribute itself is
-                        // missing, which `Catalog.create` forbids (unreachable).
-                        match Map.tryFind r.TargetKind pkAttrByKey with
-                        | None ->
-                            Some (witness k r
-                                    "emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped"
-                                    "Foreign key dropped: its target kind declares no primary key to reference. No inline FK constraint emitted.")
-                        | Some _ -> None))
+                                "emit.ssdt.foreignKey.targetMissingPrimaryKeyDropped"
+                                "Foreign key dropped: its target kind declares no primary key to reference. No inline FK constraint emitted.")
+                    | Some _ -> None)
+
+    /// The catalog-taking compute-then-delegate form (standalone callers;
+    /// the publish threads `FkEmissionLookups` + the shared resolutions).
+    let foreignKeyDropDiagnostics (catalog: Catalog) : DiagnosticEntry list =
+        let lookups = FkEmissionLookups.ofCatalog catalog
+        foreignKeyDropDiagnosticsUsing lookups (fkResolutionsUsing lookups)
 
     /// 6.A.9 — the DECISION-driven FK-drop audit trail (red-team Decision
     /// #2b). `foreignKeyStatements` filters out every reference whose key is
@@ -1070,11 +1139,11 @@ module SsdtDdlEmitter =
     // source reality. Inverse-derived references are excluded outright
     // (navigation edges; never decision subjects as of FK pass v3 —
     // the filter here is defense in depth).
-    let foreignKeyDecisionDropDiagnostics
+    let foreignKeyDecisionDropDiagnosticsUsing
         (overlay: DecisionOverlay)
-        (catalog: Catalog)
+        (allKinds: Kind list)
         : DiagnosticEntry list =
-        Catalog.allKinds catalog
+        allKinds
         |> List.collect (fun k ->
             k.References
             |> List.filter Reference.isDeployable
@@ -1101,6 +1170,14 @@ module SsdtDdlEmitter =
                                       "reference", Name.value r.Name ] }
                 else None))
 
+    /// The catalog-taking compute-then-delegate form (standalone callers;
+    /// the publish threads `FkEmissionLookups.AllKinds`).
+    let foreignKeyDecisionDropDiagnostics
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        foreignKeyDecisionDropDiagnosticsUsing overlay (Catalog.allKinds catalog)
+
     /// DECISIONS 2026-06-12 (reconciliation slice 1) — the FK-name
     /// collision TRIPWIRE. SQL Server constraint names are
     /// schema-scoped; two emitted FKs sharing `(schema, name)` fail
@@ -1113,20 +1190,15 @@ module SsdtDdlEmitter =
     /// tripwire guards the invariant, it does not implement behavior.
     /// Pure sibling of the emitter port (A18 holds; the audit rides
     /// the `Diagnostics` channel).
-    let foreignKeyNameCollisionDiagnostics
+    let foreignKeyNameCollisionDiagnosticsUsing
         (overlay: DecisionOverlay)
-        (catalog: Catalog)
+        (resolutions: (Kind * Reference * ForeignKeyDef option) list)
         : DiagnosticEntry list =
-        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
         let emittedFks =
-            allKinds
-            |> List.collect (fun k ->
-                k.References
-                |> List.filter Reference.isDeployable
-                |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
-                |> List.choose (fun r ->
-                    fkDef targetByKey pkAttrByKey k r
-                    |> Option.map (fun fk -> k, r, fk)))
+            resolutions
+            |> List.choose (fun (k, r, defOpt) ->
+                if Set.contains r.SsKey overlay.DropFk then None
+                else defOpt |> Option.map (fun fk -> k, r, fk))
         emittedFks
         |> List.groupBy (fun (k, _, fk) -> TableId.schemaText k.Physical, fk.Name)
         |> List.collect (fun ((schemaText, fkName), members) ->
@@ -1146,6 +1218,16 @@ module SsdtDdlEmitter =
                                   "constraintName", fkName
                                   "sourceTable", TableId.tableText k.Physical
                                   "reference", Name.value r.Name ] }))
+
+    /// The catalog-taking compute-then-delegate form (standalone callers;
+    /// the publish threads the shared resolutions).
+    let foreignKeyNameCollisionDiagnostics
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        foreignKeyNameCollisionDiagnosticsUsing
+            overlay
+            (fkResolutionsUsing (FkEmissionLookups.ofCatalog catalog))
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the

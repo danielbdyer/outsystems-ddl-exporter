@@ -65,6 +65,57 @@ let ``6.B.1: violations are deterministic across attributes (sorted by identity)
     Assert.Equal<string list>(List.sort names, names)
 
 // ---------------------------------------------------------------------------
+// PL-7 (S10) — `violationsOfNullCounts` is the pure sibling the wired gate
+// now consumes (over `LiveProfiler.nullCountsFor`'s scoped shape). The parity
+// law: over evidence restricted to the overlay's tightened attributes, it
+// yields EXACTLY `dataViolatesTightening`'s list — same members, same counts,
+// same sort. The live both-arms witness is PayOnceSchemaReadDockerTests.
+// ---------------------------------------------------------------------------
+
+/// The scoped restriction of a `cacheWith` fixture: kind → (attr → count)
+/// for attrs in the overlay only — what `nullCountsFor` returns.
+let private scopedCounts (kindK: SsKey) (overlay: DecisionOverlay) (nullCounts: (SsKey * int64) list) : Map<SsKey, Map<SsKey, int64>> =
+    let scoped = nullCounts |> List.filter (fun (k, _) -> Set.contains k overlay.EnforceNotNull)
+    if List.isEmpty scoped then Map.empty
+    else Map.ofList [ kindK, Map.ofList scoped ]
+
+[<Fact>]
+let ``PL-7 S10: violationsOfNullCounts equals dataViolatesTightening over the scoped restriction (NULL-bearing)`` () =
+    let noteK = attrKey "Note"
+    let cleanK = attrKey "Clean"
+    let tK = kindKey "Ticket"
+    let evidence = [ noteK, 3L; cleanK, 0L ]
+    let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.ofList [ noteK; cleanK ] }
+    let viaCache = Preflight.dataViolatesTightening (cacheWith tK evidence) overlay
+    let viaCounts = Preflight.violationsOfNullCounts (scopedCounts tK overlay evidence)
+    Assert.Equal<Preflight.TighteningViolation list>(viaCache, viaCounts)
+    match viaCounts with
+    | [ v ] ->
+        Assert.Equal<SsKey>(noteK, v.AttributeKey)
+        Assert.Equal(3L, v.NullCount)
+    | other -> Assert.Fail(sprintf "expected exactly one violation, got %A" other)
+
+[<Fact>]
+let ``PL-7 S10: zero-NULL tightened columns yield no violation from the scoped counts`` () =
+    let noteK = attrKey "Note"
+    let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.singleton noteK }
+    Assert.Empty(Preflight.violationsOfNullCounts (scopedCounts (kindKey "Ticket") overlay [ noteK, 0L ]))
+
+[<Fact>]
+let ``PL-7 S10: scoped-count violations are deterministic (sorted by attribute identity)`` () =
+    let tK = kindKey "Ticket"
+    let a = attrKey "Alpha"
+    let b = attrKey "Beta"
+    let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.ofList [ a; b ] }
+    let evidence = [ a, 1L; b, 2L ]
+    let viaCounts = Preflight.violationsOfNullCounts (scopedCounts tK overlay evidence)
+    let names = viaCounts |> List.map (fun v -> SsKey.rootOriginal v.AttributeKey)
+    Assert.Equal<string list>(List.sort names, names)
+    Assert.Equal<Preflight.TighteningViolation list>(
+        Preflight.dataViolatesTightening (cacheWith tK evidence) overlay,
+        viaCounts)
+
+// ---------------------------------------------------------------------------
 // A1 — connection pre-flight (T-VI spanning). Pure (DB-free) witnesses over
 // `connectionViolations`; the live probe (`connectionPreflight`) drives the
 // same decision against real endpoints via a Docker witness.

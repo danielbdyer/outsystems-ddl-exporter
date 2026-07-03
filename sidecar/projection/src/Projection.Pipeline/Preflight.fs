@@ -66,6 +66,26 @@ module Preflight =
                 else None))
         |> List.sortBy (fun v -> SsKey.rootOriginal v.AttributeKey)
 
+    /// Pure sibling of `dataViolatesTightening` over the SCOPED probe's
+    /// shape (`LiveProfiler.nullCountsFor` — kind-key → attribute-key →
+    /// exact null count, already restricted to the overlay's tightened
+    /// attributes): each NULL-bearing tightened column, same assembly and
+    /// same sort, so the two forms agree wherever the counts agree (PL-7,
+    /// S10). No overlay filter here — the probe's scoping IS the filter.
+    let violationsOfNullCounts
+        (counts: Map<SsKey, Map<SsKey, int64>>)
+        : TighteningViolation list =
+        counts
+        |> Map.toList
+        |> List.collect (fun (kindKey, nullCounts) ->
+            nullCounts
+            |> Map.toList
+            |> List.choose (fun (attrKey, nullCount) ->
+                if nullCount > 0L then
+                    Some { KindKey = kindKey; AttributeKey = attrKey; NullCount = nullCount }
+                else None))
+        |> List.sortBy (fun v -> SsKey.rootOriginal v.AttributeKey)
+
     /// A stable, human-readable identity for a tightening violation — the
     /// physical kind + column (`OSUSR_X_ORDER.Notes`). The key the relax-ALWAYS
     /// persistence writes to / matches against in `projection.json`, so a future
@@ -153,9 +173,13 @@ module Preflight =
             // marks (TenantScoped / SoftDeletable / SystemOwned / Temporal) —
             // the N2 over-erasure, closed 2026-06-11.
             let profileCatalog = catalog |> Catalog.stripStaticPopulations
-            match! LiveProfiler.captureEvidenceCache cnn profileCatalog with
+            // PL-7 (S10): the gate consumes ONLY the tightened columns' null
+            // counts — the scoped probe (one narrow aggregate per affected
+            // kind) replaces the full `EvidenceCache` capture, whose per-kind
+            // row streams were paid for a handful of counts.
+            match! LiveProfiler.nullCountsFor cnn profileCatalog overlay.EnforceNotNull with
             | Error es -> return Result.failure es
-            | Ok cache -> return Ok (dataViolatesTightening cache overlay)
+            | Ok counts -> return Ok (violationsOfNullCounts counts)
         }
 
     /// Run the pre-flight against a live source: capture the per-attribute
