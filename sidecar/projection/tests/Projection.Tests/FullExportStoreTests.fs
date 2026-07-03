@@ -400,3 +400,87 @@ let ``NM-33: the recorded episode carries the run's AppliedTransforms (withProve
             leg.Manifest.AppliedTransforms, recorded.AppliedTransforms)
     finally
         safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath
+
+// ===========================================================================
+// The publish spine (2026-07-02) — the store leg is a DECLARED stage, so the
+// live board covers the whole run (before this, the board hit its done-frame
+// while the store leg was still working). Wire assertions ride the same
+// harness; the board law is R1e — the stored stream reconstructs the same
+// terminal board the live subscriber built.
+// ===========================================================================
+
+let private captureEnvelopes (body: unit -> unit) : string list =
+    let sw = new StringWriter()
+    LogSink.withWriter sw (fun () -> body ())
+    sw.ToString().Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+    |> Array.toList
+
+[<Fact>]
+let ``publish spine: a store-bearing run brackets the store leg on the wire, after the emission arc`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    let store = tempStorePath ()
+    try
+        let at = DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)
+        let mutable outcome = FullExportRun.RunOutcome.Aborted (exn "unset")
+        let lines =
+            captureEnvelopes (fun () ->
+                let o, _ =
+                    FullExportRun.executeWithStore
+                        cfg None LogSink.Verbosity.Quiet Set.empty (Some store) tl Environment.Dev at
+                outcome <- o)
+        (match outcome with
+         | FullExportRun.RunOutcome.Succeeded _ -> ()
+         | other -> Assert.Fail(sprintf "expected Succeeded, got %A" other))
+        let idxOf (needle: string) =
+            match lines |> List.tryFindIndex (fun l -> l.Contains needle) with
+            | Some i -> i
+            | None -> Assert.Fail(sprintf "no envelope line contains %s" needle); -1
+        // the store leg opens AFTER the emission arc closed (a post-root stage)
+        Assert.True(idxOf "\"store.started\"" > idxOf "\"emit.started\"")
+        // and it CLOSES — the summary.stageCompleted for the store stage rides
+        Assert.True(lines |> List.exists (fun l -> l.Contains "summary.stageCompleted" && l.Contains "\"store\""))
+
+        // R1e — the stored stream, seeded from the store-bearing publish spine,
+        // reconstructs a TERMINAL board: every seeded line (extract, profile,
+        // emit, store) closed. This is the exact projection the live board folds.
+        let board =
+            Projection.Cli.Watch.boardOfStored
+                (Projection.Cli.Watch.seededOf (Spines.publishWith true false))
+                lines
+        Assert.True(Projection.Cli.Watch.isTerminal board, "the store-bearing spine must close every seeded line")
+    finally
+        safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath
+
+[<Fact>]
+let ``publish spine: a store-less run emits NO store stage events — the bare pipeline spine stays byte-identical`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    try
+        let at = DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)
+        let lines =
+            captureEnvelopes (fun () ->
+                FullExportRun.executeWithStore
+                    cfg None LogSink.Verbosity.Quiet Set.empty None tl Environment.Dev at
+                |> ignore)
+        Assert.False(lines |> List.exists (fun l -> l.Contains "store.started"))
+        // the bare spine still reaches terminal off the same stream
+        let board =
+            Projection.Cli.Watch.boardOfStored
+                (Projection.Cli.Watch.seededOf (Spines.publishWith false false))
+                lines
+        Assert.True(Projection.Cli.Watch.isTerminal board)
+    finally
+        safeRm outDir; safeDel cfg; safeDel modelPath
+
+[<Fact>]
+let ``publish spine: publishWith declares the dispatch-selected arcs — bare, store, load, both`` () =
+    let keys (spine: RunSpine) = RunSpine.keys spine
+    Assert.Equal<string list>([ "extract"; "profile"; "emit" ], keys (Spines.publishWith false false))
+    Assert.Equal<string list>([ "extract"; "profile"; "emit"; "store" ], keys (Spines.publishWith true false))
+    Assert.Equal<string list>([ "extract"; "profile"; "emit"; "seed-load" ], keys (Spines.publishWith false true))
+    Assert.Equal<string list>([ "extract"; "profile"; "emit"; "store"; "seed-load" ], keys (Spines.publishWith true true))
+    // the umbrella root stays the pipeline (never a watched line)
+    Assert.Equal(Some "pipeline", RunSpine.rootKey (Spines.publishWith true true))

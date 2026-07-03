@@ -160,8 +160,12 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
         // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
-        // pipeline's planned stages so the whole arc is visible from the first frame.
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
+        // pipeline's planned stages so the whole arc is visible from the first
+        // frame. The spine is chosen HERE (2026-07-02): a store-bearing publish
+        // seeds the store leg's line, so the board covers the whole run —
+        // an optional seeded stage would hold the done-frame back forever.
+        let hasStore = match store with Some s -> not (String.IsNullOrWhiteSpace s) | None -> false
+        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch (Spines.publishWith hasStore false) (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
@@ -202,9 +206,10 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.ProposeCorrection (model, modelOssys, out) -> runProposeCorrection model modelOssys out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
-        // The load flow runs the same publish pipeline, so it streams the same
-        // stage arc; --pretty shows the live board (§13).
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
+        // The load flow runs the same publish pipeline plus the seed-load leg
+        // (2026-07-02 — a declared stage, so the board covers the whole run;
+        // the episode record, when a store rides, happens inside that leg).
+        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch (Spines.publishWith false true) (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->

@@ -24,6 +24,9 @@ let private inScopeCodes : Set<string> =
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
+          // the publish spine's post-root legs (2026-07-02 — store / seed-load
+          // join the declared arc so the board covers the whole run)
+          "store.started"; "seed-load.started"
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           "summary.stageCompleted"
           "config.validationFailed"
@@ -78,6 +81,7 @@ let private knownEmittableCodes : Set<string> =
           // the migrate leg's live stage stream (build → apply → verify) + the
           // data-transfer leg's load stage
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
+          "store.started"; "seed-load.started"
           // the live Watch board's render-synthesized frame codes (§13) — the
           // run-title header, the terminal done-frame, and the halted stage line
           // (the R2 Aborted arm). Not LogSink envelopes: the board is a
@@ -532,7 +536,7 @@ let ``Voice stageName: an unknown stage passes through unchanged`` () =
 /// spines, not a hand-list, so a stage is covered the moment it joins a spine. The
 /// umbrella root (`RunSpine.rootKey`) is elided: the board never watches it.
 let private boardStageKeys : Set<string> =
-    [ Spines.pipeline; Spines.migrate; Spines.migrateData
+    [ Spines.pipeline; Spines.publishWith true true; Spines.migrate; Spines.migrateData
       Spines.deploy; Spines.canary; Spines.transfer ]
     |> List.collect RunSpine.keys
     |> Set.ofList

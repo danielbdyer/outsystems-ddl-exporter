@@ -106,6 +106,8 @@ module Voice =
         | "deploy"    -> "Deploy"
         | "canary"    -> "Round-trip verification"
         | "load"      -> "Data load"
+        | "store"     -> "Provenance record"
+        | "seed-load" -> "Seed load"
         | other       -> other
 
     /// The §13 follow-on for a run whose terminal stage is `terminalStage` — "the
@@ -123,6 +125,8 @@ module Voice =
         | "deploy"    -> "Verification follows."
         | "canary"    -> "The record follows."
         | "load"      -> "Verification follows."
+        | "store"     -> "The bundle is published and the change is recorded."
+        | "seed-load" -> "The data is loaded. Verification follows."
         | _           -> "The run is complete."
 
     /// The §13 follow-on for a run whose terminal stage HALTED — NM-46: a run that
@@ -523,6 +527,26 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `store.started` — the publish store leg is in progress (`THE_VOICE.md`
+    /// §13; the 2026-07-02 publish-spine completion). Gerund-in-progress: the
+    /// change is measured against the prior emission and the episode recorded.
+    let private storeStarted : Copy =
+        { Code           = "store.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Recording the change against the prior emission."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `seed-load.started` — the publish-and-load seed leg is in progress
+    /// (`THE_VOICE.md` §13). The idempotent MERGE seed, distinct from the
+    /// transfer's data load.
+    let private seedLoadStarted : Copy =
+        { Code           = "seed-load.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Loading the seed."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `watch.runTitle` — the live board's run-title header (`THE_VOICE.md` §13 —
     /// "the instrument speaks about its own running"). A neutral, agentless naming
     /// of the run in flight (the command is the subject, never "you"); the board
@@ -904,6 +928,8 @@ module Voice =
           deployStarted
           canaryStarted
           loadStarted
+          storeStarted
+          seedLoadStarted
           watchRunTitle
           watchRunDone
           watchStageHalted
