@@ -26568,3 +26568,95 @@ capture transport — a named label-population change.
 (width − pk − deferred)/width on cycle kinds; the reverse-leg scale
 suite is the measuring surface (its wall-clock rides the same docker
 pool run).
+
+## 2026-07-03 — The operator-shell chapter: one door for channel 2; the drain-loop law amended; notices roll up; the publish spine completes
+
+**Context.** Operator reports from real publish runs: the `--pretty` surface
+largely failed to materialize on full-export/publish; per-column nullability
+notices flooded the screen; the spinner hung. The audit found four inconsistent
+channel-2 paths (direct `Watch.renderWatch` for publish; `withRun` panel-only;
+gated `Face.watchInline`; ~10 verbs with no bracket at all), three drain-loop
+defects, and `LiveModelRead` printing-and-discarding one raw stderr line per
+divergence 2–3× per run over the Live region.
+
+**Decisions.**
+
+1. **The drain-loop law (amends 2026-06-06 minimum-dwell and 2026-06-19 #20).**
+   The board's drain loop COALESCES queued envelopes into one frame per batch;
+   the dwell floor paces stage TRANSITIONS only (progress frames render
+   promptly, never dwelled — one dwell per envelope is how a 10k-progress
+   backlog replayed for minutes after the run ended). The spinner heartbeats on
+   WALL CLOCK, independent of queue traffic (the timeout-branch-only heartbeat
+   starved under floods). Liveness splits from render pacing: `stalled` keys
+   off the last DEQUEUED envelope (a chatty pipeline is alive), and a
+   progress-less active stage says `stalled` in words. `PROJECTION_WATCH_STALL_MS`
+   joins the dwell as an env seam. `Watch.applyKind` carries the fold's weight
+   (`NoChange | Progressed | Transitioned`); `apply` stays the did-it-change
+   shim for `boardOfStored` (R1e unchanged).
+
+2. **Notice routing (amends F9 2026-06-17 surface-never-discard).** A model
+   read's divergences still surface, now constant-size: per-item envelopes at
+   Debug (visible under `-v`), the full detail merged-deduped into
+   `notices/<tag>/<runId>.json` (`NoticeSink`, R1c-addressed, in the §10
+   artifact table), and ONE Warn rollup envelope
+   (`adapter.ossys.modelRead.noticeRollup`) carrying fact counts per family +
+   the first samples + the artifact path. The producer owns the aggregation —
+   the verbosity filter drops sub-threshold envelopes before the accumulator
+   and subscribers, so Debug per-item events can never feed a rollup
+   downstream. Deploy's parallelism/warm-conn advisories become coded
+   envelopes for the same reason; sink-failure warnings stay last-resort
+   stderr (they fire when the sink itself fails). The §19-Q5 escalation
+   deferral's re-open trigger FIRED (operator report, 2026-07-02); this is
+   its resolution.
+
+3. **The operator shell (`Shell.execute`) — every PlanAction walks one door.**
+   Not pretty → the run-envelope bracket + body (byte-identical NDJSON) + the
+   ledger append. Pretty + spine → the live board inside a rounded PANEL (the
+   contained, fixed-viewport instrument box; NO alternate screen — the final
+   frame and verdict stay in scrollback). Pretty without a spine → a static
+   framed open (a Preview says "nothing will be written") + scoped channel-1
+   null + the verdict panel. **The A3 wire change rides this**: the
+   previously-unbracketed verbs (preview / check drift·data·shape / diff /
+   compare / explain / seal / report / slice / capture) now emit
+   `config.runStart` + `summary.runComplete` on pipes too — one law, no
+   pretty-only forks (channel 2 renders what channel 1 writes). ReadOnly-
+   register runs never join the run ledger (the `check ready` no-append
+   contract, now structural). Prompts keep the 2026-06-17 hoist rule.
+   `prettyMode`/`verboseMode` live on `Shell`; `OperatorConsole` aliases.
+
+4. **The publish spine completes (amends the pipeline-umbrella scope).** The
+   store leg and the publish-and-load seed leg become DECLARED stages
+   (`Stages.store`, `Stages.seedLoad`) bracketed with the same wire shape as
+   `Staged.stage`; the arc is chosen at DISPATCH (`Spines.publishWith`) — an
+   optional seeded stage would hold the done-frame back forever
+   (`Watch.isTerminal` requires every seeded line to close). The `pipeline`
+   umbrella brackets the emission arc only.
+
+5. **Flow framing.** `Intent.Flow` seeds the shell frame: the box title, the
+   verdict panel, and the ledger record read the flow's own words
+   ("publish: cloud-dev → on-prem-dev — preview"). The dispatch prologue
+   voices every pre-run note (`plan.note`, `survey.advisory`) BEFORE any Live
+   region; the transfer faces' raw advisory loops retire. The no-arg flow
+   menu is a `View` (pretty/plain/json/`--query`, one document).
+
+6. **A redirected sink renders PLAIN (`View.consoleFor`).** Spectre cannot
+   detect redirection through an injected `AnsiConsoleOutput`; the prior
+   "Spectre strips color of its own accord" assumption sprayed ANSI into
+   pipes and files. `CLICOLOR_FORCE` still forces color; `NO_COLOR` still wins.
+
+7. **Nice-to-haves shipped**: #19-lite extract progress (the snapshot runner's
+   `OnRowsetComplete` seam → `summary.stageProgress`, 23 rowsets); #6
+   echo-the-fix (the board's live `suggestedConfig` teaser,
+   `watch.suggestedEdits`); `--stat` (the §11 aggregates table on stdout).
+   #26 Threshold stays design-only.
+
+**Witnesses.** `ShellTests.fs`; `WatchTests`/`WatchInjectionTests` (flood-
+never-starves-heartbeat, backlog-coalesces wall-time bound, dwell-on-
+transitions-only, Active-None stalled, teardown scope); `NoticeRoutingTests.fs`
+(+ `LogSinkSubscriberTests` null-writer law); `FullExportStoreTests` publish-
+spine wire + `boardOfStored` terminal proofs; `VoiceTotalityTests` (new codes
+forced same-commit). Known residuals (HANDOFF): stdout narration inside watch
+bodies renders adjacent to teardown rather than after the panel; adapter-layer
+one-shot `eprintfn` warnings (ReadSide / BatchSplitter / SqlPolicy) cannot
+reach LogSink without cross-assembly plumbing; narrow-terminal Panel wrap is
+known-cosmetic.

@@ -191,14 +191,19 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             Shell.Bracket.SelfBracketed
             (Some (Spines.publishWith hasStore false))
             run
+    // The emit family writes its bundle regardless of --go (a bundle target
+    // "produces files (always safe)"), and the docker deploy writes to a
+    // throwaway container — so the register pins Go even under a preview
+    // flow: a frame that says "nothing will be written" over a file-writing
+    // arm would misstate (the PublishBundle precedent).
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmitSkeletonOnly cat dir))
     | PlanAction.EmitManifest (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitManifestOnly shaping cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmitManifestOnly shaping cat dir))
     | PlanAction.EmitBundle (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit shaping cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmit shaping cat dir))
     | PlanAction.DeployDocker (model, modelOssys) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy shaping cat))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runDeploy shaping cat))
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             shellRun "projection preview" Shell.Preview (fun () -> runProjectLivePreview shapedCat conn decl)))

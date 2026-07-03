@@ -1,3 +1,26 @@
+# Handoff addendum — 2026-07-03 (sixth letter), THE OPERATOR SHELL: the hang, the flood, and the four-path TTY unified behind one door. Branch `claude/spectre-tty-export-publish-d5vcis`
+
+To the next agent.
+
+**The operator's three complaints from real publish runs (pretty not materializing on full-export/publish; the nullability-notice flood; the hung spinner) are remediated, and the channel-2 surface is unified.** The rationale and the amended laws live in ONE consolidated DECISIONS entry (2026-07-03, "The operator-shell chapter") — read it before touching `Watch.fs`, `Shell.fs`, or `LiveModelRead.fs`. SPECTRE_REFINEMENTS carries the shipped section + the #19/#21 status flips. Six commits, each independently green on the fast pool.
+
+**What you now operate:**
+- `Shell.execute` (`Shell.fs`) is the ONE door for every PlanAction. Under pretty + a spine: the live board inside a rounded Panel (the contained instrument box; no alternate screen — scrollback keeps the record). Under pretty without a spine: a static preview frame + scoped channel-1 null + the verdict panel. Piped: run envelopes, byte-clean. Every path appends the ledger (ReadOnly registers excepted — the `check ready` no-append contract is structural now).
+- The drain loop coalesces; the dwell floors TRANSITIONS only; the spinner heartbeats on wall clock; `stalled` keys off dequeued envelopes. `PROJECTION_WATCH_STALL_MS` is the test seam.
+- Model-read divergences roll up: Debug per-item + `notices/model-read/<runId>.json` + ONE Warn rollup the board's notice strip renders with the artifact pointer.
+- The publish arc is whole: `Spines.publishWith store load` (dispatch-chosen; never an optional seeded stage — `isTerminal` waits for every seeded line), with the store/seed-load legs bracketed in `Compose.stagedLeg`.
+- Flow runs present in their own words (box title, verdict panel, ledger record); the no-arg menu is a `View`; `--stat` appends the aggregates table.
+
+**What I deliberately did NOT do (the named residuals):**
+1. **Stdout narration inside watch bodies** (Export.fs artifact list, `narrateTransferReport`, Migrate's execute-leg lines): still emitted at the body's tail, so under pretty they render adjacent to the board's teardown rather than after the verdict panel. The clean fix splits face bodies into core+narration (the face returns data; the arm narrates after `Shell.execute`) — mechanical but wide; do it face-by-face.
+2. **Adapter-layer one-shot warnings** (`ReadSide` zero-column/FK-row, `BatchSplitter` ScriptDom fallback, `SqlPolicy` timeout): they cannot reach LogSink without cross-assembly plumbing (Adapters/Targets compile below Pipeline). Rare and one-line; if they ever flood, thread a diagnostics callback the way `MetadataSnapshotRunner.RunOptions` does.
+3. **Panel wrap on narrow terminals** is known-cosmetic (title/notice rows are not width-truncated inside the box).
+4. **#26 Threshold** stays design-only (§G); **profile/emit intra-stage progress** is Core-touching and skipped (extract now progresses via the `OnRowsetComplete` seam — the pattern to copy if you light the others).
+
+**Traps for you:** the verbosity filter drops sub-threshold envelopes BEFORE the accumulator and subscribers — never design a rollup that expects Debug events to aggregate downstream (that premise died in this chapter's A1 finding; the producer owns aggregation). `renderWatchOn` now takes a SEED BOARD, not a spine — frame it with `{ Watch.seededOf spine with Title = … }`. And the A3 wire change means the previously-unbracketed verbs emit run envelopes on pipes: if a downstream consumer chokes on the new `config.runStart`/`summary.runComplete` lines, the fallback is named (bracket-under-pretty-only) but violates one-substrate — bring it to the operator first.
+
+Hold the spine.
+
 # Handoff addendum — 2026-07-03 (fifth letter), THE PAY-ONCE COMPLETION: all eleven plan items executed (PL-6/7/9 landed this session); one named residue (PL-6c/S24). Branch `claude/pay-once-program-86mevu`, PR #649
 
 To the next agent.

@@ -20,6 +20,31 @@ This chapter began as a survey: *25 ways to keep improving the Spectre
 implementation.* The first slice shipped on this branch; the rest are sequenced
 below, each with the technical note to start from.
 
+### Shipped 2026-07-03 — the operator-shell chapter (the hang, the flood, the one door)
+
+Grep the symbols: `Shell.execute` / `Shell.Frame` (`Shell.fs`), `Watch.applyKind`
+/ `Watch.Fold` / `Board.Notices` / `Board.SuggestedEdits`, `NoticeSink`,
+`LiveModelRead.noticeRollup`, `Spines.publishWith`, `TtyRenderer.buildFlowMenuView`
+/ `buildStatView`. The DECISIONS entry (2026-07-03, operator-shell chapter) is the
+rationale; `ShellTests.fs` + the new `WatchTests`/`WatchInjectionTests` cases are
+the proofs.
+
+- **The drain-loop rework** (the hang family): wall-clock heartbeat, coalesce-to-
+  latest, the dwell floors stage TRANSITIONS only, liveness (`stalled`) keyed off
+  dequeued envelopes, `Active None` stages say `stalled` in words.
+- **The notice rollup** (the flood): `LiveModelRead` divergences ride channel 1 at
+  Debug + the `notices/<tag>/<runId>.json` artifact + ONE Warn rollup envelope;
+  the board's notice strip renders it as one calm row with the artifact pointer.
+- **The operator shell**: every PlanAction walks one door — the live PANEL-BOXED
+  board for spined runs, a static preview frame for gated/answer verbs, run
+  envelopes + the ledger + the verdict panel on every path (the A3 wire change).
+- **Flow framing**: the box, panel, and ledger read the flow's own words
+  ("publish: cloud-dev → on-prem-dev — preview"); the no-arg menu is a `View`.
+- **#19 (extract) / #21 / #6 / `--stat`** — see the ranking-table rows below.
+- **A pre-existing spray fixed**: `View.consoleFor` now strips color for ANY
+  redirected sink (Spectre cannot detect redirection through an injected
+  `AnsiConsoleOutput`); `CLICOLOR_FORCE` still wins.
+
 ### Shipped this slice (2026-06-18)
 
 **The console factory — `View.consoleFor` / `View.consoleTo` (items #5 + #7).**
@@ -1189,7 +1214,7 @@ Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a se
 | Item | Value | Effort | Note |
 |---|---|---|---|
 | #1 PanelRow + #6 | **High** | S | A *live* lens-drift bug; the test is the proof. Do first. |
-| #19 stageProgress | Med | M–L | **Premise corrected** — transfer/migration already emit; only full-export's stages remain, an adapter-deep change (not the one-liner). |
+| #19 stageProgress | Med | M–L | **◐ → ● (extract) 2026-07-03** — `LiveModelRead` threads the snapshot runner's `OnRowsetComplete` seam into `summary.stageProgress` for the extract leg. Residual: profile/emit progress (Core-touching; assess-only, skipped). |
 | #17 `--query` | **High** | M | **● shipped** — `Query` walker over `toJson`, global `--query` flag. |
 | #23 Explore TUI | **High** | L | The marquee; gated by #18 + #20. |
 | #4 RenderOptions | Med (enabler) | M | Unblocks #11/#15/#18; land alone. |
@@ -1199,7 +1224,7 @@ Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a se
 | #14 trends | Med | S–M | `Theme.sparkline` already exists, zero callers. |
 | #24 diff verb | — | — | **● already reachable** — `diff @runA @runB` via the `Ref` uniformity; the new part folds into #23. |
 | #25 explain dig | Med | M | Needs #15 so a deep trail isn't a wall. |
-| #21 spine | Med | M | `--watch` for the other verbs. |
+| #21 spine | Med | M | **● 2026-07-03** — every verb routes through `Shell.execute` (the operator shell): canary + synth-load get their boards; the publish spines gain the store/seed-load legs; the previously-unbracketed verbs run enveloped. |
 | #12 → #13 table | Med | M / S | #13 is cheap once #12 exists. |
 | #18 ViewPath | Med | M | Build *with* #23, not speculatively. |
 | #3 defensive render | Med | S | Cheap insurance against a markup crash. |
