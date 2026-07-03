@@ -86,3 +86,32 @@ module JsonCodecKernel =
     /// Decimal → invariant-culture string (the write-side determinism primitive
     /// shared by the value-encoding codecs).
     let inv (d: decimal) : string = d.ToString(CultureInfo.InvariantCulture)
+
+    // ======================================================================
+    // ENCODE — the structural write-side twins of `field` / `optField` /
+    // `listField`. `CatalogCodec` and `ProfileCodec` each declared a
+    // byte-identical private copy of these; they carry no error-code prefix
+    // (pure structural writers, nothing to fail), so — unlike the decode
+    // helpers — they take no `prefix`. Single-sources the write semantics
+    // (how an absent option is written, array framing) the same way the
+    // decode kernel single-sources the read side.
+    // ======================================================================
+
+    /// Write a named field through a value-writer (write-side twin of `field`).
+    let wField (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (v: 'a) : unit =
+        jw.WritePropertyName name
+        write jw v
+
+    /// Write an optional named field; `None` → JSON null (write-side twin of `optField`).
+    let wOpt (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (v: 'a option) : unit =
+        jw.WritePropertyName name
+        match v with
+        | Some x -> write jw x
+        | None   -> jw.WriteNullValue()
+
+    /// Write a named array field (write-side twin of `listField`).
+    let wList (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (xs: 'a list) : unit =
+        jw.WritePropertyName name
+        jw.WriteStartArray()
+        for x in xs do write jw x
+        jw.WriteEndArray()

@@ -36,21 +36,17 @@ module ProfileCodec =
     // ENCODE
     // ======================================================================
 
+    // Structural write helpers — the shared kernel primitives under this
+    // codec's local names (mirrors the `inv` alias above; the write semantics
+    // live once in `JsonCodecKernel`).
     let private wField (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (v: 'a) : unit =
-        jw.WritePropertyName name
-        write jw v
+        JsonCodecKernel.wField jw name write v
 
     let private wOpt (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (v: 'a option) : unit =
-        jw.WritePropertyName name
-        match v with
-        | Some x -> write jw x
-        | None   -> jw.WriteNullValue()
+        JsonCodecKernel.wOpt jw name write v
 
     let private wList (jw: Utf8JsonWriter) (name: string) (write: Utf8JsonWriter -> 'a -> unit) (xs: 'a list) : unit =
-        jw.WritePropertyName name
-        jw.WriteStartArray()
-        for x in xs do write jw x
-        jw.WriteEndArray()
+        JsonCodecKernel.wList jw name write xs
 
     let private wSsKeyVal (jw: Utf8JsonWriter) (k: SsKey) : unit = jw.WriteStringValue (SsKey.serialize k)
 
