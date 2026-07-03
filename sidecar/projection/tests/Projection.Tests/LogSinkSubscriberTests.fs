@@ -103,3 +103,22 @@ let ``clearSubscribers: detaches — no delivery after clear`` () =
         Assert.Equal<string list>([ "config.runStart" ], codesOf (List.ofSeq received))
     finally
         LogSink.clearSubscribers ()
+
+[<Fact>]
+let ``emit under a Null writer still notifies subscribers and counts transforms (#20 rework)`` () =
+    // The serialization skip for a nulled channel 1 (the live board's span) must
+    // not change WHAT flows: the accumulator counters and the subscribers see
+    // every visible envelope — only the wasted NDJSON serialization is skipped.
+    LogSink.reset ()
+    LogSink.clearSubscribers ()
+    let received = ResizeArray<LogSink.Envelope>()
+    LogSink.addSubscriber (fun e -> received.Add e)
+    try
+        LogSink.withWriter TextWriter.Null (fun () ->
+            LogSink.emit (info LogSink.Transform "transform.applied")
+            LogSink.emit (info LogSink.Extract "extract.started"))
+        Assert.Equal<string list>([ "transform.applied"; "extract.started" ], codesOf (List.ofSeq received))
+        let _, applied, _ = LogSink.transformCounts ()
+        Assert.Equal(1, applied)
+    finally
+        LogSink.clearSubscribers ()

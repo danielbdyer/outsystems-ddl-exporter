@@ -128,19 +128,40 @@ module Watch =
         | Some (:? int64 as l) -> int l
         | _                    -> 0
 
-    /// Fold one envelope into the board. Returns the updated board and whether it
-    /// produced a *renderable* transition (so the shell sleeps + refreshes only on
-    /// real changes, never on every envelope). The board reacts to exactly two
-    /// event kinds: a `<stage>.started` (→ `Active`) and a `summary.stageCompleted`
+    /// The visible weight of one envelope's fold into the board — what the drain
+    /// loop renders and paces on (#20 rework). `Transitioned` is a stage-arc change
+    /// (a line started or closed): the dwell floor paces these so each stays
+    /// legible. `Progressed` is an in-place progress update on an active line:
+    /// rendered promptly, never dwelled (dwelling per progress frame is how the
+    /// backlog replay hang happened). `NoChange` is every other envelope.
+    [<RequireQualifiedAccess>]
+    type Fold =
+        | NoChange
+        | Progressed
+        | Transitioned
+
+    /// The stronger of two folds — a coalesced batch renders once, paced by the
+    /// strongest change it contained.
+    let strongestFold (a: Fold) (b: Fold) : Fold =
+        match a, b with
+        | Fold.Transitioned, _ | _, Fold.Transitioned -> Fold.Transitioned
+        | Fold.Progressed, _ | _, Fold.Progressed     -> Fold.Progressed
+        | _                                           -> Fold.NoChange
+
+    /// Fold one envelope into the board. Returns the updated board and the fold's
+    /// visible weight (so the shell dwells only on stage transitions and refreshes
+    /// only on real changes, never on every envelope). The board reacts to exactly
+    /// three event kinds: a `<stage>.started` (→ `Active`), a `summary.stageProgress`
+    /// (→ progress in place) and a `summary.stageCompleted`
     /// (→ `Done` with the measured duration on a `succeeded` outcome; → `Halted`
     /// on `failed` / `aborted`, so a closed-unsuccessful stage reads `✕`, never a
     /// `✓` that misstates and never a hung Active line — the R2 Aborted arm). The
     /// redundant `<stage>.completed` markers are ignored — `summary.stageCompleted`
     /// carries the duration.
-    let apply (board: Board) (code: string) (payload: Map<string, objnull>) : Board * bool =
+    let applyKind (board: Board) (code: string) (payload: Map<string, objnull>) : Board * Fold =
         if code.EndsWith ".started" then
             let key = code.Substring(0, code.Length - ".started".Length)
-            if isUmbrella board key then board, false
+            if isUmbrella board key then board, Fold.NoChange
             else
                 // A pre-seeded `Pending` stage flips to `Active` in place (keeping
                 // its planned position); an unseeded stage appends; an already
@@ -150,9 +171,9 @@ module Watch =
                     { board with
                         Stages =
                             board.Stages
-                            |> List.map (fun s -> if s.Key = key then { s with State = Active None } else s) }, true
-                | Some _ -> board, false
-                | None -> { board with Stages = board.Stages @ [ { Key = key; State = Active None } ] }, true
+                            |> List.map (fun s -> if s.Key = key then { s with State = Active None } else s) }, Fold.Transitioned
+                | Some _ -> board, Fold.NoChange
+                | None -> { board with Stages = board.Stages @ [ { Key = key; State = Active None } ] }, Fold.Transitioned
         elif code = "summary.stageProgress" then
             // An active stage reports how far it has come. The board updates that
             // line's progress in place — a renderable change, but never a new
@@ -166,14 +187,14 @@ module Watch =
                     { board with
                         Stages =
                             board.Stages
-                            |> List.map (fun ln -> if ln.Key = key then { ln with State = Active(Some prog) } else ln) }, true
-                | _ -> board, false
-            | _ -> board, false
+                            |> List.map (fun ln -> if ln.Key = key then { ln with State = Active(Some prog) } else ln) }, Fold.Progressed
+                | _ -> board, Fold.NoChange
+            | _ -> board, Fold.NoChange
         elif code = "summary.stageCompleted" then
             match Map.tryFind "stage" payload with
             | Some s when not (isNull s) ->
                 let key = string s
-                if isUmbrella board key then board, false
+                if isUmbrella board key then board, Fold.NoChange
                 else
                     let dur = durationOf payload
                     // The wire outcome decides the closed state: `succeeded`
@@ -187,15 +208,27 @@ module Watch =
                         { board with
                             Stages =
                                 board.Stages
-                                |> List.map (fun ln -> if ln.Key = key then { ln with State = closed } else ln) }, true
+                                |> List.map (fun ln -> if ln.Key = key then { ln with State = closed } else ln) }, Fold.Transitioned
                     else
-                        { board with Stages = board.Stages @ [ { Key = key; State = closed } ] }, true
-            | _ -> board, false
-        else board, false
+                        { board with Stages = board.Stages @ [ { Key = key; State = closed } ] }, Fold.Transitioned
+            | _ -> board, Fold.NoChange
+        else board, Fold.NoChange
+
+    /// Fold one envelope into the board as a plain did-it-change — the stored-run
+    /// reconstruction (`boardOfStored`) and the pure board tests fold on this; the
+    /// live drain loop folds on `applyKind` (it paces on the fold's weight).
+    let apply (board: Board) (code: string) (payload: Map<string, objnull>) : Board * bool =
+        let board', fold = applyKind board code payload
+        board', (fold <> Fold.NoChange)
 
     /// Fold an envelope into the board (the `LogSink.Envelope` form).
     let applyEnvelope (board: Board) (env: LogSink.Envelope) : Board * bool =
         apply board env.Code env.Payload
+
+    /// Fold an envelope into the board carrying the fold's weight (the live drain
+    /// loop's form — dwell pacing keys off `Fold.Transitioned`).
+    let applyEnvelopeKind (board: Board) (env: LogSink.Envelope) : Board * Fold =
+        applyKind board env.Code env.Payload
 
     /// R1e — reconstruct the board from a STORED run's serialized envelopes
     /// (`Run.Events`, the NDJSON lines `Run.capture` persists): each line
@@ -321,7 +354,10 @@ module Watch =
             let baseText = statementText (line.Key + ".started") Map.empty
             match prog with
             | Some p -> sprintf "%s · %s" baseText (progressTextStalled stalled p)
-            | None   -> baseText
+            // A progress-less stage that has gone quiet says so in words, the same
+            // register the progress fragment uses — a frozen dimmed spinner with no
+            // explanation left the operator guessing (#20 rework; §13 honesty).
+            | None   -> if stalled then sprintf "%s · stalled" baseText else baseText
         | Done dur ->
             let baseText = statementText "summary.stageCompleted" (Map.ofList [ "stage", box line.Key ])
             match dur with
@@ -466,6 +502,17 @@ module Watch =
             | true, v when v >= 0L -> v
             | _ -> defaultDwellMs
 
+    /// The stall threshold for this process — the default, overridable via
+    /// `PROJECTION_WATCH_STALL_MS` (perceptual tuning + a deterministic seam for
+    /// the stall-render tests, the same shape as the dwell override).
+    let resolveStallThresholdMs () : int64 =
+        match Environment.GetEnvironmentVariable "PROJECTION_WATCH_STALL_MS" with
+        | null -> stallThresholdMs
+        | s ->
+            match Int64.TryParse s with
+            | true, v when v >= 0L -> v
+            | _ -> stallThresholdMs
+
     /// The cutover timeline strip line (pretty markup) — the canary-history dots
     /// with the present marker, the R6 gate meter, and the ratio (`●●●●✕●●▸
     /// ▇▇▇▇▇▇▇░░░ 7/10`). Pure over (cells, filled, total) so the content is
@@ -514,7 +561,22 @@ module Watch =
         let board = ref (seededOf spine)
         let header = cutoverHeader ()
         let sw = System.Diagnostics.Stopwatch.StartNew()
-        let mutable lastRenderAt = 0L
+        let stallMs = resolveStallThresholdMs ()
+        // Three clocks (#20 rework, 2026-07-02). Splitting them is the fix for the
+        // hang family: one clock cannot honestly pace the dwell, the heartbeat AND
+        // the stall verdict at once.
+        //   lastTransitionAt — dwell pacing: only stage TRANSITIONS are floored, so
+        //     each arc change stays legible without turning a progress flood into a
+        //     backlog replay.
+        //   lastPaintAt — heartbeat pacing: the spinner breathes on wall clock,
+        //     regardless of whether the queue is chatty (the old loop only breathed
+        //     on a TryTake TIMEOUT, so a continuous envelope stream froze it).
+        //   lastEventAt — liveness: ANY dequeued envelope proves the pipeline is
+        //     alive; `stalled` is now-lastEventAt, never now-lastRender (the old
+        //     conflation called a quiet-but-working stage stalled at 3s).
+        let mutable lastTransitionAt = 0L
+        let mutable lastPaintAt = 0L
+        let mutable lastEventAt = 0L
         let mutable code = 0
         // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
         // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
@@ -540,32 +602,61 @@ module Watch =
                 // The breathing spinner's render tick (#20 follow-on) — advanced on EVERY
                 // render (a folded frame OR an idle wake), so the active stage visibly breathes.
                 let mutable phase = 0
+                // One paint path — every repaint advances the spinner and stamps the
+                // heartbeat clock, whatever prompted it.
+                let paint (stalled: bool) =
+                    phase <- phase + 1
+                    lastPaintAt <- sw.ElapsedMilliseconds
+                    ctx.UpdateTarget(toRenderableWith header phase stalled board.Value)
+                    ctx.Refresh()
                 while draining do
                     let mutable env = Unchecked.defaultof<LogSink.Envelope>
                     if queue.TryTake(&env, 100) then
-                        let board', changed = applyEnvelope board.Value env
-                        if changed then
+                        // COALESCE (#20 rework): fold everything already queued into ONE
+                        // frame, stopping after the first stage TRANSITION — transitions
+                        // are bounded by the spine and each deserves its dwelled frame;
+                        // progress and foreign envelopes are the unbounded flood, and
+                        // folding them one-frame-per-envelope (each dwelled 120ms) is how
+                        // the board lagged minutes behind and replayed a backlog after the
+                        // run had already finished.
+                        let mutable batch = Fold.NoChange
+                        let mutable take = true
+                        while take do
+                            lastEventAt <- sw.ElapsedMilliseconds
+                            let board', fold = applyEnvelopeKind board.Value env
                             board.Value <- board'
-                            let sleep = dwellMs floorMs lastRenderAt sw.ElapsedMilliseconds
+                            batch <- strongestFold batch fold
+                            if batch = Fold.Transitioned then take <- false
+                            elif not (queue.TryTake(&env, 0)) then take <- false
+                        match batch with
+                        | Fold.Transitioned ->
+                            // The dwell floor paces stage transitions ONLY — the previous
+                            // arc frame stays legible ≥ the floor before this one replaces
+                            // it. Progress frames render immediately below.
+                            let sleep = dwellMs floorMs lastTransitionAt sw.ElapsedMilliseconds
                             if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
-                            lastRenderAt <- sw.ElapsedMilliseconds
-                            phase <- phase + 1
-                            // a fold JUST happened — never stalled
-                            ctx.UpdateTarget(toRenderableWith header phase false board.Value)
-                            ctx.Refresh()
+                            lastTransitionAt <- sw.ElapsedMilliseconds
+                            paint false
+                        | Fold.Progressed ->
+                            paint false
+                        | Fold.NoChange ->
+                            // A batch of foreign envelopes changed nothing visible — but
+                            // the pipeline is chatty-alive, so keep the spinner breathing
+                            // on the wall-clock heartbeat (the old loop never repainted
+                            // here, which froze the board for the whole flood).
+                            if hasActiveStage board.Value && sw.ElapsedMilliseconds - lastPaintAt >= 100L then
+                                paint (sw.ElapsedMilliseconds - lastEventAt > stallMs)
                     elif queue.IsCompleted then
                         draining <- false
                     elif hasActiveStage board.Value then
-                        // Idle wake (no new frame in 100ms) with a stage in progress — advance
+                        // Idle wake (no envelope in 100ms) with a stage in progress — advance
                         // the spinner and refresh so the active line breathes between events. No
-                        // fold, no dwell sleep (the dwell is a floor on CHANGES, not added here).
-                        // If the active stage has gone quiet past the threshold, render it STALLED
-                        // (frozen spinner + the estimate degrades to `stalled`) — honest, not a
-                        // countdown that keeps lying while nothing moves.
-                        let stalled = sw.ElapsedMilliseconds - lastRenderAt > stallThresholdMs
-                        phase <- phase + 1
-                        ctx.UpdateTarget(toRenderableWith header phase stalled board.Value)
-                        ctx.Refresh()
+                        // fold, no dwell sleep (the dwell is a floor on TRANSITIONS, not added
+                        // here). If the pipeline has gone quiet past the threshold, render it
+                        // STALLED (frozen spinner + the line reads `stalled`) — honest, not a
+                        // countdown that keeps lying while nothing moves. Liveness keys off
+                        // lastEventAt: any envelope proves work, board-visible or not.
+                        paint (sw.ElapsedMilliseconds - lastEventAt > stallMs)
                 // Join the producer for its exit code — `GetAwaiter().GetResult()` so a body
                 // exception propagates as ITSELF, not wrapped in `AggregateException`.
                 code <- bodyTask.GetAwaiter().GetResult()

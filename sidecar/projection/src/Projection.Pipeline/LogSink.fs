@@ -433,6 +433,12 @@ module LogSink =
     let clearSubscribers () : unit =
         lock lockObj (fun () -> subscribers.Clear())
 
+    /// How many subscribers are attached — the executable witness for the
+    /// renderer-teardown law (`renderWatchOn` detaches on EVERY exit path);
+    /// no production consumer, read by the teardown tests only.
+    let subscriberCount () : int =
+        lock lockObj (fun () -> subscribers.Count)
+
     /// Deliver one envelope to every subscriber, in registration order.
     /// PRECONDITION: the caller holds `lockObj` — only `emit` / `runComplete`
     /// call this, both already inside the lock (`Monitor` is reentrant). The
@@ -632,7 +638,13 @@ module LogSink =
                 ()
             else
                 updateAccumulator env
-                writer.Value.WriteLine(serializeEnvelope env)
+                // #20 rework — under a nulled channel 1 (the live board's span, the
+                // `--pretty` bracket) serialization is skipped: the null writer would
+                // discard the line anyway, and serializing every envelope under the
+                // global lock taxed the emitting (pipeline) thread for nothing. The
+                // accumulator and the subscribers still see every envelope.
+                if not (System.Object.ReferenceEquals(writer.Value, TextWriter.Null)) then
+                    writer.Value.WriteLine(serializeEnvelope env)
                 // Channel 2 sees exactly what channel 1 wrote, in order.
                 notifySubscribers env)
 
@@ -689,7 +701,9 @@ module LogSink =
     /// (`done` of `total`, with the elapsed time so the live board can compute an
     /// honest estimate, §13). A mid-stage event between `<stage>.started` and the
     /// `summary.stageCompleted`; producers call it from their write loops at a
-    /// modest cadence (the board coalesces, the dwell floor paces the frames).
+    /// modest cadence (the board coalesces queued progress into one frame; the
+    /// dwell floor paces stage TRANSITIONS only, so a fast producer never builds
+    /// a render backlog).
     let recordStageProgress (stage: string) (doneCount: int) (total: int) (elapsedMs: int64) : unit =
         let payload : Map<string, objnull> =
             Map.ofList [
@@ -1070,7 +1084,10 @@ module LogSink =
             match s.EventCounts.TryGetValue Info with
             | true, n -> s.EventCounts.[Info] <- n + 1
             | false, _ -> s.EventCounts.[Info] <- 1
-            writer.Value.WriteLine(serializeEnvelope env)
+            // Same null-writer skip as `emit` (#20 rework) — the terminal envelope
+            // still reaches the accumulator above and the subscribers below.
+            if not (System.Object.ReferenceEquals(writer.Value, TextWriter.Null)) then
+                writer.Value.WriteLine(serializeEnvelope env)
             // The terminal envelope reaches subscribers too — the "watch"
             // renderer draws its final verdict panel off this event.
             notifySubscribers env
