@@ -86,6 +86,11 @@ module Config =
         Synthesize             : string list
         Scale                  : decimal option
         Seed                   : uint64 option
+        /// H-071 consumer (opt-in) — weight per-kind synthetic row volume by
+        /// FK-graph centrality, so structurally central kinds get proportionally
+        /// more rows. `false` (the default) is byte-identical to the flat
+        /// profiled-RowCount × Scale volume.
+        WeightVolumeByCentrality : bool
     }
 
     type ProfileSection = {
@@ -538,7 +543,8 @@ module Config =
     /// `SyntheticConfig.defaultConfig` holds). Public — `ProjectionConfig.empty`
     /// and a `projection.json` with no `synthetic` block both rest on it.
     let defaultSyntheticSection : SyntheticSection =
-        { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None }
+        { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None
+          WeightVolumeByCentrality = false }
 
     let private defaultModelSection : ModelSection = {
         Path                   = None
