@@ -467,7 +467,16 @@ let consoleFor (writer: System.IO.TextWriter) (redirected: bool) : IAnsiConsole 
     (match envColorOverride () with
      | Some false -> settings.ColorSystem <- ColorSystemSupport.NoColors
      | Some true  -> settings.Ansi <- AnsiSupport.Yes
-     | None       -> ())
+     | None       ->
+         // A redirected sink renders PLAIN (2026-07-02). Spectre cannot detect
+         // redirection through an injected `AnsiConsoleOutput` (the prior
+         // "Spectre strips its color of its own accord" assumption held only
+         // for the DEFAULT console), so ANSI was spraying into pipes and
+         // files. `CLICOLOR_FORCE` above still forces color into a pipe when
+         // the operator declares it.
+         if redirected then
+             settings.ColorSystem <- ColorSystemSupport.NoColors
+             settings.Ansi <- AnsiSupport.No)
     let console = AnsiConsole.Create settings
     if redirected then console.Profile.Width <- plainWidth
     console

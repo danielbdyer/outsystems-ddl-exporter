@@ -50,6 +50,7 @@
     <Compile Include="RelaxationStoreTests.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
+    <Compile Include="ShellTests.fs" />
     <Compile Include="WatchInjectionTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />
     <Compile Include="CapabilitySurveyTotalityTests.fs" />

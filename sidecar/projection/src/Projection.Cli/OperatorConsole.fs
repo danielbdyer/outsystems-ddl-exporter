@@ -49,7 +49,9 @@ let printErrors (writer: TextWriter) (errors: ValidationError list) : unit =
 /// Polish — `-v` / `--verbose` surfaces the per-label bench table (and other
 /// depth); set in `main`. Default is calm: the bench snapshot persists for the
 /// perf gate + rides the `runComplete` aggregates, but the table is opt-in.
-let verboseMode = ref false
+/// (An ALIAS since 2026-07-02 — the ref lives on the `Shell`, which compiles
+/// first; every `open …OperatorConsole` site keeps reading the same cell.)
+let verboseMode = Shell.verboseMode
 
 let dumpBench (tag: string) : unit =
     let stats = Bench.snapshot ()
@@ -85,51 +87,26 @@ let dumpBench (tag: string) : unit =
 /// the run, then the verdict panel as the resolved final frame. (`--watch` was
 /// folded into this 2026-06-17 — the board is simply what pretty shows while a
 /// run is in flight; the standalone flag is deprecated.)
-let prettyMode = ref false
+/// (An ALIAS since 2026-07-02 — the ref lives on the `Shell`.)
+let prettyMode = Shell.prettyMode
 
 // The per-face stage arcs retired 2026-06-12 (card S2): the live Watch board
 // pre-seeds from the declared `Spines` (`RunSpine` — one definition site per
 // arc), no longer from hand-rolled string lists here.
 
 let withRun (command: string) (body: unit -> int) : int =
-    // Tier-3 channel 2 (§15.1) — when --pretty + a real TTY, the panel
-    // REPLACES the NDJSON on stderr (never both on the same TTY); route
-    // channel 1 to the null sink for this run. (The writer is not run
-    // state, so it is set before the bracket's reset.)
-    let pretty = TtyRenderer.shouldRender prettyMode.Value
-    if pretty then LogSink.setWriter System.IO.TextWriter.Null
-    // Card S4a — the run envelope bracket has ONE owner (`RunEnvelope`,
-    // shared with `FullExportRun.executeCore`): runStart first, the §7.4
-    // registry inventory, the terminal runComplete always — now including
-    // crashed bodies, which previously escaped without their §10 close.
-    let code =
-        // NM-34b — the generic verb wrapper is content-blind (it brackets an
-        // arbitrary `body : unit -> int`), so it declares no hashable inputs.
-        // A digest-bearing verb runs through its own face (e.g. full-export),
-        // not this generic console bracket.
-        RunEnvelope.bracket command ignore Map.empty (fun () -> "", []) (fun () ->
-            let code = body ()
-            code, (if code = 0 then LogSink.Succeeded else LogSink.Failed))
-    // Tier-4 reporting — append this run to the cross-run ledger when one is
-    // configured (`PROJECTION_LEDGER_DIR`), so the readiness gauge can read
-    // the canary streak. Opt-in: default runs don't accumulate.
-    (match RunLedger.configuredDir () with
-     | Some dir ->
-         let registered, applied, declined = LogSink.transformCounts ()
-         try
-             RunLedger.append dir
-                 { RunId      = LogSink.runId ()
-                   Ts         = System.DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the operator-console IO boundary (ISO-8601 round-trip o format)
-                   Command    = command
-                   Outcome    = (if code = 0 then "succeeded" else "failed")
-                   Canary     = LogSink.canaryVerdict ()
-                   Registered = registered
-                   Applied    = applied
-                   Declined   = declined }
-         with ex -> eprintfn "  WARNING: failed to append ledger record: %s" ex.Message
-     | None -> ())
-    if pretty then TtyRenderer.renderSummary command code
-    code
+    // Since 2026-07-02 this is a THIN alias over the operator shell — the one
+    // door (`Shell.execute`): the run-envelope bracket (S4a, one owner),
+    // channel-1 suppression under pretty (§15.1, now SCOPED so an outer
+    // writer restores), the cross-run ledger append, and the verdict panel.
+    // NM-34b — the generic verb wrapper is content-blind (it brackets an
+    // arbitrary `body : unit -> int`); a digest-bearing verb runs through its
+    // own face (e.g. full-export), not this generic bracket.
+    Shell.execute
+        { Shell.currentFrame.Value with Command = command }
+        Shell.Bracket.Bracketed
+        None
+        body
 
 let parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
     match label with

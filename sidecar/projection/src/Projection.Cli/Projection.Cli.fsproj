@@ -19,6 +19,7 @@
     <Compile Include="Voice.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="Watch.fs" />
+    <Compile Include="Shell.fs" />
     <Compile Include="Intervene.fs" />
     <Compile Include="Navigator.fs" />
     <Compile Include="OperatorConsole.fs" />

@@ -60,7 +60,9 @@ let private inScopeCodes : Set<string> =
           "migrate.applied"; "migrate.verificationFailed"
           // the §12 at-scale rollup — the model read's divergence notices
           // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
-          "adapter.ossys.modelRead.noticeRollup" ]
+          "adapter.ossys.modelRead.noticeRollup"
+          // the operator shell's §5 preview frame (Shell.execute, render-only)
+          "shell.previewFrame" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -118,6 +120,9 @@ let private knownEmittableCodes : Set<string> =
           // the model read's notice rollup (LiveModelRead.surfaceDivergences —
           // one Warn envelope condensing the divergence notices; §12 at-scale law)
           "adapter.ossys.modelRead.noticeRollup"
+          // the operator shell's preview frame — render-synthesized (like the
+          // watch.* frames), consumed at `Shell.execute`'s static open
+          "shell.previewFrame"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]

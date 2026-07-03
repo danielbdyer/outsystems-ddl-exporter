@@ -848,6 +848,21 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
+    /// `shell.previewFrame` — the operator shell's static open for a run that
+    /// writes nothing (`THE_VOICE.md` §5's consequence-as-meaning, carried to
+    /// the preview register): the frame says so up front, so a gated dry-run
+    /// reads as a deliberate preview rather than a dead board.
+    let private shellPreviewFrame : Copy =
+        { Code           = "shell.previewFrame"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                match text "title" p with
+                | Some t -> View.Note(sprintf "%s. Nothing will be written." t)
+                | None   -> View.Note "A preview. Nothing will be written."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `adapter.ossys.modelRead.noticeRollup` — a model read's divergence notices,
     /// condensed to one calm line (`THE_VOICE.md` §12 at-scale law: the surface is
     /// a constant size; only the numbers grow). The per-item detail is the run's
@@ -934,6 +949,8 @@ module Voice =
           watchRunDone
           watchStageHalted
           summaryStageCompleted
+          // §5 — the operator shell's preview frame
+          shellPreviewFrame
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
           // §14 / §10 — config & errors

@@ -55,6 +55,12 @@ module Watch =
     /// current visible state. Ordered by first appearance.
     type StageLine = { Key: string; State: StageState }
 
+    /// The rollup codes the board's notice strip folds (2026-07-02) — each is a
+    /// producer-aggregated Warn envelope (one calm line per notice family, the
+    /// §12 at-scale law), never a per-item stream.
+    let noticeCodes : Set<string> =
+        Set.ofList [ LiveModelRead.noticeRollupCode ]
+
     /// The board — the stage lines, plus the optional run frame (`THE_VOICE.md`
     /// §13: "the instrument speaks about its own running"). `Title` is the
     /// run-in-flight header voiced above the arc; `RunIdentity` is the run's
@@ -68,10 +74,16 @@ module Watch =
         { Stages: StageLine list
           Title: string option
           RunIdentity: string option
-          Umbrella: string option }
+          Umbrella: string option
+          /// The notice strip (2026-07-02) — the run's Warn ROLLUP envelopes,
+          /// keyed by code, replace-by-code (a publish re-reads the same model
+          /// for its store/load legs, so identical rollups fold to one row —
+          /// the counts never double). Rendered muted between the stage arc
+          /// and the done-frame; the copy is the Voice catalog's (one register).
+          Notices: (string * Map<string, objnull>) list }
 
     let empty : Board =
-        { Stages = []; Title = None; RunIdentity = None; Umbrella = Some "pipeline" }
+        { Stages = []; Title = None; RunIdentity = None; Umbrella = Some "pipeline"; Notices = [] }
 
     /// A board pre-seeded with the run's planned stages, each `Pending` — so the
     /// operator sees the whole arc before the first stage starts, the stages
@@ -84,7 +96,8 @@ module Watch =
             |> List.map (fun k -> { Key = k; State = Pending })
           Title = None
           RunIdentity = None
-          Umbrella = Some "pipeline" }
+          Umbrella = Some "pipeline"
+          Notices = [] }
 
     /// A seeded board carrying the run frame — the run-title header voiced above
     /// the arc (`THE_VOICE.md` §13) and, when known up front, the run's ordinal for
@@ -102,7 +115,8 @@ module Watch =
         { Stages = RunSpine.keys spine |> List.map (fun k -> { Key = k; State = Pending })
           Title = None
           RunIdentity = None
-          Umbrella = RunSpine.rootKey spine }
+          Umbrella = RunSpine.rootKey spine
+          Notices = [] }
 
     /// The umbrella root scope (e.g. full-export's "pipeline") wraps the whole
     /// run; it is not a sub-stage the operator watches, so the board elides its
@@ -212,6 +226,17 @@ module Watch =
                     else
                         { board with Stages = board.Stages @ [ { Key = key; State = closed } ] }, Fold.Transitioned
             | _ -> board, Fold.NoChange
+        elif Set.contains code noticeCodes then
+            // A Warn ROLLUP envelope → the notice strip, replace-by-code (the
+            // 2-3 identical model reads of one publish fold to ONE row; the
+            // counts never double). A progressed fold: rendered promptly,
+            // never dwelled — it is a strip update, not an arc transition.
+            let replaced =
+                if board.Notices |> List.exists (fun (c, _) -> c = code) then
+                    board.Notices |> List.map (fun (c, p) -> if c = code then (c, payload) else (c, p))
+                else
+                    board.Notices @ [ (code, payload) ]
+            { board with Notices = replaced }, Fold.Progressed
         else board, Fold.NoChange
 
     /// Fold one envelope into the board as a plain did-it-change — the stored-run
@@ -374,6 +399,15 @@ module Watch =
     /// The stage line with no stall (the calm default — every existing caller / test).
     let lineText (line: StageLine) : string = lineTextWith false line
 
+    /// The operator line for a notice-strip row — the Voice statement for the
+    /// rollup code, with its action (the artifact pointer) appended when one
+    /// rides. Pure + voiced, so the strip is testable like the stage lines.
+    let noticeText (code: string) (payload: Map<string, objnull>) : string =
+        let statement = statementText code payload
+        match Voice.lookup code |> Option.bind (fun c -> c.Action payload) with
+        | Some (View.Action a) -> sprintf "%s %s" statement a
+        | _ -> statement
+
     /// The run's terminal stage — the last line on the board (the arc's final
     /// stage). `None` for an empty board. The done-frame's follow-on is keyed off
     /// it (§13 — "a finished change build offers the verify").
@@ -454,6 +488,12 @@ module Watch =
             | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
             | None   -> []
         let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup phase stalled s) :> IRenderable)
+        // The notice strip (2026-07-02) — the rollup rows, muted with the warn
+        // glyph, between the arc and the done-frame: present, calm, never a wall.
+        let noticeRows =
+            board.Notices
+            |> List.map (fun (code, payload) ->
+                Markup(sprintf "%s  %s" (Theme.yellow Theme.warn) (Theme.muted (Markup.Escape(noticeText code payload)))) :> IRenderable)
         let doneRow =
             match doneFrameText board with
             | Some t ->
@@ -464,7 +504,7 @@ module Watch =
                     else Theme.ok, Theme.green
                 [ Markup(sprintf "%s  %s" glyph (paint (Markup.Escape t))) :> IRenderable ]
             | None   -> []
-        titleRow @ stageRows @ doneRow
+        titleRow @ stageRows @ noticeRows @ doneRow
 
     /// Project the board onto a Spectre renderable — the live target the
     /// `LiveDisplayContext` updates in place. A STATIC render (stored board, tests)
@@ -557,8 +597,18 @@ module Watch =
     /// JOIN `body` for its exit code — so the caller still sees one synchronous, deterministic
     /// call (`Live.Start` blocks here), which is why `WatchInjectionTests` can assert on the
     /// final board with the dwell pinned to 0.
-    let renderWatchOn (console: IAnsiConsole) (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
-        let board = ref (seededOf spine)
+    /// The contained instrument box (2026-07-02, the operator-shell charter) —
+    /// the live target wraps in a rounded panel so every run presents as ONE
+    /// fixed-viewport box on the terminal. No alternate screen: the Live
+    /// region repaints in place and the final frame stays in scrollback (the
+    /// operator keeps the record after exit).
+    let private boxed (inner: IRenderable) : IRenderable =
+        let panel = Panel(inner)
+        panel.Border <- BoxBorder.Rounded
+        panel :> IRenderable
+
+    let renderWatchOn (console: IAnsiConsole) (seed: Board) (floorMs: int64) (body: unit -> int) : int =
+        let board = ref seed
         let header = cutoverHeader ()
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let stallMs = resolveStallThresholdMs ()
@@ -581,7 +631,7 @@ module Watch =
         // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
         // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
         let queue = new System.Collections.Concurrent.BlockingCollection<LogSink.Envelope>()
-        console.Live(toRenderableWith header 0 false board.Value).Start(fun ctx ->
+        console.Live(boxed (toRenderableWith header 0 false board.Value)).Start(fun ctx ->
             // Enqueue-and-return: the subscriber holds emit's lock only for the `Add`. A late
             // emit after `CompleteAdding` throws — swallowed; no such emit exists in practice
             // (the body's `withWriter` returns before the queue is completed). FORWARD NOTE:
@@ -607,7 +657,7 @@ module Watch =
                 let paint (stalled: bool) =
                     phase <- phase + 1
                     lastPaintAt <- sw.ElapsedMilliseconds
-                    ctx.UpdateTarget(toRenderableWith header phase stalled board.Value)
+                    ctx.UpdateTarget(boxed (toRenderableWith header phase stalled board.Value))
                     ctx.Refresh()
                 while draining do
                     let mutable env = Unchecked.defaultof<LogSink.Envelope>
@@ -672,13 +722,16 @@ module Watch =
         code
 
     /// Production wrapper — the live board on stderr (channel 2), mirroring
-    /// `TtyRenderer`'s console creation. Tests drive `renderWatchOn` with a
-    /// `Spectre.Console.Testing.TestConsole` to assert the board (and the
-    /// channel-1 suppression / prior-writer restoration) without a real TTY.
-    let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
+    /// `TtyRenderer`'s console creation. Takes the SEED board (2026-07-02 —
+    /// the shell frames it with the run title before handing it over; a bare
+    /// `seededOf spine` renders the unframed arc exactly as before). Tests
+    /// drive `renderWatchOn` with a `Spectre.Console.Testing.TestConsole` to
+    /// assert the board (and the channel-1 suppression / prior-writer
+    /// restoration) without a real TTY.
+    let renderWatch (seed: Board) (floorMs: int64) (body: unit -> int) : int =
         // The live board only runs on a real terminal (`shouldWatch` gates on a
         // non-redirected stderr), so the factory pins no width here; it does honor
         // `NO_COLOR` / `CLICOLOR_FORCE` so a no-color operator watching a run gets
         // the plain board, the same as the verdict panel.
         let console = View.consoleTo Console.Error
-        renderWatchOn console spine floorMs body
+        renderWatchOn console seed floorMs body

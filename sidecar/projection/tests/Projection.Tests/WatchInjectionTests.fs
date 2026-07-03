@@ -23,7 +23,7 @@ let ``renderWatchOn runs the body under the live board on an injected console`` 
         console.Profile.Capabilities.Interactive <- true
         let ran = ref false
         let code =
-            Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+            Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
                 ran.Value <- true
                 7)
         Assert.True(ran.Value, "the body must run inside the live region")
@@ -61,7 +61,7 @@ let ``renderWatchOn shows the cutover timeline header from the ledger's canary h
                   Declined = 0 }
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.canary 0L (fun () -> 0) |> ignore
+        Watch.renderWatchOn console (Watch.seededOf Spines.canary) 0L (fun () -> 0) |> ignore
         let out = console.Output
         Assert.Contains("▇", out)     // the R6 meter rode the header
         Assert.Contains("3/10", out)  // three consecutive green
@@ -82,7 +82,7 @@ let ``renderWatchOn suppresses channel 1 during the body and restores the prior 
     try
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.midRun" Map.empty)
             0)
         |> ignore
@@ -106,7 +106,7 @@ let ``renderWatchOn keeps the dwell OFF the emitting thread — emit never sleep
     let console = new TestConsole()
     console.Profile.Capabilities.Interactive <- true
     let bodyEmitMs = ref 0L
-    Watch.renderWatchOn console Spines.pipeline 200L (fun () ->
+    Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 200L (fun () ->
         let sw = System.Diagnostics.Stopwatch.StartNew()
         // each unique "<key>.started" appends a stage → applyEnvelope changed=true → the dwell
         // path. Info/Transform clears the emit filter (same shape as the suppression test).
@@ -134,7 +134,7 @@ let ``renderWatchOn propagates a body exception as itself and never hangs (#20 t
         let boom = InvalidOperationException("body boom")
         let thrown =
             try
-                Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+                Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
                     LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "alpha.started" Map.empty)
                     raise boom)
                 |> ignore
@@ -169,7 +169,7 @@ let ``renderWatchOn: a flood of foreign envelopes never starves the spinner hear
     try
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
             let sw = System.Diagnostics.Stopwatch.StartNew()
             while sw.ElapsedMilliseconds < 600L do
@@ -196,7 +196,7 @@ let ``renderWatchOn: a progress backlog coalesces — no post-run frame replay (
     console.Profile.Capabilities.Interactive <- true
     let sw = System.Diagnostics.Stopwatch.StartNew()
     let code =
-        Watch.renderWatchOn console Spines.pipeline 120L (fun () ->
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 120L (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
             for i in 1 .. 10_000 do
                 LogSink.recordStageProgress "extract" i 10_000 (int64 i)
@@ -217,7 +217,7 @@ let ``renderWatchOn: a quiet progress-less stage renders stalled after the thres
     try
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
             System.Threading.Thread.Sleep 400
             0)
@@ -238,10 +238,10 @@ let ``renderWatchOn detaches its subscriber on every exit path (#20 teardown)`` 
     try
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.pipeline 0L (fun () -> 0) |> ignore
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () -> 0) |> ignore
         Assert.Equal(0, LogSink.subscriberCount ())
         (try
-            Watch.renderWatchOn console Spines.pipeline 0L (fun () -> failwith "boom") |> ignore
+            Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () -> failwith "boom") |> ignore
          with _ -> ())
         Assert.Equal(0, LogSink.subscriberCount ())
     finally

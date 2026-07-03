@@ -38,9 +38,12 @@ module Face =
     /// live `Watch` board, else run it inline. For faces whose live stage sits APART
     /// from their `dumpBench` tail (the migrate legs render the execute leg under the
     /// board deep inside a `task`, then dump bench at the outer return).
+    /// The board seeds FRAMED (2026-07-02): the shell's ambient frame titles the
+    /// box, so a flow-dispatched face reads "publish: cloud-dev → on-prem-dev".
     let watchInline (gateOpen: bool) (spine: RunSpine) (body: unit -> int) : int =
         if gateOpen && Watch.shouldWatch prettyMode.Value then
-            Watch.renderWatch spine (Watch.resolveDwellMs ()) body
+            let seed = { Watch.seededOf spine with Title = Some (Shell.titleOf Shell.currentFrame.Value) }
+            Watch.renderWatch seed (Watch.resolveDwellMs ()) body
         else body ()
 
     /// The watch-preamble + `dumpBench` tail combined, for faces whose live stage and

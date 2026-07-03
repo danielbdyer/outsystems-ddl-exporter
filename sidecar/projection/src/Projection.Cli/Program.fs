@@ -122,6 +122,17 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     (match ModuleFilterBinding.inertFlagNote shaping.Model with
      | Some n -> eprintfn "Note — %s" n
      | None -> ())
+    // The shell wrapper for the answer / preview / one-shot verbs (2026-07-02,
+    // the A3 sweep — every verb now runs bracketed through the ONE door: run
+    // envelopes on the wire for pipes, channel-1 suppression + the framed
+    // verdict panel under pretty; see the DECISIONS amendment). The body's
+    // stdout answer surface is unchanged.
+    let shellRun (command: string) (register: Shell.Register) (body: unit -> int) : int =
+        Shell.execute
+            { Shell.currentFrame.Value with Command = command; Register = register }
+            Shell.Bracket.Bracketed
+            None
+            body
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     //
@@ -159,14 +170,19 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
-        // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
-        // pipeline's planned stages so the whole arc is visible from the first
-        // frame. The spine is chosen HERE (2026-07-02): a store-bearing publish
-        // seeds the store leg's line, so the board covers the whole run —
-        // an optional seeded stage would hold the done-frame back forever.
+        // The one door (2026-07-02): --pretty + a real TTY → the live boxed
+        // stage board (§13) then the verdict panel; the run now also joins the
+        // cross-run ledger (parity with the withRun verbs — the old direct
+        // renderWatch path skipped both). Self-bracketed: FullExportRun owns
+        // its RunEnvelope. The spine is chosen at dispatch: a store-bearing
+        // publish seeds the store leg's line, so the board covers the whole
+        // run — an optional seeded stage would hold the done-frame back forever.
         let hasStore = match store with Some s -> not (String.IsNullOrWhiteSpace s) | None -> false
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch (Spines.publishWith hasStore false) (Watch.resolveDwellMs ()) run
-        else run ()
+        Shell.execute
+            { Shell.currentFrame.Value with Command = "projection full-export" }
+            Shell.Bracket.SelfBracketed
+            (Some (Spines.publishWith hasStore false))
+            run
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
     | PlanAction.EmitManifest (model, modelOssys, dir) ->
@@ -176,7 +192,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.DeployDocker (model, modelOssys) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy shaping cat))
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
-        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
+            shellRun "projection preview" Shell.Preview (fun () -> runProjectLivePreview shapedCat conn decl)))
     | PlanAction.Transfer (src, sink, opts, execute) ->
         // R1b — the envelope-emitting faces move under `withRun` (the law:
         // a verb that mints envelopes runs bracketed; RI-11's census). The
@@ -201,55 +218,88 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             withRun "projection migrate --with-data" (fun () ->
                 runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env opts.SinkCapability)))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection, syntheticSection) ->
-        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
-    | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
-    | PlanAction.ProposeCorrection (model, modelOssys, out) -> runProposeCorrection model modelOssys out
+        // The synthetic load emits the transfer spine's load stage — under
+        // pretty an EXECUTING run now gets the live board (2026-07-02; it was
+        // the one long-running verb with no Watch wiring at all — completely
+        // silent until the trailing panel). A preview writes nothing, so its
+        // load line would never advance: no spine, the static frame instead.
+        Shell.execute
+            { Shell.currentFrame.Value with
+                Command = "projection synth-load"
+                Register = if execute then Shell.currentFrame.Value.Register else Shell.Preview }
+            Shell.Bracket.Bracketed
+            (if execute then Some Spines.transfer else None)
+            (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
+    | PlanAction.CaptureProfile (conn, out) -> shellRun "projection capture-profile" Shell.Go (fun () -> runCaptureProfile conn out)
+    | PlanAction.ProposeCorrection (model, modelOssys, out) -> shellRun "projection synth-correct" Shell.Go (fun () -> runProposeCorrection model modelOssys out)
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
         // The load flow runs the same publish pipeline plus the seed-load leg
         // (2026-07-02 — a declared stage, so the board covers the whole run;
         // the episode record, when a store rides, happens inside that leg).
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch (Spines.publishWith false true) (Watch.resolveDwellMs ()) run
-        else run ()
+        Shell.execute
+            { Shell.currentFrame.Value with Command = "projection full-export --load" }
+            Shell.Bracket.SelfBracketed
+            (Some (Spines.publishWith false true))
+            run
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate" (fun () ->
                 runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env)))
     // check --------------------------------------------------------------
-    | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
-    | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
-    | PlanAction.CheckDrift (m, conn)      -> runDrift m conn
-    | PlanAction.CheckData (before, after) -> runVerifyData before after
-    | PlanAction.CheckReady                -> runReadiness ()
-    | PlanAction.CheckShape (al, ar, confirm, asJson) -> runCheckShape al ar confirm asJson
+    // The canary verbs already emit the canary stage's spine events (the
+    // Pipeline `staged Spines.canary` CE) — under pretty they now get the
+    // live board those events always deserved (2026-07-02; the events used
+    // to flow to the nulled writer with no subscriber).
+    | PlanAction.CheckCanary (ddl, false) ->
+        Shell.execute
+            { Shell.currentFrame.Value with Command = "projection check" }
+            Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanary ddl)
+    | PlanAction.CheckCanary (ddl, true)  ->
+        Shell.execute
+            { Shell.currentFrame.Value with Command = "projection check --cdc-silence" }
+            Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
+    | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
+    | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
+    | PlanAction.CheckReady                ->
+        // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
+        // no-append contract rides the ReadOnly register).
+        Shell.execute
+            { Shell.currentFrame.Value with Command = "projection check ready"; Register = Shell.ReadOnly }
+            Shell.Bracket.SelfBracketed None runReadiness
+    | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
     // explain ------------------------------------------------------------
-    | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule
-    | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
-    | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
-    | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)
-    | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
+    | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
+        shellRun "projection diff" Shell.ReadOnly (fun () -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule)
+    | PlanAction.Compare (a, b, asJson)      -> shellRun "projection compare" Shell.ReadOnly (fun () -> runCompare a b asJson)
+    | PlanAction.ExplainPolicy (a, b)        -> shellRun "projection explain policy" Shell.ReadOnly (fun () -> runPolicyDiff a b)
+    | PlanAction.ExplainNode (c, k, asJson, depthOpt) ->
+        shellRun "projection explain node" Shell.ReadOnly (fun () -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth))
+    | PlanAction.ExplainSuggest (c, applyTo) -> shellRun "projection explain suggest" Shell.ReadOnly (fun () -> runSuggestConfig c applyTo)
     | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
-        let all = RegisteredAllTransforms.all
-        let stageBindingText (s: StageBinding) =
-            match s with
-            | StageBinding.Adapter        -> "adapter"
-            | StageBinding.Pass           -> "pass"
-            | StageBinding.OrderingPolicy -> "ordering"
-            | StageBinding.Emitter        -> "emitter"
-            | StageBinding.Pipeline       -> "pipeline"
-        printfn "projection: %d registered transform(s)" (List.length all)
-        for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
-            printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
-        0
-    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
-    | PlanAction.ExplainMigrateFromStore (store, toP, decl, forceGenesis) -> runMigrateFromStore store toP decl forceGenesis
+        shellRun "projection explain registry" Shell.ReadOnly (fun () ->
+            let all = RegisteredAllTransforms.all
+            let stageBindingText (s: StageBinding) =
+                match s with
+                | StageBinding.Adapter        -> "adapter"
+                | StageBinding.Pass           -> "pass"
+                | StageBinding.OrderingPolicy -> "ordering"
+                | StageBinding.Emitter        -> "emitter"
+                | StageBinding.Pipeline       -> "pipeline"
+            printfn "projection: %d registered transform(s)" (List.length all)
+            for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
+                printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
+            0)
+    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> shellRun "projection explain migrate" Shell.ReadOnly (fun () -> runMigratePreview fromP toP decl)
+    | PlanAction.ExplainMigrateFromStore (store, toP, decl, forceGenesis) -> shellRun "projection explain migrate" Shell.ReadOnly (fun () -> runMigrateFromStore store toP decl forceGenesis)
     // seal ---------------------------------------------------------------
-    | PlanAction.SealEject store -> runEject store
-    | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
+    | PlanAction.SealEject store -> shellRun "projection seal" Shell.Go (fun () -> runEject store)
+    | PlanAction.SealApprove (version, approver, rationale, store) -> shellRun "projection seal approve" Shell.Go (fun () -> runApprove version approver rationale store)
     // report -------------------------------------------------------------
     | PlanAction.ReportBundle (store, outputDir) ->
+        shellRun "projection report" Shell.ReadOnly (fun () ->
         match ReportRun.fromStore store with
         | Ok bundle ->
             printLines Console.Out (ReportRun.render bundle)
@@ -277,15 +327,15 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             0
         | Error msg ->
             Console.Error.WriteLine (sprintf "projection report: %s" msg)
-            6
+            6)
     // slice (data portability) -------------------------------------------
     // The slice faces own their bespoke flag parsing + config resolution and
-    // their own bench/narration; they run directly (no `withRun` envelope), the
-    // same as they did under the old `argv.[0]` dispatch — now reached through
-    // the one typed plan (recon #3).
-    | PlanAction.RunSliceExtract args        -> runSliceExtract args
-    | PlanAction.RunSliceApply (reset, args) -> runSliceApply reset args
-    | PlanAction.RunSliceFlow args           -> runSliceFlow args
+    // their own bench/narration; since 2026-07-02 they run through the shell
+    // like every other verb (the A3 sweep) — run envelopes on the wire,
+    // channel-1 suppression + the verdict panel under pretty.
+    | PlanAction.RunSliceExtract args        -> shellRun "projection slice-extract" Shell.Go (fun () -> runSliceExtract args)
+    | PlanAction.RunSliceApply (reset, args) -> shellRun (if reset then "projection slice-reset" else "projection slice-apply") Shell.Go (fun () -> runSliceApply reset args)
+    | PlanAction.RunSliceFlow args           -> shellRun "projection slice-run" Shell.Go (fun () -> runSliceFlow args)
     // refused ------------------------------------------------------------
     | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 
