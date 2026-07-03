@@ -2326,17 +2326,10 @@ module Compose =
                                 })
                         return report
                     }
-            return
-                match verdict.Disposition with
-                | RunCompleted acquired -> Result.success acquired
-                | RunStopped errors   -> Result.failure errors
-                | RunAborted (_, Some ex) ->
-                    // The spine closed the books (the open stage + the root
-                    // closed `aborted` on the wire); the composition's crash
-                    // semantics are preserved for the caller's catch.
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-                    Unchecked.defaultof<_>
-                | RunAborted (refusal, None) -> failwith refusal
+            // The spine closed the books (the open stage + the root closed
+            // `aborted` on the wire); `StagedVerdict.toResult` preserves the
+            // composition's crash semantics for the caller's catch.
+            return StagedVerdict.toResult verdict
         }
 
     /// The report-only publish (`runWithConfigAcquiring` with the

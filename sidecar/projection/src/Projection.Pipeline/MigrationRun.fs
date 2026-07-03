@@ -709,17 +709,9 @@ module MigrationRun =
                             })
                     return outcome
                 }
-            return
-                match verdict.Disposition with
-                | RunCompleted outcome -> Ok outcome
-                | RunStopped e -> Error e
-                | RunAborted (_, Some ex) ->
-                    // The spine closed the books (the open stage closed
-                    // `aborted` on the wire); the engine's crash semantics
-                    // are preserved for the caller.
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-                    Unchecked.defaultof<_>
-                | RunAborted (refusal, None) -> failwith refusal
+            // The spine closed the books; `StagedVerdict.toResult` preserves the
+            // engine's crash semantics (re-raise on abort, failwith on refusal).
+            return StagedVerdict.toResult verdict
         }
 
     /// The non-atomic migrate (M21 only) — byte-identical to the pre-M22 `execute`.

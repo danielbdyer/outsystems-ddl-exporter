@@ -154,6 +154,26 @@ type StagedVerdict<'a, 'e> =
       Outcomes    : (StageName * StagedOutcome) list
       Disposition : StagedDisposition<'a, 'e> }
 
+[<RequireQualifiedAccess>]
+module StagedVerdict =
+
+    /// Project a closed verdict onto the value plane: `RunCompleted → Ok`,
+    /// `RunStopped → Error`, and the two `RunAborted` cases preserve the engine's
+    /// crash semantics — a captured exception re-throws with its ORIGINAL stack via
+    /// `ExceptionDispatchInfo` (the trailing `Unchecked.defaultof` is unreachable;
+    /// `Throw()` never returns), a bare spine refusal becomes `failwith`. The
+    /// orchestrator tails (Pipeline / MigrationRun / TransferRun) that each
+    /// hand-rolled this exact four-arm projection now share it, so "every spine
+    /// abort re-raises identically" is structural rather than by convention.
+    let toResult (verdict: StagedVerdict<'a, 'e>) : Result<'a, 'e> =
+        match verdict.Disposition with
+        | RunCompleted value -> Ok value
+        | RunStopped error -> Error error
+        | RunAborted (_, Some ex) ->
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+            Unchecked.defaultof<_>
+        | RunAborted (refusal, None) -> failwith refusal
+
 /// The per-step flow inside the CE — internal; faces see `StagedVerdict`.
 type internal StagedStep<'a, 'e> =
     | Flowing of value: 'a
