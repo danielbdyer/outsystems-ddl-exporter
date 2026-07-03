@@ -103,7 +103,7 @@ let withRun (command: string) (body: unit -> int) : int =
     // arbitrary `body : unit -> int`); a digest-bearing verb runs through its
     // own face (e.g. full-export), not this generic bracket.
     Shell.execute
-        { Shell.currentFrame.Value with Command = command }
+        (Shell.framed command)
         Shell.Bracket.Bracketed
         None
         body

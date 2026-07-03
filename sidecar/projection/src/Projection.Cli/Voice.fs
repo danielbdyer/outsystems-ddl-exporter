@@ -848,6 +848,34 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
+    /// `plan.note` — a dispatch-prologue note (a plan note; the A7 inert-flag
+    /// note). The engine authored the text at the plan layer; the Voice frames
+    /// it on the note register so the prologue renders one way everywhere.
+    let private planNote : Copy =
+        { Code           = "plan.note"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                match text "text" p with
+                | Some t -> View.Note(sprintf "Note — %s" t)
+                | None   -> View.Note "Note."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `survey.advisory` — the G0c capability-survey advisory for a live
+    /// (`--go`) flow: a connected environment cannot do what the flow asks.
+    /// Warns, never gates (R6 — the run's own exit stands).
+    let private surveyAdvisory : Copy =
+        { Code           = "survey.advisory"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                match text "text" p with
+                | Some t -> View.Note t
+                | None   -> View.Note "A connected environment reported a capability gap."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `shell.previewFrame` — the operator shell's static open for a run that
     /// writes nothing (`THE_VOICE.md` §5's consequence-as-meaning, carried to
     /// the preview register): the frame says so up front, so a gated dry-run
@@ -951,6 +979,9 @@ module Voice =
           summaryStageCompleted
           // §5 — the operator shell's preview frame
           shellPreviewFrame
+          // §14 — the dispatch prologue's notes + the G0c survey advisory
+          planNote
+          surveyAdvisory
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
           // §14 / §10 — config & errors

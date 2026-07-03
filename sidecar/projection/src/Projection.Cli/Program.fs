@@ -116,12 +116,17 @@ let private usageLines : string list =
     ]
 
 let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
-    for n in plan.Notes do eprintfn "Note — %s" n
-    // A7 (no-silent-drop) — the module-filter include flags without a
-    // `model.modules` selection are inert; note it on the same channel.
+    // The dispatch PROLOGUE (2026-07-02) — every pre-run note renders here,
+    // voiced, structurally BEFORE any Live region or bracket: the plan notes,
+    // the inert-flag note (A7 no-silent-drop), and the G0c capability-survey
+    // advisory (previously raw stderr from inside the transfer faces).
+    let note (code: string) (text: string) =
+        TtyRenderer.renderVoicedTo Console.Error code (Map.ofList [ "text", box text ])
+    for n in plan.Notes do note "plan.note" n
     (match ModuleFilterBinding.inertFlagNote shaping.Model with
-     | Some n -> eprintfn "Note — %s" n
+     | Some n -> note "plan.note" n
      | None -> ())
+    for line in surveyAdvisory do note "survey.advisory" line
     // The shell wrapper for the answer / preview / one-shot verbs (2026-07-02,
     // the A3 sweep — every verb now runs bracketed through the ONE door: run
     // envelopes on the wire for pipes, channel-1 suppression + the framed
@@ -129,7 +134,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     // stdout answer surface is unchanged.
     let shellRun (command: string) (register: Shell.Register) (body: unit -> int) : int =
         Shell.execute
-            { Shell.currentFrame.Value with Command = command; Register = register }
+            { Shell.framed command with Register = register }
             Shell.Bracket.Bracketed
             None
             body
@@ -179,7 +184,9 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // run — an optional seeded stage would hold the done-frame back forever.
         let hasStore = match store with Some s -> not (String.IsNullOrWhiteSpace s) | None -> false
         Shell.execute
-            { Shell.currentFrame.Value with Command = "projection full-export" }
+            // A bundle emission writes files regardless of --go (the safe
+            // default act), so the register is Go even under a preview flow.
+            { Shell.framed "projection full-export" with Register = Shell.Go }
             Shell.Bracket.SelfBracketed
             (Some (Spines.publishWith hasStore false))
             run
@@ -201,7 +208,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // events, so their streams now open with `config.runStart` and
         // close with the §10 terminal — and the run is capturable.
         withRun "projection transfer" (fun () ->
-            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir surveyAdvisory)
+            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -212,7 +219,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability surveyAdvisory))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
@@ -224,8 +231,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // silent until the trailing panel). A preview writes nothing, so its
         // load line would never advance: no spine, the static frame instead.
         Shell.execute
-            { Shell.currentFrame.Value with
-                Command = "projection synth-load"
+            { Shell.framed "projection synth-load" with
                 Register = if execute then Shell.currentFrame.Value.Register else Shell.Preview }
             Shell.Bracket.Bracketed
             (if execute then Some Spines.transfer else None)
@@ -238,7 +244,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // (2026-07-02 — a declared stage, so the board covers the whole run;
         // the episode record, when a store rides, happens inside that leg).
         Shell.execute
-            { Shell.currentFrame.Value with Command = "projection full-export --load" }
+            { Shell.framed "projection full-export --load" with Register = Shell.Go }
             Shell.Bracket.SelfBracketed
             (Some (Spines.publishWith false true))
             run
@@ -253,11 +259,11 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     // to flow to the nulled writer with no subscriber).
     | PlanAction.CheckCanary (ddl, false) ->
         Shell.execute
-            { Shell.currentFrame.Value with Command = "projection check" }
+            (Shell.framed "projection check")
             Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  ->
         Shell.execute
-            { Shell.currentFrame.Value with Command = "projection check --cdc-silence" }
+            (Shell.framed "projection check --cdc-silence")
             Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
     | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
     | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
@@ -265,7 +271,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
         // no-append contract rides the ReadOnly register).
         Shell.execute
-            { Shell.currentFrame.Value with Command = "projection check ready"; Register = Shell.ReadOnly }
+            { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
     // explain ------------------------------------------------------------
@@ -429,7 +435,7 @@ let private flowSourceText (s: FlowSource) : string =
 
 /// `projection` with no args lists the flows as `name: from → to (spec)` —
 /// the config IS the menu (THE_CLI.md §4.4). No flows configured → the help.
-let private runList () : int =
+let private runList (asJson: bool) : int =
     match discoverConfig () with
     | Error es ->
         Console.Error.WriteLine "projection: projection.json is invalid:"
@@ -438,13 +444,16 @@ let private runList () : int =
     | Ok cfg ->
         if Map.isEmpty cfg.Flows then printLines Console.Out usageLines
         else
-            Console.Out.WriteLine "Flows (projection <flow> [--go] [--fresh] [--allow-drops]):"
-            for KeyValue (name, f) in cfg.Flows do
-                let extra =
-                    [ if Option.isSome f.Rekey then yield "rekey"
-                      if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
-                let suffix = if List.isEmpty extra then "" else sprintf "  (%s)" (String.concat "; " extra)
-                Console.Out.WriteLine(sprintf "  %-16s %s → %s%s" name (flowSourceText f.From) f.To suffix)
+            // The menu is a `View` (2026-07-02) — pretty / plain / `--format
+            // json` / `--query` are the one document's lenses, like every
+            // other answer surface.
+            let rows =
+                [ for KeyValue (name, f) in cfg.Flows ->
+                    let extra =
+                        [ if Option.isSome f.Rekey then yield "rekey"
+                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                    name, flowSourceText f.From, f.To, String.concat "; " extra ]
+            TtyRenderer.renderAnswer asJson View.defaultDepth (TtyRenderer.buildFlowMenuView rows)
         0
 
 [<EntryPoint>]
@@ -516,7 +525,7 @@ let main argv =
     | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
-    | [||] -> runList ()
+    | [||] -> runList forceJson
     | [| "init" |] -> runInit ()
     | [| "inspect" |] -> runInspectHistory forceJson
     | [| "inspect"; runId |] -> runInspect runId None forceJson
@@ -569,4 +578,17 @@ let main argv =
                         | Some flowShaping -> Config.overlay cfg.Shaping flowShaping
                         | None -> cfg.Shaping
                     | _ -> cfg.Shaping
+                // The flow frame (2026-07-02) — a flow-dispatched run presents
+                // in the daily surface's own words: the box title, the verdict
+                // panel, and the ledger record read "publish: cloud-dev →
+                // on-prem-dev — preview", never the engine verb the plan chose.
+                // Seeded here (the one place the Intent is in scope); the verb
+                // arms preserve it via `Shell.framed`.
+                (match intent with
+                 | Intent.Flow (flow, opts) ->
+                     Shell.currentFrame.Value <-
+                         { Command  = sprintf "projection %s" flow.Name
+                           Flow     = Some { Name = flow.Name; From = flowSourceText flow.From; To = flow.To }
+                           Register = if opts.Go then Shell.Go else Shell.Preview }
+                 | _ -> ())
                 runPlan effectiveShaping surveyAdvisory (Command.plan cfg intent)

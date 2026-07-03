@@ -62,7 +62,9 @@ let private inScopeCodes : Set<string> =
           // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
           "adapter.ossys.modelRead.noticeRollup"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
-          "shell.previewFrame" ]
+          "shell.previewFrame"
+          // the dispatch prologue's voiced notes (runPlan, render-only)
+          "plan.note"; "survey.advisory" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -123,6 +125,8 @@ let private knownEmittableCodes : Set<string> =
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"
+          // the dispatch prologue's voiced notes — render-synthesized at runPlan
+          "plan.note"; "survey.advisory"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]

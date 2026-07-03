@@ -68,6 +68,17 @@ module Shell =
     /// `prettyMode`.
     let currentFrame : Frame ref = ref (Frame.ofCommand "projection")
 
+    /// The frame for a verb arm: a FLOW-dispatched run keeps its flow frame —
+    /// the daily surface's own words title the box, the verdict panel, and
+    /// the ledger record ("projection publish", never the engine verb it
+    /// planned to) — while a direct verb takes its command. The register is
+    /// untouched (the dispatcher's preview/go posture holds).
+    let framed (command: string) : Frame =
+        let ambient = currentFrame.Value
+        match ambient.Flow with
+        | Some _ -> ambient
+        | None   -> { ambient with Command = command }
+
     /// Whether the body self-brackets its run envelope (`FullExportRun`
     /// carries its own `RunEnvelope` orchestration) or the shell brackets it.
     type Bracket =

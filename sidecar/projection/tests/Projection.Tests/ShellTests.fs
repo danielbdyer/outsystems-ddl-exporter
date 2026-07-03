@@ -189,3 +189,60 @@ let ``shell: titleOf frames a flow with its route and register`` () =
     Assert.Contains("— preview", Shell.titleOf preview)
     let readOnly : Shell.Frame = { Command = "projection diff"; Flow = None; Register = Shell.ReadOnly }
     Assert.Equal("projection diff", Shell.titleOf readOnly)
+
+[<Fact>]
+let ``shell: a flow frame titles the live board with name, route, and register`` () =
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    LogSink.reset ()
+    try
+        let console = newConsole ()
+        let frame : Shell.Frame =
+            { Command  = "projection publish"
+              Flow     = Some { Name = "publish"; From = "cloud-dev"; To = "on-prem-dev" }
+              Register = Shell.Go }
+        Shell.executeOn console true true frame Shell.Bracket.Bracketed (Some Spines.canary) (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Canary "canary.started" Map.empty)
+            LogSink.recordStageEvent "canary" 2L LogSink.Succeeded
+            0)
+        |> ignore
+        let out = console.Output
+        Assert.Contains("publish: cloud-dev", out)
+        Assert.Contains("on-prem-dev", out)
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``shell: framed preserves the ambient flow frame for a verb arm, and takes the command otherwise`` () =
+    let flowFrame : Shell.Frame =
+        { Command  = "projection publish"
+          Flow     = Some { Name = "publish"; From = "cloud-dev"; To = "on-prem-dev" }
+          Register = Shell.Preview }
+    Shell.currentFrame.Value <- flowFrame
+    try
+        // a flow-dispatched verb keeps the flow's words
+        Assert.Equal("projection publish", (Shell.framed "projection transfer").Command)
+        Assert.Equal(Shell.Preview, (Shell.framed "projection transfer").Register)
+        // a direct verb takes its own command
+        Shell.currentFrame.Value <- Shell.Frame.ofCommand "projection"
+        Assert.Equal("projection diff", (Shell.framed "projection diff").Command)
+    finally
+        Shell.currentFrame.Value <- Shell.Frame.ofCommand "projection"
+
+[<Fact>]
+let ``flow menu: the view renders as a table and its toJson carries every flow (one substrate)`` () =
+    let view =
+        TtyRenderer.buildFlowMenuView
+            [ "publish", "cloud-dev", "on-prem-dev", ""
+              "try",     "cloud-dev", "local",       "rekey" ]
+    // plain lens
+    use sw = new StringWriter()
+    let console = View.consoleTo sw
+    View.write console view
+    let plain = sw.ToString()
+    Assert.Contains("publish", plain)
+    Assert.Contains("on-prem-dev", plain)
+    Assert.Contains("rekey", plain)
+    // machine lens — the same document, full
+    let json = (View.toJson view).ToJsonString()
+    Assert.Contains("publish", json)
+    Assert.Contains("local", json)

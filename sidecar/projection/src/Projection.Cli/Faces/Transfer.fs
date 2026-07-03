@@ -153,7 +153,6 @@ let runTransfer
     (tables: string list)
     (revertPolicy: RevertPolicy)
     (revertDir: string option)
-    (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -248,11 +247,9 @@ let runTransfer
     // raised over the touched environments as a STDERR ADVISORY WARNING, then
     // PROCEED regardless. V2 owns no production write path during dual-track
     // (CLAUDE.md R6; DECISIONS 2026-06-09 S3), so the gate is advisory until the
-    // per-pair flip — the run's own exit stands; the advisory never borrows the
-    // standalone `survey` verb's exit-7. Computed at the dispatch layer (where
-    // config is in scope) and threaded in as `surveyAdvisory`; a dry-run carries
-    // no advisory (the empty list), so the preview path is byte-identical.
-    if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
+    // per-pair flip — the run's own exit stands. Since 2026-07-02 the advisory
+    // lines render VOICED in the dispatch prologue (`runPlan`), before any Live
+    // region — never raw stderr from inside a face.
     // --pretty + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
@@ -286,7 +283,6 @@ let runReverseLegTransfer
     (revertPolicy: RevertPolicy)
     (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
-    (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource = TransferSpec.parseConnectionSpec sourceSpec
@@ -409,9 +405,8 @@ let runReverseLegTransfer
         | Error errors ->
             printErrors Console.Error errors
             (Preflight.refusalOf errors).ExitCode
-    // G0c — the advisory capability survey (R6 warn-not-stop); same channel
-    // and same advisory-only posture as the peer transfer's Execute path.
-    if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
+    // G0c — the advisory capability survey renders in the dispatch prologue
+    // (voiced, pre-Live) since 2026-07-02; same posture as the peer transfer.
     Face.staged "transfer" executeGated Spines.transfer runBody
 
 // ---------------------------------------------------------------------------
