@@ -20,6 +20,83 @@ open Projection.Adapters.OssysSql
 [<RequireQualifiedAccess>]
 module LiveModelRead =
 
+    /// The rollup envelope's code — the ONE Warn line a model read's divergence
+    /// notices condense to on channel 1 (and the live board's notice strip).
+    [<Literal>]
+    let noticeRollupCode : string = "adapter.ossys.modelRead.noticeRollup"
+
+    let private severityText (s: DiagnosticSeverity) : string =
+        match s with
+        | DiagnosticSeverity.Info    -> "info"
+        | DiagnosticSeverity.Warning -> "warning"
+        | DiagnosticSeverity.Error   -> "error"
+
+    let private toNotice (d: DiagnosticEntry) : NoticeSink.Notice =
+        { Code = d.Code; Severity = severityText d.Severity; Message = d.Message; Metadata = d.Metadata }
+
+    /// How many underlying FACTS a divergence entry stands for. The nullability
+    /// entry is already producer-aggregated (one entry carrying `count` columns
+    /// in its metadata); every other entry names one concrete divergence.
+    let private factCount (d: DiagnosticEntry) : int =
+        match Map.tryFind "count" d.Metadata with
+        | Some c ->
+            match System.Int32.TryParse c with
+            | true, n when n > 0 -> n
+            | _ -> 1
+        | None -> 1
+
+    /// The rollup payload over a read's divergence entries — pure, so the
+    /// constant-size law ("one calm line whether 3 or 3,000 diverge") is
+    /// testable without a connection or a console. Family counts are FACT
+    /// counts: 180 nullability-divergent columns count as 180, not as the one
+    /// producer-aggregated entry that carries them.
+    let noticeRollup (artifactPath: string) (entries: DiagnosticEntry list) : Map<string, objnull> =
+        let familyOf (d: DiagnosticEntry) : string =
+            if d.Code.EndsWith ".nullabilityDivergence" then "nullability"
+            elif d.Code.EndsWith ".identityDivergence" then "identity"
+            elif d.Code.StartsWith "adapter.ossys.primaryKey" then "primaryKey"
+            else "other"
+        let counts =
+            entries
+            |> List.groupBy familyOf
+            |> List.map (fun (family, ds) -> family, ds |> List.sumBy factCount)
+        let total = counts |> List.sumBy snd
+        let samples = entries |> List.truncate 3 |> List.map (fun d -> d.Message)
+        Map.ofList
+            ([ "total",        box total
+               "artifactPath", box artifactPath
+               "samples",      box (String.concat " | " samples) ]
+             @ (counts |> List.map (fun (family, n) -> family, box n)))
+
+    /// Surface a model read's divergence entries (F9 — never silently
+    /// discarded; and since 2026-07-02 never a per-item stderr wall over the
+    /// live board either): each entry rides channel 1 at Debug (visible under
+    /// `-v`/`--debug`), the full detail lands in the run's notice artifact
+    /// (`notices/model-read/<runId>.json`, merge-deduped across the run's 2-3
+    /// read legs), and ONE Warn rollup envelope names the counts + the path.
+    let private surfaceDivergences (entries: DiagnosticEntry list) : unit =
+        if not (List.isEmpty entries) then
+            for d in entries do
+                let payload : Map<string, objnull> =
+                    Map.ofList
+                        ([ "message", box d.Message ]
+                         @ (d.Metadata |> Map.toList |> List.map (fun (k, v) -> k, box v)))
+                LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Extract d.Code payload)
+            let artifactPath =
+                NoticeSink.runPath (System.IO.Directory.GetCurrentDirectory()) "model-read" (LogSink.runId ())
+            let persisted =
+                try
+                    NoticeSink.append artifactPath (entries |> List.map toNotice) |> ignore
+                    LogSink.recordArtifact { Kind = "notices"; Path = artifactPath; SizeBytes = None; FileCount = None }
+                    true
+                with ex ->
+                    // LINT-ALLOW: last-resort stderr — the notice SINK itself
+                    // failed, so this warning cannot ride the artifact it is about.
+                    eprintfn "  WARNING: failed to persist the notice artifact: %s" ex.Message
+                    false
+            let path = if persisted then artifactPath else ""
+            LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Extract noticeRollupCode (noticeRollup path entries))
+
     /// Read the model from an already-open OSSYS connection under the
     /// supplied scope parameters: snapshot → bundle → Catalog (native
     /// SsKey). Reconciliation slice 4 (DECISIONS 2026-06-13) — the
@@ -37,19 +114,15 @@ module LiveModelRead =
                 // F9 (audit 2026-06-17) — surface, never silently discard, every
                 // logical-vs-deployed `#ColumnReality` divergence the snapshot
                 // carries (the adapter keeps the LOGICAL value; the operator is
-                // told so they can confirm which source is authoritative). The
-                // carried value is unchanged — diagnostic only, no auto-resolve.
-                for d in MetadataSnapshotRunner.columnRealityDivergences snapshot do
-                    // LINT-ALLOW: operator-facing boundary warning (channel 2),
-                    // sibling to the tightening-relax acknowledgment.
-                    eprintfn "%s: %s" d.Code d.Message
-                // PK identity carries twice in OSSYS (attribute flag +
-                // entity key); the reader recovers from a missing flag via
-                // the entity key but never resolves a contradiction — that
-                // is named here.
-                for d in MetadataSnapshotRunner.primaryKeyDivergences snapshot do
-                    // LINT-ALLOW: operator-facing boundary warning (channel 2).
-                    eprintfn "%s: %s" d.Code d.Message
+                // told so they can confirm which source is authoritative), and
+                // every attribute-flag-vs-entity-key primary-key contradiction.
+                // The carried value is unchanged — diagnostic only, no
+                // auto-resolve. Since 2026-07-02 the surface is the notice
+                // rollup (one Warn envelope + the detail artifact), never a
+                // per-item stderr wall fighting the live board.
+                surfaceDivergences
+                    (MetadataSnapshotRunner.columnRealityDivergences snapshot
+                     @ MetadataSnapshotRunner.primaryKeyDivergences snapshot)
                 let bundle = MetadataSnapshotRunner.toBundle snapshot
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded

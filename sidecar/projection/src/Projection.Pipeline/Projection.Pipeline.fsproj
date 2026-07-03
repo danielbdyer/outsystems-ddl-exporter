@@ -19,6 +19,7 @@
     <Compile Include="RunLedger.fs" />
     <Compile Include="Run.fs" />
     <Compile Include="ConnectionSpec.fs" />
+    <Compile Include="NoticeSink.fs" />
     <Compile Include="LiveModelRead.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />

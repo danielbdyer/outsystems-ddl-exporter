@@ -54,7 +54,10 @@ let private inScopeCodes : Set<string> =
           // migration recon #11): preview / applied / drop refusal, and the
           // migrate execute-leg applied / verification-failed verdicts
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
-          "migrate.applied"; "migrate.verificationFailed" ]
+          "migrate.applied"; "migrate.verificationFailed"
+          // the §12 at-scale rollup — the model read's divergence notices
+          // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
+          "adapter.ossys.modelRead.noticeRollup" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -108,6 +111,9 @@ let private knownEmittableCodes : Set<string> =
           // the §4 transfer / migrate move verdicts (recon #11)
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
           "migrate.applied"; "migrate.verificationFailed"
+          // the model read's notice rollup (LiveModelRead.surfaceDivergences —
+          // one Warn envelope condensing the divergence notices; §12 at-scale law)
+          "adapter.ossys.modelRead.noticeRollup"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -190,7 +196,7 @@ let ``Voice totality: no copy is authored for a code the engine cannot emit`` ()
 
 [<Fact>]
 let ``Voice totality: every entry cites a recognized THE_VOICE section`` () =
-    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§13"; "§14" ]
+    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§12"; "§13"; "§14" ]
     for c in Voice.all do
         Assert.False(System.String.IsNullOrWhiteSpace c.DocSection, sprintf "%s has no DocSection" c.Code)
         Assert.True(Set.contains c.DocSection recognized, sprintf "%s cites unrecognized section %s" c.Code c.DocSection)

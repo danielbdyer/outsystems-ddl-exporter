@@ -31,6 +31,7 @@
     <Compile Include="CapabilityRefusalTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="LogSinkSubscriberTests.fs" />
+    <Compile Include="NoticeRoutingTests.fs" />
     <Compile Include="RunSpineTests.fs" />
     <Compile Include="StagedTests.fs" />
     <Compile Include="RunLedgerTests.fs" />

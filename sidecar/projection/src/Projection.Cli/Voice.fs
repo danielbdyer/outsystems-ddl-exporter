@@ -824,6 +824,38 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
+    /// `adapter.ossys.modelRead.noticeRollup` — a model read's divergence notices,
+    /// condensed to one calm line (`THE_VOICE.md` §12 at-scale law: the surface is
+    /// a constant size; only the numbers grow). The per-item detail is the run's
+    /// notice artifact; the action points there — never a wall of lines.
+    let private modelReadNoticeRollup : Copy =
+        { Code           = "adapter.ossys.modelRead.noticeRollup"
+          DocSection     = "§12"
+          Statement      =
+            fun p ->
+                let families =
+                    [ "nullability", "nullability"
+                      "identity",    "identity"
+                      "primaryKey",  "primary key"
+                      "other",       "other" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p |> Option.map (fun n -> sprintf "%s %s" label (humane n)))
+                let total = humane (textOr "total" "0" p)
+                match families with
+                | [] -> View.Note(sprintf "%s model-reality notices. The model's declared values were kept." total)
+                | fs -> View.Note(sprintf "%s model-reality notices — %s. The model's declared values were kept." total (String.concat ", " fs))
+          Substantiation =
+            fun p ->
+                match text "samples" p with
+                | Some s when s <> "" -> [ View.Disclosure("the first notices", View.Neutral, [ View.Note s ]) ]
+                | _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review the full list at %s." path)) }
+
+    // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
     // registry's `registered ⇔ executed`), so the copy can't drift from
@@ -876,6 +908,8 @@ module Voice =
           watchRunDone
           watchStageHalted
           summaryStageCompleted
+          // §12 — the at-scale rollups (constant-size surfaces over growing counts)
+          modelReadNoticeRollup
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing
