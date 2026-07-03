@@ -132,6 +132,7 @@
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="SyntheticDataTests.fs" />
     <Compile Include="SyntheticVolumeTests.fs" />
+    <Compile Include="ManifestAnalyticsTests.fs" />
     <Compile Include="SyntheticCorrectionTests.fs" />
     <Compile Include="FakerRealizationTests.fs" />
     <Compile Include="PolicyTests.fs" />

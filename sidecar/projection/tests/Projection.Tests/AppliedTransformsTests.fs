@@ -89,7 +89,7 @@ let private sampleTrail =
 [<Fact>]
 let ``buildFull threads the trail into Manifest.AppliedTransforms`` () =
     let manifest =
-        ManifestEmitter.buildFull Profile.empty [] None None [] sampleTrail sampleCatalog
+        ManifestEmitter.buildFull Profile.empty [] None None [] sampleTrail None sampleCatalog
     Assert.Equal<(SsKey * OverlayAxis option) list>(
         ManifestEmitter.appliedTransforms sampleTrail,
         manifest.AppliedTransforms)
@@ -102,7 +102,7 @@ let ``build and buildWith leave AppliedTransforms empty (no pipeline trail)`` ()
 [<Fact>]
 let ``toJson renders appliedTransforms with overlay names and JSON null; byte-deterministic (T1)`` () =
     let manifest =
-        ManifestEmitter.buildFull Profile.empty [] None None [] sampleTrail sampleCatalog
+        ManifestEmitter.buildFull Profile.empty [] None None [] sampleTrail None sampleCatalog
     let json1 = ManifestEmitter.toJson manifest
     let json2 = ManifestEmitter.toJson manifest
     Assert.Equal<string>(json1, json2)

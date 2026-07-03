@@ -563,7 +563,7 @@ module Compose =
                     let manifest =
                         ManifestEmitter.buildFull
                             ctx.Profile registry ctx.ComposedState.TopologicalOrder
-                            ctx.VersionedPolicy policyConflicts ctx.Trail ctx.EmittedCatalog
+                            ctx.VersionedPolicy policyConflicts ctx.Trail (Some ctx.ComposedState) ctx.EmittedCatalog
                     { outputs with SsdtBundle = SsdtBundle.compose rewritten manifest; Manifest = manifest }
                 | Error err ->
                     invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err) }
