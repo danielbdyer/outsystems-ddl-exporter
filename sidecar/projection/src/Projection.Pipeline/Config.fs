@@ -1294,100 +1294,65 @@ module Config =
         | None -> Result.success defaultEmission
         | Some element ->
             let read name (defaultValue: bool) = getBoolOr element name defaultValue
-            match read "ssdt" defaultEmission.Ssdt with
-            | Error es -> Error es
-            | Ok ssdt ->
-                match read "dacpac" defaultEmission.Dacpac with
-                | Error es -> Error es
-                | Ok dacpac ->
-                    // `emission.sqlproj` (2026-06-24) — flat rung (sibling of
-                    // `dacpac` on the deployable axis); default false.
-                    match read "sqlproj" defaultEmission.Sqlproj with
-                    | Error es -> Error es
-                    | Ok sqlproj ->
-                    match read "json" defaultEmission.Json with
-                    | Error es -> Error es
-                    | Ok json ->
-                        match read "distributions" defaultEmission.Distributions with
-                        | Error es -> Error es
-                        | Ok dist ->
-                            match read "staticSeeds" defaultEmission.StaticSeeds with
-                            | Error es -> Error es
-                            | Ok seeds ->
-                                match read "migrationDependencies" defaultEmission.MigrationDependencies with
-                                | Error es -> Error es
-                                | Ok migDeps ->
-                                    match read "bootstrap" defaultEmission.Bootstrap with
-                                    | Error es -> Error es
-                                    | Ok boot ->
-                                        match read "bootstrapAllData" defaultEmission.BootstrapAllData with
-                                        | Error es -> Error es
-                                        | Ok bootAll ->
-                                        match read "decisionLog" defaultEmission.DecisionLog with
-                                        | Error es -> Error es
-                                        | Ok dlog ->
-                                            match read "opportunities" defaultEmission.Opportunities with
-                                            | Error es -> Error es
-                                            | Ok opps ->
-                                                match read "validations" defaultEmission.Validations with
-                                                | Error es -> Error es
-                                                | Ok vals ->
-                                                    match read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes with
-                                                    | Error es -> Error es
-                                                    | Ok includeAuto ->
-                                                    match read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant with
-                                                    | Error es -> Error es
-                                                    | Ok renderElegant ->
-                                                    // NM-70 — `emission.identityAnnotations`; default true.
-                                                    match read "identityAnnotations" defaultEmission.EmitIdentityAnnotations with
-                                                    | Error es -> Error es
-                                                    | Ok identityAnnotations ->
-                                                    match parseDataVerification element with
-                                                    | Error es -> Error es
-                                                    | Ok dataVerification ->
-                                                    match parseDeleteScope element with
-                                                    | Error es -> Error es
-                                                    | Ok deleteScope ->
-                                                    match parseTolerance element with
-                                                    | Error es -> Error es
-                                                    | Ok tolerance ->
-                                                    match parseDataStaging element with
-                                                    | Error es -> Error es
-                                                    | Ok dataStaging ->
-                                                    match getIntOr element "dataReadConcurrency" defaultEmission.DataReadConcurrency with
-                                                    | Error es -> Error es
-                                                    | Ok c when c < 1 ->
-                                                        Result.failureOf (
-                                                            configError
-                                                                "emission.dataReadConcurrency.invalid"
-                                                                (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
-                                                    | Ok dataReadConcurrency ->
-                                                    match read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap with
-                                                    | Error es -> Error es
-                                                    | Ok pipelinedBootstrap ->
-                                                    Result.success {
-                                                        Ssdt = ssdt
-                                                        Dacpac = dacpac
-                                                        Sqlproj = sqlproj
-                                                        Json = json
-                                                        Distributions = dist
-                                                        StaticSeeds = seeds
-                                                        MigrationDependencies = migDeps
-                                                        Bootstrap = boot
-                                                        BootstrapAllData = bootAll
-                                                        DecisionLog = dlog
-                                                        Opportunities = opps
-                                                        Validations = vals
-                                                        IncludePlatformAutoIndexes = includeAuto
-                                                        DeleteScope = deleteScope
-                                                        RenderConstraintsElegant = renderElegant
-                                                        EmitIdentityAnnotations = identityAnnotations
-                                                        DataVerification = dataVerification
-                                                        Tolerance = tolerance
-                                                        DataStaging = dataStaging
-                                                        DataReadConcurrency = dataReadConcurrency
-                                                        PipelinedBootstrap = pipelinedBootstrap
-                                                    }
+            // The `result { }` CE threads the same short-circuit these fields
+            // hand-rolled as a 20-deep `| Error es -> Error es` pyramid; the bind
+            // ORDER is preserved verbatim, so the first-error surfaced on a
+            // multi-field malformed block is byte-identical.
+            result {
+                let! ssdt = read "ssdt" defaultEmission.Ssdt
+                let! dacpac = read "dacpac" defaultEmission.Dacpac
+                // `emission.sqlproj` (2026-06-24) — flat rung (sibling of `dacpac`).
+                let! sqlproj = read "sqlproj" defaultEmission.Sqlproj
+                let! json = read "json" defaultEmission.Json
+                let! dist = read "distributions" defaultEmission.Distributions
+                let! seeds = read "staticSeeds" defaultEmission.StaticSeeds
+                let! migDeps = read "migrationDependencies" defaultEmission.MigrationDependencies
+                let! boot = read "bootstrap" defaultEmission.Bootstrap
+                let! bootAll = read "bootstrapAllData" defaultEmission.BootstrapAllData
+                let! dlog = read "decisionLog" defaultEmission.DecisionLog
+                let! opps = read "opportunities" defaultEmission.Opportunities
+                let! vals = read "validations" defaultEmission.Validations
+                let! includeAuto = read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes
+                let! renderElegant = read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant
+                // NM-70 — `emission.identityAnnotations`; default true.
+                let! identityAnnotations = read "identityAnnotations" defaultEmission.EmitIdentityAnnotations
+                let! dataVerification = parseDataVerification element
+                let! deleteScope = parseDeleteScope element
+                let! tolerance = parseTolerance element
+                let! dataStaging = parseDataStaging element
+                let! dataReadConcurrency =
+                    match getIntOr element "dataReadConcurrency" defaultEmission.DataReadConcurrency with
+                    | Ok c when c < 1 ->
+                        Result.failureOf (
+                            configError
+                                "emission.dataReadConcurrency.invalid"
+                                (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
+                    | other -> other
+                let! pipelinedBootstrap = read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap
+                return {
+                    Ssdt = ssdt
+                    Dacpac = dacpac
+                    Sqlproj = sqlproj
+                    Json = json
+                    Distributions = dist
+                    StaticSeeds = seeds
+                    MigrationDependencies = migDeps
+                    Bootstrap = boot
+                    BootstrapAllData = bootAll
+                    DecisionLog = dlog
+                    Opportunities = opps
+                    Validations = vals
+                    IncludePlatformAutoIndexes = includeAuto
+                    DeleteScope = deleteScope
+                    RenderConstraintsElegant = renderElegant
+                    EmitIdentityAnnotations = identityAnnotations
+                    DataVerification = dataVerification
+                    Tolerance = tolerance
+                    DataStaging = dataStaging
+                    DataReadConcurrency = dataReadConcurrency
+                    PipelinedBootstrap = pipelinedBootstrap
+                }
+            }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
         match element.TryGetProperty(name) with
