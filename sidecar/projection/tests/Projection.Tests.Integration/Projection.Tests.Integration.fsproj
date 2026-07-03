@@ -57,6 +57,7 @@
     <Compile Include="ExecuteBatchParallelTests.fs" />
     <Compile Include="SyntheticLoadTests.fs" />
     <Compile Include="SyntheticCanaryTests.fs" />
+    <Compile Include="CentralityVolumeCanaryTests.fs" />
     <Compile Include="ModelResolutionDockerTests.fs" />
   </ItemGroup>
 
