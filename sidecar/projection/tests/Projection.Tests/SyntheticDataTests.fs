@@ -360,3 +360,56 @@ let ``NM-21: a satisfiable population emits no unsatisfiable-FK diagnostics`` ()
     // is satisfiable — σ raises no unsatisfiable-FK lineage.
     let _, diags = SyntheticData.generateWithDiagnostics catalog profile cfg 5UL
     Assert.Empty(diags |> List.filter (fun d -> d.Code = SyntheticDiagnostic.UnsatisfiableForeignKeyCode))
+
+// ---------------------------------------------------------------------------
+// H-072 — intra-cluster FK locality (opt-in via SyntheticConfig.FkLocalityClusters).
+// The Order→Customer FK has no captured selectivity / joint evidence in the
+// standard profile, so it takes σ's UNIFORM fallback — exactly the draw the
+// clustering skew modifies. Customer pool = 100; hot prefix = ceil(100×0.3) = 30.
+// ---------------------------------------------------------------------------
+
+let private clusterAnchor = kindKey ["Ctx"]
+
+[<Fact>]
+let ``H-072: intra-cluster FK draws concentrate on the pool's hot prefix`` () =
+    // Child (Order) and target (Customer) share a cluster ⇒ the 250 FK draws
+    // land only in the first 30 Customer PKs, so ≤30 distinct parents are used.
+    let clustered = { cfg with FkLocalityClusters = Map.ofList [ custKey, clusterAnchor; ordKey, clusterAnchor ] }
+    let m = SyntheticData.generate catalog profile clustered 1UL
+    let distinct = valuesOf m ordKey "CustomerId" |> Set.ofList |> Set.count
+    Assert.True(distinct <= 30, sprintf "expected ≤30 distinct parents under clustering, got %d" distinct)
+
+[<Fact>]
+let ``H-072: clustering references FEWER distinct parents than the uniform baseline`` () =
+    let baseline = SyntheticData.generate catalog profile cfg 1UL
+    let clustered = { cfg with FkLocalityClusters = Map.ofList [ custKey, clusterAnchor; ordKey, clusterAnchor ] }
+    let m = SyntheticData.generate catalog profile clustered 1UL
+    let baseDistinct = valuesOf baseline ordKey "CustomerId" |> Set.ofList |> Set.count
+    let clusDistinct = valuesOf m ordKey "CustomerId" |> Set.ofList |> Set.count
+    Assert.True(baseDistinct > clusDistinct, sprintf "clustering (%d) should reference fewer parents than uniform (%d)" clusDistinct baseDistinct)
+
+[<Fact>]
+let ``H-072: clustering preserves zero FK orphans`` () =
+    // Every drawn FK value must still be a real Customer PK — the skew only
+    // narrows WHICH parents are drawn, never invents an index.
+    let clustered = { cfg with FkLocalityClusters = Map.ofList [ custKey, clusterAnchor; ordKey, clusterAnchor ] }
+    let m = SyntheticData.generate catalog profile clustered 1UL
+    let custPks = valuesOf m custKey "Id" |> Set.ofList
+    let fkVals  = valuesOf m ordKey "CustomerId"
+    Assert.All(fkVals, fun v -> Assert.Contains(v, custPks))
+
+[<Fact>]
+let ``H-072: a cross-cluster edge is byte-identical to the uniform baseline`` () =
+    // Child and target in DIFFERENT clusters ⇒ the skew never fires ⇒ output is
+    // exactly the uniform draw. (Off-by-construction: an empty map is the default.)
+    let baseline = SyntheticData.generate catalog profile cfg 1UL
+    let crossCluster = { cfg with FkLocalityClusters = Map.ofList [ custKey, kindKey ["A"]; ordKey, kindKey ["B"] ] }
+    let m = SyntheticData.generate catalog profile crossCluster 1UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(baseline, m)
+
+[<Fact>]
+let ``H-072: intra-cluster generation is deterministic for a fixed seed`` () =
+    let clustered = { cfg with FkLocalityClusters = Map.ofList [ custKey, clusterAnchor; ordKey, clusterAnchor ] }
+    let a = SyntheticData.generate catalog profile clustered 3UL
+    let b = SyntheticData.generate catalog profile clustered 3UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(a, b)

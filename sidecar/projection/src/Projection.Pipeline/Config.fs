@@ -91,6 +91,11 @@ module Config =
         /// more rows. `false` (the default) is byte-identical to the flat
         /// profiled-RowCount × Scale volume.
         WeightVolumeByCentrality : bool
+        /// H-072 consumer (opt-in) — cluster synthetic FK locality by discovered
+        /// bounded context, so an intra-context reference set reads as a
+        /// self-consistent slice. `false` (the default) leaves FK draws uniform,
+        /// byte-identical to the pre-clustering flow.
+        ClusterFksByContext : bool
     }
 
     type ProfileSection = {
@@ -544,7 +549,7 @@ module Config =
     /// and a `projection.json` with no `synthetic` block both rest on it.
     let defaultSyntheticSection : SyntheticSection =
         { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None
-          WeightVolumeByCentrality = false }
+          WeightVolumeByCentrality = false; ClusterFksByContext = false }
 
     let private defaultModelSection : ModelSection = {
         Path                   = None

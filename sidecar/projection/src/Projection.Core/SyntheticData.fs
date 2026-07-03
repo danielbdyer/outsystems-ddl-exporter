@@ -78,6 +78,17 @@ type SyntheticConfig = {
     SynthesizeColumns      : Set<string>
     Scale                  : decimal
     VolumeByKind           : Map<SsKey, VolumeTarget>
+    /// H-072 consumer (opt-in) — kinds mapped to a shared cluster id (any two
+    /// kinds with the same value cluster together). When a FK's child and target
+    /// kinds share a cluster, the UNIFORM FK draw (the fallback with no captured
+    /// selectivity / joint evidence) concentrates on the parent pool's leading
+    /// `localityHotFraction`, so an intra-cluster reference set reads as a
+    /// self-consistent sub-dataset (H-072's module-extraction purpose). Empty (the
+    /// default) = uniform draws everywhere, byte-identical to the pre-clustering
+    /// flow. Cross-cluster and no-cluster FK edges are always uniform. The map is
+    /// a generic clustering (the `from:synthetic` composition derives it from
+    /// `BoundedContextDiscovery`; Core stays decoupled from that source type).
+    FkLocalityClusters     : Map<SsKey, SsKey>
 }
 
 [<RequireQualifiedAccess>]
@@ -90,7 +101,8 @@ module SyntheticConfig =
           PreserveColumns        = Set.empty
           SynthesizeColumns      = Set.empty
           Scale                  = 1M
-          VolumeByKind           = Map.empty }
+          VolumeByKind           = Map.empty
+          FkLocalityClusters     = Map.empty }
 
 
 /// NM-21 — a named lineage event σ emits when a **non-nullable** FK column
@@ -368,6 +380,18 @@ module SyntheticData =
     /// per-kind `Rng` is threaded over rows × attributes in a fixed order
     /// (declaration order, ascending row index) — deterministic by
     /// construction.
+    /// H-072 — the leading fraction of a parent pool that intra-cluster FK draws
+    /// concentrate on (opt-in). 0.3 = intra-cluster references land in the top 30%
+    /// of the pool, so a cluster's rows share a small parent set (the cluster reads
+    /// as a self-consistent sub-dataset). `let`, not `[<Literal>]` (decimal cctor bomb).
+    let private localityHotFraction : decimal = 0.3M
+
+    /// The count of "hot" parents an intra-cluster FK draws from — `ceil(poolLen ×
+    /// localityHotFraction)`, floored at 1 (always a valid index; the empty-pool
+    /// case is handled before the draw). `poolLen` (no cluster) is the uniform draw.
+    let private intraClusterHotCount (poolLen: int) : int =
+        max 1 (int (System.Decimal.Ceiling (decimal poolLen * localityHotFraction)))
+
     let private generateKindRows
         (catalog: Catalog)
         (profile: Profile)
@@ -377,6 +401,13 @@ module SyntheticData =
         (kind: Kind)
         : StaticRow list * SyntheticDiagnostic list =
         let kindHash = fnv1a (SsKey.serialize kind.SsKey)
+        // §H-072 — same-cluster child/target ⇒ the uniform FK fallback concentrates
+        // on the pool's hot prefix. Empty map (the default) ⇒ always false ⇒ every
+        // draw stays uniform (byte-identical to the pre-clustering flow).
+        let sameCluster (childKind: SsKey) (targetKind: SsKey) : bool =
+            match Map.tryFind childKind config.FkLocalityClusters, Map.tryFind targetKind config.FkLocalityClusters with
+            | Some a, Some b -> a = b
+            | _              -> false
         let rowCount = pkPools |> Map.tryFind kind.SsKey |> Option.map List.length |> Option.defaultValue 0
         let pkPool = pkPools |> Map.tryFind kind.SsKey |> Option.defaultValue []
         let pkAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey)
@@ -527,7 +558,17 @@ module SyntheticData =
                                         state <- s
                                         Some pool.[min j (List.length pool - 1)]
                                     | None ->
-                                        let j = int (nextDraw () % uint64 (List.length pool))
+                                        // §H-072 — intra-cluster FK locality (opt-in). When the child
+                                        // and target kinds share a cluster, references concentrate on
+                                        // the pool's leading hot prefix (fewer distinct parents; the
+                                        // cluster reads as a self-consistent slice); cross-cluster and
+                                        // no-cluster edges keep the uniform draw (byte-identical — same
+                                        // single draw, same modulus). Always a valid index → zero orphans.
+                                        let poolLen = List.length pool
+                                        let effLen =
+                                            if sameCluster kind.SsKey target then intraClusterHotCount poolLen
+                                            else poolLen
+                                        let j = int (nextDraw () % uint64 effLen)
                                         Some pool.[j]
                         else
                             let nulled, s = drawsNull profile attr.SsKey state

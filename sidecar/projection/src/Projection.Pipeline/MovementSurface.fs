@@ -385,7 +385,8 @@ module ProjectionConfig =
               Synthesize             = getStringArray s "synthesize"
               Scale                  = decimalOf "scale"
               Seed                   = uint64Of "seed"
-              WeightVolumeByCentrality = boolOf "weightVolumeByCentrality" }
+              WeightVolumeByCentrality = boolOf "weightVolumeByCentrality"
+              ClusterFksByContext      = boolOf "clusterFksByContext" }
         | _ -> Config.defaultSyntheticSection
 
     /// Data-portability — parse the top-level `"slices"` block to the named
@@ -1024,6 +1025,7 @@ module ProjectionConfig =
             (match cfg.Synthetic.Scale with Some d -> s.["scale"] <- JsonValue.Create d | None -> ())
             (match cfg.Synthetic.Seed with Some n -> s.["seed"] <- JsonValue.Create n | None -> ())
             (if cfg.Synthetic.WeightVolumeByCentrality then s.["weightVolumeByCentrality"] <- JsonValue.Create true)
+            (if cfg.Synthetic.ClusterFksByContext then s.["clusterFksByContext"] <- JsonValue.Create true)
             root.["synthetic"] <- s)
         // Data-portability — the named use-case slice definitions. Each spec is
         // rendered via `SliceCodec` (the same serializer the round-trip law is
