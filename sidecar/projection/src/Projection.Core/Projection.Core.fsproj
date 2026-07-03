@@ -102,6 +102,7 @@
          so ComposeState can carry them as optional evidence fields.
          Pattern mirrors TopologicalOrder.fs / TopologicalOrderPass.fs. -->
     <Compile Include="Centrality.fs" />
+    <Compile Include="SyntheticVolume.fs" />
     <Compile Include="BoundedContext.fs" />
     <Compile Include="ProfileAnomaly.fs" />
     <Compile Include="SchemaComplexityMetrics.fs" />
