@@ -97,7 +97,8 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
-        "board + verdict panel, a pipe gets NDJSON). --query <path> narrows any answer to a"
+        "board + verdict panel, a pipe gets NDJSON). --stat appends the run's event rollup"
+        "(category · code · count) to stdout. --query <path> narrows any answer to a"
         "JSONPath-subset slice of its structured form (e.g. --query 'blocks[?status=warn]')."
         "--open <path> force-reveals just that dotted child-index branch of a pretty answer"
         "(e.g. --open 1.0), the rest staying at --depth — the headless half of the dig."
@@ -116,12 +117,28 @@ let private usageLines : string list =
     ]
 
 let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
-    for n in plan.Notes do eprintfn "Note — %s" n
-    // A7 (no-silent-drop) — the module-filter include flags without a
-    // `model.modules` selection are inert; note it on the same channel.
+    // The dispatch PROLOGUE (2026-07-02) — every pre-run note renders here,
+    // voiced, structurally BEFORE any Live region or bracket: the plan notes,
+    // the inert-flag note (A7 no-silent-drop), and the G0c capability-survey
+    // advisory (previously raw stderr from inside the transfer faces).
+    let note (code: string) (text: string) =
+        TtyRenderer.renderVoicedTo Console.Error code (Map.ofList [ "text", box text ])
+    for n in plan.Notes do note "plan.note" n
     (match ModuleFilterBinding.inertFlagNote shaping.Model with
-     | Some n -> eprintfn "Note — %s" n
+     | Some n -> note "plan.note" n
      | None -> ())
+    for line in surveyAdvisory do note "survey.advisory" line
+    // The shell wrapper for the answer / preview / one-shot verbs (2026-07-02,
+    // the A3 sweep — every verb now runs bracketed through the ONE door: run
+    // envelopes on the wire for pipes, channel-1 suppression + the framed
+    // verdict panel under pretty; see the DECISIONS amendment). The body's
+    // stdout answer surface is unchanged.
+    let shellRun (command: string) (register: Shell.Register) (body: unit -> int) : int =
+        Shell.execute
+            { Shell.framed command with Register = register }
+            Shell.Bracket.Bracketed
+            None
+            body
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     //
@@ -159,20 +176,37 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
-        // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
-        // pipeline's planned stages so the whole arc is visible from the first frame.
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
-        else run ()
+        // The one door (2026-07-02): --pretty + a real TTY → the live boxed
+        // stage board (§13) then the verdict panel; the run now also joins the
+        // cross-run ledger (parity with the withRun verbs — the old direct
+        // renderWatch path skipped both). Self-bracketed: FullExportRun owns
+        // its RunEnvelope. The spine is chosen at dispatch: a store-bearing
+        // publish seeds the store leg's line, so the board covers the whole
+        // run — an optional seeded stage would hold the done-frame back forever.
+        let hasStore = match store with Some s -> not (String.IsNullOrWhiteSpace s) | None -> false
+        Shell.execute
+            // A bundle emission writes files regardless of --go (the safe
+            // default act), so the register is Go even under a preview flow.
+            { Shell.framed "projection full-export" with Register = Shell.Go }
+            Shell.Bracket.SelfBracketed
+            (Some (Spines.publishWith hasStore false))
+            run
+    // The emit family writes its bundle regardless of --go (a bundle target
+    // "produces files (always safe)"), and the docker deploy writes to a
+    // throwaway container — so the register pins Go even under a preview
+    // flow: a frame that says "nothing will be written" over a file-writing
+    // arm would misstate (the PublishBundle precedent).
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmitSkeletonOnly cat dir))
     | PlanAction.EmitManifest (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitManifestOnly shaping cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmitManifestOnly shaping cat dir))
     | PlanAction.EmitBundle (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit shaping cat dir))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runEmit shaping cat dir))
     | PlanAction.DeployDocker (model, modelOssys) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy shaping cat))
+        needCatalog modelOssys model (fun cat -> shellRun "projection project" Shell.Go (fun () -> runDeploy shaping cat))
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
-        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
+            shellRun "projection preview" Shell.Preview (fun () -> runProjectLivePreview shapedCat conn decl)))
     | PlanAction.Transfer (src, sink, opts, execute) ->
         // R1b — the envelope-emitting faces move under `withRun` (the law:
         // a verb that mints envelopes runs bracketed; RI-11's census). The
@@ -180,7 +214,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // events, so their streams now open with `config.runStart` and
         // close with the §10 terminal — and the run is capturable.
         withRun "projection transfer" (fun () ->
-            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir surveyAdvisory)
+            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -191,60 +225,93 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability surveyAdvisory))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
                 runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env opts.SinkCapability)))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection, syntheticSection) ->
-        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
-    | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
-    | PlanAction.ProposeCorrection (model, modelOssys, out) -> runProposeCorrection model modelOssys out
+        // The synthetic load emits the transfer spine's load stage — under
+        // pretty an EXECUTING run now gets the live board (2026-07-02; it was
+        // the one long-running verb with no Watch wiring at all — completely
+        // silent until the trailing panel). A preview writes nothing, so its
+        // load line would never advance: no spine, the static frame instead.
+        Shell.execute
+            { Shell.framed "projection synth-load" with
+                Register = if execute then Shell.currentFrame.Value.Register else Shell.Preview }
+            Shell.Bracket.Bracketed
+            (if execute then Some Spines.transfer else None)
+            (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
+    | PlanAction.CaptureProfile (conn, out) -> shellRun "projection capture-profile" Shell.Go (fun () -> runCaptureProfile conn out)
+    | PlanAction.ProposeCorrection (model, modelOssys, out) -> shellRun "projection synth-correct" Shell.Go (fun () -> runProposeCorrection model modelOssys out)
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
-        // The load flow runs the same publish pipeline, so it streams the same
-        // stage arc; --pretty shows the live board (§13).
-        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
-        else run ()
+        // The load flow runs the same publish pipeline plus the seed-load leg
+        // (2026-07-02 — a declared stage, so the board covers the whole run;
+        // the episode record, when a store rides, happens inside that leg).
+        Shell.execute
+            { Shell.framed "projection full-export --load" with Register = Shell.Go }
+            Shell.Bracket.SelfBracketed
+            (Some (Spines.publishWith false true))
+            run
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate" (fun () ->
                 runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env)))
     // check --------------------------------------------------------------
-    | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
-    | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
-    | PlanAction.CheckDrift (m, conn)      -> runDrift m conn
-    | PlanAction.CheckData (before, after) -> runVerifyData before after
-    | PlanAction.CheckReady                -> runReadiness ()
-    | PlanAction.CheckShape (al, ar, confirm, asJson) -> runCheckShape al ar confirm asJson
+    // The canary verbs already emit the canary stage's spine events (the
+    // Pipeline `staged Spines.canary` CE) — under pretty they now get the
+    // live board those events always deserved (2026-07-02; the events used
+    // to flow to the nulled writer with no subscriber).
+    | PlanAction.CheckCanary (ddl, false) ->
+        Shell.execute
+            (Shell.framed "projection check")
+            Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanary ddl)
+    | PlanAction.CheckCanary (ddl, true)  ->
+        Shell.execute
+            (Shell.framed "projection check --cdc-silence")
+            Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
+    | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
+    | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
+    | PlanAction.CheckReady                ->
+        // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
+        // no-append contract rides the ReadOnly register).
+        Shell.execute
+            { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
+            Shell.Bracket.SelfBracketed None runReadiness
+    | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
     // explain ------------------------------------------------------------
-    | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule
-    | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
-    | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
-    | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)
-    | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
+    | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
+        shellRun "projection diff" Shell.ReadOnly (fun () -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule)
+    | PlanAction.Compare (a, b, asJson)      -> shellRun "projection compare" Shell.ReadOnly (fun () -> runCompare a b asJson)
+    | PlanAction.ExplainPolicy (a, b)        -> shellRun "projection explain policy" Shell.ReadOnly (fun () -> runPolicyDiff a b)
+    | PlanAction.ExplainNode (c, k, asJson, depthOpt) ->
+        shellRun "projection explain node" Shell.ReadOnly (fun () -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth))
+    | PlanAction.ExplainSuggest (c, applyTo) -> shellRun "projection explain suggest" Shell.ReadOnly (fun () -> runSuggestConfig c applyTo)
     | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
-        let all = RegisteredAllTransforms.all
-        let stageBindingText (s: StageBinding) =
-            match s with
-            | StageBinding.Adapter        -> "adapter"
-            | StageBinding.Pass           -> "pass"
-            | StageBinding.OrderingPolicy -> "ordering"
-            | StageBinding.Emitter        -> "emitter"
-            | StageBinding.Pipeline       -> "pipeline"
-        printfn "projection: %d registered transform(s)" (List.length all)
-        for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
-            printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
-        0
-    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
-    | PlanAction.ExplainMigrateFromStore (store, toP, decl, forceGenesis) -> runMigrateFromStore store toP decl forceGenesis
+        shellRun "projection explain registry" Shell.ReadOnly (fun () ->
+            let all = RegisteredAllTransforms.all
+            let stageBindingText (s: StageBinding) =
+                match s with
+                | StageBinding.Adapter        -> "adapter"
+                | StageBinding.Pass           -> "pass"
+                | StageBinding.OrderingPolicy -> "ordering"
+                | StageBinding.Emitter        -> "emitter"
+                | StageBinding.Pipeline       -> "pipeline"
+            printfn "projection: %d registered transform(s)" (List.length all)
+            for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
+                printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
+            0)
+    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> shellRun "projection explain migrate" Shell.ReadOnly (fun () -> runMigratePreview fromP toP decl)
+    | PlanAction.ExplainMigrateFromStore (store, toP, decl, forceGenesis) -> shellRun "projection explain migrate" Shell.ReadOnly (fun () -> runMigrateFromStore store toP decl forceGenesis)
     // seal ---------------------------------------------------------------
-    | PlanAction.SealEject store -> runEject store
-    | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
+    | PlanAction.SealEject store -> shellRun "projection seal" Shell.Go (fun () -> runEject store)
+    | PlanAction.SealApprove (version, approver, rationale, store) -> shellRun "projection seal approve" Shell.Go (fun () -> runApprove version approver rationale store)
     // report -------------------------------------------------------------
     | PlanAction.ReportBundle (store, outputDir) ->
+        shellRun "projection report" Shell.ReadOnly (fun () ->
         match ReportRun.fromStore store with
         | Ok bundle ->
             printLines Console.Out (ReportRun.render bundle)
@@ -272,15 +339,15 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             0
         | Error msg ->
             Console.Error.WriteLine (sprintf "projection report: %s" msg)
-            6
+            6)
     // slice (data portability) -------------------------------------------
     // The slice faces own their bespoke flag parsing + config resolution and
-    // their own bench/narration; they run directly (no `withRun` envelope), the
-    // same as they did under the old `argv.[0]` dispatch — now reached through
-    // the one typed plan (recon #3).
-    | PlanAction.RunSliceExtract args        -> runSliceExtract args
-    | PlanAction.RunSliceApply (reset, args) -> runSliceApply reset args
-    | PlanAction.RunSliceFlow args           -> runSliceFlow args
+    // their own bench/narration; since 2026-07-02 they run through the shell
+    // like every other verb (the A3 sweep) — run envelopes on the wire,
+    // channel-1 suppression + the verdict panel under pretty.
+    | PlanAction.RunSliceExtract args        -> shellRun "projection slice-extract" Shell.Go (fun () -> runSliceExtract args)
+    | PlanAction.RunSliceApply (reset, args) -> shellRun (if reset then "projection slice-reset" else "projection slice-apply") Shell.Go (fun () -> runSliceApply reset args)
+    | PlanAction.RunSliceFlow args           -> shellRun "projection slice-run" Shell.Go (fun () -> runSliceFlow args)
     // refused ------------------------------------------------------------
     | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 
@@ -374,7 +441,7 @@ let private flowSourceText (s: FlowSource) : string =
 
 /// `projection` with no args lists the flows as `name: from → to (spec)` —
 /// the config IS the menu (THE_CLI.md §4.4). No flows configured → the help.
-let private runList () : int =
+let private runList (asJson: bool) : int =
     match discoverConfig () with
     | Error es ->
         Console.Error.WriteLine "projection: projection.json is invalid:"
@@ -383,13 +450,16 @@ let private runList () : int =
     | Ok cfg ->
         if Map.isEmpty cfg.Flows then printLines Console.Out usageLines
         else
-            Console.Out.WriteLine "Flows (projection <flow> [--go] [--fresh] [--allow-drops]):"
-            for KeyValue (name, f) in cfg.Flows do
-                let extra =
-                    [ if Option.isSome f.Rekey then yield "rekey"
-                      if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
-                let suffix = if List.isEmpty extra then "" else sprintf "  (%s)" (String.concat "; " extra)
-                Console.Out.WriteLine(sprintf "  %-16s %s → %s%s" name (flowSourceText f.From) f.To suffix)
+            // The menu is a `View` (2026-07-02) — pretty / plain / `--format
+            // json` / `--query` are the one document's lenses, like every
+            // other answer surface.
+            let rows =
+                [ for KeyValue (name, f) in cfg.Flows ->
+                    let extra =
+                        [ if Option.isSome f.Rekey then yield "rekey"
+                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                    name, flowSourceText f.From, f.To, String.concat "; " extra ]
+            TtyRenderer.renderAnswer asJson View.defaultDepth (TtyRenderer.buildFlowMenuView rows)
         0
 
 [<EntryPoint>]
@@ -445,6 +515,9 @@ let main argv =
             else None)
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
+    // `--stat` (2026-07-02) — after the run closes, the §11 aggregates table
+    // on stdout (the headless rollup lens).
+    Shell.statMode := has "--stat"
     let forceJson = has "--json" || has "--no-pretty"
     let forcePretty = has "--pretty"
     // "operator wants pretty" — explicit, or auto when stderr is a real TTY
@@ -455,13 +528,13 @@ let main argv =
     // `--watch` is DEPRECATED (2026-06-17 — folded into `--pretty`/auto-TTY; the
     // live board is what pretty shows). Still stripped so an old habit doesn't
     // error, but it no longer carries its own behavior.
-    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch"; "--stat" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
-    | [||] -> runList ()
+    | [||] -> runList forceJson
     | [| "init" |] -> runInit ()
     | [| "inspect" |] -> runInspectHistory forceJson
     | [| "inspect"; runId |] -> runInspect runId None forceJson
@@ -514,4 +587,17 @@ let main argv =
                         | Some flowShaping -> Config.overlay cfg.Shaping flowShaping
                         | None -> cfg.Shaping
                     | _ -> cfg.Shaping
+                // The flow frame (2026-07-02) — a flow-dispatched run presents
+                // in the daily surface's own words: the box title, the verdict
+                // panel, and the ledger record read "publish: cloud-dev →
+                // on-prem-dev — preview", never the engine verb the plan chose.
+                // Seeded here (the one place the Intent is in scope); the verb
+                // arms preserve it via `Shell.framed`.
+                (match intent with
+                 | Intent.Flow (flow, opts) ->
+                     Shell.currentFrame.Value <-
+                         { Command  = sprintf "projection %s" flow.Name
+                           Flow     = Some { Name = flow.Name; From = flowSourceText flow.From; To = flow.To }
+                           Register = if opts.Go then Shell.Go else Shell.Preview }
+                 | _ -> ())
                 runPlan effectiveShaping surveyAdvisory (Command.plan cfg intent)

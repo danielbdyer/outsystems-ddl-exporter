@@ -24,7 +24,11 @@ let private inScopeCodes : Set<string> =
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
+          // the publish spine's post-root legs (2026-07-02 — store / seed-load
+          // join the declared arc so the board covers the whole run)
+          "store.started"; "seed-load.started"
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
+          "watch.suggestedEdits"
           "summary.stageCompleted"
           "config.validationFailed"
           // the run-face verdict codes (`RunFaces` register migration) — the
@@ -54,7 +58,14 @@ let private inScopeCodes : Set<string> =
           // migration recon #11): preview / applied / drop refusal, and the
           // migrate execute-leg applied / verification-failed verdicts
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
-          "migrate.applied"; "migrate.verificationFailed" ]
+          "migrate.applied"; "migrate.verificationFailed"
+          // the §12 at-scale rollup — the model read's divergence notices
+          // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
+          "adapter.ossys.modelRead.noticeRollup"
+          // the operator shell's §5 preview frame (Shell.execute, render-only)
+          "shell.previewFrame"
+          // the dispatch prologue's voiced notes (runPlan, render-only)
+          "plan.note"; "survey.advisory" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -75,12 +86,14 @@ let private knownEmittableCodes : Set<string> =
           // the migrate leg's live stage stream (build → apply → verify) + the
           // data-transfer leg's load stage
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
+          "store.started"; "seed-load.started"
           // the live Watch board's render-synthesized frame codes (§13) — the
           // run-title header, the terminal done-frame, and the halted stage line
           // (the R2 Aborted arm). Not LogSink envelopes: the board is a
           // *rendering* of the run, so its frame copy is voiced through the
           // catalog (one register) and consumed at render, never emitted.
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
+          "watch.suggestedEdits"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // the run-face verdict codes — like the watch frames, these are not
@@ -108,6 +121,14 @@ let private knownEmittableCodes : Set<string> =
           // the §4 transfer / migrate move verdicts (recon #11)
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
           "migrate.applied"; "migrate.verificationFailed"
+          // the model read's notice rollup (LiveModelRead.surfaceDivergences —
+          // one Warn envelope condensing the divergence notices; §12 at-scale law)
+          "adapter.ossys.modelRead.noticeRollup"
+          // the operator shell's preview frame — render-synthesized (like the
+          // watch.* frames), consumed at `Shell.execute`'s static open
+          "shell.previewFrame"
+          // the dispatch prologue's voiced notes — render-synthesized at runPlan
+          "plan.note"; "survey.advisory"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -190,7 +211,7 @@ let ``Voice totality: no copy is authored for a code the engine cannot emit`` ()
 
 [<Fact>]
 let ``Voice totality: every entry cites a recognized THE_VOICE section`` () =
-    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§13"; "§14" ]
+    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§12"; "§13"; "§14" ]
     for c in Voice.all do
         Assert.False(System.String.IsNullOrWhiteSpace c.DocSection, sprintf "%s has no DocSection" c.Code)
         Assert.True(Set.contains c.DocSection recognized, sprintf "%s cites unrecognized section %s" c.Code c.DocSection)
@@ -526,7 +547,7 @@ let ``Voice stageName: an unknown stage passes through unchanged`` () =
 /// spines, not a hand-list, so a stage is covered the moment it joins a spine. The
 /// umbrella root (`RunSpine.rootKey`) is elided: the board never watches it.
 let private boardStageKeys : Set<string> =
-    [ Spines.pipeline; Spines.migrate; Spines.migrateData
+    [ Spines.pipeline; Spines.publishWith true true; Spines.migrate; Spines.migrateData
       Spines.deploy; Spines.canary; Spines.transfer ]
     |> List.collect RunSpine.keys
     |> Set.ofList

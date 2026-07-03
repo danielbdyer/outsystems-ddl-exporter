@@ -31,6 +31,7 @@
     <Compile Include="CapabilityRefusalTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="LogSinkSubscriberTests.fs" />
+    <Compile Include="NoticeRoutingTests.fs" />
     <Compile Include="RunSpineTests.fs" />
     <Compile Include="StagedTests.fs" />
     <Compile Include="RunLedgerTests.fs" />
@@ -49,6 +50,7 @@
     <Compile Include="RelaxationStoreTests.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
+    <Compile Include="ShellTests.fs" />
     <Compile Include="WatchInjectionTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />
     <Compile Include="CapabilitySurveyTotalityTests.fs" />

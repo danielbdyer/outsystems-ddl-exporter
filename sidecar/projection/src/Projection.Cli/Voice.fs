@@ -106,6 +106,8 @@ module Voice =
         | "deploy"    -> "Deploy"
         | "canary"    -> "Round-trip verification"
         | "load"      -> "Data load"
+        | "store"     -> "Provenance record"
+        | "seed-load" -> "Seed load"
         | other       -> other
 
     /// The §13 follow-on for a run whose terminal stage is `terminalStage` — "the
@@ -123,6 +125,8 @@ module Voice =
         | "deploy"    -> "Verification follows."
         | "canary"    -> "The record follows."
         | "load"      -> "Verification follows."
+        | "store"     -> "The bundle is published and the change is recorded."
+        | "seed-load" -> "The data is loaded. Verification follows."
         | _           -> "The run is complete."
 
     /// The §13 follow-on for a run whose terminal stage HALTED — NM-46: a run that
@@ -523,6 +527,26 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `store.started` — the publish store leg is in progress (`THE_VOICE.md`
+    /// §13; the 2026-07-02 publish-spine completion). Gerund-in-progress: the
+    /// change is measured against the prior emission and the episode recorded.
+    let private storeStarted : Copy =
+        { Code           = "store.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Recording the change against the prior emission."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `seed-load.started` — the publish-and-load seed leg is in progress
+    /// (`THE_VOICE.md` §13). The idempotent MERGE seed, distinct from the
+    /// transfer's data load.
+    let private seedLoadStarted : Copy =
+        { Code           = "seed-load.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Loading the seed."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `watch.runTitle` — the live board's run-title header (`THE_VOICE.md` §13 —
     /// "the instrument speaks about its own running"). A neutral, agentless naming
     /// of the run in flight (the command is the subject, never "you"); the board
@@ -824,6 +848,96 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
+    /// `watch.suggestedEdits` — the live board's config-edit teaser (#6
+    /// echo-the-fix): envelopes carrying a `suggestedConfig` payload tick this
+    /// count as the run happens; the verdict panel ranks the single biggest
+    /// lever afterward.
+    let private watchSuggestedEdits : Copy =
+        { Code           = "watch.suggestedEdits"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "count" p with
+                | Some n -> View.Note(sprintf "%s config edit(s) suggested so far — the verdict panel ranks the lever." (humane n))
+                | None   -> View.Note "Config edits suggested — the verdict panel ranks the lever."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `plan.note` — a dispatch-prologue note (a plan note; the A7 inert-flag
+    /// note). The engine authored the text at the plan layer; the Voice frames
+    /// it on the note register so the prologue renders one way everywhere.
+    let private planNote : Copy =
+        { Code           = "plan.note"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                match text "text" p with
+                | Some t -> View.Note(sprintf "Note — %s" t)
+                | None   -> View.Note "Note."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `survey.advisory` — the G0c capability-survey advisory for a live
+    /// (`--go`) flow: a connected environment cannot do what the flow asks.
+    /// Warns, never gates (R6 — the run's own exit stands).
+    let private surveyAdvisory : Copy =
+        { Code           = "survey.advisory"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                match text "text" p with
+                | Some t -> View.Note t
+                | None   -> View.Note "A connected environment reported a capability gap."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `shell.previewFrame` — the operator shell's static open for a run that
+    /// writes nothing (`THE_VOICE.md` §5's consequence-as-meaning, carried to
+    /// the preview register): the frame says so up front, so a gated dry-run
+    /// reads as a deliberate preview rather than a dead board.
+    let private shellPreviewFrame : Copy =
+        { Code           = "shell.previewFrame"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                match text "title" p with
+                | Some t -> View.Note(sprintf "%s. Nothing will be written." t)
+                | None   -> View.Note "A preview. Nothing will be written."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `adapter.ossys.modelRead.noticeRollup` — a model read's divergence notices,
+    /// condensed to one calm line (`THE_VOICE.md` §12 at-scale law: the surface is
+    /// a constant size; only the numbers grow). The per-item detail is the run's
+    /// notice artifact; the action points there — never a wall of lines.
+    let private modelReadNoticeRollup : Copy =
+        { Code           = "adapter.ossys.modelRead.noticeRollup"
+          DocSection     = "§12"
+          Statement      =
+            fun p ->
+                let families =
+                    [ "nullability", "nullability"
+                      "identity",    "identity"
+                      "primaryKey",  "primary key"
+                      "other",       "other" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p |> Option.map (fun n -> sprintf "%s %s" label (humane n)))
+                let total = humane (textOr "total" "0" p)
+                match families with
+                | [] -> View.Note(sprintf "%s model-reality notices. The model's declared values were kept." total)
+                | fs -> View.Note(sprintf "%s model-reality notices — %s. The model's declared values were kept." total (String.concat ", " fs))
+          Substantiation =
+            fun p ->
+                match text "samples" p with
+                | Some s when s <> "" -> [ View.Disclosure("the first notices", View.Neutral, [ View.Note s ]) ]
+                | _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review the full list at %s." path)) }
+
+    // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
     // registry's `registered ⇔ executed`), so the copy can't drift from
@@ -872,10 +986,20 @@ module Voice =
           deployStarted
           canaryStarted
           loadStarted
+          storeStarted
+          seedLoadStarted
           watchRunTitle
           watchRunDone
           watchStageHalted
+          watchSuggestedEdits
           summaryStageCompleted
+          // §5 — the operator shell's preview frame
+          shellPreviewFrame
+          // §14 — the dispatch prologue's notes + the G0c survey advisory
+          planNote
+          surveyAdvisory
+          // §12 — the at-scale rollups (constant-size surfaces over growing counts)
+          modelReadNoticeRollup
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

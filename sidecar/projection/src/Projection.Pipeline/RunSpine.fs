@@ -393,6 +393,15 @@ module Stages =
     let deploy    : StageName = name "deploy"
     let canary    : StageName = name "canary"
     let load      : StageName = name "load"
+    /// The publish store leg (diff-vs-prior + the episode record) — a declared
+    /// post-root stage (2026-07-02) so the live board covers the WHOLE publish
+    /// run: before this, the board hit its done-frame while the store leg was
+    /// still working.
+    let store     : StageName = name "store"
+    /// The publish-and-load seed leg — a distinct key from the transfer
+    /// `load` (its Voice gerund speaks the idempotent-seed act, not the
+    /// transfer's row movement).
+    let seedLoad  : StageName = name "seed-load"
 
 /// The declared spines — one definition site per run face's arc (the
 /// per-face display string lists retire onto these; the Watch pre-seeds
@@ -403,6 +412,18 @@ module Spines =
     /// `full-export`: the "pipeline" umbrella over extract → profile → emit.
     let pipeline : RunSpine =
         RunSpine.createWithRoot Stages.pipeline [ Stages.extract; Stages.profile; Stages.emit ]
+        |> Result.value
+
+    /// The publish arcs — `pipeline` plus the store leg (when a lifecycle
+    /// store is supplied) and the seed-load leg (publish-and-load). Chosen at
+    /// DISPATCH, never as an optional seeded stage: the board's done-frame
+    /// waits for every seeded stage to close, so a seeded-but-skipped stage
+    /// would hold it back forever (2026-07-02).
+    let publishWith (store: bool) (load: bool) : RunSpine =
+        RunSpine.createWithRoot Stages.pipeline
+            ([ Stages.extract; Stages.profile; Stages.emit ]
+             @ (if store then [ Stages.store ] else [])
+             @ (if load then [ Stages.seedLoad ] else []))
         |> Result.value
 
     /// The in-place migrate leg: build → safety gates → apply → verify.

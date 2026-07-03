@@ -387,17 +387,19 @@ module Deploy =
                     // without matched server capacity wastes
                     // connection-pool slots without throughput gain.
                     let clamped = max MinParallelism (min 8 clientCpus)
-                    eprintfn
-                        "deploy.detectParallelism: SQL Server DMV unavailable; falling back to Environment.ProcessorCount = %d (clamped to %d)"
-                        clientCpus clamped
+                    // Coded envelope, not raw stderr (2026-07-02) — a raw eprintfn
+                    // tears the live board's region; channel 1 carries the advisory.
+                    LogSink.emit
+                        (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.dmvUnavailable"
+                            (Map.ofList [ "clientCpus", box clientCpus; "resolved", box clamped ]))
                     Bench.recordSample "deploy.detectParallelism.clientCpus" (int64 clientCpus)
                     Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
                     return clamped
                 else
                     // Layer 3: static fallback (last resort).
-                    eprintfn
-                        "deploy.detectParallelism: both SQL Server DMV and Environment.ProcessorCount unavailable; falling back to %d"
-                        FallbackParallelism
+                    LogSink.emit
+                        (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.staticFallback"
+                            (Map.ofList [ "resolved", box FallbackParallelism ]))
                     Bench.recordSample "deploy.detectParallelism.resolved" (int64 FallbackParallelism)
                     return FallbackParallelism
         }
@@ -424,9 +426,9 @@ module Deploy =
                     Bench.recordSample "deploy.resolveParallelism.envOverride" (int64 n)
                     return n
                 | _ ->
-                    eprintfn
-                        "PROJECTION_DEPLOY_PARALLELISM='%s' is not a positive integer; auto-detecting"
-                        s
+                    LogSink.emit
+                        (LogSink.envelope LogSink.Warn LogSink.Deploy "deploy.parallelism.envOverrideMalformed"
+                            (Map.ofList [ "value", box s ]))
                     match parallelismCache.TryGetValue connectionString with
                     | true, cached -> return cached
                     | false, _ ->
@@ -480,9 +482,9 @@ module Deploy =
             // Halve to leave headroom for concurrent connections.
             let safeCeil = max 1 (maxPool / 2)
             if requested > safeCeil then
-                eprintfn
-                    "deploy.executeBatchParallel: requested parallelism %d exceeds half of MaxPoolSize %d; capping to %d"
-                    requested maxPool safeCeil
+                LogSink.emit
+                    (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.poolCapped"
+                        (Map.ofList [ "requested", box requested; "maxPoolSize", box maxPool; "capped", box safeCeil ]))
                 safeCeil
             else
                 requested
@@ -808,11 +810,10 @@ module Deploy =
                 let codes =
                     errors
                     |> List.map (fun e -> e.Code)
-                    |> String.concat ", "  // LINT-ALLOW: terminal stderr-emission boundary; typed code list joined for human-readable warning
-                eprintfn
-                    "  WARNING: %s is set but malformed (%s); falling back to ephemeral container."
-                    WarmConnStringEnvVar
-                    codes
+                    |> String.concat ", "  // LINT-ALLOW: typed code list joined for the envelope payload
+                LogSink.emit
+                    (LogSink.envelope LogSink.Warn LogSink.Deploy "deploy.warmConnMalformed"
+                        (Map.ofList [ "envVar", box WarmConnStringEnvVar; "codes", box codes ]))
                 None
 
     /// Run `body` with a master connection string sourced from either

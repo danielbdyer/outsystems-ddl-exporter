@@ -306,6 +306,37 @@ let benchView (stats: Bench.Stats list) : View.View =
           string s.MaxMs,          View.Neutral ]
     View.Doc [ View.Note "Bench (sorted by total time)"; View.Table(headers, stats |> List.map row) ]
 
+/// Build the `--stat` rollup `View` (2026-07-02) — the run's §11 aggregates
+/// as one table (category / code / count / first samples' grain elided): the
+/// headless "where did my notices go" lens, sorted most-frequent first.
+let buildStatView (groups: LogSink.GroupAccumulator list) : View.View =
+    let headers = [ "category"; "code"; "count" ]
+    let row (g: LogSink.GroupAccumulator) : (string * View.Status) list =
+        [ LogSink.categoryToString g.Category, View.Neutral
+          g.Code,                              View.Neutral
+          string g.Count,                      View.Neutral ]
+    let rows =
+        groups
+        |> List.sortByDescending (fun g -> g.Count)
+        |> List.map row
+    View.Doc [ View.Note "Run events, rolled up (category · code · count)"; View.Table(headers, rows) ]
+
+/// Build the flow-menu `View` — the no-argument `projection` answer ("the
+/// config IS the menu", THE_CLI.md §4.4), as one document the three lenses
+/// share: a hero naming the daily act, then the flows as a table
+/// (name / route / notes). 2026-07-02 — previously plain Console.Out lines,
+/// invisible to `--json` / `--query` and unstyled under pretty.
+let buildFlowMenuView (flows: (string * string * string * string) list) : View.View =
+    let headers = [ "flow"; "from"; "to"; "notes" ]
+    let row (name, source, target, extras) : (string * View.Status) list =
+        [ name,   View.Neutral
+          source, View.Neutral
+          target, View.Neutral
+          extras, View.Neutral ]
+    View.Doc
+        [ View.Note "Flows — the daily act is `projection <flow>` (preview by default; --go applies)."
+          View.Table(headers, flows |> List.map row) ]
+
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). The factory
     // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)

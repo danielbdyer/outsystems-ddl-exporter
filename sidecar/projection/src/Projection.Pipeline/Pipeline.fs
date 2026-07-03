@@ -2689,6 +2689,32 @@ module Compose =
     /// displacement, or a non-monotone record surface as `Error` on the run,
     /// *after* the bundle has landed (the operator knows the emission succeeded
     /// but provenance did not).
+    /// Bracket a post-root publish leg (`store` / `seed-load`) in the stage
+    /// wire events (2026-07-02 — the legs join the declared publish spine so
+    /// the live board covers the whole run). Same wire shape as
+    /// `Staged.stage`: `<key>.started` → `summary.stageCompleted` with
+    /// `succeeded`/`failed` off the Result and `aborted` on a throw — the
+    /// board's line always closes, never a hang. The legs run AFTER the
+    /// pipeline CE's root scope closed, so they bracket via the primitives
+    /// rather than inside the CE (the umbrella brackets the emission arc).
+    let private stagedLeg (key: string) (body: unit -> Task<Result<'a>>) : Task<Result<'a>> =
+        task {
+            LogSink.recordStageStart key
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            try
+                let! result = body ()
+                sw.Stop()
+                match result with
+                | Ok _    -> LogSink.recordStageEvent key sw.ElapsedMilliseconds LogSink.Succeeded
+                | Error _ -> LogSink.recordStageEvent key sw.ElapsedMilliseconds LogSink.Failed
+                return result
+            with ex ->
+                sw.Stop()
+                LogSink.recordStageEvent key sw.ElapsedMilliseconds LogSink.Aborted
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                return Unchecked.defaultof<_>
+        }
+
     let runWithConfigAndStore
         (cfg: Config.Config)
         (storePath: string option)
@@ -2700,12 +2726,26 @@ module Compose =
             // PL-1 — one estate acquisition: the store leg consumes the
             // publish's own read catalog instead of re-extracting the model.
             let! acquiredR = runWithConfigAcquiring cfg
-            return
-                match acquiredR with
-                | Error errors -> Result.failure errors
-                | Ok (report, acquired) ->
-                    storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms
-                    |> Result.map (fun legOpt -> report, legOpt)
+            match acquiredR with
+            | Error errors -> return Result.failure errors
+            | Ok (report, acquired) ->
+                match storePath with
+                | Some p when not (System.String.IsNullOrWhiteSpace p) ->
+                    // The store leg is a declared stage on the publish spine
+                    // (`Spines.publishWith true …`) — bracketed so the board's
+                    // store line opens, works, and closes honestly.
+                    let! legR =
+                        stagedLeg (StageName.value Stages.store) (fun () ->
+                            Task.FromResult
+                                (storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms))
+                    return legR |> Result.map (fun legOpt -> report, legOpt)
+                | _ ->
+                    // No store — the genesis emission; no store stage was
+                    // seeded (dispatch chose the bare pipeline spine), so no
+                    // bracket fires.
+                    return
+                        storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms
+                        |> Result.map (fun legOpt -> report, legOpt)
         }
 
     /// AC-X1 (part B) — the **live data-load leg core**: load the idempotent
@@ -2879,6 +2919,12 @@ module Compose =
             match acquiredR with
             | Error errors -> return Result.failure errors
             | Ok (report, acquired) ->
-                let! loadResult = loadFromAcquisition cdcCaptureTotal executeLeveled cfg acquired sink storePath timeline environment at
+                // The seed-load leg is a declared stage on the publish-and-load
+                // spine (`Spines.publishWith … true`, 2026-07-02) — bracketed so
+                // the board covers the potentially-longest leg of the run (the
+                // episode record, when a store rides, happens INSIDE this leg).
+                let! loadResult =
+                    stagedLeg (StageName.value Stages.seedLoad) (fun () ->
+                        loadFromAcquisition cdcCaptureTotal executeLeveled cfg acquired sink storePath timeline environment at)
                 return loadResult |> Result.map (fun (leg, cdcDelta) -> report, leg, cdcDelta)
         }

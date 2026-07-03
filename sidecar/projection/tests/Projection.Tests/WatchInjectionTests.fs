@@ -23,7 +23,7 @@ let ``renderWatchOn runs the body under the live board on an injected console`` 
         console.Profile.Capabilities.Interactive <- true
         let ran = ref false
         let code =
-            Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+            Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
                 ran.Value <- true
                 7)
         Assert.True(ran.Value, "the body must run inside the live region")
@@ -61,7 +61,7 @@ let ``renderWatchOn shows the cutover timeline header from the ledger's canary h
                   Declined = 0 }
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.canary 0L (fun () -> 0) |> ignore
+        Watch.renderWatchOn console (Watch.seededOf Spines.canary) 0L (fun () -> 0) |> ignore
         let out = console.Output
         Assert.Contains("▇", out)     // the R6 meter rode the header
         Assert.Contains("3/10", out)  // three consecutive green
@@ -82,7 +82,7 @@ let ``renderWatchOn suppresses channel 1 during the body and restores the prior 
     try
         let console = new TestConsole()
         console.Profile.Capabilities.Interactive <- true
-        Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.midRun" Map.empty)
             0)
         |> ignore
@@ -106,7 +106,7 @@ let ``renderWatchOn keeps the dwell OFF the emitting thread — emit never sleep
     let console = new TestConsole()
     console.Profile.Capabilities.Interactive <- true
     let bodyEmitMs = ref 0L
-    Watch.renderWatchOn console Spines.pipeline 200L (fun () ->
+    Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 200L (fun () ->
         let sw = System.Diagnostics.Stopwatch.StartNew()
         // each unique "<key>.started" appends a stage → applyEnvelope changed=true → the dwell
         // path. Info/Transform clears the emit filter (same shape as the suppression test).
@@ -134,7 +134,7 @@ let ``renderWatchOn propagates a body exception as itself and never hangs (#20 t
         let boom = InvalidOperationException("body boom")
         let thrown =
             try
-                Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+                Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
                     LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "alpha.started" Map.empty)
                     raise boom)
                 |> ignore
@@ -156,3 +156,93 @@ let ``Watch board: an active stage breathes the phase's spinner frame (#20)`` ()
     let out = console.Output
     Assert.Contains(Theme.spinner 2, out)               // the active line wears the phase-2 frame
     Assert.DoesNotContain(Theme.spinner 3, out)         // and only that frame (phase is fixed per render)
+
+[<Fact>]
+let ``renderWatchOn: a flood of foreign envelopes never starves the spinner heartbeat (#20 rework)`` () =
+    // The starvation defect: the OLD loop only advanced the spinner on a TryTake
+    // TIMEOUT, so a pipeline chatting non-board envelopes faster than one per
+    // 100ms froze the board for the whole flood. The reworked loop heartbeats on
+    // wall clock. The body floods foreign envelopes for ~600ms — the output must
+    // carry spinner frames BEYOND the one painted by the stage transition
+    // (phase 1), i.e. heartbeat repaints happened DURING the flood.
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    try
+        let console = new TestConsole()
+        console.Profile.Capabilities.Interactive <- true
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            while sw.ElapsedMilliseconds < 600L do
+                LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.chatter" Map.empty)
+            0)
+        |> ignore
+        let out = console.Output
+        Assert.Contains(Theme.spinner 2, out)   // ≥1 heartbeat repaint during the flood
+        Assert.Contains(Theme.spinner 3, out)   // ≥2 — the spinner is breathing, not ticking once
+        // A chatty pipeline is ALIVE: liveness keys off dequeued envelopes, so the
+        // flood must never read as a stall.
+        Assert.DoesNotContain("stalled", out)
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``renderWatchOn: a progress backlog coalesces — no post-run frame replay (#20 rework)`` () =
+    // The backlog defect: the OLD loop dwelled 120ms per renderable envelope with
+    // no coalescing, so 10,000 progress events queued ≈ 20 MINUTES of replay after
+    // the body had already returned. The reworked loop folds the whole backlog into
+    // coalesced frames and dwells on stage TRANSITIONS only — the run must complete
+    // in seconds, with the dwell floor left at a real value (120ms).
+    let console = new TestConsole()
+    console.Profile.Capabilities.Interactive <- true
+    let sw = System.Diagnostics.Stopwatch.StartNew()
+    let code =
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 120L (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
+            for i in 1 .. 10_000 do
+                LogSink.recordStageProgress "extract" i 10_000 (int64 i)
+            0)
+    sw.Stop()
+    Assert.Equal(0, code)
+    Assert.True(
+        sw.ElapsedMilliseconds < 8_000L,
+        sprintf "10k progress envelopes took %dms — the backlog must coalesce, never replay one dwelled frame per envelope" sw.ElapsedMilliseconds)
+
+[<Fact>]
+let ``renderWatchOn: a quiet progress-less stage renders stalled after the threshold (#20 rework)`` () =
+    // The honesty half of the stall design: a stage with NO progress events (every
+    // full-export stage today) that goes quiet past the threshold must SAY stalled,
+    // not just freeze a dimmed spinner. Threshold pinned low via the env seam.
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_STALL_MS", "50")
+    try
+        let console = new TestConsole()
+        console.Profile.Capabilities.Interactive <- true
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "extract.started" Map.empty)
+            System.Threading.Thread.Sleep 400
+            0)
+        |> ignore
+        Assert.Contains("stalled", console.Output)
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_STALL_MS", null)
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``renderWatchOn detaches its subscriber on every exit path (#20 teardown)`` () =
+    // The teardown law: the board's LogSink subscriber never outlives the render —
+    // a leaked subscriber would enqueue into a completed queue forever after. The
+    // witness is `LogSink.subscriberCount` (test-only accessor); asserted after a
+    // clean body AND after a throwing body.
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    LogSink.clearSubscribers ()
+    try
+        let console = new TestConsole()
+        console.Profile.Capabilities.Interactive <- true
+        Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () -> 0) |> ignore
+        Assert.Equal(0, LogSink.subscriberCount ())
+        (try
+            Watch.renderWatchOn console (Watch.seededOf Spines.pipeline) 0L (fun () -> failwith "boom") |> ignore
+         with _ -> ())
+        Assert.Equal(0, LogSink.subscriberCount ())
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)

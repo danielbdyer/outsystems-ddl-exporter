@@ -426,3 +426,83 @@ let ``Watch frame: the run frame clears the twelve-rule banned list`` () =
 let ``Watch frame: followOnAfter is total — every reachable terminal stage names a move`` () =
     for stage in [ "extract"; "profile"; "emit"; "deploy"; "canary"; "load"; "somethingNew" ] do
         Assert.False(System.String.IsNullOrWhiteSpace(Voice.followOnAfter stage))
+
+// ---------------------------------------------------------------------------
+// the fold weights (#20 rework — the drain loop paces on `Fold`, dwelling on
+// stage TRANSITIONS only; progress renders promptly; foreign envelopes never
+// starve the heartbeat)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch fold: a stage start weighs Transitioned`` () =
+    let _, fold = Watch.applyKind Watch.empty "extract.started" Map.empty
+    Assert.Equal(Watch.Fold.Transitioned, fold)
+
+[<Fact>]
+let ``Watch fold: a stage completion weighs Transitioned`` () =
+    let b, _ = Watch.applyKind Watch.empty "extract.started" Map.empty
+    let _, fold = Watch.applyKind b "summary.stageCompleted" (payload [ "stage", box "extract"; "durationMs", box 5L ])
+    Assert.Equal(Watch.Fold.Transitioned, fold)
+
+[<Fact>]
+let ``Watch fold: progress on an active stage weighs Progressed, never Transitioned`` () =
+    let b, _ = Watch.applyKind Watch.empty "extract.started" Map.empty
+    let _, fold = Watch.applyKind b "summary.stageProgress" (payload [ "stage", box "extract"; "done", box 3; "total", box 10; "elapsedMs", box 100L ])
+    Assert.Equal(Watch.Fold.Progressed, fold)
+
+[<Fact>]
+let ``Watch fold: a foreign envelope weighs NoChange`` () =
+    let _, fold = Watch.applyKind Watch.empty "transform.lineage" Map.empty
+    Assert.Equal(Watch.Fold.NoChange, fold)
+
+[<Fact>]
+let ``Watch fold: a repeated start weighs NoChange`` () =
+    let b, _ = Watch.applyKind Watch.empty "extract.started" Map.empty
+    let _, fold = Watch.applyKind b "extract.started" Map.empty
+    Assert.Equal(Watch.Fold.NoChange, fold)
+
+[<Fact>]
+let ``Watch fold: strongestFold ranks transition over progress over none`` () =
+    Assert.Equal(Watch.Fold.Transitioned, Watch.strongestFold Watch.Fold.Progressed Watch.Fold.Transitioned)
+    Assert.Equal(Watch.Fold.Transitioned, Watch.strongestFold Watch.Fold.Transitioned Watch.Fold.NoChange)
+    Assert.Equal(Watch.Fold.Progressed,   Watch.strongestFold Watch.Fold.NoChange Watch.Fold.Progressed)
+    Assert.Equal(Watch.Fold.NoChange,     Watch.strongestFold Watch.Fold.NoChange Watch.Fold.NoChange)
+
+[<Fact>]
+let ``Watch fold: apply is the did-it-change shim over applyKind`` () =
+    // The stored-run reconstruction folds on `apply`; the law is that its bool is
+    // exactly `applyKind <> NoChange` — one fold, two views, no drift.
+    let cases =
+        [ "extract.started", Map.empty
+          "transform.lineage", Map.empty
+          "summary.stageCompleted", payload [ "stage", box "extract"; "durationMs", box 5L ] ]
+    for code, p in cases do
+        let _, changed = Watch.apply Watch.empty code p
+        let _, fold = Watch.applyKind Watch.empty code p
+        Assert.Equal(changed, fold <> Watch.Fold.NoChange)
+
+// ---------------------------------------------------------------------------
+// the stalled line for a progress-less stage (#20 rework — a quiet Active None
+// stage says `stalled` in words; a frozen dimmed spinner alone explained nothing)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch line: a stalled progress-less stage reads stalled in words`` () =
+    let text = Watch.lineTextWith true { Key = "extract"; State = Watch.Active None }
+    Assert.Contains("Reading the model", text)
+    Assert.Contains("stalled", text)
+
+[<Fact>]
+let ``Watch line: a live progress-less stage carries no stall suffix`` () =
+    let text = Watch.lineTextWith false { Key = "extract"; State = Watch.Active None }
+    Assert.DoesNotContain("stalled", text)
+
+[<Fact>]
+let ``Watch line: the stalled suffix clears the twelve-rule banned list`` () =
+    let banned =
+        [ "your"; "you "; " i "; " we "; "that's real"; ", not "
+          "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused" ]
+    let line = Watch.lineTextWith true { Key = "profile"; State = Watch.Active None }
+    let lowered = line.ToLowerInvariant()
+    for b in banned do
+        Assert.False(lowered.Contains b, sprintf "stalled line '%s' breaks the banned list: contains '%s'" line b)
