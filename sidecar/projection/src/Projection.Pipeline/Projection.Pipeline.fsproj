@@ -47,6 +47,7 @@
     <Compile Include="DockerDaemon.fs" />
     <Compile Include="DatabaseNameGenerator.fs" />
     <Compile Include="DeployConnectionString.fs" />
+    <Compile Include="DeployParallelism.fs" />
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="Preflight.fs" />
