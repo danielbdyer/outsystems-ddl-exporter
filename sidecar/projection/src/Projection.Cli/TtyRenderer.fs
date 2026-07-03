@@ -306,6 +306,21 @@ let benchView (stats: Bench.Stats list) : View.View =
           string s.MaxMs,          View.Neutral ]
     View.Doc [ View.Note "Bench (sorted by total time)"; View.Table(headers, stats |> List.map row) ]
 
+/// Build the `--stat` rollup `View` (2026-07-02) — the run's §11 aggregates
+/// as one table (category / code / count / first samples' grain elided): the
+/// headless "where did my notices go" lens, sorted most-frequent first.
+let buildStatView (groups: LogSink.GroupAccumulator list) : View.View =
+    let headers = [ "category"; "code"; "count" ]
+    let row (g: LogSink.GroupAccumulator) : (string * View.Status) list =
+        [ LogSink.categoryToString g.Category, View.Neutral
+          g.Code,                              View.Neutral
+          string g.Count,                      View.Neutral ]
+    let rows =
+        groups
+        |> List.sortByDescending (fun g -> g.Count)
+        |> List.map row
+    View.Doc [ View.Note "Run events, rolled up (category · code · count)"; View.Table(headers, rows) ]
+
 /// Build the flow-menu `View` — the no-argument `projection` answer ("the
 /// config IS the menu", THE_CLI.md §4.4), as one document the three lenses
 /// share: a hero naming the daily act, then the flows as a table

@@ -80,10 +80,14 @@ module Watch =
           /// for its store/load legs, so identical rollups fold to one row —
           /// the counts never double). Rendered muted between the stage arc
           /// and the done-frame; the copy is the Voice catalog's (one register).
-          Notices: (string * Map<string, objnull>) list }
+          Notices: (string * Map<string, objnull>) list
+          /// #6 echo-the-fix (2026-07-02) — how many envelopes so far carried a
+          /// `suggestedConfig` payload (the operator's prioritized to-do). The
+          /// board teases the count live; the verdict panel ranks the lever.
+          SuggestedEdits: int }
 
     let empty : Board =
-        { Stages = []; Title = None; RunIdentity = None; Umbrella = Some "pipeline"; Notices = [] }
+        { Stages = []; Title = None; RunIdentity = None; Umbrella = Some "pipeline"; Notices = []; SuggestedEdits = 0 }
 
     /// A board pre-seeded with the run's planned stages, each `Pending` — so the
     /// operator sees the whole arc before the first stage starts, the stages
@@ -97,7 +101,8 @@ module Watch =
           Title = None
           RunIdentity = None
           Umbrella = Some "pipeline"
-          Notices = [] }
+          Notices = []
+          SuggestedEdits = 0 }
 
     /// A seeded board carrying the run frame — the run-title header voiced above
     /// the arc (`THE_VOICE.md` §13) and, when known up front, the run's ordinal for
@@ -116,7 +121,8 @@ module Watch =
           Title = None
           RunIdentity = None
           Umbrella = RunSpine.rootKey spine
-          Notices = [] }
+          Notices = []
+          SuggestedEdits = 0 }
 
     /// The umbrella root scope (e.g. full-export's "pipeline") wraps the whole
     /// run; it is not a sub-stage the operator watches, so the board elides its
@@ -237,6 +243,12 @@ module Watch =
                 else
                     board.Notices @ [ (code, payload) ]
             { board with Notices = replaced }, Fold.Progressed
+        elif Map.containsKey "suggestedConfig" payload then
+            // #6 echo-the-fix — an envelope carrying a suggested config edit
+            // ticks the live teaser (the same predicate the §11 rollup's
+            // `suggestedConfigEdits` counter uses; the verdict panel ranks the
+            // single biggest lever after the run).
+            { board with SuggestedEdits = board.SuggestedEdits + 1 }, Fold.Progressed
         else board, Fold.NoChange
 
     /// Fold one envelope into the board as a plain did-it-change — the stored-run
@@ -494,6 +506,13 @@ module Watch =
             board.Notices
             |> List.map (fun (code, payload) ->
                 Markup(sprintf "%s  %s" (Theme.yellow Theme.warn) (Theme.muted (Markup.Escape(noticeText code payload)))) :> IRenderable)
+        // #6 echo-the-fix — the live teaser for accumulated config-edit
+        // suggestions; the copy rides the catalog (`watch.suggestedEdits`).
+        let suggestedRow =
+            if board.SuggestedEdits = 0 then []
+            else
+                let text = statementText "watch.suggestedEdits" (Map.ofList [ "count", box board.SuggestedEdits ])
+                [ Markup(sprintf "%s  %s" (Theme.yellow Theme.warn) (Theme.muted (Markup.Escape text))) :> IRenderable ]
         let doneRow =
             match doneFrameText board with
             | Some t ->
@@ -504,7 +523,7 @@ module Watch =
                     else Theme.ok, Theme.green
                 [ Markup(sprintf "%s  %s" glyph (paint (Markup.Escape t))) :> IRenderable ]
             | None   -> []
-        titleRow @ stageRows @ noticeRows @ doneRow
+        titleRow @ stageRows @ noticeRows @ suggestedRow @ doneRow
 
     /// Project the board onto a Spectre renderable — the live target the
     /// `LiveDisplayContext` updates in place. A STATIC render (stored board, tests)

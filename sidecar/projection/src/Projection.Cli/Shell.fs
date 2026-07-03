@@ -35,6 +35,11 @@ module Shell =
     let prettyMode : bool ref = ref false
     let verboseMode : bool ref = ref false
 
+    /// `--stat` (2026-07-02) — after the run closes, render the §11 event
+    /// aggregates as one table on stdout (the headless rollup lens; the
+    /// pipe-friendly answer to "where did my notices go").
+    let statMode : bool ref = ref false
+
     /// The run's register — what kind of act the operator is watching. A
     /// `Preview` writes nothing (the daily `projection <flow>` without
     /// `--go`); `Go` is a live write; `ReadOnly` is an answer verb (diff /
@@ -181,6 +186,10 @@ module Shell =
          | ReadOnly -> ()
          | Go | Preview -> appendLedger frame code)
         if pretty then TtyRenderer.renderSummaryTo console frame.Command code
+        // `--stat` — the aggregates table on stdout (an ANSWER, so it rides
+        // the answer channel + lenses, not the injected stderr console).
+        if statMode.Value then
+            TtyRenderer.renderAnswer false View.defaultDepth (TtyRenderer.buildStatView (LogSink.aggregates ()))
         code
 
     /// THE one door. Runs `body` inside the frame: the live boxed board when

@@ -108,7 +108,22 @@ module LiveModelRead =
         (cnn: SqlConnection)
         : Task<Result<Catalog>> =
         task {
-            match! MetadataSnapshotRunner.runAsync cnn parameters with
+            // #19-lite (2026-07-02) — the extract leg reports per-rowset
+            // progress through the matrix-row-36 seam (`OnRowsetComplete`),
+            // so a live board's extract line counts up (`n of 23`) instead of
+            // sitting frozen through a long OSSYS read. The callback only
+            // emits an envelope — no sleep, no render (the board's drain loop
+            // owns pacing).
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let options =
+                { MetadataSnapshotRunner.defaultOptions with
+                    OnRowsetComplete =
+                        fun obs ->
+                            LogSink.recordStageProgress "extract"
+                                (obs.ResultSetIndex + 1)
+                                MetadataSnapshotRunner.ExpectedResultSets
+                                sw.ElapsedMilliseconds }
+            match! MetadataSnapshotRunner.runAsyncWithOptions cnn parameters options with
             | Error es -> return Result.failure es
             | Ok snapshot ->
                 // F9 (audit 2026-06-17) — surface, never silently discard, every

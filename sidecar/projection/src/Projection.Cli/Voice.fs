@@ -848,6 +848,21 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
+    /// `watch.suggestedEdits` — the live board's config-edit teaser (#6
+    /// echo-the-fix): envelopes carrying a `suggestedConfig` payload tick this
+    /// count as the run happens; the verdict panel ranks the single biggest
+    /// lever afterward.
+    let private watchSuggestedEdits : Copy =
+        { Code           = "watch.suggestedEdits"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "count" p with
+                | Some n -> View.Note(sprintf "%s config edit(s) suggested so far — the verdict panel ranks the lever." (humane n))
+                | None   -> View.Note "Config edits suggested — the verdict panel ranks the lever."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `plan.note` — a dispatch-prologue note (a plan note; the A7 inert-flag
     /// note). The engine authored the text at the plan layer; the Voice frames
     /// it on the note register so the prologue renders one way everywhere.
@@ -976,6 +991,7 @@ module Voice =
           watchRunTitle
           watchRunDone
           watchStageHalted
+          watchSuggestedEdits
           summaryStageCompleted
           // §5 — the operator shell's preview frame
           shellPreviewFrame

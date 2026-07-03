@@ -97,7 +97,8 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
-        "board + verdict panel, a pipe gets NDJSON). --query <path> narrows any answer to a"
+        "board + verdict panel, a pipe gets NDJSON). --stat appends the run's event rollup"
+        "(category · code · count) to stdout. --query <path> narrows any answer to a"
         "JSONPath-subset slice of its structured form (e.g. --query 'blocks[?status=warn]')."
         "--open <path> force-reveals just that dotted child-index branch of a pretty answer"
         "(e.g. --open 1.0), the rest staying at --depth — the headless half of the dig."
@@ -509,6 +510,9 @@ let main argv =
             else None)
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
+    // `--stat` (2026-07-02) — after the run closes, the §11 aggregates table
+    // on stdout (the headless rollup lens).
+    Shell.statMode := has "--stat"
     let forceJson = has "--json" || has "--no-pretty"
     let forcePretty = has "--pretty"
     // "operator wants pretty" — explicit, or auto when stderr is a real TTY
@@ -519,7 +523,7 @@ let main argv =
     // `--watch` is DEPRECATED (2026-06-17 — folded into `--pretty`/auto-TTY; the
     // live board is what pretty shows). Still stripped so an old habit doesn't
     // error, but it no longer carries its own behavior.
-    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch"; "--stat" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [| "--help" |] | [| "-h" |] ->

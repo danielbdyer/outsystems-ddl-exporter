@@ -28,6 +28,7 @@ let private inScopeCodes : Set<string> =
           // join the declared arc so the board covers the whole run)
           "store.started"; "seed-load.started"
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
+          "watch.suggestedEdits"
           "summary.stageCompleted"
           "config.validationFailed"
           // the run-face verdict codes (`RunFaces` register migration) — the
@@ -92,6 +93,7 @@ let private knownEmittableCodes : Set<string> =
           // *rendering* of the run, so its frame copy is voiced through the
           // catalog (one register) and consumed at render, never emitted.
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
+          "watch.suggestedEdits"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // the run-face verdict codes — like the watch frames, these are not

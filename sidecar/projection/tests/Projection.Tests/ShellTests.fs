@@ -246,3 +246,31 @@ let ``flow menu: the view renders as a table and its toJson carries every flow (
     let json = (View.toJson view).ToJsonString()
     Assert.Contains("publish", json)
     Assert.Contains("local", json)
+
+[<Fact>]
+let ``echo-the-fix: a suggestedConfig-bearing envelope ticks the board's live teaser (#6)`` () =
+    let payload : Map<string, objnull> =
+        Map.ofList [ "suggestedConfig", box (Map.ofList [ "path", box "$.profiling.samplingCap" ] : Map<string, objnull>) ]
+    let b1, f1 = Watch.applyKind Watch.empty "transform.diagnostic" payload
+    Assert.Equal(Watch.Fold.Progressed, f1)
+    Assert.Equal(1, b1.SuggestedEdits)
+    let b2, _ = Watch.applyKind b1 "transform.diagnostic" payload
+    Assert.Equal(2, b2.SuggestedEdits)
+    // the teaser renders through the catalog (one register)
+    let console = new TestConsole()
+    console.Write(Watch.toRenderableWith [] 0 false b2)
+    Assert.Contains("2 config edit(s) suggested", console.Output)
+
+[<Fact>]
+let ``stat view: the aggregates table names category, code, and count, most-frequent first`` () =
+    LogSink.reset ()
+    LogSink.withWriter TextWriter.Null (fun () ->
+        for _ in 1 .. 3 do LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+        LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Extract "adapter.ossys.modelRead.noticeRollup" Map.empty))
+    let view = TtyRenderer.buildStatView (LogSink.aggregates ())
+    use sw = new StringWriter()
+    View.write (View.consoleTo sw) view
+    let plain = sw.ToString()
+    Assert.Contains("transform.applied", plain)
+    Assert.Contains("noticeRollup", plain)
+    Assert.Contains("3", plain)
