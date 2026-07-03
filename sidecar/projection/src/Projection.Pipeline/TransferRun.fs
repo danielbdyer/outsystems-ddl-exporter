@@ -1603,8 +1603,48 @@ module Transfer =
                         match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
                         | Some kind, Some ingestKind ->
                             let idAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
-                            // PL-9 (S22): the SAME basis phase 1 derived.
-                            let basis = Map.find load.Kind basisByKind
+                            // PL-9 (S11): phase 2 consumes ONLY the PK cells
+                            // (the WHERE key, remap-re-keyed) and the deferred
+                            // FK cells (the SET values) — the incumbent
+                            // re-pulled the kind's FULL width a second time,
+                            // every other column crossing the wire unconsumed.
+                            // The projection is a filtered ingest Kind through
+                            // the ONE stream core (a NAMED departure from the
+                            // plan's `readRowsProjectedStream` carrier: a
+                            // second reader entry point would be a new
+                            // definition site for the same read). The
+                            // projected basis scopes the re-point implicitly
+                            // (`fkOrdinalsTargeting` drops basis-absent
+                            // columns): a non-deferred FK's unresolvable value
+                            // no longer drops the row HERE — its skip was
+                            // filtered from the phase-2 report anyway, and
+                            // phase 1 already dropped (and reported) that row
+                            // at insert, so the no-op UPDATE changes no sink
+                            // row and no report line. An empty projection
+                            // (unmatched rename — defensive) keeps the
+                            // incumbent full-width stream.
+                            let neededSinkNames =
+                                kind.Attributes
+                                |> List.filter (fun a -> a.IsPrimaryKey)
+                                |> List.map (fun a -> a.Name)
+                                |> Set.ofList
+                                |> Set.union load.DeferredFkColumns
+                            let projectedIngest =
+                                match
+                                    ingestKind.Attributes
+                                    |> List.filter (fun a ->
+                                        Set.contains
+                                            (Map.tryFind a.Name renameMap |> Option.defaultValue a.Name)
+                                            neededSinkNames)
+                                with
+                                | [] -> ingestKind
+                                | projected -> { ingestKind with Attributes = projected }
+                            // The PROJECTED stream's renamed basis. (S22's
+                            // shared `basisByKind` serves phase 1's full-width
+                            // stream; phase 2's basis is the projection's own
+                            // — a DIFFERENT fact once S11 narrows the pull,
+                            // derived once per kind here.)
+                            let basis = RowBasis.rename renameMap (Kind.rowBasis projectedIngest)
                             let renderUpdate = TransferCellShaping.phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
                             // PL-9 (S16): re-point + PK re-key staged once per
                             // kind. The re-key: the PK cell re-keys to the
@@ -1633,7 +1673,7 @@ module Transfer =
                                                         cells.[idIx] <- assigned
                                                         { Cells = cells }))
                                 | _ -> id
-                            let stream = Ingestion.streamKind source ingestKind
+                            let stream = Ingestion.streamKind source projectedIngest
                             let! kindSkips = phase2Chunks load repointChunk rekey renderUpdate stream []
                             return! phase2 rest (skips @ kindSkips)
                         | _ -> return! phase2 rest skips

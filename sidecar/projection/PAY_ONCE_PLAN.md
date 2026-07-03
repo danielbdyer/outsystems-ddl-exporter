@@ -405,6 +405,19 @@ unsampled kinds).
 
 ### PL-9 · Streaming transfer: per-kind constants staged once (the lane the docstrings already promise)
 
+> **STATUS: EXECUTED 2026-07-03** (DECISIONS entry "PL-9 executed").
+> S15 `SurrogateCapture.CaptureKindSql`/`stageKind` (texts render once
+> per kind; staged texts dispatch as pre-split segments — the capture
+> transport's per-chunk parses retire); S16 `KindWriteLane` (repoint
+> ordinals + cell getters + capture + PK re-key staged before the chunk
+> loop); S17 `phase2UpdateSqlStaged`; S22 `basisByKind` (phase-1;
+> phase 2's basis became the S11 projection's own); S11 the phase-2
+> re-stream pulls a PROJECTED ingest kind (PK ∪ deferred) through the
+> ONE stream core — a NAMED departure from `readRowsProjectedStream`
+> (no second reader definition site). FS3511 traps recorded in the
+> DECISIONS entry. Gates: docker transfer/reverse-leg/resume suites +
+> pure pool + Release build.
+
 **Findings:** S15 (staging DDL / capture MERGE / keymap SQL re-rendered per
 50k chunk), S16 (cell getters + FK ordinals re-staged per chunk against the
 docstring's "once per kind"), S17 (buffered Phase-2 recomputes PK/deferred

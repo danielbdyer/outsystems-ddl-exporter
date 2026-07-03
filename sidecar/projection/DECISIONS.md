@@ -26492,3 +26492,79 @@ merge, per-row Phase-2, migration dependencies, bootstrap) gated by
 every publish golden — its own slice, executed separately against the
 PL-2 bundle-identity witness, the golden corpus, and the
 `executeLeveledSeed` docker witnesses.
+
+## 2026-07-03 — PL-9 executed: the streaming transfer's per-kind constants stage once; phase 2 streams only the columns it consumes
+
+**Decision.** Pay-once item PL-9 (S15/S16/S17/S22/S11; S14 landed with
+PL-6):
+
+- **S15** — `SurrogateCapture.CaptureKindSql` (`stageKind`): the capture
+  lane's rendered SQL texts (staging DDL, both capture-MERGE rungs, the
+  keymap staging/select, the drops) and the insert-column vocabulary are
+  pure functions of `(kind, identityAttr)`, yet EVERY 50k-row chunk
+  re-ran the ScriptDom build + `generateOne` render (thousands of chunks
+  per kind at estate scale). Staged once per kind; the per-chunk
+  temp-table EXECUTION is unchanged — only the text generation moves.
+  The staged texts (all GO-free single-statement renders) dispatch as
+  pre-split segments (PL-6's S14 carrier), so the capture transport's
+  per-chunk `TSql160Parser` re-parses retire with them. Both transfer
+  paths stage: the materialized `captureChunks` (now a staging wrapper
+  over the `captureChunksOn` fold) and the streaming `writeChunk`.
+- **S16** — `KindWriteLane`: the streaming loop's chunk-invariant
+  machinery stages once per kind before the chunk loop — the FK
+  re-point (`repointFor`: target-column set + basis ordinals, each
+  ordinal an O(width) scan the incumbent re-paid per chunk), the two
+  quantum cell projections (per-attribute getters), the staged
+  descending capture, and phase 2's PK re-key closure. The Q3
+  docstrings' "once per kind" claim is now structurally true.
+  `quantumCellRows*` / `captureCells` gained `*Staged` forms; the
+  incumbents delegate (stage-then-apply-once).
+- **S17** — `phase2UpdateSqlStaged`: the StaticRow twin of the quantum
+  sibling — the kind's PK/deferred attribute walks and per-attribute
+  column texts resolve once per kind, not per row, on the materialized
+  Phase 2. The incumbent delegates.
+- **S22** — `basisByKind`: each load-kind's renamed row basis derives
+  ONCE (phase 2 recomputed it from the same inputs in the same run).
+  NUANCE once S11 landed: the shared map serves phase 1's full-width
+  stream; phase 2's basis became the PROJECTION's own basis — a
+  different fact, still derived once per kind.
+- **S11** — phase 2 consumes ONLY the PK cells (the WHERE key,
+  remap-re-keyed) and the deferred FK cells (the SET values); the
+  incumbent re-streamed the kind's FULL width a second time, every
+  other column crossing the wire unconsumed. The re-stream now pulls a
+  PROJECTED ingest kind (PK ∪ deferred, resolved through the rename
+  map). NAMED DEPARTURE from the plan's `ReadSide.readRowsProjectedStream`
+  carrier: a filtered Kind through the ONE stream core needs no second
+  reader definition site for the same read. Adjudicated edge: the
+  projected basis scopes the re-point (`fkOrdinalsTargeting` drops
+  basis-absent columns), so a NON-deferred FK's unresolvable value no
+  longer drops a row in phase 2 — that skip was filtered from the
+  phase-2 report anyway, and the row it dropped was already dropped
+  AND reported by phase 1 at insert (same source row, same repoint,
+  wider scope), so the surviving no-op UPDATE changes no sink row and
+  no report line. An empty projection (unmatched rename — defensive)
+  falls back to the incumbent full-width stream.
+
+**FS3511 note (recorded for the next reader).** The F# optimizer
+INLINES a small non-`rec` wrapper whose body is a `task { }` into its
+caller's resumable code — the staged-closure allocation then lands
+inside the caller's state machine and fails reduction (the error's
+reported span points at an unrelated line of the CALLER). The
+materialized `captureChunks` wrapper is marked `rec` (a `rec` binding
+is never inlined). Also confirmed again: a task-level `let` of a
+staged closure inside a loop body defeats reduction — apply staged
+renderers inline as the chooser argument instead.
+
+**Identity gates.** Docker pool green — the transfer round-trip,
+reverse-leg (canary/scale/streaming), keymap-spill, and resume/journal
+suites all exercise the staged lanes and the projected phase-2 stream
+against sink-state assertions; pure pool green (3831). Journal
+fingerprints are computed from the SAME chunk quanta as before
+(phase-1 stream untouched), so resume compatibility holds. Bench note:
+`deploy.executeSegments*` labels replace `deploy.executeBatch*` on the
+capture transport — a named label-population change.
+
+**Measurement note.** S11's wire cut is proportional to
+(width − pk − deferred)/width on cycle kinds; the reverse-leg scale
+suite is the measuring surface (its wall-clock rides the same docker
+pool run).
