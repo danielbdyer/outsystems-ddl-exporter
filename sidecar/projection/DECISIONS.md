@@ -237,6 +237,31 @@ table before continuing.
 | **Staged-bulk MERGE shape + `chooseMergeShape` selector for emitted seed scripts** | 2026-06-11 (The perf-harness verdicts — the MERGE cliff REFUTED) | Static populations ≳100k rows/kind, where the measured ~2.5k rows/sec single-MERGE execute slope or per-statement memory matters. Demoted from stage-0 correctness to armed-perf by the H1 in-harness refutation (the `MERGE … USING (VALUES …)` derived-table form executes at 10k rows on SQL Server 2022; the 1000-row TVC cap binds `INSERT … VALUES` only — COUNT(*)-verified, replicated on a second host). Any future cut here carries the DeleteScope-correctness witness (`WHEN NOT MATCHED BY SOURCE` cannot be naively chunked) and the before/after via `perf-harness.sh run seed-merge-execute`. | **Cashed out — 2026-06-25.** Shipped as `DataStagingPolicy` (`emission.dataStaging { mode, threshold, indexThreshold }` → Core) threaded to all three data lanes via the composer's `DataEmitOptions`; the generic staged rendering lives in the shared `StagedMerge` module (`Targets.Data`); `DataStagingPolicy.shouldStage` IS the `chooseMergeShape` selector. `indexThreshold = 100000` is MEASURED (clustered `#temp`-PK index wins ~33-37% at 100k/250k/500k, no crossover). DEPLOY-verified (`StagedMergeDeployE2ETests` 5/5). See `2026-06-25 — Staged-\`#temp\` MERGE completed across all 3 data lanes` entry below. |
 | **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
 
+**[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
+now consumed].** These six items are not tracked as individual rows in this table
+(their "awaiting consumer" framing lives in `HORIZON.md` and
+`AUDIT_2026_06_13_INVARIANT_NEAR_MISS_HUNT.md`, not here), so this note is
+appended rather than an in-row annotation. Verified at HEAD on
+`claude/projection-refactor-survey-erwzle`: **H-071** (`CentralityRanking`,
+`HORIZON.md:2233`) is now consumed by `SyntheticVolume.byCentrality`
+(`src/Projection.Core/SyntheticVolume.fs:42`, gated by config
+`synthetic.weightVolumeByCentrality`) and rendered as the manifest `centrality`
+section (`ManifestEmitter.buildFull`, `src/Projection.Targets.SSDT/ManifestEmitter.fs:773`).
+**H-072** (`BoundedContextDiscovery`, `HORIZON.md:2259`) is now consumed by the
+synthetic FK-locality clustering (`SyntheticConfig.FkLocalityClusters` +
+`SyntheticData.generateKindRows`, `src/Projection.Core/SyntheticData.fs:91,395`,
+gated by `synthetic.clusterFksByContext`) and rendered as the manifest
+`boundedContexts` section. **H-073** (`ProfileAnomalies`), **H-075**
+(`SchemaComplexity`), **H-076** (`QueryHints`), and **NM-36**
+(`CascadeShockZones`, `AUDIT_2026_06_13_INVARIANT_NEAR_MISS_HUNT.md:193`) are now
+each rendered as their own manifest section — `ManifestEmitter.buildFull` takes a
+`ComposeState option` (`ManifestEmitter.fs:762`) and `toNode` emits each section
+only when the corresponding field is `Some`/non-empty (`:1005,1020,1028,1040,1047`).
+All six previously zero-reader fields now have production readers; none of the
+six is deleted or renamed, so no prior DECISIONS entry here needs correction —
+this note only records that the "no consumer" premise those HORIZON/audit
+citations rested on no longer holds.
+
 **Discipline.** Each deferral here was logged as the right call **at the
 time it was made** under "IR grows under evidence." A deferral is not a
 TODO — the cash-out point is a structural condition, not a date. The
