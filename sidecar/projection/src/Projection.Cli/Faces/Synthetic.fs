@@ -96,7 +96,8 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
     let result =
         (SyntheticLoadRun.run
             modelOssys modelFile profileRef opts.Correction connSpec opts.Emission opts.AllowCdc
-            syntheticConfig seed executeGated modelSection)
+            syntheticConfig seed executeGated modelSection
+            syntheticSection.WeightVolumeByCentrality syntheticSection.ClusterFksByContext)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with

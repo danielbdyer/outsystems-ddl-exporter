@@ -23,6 +23,14 @@ module SyntheticLoadRun =
     [<Literal>]
     let defaultSeed : uint64 = 0x5117_8E5D_0000_0001UL
 
+    /// Defaults for centrality volume weighting (opt-in via
+    /// `synthetic.weightVolumeByCentrality`). `strength` 1 means a kind at 2× the
+    /// mean FK-graph centrality gets ~2× its baseline volume; `maxFactor` 4 caps
+    /// the heaviest hub so one dominant table cannot explode the row budget.
+    /// (`let`, not `[<Literal>]` — a `[<Literal>] decimal` is a module-load bomb.)
+    let private centralityWeightStrength : decimal = 1M
+    let private centralityWeightMaxFactor : decimal = 4M
+
     /// §11 — resolve the base `SyntheticConfig` from the declarative `synthetic`
     /// config block, with the per-run `--scale` override winning over the block's
     /// `scale`, over the built-in default (config is the primary surface; the CLI
@@ -116,6 +124,8 @@ module SyntheticLoadRun =
         (seed: uint64)
         (execute: bool)
         (modelSection: Config.ModelSection)
+        (weightVolumeByCentrality: bool)
+        (clusterFksByContext: bool)
         : Task<Result<Transfer.TransferReport>> =
         task {
             match resolveProfile profileRef, resolveCorrection correctionRef with
@@ -152,7 +162,36 @@ module SyntheticLoadRun =
                     // (Faker over the σ tokens / preserved values, seeded per row).
                     // Both are identity when the correction is empty, so an
                     // uncorrected load is byte-identical to the pre-F0c flow.
-                    let effectiveConfig = Correction.applyToConfig catalog correction config
+                    let baseConfig = Correction.applyToConfig catalog correction config
+                    // H-071 / H-072 consumers (both opt-in) — the two graph analytics
+                    // reach the synthetic path here. Both read the SAME FK-graph
+                    // topology the load already computes for its write order, so it is
+                    // derived at most once. Each is OFF by default and byte-identical
+                    // when off — the whole branch is skipped, so no analytics run.
+                    //   H-071 — weight per-kind volume by centrality (central kinds get
+                    //           more rows); operator `volume` corrections win the merge.
+                    //   H-072 — cluster FK locality by discovered bounded context (an
+                    //           intra-context reference set reads as a self-consistent
+                    //           slice). Threaded as a generic cluster map (Core stays
+                    //           decoupled from BoundedContextDiscovery).
+                    let effectiveConfig =
+                        if not (weightVolumeByCentrality || clusterFksByContext) then baseConfig
+                        else
+                            let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
+                            let withVolume =
+                                if weightVolumeByCentrality then
+                                    let ranking = (Projection.Core.Passes.CentralityPass.registered.Run topo).Value.Value
+                                    let derived = SyntheticVolume.byCentrality centralityWeightStrength centralityWeightMaxFactor baseConfig.Scale ranking
+                                    { baseConfig with VolumeByKind = SyntheticVolume.mergeUnderOperator baseConfig.VolumeByKind derived }
+                                else baseConfig
+                            if clusterFksByContext then
+                                let discovery = (Projection.Core.Passes.BoundedContextPass.registered.Run topo).Value.Value
+                                let clusters =
+                                    discovery.Candidates
+                                    |> List.collect (fun c -> c.Members |> List.map (fun m -> m, c.AnchorKey))
+                                    |> Map.ofList
+                                { withVolume with FkLocalityClusters = clusters }
+                            else withVolume
                     let realize = FakerRealization.realize catalog correction
                     // The sink opens through the one `ConnectionSpec.openSpec`
                     // opener (recon #13 — `env:` / `file:` / `live:` / bare,

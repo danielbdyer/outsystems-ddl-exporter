@@ -38,7 +38,7 @@ module IndexNaming =
             | None ->
                 // Unreachable post-`Catalog.create` (referential integrity:
                 // every Index.Column resolves within its owning Kind).
-                invalidOp (sprintf "IndexNaming.emittedNames: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)
+                invalidOp (sprintf "IndexNaming.emittedNames: column SsKey %A not found in kind %A (unreachable; Catalog.create invariant)" columnSsKey k.SsKey)  // LINT-ALLOW: terminal invariant-violation message; unreachable post-Catalog.create, sprintf is the irreducible primitive for this diagnostic-only text, no AST applies
         let baseNameOf (idx: Index) : string =
             if IndexUniqueness.isPrimaryKey idx.Uniqueness then
                 System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical)  // LINT-ALLOW: V1 naming-convention PK constraint name (pkDef's shape); segments pre-unwrapped via TableId helpers
@@ -50,7 +50,7 @@ module IndexNaming =
                     idx.Columns |> List.map (fun c -> attrNameOf c.Attribute)
                 System.String.Concat(  // LINT-ALLOW: generated index-name convention (IX_/UIX_ + logical kind + logical columns); no BCL/ScriptDom primitive emits naming-convention identifiers; segments are typed Name values unwrapped via Name.value
                     (if isUnique then "UIX_" else "IX_"),
-                    Name.value k.Name, "_", String.concat "_" columnNames)
+                    Name.value k.Name, "_", String.concat "_" columnNames)  // LINT-ALLOW: generated index-name convention; no BCL/ScriptDom primitive emits naming-convention identifiers, String.concat is the irreducible primitive joining the typed column-name segments
         k.Indexes
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx -> idx, baseNameOf idx)

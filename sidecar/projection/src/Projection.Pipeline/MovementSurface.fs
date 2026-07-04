@@ -376,11 +376,17 @@ module ProjectionConfig =
             let int64Of name   = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetInt64()   with true, n -> Some n | _ -> None)
             let decimalOf name = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetDecimal() with true, d -> Some d | _ -> None)
             let uint64Of name  = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetUInt64()  with true, n -> Some n | _ -> None)
+            let boolOf (name: string) : bool =
+                match s.TryGetProperty name with
+                | true, v when v.ValueKind = JsonValueKind.True  -> true
+                | _ -> false
             { PreserveCardinalityMax = int64Of "preserveCardinalityMax"
               Preserve               = getStringArray s "preserve"
               Synthesize             = getStringArray s "synthesize"
               Scale                  = decimalOf "scale"
-              Seed                   = uint64Of "seed" }
+              Seed                   = uint64Of "seed"
+              WeightVolumeByCentrality = boolOf "weightVolumeByCentrality"
+              ClusterFksByContext      = boolOf "clusterFksByContext" }
         | _ -> Config.defaultSyntheticSection
 
     /// Data-portability — parse the top-level `"slices"` block to the named
@@ -1018,6 +1024,8 @@ module ProjectionConfig =
                 s.["synthesize"] <- a)
             (match cfg.Synthetic.Scale with Some d -> s.["scale"] <- JsonValue.Create d | None -> ())
             (match cfg.Synthetic.Seed with Some n -> s.["seed"] <- JsonValue.Create n | None -> ())
+            (if cfg.Synthetic.WeightVolumeByCentrality then s.["weightVolumeByCentrality"] <- JsonValue.Create true)
+            (if cfg.Synthetic.ClusterFksByContext then s.["clusterFksByContext"] <- JsonValue.Create true)
             root.["synthetic"] <- s)
         // Data-portability — the named use-case slice definitions. Each spec is
         // rendered via `SliceCodec` (the same serializer the round-trip law is

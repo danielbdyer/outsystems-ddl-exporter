@@ -1086,11 +1086,13 @@ module ReadSide =
                     Description = None
                     // Chapter A.0' slice β — see buildAttribute rationale.
                     IsActive = true
-                    // Chapter A.0' slices γ + ε + ζ — ReadSide does
-                    // not yet pick up triggers, table-level CHECK
-                    // constraints, or entity-level extended
-                    // properties from the deployed schema. Empty
-                    // defaults; future slices add the queries.
+                    // Chapter A.0' slices γ + ε + ζ / Wave-1 slice 1.3 —
+                    // constructed empty here; `attachAnnotations`
+                    // (line ~1252) populates triggers, table-level CHECK
+                    // constraints, and entity-level extended properties
+                    // from `sys.triggers` / `sys.check_constraints` /
+                    // `sys.extended_properties` (readTriggers /
+                    // readCheckConstraints / readExtendedProperties).
                     Triggers = []
                     ColumnChecks = []
                     ExtendedProperties = []

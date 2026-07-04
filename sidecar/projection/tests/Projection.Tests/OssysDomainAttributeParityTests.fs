@@ -5,14 +5,48 @@ module Projection.Tests.OssysDomainAttributeParityTests
 // record + Kind-scoped ColumnChecks).
 
 open Xunit
+open Projection.Core
+open Projection.Tests.Fixtures
 
 [<Fact(Skip = "Matrix row 48 — 🟡 DIVERGENCE. V1's attribute aggregate spans 3 layers across 7 files: (1) **Logical** (`AttributeModel` + `AttributeMetadata`; LogicalName, ColumnName, DataType, defaults, IsMandatory, IsIdentifier, IsAutoNumber, Description, ExtendedProperties); (2) **Physical reality** (`AttributeReality`; 5 reflection fields: IsNullableInDatabase, HasNulls, HasDuplicates, HasOrphans, IsPresentButInactive); (3) **On-disk evidence** (`AttributeOnDiskMetadata` + `AttributeOnDiskCheckConstraint` + `AttributeOnDiskDefaultConstraint`; SqlType, MaxLength, Precision, Collation, IsIdentity, IsComputed, DefaultDefinition, CHECK constraint arrays). V2 consolidates into a single `Attribute` record (~21 fields) + `Kind.ColumnChecks` collection (table-scoped). V2's consolidation flows from pillar 9 — the three V1 layers conflate DataIntent (logical + on-disk schema definition) with OperatorIntent (reality reflection is observational, separate concern). See `DECISIONS 2026-05-18 (slice 5.2.α.attribute) — V1 three-layer attribute model consolidates into V2 typed Attribute + table-scoped checks`. Re-open trigger: V2 grows a Profile-layer that carries runtime reflection statistics (parallels matrix row 30 telemetry).")>]
 let ``5.2.α row 48: V1 three-layer attribute aggregate vs V2 consolidated Attribute + Kind.ColumnChecks`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 48 + DECISIONS 2026-05-18 (slice 5.2.α.attribute)"
 
-[<Fact(Skip = "Matrix row 49 — 🟠 NOT-MAPPED. V1's `AttributeReality` carries 5 runtime-reflection fields: `IsNullableInDatabase`, `HasNulls`, `HasDuplicates`, `HasOrphans`, `IsPresentButInactive`. V2's `Attribute` does not carry any of these — V2's data-intent boundary (pillar 9) explicitly excludes reflection statistics from the schema-definition IR. Trigger: V2 grows a Profile-layer surface (currently `Projection.Core.Profile` carries some statistical evidence but not these per-attribute reality fields) AND a downstream consumer (tightening pass; remediation emitter) needs to consume per-attribute reflection state. Cash-out shape: add a `Profile.AttributeReality` record carrying the 5 fields; thread through ReadSide adapter; consumers access via `Profile` projection per A34 (Profile is independent of Catalog and Policy).")>]
-let ``5.2.α row 49: V1 AttributeReality reflection fields lift to V2 Profile.AttributeReality`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 49"
+[<Fact>]
+let ``5.2.α row 49: V1 AttributeReality reflection fields lift to V2 Profile.AttributeReality (matrix row 49 cashed out)`` () : unit =
+    // The axis fired: `Profile.AttributeReality` (Profile.fs:783-812)
+    // carries exactly the 5 V1 reflection fields this row named as
+    // missing (`IsNullableInDatabase`, `HasNulls`, `HasDuplicates`,
+    // `HasOrphans`, `IsPresentButInactive`), keyed by `AttributeKey :
+    // SsKey` (A4 identity), living on `Profile` — independent of
+    // `Catalog` / `Policy` per A34. Assert the zero-evidence default
+    // (`AttributeReality.create`) carries all-false, then that every
+    // field is independently settable and merges into `Profile
+    // .AttributeRealities`.
+    let key = customerIdAttrKey
+    let defaultReality = AttributeReality.create key
+    Assert.Equal(key, defaultReality.AttributeKey)
+    Assert.False(defaultReality.IsNullableInDatabase)
+    Assert.False(defaultReality.HasNulls)
+    Assert.False(defaultReality.HasDuplicates)
+    Assert.False(defaultReality.HasOrphans)
+    Assert.False(defaultReality.IsPresentButInactive)
+
+    let fullyObserved =
+        { defaultReality with
+            IsNullableInDatabase = true
+            HasNulls             = true
+            HasDuplicates        = true
+            HasOrphans           = true
+            IsPresentButInactive = true }
+    let profile = { Profile.empty with AttributeRealities = [ fullyObserved ] }
+    let recovered = profile.AttributeRealities |> List.exactlyOne
+    Assert.Equal(key, recovered.AttributeKey)
+    Assert.True(recovered.IsNullableInDatabase)
+    Assert.True(recovered.HasNulls)
+    Assert.True(recovered.HasDuplicates)
+    Assert.True(recovered.HasOrphans)
+    Assert.True(recovered.IsPresentButInactive)
 
 [<Fact(Skip = "Matrix row 50 — 🔵 V2-EXTENSION. V1's `AttributeOnDiskCheckConstraint` is an attribute-nested array — each attribute carries `CheckConstraints : ImmutableArray<AttributeOnDiskCheckConstraint>` with (Name, Definition, IsNotTrusted). V2 promotes CHECK constraints to **table-scoped** `Kind.ColumnChecks : ColumnCheck list` (chapter A.0' slice ε IR lift; L3-S5 sub-axiom). V2's placement aligns with SQL Server semantic — a CHECK constraint may span multiple columns; attribute-scoping was V1's mismodeling. V2 carries (SsKey + Name option + Definition + IsNotTrusted), structurally stronger via typed identity. Emitter consumer for CHECK constraints in DDL is a separate axis (matrix row 12 NOT-MAPPED — V2 IR carries but no emitter consumes yet).")>]
 let ``5.2.α row 50: V1 attribute-nested CHECK arrays vs V2 table-scoped Kind.ColumnChecks (V2 corrects placement)`` () : unit =

@@ -563,7 +563,7 @@ module Compose =
                     let manifest =
                         ManifestEmitter.buildFull
                             ctx.Profile registry ctx.ComposedState.TopologicalOrder
-                            ctx.VersionedPolicy policyConflicts ctx.Trail ctx.EmittedCatalog
+                            ctx.VersionedPolicy policyConflicts ctx.Trail (Some ctx.ComposedState) ctx.EmittedCatalog
                     { outputs with SsdtBundle = SsdtBundle.compose rewritten manifest; Manifest = manifest }
                 | Error err ->
                     invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err) }
@@ -792,9 +792,9 @@ module Compose =
                 let composed =
                     match finalState.TopologicalOrder with
                     | Some topo ->
-                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                     | None ->
-                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane UserRemapContext.empty
+                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                 match composed with
                 | Ok bundle ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
@@ -1212,9 +1212,13 @@ module Compose =
 
     /// Build the full `Policy` aggregate from a parsed `Config` and
     /// the loaded `Catalog`. Wires the tightening axis (Chapter C
-    /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
-    /// Emission / UserMatching axes remain dormant pending operator-
-    /// pull triggers per the dormant-config-section sweep.
+    /// slice C.1) + insertion axis (Chapter C slice C.5) + the
+    /// emission axis (AC-X1 / NM-02, below — schema / data /
+    /// diagnostics toggles and `DataComposition`); Selection and
+    /// UserMatching stay unfed from this config surface — per
+    /// `Config.fs`'s NM-03 note, their Core axes have real consumers
+    /// (`UserFkReflowPass`, `PolicyDiff`) that set them directly, and
+    /// the config-ingestion path for both was removed as dead.
     /// **Second consumer (§5.6).** Made public for the `policy-diff` verb,
     /// which binds two operator `Policy` values from two configs against a
     /// shared catalog. Previously private to `runWithConfigCore`.
@@ -2326,17 +2330,10 @@ module Compose =
                                 })
                         return report
                     }
-            return
-                match verdict.Disposition with
-                | RunCompleted acquired -> Result.success acquired
-                | RunStopped errors   -> Result.failure errors
-                | RunAborted (_, Some ex) ->
-                    // The spine closed the books (the open stage + the root
-                    // closed `aborted` on the wire); the composition's crash
-                    // semantics are preserved for the caller's catch.
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-                    Unchecked.defaultof<_>
-                | RunAborted (refusal, None) -> failwith refusal
+            // The spine closed the books (the open stage + the root closed
+            // `aborted` on the wire); `StagedVerdict.toResult` preserves the
+            // composition's crash semantics for the caller's catch.
+            return StagedVerdict.toResult verdict
         }
 
     /// The report-only publish (`runWithConfigAcquiring` with the
@@ -2410,7 +2407,7 @@ module Compose =
                             topo policy renderCatalog Profile.empty
                             acquired.Migration
                             acquired.BootstrapLane
-                            UserRemapContext.empty
+                            (acquired.FinalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                     with
                     | Ok plan -> Result.success (emitted, plan)
                     | Error err ->

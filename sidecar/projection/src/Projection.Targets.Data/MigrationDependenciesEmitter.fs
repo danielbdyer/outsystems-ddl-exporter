@@ -61,10 +61,13 @@ module MigrationDependencyContext =
 
     /// The empty context — no migration rows. The neutral input for
     /// callers that don't have a migration-dependency channel
-    /// configured (the dominant case at chapter 4.1.B slice ε
-    /// since the ingestion adapter is deferred). `MigrationDependencies
-    /// Emitter` against this context produces empty `Phase1Merges` /
-    /// `Phase2Updates` for every kind (T11 keyset preserved).
+    /// configured — the ingestion adapter (`MigrationDependenciesBinding
+    /// .fromConfig`, cashed out 2026-06-15 per the header above) is
+    /// opt-in via `overrides.migrationDependencies.path`; direct
+    /// consumers (canary / golden tests) still pass this when they
+    /// don't need the channel. `MigrationDependenciesEmitter` against
+    /// this context produces empty `Phase1Merges` / `Phase2Updates`
+    /// for every kind (T11 keyset preserved).
     let empty : MigrationDependencyContext = { Rows = [] }
 
     /// Group the context's rows by their owning `KindKey`. The

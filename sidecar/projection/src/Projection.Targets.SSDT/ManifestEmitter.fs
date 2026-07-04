@@ -611,6 +611,26 @@ module ManifestEmitter =
             /// slice-ζ forward signal and completes the CLAUDE.md load-bearing
             /// commitment "manifest names every applied overlay per artifact."
             AppliedTransforms : (SsKey * OverlayAxis option) list
+            /// **H-071** — FK-graph centrality ranking (PageRank). `None` for the
+            /// convenience / topology-only builders; `Some` when `buildFull` is
+            /// threaded the composed pipeline state. Rendered as a `centrality`
+            /// section; omitted from the JSON when `None` (byte-identical to the
+            /// pre-analytics manifest for callers that don't supply state).
+            Centrality : CentralityRanking option
+            /// **H-072** — discovered bounded-context candidates (community
+            /// detection over the FK coupling graph). `None`/omitted as above.
+            BoundedContexts : BoundedContextDiscovery option
+            /// **H-073** — profile anomaly report (high null-rate / high-CV
+            /// columns relative to their table peers). `None`/omitted as above.
+            ProfileAnomalies : ProfileAnomalyReport option
+            /// **H-075** — composite schema-complexity score. `None`/omitted as above.
+            SchemaComplexity : SchemaComplexity option
+            /// **H-076** — query-plan fill-factor suggestions. `None`/omitted as above.
+            QueryHints : QueryHintReport option
+            /// **NM-36** — cascade-delete-risk shock zones (subgraphs where a
+            /// DELETE fans out ≥3 kinds through CASCADE edges). Empty list ⇒
+            /// omitted from the JSON (byte-identical when absent).
+            CascadeShockZones : CascadeShockZone list
         }
 
     /// Build the manifest from a Profile + optional TopologicalOrder +
@@ -691,6 +711,12 @@ module ManifestEmitter =
             PolicyVersion = None
             PolicyConflicts = []
             AppliedTransforms = []
+            Centrality = None
+            BoundedContexts = None
+            ProfileAnomalies = None
+            SchemaComplexity = None
+            QueryHints = None
+            CascadeShockZones = []
         }
 
     /// **§5.5** — derive the per-artifact overlay enumeration from a
@@ -733,13 +759,23 @@ module ManifestEmitter =
         (policyVersion: VersionedPolicy option)
         (policyConflicts: PolicyConflict list)
         (trail: LineageEvent list)
+        (composeState: ComposeState option)
         (catalog: Catalog)
         : Manifest =
         let manifest = buildWithTopology profile registry topology catalog
+        // The pass-chain analytics (H-071/072/073/075/076, NM-36) ride on the
+        // composed pipeline state. `None` (topology-only / convenience callers)
+        // leaves every analytics field absent, so the manifest JSON is unchanged.
         { manifest with
             PolicyVersion     = policyVersion
             PolicyConflicts   = policyConflicts
-            AppliedTransforms = appliedTransforms trail }
+            AppliedTransforms = appliedTransforms trail
+            Centrality        = composeState |> Option.bind (fun s -> s.CentralityRanking)
+            BoundedContexts   = composeState |> Option.bind (fun s -> s.BoundedContexts)
+            ProfileAnomalies  = composeState |> Option.bind (fun s -> s.ProfileAnomalies)
+            SchemaComplexity  = composeState |> Option.bind (fun s -> s.SchemaComplexity)
+            QueryHints        = composeState |> Option.bind (fun s -> s.QueryHints)
+            CascadeShockZones = composeState |> Option.bind (fun s -> s.CascadeShockZones) |> Option.defaultValue [] }
 
     /// Build the manifest from a Profile + Catalog + explicit registry-
     /// metadata list. The `registry` parameter feeds the slice-ζ
@@ -937,6 +973,89 @@ module ManifestEmitter =
             | None      -> entryObj.Add("overlay", (null: JsonNode | null))
             appliedTransformsArr.Add(entryObj)
         doc.Add("appliedTransforms", appliedTransformsArr)
+        // ---- Pass-chain schema-intelligence analytics (H-071/072/073/075/076,
+        // NM-36). Each section is OMITTED when its source is absent/empty, so a
+        // manifest built without the composed state is byte-identical to the
+        // pre-analytics shape. SsKeys render via `SsKey.rootOriginal` (operator
+        // readability, matching the deploymentBatches / conflict precedents);
+        // decimals via `JsonValue.Create` (the columnProfiles precedent). ----
+        let ssKeyPairArr (keyLabel: string) (valLabel: string) (mk: 'v -> JsonNode) (pairs: (SsKey * 'v) list) : JsonArray =
+            let arr = JsonArray()
+            for (k, v) in pairs do
+                let o = JsonObject()
+                o.Add("ssKey", requireValue keyLabel (JsonValue.Create(SsKey.rootOriginal k)))
+                o.Add(valLabel, mk v)
+                arr.Add(o)
+            arr
+        // H-071 — centrality ranking (scores already Score-desc, SsKey-asc).
+        match manifest.Centrality with
+        | None -> ()
+        | Some r ->
+            let obj = JsonObject()
+            obj.Add("iterations", requireValue "centrality.iterations" (JsonValue.Create(r.Iterations)))
+            let scoresArr = JsonArray()
+            for s in r.Scores do
+                let sObj = JsonObject()
+                sObj.Add("ssKey", requireValue "centrality.ssKey" (JsonValue.Create(SsKey.rootOriginal s.SsKey)))
+                sObj.Add("score", requireValue "centrality.score" (JsonValue.Create(s.Score)))
+                scoresArr.Add(sObj)
+            obj.Add("scores", scoresArr)
+            doc.Add("centrality", obj :> JsonNode)
+        // H-072 — bounded-context candidates.
+        match manifest.BoundedContexts with
+        | None -> ()
+        | Some d ->
+            let arr = JsonArray()
+            for c in d.Candidates do
+                let cObj = JsonObject()
+                cObj.Add("anchor", requireValue "boundedContext.anchor" (JsonValue.Create(SsKey.rootOriginal c.AnchorKey)))
+                let membersArr = JsonArray()
+                for m in c.Members do membersArr.Add(requireValue "boundedContext.member" (JsonValue.Create(SsKey.rootOriginal m)))
+                cObj.Add("members", membersArr)
+                cObj.Add("internalEdges", requireValue "boundedContext.internalEdges" (JsonValue.Create(c.InternalEdgeCount)))
+                cObj.Add("externalEdges", requireValue "boundedContext.externalEdges" (JsonValue.Create(c.ExternalEdgeCount)))
+                arr.Add(cObj)
+            doc.Add("boundedContexts", arr)
+        // H-073 — profile anomalies (high null-rate / high-CV columns).
+        match manifest.ProfileAnomalies with
+        | None -> ()
+        | Some a ->
+            let obj = JsonObject()
+            obj.Add("highNullRate", ssKeyPairArr "anomaly.ssKey" "nullRate" (fun (v: decimal) -> requireValue "anomaly.nullRate" (JsonValue.Create(v))) a.HighNullRateColumns)
+            obj.Add("highCv",       ssKeyPairArr "anomaly.ssKey" "cv"       (fun (v: decimal) -> requireValue "anomaly.cv"       (JsonValue.Create(v))) a.HighCvColumns)
+            doc.Add("profileAnomalies", obj :> JsonNode)
+        // H-075 — composite schema-complexity score.
+        match manifest.SchemaComplexity with
+        | None -> ()
+        | Some c ->
+            let obj = JsonObject()
+            obj.Add("cyclomaticComplexity", requireValue "complexity.cyclomatic"  (JsonValue.Create(c.CyclomaticComplexity)))
+            obj.Add("couplingIndex",        requireValue "complexity.coupling"    (JsonValue.Create(c.CouplingIndex)))
+            obj.Add("cohesionIndex",        requireValue "complexity.cohesion"    (JsonValue.Create(c.CohesionIndex)))
+            obj.Add("depthOfInheritance",   requireValue "complexity.depth"       (JsonValue.Create(c.DepthOfInheritance)))
+            obj.Add("nullabilityRatio",     requireValue "complexity.nullability" (JsonValue.Create(c.NullabilityRatio)))
+            obj.Add("overallScore",         requireValue "complexity.overall"     (JsonValue.Create(c.OverallScore)))
+            doc.Add("schemaComplexity", obj :> JsonNode)
+        // H-076 — query-plan fill-factor suggestions.
+        match manifest.QueryHints with
+        | None -> ()
+        | Some q ->
+            let obj = JsonObject()
+            obj.Add("fillFactorSuggestions", ssKeyPairArr "queryHint.ssKey" "fillFactor" (fun (v: int) -> requireValue "queryHint.fillFactor" (JsonValue.Create(v))) q.FillFactorSuggestions)
+            doc.Add("queryHints", obj :> JsonNode)
+        // NM-36 — cascade shock zones. Omitted when empty.
+        match manifest.CascadeShockZones with
+        | [] -> ()
+        | zones ->
+            let arr = JsonArray()
+            for z in zones do
+                let zObj = JsonObject()
+                zObj.Add("root", requireValue "cascadeShock.root" (JsonValue.Create(SsKey.rootOriginal z.Root)))
+                let reachArr = JsonArray()
+                for k in z.Reachable do reachArr.Add(requireValue "cascadeShock.reachable" (JsonValue.Create(SsKey.rootOriginal k)))
+                zObj.Add("reachable", reachArr)
+                arr.Add(zObj)
+            doc.Add("cascadeShockZones", arr)
         doc :> JsonNode
 
     /// Render the manifest to JSON text. The terminal serialization

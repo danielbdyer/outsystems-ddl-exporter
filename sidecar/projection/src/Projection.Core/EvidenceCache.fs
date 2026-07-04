@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE-MUTATION: the per-column null-count fold (`let mutable n = 0L` / `n <- n + 1L`
+//   in `cachedKindFromPerColumn`) is a tight local accumulator loop over an already-materialized
+//   `perColumn` array; a local mutable counter is the idiomatic, allocation-free realization —
+//   no module-level or cross-call mutable state is introduced.
+
 open System
 
 /// **EvidenceCache** — the in-memory typed-row substrate of deployed reality.

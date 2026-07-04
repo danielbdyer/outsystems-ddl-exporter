@@ -86,6 +86,16 @@ module Config =
         Synthesize             : string list
         Scale                  : decimal option
         Seed                   : uint64 option
+        /// H-071 consumer (opt-in) — weight per-kind synthetic row volume by
+        /// FK-graph centrality, so structurally central kinds get proportionally
+        /// more rows. `false` (the default) is byte-identical to the flat
+        /// profiled-RowCount × Scale volume.
+        WeightVolumeByCentrality : bool
+        /// H-072 consumer (opt-in) — cluster synthetic FK locality by discovered
+        /// bounded context, so an intra-context reference set reads as a
+        /// self-consistent slice. `false` (the default) leaves FK draws uniform,
+        /// byte-identical to the pre-clustering flow.
+        ClusterFksByContext : bool
     }
 
     type ProfileSection = {
@@ -538,7 +548,8 @@ module Config =
     /// `SyntheticConfig.defaultConfig` holds). Public — `ProjectionConfig.empty`
     /// and a `projection.json` with no `synthetic` block both rest on it.
     let defaultSyntheticSection : SyntheticSection =
-        { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None }
+        { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None
+          WeightVolumeByCentrality = false; ClusterFksByContext = false }
 
     let private defaultModelSection : ModelSection = {
         Path                   = None
@@ -812,12 +823,11 @@ module Config =
                     configError "nullProperty" "model.modules entry is null.")
             | s -> Result.success (Whole s)
         | JsonValueKind.Object ->
-            match getString element "name" with
-            | Error es -> Error es
-            | Ok name ->
-                match getStringListOrEmpty element "entities" with
-                | Error es -> Error es
-                | Ok entities -> Result.success (WithEntities (name, entities))
+            result {
+                let! name = getString element "name"
+                let! entities = getStringListOrEmpty element "entities"
+                return WithEntities (name, entities)
+            }
         | _ ->
             Result.failureOf (
                 configError "typeMismatch" "model.modules entry must be a string or an object.")
@@ -856,52 +866,40 @@ module Config =
         | Some el when (not requireModel) && el.ValueKind <> JsonValueKind.Object ->
             Result.success defaultModelSection
         | _ ->
-        match getProperty root "model" with
-        | Error es -> Error es
-        | Ok element ->
-            match getOptionalString element "path" with
-            | Error es -> Error es
-            | Ok path ->
-                match parseModulesList element with
-                | Error es -> Error es
-                | Ok modules ->
-                    match getBoolOr element "includeSystemModules" false with
-                    | Error es -> Error es
-                    | Ok inclSys ->
-                        match getBoolOr element "includeInactiveModules" false with
-                        | Error es -> Error es
-                        | Ok inclInactive ->
-                            match getBoolOr element "onlyActiveAttributes" true with
-                            | Error es -> Error es
-                            | Ok onlyActive ->
-                                match getOptionalString element "ossys" with
-                                | Error es -> Error es
-                                | Ok ossys ->
-                                    // At least one model source is required (path or ossys)
-                                    // under the strict parser; the lenient parser substitutes
-                                    // the no-source default instead of erroring.
-                                    match path, ossys with
-                                    | None, None when requireModel ->
-                                        Result.failureOf (
-                                            configError "modelNoSource"
-                                                "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection).")
-                                    | None, None ->
-                                        Result.success {
-                                            defaultModelSection with
-                                                Modules                = modules
-                                                IncludeSystemModules   = inclSys
-                                                IncludeInactiveModules = inclInactive
-                                                OnlyActiveAttributes   = onlyActive
-                                        }
-                                    | _ ->
-                                        Result.success {
-                                            Path                   = path
-                                            Ossys                  = ossys
-                                            Modules                = modules
-                                            IncludeSystemModules   = inclSys
-                                            IncludeInactiveModules = inclInactive
-                                            OnlyActiveAttributes   = onlyActive
-                                        }
+        result {
+            let! element = getProperty root "model"
+            let! path = getOptionalString element "path"
+            let! modules = parseModulesList element
+            let! inclSys = getBoolOr element "includeSystemModules" false
+            let! inclInactive = getBoolOr element "includeInactiveModules" false
+            let! onlyActive = getBoolOr element "onlyActiveAttributes" true
+            let! ossys = getOptionalString element "ossys"
+            // At least one model source is required (path or ossys)
+            // under the strict parser; the lenient parser substitutes
+            // the no-source default instead of erroring.
+            match path, ossys with
+            | None, None when requireModel ->
+                return! Result.failureOf (
+                    configError "modelNoSource"
+                        "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection).")
+            | None, None ->
+                return {
+                    defaultModelSection with
+                        Modules                = modules
+                        IncludeSystemModules   = inclSys
+                        IncludeInactiveModules = inclInactive
+                        OnlyActiveAttributes   = onlyActive
+                }
+            | _ ->
+                return {
+                    Path                   = path
+                    Ossys                  = ossys
+                    Modules                = modules
+                    IncludeSystemModules   = inclSys
+                    IncludeInactiveModules = inclInactive
+                    OnlyActiveAttributes   = onlyActive
+                }
+        }
 
     let private parseProfile (root: JsonElement) : Result<ProfileSection> =
         match tryGetProperty root "profile" with
@@ -915,45 +913,45 @@ module Config =
         match tryGetProperty root "profiler" with
         | None -> Result.success defaultProfiler
         | Some element ->
-            match getIntOr element "maxConcurrency" defaultProfiler.MaxConcurrency with
-            | Error es -> Error es
-            | Ok maxConcurrency when maxConcurrency < 1 ->
-                Result.failureOf (
-                    configError
-                        "profiler.maxConcurrency.invalid"
-                        (sprintf
-                            "profiler.maxConcurrency must be >= 1; got %d."
-                            maxConcurrency))
-            | Ok maxConcurrency ->
-                match getOptionalString element "provider" with
-                | Error es -> Error es
-                | Ok None -> Result.success { defaultProfiler with MaxConcurrency = maxConcurrency }
-                | Ok (Some s) ->
-                    match ProfilerProvider.ofToken s with
-                    | Some p -> Result.success { Provider = p; MaxConcurrency = maxConcurrency }
-                    | None ->
+            result {
+                let! maxConcurrency =
+                    match getIntOr element "maxConcurrency" defaultProfiler.MaxConcurrency with
+                    | Ok maxConcurrency when maxConcurrency < 1 ->
                         Result.failureOf (
+                            configError
+                                "profiler.maxConcurrency.invalid"
+                                (sprintf
+                                    "profiler.maxConcurrency must be >= 1; got %d."
+                                    maxConcurrency))
+                    | other -> other
+                let! providerOpt = getOptionalString element "provider"
+                match providerOpt with
+                | None -> return { defaultProfiler with MaxConcurrency = maxConcurrency }
+                | Some s ->
+                    match ProfilerProvider.ofToken s with
+                    | Some p -> return { Provider = p; MaxConcurrency = maxConcurrency }
+                    | None ->
+                        return! Result.failureOf (
                             configError
                                 "profiler.provider.unknown"
                                 (sprintf
                                     "profiler.provider \"%s\" is not recognized; expected \"%s\" or \"%s\"."
                                     s LiveProfilerProvider FixtureProfilerProvider))
+            }
 
     let private parsePhysicalName (element: JsonElement) : Result<PhysicalName> =
-        match getString element "schema" with
-        | Error es -> Error es
-        | Ok schema ->
-            match getString element "table" with
-            | Error es -> Error es
-            | Ok table -> Result.success { Schema = schema; Table = table }
+        result {
+            let! schema = getString element "schema"
+            let! table = getString element "table"
+            return { Schema = schema; Table = table }
+        }
 
     let private parseLogicalName (element: JsonElement) : Result<LogicalName> =
-        match getString element "module" with
-        | Error es -> Error es
-        | Ok m ->
-            match getString element "entity" with
-            | Error es -> Error es
-            | Ok e -> Result.success { Module = m; Entity = e }
+        result {
+            let! m = getString element "module"
+            let! e = getString element "entity"
+            return { Module = m; Entity = e }
+        }
 
     let private parseRenameSource (element: JsonElement) : Result<RenameSource> =
         let hasModule = element.TryGetProperty("module") |> fst
@@ -974,18 +972,13 @@ module Config =
                     "tableRenames[].from must carry either { module, entity } or { schema, table }.")
 
     let private parseTableRename (element: JsonElement) : Result<TableRename> =
-        match getProperty element "from" with
-        | Error es -> Error es
-        | Ok fromElement ->
-            match parseRenameSource fromElement with
-            | Error es -> Error es
-            | Ok source ->
-                match getProperty element "to" with
-                | Error es -> Error es
-                | Ok toElement ->
-                    match parsePhysicalName toElement with
-                    | Error es -> Error es
-                    | Ok target -> Result.success { From = source; To = target }
+        result {
+            let! fromElement = getProperty element "from"
+            let! source = parseRenameSource fromElement
+            let! toElement = getProperty element "to"
+            let! target = parsePhysicalName toElement
+            return { From = source; To = target }
+        }
 
     let private parseTableRenames (element: JsonElement) : Result<TableRename list> =
         match element.TryGetProperty("tableRenames") with
@@ -1014,15 +1007,12 @@ module Config =
             parseFilePathOverride element |> Result.map Some
 
     let private parseCircularDependencyEntry (element: JsonElement) : Result<CircularDependencyEntry> =
-        match getString element "module" with
-        | Error es -> Error es
-        | Ok m ->
-            match getString element "entity" with
-            | Error es -> Error es
-            | Ok e ->
-                match getIntOr element "position" 0 with
-                | Error es -> Error es
-                | Ok p -> Result.success { Module = m; Entity = e; Position = p }
+        result {
+            let! m = getString element "module"
+            let! e = getString element "entity"
+            let! p = getIntOr element "position" 0
+            return { Module = m; Entity = e; Position = p }
+        }
 
     let private parseCircularDependencyCycle (element: JsonElement) : Result<CircularDependencyCycle> =
         match element.TryGetProperty("order") with
@@ -1041,24 +1031,21 @@ module Config =
         match tryGetProperty root "circularDependencies" with
         | None -> Result.success None
         | Some element ->
-            let cyclesR =
-                match element.TryGetProperty("allowedCycles") with
-                | false, _ -> Result.success []
-                | true, v when v.ValueKind = JsonValueKind.Array ->
-                    v.EnumerateArray()
-                    |> Seq.toList
-                    |> List.map parseCircularDependencyCycle
-                    |> Result.aggregate
-                | _ ->
-                    Result.failureOf (
-                        configError "typeMismatch" "circularDependencies.allowedCycles must be an array.")
-            match cyclesR with
-            | Error es -> Error es
-            | Ok cycles ->
-                match getBoolOr element "strictMode" false with
-                | Error es -> Error es
-                | Ok strict ->
-                    Result.success (Some { AllowedCycles = cycles; StrictMode = strict })
+            result {
+                let! cycles =
+                    match element.TryGetProperty("allowedCycles") with
+                    | false, _ -> Result.success []
+                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                        v.EnumerateArray()
+                        |> Seq.toList
+                        |> List.map parseCircularDependencyCycle
+                        |> Result.aggregate
+                    | _ ->
+                        Result.failureOf (
+                            configError "typeMismatch" "circularDependencies.allowedCycles must be an array.")
+                let! strict = getBoolOr element "strictMode" false
+                return Some { AllowedCycles = cycles; StrictMode = strict }
+            }
 
     /// Parse `overrides.allowMissingPrimaryKey` as a list of typed
     /// `{ module, entity }` objects (Chapter C slice C.2). Operator
@@ -1095,15 +1082,12 @@ module Config =
     /// absolute/parent-traversal rejection) lives in the binder, not
     /// the parser — Config.fs stays in its textual-shape role.
     let private parseEmissionFolderEntry (element: JsonElement) : Result<EmissionFolderEntry> =
-        match getProperty element "ref" with
-        | Error es -> Error es
-        | Ok refElement ->
-            match parseLogicalName refElement with
-            | Error es -> Error es
-            | Ok logical ->
-                match getString element "folder" with
-                | Error es -> Error es
-                | Ok folder -> Result.success { Ref = logical; Folder = folder }
+        result {
+            let! refElement = getProperty element "ref"
+            let! logical = parseLogicalName refElement
+            let! folder = getString element "folder"
+            return { Ref = logical; Folder = folder }
+        }
 
     let private parseEmissionFolders (element: JsonElement) : Result<EmissionFolderEntry list> =
         match element.TryGetProperty("emissionFolders") with
@@ -1131,32 +1115,22 @@ module Config =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
         | Some element ->
-            match parseTableRenames element with
-            | Error es -> Error es
-            | Ok renames ->
-                match parseOptionalFilePathOverride element "migrationDependencies" with
-                | Error es -> Error es
-                | Ok migDeps ->
-                    match parseOptionalFilePathOverride element "staticData" with
-                    | Error es -> Error es
-                    | Ok staticData ->
-                        match parseCircularDependencies element with
-                        | Error es -> Error es
-                        | Ok cycles ->
-                            match parseAllowMissingPrimaryKey element with
-                            | Error es -> Error es
-                            | Ok allowedPks ->
-                                match parseEmissionFolders element with
-                                | Error es -> Error es
-                                | Ok folders ->
-                                    Result.success {
-                                        TableRenames           = renames
-                                        MigrationDependencies  = migDeps
-                                        StaticData             = staticData
-                                        CircularDependencies   = cycles
-                                        AllowMissingPrimaryKey = allowedPks
-                                        EmissionFolders        = folders
-                                    }
+            result {
+                let! renames = parseTableRenames element
+                let! migDeps = parseOptionalFilePathOverride element "migrationDependencies"
+                let! staticData = parseOptionalFilePathOverride element "staticData"
+                let! cycles = parseCircularDependencies element
+                let! allowedPks = parseAllowMissingPrimaryKey element
+                let! folders = parseEmissionFolders element
+                return {
+                    TableRenames           = renames
+                    MigrationDependencies  = migDeps
+                    StaticData             = staticData
+                    CircularDependencies   = cycles
+                    AllowMissingPrimaryKey = allowedPks
+                    EmissionFolders        = folders
+                }
+            }
 
     /// AC-D7 — `emission.deleteScope: { "terms": [ { "column": "...",
     /// "value": <string|number> } ] }`. Every term needs a non-blank
@@ -1245,35 +1219,34 @@ module Config =
         match tryGetProperty element "dataStaging" with
         | None -> Result.success DataStagingPolicy.auto
         | Some staging when staging.ValueKind = JsonValueKind.Object ->
-            let modeResult =
-                match getOptionalString staging "mode" with
-                | Error es -> Error es
-                | Ok None                 -> Result.success DataStagingMode.Auto
-                | Ok (Some "auto")        -> Result.success DataStagingMode.Auto
-                | Ok (Some "inline")      -> Result.success DataStagingMode.Inline
-                | Ok (Some "tempTable")   -> Result.success DataStagingMode.TempTable
-                | Ok (Some other) ->
-                    Result.failureOf (
-                        configError "invalidValue"
-                            (sprintf "emission.dataStaging.mode must be \"auto\", \"inline\", or \"tempTable\"; got \"%s\"." other))
-            match modeResult with
-            | Error es -> Error es
-            | Ok mode ->
-                match getIntOr staging "threshold" DataStagingPolicy.auto.Threshold with
-                | Error es -> Error es
-                | Ok threshold when threshold < 1 ->
-                    Result.failureOf (
-                        configError "invalidValue"
-                            (sprintf "emission.dataStaging.threshold must be >= 1; got %d." threshold))
-                | Ok threshold ->
-                    match getIntOr staging "indexThreshold" DataStagingPolicy.auto.IndexThreshold with
+            result {
+                let! mode =
+                    match getOptionalString staging "mode" with
                     | Error es -> Error es
+                    | Ok None                 -> Result.success DataStagingMode.Auto
+                    | Ok (Some "auto")        -> Result.success DataStagingMode.Auto
+                    | Ok (Some "inline")      -> Result.success DataStagingMode.Inline
+                    | Ok (Some "tempTable")   -> Result.success DataStagingMode.TempTable
+                    | Ok (Some other) ->
+                        Result.failureOf (
+                            configError "invalidValue"
+                                (sprintf "emission.dataStaging.mode must be \"auto\", \"inline\", or \"tempTable\"; got \"%s\"." other))
+                let! threshold =
+                    match getIntOr staging "threshold" DataStagingPolicy.auto.Threshold with
+                    | Ok threshold when threshold < 1 ->
+                        Result.failureOf (
+                            configError "invalidValue"
+                                (sprintf "emission.dataStaging.threshold must be >= 1; got %d." threshold))
+                    | other -> other
+                let! indexThreshold =
+                    match getIntOr staging "indexThreshold" DataStagingPolicy.auto.IndexThreshold with
                     | Ok indexThreshold when indexThreshold < 1 ->
                         Result.failureOf (
                             configError "invalidValue"
                                 (sprintf "emission.dataStaging.indexThreshold must be >= 1; got %d." indexThreshold))
-                    | Ok indexThreshold ->
-                        Result.success { Mode = mode; Threshold = threshold; IndexThreshold = indexThreshold }
+                    | other -> other
+                return { Mode = mode; Threshold = threshold; IndexThreshold = indexThreshold }
+            }
         | Some _ ->
             Result.failureOf (
                 configError "typeMismatch" "emission.dataStaging must be an object with optional 'mode', 'threshold', and 'indexThreshold'.")
@@ -1283,100 +1256,65 @@ module Config =
         | None -> Result.success defaultEmission
         | Some element ->
             let read name (defaultValue: bool) = getBoolOr element name defaultValue
-            match read "ssdt" defaultEmission.Ssdt with
-            | Error es -> Error es
-            | Ok ssdt ->
-                match read "dacpac" defaultEmission.Dacpac with
-                | Error es -> Error es
-                | Ok dacpac ->
-                    // `emission.sqlproj` (2026-06-24) — flat rung (sibling of
-                    // `dacpac` on the deployable axis); default false.
-                    match read "sqlproj" defaultEmission.Sqlproj with
-                    | Error es -> Error es
-                    | Ok sqlproj ->
-                    match read "json" defaultEmission.Json with
-                    | Error es -> Error es
-                    | Ok json ->
-                        match read "distributions" defaultEmission.Distributions with
-                        | Error es -> Error es
-                        | Ok dist ->
-                            match read "staticSeeds" defaultEmission.StaticSeeds with
-                            | Error es -> Error es
-                            | Ok seeds ->
-                                match read "migrationDependencies" defaultEmission.MigrationDependencies with
-                                | Error es -> Error es
-                                | Ok migDeps ->
-                                    match read "bootstrap" defaultEmission.Bootstrap with
-                                    | Error es -> Error es
-                                    | Ok boot ->
-                                        match read "bootstrapAllData" defaultEmission.BootstrapAllData with
-                                        | Error es -> Error es
-                                        | Ok bootAll ->
-                                        match read "decisionLog" defaultEmission.DecisionLog with
-                                        | Error es -> Error es
-                                        | Ok dlog ->
-                                            match read "opportunities" defaultEmission.Opportunities with
-                                            | Error es -> Error es
-                                            | Ok opps ->
-                                                match read "validations" defaultEmission.Validations with
-                                                | Error es -> Error es
-                                                | Ok vals ->
-                                                    match read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes with
-                                                    | Error es -> Error es
-                                                    | Ok includeAuto ->
-                                                    match read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant with
-                                                    | Error es -> Error es
-                                                    | Ok renderElegant ->
-                                                    // NM-70 — `emission.identityAnnotations`; default true.
-                                                    match read "identityAnnotations" defaultEmission.EmitIdentityAnnotations with
-                                                    | Error es -> Error es
-                                                    | Ok identityAnnotations ->
-                                                    match parseDataVerification element with
-                                                    | Error es -> Error es
-                                                    | Ok dataVerification ->
-                                                    match parseDeleteScope element with
-                                                    | Error es -> Error es
-                                                    | Ok deleteScope ->
-                                                    match parseTolerance element with
-                                                    | Error es -> Error es
-                                                    | Ok tolerance ->
-                                                    match parseDataStaging element with
-                                                    | Error es -> Error es
-                                                    | Ok dataStaging ->
-                                                    match getIntOr element "dataReadConcurrency" defaultEmission.DataReadConcurrency with
-                                                    | Error es -> Error es
-                                                    | Ok c when c < 1 ->
-                                                        Result.failureOf (
-                                                            configError
-                                                                "emission.dataReadConcurrency.invalid"
-                                                                (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
-                                                    | Ok dataReadConcurrency ->
-                                                    match read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap with
-                                                    | Error es -> Error es
-                                                    | Ok pipelinedBootstrap ->
-                                                    Result.success {
-                                                        Ssdt = ssdt
-                                                        Dacpac = dacpac
-                                                        Sqlproj = sqlproj
-                                                        Json = json
-                                                        Distributions = dist
-                                                        StaticSeeds = seeds
-                                                        MigrationDependencies = migDeps
-                                                        Bootstrap = boot
-                                                        BootstrapAllData = bootAll
-                                                        DecisionLog = dlog
-                                                        Opportunities = opps
-                                                        Validations = vals
-                                                        IncludePlatformAutoIndexes = includeAuto
-                                                        DeleteScope = deleteScope
-                                                        RenderConstraintsElegant = renderElegant
-                                                        EmitIdentityAnnotations = identityAnnotations
-                                                        DataVerification = dataVerification
-                                                        Tolerance = tolerance
-                                                        DataStaging = dataStaging
-                                                        DataReadConcurrency = dataReadConcurrency
-                                                        PipelinedBootstrap = pipelinedBootstrap
-                                                    }
+            // The `result { }` CE threads the same short-circuit these fields
+            // hand-rolled as a 20-deep `| Error es -> Error es` pyramid; the bind
+            // ORDER is preserved verbatim, so the first-error surfaced on a
+            // multi-field malformed block is byte-identical.
+            result {
+                let! ssdt = read "ssdt" defaultEmission.Ssdt
+                let! dacpac = read "dacpac" defaultEmission.Dacpac
+                // `emission.sqlproj` (2026-06-24) — flat rung (sibling of `dacpac`).
+                let! sqlproj = read "sqlproj" defaultEmission.Sqlproj
+                let! json = read "json" defaultEmission.Json
+                let! dist = read "distributions" defaultEmission.Distributions
+                let! seeds = read "staticSeeds" defaultEmission.StaticSeeds
+                let! migDeps = read "migrationDependencies" defaultEmission.MigrationDependencies
+                let! boot = read "bootstrap" defaultEmission.Bootstrap
+                let! bootAll = read "bootstrapAllData" defaultEmission.BootstrapAllData
+                let! dlog = read "decisionLog" defaultEmission.DecisionLog
+                let! opps = read "opportunities" defaultEmission.Opportunities
+                let! vals = read "validations" defaultEmission.Validations
+                let! includeAuto = read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes
+                let! renderElegant = read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant
+                // NM-70 — `emission.identityAnnotations`; default true.
+                let! identityAnnotations = read "identityAnnotations" defaultEmission.EmitIdentityAnnotations
+                let! dataVerification = parseDataVerification element
+                let! deleteScope = parseDeleteScope element
+                let! tolerance = parseTolerance element
+                let! dataStaging = parseDataStaging element
+                let! dataReadConcurrency =
+                    match getIntOr element "dataReadConcurrency" defaultEmission.DataReadConcurrency with
+                    | Ok c when c < 1 ->
+                        Result.failureOf (
+                            configError
+                                "emission.dataReadConcurrency.invalid"
+                                (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
+                    | other -> other
+                let! pipelinedBootstrap = read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap
+                return {
+                    Ssdt = ssdt
+                    Dacpac = dacpac
+                    Sqlproj = sqlproj
+                    Json = json
+                    Distributions = dist
+                    StaticSeeds = seeds
+                    MigrationDependencies = migDeps
+                    Bootstrap = boot
+                    BootstrapAllData = bootAll
+                    DecisionLog = dlog
+                    Opportunities = opps
+                    Validations = vals
+                    IncludePlatformAutoIndexes = includeAuto
+                    DeleteScope = deleteScope
+                    RenderConstraintsElegant = renderElegant
+                    EmitIdentityAnnotations = identityAnnotations
+                    DataVerification = dataVerification
+                    Tolerance = tolerance
+                    DataStaging = dataStaging
+                    DataReadConcurrency = dataReadConcurrency
+                    PipelinedBootstrap = pipelinedBootstrap
+                }
+            }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
         match element.TryGetProperty(name) with
@@ -1409,12 +1347,11 @@ module Config =
             Result.failureOf (configError "typeMismatch" (sprintf "'%s' must be an integer." name))
 
     let private parseTighteningAttributeOverride (element: JsonElement) : Result<TighteningAttributeOverride> =
-        match getString element "attributeRef" with
-        | Error es -> Error es
-        | Ok ref ->
-            match getString element "action" with
-            | Error es -> Error es
-            | Ok action -> Result.success { AttributeRef = ref; Action = action }
+        result {
+            let! ref = getString element "attributeRef"
+            let! action = getString element "action"
+            return { AttributeRef = ref; Action = action }
+        }
 
     let private parseTighteningOverrides (element: JsonElement) : Result<TighteningAttributeOverride list> =
         match element.TryGetProperty("overrides") with
@@ -1429,60 +1366,36 @@ module Config =
                 configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
 
     let private parseTighteningIntervention (element: JsonElement) : Result<TighteningInterventionEntry> =
-        match getString element "kind" with
-        | Error es -> Error es
-        | Ok kind ->
-            match getString element "id" with
-            | Error es -> Error es
-            | Ok id ->
-                match getOptionalDecimal element "nullBudget" with
-                | Error es -> Error es
-                | Ok nullBudget ->
-                    match getOptionalBool element "allowMandatoryRelaxation" with
-                    | Error es -> Error es
-                    | Ok allowMand ->
-                        match parseTighteningOverrides element with
-                        | Error es -> Error es
-                        | Ok overrides ->
-                            match getOptionalBool element "enforceSingleColumnUnique" with
-                            | Error es -> Error es
-                            | Ok ensSc ->
-                                match getOptionalBool element "enforceMultiColumnUnique" with
-                                | Error es -> Error es
-                                | Ok ensMc ->
-                                    match getOptionalBool element "enableCreation" with
-                                    | Error es -> Error es
-                                    | Ok enable ->
-                                        match getOptionalBool element "allowCrossSchema" with
-                                        | Error es -> Error es
-                                        | Ok crossSchema ->
-                                            match getOptionalBool element "allowCrossCatalog" with
-                                            | Error es -> Error es
-                                            | Ok crossCatalog ->
-                                                match getOptionalBool element "treatMissingDeleteRuleAsIgnore" with
-                                                | Error es -> Error es
-                                                | Ok missingDR ->
-                                                    match getOptionalBool element "allowNoCheckCreation" with
-                                                    | Error es -> Error es
-                                                    | Ok nocheck ->
-                                                        match getOptionalInt64 element "minDistinctCountForUniqueness" with
-                                                        | Error es -> Error es
-                                                        | Ok minDist ->
-                                                            Result.success {
-                                                                Kind = kind
-                                                                Id = id
-                                                                NullBudget = nullBudget
-                                                                AllowMandatoryRelaxation = allowMand
-                                                                NullabilityOverrides = overrides
-                                                                EnforceSingleColumnUnique = ensSc
-                                                                EnforceMultiColumnUnique = ensMc
-                                                                EnableCreation = enable
-                                                                AllowCrossSchema = crossSchema
-                                                                AllowCrossCatalog = crossCatalog
-                                                                TreatMissingDeleteRuleAsIgnore = missingDR
-                                                                AllowNoCheckCreation = nocheck
-                                                                MinDistinctCountForUniqueness = minDist
-                                                            }
+        result {
+            let! kind = getString element "kind"
+            let! id = getString element "id"
+            let! nullBudget = getOptionalDecimal element "nullBudget"
+            let! allowMand = getOptionalBool element "allowMandatoryRelaxation"
+            let! overrides = parseTighteningOverrides element
+            let! ensSc = getOptionalBool element "enforceSingleColumnUnique"
+            let! ensMc = getOptionalBool element "enforceMultiColumnUnique"
+            let! enable = getOptionalBool element "enableCreation"
+            let! crossSchema = getOptionalBool element "allowCrossSchema"
+            let! crossCatalog = getOptionalBool element "allowCrossCatalog"
+            let! missingDR = getOptionalBool element "treatMissingDeleteRuleAsIgnore"
+            let! nocheck = getOptionalBool element "allowNoCheckCreation"
+            let! minDist = getOptionalInt64 element "minDistinctCountForUniqueness"
+            return {
+                Kind = kind
+                Id = id
+                NullBudget = nullBudget
+                AllowMandatoryRelaxation = allowMand
+                NullabilityOverrides = overrides
+                EnforceSingleColumnUnique = ensSc
+                EnforceMultiColumnUnique = ensMc
+                EnableCreation = enable
+                AllowCrossSchema = crossSchema
+                AllowCrossCatalog = crossCatalog
+                TreatMissingDeleteRuleAsIgnore = missingDR
+                AllowNoCheckCreation = nocheck
+                MinDistinctCountForUniqueness = minDist
+            }
+        }
 
     let private parseTightening (root: JsonElement) : Result<TighteningSection option> =
         match tryGetProperty root "tightening" with
@@ -1505,12 +1418,11 @@ module Config =
     /// the string `name` to the closed-DU `TransformGroup` value at
     /// bind time.
     let private parseTransformGroupEntry (element: JsonElement) : Result<TransformGroupEntry> =
-        match getString element "name" with
-        | Error es -> Error es
-        | Ok name ->
-            match getBoolOr element "enabled" true with
-            | Error es -> Error es
-            | Ok enabled -> Result.success { Name = name; Enabled = enabled }
+        result {
+            let! name = getString element "name"
+            let! enabled = getBoolOr element "enabled" true
+            return { Name = name; Enabled = enabled }
+        }
 
     let private parseTransformGroups (element: JsonElement) : Result<TransformGroupEntry list> =
         match element.TryGetProperty("transformGroups") with

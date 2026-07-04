@@ -1698,13 +1698,7 @@ module Transfer =
                             })
                     return outcome
                 }
-            match verdict.Disposition with
-            | RunCompleted value -> return Result.success value
-            | RunStopped es -> return Result.failure es
-            | RunAborted (_, Some ex) ->
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
-                return Unchecked.defaultof<_>
-            | RunAborted (refusal, None) -> return failwith refusal
+            return StagedVerdict.toResult verdict
         }
 
     /// **The streaming realization, reconcile-capable** — bounded memory for

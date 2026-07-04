@@ -326,7 +326,7 @@ let buildStatView (groups: LogSink.GroupAccumulator list) : View.View =
 /// share: a hero naming the daily act, then the flows as a table
 /// (name / route / notes). 2026-07-02 — previously plain Console.Out lines,
 /// invisible to `--json` / `--query` and unstyled under pretty.
-let buildFlowMenuView (flows: (string * string * string * string) list) : View.View =
+let buildFlowMenuView (flows: (string * string * string * string) list) : View.View =  // LINT-ALLOW: terminal 4-tuple is the flow-menu row shape (name/source/target/notes) at the TtyRenderer display boundary, the same terminal-view-shape precedent as the survey/setup fields above
     let headers = [ "flow"; "from"; "to"; "notes" ]
     let row (name, source, target, extras) : (string * View.Status) list =
         [ name,   View.Neutral

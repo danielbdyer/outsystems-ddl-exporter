@@ -63,10 +63,10 @@ module LiveModelRead =
         let total = counts |> List.sumBy snd
         let samples = entries |> List.truncate 3 |> List.map (fun d -> d.Message)
         Map.ofList
-            ([ "total",        box total
-               "artifactPath", box artifactPath
-               "samples",      box (String.concat " | " samples) ]
-             @ (counts |> List.map (fun (family, n) -> family, box n)))
+            ([ "total",        box total // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
+               "artifactPath", box artifactPath // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
+               "samples",      box (String.concat " | " samples) ] // LINT-ALLOW: terminal sample-list join for the notice-rollup metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map, and String.concat is the terminal display join, no AST applies to a free-text sample preview
+             @ (counts |> List.map (fun (family, n) -> family, box n))) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
 
     /// Surface a model read's divergence entries (F9 — never silently
     /// discarded; and since 2026-07-02 never a per-item stderr wall over the
@@ -79,8 +79,8 @@ module LiveModelRead =
             for d in entries do
                 let payload : Map<string, objnull> =
                     Map.ofList
-                        ([ "message", box d.Message ]
-                         @ (d.Metadata |> Map.toList |> List.map (fun (k, v) -> k, box v)))
+                        ([ "message", box d.Message ] // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
+                         @ (d.Metadata |> Map.toList |> List.map (fun (k, v) -> k, box v))) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
                 LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Extract d.Code payload)
             let artifactPath =
                 NoticeSink.runPath (System.IO.Directory.GetCurrentDirectory()) "model-read" (LogSink.runId ())

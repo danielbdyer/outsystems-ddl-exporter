@@ -229,15 +229,21 @@ Each is a design change needing its own plan + tests, not a cleanup sweep.
   across `Attribute`/`changedFacets`/`applyFacet`/`renderColumn`. Delete the dead
   `SqlStorageType.to/ofPrimitiveType`. **Keep `PhysicalColumn` a distinct quotient**
   (N5) — single-source the *vocabulary*, never the *type*.
-- **AR2 ☐ — `ChannelDiff<'facet>`** (CatalogDiff 4-channel collapse, ~250 net
-  LOC, per A40). Unlocked by AR1.
+- **AR2 ☑ — `ChannelDiff<'facet>`** (CatalogDiff 4-channel collapse, ~250 net
+  LOC, per A40). Unlocked by AR1. [UPDATE 2026-07-03 — cashed out: `ChannelDiff<'change>`
+  ships at `src/Projection.Core/CatalogDiff.fs:63`, with `AttributeDiff`/`ReferenceDiff`/
+  `IndexDiff`/`SequenceDiff` (`:78,116,141,166`) as instantiations. Checkbox was stale;
+  also recorded at `CONFIRMED_BACKLOG_2026_06_09.md` row B5.]
 - **AR3 ☐ — `Analytics.touchAll` combinator** for the 6-site analytics-pass
   epilogue (~75 LOC).
 - **AR4 ☐ — `GraphView`** (forward/reverse/undirected adjacency computed once on
   `TopologicalOrder`, threaded to the 5 graph passes that each rebuild it).
-- **AR5 ☐ — `Statement` DU `Merge`/`Update` variants** to bring the Data
+- **AR5 ☑ — `Statement` DU `Merge`/`Update` variants** to bring the Data
   triumvirate onto the typed `seq<Statement>` stream (closes the A35 gap — the
-  Data emitters are currently a string-rendered island).
+  Data emitters are currently a string-rendered island). [UPDATE 2026-07-03 —
+  cashed out: `Merge of MergeBuildArgs` / `Update of UpdateBuildArgs` ship at
+  `src/Projection.Targets.SSDT/Statement.fs:308,311`. Checkbox was stale; see
+  `DECISIONS.md` "Statement DU MERGE/UPDATE promotion" cash-out, 2026-06-25.]
 - **AR6 ☐ — derived `Codec<'a>`** for CatalogCodec (~58/60 pairs) + `writeOnly`
   and `iso`/`legacy` primitives for the asymmetries; `Index.Uniqueness` is the
   irreducible seam. Close the 2 property-test coverage holes (SsKey variants; the

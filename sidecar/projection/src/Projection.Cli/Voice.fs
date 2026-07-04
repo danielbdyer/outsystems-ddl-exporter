@@ -925,7 +925,7 @@ module Voice =
                 let total = humane (textOr "total" "0" p)
                 match families with
                 | [] -> View.Note(sprintf "%s model-reality notices. The model's declared values were kept." total)
-                | fs -> View.Note(sprintf "%s model-reality notices — %s. The model's declared values were kept." total (String.concat ", " fs))
+                | fs -> View.Note(sprintf "%s model-reality notices — %s. The model's declared values were kept." total (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined notice narration
           Substantiation =
             fun p ->
                 match text "samples" p with

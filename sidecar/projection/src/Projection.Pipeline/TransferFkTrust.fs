@@ -33,18 +33,18 @@ module TransferFkTrust =
             if Set.isEmpty loaded then return [] else
             let trusted = System.Collections.Generic.List<string * string * string>()
             use cmd = sink.CreateCommand()
-            cmd.CommandText <-
+            cmd.CommandText <- // LINT-ALLOW: ADO.NET command-text assignment on the sys.foreign_keys snapshot query; SqlCommand.CommandText is a settable BCL property, not a mutation to avoid
                 "SELECT s.name, t.name, fk.name \
                  FROM sys.foreign_keys fk \
                  JOIN sys.tables t ON fk.parent_object_id = t.object_id \
                  JOIN sys.schemas s ON t.schema_id = s.schema_id \
                  WHERE fk.is_not_trusted = 0 AND fk.is_disabled = 0;"
             use! reader = cmd.ExecuteReaderAsync()
-            let mutable go = true
+            let mutable go = true // LINT-ALLOW: ADO reader-drain loop condition over SqlDataReader.ReadAsync; the reader is the mutable-by-nature ADO.NET boundary, not core state
             while go do
                 let! has = reader.ReadAsync()
                 if has then trusted.Add(reader.GetString 0, reader.GetString 1, reader.GetString 2)
-                else go <- false
+                else go <- false // LINT-ALLOW: ADO reader-drain loop condition over SqlDataReader.ReadAsync; the reader is the mutable-by-nature ADO.NET boundary, not core state
             reader.Close()
             return
                 trusted
@@ -90,11 +90,11 @@ module TransferFkTrust =
                 |> List.map (fun (sch, tbl, fk) ->
                     // LINT-ALLOW: terminal SQL-text boundary; identifiers are sys.* catalog-view
                     // names (deployed truth), each quoted via Render.quote.
-                    System.String.Concat(
+                    System.String.Concat( // LINT-ALLOW: terminal SQL-text boundary; identifiers are sys.* catalog-view names quoted via Render.quote, BCL String.Concat is the irreducible primitive for this multi-segment ALTER statement
                         "ALTER TABLE ", Render.quote sch, ".", Render.quote tbl,
                         " WITH CHECK CHECK CONSTRAINT ", Render.quote fk, ";"))
             try
-                do! Deploy.executeBatch sink (String.concat "\n" stmts)
+                do! Deploy.executeBatch sink (String.concat "\n" stmts) // LINT-ALLOW: terminal SQL-batch join at the ADO.NET execute boundary; each stmt is already terminal SQL text, String.concat is the irreducible primitive for newline-joining a batch
                 LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
             with :? SqlException as ex when isAlterCapabilityRefusal ex ->
                 // Capability descent — the sink login cannot ALTER (a ManagedDml /

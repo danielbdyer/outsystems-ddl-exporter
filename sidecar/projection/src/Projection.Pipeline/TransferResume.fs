@@ -93,7 +93,7 @@ module TransferResume =
         |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
         |> List.map (fun k -> Render.tableQualified k.Physical)
         |> List.sort
-        |> String.concat "|"
+        |> String.concat "|" // LINT-ALLOW: terminal plan-signature string at the progress-marker boundary; the joined table list IS the marker key, String.concat is the irreducible primitive for this deterministic signature
 
     /// NM-53 — `None` when the marker is absent (not yet complete); `Some n` when
     /// the transfer completed, carrying the DROP COUNT it recorded. The no-op
@@ -102,18 +102,18 @@ module TransferResume =
     let markedDropCount (sink: SqlConnection) (marker: string) : Task<int option> =
         task {
             use cmd = sink.CreateCommand()
-            cmd.CommandText <- "SELECT DropCount FROM dbo.__projection_transfer_progress WHERE Marker = @m;"
+            cmd.CommandText <- "SELECT DropCount FROM dbo.__projection_transfer_progress WHERE Marker = @m;" // LINT-ALLOW: ADO.NET command-text assignment on the progress-marker lookup query; SqlCommand.CommandText is a settable BCL property, not a mutation to avoid
             cmd.Parameters.AddWithValue("@m", marker) |> ignore
             let! v = cmd.ExecuteScalarAsync()
             return
-                if isNull v || v = box System.DBNull.Value then None
+                if isNull v || v = box System.DBNull.Value then None // LINT-ALLOW: ADO.NET scalar-result boundary; ExecuteScalarAsync returns obj, boxing DBNull.Value for the equality check is the irreducible primitive for detecting SQL NULL
                 else Some (System.Convert.ToInt32 v)
         }
 
     let markComplete (sink: SqlConnection) (marker: string) (dropCount: int) : Task<unit> =
         task {
             use cmd = sink.CreateCommand()
-            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker, DropCount) VALUES (@m, @d);"
+            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker, DropCount) VALUES (@m, @d);" // LINT-ALLOW: ADO.NET command-text assignment on the progress-marker insert; SqlCommand.CommandText is a settable BCL property, not a mutation to avoid
             cmd.Parameters.AddWithValue("@m", marker) |> ignore
             cmd.Parameters.AddWithValue("@d", dropCount) |> ignore
             let! _ = cmd.ExecuteNonQueryAsync()

@@ -23,7 +23,7 @@ module SamplingDiagnostics =
                             "profiler:sampling"
                             DiagnosticSeverity.Info
                             "profiler.evidence.sampled"
-                            (sprintf
+                            (sprintf  // LINT-ALLOW: terminal operator-diagnostic message text; sprintf is the irreducible primitive for this free-text sampling-downgrade narration, no typed-AST applies to a DiagnosticEntry message
                                 "%s: cell evidence sampled to %d rows by the profiler sampling policy. Row and null counts remain EXACT (the aggregate query is never capped); distribution, duplicate/uniqueness, and observed-length evidence downgrade to observed-sample confidence (ProbeStatus carries the sample size). This kind is excluded from single-scan derivation and keeps the live capped discovery."
                                 (Name.value k.Name)
                                 cap)))

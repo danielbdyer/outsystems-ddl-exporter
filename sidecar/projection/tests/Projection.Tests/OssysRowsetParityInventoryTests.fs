@@ -9,6 +9,28 @@ module Projection.Tests.OssysRowsetParityInventoryTests
 // real assertion and the matrix row gets a Status-history amendment.
 
 open Xunit
+open Projection.Core
+open Projection.Targets.SSDT
+open Projection.Tests.Fixtures
+
+// =====================================================================
+// Shared fixture for the two promoted rows below (12, 23) — reuses
+// `Fixtures.annotationBearingCatalog` (Wave-1 slice 1.3's fixture,
+// already exercised end-to-end against a live target in
+// `CanaryRoundTripTests`'s "triggers / checks / sequences / extended
+// properties are RECOVERED" test). Its `Widget` kind carries one
+// `Trigger` + one `ColumnCheck` — exactly the two axes rows 12 + 23
+// promote. Rendering through `SsdtDdlEmitter.statements` here proves
+// the pure emission path (no Docker needed); the Integration-suite
+// canary proves the full round-trip.
+// =====================================================================
+
+let private rowsetInventoryWidgetKind : Kind =
+    Catalog.allKinds annotationBearingCatalog
+    |> List.find (fun k -> k.Name = mkName "Widget")
+
+let private rowsetInventoryWidgetBody : string =
+    SsdtDdlEmitter.statements annotationBearingCatalog |> Render.toText
 
 // =====================================================================
 // 🟠 NOT-MAPPED — V2's OssysSql adapter walks but does not parse
@@ -20,9 +42,18 @@ open Xunit
 let ``5.1.α row 11: OutsystemsColumnRealityRow lifts to MetadataSnapshot.ColumnReality`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 11"
 
-[<Fact(Skip = "Matrix row 12 — 🟠 NOT-MAPPED. V1 rowset 7 #ColumnCheckReality (CHECK constraint reflection on OSSYS-source: constraint name, predicate, IsNotTrusted). V2's IR carries no CHECK-constraint axis on `Attribute` / `Kind`. Trigger: V2 IR refinement adds a CHECK-constraint field AND a downstream emitter (SSDT or DACPAC) demands it.")>]
-let ``5.1.α row 12: OutsystemsColumnCheckRow lifts to MetadataSnapshot.ColumnChecks`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 12"
+[<Fact>]
+let ``5.1.α row 12: OutsystemsColumnCheckRow lifts to Kind.ColumnChecks and renders as a table-scoped CHECK constraint (matrix row 12 cashed out)`` () : unit =
+    // The CHECK-constraint axis fired: `ColumnCheck : ColumnCheck list`
+    // lives at `Kind.ColumnChecks` (Catalog.fs:1185), carrying name +
+    // predicate + IsNotTrusted (the exact V1 #ColumnCheckReality shape
+    // this row named as missing). Assert (a) the IR carries it and
+    // (b) `SsdtDdlEmitter` (SsdtDdlEmitter.fs:1265, "matrix row 12")
+    // projects it into the CREATE TABLE body as a named CONSTRAINT.
+    Assert.False(List.isEmpty rowsetInventoryWidgetKind.ColumnChecks)
+    let chk = List.exactlyOne rowsetInventoryWidgetKind.ColumnChecks
+    Assert.Equal(Some "CK_Widget_Qty", chk.Name |> Option.map Name.value)
+    Assert.Contains("CONSTRAINT [CK_Widget_Qty] CHECK", rowsetInventoryWidgetBody)
 
 [<Fact(Skip = "Matrix row 14 — 🟠 NOT-MAPPED. V1 rowset 9 #PhysColsPresent (binary presence flag — distinct AttrIds that exist as physical columns on the OSSYS-source). V2 reconstructs presence on the deployed-target side via `PhysicalSchema.PhysicalRows` set membership; no OSSYS-source presence carrier. Trigger: V2 needs orphan-attribute detection on the OSSYS source (logical-attribute-without-physical-column reporting).")>]
 let ``5.1.α row 14: OutsystemsPhysicalColumnPresenceRow lifts to MetadataSnapshot.PhysicalColumnsPresent`` () : unit =
@@ -44,9 +75,20 @@ let ``5.1.α row 17: OutsystemsForeignKeyRow lifts to MetadataSnapshot.ForeignKe
 let ``5.1.α row 18: OutsystemsForeignKeyColumnRow lifts to MetadataSnapshot.ForeignKeyColumns`` () : unit =
     failwith "deferred — see V1_PARITY_MATRIX.md row 18"
 
-[<Fact(Skip = "Matrix row 23 — 🟠 NOT-MAPPED. V1 rowset 18 #Triggers (DDL trigger reflection on OSSYS-source: name / IsDisabled / full T-SQL body). V2 carries no trigger axis in `Catalog` IR. Trigger: V2 IR refinement adds a `Catalog.Triggers` axis AND a downstream emitter (SSDT or remediation) demands trigger evidence; OR cutover-15 risk analysis identifies live OSSYS-managed triggers that V2's emission must preserve.")>]
-let ``5.1.α row 23: OutsystemsTriggerRow lifts to MetadataSnapshot.Triggers`` () : unit =
-    failwith "deferred — see V1_PARITY_MATRIX.md row 23"
+[<Fact>]
+let ``5.1.α row 23: OutsystemsTriggerRow lifts to Kind.Triggers and renders as a CREATE TRIGGER statement (matrix row 23 cashed out)`` () : unit =
+    // The trigger axis fired: `Trigger : Trigger list` lives at
+    // `Kind.Triggers` (Catalog.fs:1176), carrying name + IsDisabled +
+    // the full T-SQL body (the exact V1 #Triggers shape this row named
+    // as missing). Assert (a) the IR carries it and (b)
+    // `triggerStatements` (SsdtDdlEmitter.fs:561-580) projects it into
+    // a `CREATE TRIGGER` statement (plus the metadata comment).
+    Assert.False(List.isEmpty rowsetInventoryWidgetKind.Triggers)
+    let trg = List.exactlyOne rowsetInventoryWidgetKind.Triggers
+    Assert.Equal("TR_Widget_Audit", Name.value trg.Name)
+    Assert.False(trg.IsDisabled)
+    Assert.Contains("CREATE TRIGGER [dbo].[TR_Widget_Audit]", rowsetInventoryWidgetBody)
+    Assert.Contains("Trigger: TR_Widget_Audit (disabled: false)", rowsetInventoryWidgetBody)
 
 // =====================================================================
 // 🟡 DIVERGENCE — V2 deliberately diverges from V1; each row references
@@ -113,11 +155,12 @@ let ``5.1.α row 28: OutsystemsModuleJsonRow sunsets with V1 osm_model.json emis
 // =====================================================================
 
 [<Fact>]
-let ``5.1.α: inventory file present; 19 Skip stubs reserve matrix rows 11-29`` () : unit =
+let ``5.1.α: inventory file present; 17 Skip stubs reserve matrix rows 11-29 (rows 12 + 23 promoted)`` () : unit =
     // The artifact-as-evidence claim is structural: the matrix doc
-    // names rows 11–29 (19 rows), and the test runner reports 19 Skip
-    // stubs in this file. The assertion below is intentionally weak —
-    // its function is to keep the inventory file visible in test
-    // discovery so future slices flipping a Skip stub surface
-    // immediately in the run.
+    // names rows 11–29 (19 rows); rows 12 + 23 cashed out (CHECK
+    // constraints, triggers) and promoted to real assertions above,
+    // leaving 17 Skip stubs in this file. The assertion below is
+    // intentionally weak — its function is to keep the inventory file
+    // visible in test discovery so future slices flipping a Skip stub
+    // surface immediately in the run.
     Assert.True(true)
