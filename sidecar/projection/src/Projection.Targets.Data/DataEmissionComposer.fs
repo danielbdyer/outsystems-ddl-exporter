@@ -15,10 +15,12 @@ open Projection.Core.Passes
 /// **Slice η + ε + ζ + θ scope.** The composer dispatches through
 /// the three sibling-Π data emitters: `StaticSeedsEmitter` (slice
 /// α/β/δ), `MigrationDependenciesEmitter` (slice ε), and
-/// `BootstrapEmitter` (slice ζ; structural stub pending chapters
-/// 4.2 / 4.3 row-source consumers). Slice θ adds the partition
-/// assertion: every kind's populated coverage comes from at most one
-/// emitter under a given `DataComposition`; overlap surfaces as
+/// `BootstrapEmitter` (slice ζ, activated at WP6 step 2 — DECISIONS
+/// 2026-06-13 — once the pipeline's hydration step grafts its
+/// per-kind row source; see `BootstrapEmitter.registeredMetadata`'s
+/// "Status = Active"). Slice θ adds the partition assertion: every
+/// kind's populated coverage comes from at most one emitter under a
+/// given `DataComposition`; overlap surfaces as
 /// `EmitError.OverlappingEmitterCoverage` rather than the prior
 /// left-biased silent precedence.
 ///
@@ -33,28 +35,28 @@ open Projection.Core.Passes
 /// callers that don't need it.
 ///
 /// **Per-axis correctness for multi-kind cycles** (the slice-δ open
-/// item). Pre-composer, slice δ's per-kind `Rendered` was deploy-
-/// correct only for self-FK cycles; multi-kind cycles required
-/// global Phase-1-then-Phase-2 ordering across emitters. The
-/// composer is where that global ordering would land. **Slice η
-/// MVP scope: the global ordering is structurally enabled (every
-/// emitter outputs `Phase1Merges + Phase2Updates` separately;
-/// composer can interleave) but not yet REIFIED — the per-kind
-/// `Rendered` is the only consumer-visible output today.** Slice ε
-/// (Migration) is the natural trigger for reifying the global
-/// `Phase1 ⨄ Phase2` interleave — at that point a sibling
-/// `composeRendered` (or similar) lifts the per-kind text into a
-/// pipeline-level concatenation respecting the global phase
-/// boundary.
+/// item, reified at slice ι). Pre-composer, slice δ's per-kind
+/// `Rendered` was deploy-correct only for self-FK cycles; multi-kind
+/// cycles required global Phase-1-then-Phase-2 ordering across
+/// emitters. **Slice η enabled it structurally** (every emitter
+/// outputs `Phase1Merges + Phase2Updates` separately); **slice ι
+/// reifies it** — `composeRendered` / `composeRenderedFull` (below,
+/// ~line 351) concatenate Phase-1 across all kinds in topological
+/// order, then Phase-2 across all kinds, into one globally-ordered
+/// GO-batched string. The per-kind `Rendered` stays available for
+/// callers that only need self-FK-correct output; `composeRendered`
+/// is the multi-kind-cycle-correct surface.
 [<RequireQualifiedAccess>]
 module DataEmissionComposer =
 
     [<Literal>]
     let version : int = 1
 
-    /// The composer's three sibling emitter outputs. `StaticSeeds`
-    /// is real today; `MigrationDependencies` and `Bootstrap` are
-    /// no-op stubs (per slice ordering — slices ε / ζ ship them).
+    /// The composer's three sibling emitter outputs. All three are
+    /// real emitters today (`MigrationDependenciesEmitter` since
+    /// slice ε; `BootstrapEmitter` since WP6 step 2 — see the module
+    /// doc above); each renders empty per kind only when its own
+    /// context/plan is empty, not because the emitter is a stub.
     /// The shape is the natural home for the cross-emitter union
     /// the composer performs at the `union` step.
     type SiblingArtifacts =
@@ -106,12 +108,11 @@ module DataEmissionComposer =
     /// Run the three sibling emitters per the policy's data-
     /// composition variant. Per pre-scope §3.4 + §3.2:
     ///   - `AllRemaining`     → Static fires; Migration fires;
-    ///                          Bootstrap fires (stub today).
+    ///                          Bootstrap fires.
     ///   - `AllExceptStatic`  → Static skipped; Migration fires;
-    ///                          Bootstrap fires (stub today).
+    ///                          Bootstrap fires.
     ///   - `AllData`          → Static fires; Migration skipped;
-    ///                          Bootstrap fires for everything (stub
-    ///                          today).
+    ///                          Bootstrap fires for everything.
     ///
     /// `EmitData = false` short-circuits before this function — the
     /// caller emits nothing on the data axis and never invokes

@@ -1212,9 +1212,13 @@ module Compose =
 
     /// Build the full `Policy` aggregate from a parsed `Config` and
     /// the loaded `Catalog`. Wires the tightening axis (Chapter C
-    /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
-    /// Emission / UserMatching axes remain dormant pending operator-
-    /// pull triggers per the dormant-config-section sweep.
+    /// slice C.1) + insertion axis (Chapter C slice C.5) + the
+    /// emission axis (AC-X1 / NM-02, below — schema / data /
+    /// diagnostics toggles and `DataComposition`); Selection and
+    /// UserMatching stay unfed from this config surface — per
+    /// `Config.fs`'s NM-03 note, their Core axes have real consumers
+    /// (`UserFkReflowPass`, `PolicyDiff`) that set them directly, and
+    /// the config-ingestion path for both was removed as dead.
     /// **Second consumer (§5.6).** Made public for the `policy-diff` verb,
     /// which binds two operator `Policy` values from two configs against a
     /// shared catalog. Previously private to `runWithConfigCore`.

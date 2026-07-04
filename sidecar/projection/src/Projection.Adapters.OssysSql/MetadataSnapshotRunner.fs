@@ -212,10 +212,13 @@ module MetadataSnapshotRunner =
     /// `#ColumnReality` rowset (matrix row 11). One row per V1 attribute
     /// reflecting the deployed-target `sys.columns` projection — typed
     /// per-column reality the source-side adapter sees through V1's
-    /// SQL. Currently no V2 consumer; lifts at the runner layer so a
-    /// future tightening-rule that needs source-reflection evidence
-    /// (e.g., Profile.AttributeReality per matrix row 49) can wire from
-    /// here without re-walking the rowset.
+    /// SQL. Consumed within this file: `toBundle` lifts collation /
+    /// computed / default-constraint facets (~line 1180), and
+    /// `columnRealityDivergences` (~line 1016, wired at
+    /// `LiveModelRead.fs:139`) diffs it against the logical facets for
+    /// identity/nullability divergence diagnostics. Not yet compared
+    /// against `Profile.AttributeReality` (matrix row 49) — that
+    /// remains a future tightening-rule trigger.
     type OssysColumnRealityRow =
         { AttrId                : int
           IsNullable            : bool

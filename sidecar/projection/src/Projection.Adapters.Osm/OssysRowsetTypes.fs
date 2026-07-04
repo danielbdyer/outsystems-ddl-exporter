@@ -231,8 +231,11 @@ module OssysRowsetTypes =
             IsConstraintTrusted : bool
         }
 
-    /// V1 rowset bundle — the in-memory carrier the future C# SqlClient
-    /// loader produces; in-memory test fixtures construct directly. Per
+    /// V1 rowset bundle — the in-memory carrier
+    /// `Projection.Adapters.OssysSql.MetadataSnapshotRunner.toBundle`
+    /// produces (an F# `Microsoft.Data.SqlClient` loader, not the
+    /// once-anticipated C# one; wired into production via
+    /// `LiveModelRead.fs`); in-memory test fixtures construct directly. Per
     /// `CHAPTER_3_PRESCOPE_SNAPSHOT_ROWSETS.md` §2-§3: hand-written F#
     /// records mirroring V1's first three rowsets (modules / entities /
     /// attributes); extends under empirical pressure as future

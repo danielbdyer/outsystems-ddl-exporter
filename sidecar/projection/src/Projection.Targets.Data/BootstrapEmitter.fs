@@ -25,23 +25,29 @@ open Projection.Core.Passes
 /// any remaining-by-policy kinds whose data is not in StaticSeeds or
 /// MigrationDependencies."
 ///
-/// **Slice ζ MVP scope.** The emitter ships structurally — type
-/// signature, composer integration, T11 keyset coverage — but emits
-/// no rows today. The data sources Bootstrap needs (system-user
-/// fixtures, default-policy snapshots, profile-attached row data)
-/// land at chapters 4.2 + 4.3 when those consumers materialize. Per
-/// IR-grows-under-evidence, the structural hook lands now (so the
-/// composer's dispatch tree completes); the actual content fills in
-/// as consumer-driven evidence surfaces.
+/// **Slice ζ shipped structurally, activated at WP6 step 2
+/// (DECISIONS 2026-06-13).** The emitter's shell — type signature,
+/// composer integration, T11 keyset coverage — landed at slice ζ
+/// emitting no rows. `emitFromPlan` / `emitWithTopo` (below) now
+/// delegate to `StaticSeedsEmitter.emitFromPlanWith` over a real
+/// `DataLoadPlan`; the pipeline's hydration step
+/// (`Hydration.graftStaticPopulations`) grafts the per-kind row
+/// source that reaches this emitter as `Pipeline.fs`'s
+/// `BootstrapLane.Rows`. See `registeredMetadata` below ("Status =
+/// Active") for the harvest-discipline classification. An empty
+/// plan still renders empty per kind — byte-identical to the
+/// pre-WP6 stub — so that shape survives as the degenerate case,
+/// not as dead code.
 ///
-/// **Why ship the stub now.** The slice η composer dispatches
+/// **Why the stub shape persists.** The slice η composer dispatches
 /// through three sibling positions; pre-ζ the third position was a
-/// `emptyArtifact` no-op directly inside the composer. Lifting the
-/// stub into a named emitter module (a) gives chapters 4.2 / 4.3 a
-/// fixed insertion point, (b) makes the slice θ partition assertion
+/// `emptyArtifact` no-op directly inside the composer. Lifting it
+/// into a named emitter module (a) gave chapters 4.2 / 4.3 a fixed
+/// insertion point, (b) makes the slice θ partition assertion
 /// honest (the composer asks Bootstrap for its coverage rather than
 /// silently knowing it's empty), and (c) preserves T11 + A18 amended
-/// at the structural level for the third sibling.
+/// at the structural level for the third sibling — all still true
+/// now that the plan is populated.
 ///
 /// **A18 amended.** Signature carries `Catalog × Profile ×
 /// UserRemapContext`; never `Policy`. The composer
