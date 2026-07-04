@@ -1,5 +1,11 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE-MUTATION: ADO.NET command mutation (cmd.CommandText / cmd.CommandTimeout <-
+//   on the DMV-probe and parallel-segment SqlCommands) + the ConcurrentDictionary
+//   parallelism-per-connection-string cache — mirrors Deploy.fs's file-level marker;
+//   this file was extracted from Deploy.fs (R2/B7 decomposition) and the extraction
+//   dropped the marker along with the code.
+
 open System
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
@@ -129,7 +135,7 @@ module DeployParallelism =
                     // tears the live board's region; channel 1 carries the advisory.
                     LogSink.emit
                         (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.dmvUnavailable"
-                            (Map.ofList [ "clientCpus", box clientCpus; "resolved", box clamped ]))
+                            (Map.ofList [ "clientCpus", box clientCpus; "resolved", box clamped ])) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
                     Bench.recordSample "deploy.detectParallelism.clientCpus" (int64 clientCpus)
                     Bench.recordSample "deploy.detectParallelism.resolved" (int64 clamped)
                     return clamped
@@ -137,7 +143,7 @@ module DeployParallelism =
                     // Layer 3: static fallback (last resort).
                     LogSink.emit
                         (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.staticFallback"
-                            (Map.ofList [ "resolved", box FallbackParallelism ]))
+                            (Map.ofList [ "resolved", box FallbackParallelism ])) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
                     Bench.recordSample "deploy.detectParallelism.resolved" (int64 FallbackParallelism)
                     return FallbackParallelism
         }
@@ -166,7 +172,7 @@ module DeployParallelism =
                 | _ ->
                     LogSink.emit
                         (LogSink.envelope LogSink.Warn LogSink.Deploy "deploy.parallelism.envOverrideMalformed"
-                            (Map.ofList [ "value", box s ]))
+                            (Map.ofList [ "value", box s ])) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
                     match parallelismCache.TryGetValue connectionString with
                     | true, cached -> return cached
                     | false, _ ->
@@ -222,7 +228,7 @@ module DeployParallelism =
             if requested > safeCeil then
                 LogSink.emit
                     (LogSink.envelope LogSink.Info LogSink.Deploy "deploy.parallelism.poolCapped"
-                        (Map.ofList [ "requested", box requested; "maxPoolSize", box maxPool; "capped", box safeCeil ]))
+                        (Map.ofList [ "requested", box requested; "maxPoolSize", box maxPool; "capped", box safeCeil ])) // LINT-ALLOW: heterogeneous telemetry-metadata Map<string,obj> at the diagnostics boundary; box is the irreducible primitive for the obj-valued map
                 safeCeil
             else
                 requested

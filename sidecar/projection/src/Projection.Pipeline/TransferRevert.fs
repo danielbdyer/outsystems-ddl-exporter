@@ -28,7 +28,7 @@ module TransferRevert =
         let renderKey (k: string) : string =
             match System.Int64.TryParse k with
             | true, _ -> k
-            | false, _ -> System.String.Concat("N'", k.Replace("'", "''"), "'")
+            | false, _ -> System.String.Concat("N'", k.Replace("'", "''"), "'") // LINT-ALLOW: terminal SQL-literal boundary; k is escaped via single-quote-doubling (the SQL-standard escape), BCL String.Concat is the irreducible primitive at this terminal SQL-text site
         plan.Loads
         |> List.rev
         |> List.collect (fun load ->
@@ -43,7 +43,7 @@ module TransferRevert =
                         keys
                         |> List.chunkBySize 1000
                         |> List.map (fun chunk ->
-                            sprintf "DELETE FROM %s WHERE %s IN (%s);" table pkCol (chunk |> List.map renderKey |> String.concat ", "))
+                            sprintf "DELETE FROM %s WHERE %s IN (%s);" table pkCol (chunk |> List.map renderKey |> String.concat ", ")) // LINT-ALLOW: terminal SQL-text boundary; table/pkCol are validated Render output and each key is pre-escaped, sprintf/String.concat are the irreducible primitives for this chunked DELETE statement
                     | None -> []
                 | _ -> [])
 
@@ -60,7 +60,7 @@ module TransferRevert =
                 | Some dir ->
                     try
                         System.IO.Directory.CreateDirectory dir |> ignore
-                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" script)
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" script) // LINT-ALLOW: terminal file-write boundary; each script entry is already terminal SQL text, String.concat is the irreducible primitive for newline-joining the artifact
                     with _ -> ()
                 | None -> ()
                 if autoRevert then

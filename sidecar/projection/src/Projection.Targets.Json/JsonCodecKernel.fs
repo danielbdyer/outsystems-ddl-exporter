@@ -28,41 +28,41 @@ module JsonCodecKernel =
     let prop (prefix: string) (el: JsonElement) (name: string) : Result<JsonElement> =
         match el.TryGetProperty name with
         | true, v -> Ok v
-        | _ -> fail (prefix + ".missingField") (sprintf "missing field '%s'" name)
+        | _ -> fail (prefix + ".missingField") (sprintf "missing field '%s'" name) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     let asString (prefix: string) (el: JsonElement) : Result<string> =
         if el.ValueKind = JsonValueKind.String then
             match el.GetString() with
-            | null -> fail (prefix + ".expectedString") "string element returned null"
+            | null -> fail (prefix + ".expectedString") "string element returned null" // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
             | s -> Ok s
-        else fail (prefix + ".expectedString") (sprintf "expected string, got %A" el.ValueKind)
+        else fail (prefix + ".expectedString") (sprintf "expected string, got %A" el.ValueKind) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     let asBool (prefix: string) (el: JsonElement) : Result<bool> =
         match el.ValueKind with
         | JsonValueKind.True  -> Ok true
         | JsonValueKind.False -> Ok false
-        | k -> fail (prefix + ".expectedBool") (sprintf "expected bool, got %A" k)
+        | k -> fail (prefix + ".expectedBool") (sprintf "expected bool, got %A" k) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     let asInt (prefix: string) (el: JsonElement) : Result<int> =
         if el.ValueKind = JsonValueKind.Number then
             match el.TryGetInt32() with
             | true, n -> Ok n
-            | _ -> fail (prefix + ".expectedInt") "number is not an int32"
-        else fail (prefix + ".expectedInt") (sprintf "expected number, got %A" el.ValueKind)
+            | _ -> fail (prefix + ".expectedInt") "number is not an int32" // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
+        else fail (prefix + ".expectedInt") (sprintf "expected number, got %A" el.ValueKind) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     let asInt64 (prefix: string) (el: JsonElement) : Result<int64> =
         if el.ValueKind = JsonValueKind.Number then
             match el.TryGetInt64() with
             | true, n -> Ok n
-            | _ -> fail (prefix + ".expectedInt64") "number is not an int64"
-        else fail (prefix + ".expectedInt64") (sprintf "expected number, got %A" el.ValueKind)
+            | _ -> fail (prefix + ".expectedInt64") "number is not an int64" // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
+        else fail (prefix + ".expectedInt64") (sprintf "expected number, got %A" el.ValueKind) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     let asDecimal (prefix: string) (el: JsonElement) : Result<decimal> =
         asString prefix el
         |> Result.bind (fun s ->
             match System.Decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture) with
             | true, d -> Ok d
-            | _ -> fail (prefix + ".expectedDecimal") (sprintf "not an invariant-culture decimal: '%s'" s))
+            | _ -> fail (prefix + ".expectedDecimal") (sprintf "not an invariant-culture decimal: '%s'" s)) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
 
     /// Read a required named field through a value-reader.
     let field (prefix: string) (el: JsonElement) (name: string) (read: JsonElement -> Result<'a>) : Result<'a> =
@@ -80,7 +80,7 @@ module JsonCodecKernel =
         match el.TryGetProperty name with
         | true, v when v.ValueKind = JsonValueKind.Array ->
             v.EnumerateArray() |> Seq.map read |> Seq.toList |> Result.collect
-        | true, v -> fail (prefix + ".expectedArray") (sprintf "field '%s': expected array, got %A" name v.ValueKind)
+        | true, v -> fail (prefix + ".expectedArray") (sprintf "field '%s': expected array, got %A" name v.ValueKind) // LINT-ALLOW: terminal error-code path composition at the JSON-decode boundary; prefix + suffix are two typed string segments, the irreducible primitive at this terminal boundary
         | _ -> Ok []
 
     /// Decimal → invariant-culture string (the write-side determinism primitive
