@@ -106,7 +106,16 @@ NOT choose. Every such edge needs one of two strategies:
    ```
    Reconciled tables are never inserted into — source rows are matched to the
    sink's existing rows by that column, and every FK re-keys to the sink's own
-   identities.
+   identities. Three rule forms, one grammar:
+   - `"Module.Entity:Column"` — dynamic match by business column;
+   - `"Module.Entity:=1234"` — **the single-owner pin**: EVERY reference
+     re-keys to the one sink row `1234` (configuration tables owned by one
+     designated user/row — no matching at all);
+   - `"Module.Entity:Column:=1234"` — dynamic match first, the pinned owner
+     catches every row the match misses.
+   A pinned key that names no sink row refuses by name before any write
+   (`transfer.reconcile.pinnedOwnerMissing`), and the go board probes every
+   pin against the live sink (`pinned owners` axis) so you see it early.
 2. **Widen the subset**: add the referenced table to `tables` — it transfers
    too (the sink mints its keys; FKs re-point automatically).
 

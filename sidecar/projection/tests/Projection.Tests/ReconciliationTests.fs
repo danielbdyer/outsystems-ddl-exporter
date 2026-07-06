@@ -21,6 +21,45 @@ let private byEmail = ReconciliationStrategy.MatchByColumn (mkName "Email")
 
 // -- reconciliation engine -------------------------------------------------
 
+// -- the single-owner pin (2026-07-06): every reference to one sink row ------
+
+[<Fact>]
+let ``pin-all (FallbackToAssigned + match-nothing primary): every source identity re-keys to the ONE pinned sink row; nothing unmatched`` () =
+    let pinAll = ReconciliationStrategy.FallbackToAssigned (AssignedKey.ofString "42", ReconciliationStrategy.ManualOverride Map.empty)
+    let source = [ row "280" [ "Email", "alice@x" ]; row "281" [ "Email", "bob@x" ] ]
+    let sink   = [ row "42" [ "Email", "owner@x" ]; row "43" [ "Email", "other@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol pinAll source sink
+    Assert.Empty result.Unmatched
+    Assert.Empty result.MissingPinnedOwners
+    for src in [ "280"; "281" ] do
+        Assert.Equal(
+            Some (AssignedKey.ofString "42"),
+            SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString src) result.Remap)
+
+[<Fact>]
+let ``match-then-pin: dynamic match wins where it can; the pinned owner catches the rest`` () =
+    let matchPin = ReconciliationStrategy.FallbackToAssigned (AssignedKey.ofString "42", byEmail)
+    let source = [ row "280" [ "Email", "alice@x" ]; row "281" [ "Email", "nobody@x" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "42" [ "Email", "owner@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol matchPin source sink
+    Assert.Empty result.Unmatched
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    Assert.Equal(Some (AssignedKey.ofString "42"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "281") result.Remap)
+
+[<Fact>]
+let ``a pinned owner the sink does not hold is SURFACED (MissingPinnedOwners) — the engine refuses before any write`` () =
+    let pinAll = ReconciliationStrategy.FallbackToAssigned (AssignedKey.ofString "999", ReconciliationStrategy.ManualOverride Map.empty)
+    let source = [ row "280" [] ]
+    let sink   = [ row "42" [] ]
+    let result = Reconciliation.reconcileKind userKey idCol pinAll source sink
+    Assert.Equal<(SsKey * AssignedKey) list>([ userKey, AssignedKey.ofString "999" ], result.MissingPinnedOwners)
+    match Projection.Pipeline.Transfer.validatePinnedOwners result with
+    | Some e ->
+        Assert.Equal("transfer.reconcile.pinnedOwnerMissing", e.Code)
+        Assert.Contains("999", e.Message)
+    | None -> Assert.Fail "expected the pinned-owner refusal"
+
+
 [<Fact>]
 let ``reconcileKind matches Source to pre-existing Sink by column (the Dev->UAT User re-key)`` () =
     // Dev user 280 (alice) is UAT user 18; Dev 281 (bob) is UAT 19.

@@ -335,3 +335,75 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                 Assert.Equal<(string * string) list>([ ("alice@x", "Lisbon"); ("bob@x", "Porto") ], secondJoin)
                             })
                 }))
+
+    /// THE SINGLE-OWNER PIN (2026-07-06): configuration tables whose every
+    /// reference belongs to ONE designated sink row. The `Table:=<key>`
+    /// reconcile form re-keys every Customer→City reference to the pinned
+    /// sink city — no dynamic matching, no city rows written — and a pinned
+    /// key the sink does NOT hold refuses BY NAME before any write.
+    [<Fact>]
+    member _.``peer A→A: a pinned owner (Table:=key) re-keys every reference to the ONE sink row; a missing pin refuses by name`` () =
+        if not (PeerAlignedFixtures.skipIfNoDocker "PeerPinnedOwner") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "PeerPinSrc" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src (PeerAlignedFixtures.seedA ())
+                    do! Deploy.executeBatch src PeerAlignedFixtures.sourceRows
+                    return!
+                        fixture.WithEphemeralDatabase "PeerPinSink" (fun sink sinkConnStr ->
+                            task {
+                                do! Deploy.executeBatch sink (PeerAlignedFixtures.seedB ())
+                                do! Deploy.executeBatch sink PeerAlignedFixtures.reseedSinkIdentities
+                                do! Deploy.executeBatch sink PeerAlignedFixtures.sinkCityRows
+
+                                let! srcContractR = PeerAlignedFixtures.contractOf src
+                                let! sinkContractR = PeerAlignedFixtures.contractOf sink
+                                let srcContract = PeerAlignedFixtures.value srcContractR
+                                let sinkContract = PeerAlignedFixtures.value sinkContractR
+
+                                // The pin parses + resolves through the SAME
+                                // spec grammar the flow config carries.
+                                let entry = TransferSpec.parseReconcileSpec "AppCore.City:=501" |> PeerAlignedFixtures.value
+                                let reconciliation =
+                                    TransferSpec.resolveAllReconciliation sinkContract [ entry ] []
+                                    |> PeerAlignedFixtures.value
+
+                                let! report =
+                                    PeerAlignedFixtures.throughConnections srcConnStr sinkConnStr true (fun connections ->
+                                        task {
+                                            let! r =
+                                                Transfer.runReverseLegThroughConnections
+                                                    Transfer.Execute EmissionMode.Incremental false true false
+                                                    [ "Customer" ] connections srcContract sinkContract reconciliation
+                                            return PeerAlignedFixtures.value r
+                                        })
+                                Assert.Empty(report.UnmatchedIdentities)
+                                // EVERY customer reference re-keyed to the ONE
+                                // pinned sink city — including the source row
+                                // whose city (Porto/2) is a DIFFERENT city.
+                                let! pinned = PeerAlignedFixtures.countRows sink "[dbo].[OSUSR_XABC_CUSTOMER] WHERE [CITYID] = 501"
+                                Assert.Equal(2, pinned)
+                                let! cities = PeerAlignedFixtures.countRows sink "[dbo].[OSUSR_XDEF_CITY]"
+                                Assert.Equal(2, cities)   // the sink's own rows; none written
+
+                                // The missing-pin refusal: :=9999 names no sink
+                                // row — refuse BY NAME, zero writes.
+                                let badEntry = TransferSpec.parseReconcileSpec "AppCore.City:=9999" |> PeerAlignedFixtures.value
+                                let badReconciliation =
+                                    TransferSpec.resolveAllReconciliation sinkContract [ badEntry ] []
+                                    |> PeerAlignedFixtures.value
+                                let! customersBefore = PeerAlignedFixtures.countRows sink "[dbo].[OSUSR_XABC_CUSTOMER]"
+                                let! refused =
+                                    PeerAlignedFixtures.throughConnections srcConnStr sinkConnStr true (fun connections ->
+                                        Transfer.runReverseLegThroughConnections
+                                            Transfer.Execute EmissionMode.WipeAndLoad false true false
+                                            [ "Customer" ] connections srcContract sinkContract badReconciliation)
+                                match refused with
+                                | Ok _ -> Assert.Fail "expected the pinned-owner refusal"
+                                | Error errors ->
+                                    Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "transfer.reconcile.pinnedOwnerMissing")
+                                let! customersAfter = PeerAlignedFixtures.countRows sink "[dbo].[OSUSR_XABC_CUSTOMER]"
+                                Assert.Equal(customersBefore, customersAfter)   // pre-write halt: untouched
+                                return ()
+                            })
+                }))

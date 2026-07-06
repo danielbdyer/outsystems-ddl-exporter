@@ -963,6 +963,41 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (asJson:
                  else
                      items.Add (GoBoard.item "grant"
                          (GoBoard.Status.Red (sprintf "the sink principal lacks database-scope %s." (String.concat ", " missing), "grant the missing permission(s) to the sink principal; then re-run."))))
+            // Pinned owners (2026-07-06, the single-owner program): every
+            // `Table:=<key>` / `Table:Column:=<key>` rule names a sink row
+            // that must EXIST — probe each against the live sink so the
+            // missing-owner refusal is an early red line, not an execute-time
+            // halt.
+            let pinnedOwners =
+                let rec keysOf (st: ReconciliationStrategy) =
+                    match st with
+                    | ReconciliationStrategy.FallbackToAssigned (k, primary) -> k :: keysOf primary
+                    | _ -> []
+                reconciliation
+                |> Map.toList
+                |> List.collect (fun (kindKey, st) -> keysOf st |> List.map (fun k -> kindKey, k))
+            if not (List.isEmpty pinnedOwners) then
+                let renderKey (k: string) =
+                    match System.Int64.TryParse k with
+                    | true, _ -> k
+                    | _ -> System.String.Concat("N'", k.Replace("'", "''"), "'")
+                let missing =
+                    pinnedOwners
+                    |> List.choose (fun (kindKey, AssignedKey key) ->
+                        match Catalog.tryFindKind kindKey sinkContract with
+                        | None -> None
+                        | Some k ->
+                            match k.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey) with
+                            | None -> None
+                            | Some pk ->
+                                let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] = %s;" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) (ColumnRealization.columnNameText pk.Column) (renderKey key))
+                                if n = 0 then Some (sprintf "%s := '%s' — no such row in the sink" (Name.value k.Name) key) else None)
+                if List.isEmpty missing then
+                    items.Add (GoBoard.item "pinned owners" (GoBoard.Status.Green (sprintf "%d pinned owner(s) exist in the sink." pinnedOwners.Length)))
+                else
+                    items.Add (GoBoard.itemWith "pinned owners"
+                        (GoBoard.Status.Red ("a pinned owner names a sink row that does not exist — every re-keyed reference would dangle.", "create the row in the sink, or fix the pinned key; then re-run."))
+                        missing)
             // Re-run semantics over the ACTUAL sink state.
             let subsetKinds =
                 match loadSet with
