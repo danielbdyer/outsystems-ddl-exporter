@@ -786,4 +786,47 @@ finding applied, the explicit not-dos honored.
   escape proposals lead with the paste-able move (truncation-safe); ONE name — "the
   go board" — everywhere.
 
-Fast pool + the full peer/managed/go-board/reverse-leg docker sweep: GREEN.
+Fast pool + the full peer/managed/go-board/reverse-leg docker sweep: GREEN — and
+**the full docker pool PASSED IN FULL (510s)** with every final-pass change aboard.
+The final pass is closed; the branch is ready for live operation.
+
+## Entry 21 — 2026-07-06, THE SINGLE-OWNER PIN: one designated sink row owns every reference
+
+Operator directive (pre-live-test): the moved subset is configuration-domain tables
+whose every reference should belong to ONE designated user/row in the sink —
+first-class, with fallback to the dynamic matching when no pin is provided.
+
+**Landed — three rule forms, ONE grammar (flow `reconcile:` / `--reconcile`):**
+- `Module.Entity:Column` — dynamic match by business column (the incumbent; the
+  fallback when no pin is given — unchanged).
+- `Module.Entity:=1234` — **the single-owner pin**: every source reference re-keys
+  to the ONE sink row `1234`. No matching at all.
+- `Module.Entity:Column:=1234` — dynamic match FIRST; the pinned owner catches
+  every row the match misses (the graceful composite).
+
+**Zero new engine cases:** the pin forms map onto the EXISTING strategy algebra —
+`FallbackToAssigned(key, ManualOverride ∅)` (a match-nothing primary: everything
+falls to the owner) and `FallbackToAssigned(key, MatchByColumn col)`. The gates,
+the board, the escape coverage, and the wipe-exclusion all inherit through the same
+reconciliation map.
+
+**The safety half:** a pinned key that names NO sink row would dangle every
+re-keyed reference (a raw 547 mid-load). Now: `reconcileKind` surfaces
+`MissingPinnedOwners`; `Transfer.validatePinnedOwners` refuses BY NAME
+(`transfer.reconcile.pinnedOwnerMissing`, the reconcile class — NOT downgradable by
+--allow-drops: the rule is wrong, not the data) on BOTH preWrite chains
+(materialized + streaming); and the go board gains a `pinned owners` axis that
+probes every pin against the live sink — the missing-owner case is an early red
+line, not an execute-time halt.
+
+**Proven:** pure (parse forms + refusals; resolve→algebra mapping; pin-all re-keys
+every source identity with nothing unmatched; match-then-pin splits correctly;
+missing owner surfaces + the named refusal) and docker e2e
+(`PeerAlignedTransferDockerTests`, 4th scenario): `AppCore.City:=501` re-keys BOTH
+customers to the one pinned sink city — including the source row whose city was a
+DIFFERENT city — zero city rows written; `:=9999` refuses by name pre-write, sink
+byte-untouched. Runbook Step 3 + usage carry the forms. Fast pool + the full peer
+docker sweep GREEN.
+
+**Final verdict:** the full docker pool PASSED IN FULL (484s) with the pin aboard.
+Ready for the live test.

@@ -98,7 +98,7 @@
 
     "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "reconcile": ["ServiceCenter.User:Email"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
 
-    "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "resumable": true, "journal": "lifecycle/reverse-uat.ndjson" },
+    "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
     "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat", "correction": "file:./corrections/uat.correction.json" }
   },

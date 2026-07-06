@@ -631,6 +631,26 @@ module Transfer =
     /// `--allow-drops`) downgrades to the existing post-write reported-drop path
     /// — a non-reconciling run has an empty `Unmatched`, so this never fires for
     /// `run`/`runWithRenames`.
+    /// 2026-07-06 (the single-owner program): a pinned owner
+    /// (`Table:=<key>` / `Table:Column:=<key>`) whose key matches NO sink
+    /// row refuses BY NAME before any write — every re-keyed FK would point
+    /// at a nonexistent record (a raw 547 mid-load otherwise). NOT
+    /// downgradable by --allow-drops: the rule itself is wrong, not the data.
+    let validatePinnedOwners (reconciled: ReconciledIdentity) : ValidationError option =
+        match reconciled.MissingPinnedOwners with
+        | [] -> None
+        | missing ->
+            let described =
+                missing
+                |> List.truncate 3
+                |> List.map (fun (k, AssignedKey a) -> sprintf "%s := '%s'" (SsKey.rootOriginal k) a)
+                |> String.concat "; "
+            Some (ValidationError.create
+                    "transfer.reconcile.pinnedOwnerMissing"
+                    (sprintf
+                        "%d pinned owner(s) name a sink row that does not exist (%s) — every re-keyed reference would dangle. Create the row in the sink, or fix the pinned key; refusing before any write."
+                        missing.Length described))
+
     let validateUserMap (allowDrops: bool) (reconciled: ReconciledIdentity) : ValidationError option =
         if allowDrops || List.isEmpty reconciled.Unmatched then None
         else
@@ -719,6 +739,7 @@ module Transfer =
             let mutable unmatched : (SsKey * SourceKey) list = []
             let mutable ambiguous : (SsKey * SourceKey) list = []
             let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
+            let mutable missingPinned : (SsKey * AssignedKey) list = []
             for KeyValue (kind, strategy) in reconciliation do
                 match Catalog.tryFindKind kind catalog with
                 | None -> ()
@@ -738,8 +759,9 @@ module Transfer =
                         unmatched <- unmatched @ result.Unmatched
                         ambiguous <- ambiguous @ result.Ambiguous
                         ambiguousTargets <- ambiguousTargets @ result.AmbiguousTargetKeys
+                        missingPinned <- missingPinned @ result.MissingPinnedOwners
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets }
+            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
         }
 
     // -- orchestration ------------------------------------------------------
@@ -926,7 +948,10 @@ module Transfer =
                         | None ->
                             match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
                             | Some refusal -> Some refusal
-                            | None         -> validateUserMap allowDrops reconciled
+                            | None ->
+                                match validatePinnedOwners reconciled with
+                                | Some refusal -> Some refusal
+                                | None         -> validateUserMap allowDrops reconciled
                 else None
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
@@ -1924,7 +1949,10 @@ module Transfer =
                         | None ->
                             match orderedLoadGate topo with
                             | Some refusal -> Some refusal
-                            | None         -> validateUserMap allowDrops reconciled
+                            | None ->
+                                match validatePinnedOwners reconciled with
+                                | Some refusal -> Some refusal
+                                | None         -> validateUserMap allowDrops reconciled
                     else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal

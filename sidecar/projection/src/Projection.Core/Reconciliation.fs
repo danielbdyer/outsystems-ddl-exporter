@@ -41,6 +41,12 @@ type ReconciledIdentity =
         /// operator can supply a `ManualOverride` for the specific keys. Empty
         /// for a unique key, a `ManualOverride`, or a non-reconciling Transfer.
         AmbiguousTargetKeys : (SsKey * AssignedKey) list
+        /// 2026-07-06 (the single-owner program) — a `FallbackToAssigned`
+        /// pinned owner whose key matches NO sink row: every re-keyed FK
+        /// would point at a nonexistent record (a raw 547 mid-load).
+        /// Surfaced so the caller refuses BY NAME before any write. Empty
+        /// for match-only strategies or a pinned key the sink holds.
+        MissingPinnedOwners : (SsKey * AssignedKey) list
     }
 
 /// How the operator reconciles Source surrogates to pre-existing Sink
@@ -195,10 +201,24 @@ module Reconciliation =
                     | Error _ -> ambiguous <- (kind, src) :: ambiguous
                 | None -> unmatched <- (kind, src) :: unmatched
 
+        // The pinned-owner existence check (2026-07-06): every fallback key
+        // the strategy carries (recursively) must name a row the sink holds.
+        let sinkSurrogates =
+            sinkRows |> List.choose surrogateOf |> List.map (fun (SourceKey s) -> s) |> Set.ofList
+        let rec fallbackKeysOf (s: ReconciliationStrategy) : AssignedKey list =
+            match s with
+            | ReconciliationStrategy.FallbackToAssigned (k, primary) -> k :: fallbackKeysOf primary
+            | _ -> []
+        let missingPinned =
+            fallbackKeysOf strategy
+            |> List.filter (fun (AssignedKey a) -> not (Set.contains a sinkSurrogates))
+            |> List.map (fun k -> kind, k)
+
         { Remap     = remap
           Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s)
           Ambiguous = ambiguous |> List.sortBy (fun (_, SourceKey s) -> s)
-          AmbiguousTargetKeys = ambiguousTargets |> List.sortBy (fun (_, AssignedKey a) -> a) }
+          AmbiguousTargetKeys = ambiguousTargets |> List.sortBy (fun (_, AssignedKey a) -> a)
+          MissingPinnedOwners = missingPinned }
 
     /// Translate the User kind's `UserMatchingStrategy` into the generic
     /// `ReconciliationStrategy` so all four operator-chosen user-match
