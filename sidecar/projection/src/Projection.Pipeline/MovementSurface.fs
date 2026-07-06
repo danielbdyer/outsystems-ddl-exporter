@@ -696,7 +696,7 @@ module ProjectionConfig =
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
         set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
-              "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
+              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -1331,6 +1331,25 @@ module Command =
                     err "cli.compare.args" "projection compare: needs two references — projection compare <A> <B>.")
         { Notes = []; Action = action }
 
+    /// `revert [--script <path>] --against <env> [--go]` — the deliberate
+    /// undo (2026-07-06): run the DELETE-by-captured-key artifact a
+    /// successful transfer wrote (`transfer-undo.sql`) — or a failed run's
+    /// `transfer-revert.sql` — against the named environment. Preview is
+    /// the default; `--go` (+ the env gate) executes.
+    let planRevert (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let script = valueOf "--script" |> Option.defaultValue "transfer-undo.sql"
+        let go = List.contains "--go" args
+        let action =
+            match valueOf "--against" with
+            | None ->
+                PlanAction.Refused (2, err "cli.revert.args" "projection revert: needs --against <environment> (the sink the undo runs against). Optional: --script <path> (default ./transfer-undo.sql), --go.")
+            | Some envLabel ->
+                match resolveLiveConn cfg envLabel with
+                | Error es -> PlanAction.Refused (6, List.head es)
+                | Ok conn -> PlanAction.RevertScript (script, envLabel, conn, go)
+        { Notes = []; Action = action }
+
     let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let depthOpt =
@@ -1848,6 +1867,7 @@ module Command =
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "compare" :: rest -> Result.success (Intent.Compare rest)
+        | "revert" :: rest  -> Result.success (Intent.Revert rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
         // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
@@ -1914,6 +1934,7 @@ module Command =
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
         | Intent.Compare args      -> planCompare cfg args
+        | Intent.Revert args       -> planRevert cfg args
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
         | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }

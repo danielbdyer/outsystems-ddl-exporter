@@ -135,6 +135,19 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
             n
     | _ -> ()
 
+/// After a successful EXECUTE, the undo artifact (`transfer-undo.sql`,
+/// written by the engine's success tail into the revert dir) is the
+/// deliberate-revert half of the proving loop — point the operator at it.
+let private narrateUndoPointer (mode: Transfer.Mode) (revertOut: string option) : unit =
+    match mode, revertOut with
+    | Transfer.Execute, Some dir ->
+        let path = System.IO.Path.Combine(dir, "transfer-undo.sql")
+        if System.IO.File.Exists path then
+            printfn ""
+            printfn "Undo script written: %s" path
+            printfn "  Revert this run with: PROJECTION_ALLOW_EXECUTE=1 projection revert --script %s --against <sink-environment> --go" path
+    | _ -> ()
+
 /// 6.A.1 — the drop-set is fail-loud, not exit-0. A successful write that
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
 /// a distinct non-zero exit unless the operator declared the drops
@@ -248,6 +261,7 @@ let runTransfer
         match result with
         | Ok report ->
             narrateTransferReport report
+            narrateUndoPointer mode revertOut
             narrateDropExit allowDrops report
         | Error errors ->
             printErrors Console.Error errors
@@ -428,6 +442,7 @@ let runContractPairTransfer
         match result with
         | Ok report ->
             narrateTransferReport report
+            narrateUndoPointer mode revertOut
             narrateDropExit allowDrops report
         | Error errors ->
             printErrors Console.Error errors
@@ -608,6 +623,109 @@ let runPeerTransfer
         reconcileSpecs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
+
+// ---------------------------------------------------------------------------
+// `projection revert` (2026-07-06, the proving-loop program) — the DELIBERATE
+// UNDO. A successful transfer writes `transfer-undo.sql` (the precise
+// DELETE-by-captured-key script, children first, pre-existing rows never
+// touched); a failed run writes `transfer-revert.sql`. This verb previews
+// (default) or executes either artifact against a configured environment —
+// so a small declared subset can be transferred, verified, and reverted as
+// one proving loop. A live run needs PROJECTION_ALLOW_EXECUTE=1 + --go and
+// runs in ONE transaction (all deletes land or none do).
+// ---------------------------------------------------------------------------
+
+let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (goRequested: bool) : int =
+    if not (System.IO.File.Exists scriptPath) then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "revert.scriptMissing"
+                (sprintf "revert script '%s' not found. A successful transfer writes transfer-undo.sql (a failed one transfer-revert.sql) into its --revert-dir (default: the working directory); point --script at it." scriptPath))
+        2
+    else
+    let statements =
+        System.IO.File.ReadAllLines scriptPath
+        |> Array.map (fun l -> l.Trim())
+        |> Array.filter (fun l -> l <> "" && not (l.Equals("GO", System.StringComparison.OrdinalIgnoreCase)))
+        |> Array.toList
+    if List.isEmpty statements then
+        printfn "revert: '%s' carries no statements — nothing to undo." scriptPath
+        0
+    else
+    // The per-table summary: each statement is one chunked
+    // `DELETE FROM <table> WHERE <pk> IN (k, k, …);` — table from the text,
+    // key count from the IN list's commas (display only; execution runs the
+    // statements verbatim).
+    let tableOf (stmt: string) : string =
+        let afterFrom = stmt.IndexOf "DELETE FROM "
+        if afterFrom < 0 then "(statement)"
+        else
+            let rest = stmt.Substring(afterFrom + 12)
+            match rest.IndexOf " WHERE " with
+            | -1 -> rest.Trim()
+            | i -> rest.Substring(0, i).Trim()
+    let keyCountOf (stmt: string) : int =
+        match stmt.IndexOf " IN (" with
+        | -1 -> 0
+        | i ->
+            let inner = stmt.Substring(i + 5)
+            match inner.LastIndexOf ')' with
+            | -1 -> 0
+            | j -> (inner.Substring(0, j).Split(',')).Length
+    let summary =
+        statements
+        |> List.groupBy tableOf
+        |> List.map (fun (t, ss) -> t, ss |> List.sumBy keyCountOf)
+    printfn "Revert '%s' against %s — %d statement(s) over %d table(s):" scriptPath envLabel statements.Length summary.Length
+    for (t, keys) in summary do
+        printfn "  %-60s %d captured key(s)" t keys
+    let executeGated =
+        goRequested && System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
+    if goRequested && not executeGated then
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
+        dumpBench "revert"
+        7
+    elif not goRequested then
+        printfn ""
+        printfn "Preview only — no rows deleted. Execute with: PROJECTION_ALLOW_EXECUTE=1 projection revert --script %s --against %s --go" scriptPath envLabel
+        0
+    else
+        match (ConnectionSpec.openSpec SubstrateRole.Sink "revert-sink" connSpec).GetAwaiter().GetResult() with
+        | Error errors ->
+            printErrors Console.Error errors
+            dumpBench "revert"
+            6
+        | Ok sink ->
+            use sink = sink
+            // ONE transaction: the undo lands whole or not at all (the
+            // child-first order means FKs never block; a mid-script failure
+            // rolls the earlier deletes back rather than leaving a
+            // half-undone sink).
+            use tx = sink.BeginTransaction()
+            try
+                let mutable total = 0
+                let perTable = System.Collections.Generic.Dictionary<string, int>()
+                for stmt in statements do
+                    use cmd = sink.CreateCommand()
+                    cmd.Transaction <- tx
+                    cmd.CommandText <- stmt
+                    let affected = cmd.ExecuteNonQuery()
+                    total <- total + affected
+                    let t = tableOf stmt
+                    perTable.[t] <- (match perTable.TryGetValue t with | true, n -> n | _ -> 0) + affected
+                tx.Commit()
+                printfn ""
+                printfn "Reverted — %d row(s) deleted:" total
+                for KeyValue (t, n) in perTable do
+                    printfn "  %-60s %d row(s)" t n
+                dumpBench "revert"
+                0
+            with ex ->
+                (try tx.Rollback() with _ -> ())
+                TtyRenderer.renderVoicedError
+                    (ValidationError.create "revert.failed"
+                        (sprintf "revert failed and ROLLED BACK (no rows deleted): %s" ex.Message))
+                dumpBench "revert"
+                3
 
 // ---------------------------------------------------------------------------
 // THE GO BOARD (2026-07-06, the preview-engine program) — `projection check

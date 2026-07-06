@@ -117,3 +117,77 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(5, red2)
                         return ()
                     }))
+
+    /// THE PROVING LOOP (2026-07-06): transfer a small declared subset, prove
+    /// it landed, then DELIBERATELY REVERT it — the success-undo artifact
+    /// (`transfer-undo.sql`, written by the engine's success tail) executed
+    /// through the `projection revert` face restores the sink to its
+    /// pre-transfer state; pre-existing rows are never touched.
+    [<Fact>]
+    member _.``proving loop: transfer a subset, then revert it from the success-undo artifact — the sink returns to its pre-transfer state`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "ProvingLoop") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "ProveRevert"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let undoDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "prove-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
+                        let sinkFile = System.IO.Path.GetTempFileName()
+                        try
+                            let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
+                            let (srcContract, sinkContract) = Result.value contractsR
+                            let cityKind =
+                                Catalog.allKinds sinkContract
+                                |> List.find (fun k -> Name.value k.Name = "City")
+                            let cityName = cityKind.Attributes |> List.find (fun a -> Name.value a.Name = "Name")
+                            let reconciliation = Map.ofList [ cityKind.SsKey, ReconciliationStrategy.MatchByColumn cityName.Name ]
+
+                            // 1. TRANSFER the subset (revert dir threaded so the
+                            //    success tail writes transfer-undo.sql).
+                            let srcSub : Substrate = { Environment = Projection.Core.Environment.Qa; Role = SubstrateRole.Source; ConnectionRef = ConnectionRef.File sinkFile }
+                            // (the source ref file carries the SOURCE conn; reuse one temp file per side)
+                            let srcFile = System.IO.Path.GetTempFileName()
+                            System.IO.File.WriteAllText(srcFile, src.EngineConnStr)
+                            System.IO.File.WriteAllText(sinkFile, snk.EngineConnStr)
+                            let srcSub = { srcSub with ConnectionRef = ConnectionRef.File srcFile }
+                            let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.File sinkFile }
+                            let connections = TransferConnections.create srcSub sinkSub true |> Result.value
+                            let! runR =
+                                Transfer.runReverseLegThroughConnectionsWith
+                                    IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
+                                    [ "Customer" ] connections srcContract sinkContract reconciliation
+                                    false (Some undoDir)
+                            let report = Result.value runR
+                            Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
+                            let! customersAfter = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                            Assert.Equal(2, customersAfter)
+
+                            // 2. The undo artifact exists and names the minted keys.
+                            let undoPath = System.IO.Path.Combine(undoDir, "transfer-undo.sql")
+                            Assert.True(System.IO.File.Exists undoPath, "the success tail must write transfer-undo.sql")
+
+                            // 3. REVERT through the face: preview (no deletes), then live.
+                            let preview = Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("file:" + sinkFile) false
+                            Assert.Equal(0, preview)
+                            let! stillThere = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                            Assert.Equal(2, stillThere)
+                            let prior = System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE"
+                            System.Environment.SetEnvironmentVariable("PROJECTION_ALLOW_EXECUTE", "1")
+                            let live =
+                                try Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("file:" + sinkFile) true
+                                finally System.Environment.SetEnvironmentVariable("PROJECTION_ALLOW_EXECUTE", prior)
+                            Assert.Equal(0, live)
+
+                            // 4. The sink is back to its pre-transfer state:
+                            //    minted rows gone, pre-existing city rows intact.
+                            let! customersReverted = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                            Assert.Equal(0, customersReverted)
+                            let! cities = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XDEF_CITY]"
+                            Assert.Equal(2, cities)
+                            try System.IO.File.Delete srcFile with _ -> ()
+                            return ()
+                        finally
+                            try System.IO.File.Delete sinkFile with _ -> ()
+                            try System.IO.Directory.Delete(undoDir, true) with _ -> ()
+                    }))

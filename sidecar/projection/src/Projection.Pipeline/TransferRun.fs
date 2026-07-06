@@ -294,6 +294,19 @@ module Transfer =
     /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
     /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
 
+    /// Best-effort write of the SUCCESS-undo artifact (`transfer-undo.sql`)
+    /// — the deliberate-revert sibling of `TransferRevert.runRevert`'s
+    /// failed-run `transfer-revert.sql`. Empty script / no dir → no-op;
+    /// a write failure never fails the (successful) load.
+    let private writeUndoArtifact (artifactDir: string option) (undo: string list) : unit =
+        match artifactDir with
+        | Some dir when not (List.isEmpty undo) ->
+            try
+                System.IO.Directory.CreateDirectory dir |> ignore
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-undo.sql"), String.concat "\n" undo) // LINT-ALLOW: terminal file-write boundary; each entry is terminal SQL text (same convention as TransferRevert.runRevert's artifact write)
+            with _ -> ()
+        | _ -> ()
+
     let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
@@ -436,7 +449,19 @@ module Transfer =
                     return ()
                 }
             match verdict.Disposition with
-            | RunCompleted () -> return writeSkips.Value, laneDescents.Value
+            | RunCompleted () ->
+                // 2026-07-06 (the proving-loop program): the undo script is
+                // written on SUCCESS too — `transfer-undo.sql`, the precise
+                // DELETE-by-captured-key script (children first; pre-existing
+                // rows untouched). A small-subset transfer can be proven and
+                // then deliberately reverted (`projection revert`). Distinct
+                // file from `transfer-revert.sql` (the FAILED-run
+                // compensation) so the two artifacts never shadow each other.
+                // NOTE: a WipeAndLoad's wipe is NOT undone by this script —
+                // the undo removes what this run MINTED; rows the wipe
+                // deleted are gone (named in the runbook).
+                writeUndoArtifact revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
+                return writeSkips.Value, laneDescents.Value
             | RunStopped _ ->
                 // The body never returns Error; total match, named.
                 return invalidOp "writePlan: the load body cannot stop"

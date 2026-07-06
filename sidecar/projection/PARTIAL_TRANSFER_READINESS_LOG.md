@@ -667,3 +667,41 @@ exactly what was validated.
 
 Fast pool + the peer/managed-grant/go-board docker sweep: GREEN after the narration
 fixes.
+
+## Entry 18 — 2026-07-06, THE PROVING LOOP: success-undo artifacts + `projection revert`
+
+Operator directive: live revert commands AND written revert scripts, so a small
+declared subset can be transferred, proven, and deliberately reverted.
+
+**What existed:** revert was FAILURE-COMPENSATION only — `transfer-revert.sql` was
+written (or auto-executed) when a run crashed mid-load; a SUCCESSFUL run left no
+undo artifact, and no verb could execute one.
+
+**What landed:**
+1. **The success-undo artifact.** Every successful Execute now writes
+   `transfer-undo.sql` into the revert dir (default: cwd) — the same precise
+   child-first DELETE-by-captured-key script, targeting exactly the rows THIS run
+   minted; pre-existing/reconciled rows are never in it. Written by the engine's
+   success tail (`writeUndoArtifact` beside `writePlan`); distinct filename from the
+   failed-run compensation so the two never shadow each other. The run's closing
+   narration prints the path + the revert command.
+2. **`projection revert [--script <p>] --against <env> [--go]`** — the deliberate
+   undo verb (Intent → planRevert → face). Preview by default (tables + captured-key
+   counts, zero deletes); a live run needs the env gate + `--go` and executes in ONE
+   transaction (all deletes land or none — a failure rolls back and says so), with
+   per-table rows-deleted narration. Exit: 0 / 2 (script missing/args) / 6 (conn) /
+   7 (gate) / 3 (rolled back).
+3. **Proven live with the real CLI** (the rehearsal pair, DML-only principals):
+   transfer --go → `Undo script written: ./transfer-undo.sql` → revert preview
+   (2 statements over 2 tables, 2 keys each, no deletes) → revert --go →
+   "Reverted — 4 row(s) deleted" → sink counts back to zero, pre-existing cities +
+   categories untouched. And pinned durably: the `proving loop` docker e2e
+   (GoBoardDockerTests) runs transfer → artifact → face preview → face live revert →
+   pre-transfer state, under managed-grant principals.
+4. **Runbook Step 6½** documents the loop + the two honesty notes: a
+   replace-strategy WIPE is not undone (the undo removes what the run minted), and
+   the undo should run before new app activity references the minted rows (an FK
+   from a newer row rolls the transaction back, loudly).
+
+Fast pool + the transfer/revert docker sweep (GoBoard + both peer suites +
+ReverseLegCanary): GREEN.

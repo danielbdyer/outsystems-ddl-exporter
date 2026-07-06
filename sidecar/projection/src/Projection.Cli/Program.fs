@@ -64,6 +64,10 @@ let private usageLines : string list =
         "    projection synth-correct --out <path>   propose a blessed-correction artifact (review/edit/bless)"
         "    projection inspect [<runId> [<runId>]]  a stored run (no id = latest; arrows dig, PgUp/PgDn walk runs)"
         "    projection init                 scaffold a projection.json"
+        "    projection revert [--script <p>] --against <env> [--go]   undo a transfer: run the"
+        "                      transfer-undo.sql a successful run wrote (or a failed run's"
+        "                      transfer-revert.sql) — preview by default; --go deletes the"
+        "                      captured rows in ONE transaction (pre-existing rows untouched)"
         "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
         "                                    --conn also probes a target (reachable + ALTER grant)"
         ""
@@ -292,6 +296,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
     | PlanAction.CheckGo (flowName, fromLabel, toLabel, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo flowName fromLabel toLabel planned)
+    | PlanAction.RevertScript (script, envLabel, connSpec, go) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go)
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
         shellRun "projection diff" Shell.ReadOnly (fun () -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule)

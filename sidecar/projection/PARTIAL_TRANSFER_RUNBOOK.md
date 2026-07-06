@@ -153,6 +153,33 @@ through the captured old→new key map → nullable cycle FKs re-pointed by
 phase-2 UPDATE → reconciled kinds' FKs re-keyed to the sink's existing rows →
 the run report printed (same vocabulary as the preview).
 
+## Step 6½ — The proving loop: revert what you just transferred
+
+Every successful `--go` writes **`transfer-undo.sql`** into the revert dir
+(default: the working directory) — the precise child-first
+`DELETE`-by-captured-key script for exactly the rows this run minted.
+Pre-existing sink rows (reconciled tables, anything already there) are never
+in it. The run's closing narration prints the path and the revert command.
+
+```
+projection revert --against cloud-uat                    # preview: tables + key counts, no deletes
+PROJECTION_ALLOW_EXECUTE=1 projection revert --against cloud-uat --go   # the undo, ONE transaction
+```
+
+- `--script <path>` points at a specific artifact (default `./transfer-undo.sql`;
+  a FAILED run's compensation script is `transfer-revert.sql` — same verb runs it).
+- The live revert runs in one transaction: all deletes land or none do (a
+  failure rolls back and says so).
+- So the small-sample proving loop is: declare a tiny `tables` subset → board
+  green → `--go` → verify in the target app/DB → `revert --go` → the sink is
+  back where it started. Iterate until confident, then widen the subset.
+- Two honesty notes: (1) a `replace`-strategy run's WIPE is not undone by the
+  script — the undo removes what the run MINTED; rows the wipe deleted are
+  gone (on a first load into empty tables this distinction is empty). (2) the
+  undo targets captured keys — run it BEFORE new app activity writes rows that
+  reference the minted ones (an FK from a newer row blocks the delete; the
+  transaction rolls back and tells you).
+
 ## Step 7 — Re-run whenever you need
 
 With `strategy: replace`, running step 6 again wipes the subset and reloads —

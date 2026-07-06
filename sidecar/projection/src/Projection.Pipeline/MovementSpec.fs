@@ -384,6 +384,12 @@ type Intent =
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
+    /// `revert [--script <path>] --against <env> [--go]` — execute (or
+    /// preview) a transfer undo/revert artifact (`transfer-undo.sql` /
+    /// `transfer-revert.sql`) against a configured environment: the
+    /// deliberate-undo half of the proving loop (2026-07-06). Preview is the
+    /// default; a live run needs PROJECTION_ALLOW_EXECUTE=1 + --go.
+    | Revert of args: string list
     /// `slice-extract` / `slice-apply` / `slice-reset` / `slice-run` — the
     /// data-portability verbs (Slice 3/7). Lifted onto the typed `Intent` surface
     /// (recon #3) so the CLI runs ONE dispatcher; the bespoke flag parsing stays
@@ -515,6 +521,12 @@ type PlanAction =
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
     | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `revert [--script <path>] --against <env> [--go]` — execute (or
+    /// preview) a transfer undo/revert artifact against a configured live
+    /// environment (2026-07-06, the proving-loop program). Carries the
+    /// script path, the environment label (display), the RESOLVED conn
+    /// spec, and the per-run intent flag.
+    | RevertScript of script: string * envLabel: string * connSpec: string * go: bool
     /// `check go <flow>` — THE GO BOARD (2026-07-06, the preview-engine
     /// program): the red/green go-readiness checklist for a data flow. The
     /// action carries the flow's coordinates + the PLANNED action the flow
