@@ -827,3 +827,6 @@ customers to the one pinned sink city — including the source row whose city wa
 DIFFERENT city — zero city rows written; `:=9999` refuses by name pre-write, sink
 byte-untouched. Runbook Step 3 + usage carry the forms. Fast pool + the full peer
 docker sweep GREEN.
+
+**Final verdict:** the full docker pool PASSED IN FULL (484s) with the pin aboard.
+Ready for the live test.
