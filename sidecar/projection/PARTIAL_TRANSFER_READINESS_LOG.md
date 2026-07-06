@@ -619,3 +619,6 @@ stepwise end-to-end explanation.
 decision → green → preview → execute → idempotent re-run, with the axis table, the
 decision playbook, exit codes, troubleshooting, and the exact per-environment
 permission footprint.
+
+**Final verdict:** fast pool PASSED; the full docker pool PASSED IN FULL (536s) with
+the go-board e2e aboard. The preview-engine program is closed.
