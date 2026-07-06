@@ -38,6 +38,7 @@
     <Compile Include="TransferCanaryTests.fs" />
     <Compile Include="PeerAlignedTransferDockerTests.fs" />
     <Compile Include="PeerManagedGrantTransferDockerTests.fs" />
+    <Compile Include="GoBoardDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />

@@ -582,3 +582,40 @@ mock-OutSystems-environment fixture stack; 5 managed-grant e2e scenarios; 1
 live-test-killing extraction bug caught BY the new mock environments in their first
 hour (check-constraint definitions under VIEW-DEFINITION-less principals); the
 semantics walkthrough (entry 14) for operator validation.
+
+## Entry 16 — 2026-07-06, THE PREVIEW ENGINE: the go board (red→green), the dry-run forecast, and the runbook
+
+Operator directive: all forecast capabilities in one place, a dry run, CLI-visible
+open-decision flagging, and a validateable red-until-configured → green model, plus a
+stepwise end-to-end explanation.
+
+**Landed — `projection check go <flow>` (THE GO BOARD):**
+- One typed checklist (`GoBoard`, Pipeline) judging every axis a live run hits:
+  routing, contracts, tables, reconcile, shape (+advisories), relationships
+  (escaping-FK open decisions with paste-able remedies), load order, **the engine
+  DRY RUN** (real reads, zero writes → exact per-table row forecast, unmatched
+  identities, drop forecast, unbreakable cycles), CDC posture, grant evidence
+  (+the standing G1 note), re-run semantics judged against the sink's ACTUAL state
+  (merge-into-populated duplicates; replace wipe-blockers probed), and the run-time
+  execute gates as a note.
+- Every red line carries the reason AND the exact remedy. Verdict is total:
+  GREEN ⇔ zero red. **Exit 0 green / 5 red — CI-able**: wire it red, fix the named
+  decisions, watch it turn green.
+- The check derives the flow through the SAME `planFlow` path a real run takes
+  (A44: the check and the run cannot drift); previews print a pointer to the board.
+
+**Proven:**
+- Pure: verdict algebra, render marks/remedy/detail/next-move.
+- Docker e2e (`GoBoardDockerTests`, managed-grant principals both sides): an
+  unconfigured flow (escaping FK) is RED exit 5 with the named decision; adding the
+  proposed reconcile turns it GREEN exit 0 (with the dry-run forecast: "Customer: 2
+  row(s) will transfer (assigned by the target)"); a real sink-metamodel divergence
+  turns it RED again; the sink stays byte-untouched throughout (the dry run never
+  writes).
+- Fast pool + the full peer/board docker sweep green.
+
+**The stepwise end-to-end guide** is now a first-class doc:
+`PARTIAL_TRANSFER_RUNBOOK.md` — configure → check go (red) → resolve each named
+decision → green → preview → execute → idempotent re-run, with the axis table, the
+decision playbook, exit codes, troubleshooting, and the exact per-environment
+permission footprint.

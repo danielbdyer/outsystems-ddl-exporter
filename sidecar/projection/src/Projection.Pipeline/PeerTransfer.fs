@@ -287,7 +287,7 @@ module PeerTransfer =
             let targetRef = sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName)
             let candidates =
                 match e.CandidateReconcileColumns with
-                | [] -> "no unique non-key column found — widen the subset"
+                | [] -> sprintf "no unique non-key column detected — reconcile '%s:<a column you know is unique>' still works" targetRef
                 | cs ->
                     cs
                     |> List.map (fun c -> sprintf "reconcile '%s:%s'" targetRef (Name.value c))

@@ -573,6 +573,13 @@ let runPeerTransfer
         (Preflight.refusalOf errors).ExitCode
     | Ok () ->
 
+    // The decision board is one verb away — point every preview at it (the
+    // board re-derives the same gates PLUS the live probes and the row
+    // forecast, with the red/green verdict).
+    if not executeRequested then
+        printfn ""
+        printfn "The decision board (open decisions + row forecast + red/green verdict): projection check go <flow>"
+
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
     // with the peer pair as the contracts and the peer label on the prose.
@@ -581,5 +588,261 @@ let runPeerTransfer
         reconcileSpecs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
+
+// ---------------------------------------------------------------------------
+// THE GO BOARD (2026-07-06, the preview-engine program) — `projection check
+// go <flow>`: the ONE surface that forecasts a live run and flags every OPEN
+// DECISION, red until each is resolved, green when the flow is genuinely
+// executable. The runner: acquire the two contracts, run every pure gate the
+// live run would hit, run the ENGINE DRY RUN (real reads, zero writes — the
+// row-count forecast, the unmatched-identity forecast, the drop forecast),
+// probe the sink (CDC posture, grant evidence, re-run hazards), and render
+// the checklist with a total red/green verdict. Exit 0 green / 5 red — the
+// board is CI-able.
+// ---------------------------------------------------------------------------
+
+let private probeCount (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : int =
+    use cmd = cnn.CreateCommand()
+    cmd.CommandText <- sql
+    System.Convert.ToInt32 (cmd.ExecuteScalar())
+
+let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned: PlanAction) : int =
+    let finish (items: GoBoard.Item list) : int =
+        let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
+        GoBoard.render board |> List.iter (printfn "%s")
+        GoBoard.exitCode board
+    match planned with
+    | PlanAction.Refused (_, e) ->
+        finish [ GoBoard.item "routing" (GoBoard.Status.Red (sprintf "the flow does not plan: %s" e.Message, "fix projection.json (the flow/environment definition) and re-run.")) ]
+    | PlanAction.Transfer (_, _, _, _) ->
+        finish
+            [ GoBoard.item "routing"
+                (GoBoard.Status.Red
+                    ("this env->env data flow rides the NAME-BLIND transfer (renditions unset) — it assumes matching physical table names on both sides.",
+                     "set \"rendition\": \"physical\" on BOTH environments in projection.json to run the SsKey-aligned peer leg (shape + relationship gates), then re-run.")) ]
+    | PlanAction.TransferPeer (sourceSpec, sinkSpec, opts, _) ->
+        let items = ResizeArray<GoBoard.Item>()
+        items.Add (GoBoard.item "routing" (GoBoard.Status.Green "the SsKey-aligned peer leg (both renditions physical)."))
+        // -- contracts (the two OSSYS metamodel reads) ---------------------
+        match (PeerTransfer.acquireContracts sourceSpec sinkSpec).GetAwaiter().GetResult() with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "contracts"
+                (GoBoard.Status.Red
+                    ("a metamodel could not be read — the run has no contract to align on.",
+                     "check the connection reference and the principal's SELECT on the ossys_* tables; then re-run."))
+                (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
+            finish (List.ofSeq items)
+        | Ok (sourceContract, sinkContract) ->
+        items.Add (GoBoard.item "contracts" (GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."))
+        // -- the declared subset -------------------------------------------
+        match Transfer.resolveLoadSet sourceContract opts.Tables with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "tables"
+                (GoBoard.Status.Red ("the declared table subset does not resolve.", "fix the flow's `tables` list (use Module.Entity for ambiguous names); then re-run."))
+                (errors |> List.map (fun e -> e.Message)))
+            finish (List.ofSeq items)
+        | Ok loadSet ->
+        items.Add (GoBoard.item "tables"
+            (GoBoard.Status.Green
+                (match loadSet with
+                 | Some s -> sprintf "%d table(s) declared; all resolve." (Set.count s)
+                 | None -> "no subset declared — the whole modeled estate transfers.")))
+        // -- reconcile strategy resolution ----------------------------------
+        let parsedReconciles = opts.Reconcile |> List.map TransferSpec.parseReconcileSpec
+        let parsedUserMap =
+            match opts.Rekey with
+            | None -> Result.success []
+            | Some path ->
+                if not (System.IO.File.Exists path) then
+                    Result.failureOf (ValidationError.create "transfer.userMap.fileMissing" (sprintf "user-map file '%s' not found." path))
+                else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+        let reconcileResolution =
+            let specErrors =
+                (parsedReconciles |> List.collect (function Ok _ -> [] | Error es -> es))
+                @ (match parsedUserMap with Ok _ -> [] | Error es -> es)
+            if not (List.isEmpty specErrors) then Result.failure specErrors
+            else
+                TransferSpec.resolveAllReconciliation sinkContract
+                    (parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None))
+                    (match parsedUserMap with Ok es -> es | Error _ -> [])
+        match reconcileResolution with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "reconcile"
+                (GoBoard.Status.Red ("a reconcile/user-map entry does not resolve against the sink.", "fix the entry (Module.Entity:Column is the espace-safe form) or the user-map file; then re-run."))
+                (errors |> List.map (fun e -> e.Message)))
+            finish (List.ofSeq items)
+        | Ok reconciliation ->
+        let reconciledKeys = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        items.Add (GoBoard.item "reconcile"
+            (GoBoard.Status.Green (sprintf "%d reconcile strateg(ies) resolve against the sink." (Map.count reconciliation))))
+        // -- schema shape ----------------------------------------------------
+        let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
+        let shape = PeerTransfer.shapeVerdict gateScope sourceContract sinkContract
+        if not (List.isEmpty shape.Blocking) then
+            items.Add (GoBoard.itemWith "shape"
+                (GoBoard.Status.Red (sprintf "%d blocking schema divergence(s) over the transferred set." shape.Blocking.Length, "align the models (deploy the same version to both environments) or narrow the subset; then re-run."))
+                shape.Blocking)
+        elif not (List.isEmpty shape.Advisory) then
+            items.Add (GoBoard.itemWith "shape"
+                (GoBoard.Status.Advisory (sprintf "one shape modulo %d advisory divergence(s) — none blocks a data load." shape.Advisory.Length))
+                shape.Advisory)
+        else
+            items.Add (GoBoard.item "shape" (GoBoard.Status.Green "the two models are one shape over the transferred set."))
+        // -- escaping relationships (the OPEN-DECISION axis) ----------------
+        let escapes =
+            match loadSet with
+            | Some s -> PeerTransfer.escapingFks sourceContract s reconciledKeys
+            | None -> []
+        if not (List.isEmpty escapes) then
+            items.Add (GoBoard.itemWith "relationships"
+                (GoBoard.Status.Red (sprintf "%d relationship(s) escape the subset — each needs a decision." escapes.Length, "add the proposed reconcile entr(ies) to the flow, or widen `tables`; then re-run."))
+                (PeerTransfer.narrateEscapes escapes))
+        else
+            items.Add (GoBoard.item "relationships" (GoBoard.Status.Green "every relationship the subset touches is inside it or reconciled."))
+        // -- load order (the whole-estate topology) --------------------------
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle sinkContract).Value
+        (match Transfer.orderedLoadGate topo with
+         | Some refusal ->
+             items.Add (GoBoard.itemWith "load order"
+                 (GoBoard.Status.Red ("the load order degraded to the alphabetical fallback — a live run refuses.", "make the named cycle's FK columns nullable (they then defer automatically), or transfer without the affected kinds."))
+                 [ refusal.Message ])
+         | None ->
+             items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children, proven (topological).")))
+        // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
+        let shapeClean = List.isEmpty shape.Blocking
+        if not shapeClean then
+            items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
+        else
+            let dryRun () =
+                let srcFile = System.IO.Path.GetTempFileName()
+                let sinkFile = System.IO.Path.GetTempFileName()
+                try
+                    let refOf (spec: string) (file: string) =
+                        match TransferSpec.parseConnectionSpec spec with
+                        | Ok r -> r
+                        | Error _ ->
+                            System.IO.File.WriteAllText(file, spec)
+                            ConnectionRef.File file
+                    let srcSub : Substrate = { Environment = parseEnvironment "Source" (Some fromLabel); Role = SubstrateRole.Source; ConnectionRef = refOf sourceSpec srcFile }
+                    let sinkSub : Substrate = { Environment = parseEnvironment "Sink" (Some toLabel); Role = SubstrateRole.Sink; ConnectionRef = refOf sinkSpec sinkFile }
+                    match TransferConnections.create srcSub sinkSub (not (Map.isEmpty reconciliation)) with
+                    | Error es -> Error es
+                    | Ok connections ->
+                        (Transfer.runReverseLegThroughConnections
+                            Transfer.DryRun opts.Emission false true false
+                            opts.Tables connections sourceContract sinkContract reconciliation)
+                            .GetAwaiter().GetResult()
+                finally
+                    try System.IO.File.Delete srcFile with _ -> ()
+                    try System.IO.File.Delete sinkFile with _ -> ()
+            match dryRun () with
+            | Error errors ->
+                items.Add (GoBoard.itemWith "forecast"
+                    (GoBoard.Status.Red ("the dry run refused.", "resolve the named refusal; then re-run."))
+                    (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
+            | Ok report ->
+                let nm = nameOf report.Names
+                let forecastLines =
+                    report.Kinds
+                    |> List.filter (fun k -> k.RowsIngested > 0 || k.Disposition = IdentityDisposition.ReconciledByRule)
+                    |> List.map (fun k -> sprintf "%s: %d row(s) will transfer (%s)" (nm k.Kind) k.RowsIngested (dispositionName k.Disposition))
+                items.Add (GoBoard.itemWith "forecast"
+                    (GoBoard.Status.Green (sprintf "dry run complete — %d row(s) across %d table(s) would transfer." (report.Kinds |> List.sumBy (fun k -> k.RowsIngested)) (report.Kinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)))
+                    forecastLines)
+                if not (List.isEmpty report.UnbreakableCycleFks) then
+                    items.Add (GoBoard.itemWith "cycles"
+                        (GoBoard.Status.Red (sprintf "%d relationship cycle(s) cannot be broken — the load cannot run as planned." report.UnbreakableCycleFks.Length, "make the cycle's FK columns nullable, or exclude the affected kinds."))
+                        (report.UnbreakableCycleFks |> List.map (fun u -> sprintf "%s.%s -> %s" (nm u.Kind) (Name.value u.Column) (nm u.Target))))
+                if not (List.isEmpty report.UnmatchedIdentities) then
+                    items.Add (GoBoard.itemWith "identities"
+                        (GoBoard.Status.Red (sprintf "%d source identit(ies) have no sink match — a live run halts before any write." report.UnmatchedIdentities.Length, "remediate the user-map / reconcile data, or accept the loss with --allow-drops at run time."))
+                        (report.UnmatchedIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))))
+                elif not (Map.isEmpty reconciliation) then
+                    items.Add (GoBoard.item "identities" (GoBoard.Status.Green "every reconciled source identity matches a sink row."))
+                if not (List.isEmpty report.SkippedReferences) then
+                    items.Add (GoBoard.itemWith "drops"
+                        (GoBoard.Status.Red (sprintf "%d row(s) would drop — a relationship points at an unmatched record." report.SkippedReferences.Length, "fix the referenced data, or accept with --allow-drops at run time."))
+                        (report.SkippedReferences |> List.truncate 10 |> List.map (fun (owner, r) -> sprintf "%s.%s -> %s (source '%s')" (nm owner) (Name.value r.Column) (nm r.Target) (SourceKey.value r.UnresolvedSource))))
+        // -- sink probes: CDC posture, grant evidence, re-run semantics ------
+        match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-sink" sinkSpec).GetAwaiter().GetResult() with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "sink probes"
+                (GoBoard.Status.Red ("the sink connection could not open for the CDC/grant/re-run probes.", "check the connection reference; then re-run."))
+                (errors |> List.map (fun e -> e.Message)))
+        | Ok sink ->
+            use sink = sink
+            (match (ReadSide.cdcTrackedTables sink).GetAwaiter().GetResult() with
+             | Error errors ->
+                 items.Add (GoBoard.itemWith "cdc" (GoBoard.Status.Red ("the CDC probe failed — a live run refuses rather than proceed blind.", "grant the probe's reads or resolve the error; then re-run.")) (errors |> List.map (fun e -> e.Message)))
+             | Ok [] ->
+                 items.Add (GoBoard.item "cdc" (GoBoard.Status.Green "the sink tracks no tables with CDC."))
+             | Ok tracked ->
+                 items.Add (GoBoard.itemWith "cdc"
+                     (GoBoard.Status.Red (sprintf "the sink is CDC-tracked (%d table(s)) — a live run refuses without consent." tracked.Length, "run --go with --allow-cdc (the capture will see the load), or disable capture on the sink."))
+                     (tracked |> List.truncate 5)))
+            (match (Preflight.captureGrantEvidence sink).GetAwaiter().GetResult() with
+             | Error errors ->
+                 items.Add (GoBoard.itemWith "grant" (GoBoard.Status.Red ("the grant probe failed.", "check the sink connection/principal; then re-run.")) (errors |> List.map (fun e -> e.Message)))
+             | Ok evidence ->
+                 let missing =
+                     [ "SELECT"; "INSERT"; "UPDATE"; "DELETE" ]
+                     |> List.filter (fun p -> not (Preflight.coversPermissionAtDatabaseScope p evidence))
+                 if List.isEmpty missing then
+                     items.Add (GoBoard.itemWith "grant"
+                         (GoBoard.Status.Green "the sink principal carries database-scope SELECT/INSERT/UPDATE/DELETE.")
+                         [ "standing note: a TABLE-level DENY is invisible to this probe and would surface mid-load (the pinned G1 gap)." ])
+                 else
+                     items.Add (GoBoard.item "grant"
+                         (GoBoard.Status.Red (sprintf "the sink principal lacks database-scope %s." (String.concat ", " missing), "grant the missing permission(s) to the sink principal; then re-run."))))
+            // Re-run semantics over the ACTUAL sink state.
+            let subsetKinds =
+                match loadSet with
+                | Some s -> Catalog.allKinds sinkContract |> List.filter (fun k -> Set.contains k.SsKey s)
+                | None -> Catalog.allKinds sinkContract |> List.filter (fun k -> not (Set.contains k.SsKey reconciledKeys))
+            let populated =
+                subsetKinds
+                |> List.choose (fun k ->
+                    let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical))
+                    if n > 0 then Some (sprintf "%s: %d row(s)" (Name.value k.Name) n) else None)
+            (match opts.Emission, populated with
+             | EmissionMode.Incremental, (_ :: _) ->
+                 items.Add (GoBoard.itemWith "re-run"
+                     (GoBoard.Status.Red ("the sink already holds rows in the transferred set and the strategy is merge/incremental — a re-run would DUPLICATE sink-minted rows.", "set \"strategy\": \"replace\" on the flow (wipe-the-subset-then-load, idempotent), or clear the subset first."))
+                     populated)
+             | EmissionMode.WipeAndLoad, _ ->
+                 // The wipe-blocker probe: out-of-subset sink children holding
+                 // rows that reference an in-subset parent block the child-first
+                 // DELETE with a raw 547 (the pinned wipe hazard).
+                 let subsetSet = subsetKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
+                 let blockers =
+                     Catalog.allKinds sinkContract
+                     |> List.filter (fun k -> not (Set.contains k.SsKey subsetSet))
+                     |> List.collect (fun child ->
+                         child.References
+                         |> List.filter (fun r -> Set.contains r.TargetKind subsetSet)
+                         |> List.choose (fun r ->
+                             child.Attributes
+                             |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                             |> Option.bind (fun a ->
+                                 let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] IS NOT NULL;" (TableId.schemaText child.Physical) (TableId.tableText child.Physical) (ColumnRealization.columnNameText a.Column))
+                                 if n > 0 then Some (sprintf "%s.%s -> in-subset parent (%d referencing row(s))" (Name.value child.Name) (Name.value a.Name) n) else None)))
+                 if List.isEmpty blockers then
+                     items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "strategy replace: the subset wipes child-first and reloads — idempotent; no out-of-subset rows block the wipe."))
+                 else
+                     items.Add (GoBoard.itemWith "re-run"
+                         (GoBoard.Status.Red ("out-of-subset sink rows reference the tables the wipe would delete — the wipe would fail mid-way (FK 547).", "widen `tables` to include the referencing table(s), or clear those rows first."))
+                         blockers)
+             | _ ->
+                 items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "the transferred set is empty on the sink — first load; both strategies behave identically.")))
+        // -- the run-time gates (never red here: they are per-run intent) ----
+        let envGate = System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
+        items.Add (GoBoard.item "execute gates"
+            (GoBoard.Status.Advisory
+                (if envGate then "PROJECTION_ALLOW_EXECUTE is set; the live run still needs the per-run intent flag --go."
+                 else "two gates at run time: PROJECTION_ALLOW_EXECUTE=1 (environment authorization) + --go (per-run intent).")))
+        finish (List.ofSeq items)
+    | _ ->
+        Console.Error.WriteLine (sprintf "projection check go: flow '%s' is not a live data-transfer flow (the go board covers env->env data flows)." flowName)
+        2
 
 // ---------------------------------------------------------------------------

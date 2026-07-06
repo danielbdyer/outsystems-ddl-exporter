@@ -515,6 +515,12 @@ type PlanAction =
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
     | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `check go <flow>` — THE GO BOARD (2026-07-06, the preview-engine
+    /// program): the red/green go-readiness checklist for a data flow. The
+    /// action carries the flow's coordinates + the PLANNED action the flow
+    /// would run (the same `planFlow` derivation a real run takes, under
+    /// preview opts), so the board judges exactly what `--go` would execute.
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * planned: PlanAction
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool

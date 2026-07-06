@@ -43,9 +43,12 @@ let private usageLines : string list =
         "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable] [--atomic] [--auto-revert]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
-        "                      | data --before <t> --after <t> | ready | shape )"
+        "                      | data --before <t> --after <t> | ready | shape | go <flow> )"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
+        "                      go    = THE GO BOARD for a data flow: every open decision +"
+        "                      the dry-run row forecast, red (exit 5) until each decision is"
+        "                      resolved, green (exit 0) when --go would execute cleanly"
         "    projection diff <a> <b> [--format json] [--depth N] [--only <channel>] [--module <name>]"
         "                      change between two refs (--only columns|relationships|indexes|"
         "                      sequences|tables scopes the display; --module scopes the diff)"
@@ -109,7 +112,7 @@ let private usageLines : string list =
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
         "    4  Docker unavailable (a docker target; check fidelity)"
-        "    5  fidelity divergence (check canary / check drift; check shape not-ready)"
+        "    5  fidelity divergence (check canary / check drift; check shape / check go not-ready)"
         "    6  config error (file missing / unparseable / D9; connection-ref resolve; check shape env unreadable)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
         "    8  data divergence (check data row / null)"
@@ -288,6 +291,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
+    | PlanAction.CheckGo (flowName, fromLabel, toLabel, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo flowName fromLabel toLabel planned)
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
         shellRun "projection diff" Shell.ReadOnly (fun () -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule)

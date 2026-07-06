@@ -290,6 +290,41 @@ let ``shapeGate: nullable-in-source but NOT-NULL-in-sink blocks; the reverse is 
     | Ok advisories -> Assert.True(advisories |> List.exists (fun l -> l.Contains "permissive"), sprintf "expected the loosening advisory, got %A" advisories)
     | other -> Assert.Fail(sprintf "expected an advisory pass, got %A" other)
 
+// --- THE GO BOARD (pure verdict algebra + render marks) -----------------------
+
+[<Fact>]
+let ``GoBoard: green iff zero red items; advisories never block; exit 0/5`` () =
+    let g = GoBoard.item "a" (GoBoard.Status.Green "ok")
+    let adv = GoBoard.item "b" (GoBoard.Status.Advisory "note")
+    let red = GoBoard.item "c" (GoBoard.Status.Red ("broken", "fix it"))
+    let board items : GoBoard.Board = { Flow = "golden"; From = "qa"; To = "uat"; Items = items }
+    Assert.True(GoBoard.isGreen (board [ g; adv ]))
+    Assert.Equal(0, GoBoard.exitCode (board [ g; adv ]))
+    Assert.False(GoBoard.isGreen (board [ g; adv; red ]))
+    Assert.Equal(5, GoBoard.exitCode (board [ g; adv; red ]))
+    Assert.Equal(1, GoBoard.redCount (board [ g; red ]))
+
+[<Fact>]
+let ``GoBoard: the render carries the marks, the remedy, the detail, and the verdict with the next move`` () =
+    let board : GoBoard.Board =
+        { Flow = "golden"; From = "qa"; To = "uat"
+          Items =
+            [ GoBoard.item "routing" (GoBoard.Status.Green "peer leg")
+              GoBoard.itemWith "relationships" (GoBoard.Status.Red ("2 escapes", "add the reconcile")) [ "Customer.CityId -> City" ]
+              GoBoard.item "execute gates" (GoBoard.Status.Advisory "two gates at run time") ] }
+    let text = GoBoard.render board |> String.concat "\n"
+    Assert.Contains("[ GO ] routing", text)
+    Assert.Contains("[STOP] relationships", text)
+    Assert.Contains("-> add the reconcile", text)
+    Assert.Contains("Customer.CityId -> City", text)
+    Assert.Contains("[note] execute gates", text)
+    Assert.Contains("VERDICT — RED. 1 open decision", text)
+    Assert.Contains("check go golden", text)
+    let green = { board with Items = board.Items |> List.filter (fun i -> i.Axis <> "relationships") }
+    let greenText = GoBoard.render green |> String.concat "\n"
+    Assert.Contains("VERDICT — GREEN", greenText)
+    Assert.Contains("PROJECTION_ALLOW_EXECUTE=1 projection golden --go", greenText)
+
 // --- the Preflight classification of the two new axes -------------------------
 
 [<Fact>]

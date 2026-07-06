@@ -1319,59 +1319,7 @@ module Command =
             | _ -> []
         { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote @ renditionNote; Action = action }
 
-    /// Route a `check` verb tail to its proof-plane action — purely.
-    let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
-        let valueOf = flagValue args
-        let connOf (raw: string) : Result<string> = resolveLiveConn cfg raw
-        let action =
-            match args with
-            | "drift" :: _ ->
-                match valueOf "--model", valueOf "--to" with
-                | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
-            | "data" :: _ ->
-                match valueOf "--before", valueOf "--after" with
-                | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
-            | "ready" :: _ -> PlanAction.CheckReady
-            | "shape" :: _ ->
-                match cfg.Readiness with
-                | None ->
-                    PlanAction.Refused (2, err "cli.check.shapeNoBlock" "projection check shape: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
-                | Some rs ->
-                    // Resolve each env name to (label, D9 conn-ref) for the OSSYS
-                    // read; a non-direct or unknown env is a NAMED refusal.
-                    let refOf (envName: string) : Result<string * string> =
-                        match Map.tryFind envName cfg.Environments with
-                        | Some env ->
-                            match env.Access with
-                            | Access.Direct r -> Result.success (envName, connSpecOf r)
-                            | _ -> Result.failureOf (err "cli.check.shapeNotDirect" (sprintf "readiness environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
-                        | None -> Result.failureOf (err "cli.check.shapeUnknownEnv" (sprintf "readiness environment '%s' is not defined." envName))
-                    let agreedR = refOf rs.Schema
-                    let confirmRs = rs.Confirm |> List.map refOf
-                    let errors =
-                        (match agreedR with Error es -> es | Ok _ -> [])
-                        @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
-                    match errors with
-                    | e :: _ -> PlanAction.Refused (6, e)
-                    | [] ->
-                        let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
-                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
-                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
-            | _ ->
-                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
-                | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
-                | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
-        { Notes = []; Action = action }
 
-    /// Route an `explain` verb tail to its understanding action — purely.
-    /// `explain <flow>` is the live preview: what publishing the flow would
-    /// change against its target's last sealed episode (B = the flow's model,
-    /// A_prior = the target store) — the preview sibling to `report`'s history.
-    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
-    /// read-only readiness compare (schema delta + data dealbreakers). The face
-    /// writes `compare.json` + prints the roll-up. Two refs are required.
     let planCompare (_cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let action =
@@ -1731,6 +1679,78 @@ module Command =
     /// ChangeManifest series — what changed since the last sealed episode. An
     /// explicit `--store <path>` overrides; a target with no store is refused
     /// (named, never silent). The bundle itself is built by the runner.
+    /// Route a `check` verb tail to its proof-plane action — purely.
+    let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let connOf (raw: string) : Result<string> = resolveLiveConn cfg raw
+        let action =
+            match args with
+            | "drift" :: _ ->
+                match valueOf "--model", valueOf "--to" with
+                | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
+            | "data" :: _ ->
+                match valueOf "--before", valueOf "--after" with
+                | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
+            | "ready" :: _ -> PlanAction.CheckReady
+            | "go" :: rest ->
+                // THE GO BOARD — resolve the named flow through the SAME
+                // planning path a real run takes (preview opts), so the board
+                // judges exactly what `--go` would execute (A44: the check
+                // and the run cannot drift).
+                match rest |> List.filter (fun a -> not (a.StartsWith "--")) with
+                | [ flowName ] ->
+                    match Map.tryFind flowName cfg.Flows with
+                    | None ->
+                        PlanAction.Refused (2, err "cli.check.goUnknownFlow" (sprintf "projection check go: flow '%s' is not defined in projection.json." flowName))
+                    | Some flow ->
+                        let previewOpts : FlowRunOpts =
+                            { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false
+                              Resumable = false; Streaming = false; Journal = None; NoAtomic = false
+                              AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+                        let fromLabel = match flow.From with FlowSource.Env e -> e | FlowSource.Model -> "model" | FlowSource.Synthetic _ -> "synthetic" | FlowSource.NoData -> "none"
+                        PlanAction.CheckGo (flowName, fromLabel, flow.To, (planFlow cfg flow previewOpts).Action)
+                | _ ->
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow>).")
+            | "shape" :: _ ->
+                match cfg.Readiness with
+                | None ->
+                    PlanAction.Refused (2, err "cli.check.shapeNoBlock" "projection check shape: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs ->
+                    // Resolve each env name to (label, D9 conn-ref) for the OSSYS
+                    // read; a non-direct or unknown env is a NAMED refusal.
+                    let refOf (envName: string) : Result<string * string> =
+                        match Map.tryFind envName cfg.Environments with
+                        | Some env ->
+                            match env.Access with
+                            | Access.Direct r -> Result.success (envName, connSpecOf r)
+                            | _ -> Result.failureOf (err "cli.check.shapeNotDirect" (sprintf "readiness environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
+                        | None -> Result.failureOf (err "cli.check.shapeUnknownEnv" (sprintf "readiness environment '%s' is not defined." envName))
+                    let agreedR = refOf rs.Schema
+                    let confirmRs = rs.Confirm |> List.map refOf
+                    let errors =
+                        (match agreedR with Error es -> es | Ok _ -> [])
+                        @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
+                    match errors with
+                    | e :: _ -> PlanAction.Refused (6, e)
+                    | [] ->
+                        let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
+                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
+                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
+            | _ ->
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
+                | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
+                | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
+        { Notes = []; Action = action }
+
+    /// Route an `explain` verb tail to its understanding action — purely.
+    /// `explain <flow>` is the live preview: what publishing the flow would
+    /// change against its target's last sealed episode (B = the flow's model,
+    /// A_prior = the target store) — the preview sibling to `report`'s history.
+    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
+    /// read-only readiness compare (schema delta + data dealbreakers). The face
+    /// writes `compare.json` + prints the roll-up. Two refs are required.
     let planReport (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         // The flow target's bundle `out` folder, when one is configured — the
         // directory the full-export feeding this timeline wrote `fidelity.json`

@@ -69,6 +69,7 @@
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="PeerTransfer.fs" />
+    <Compile Include="GoBoard.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
