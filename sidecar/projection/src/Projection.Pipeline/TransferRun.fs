@@ -572,6 +572,39 @@ module Transfer =
                             (SsKey.rootOriginal k)))
             | [] -> None
 
+    /// 2026-07-06 (the parity sweep): the ESCAPING-RELATIONSHIP gate at the
+    /// ENGINE level — every leg (peer, legacy reverse, forward) inherits it.
+    /// A declared subset whose FK targets an out-of-subset, un-reconciled
+    /// kind would land rows carrying the SOURCE environment's surrogate
+    /// values (silent cross-wiring; the phase-2 CRITICAL #2 class). The
+    /// peer FACE narrates rich per-edge strategy proposals before this
+    /// fires; here is the backstop that makes the hazard unreachable from
+    /// ANY entry point. `None` load-set (a full transfer) has no escapes
+    /// by definition.
+    let subsetEscapeGate (catalog: Catalog) (loadSet: Set<SsKey> option) (reconciled: Set<SsKey>) : ValidationError option =
+        match loadSet with
+        | None -> None
+        | Some set ->
+            let escapes =
+                Catalog.allKinds catalog
+                |> List.filter (fun k -> Set.contains k.SsKey set)
+                |> List.collect (fun kind ->
+                    kind.References
+                    |> List.choose (fun r ->
+                        if Set.contains r.TargetKind set || Set.contains r.TargetKind reconciled then None
+                        else
+                            Catalog.tryFindKind r.TargetKind catalog
+                            |> Option.map (fun target ->
+                                sprintf "%s.%s -> %s" (Name.value kind.Name) (Name.value r.Name) (Name.value target.Name))))
+                |> List.sort
+            if List.isEmpty escapes then None
+            else
+                Some (ValidationError.create
+                        "transfer.subsetFkEscapes"
+                        (sprintf
+                            "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
+                            escapes.Length (String.concat "; " escapes)))
+
     /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
     /// whose load order fell back to the ALPHABETICAL degrade (an
     /// unresolvable dependency cycle anywhere in the estate) would load
@@ -898,7 +931,10 @@ module Transfer =
                     | None ->
                         match orderedLoadGate topo with
                         | Some refusal -> Some refusal
-                        | None         -> validateUserMap allowDrops reconciled
+                        | None ->
+                            match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
+                            | Some refusal -> Some refusal
+                            | None         -> validateUserMap allowDrops reconciled
                 else None
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
@@ -1883,13 +1919,20 @@ module Transfer =
                     DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
                     |> DataLoadPlan.reclassifyReconciled reconciledKinds
                 // Pre-write gates (Execute only), precedence-ordered:
-                // structural unsatisfiability first, then the validate-
+                // structural unsatisfiability first, then the load-order
+                // proof (2026-07-06 parity sweep — the streaming arm was
+                // the one Execute path without it), then the validate-
                 // user-map orphan halt (AC-I5 / NM-31 — now ON streaming).
+                // (No subset gate: streaming refuses --tables at the
+                // realization selector, so no load-set reaches here.)
                 let preWrite =
                     if mode = Execute then
                         match executeGate sinkContract plan with
                         | Some refusal -> Some refusal
-                        | None         -> validateUserMap allowDrops reconciled
+                        | None ->
+                            match orderedLoadGate topo with
+                            | Some refusal -> Some refusal
+                            | None         -> validateUserMap allowDrops reconciled
                     else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal

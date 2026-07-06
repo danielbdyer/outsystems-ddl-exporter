@@ -290,6 +290,25 @@ let ``shapeGate: nullable-in-source but NOT-NULL-in-sink blocks; the reverse is 
     | Ok advisories -> Assert.True(advisories |> List.exists (fun l -> l.Contains "permissive"), sprintf "expected the loosening advisory, got %A" advisories)
     | other -> Assert.Fail(sprintf "expected an advisory pass, got %A" other)
 
+// --- the ENGINE-level subset-escape gate (the parity sweep, 2026-07-06) -------
+// The peer FACE narrates rich proposals; this backstop refuses from ANY leg
+// (legacy reverse / forward transfer) so the cross-wiring hazard is
+// unreachable engine-wide.
+
+[<Fact>]
+let ``subsetEscapeGate: a full transfer or a closed/reconciled subset passes; an escaping edge refuses on the leg-neutral code`` () =
+    Assert.Equal(None, Transfer.subsetEscapeGate srcCell None Set.empty)
+    Assert.Equal(None, Transfer.subsetEscapeGate srcCell (Some (keys [ "City"; "Customer"; "Order" ])) Set.empty)
+    Assert.Equal(None, Transfer.subsetEscapeGate srcCell (Some (keys [ "Customer" ])) (keys [ "City" ]))
+    match Transfer.subsetEscapeGate srcCell (Some (keys [ "Customer" ])) Set.empty with
+    | Some e ->
+        Assert.Equal("transfer.subsetFkEscapes", e.Code)
+        Assert.Contains("Customer.CityId -> City", e.Message)
+        Assert.Contains("SOURCE-environment references", e.Message)
+    | None -> Assert.Fail "expected the engine-level escape refusal"
+    // The classification rides the SAME axis as the peer face's refusal.
+    Assert.Equal((9, Preflight.SubsetFkEscape), Preflight.classify "transfer.subsetFkEscapes")
+
 // --- THE GO BOARD (pure verdict algebra + render marks) -----------------------
 
 [<Fact>]

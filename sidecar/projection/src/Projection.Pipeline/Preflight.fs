@@ -650,7 +650,10 @@ module Preflight =
             MidWriteNotProtected
         elif code = "transfer.peer.shapeDivergence" then
             ShapeDivergence
-        elif code = "transfer.peer.subsetFkEscapes" then
+        elif code = "transfer.peer.subsetFkEscapes" || code = "transfer.subsetFkEscapes" then
+            // The peer face's rich-narration refusal AND the engine-level
+            // backstop (the parity sweep — legacy/forward legs) ride ONE
+            // axis: exit 9, the drop-set class.
             SubsetFkEscape
         elif code.StartsWith "source.ossys." then
             // The peer leg's contract acquisition — an unreadable OSSYS

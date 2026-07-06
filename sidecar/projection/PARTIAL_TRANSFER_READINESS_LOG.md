@@ -705,3 +705,34 @@ undo artifact, and no verb could execute one.
 
 Fast pool + the transfer/revert docker sweep (GoBoard + both peer suites +
 ReverseLegCanary): GREEN.
+
+## Entry 19 — 2026-07-06, THE PARITY SWEEP: every leg inherits this session's protections
+
+Operator directive: keep the other reverse-leg flows in feature parity.
+
+The audit (the full matrix is in the PR): most of the session's fixes were already
+engine-shared (kind-scoped renames, cell shaping, resolver semantics, narration,
+undo artifacts via the shared `writePlan`). Three genuine gaps found and closed:
+
+1. **The escaping-FK guard was FACE-only.** The legacy reverse leg and the forward
+   transfer accept `tables` subsets and reached the engine with the cross-wiring
+   hazard unguarded (the phase-2 CRITICAL-#2 class). New: `Transfer.subsetEscapeGate`
+   — a leg-neutral Execute pre-write gate (`transfer.subsetFkEscapes`, same exit-9
+   axis) in `runCore`'s chain, making the hazard unreachable from ANY entry point.
+   The peer face keeps its richer per-edge strategy narration in front of it.
+2. **The streaming arm lacked `orderedLoadGate`** — the one Execute path that could
+   still load on a degraded (alphabetical) order. Wired into its pre-write chain
+   (executeGate → orderedLoadGate → validateUserMap).
+3. **The forward transfer's `--resumable` had no capability gate** — the same raw
+   CREATE TABLE crash on a managed sink the reverse selector already refused. The
+   face now refuses by the same name (`transfer.reverseLeg.resumableSinkUnsupported`),
+   with the sink capability threaded from the flow's declared archetype.
+
+Named non-goals (documented, not silent): the go board stays env→env-scoped (legacy
+model-sourced flows keep their probe sheet; wiring the board there is clean
+follow-on); streaming success-undo derives from the capture journal when needed
+(estate-scale key lists don't belong in a .sql artifact; streaming has no `--tables`
+so it sits outside the small-sample proving loop).
+
+Pure pins added (`subsetEscapeGate` semantics + exit-9 classification). Fast pool
+GREEN; the full docker pool running as the final arbiter (verdict appended below).

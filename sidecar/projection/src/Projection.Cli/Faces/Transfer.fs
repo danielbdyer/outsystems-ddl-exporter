@@ -186,7 +186,19 @@ let runTransfer
     (tables: string list)
     (revertPolicy: RevertPolicy)
     (revertDir: string option)
+    (sinkResidentResume: bool)
     : int =
+    // 2026-07-06 (the parity sweep): the FORWARD leg's --resumable rides the
+    // same G10 sink-resident progress table the reverse leg's does — and had
+    // the same unguarded raw CREATE TABLE crash on a managed sink. The same
+    // named refusal, before any connection opens.
+    if resumable && not sinkResidentResume then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.resumableSinkUnsupported"
+                "--resumable keeps its G10 marker in a sink-resident progress table, which needs CREATE TABLE the sink's data grant forbids (archetype managed-dml/undeclared). Drop --resumable (a wipe-and-load re-run is idempotent by construction), or declare the sink archetype full-rights if it truly can host the table.")
+        dumpBench "transfer"
+        2
+    else
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
     let parsedSink      = TransferSpec.parseConnectionSpec sinkSpec
