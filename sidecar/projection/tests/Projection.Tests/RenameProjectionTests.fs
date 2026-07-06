@@ -58,8 +58,9 @@ let ``6.B.2: a renamed column is re-pointed by the rename map, not matched by or
     // Email's value onto Contact by NAME; Phone is untouched. A positional
     // (ordinal) scheme could not distinguish this — the re-point is by identity.
     let map =
-        RenameProjection.renameMap
-            [ { Attribute = aKey "Email"; SourceName = nm "Email"; SinkName = nm "Contact" } ]
+        RenameProjection.renameMapByKind
+            [ { Kind = kKey "Customer"; Attribute = aKey "Email"; SourceName = nm "Email"; SinkName = nm "Contact" } ]
+        |> RenameProjection.forKind (kKey "Customer")
     let row = rowOf [ "Email", "alice@x"; "Phone", "555" ]
     let out = RenameProjection.repointRow map row
     Assert.Equal("alice@x", out.Values.[nm "Contact"])
@@ -69,8 +70,9 @@ let ``6.B.2: a renamed column is re-pointed by the rename map, not matched by or
 [<Fact>]
 let ``6.B.2: the value follows the name regardless of insertion order (not ordinal)`` () =
     let map =
-        RenameProjection.renameMap
-            [ { Attribute = aKey "Email"; SourceName = nm "Email"; SinkName = nm "Contact" } ]
+        RenameProjection.renameMapByKind
+            [ { Kind = kKey "Customer"; Attribute = aKey "Email"; SourceName = nm "Email"; SinkName = nm "Contact" } ]
+        |> RenameProjection.forKind (kKey "Customer")
     // Same cells, reversed insertion order — the re-point result is identical,
     // because it keys on the name, not the position.
     let a = RenameProjection.repointRow map (rowOf [ "Email", "x"; "Phone", "y" ])
@@ -90,7 +92,10 @@ let ``6.B.2: end-to-end — diff-derived renames re-point a source row onto the 
     // re-point a source-shaped row onto the sink's names.
     let a = catOf (custKind "Email" "EMAIL")
     let b = catOf (custKind "Contact" "CONTACT")
-    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMap
+    let map =
+        RenameProjection.renames (betweenOk a b)
+        |> RenameProjection.renameMapByKind
+        |> RenameProjection.forKind (kKey "Customer")
     let sourceRow = rowOf [ "Id", "1"; "Email", "bob@x" ]
     let sinkRow = RenameProjection.repointRow map sourceRow
     Assert.Equal("bob@x", sinkRow.Values.[nm "Contact"])
@@ -107,7 +112,10 @@ let ``6.B.2: end-to-end — diff-derived renames re-point a source row onto the 
 let ``A5: the migrate-with-data rename map derives from between(sinkSource=A, target=B) and re-points A->B`` () =
     let a = catOf (custKind "Email" "EMAIL")    // sinkSource — the data source's schema A
     let b = catOf (custKind "Contact" "CONTACT") // target — the migrated sink schema B
-    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMap
+    let map =
+        RenameProjection.renames (betweenOk a b)
+        |> RenameProjection.renameMapByKind
+        |> RenameProjection.forKind (kKey "Customer")
     // A row carrying the A-schema name re-points onto the B name (not lost to NULL).
     let aRow = rowOf [ "Id", "1"; "Email", "alice@x" ]
     let repointed = RenameProjection.repointRow map aRow
@@ -120,10 +128,50 @@ let ``A5: a no-renames A->B diff yields an empty rename map (the data leg stays 
     // not renames (here, identical), the rename map is empty ⇒ identity repoint.
     let a = catOf (custKind "Email" "EMAIL")
     let b = catOf (custKind "Email" "EMAIL")
-    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMap
+    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMapByKind
     Assert.True(Map.isEmpty map)
 
 // =====================================================================
+// =====================================================================
+// 2026-07-06 (the phase-2 adversarial review, CRITICAL #1) — the rename
+// map is KIND-SCOPED. The prior flat map was kind-blind: a rename
+// recorded for ONE kind's attribute re-keyed the same NAME in EVERY
+// kind's rows, so `Invoice.Status → State` silently emptied
+// `Order.Status` (the re-keyed value became unreachable at the sink
+// getter; the column wrote NULL). These pins make the poisoning
+// structurally impossible to reintroduce.
+// =====================================================================
+
+[<Fact>]
+let ``kind-scoping: a rename in one kind does NOT re-key the same name in another kind`` () =
+    let invoice (statusName: string) =
+        Kind.create (kKey "Invoice") (nm "Invoice")
+            (TableId.create "dbo" "RP_INVOICE" |> Result.value)
+            [ attr (aKey "Invoice.Id") "Id" "ID" true
+              attr (aKey "Invoice.Status") statusName (statusName.ToUpperInvariant()) false ]
+    let order () =
+        Kind.create (kKey "Order") (nm "Order")
+            (TableId.create "dbo" "RP_ORDER" |> Result.value)
+            [ attr (aKey "Order.Id") "Id" "ID" true
+              attr (aKey "Order.Status") "Status" "STATUS" false ]
+    let catTwo (inv: Kind) (ord: Kind) : Catalog =
+        IRBuilders.mkCatalog [ IRBuilders.mkModule (kKey "Mod") (nm "M") [ inv; ord ] ]
+    // A: Invoice.Status + Order.Status. B: Invoice.State (RENAMED, same
+    // SsKey) + Order.Status (untouched).
+    let a = catTwo (invoice "Status") (order ())
+    let b = catTwo (invoice "State") (order ())
+    let byKind = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMapByKind
+    // Invoice's map carries the rename; Order's map is EMPTY.
+    Assert.Equal("State", Name.value (RenameProjection.forKind (kKey "Invoice") byKind).[nm "Status"])
+    Assert.True(Map.isEmpty (RenameProjection.forKind (kKey "Order") byKind))
+    // The poisoning scenario, dead: an Order row's Status survives untouched
+    // under ORDER's map, while an Invoice row's Status re-keys under INVOICE's.
+    let orderRow = RenameProjection.repointRow (RenameProjection.forKind (kKey "Order") byKind) (rowOf [ "Id", "7"; "Status", "OPEN" ])
+    Assert.Equal("OPEN", orderRow.Values.[nm "Status"])
+    let invoiceRow = RenameProjection.repointRow (RenameProjection.forKind (kKey "Invoice") byKind) (rowOf [ "Id", "9"; "Status", "PAID" ])
+    Assert.Equal("PAID", invoiceRow.Values.[nm "State"])
+    Assert.False(invoiceRow.Values.ContainsKey(nm "Status"))
+
 // AC-I7 — the composed Transfer: a column rename AND a Dev→UAT re-key in
 // ONE run. `Transfer.runReconcilingWithRenames` threads BOTH legs through
 // the single `runCore` path: re-point each ingested row's values onto the
@@ -236,7 +284,10 @@ let private orderLoad (plan: DataLoadPlan) : DataLoadKind =
 let ``AC-I7: composed rename+rekey — FK value follows its SsKey to BUYER AND re-keys through the remap`` () =
     // Source Order row: Owner FK points at Dev User 280 (alice).
     let sourceOrder = [ rowOf [ "Id", "1000"; "Owner", "280" ] ]
-    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    let renameMap =
+        RenameProjection.renames (betweenOk rpSourceContract rpSinkContract)
+        |> RenameProjection.renameMapByKind
+        |> RenameProjection.forKind rpOrderKey
     let plan = composePlan renameMap rpReconciliation sourceOrder
     let load = orderLoad plan
     let row = List.exactlyOne load.Rows
@@ -267,7 +318,10 @@ let ``AC-I7 discrimination: dropping the RECONCILE leg leaves the FK at the sour
     // re-keyed to the UAT identity 18 — proving the reconcile leg is
     // load-bearing.
     let sourceOrder = [ rowOf [ "Id", "1000"; "Owner", "280" ] ]
-    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    let renameMap =
+        RenameProjection.renames (betweenOk rpSourceContract rpSinkContract)
+        |> RenameProjection.renameMapByKind
+        |> RenameProjection.forKind rpOrderKey
     let plan = composePlan renameMap Map.empty sourceOrder
     let row = List.exactlyOne (orderLoad plan).Rows
     Assert.Equal(Some "280", Map.tryFind (nm "Buyer") row.Values)
@@ -280,7 +334,10 @@ let ``AC-I7 adversarial: an ordinal rename would mis-assign — the SsKey re-poi
     // the Email-shaped junk value into the FK column. The identity re-point
     // keys on the NAME (Owner → Buyer), so the FK value 280 lands in BUYER
     // regardless of cell order, and re-keys to 18.
-    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    let renameMap =
+        RenameProjection.renames (betweenOk rpSourceContract rpSinkContract)
+        |> RenameProjection.renameMapByKind
+        |> RenameProjection.forKind rpOrderKey
     // Adversarial cell order: a decoy column precedes Owner. An ordinal
     // scheme keyed on position would grab "decoy" for BUYER.
     let sourceOrder = [ rowOf [ "Decoy", "ZZZ"; "Owner", "280"; "Id", "1000" ] ]

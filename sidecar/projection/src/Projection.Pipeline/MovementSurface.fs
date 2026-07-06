@@ -334,6 +334,10 @@ module ProjectionConfig =
         match r with
         | ConnectionRef.EnvVar n -> "env:" + n
         | ConnectionRef.File p   -> "file:" + p
+        // Raw never comes FROM config parsing (D9 belt: the config carries
+        // references, never secrets); round-tripping one would re-embed the
+        // secret, so it maps to the openable `live:` spec form instead.
+        | ConnectionRef.Raw c    -> "live:" + c
 
     /// D9 belt: reject a value that looks like an inline secret rather than
     /// a reference (a connection string pasted into the config).
@@ -696,7 +700,7 @@ module ProjectionConfig =
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
         set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
-              "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
+              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -1077,6 +1081,7 @@ module Command =
         match r with
         | ConnectionRef.EnvVar n -> "env:" + n
         | ConnectionRef.File p   -> "file:" + p
+        | ConnectionRef.Raw c    -> "live:" + c
 
     /// Resolve a live-connection reference: a scheme-prefixed ref (env:/file:)
     /// or a named `direct` environment → its out-of-band connection spec.
@@ -1209,6 +1214,16 @@ module Command =
                         // to render, so the refusal is at PLAN time, named.
                         if hasModel then PlanAction.RunReverseLeg (spec.Model, modelOssys, src, conn, opts, execute)
                         else modelMissing "projection (reverse leg): the B→A reverse leg renders its contracts from the authored model. "
+                    | MovementDirection.UpPeer ->
+                        // The peer (A→A) move — two deployed cells of one model
+                        // whose physical `OSUSR_*` names differ per espace. The
+                        // peer runner reads a contract from EACH side's OSSYS
+                        // metamodel (native GUID identity), so no authored model
+                        // rides the action; the shape gate + subset-FK gate own
+                        // the pre-write refusals. 2026-07-06. (An env→env flow
+                        // with UNSET renditions keeps the name-blind `Transfer`
+                        // below — the identical-rendition escape hatch.)
+                        PlanAction.TransferPeer (src, conn, opts, execute)
                     | _ -> PlanAction.Transfer (src, conn, opts, execute)
                 if not spec.Commit then
                     match spec.Data with
@@ -1247,6 +1262,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.TransferPeer _ -> []
             | _, PlanAction.RunReverseLeg _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
@@ -1257,6 +1273,7 @@ module Command =
             match spec.Resumable, action with
             | false, _ -> []
             | true, PlanAction.Transfer _ -> []
+            | true, PlanAction.TransferPeer _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
         // D8 — seed/scale are honored on the synthetic load only; on any other
@@ -1274,11 +1291,16 @@ module Command =
             match spec.Streaming, action with
             | false, _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
+            // The peer leg rides the reverse-leg realization selector, so an
+            // explicit --streaming is honored (or refused BY NAME on an
+            // inadmissible combination — never silently dropped).
+            | true, PlanAction.TransferPeer _ -> []
             | true, _ -> [ "--streaming accepted; this action has no streaming write seam (materialized write applied)." ]
         let journalNote =
             match spec.Journal, action with
             | None, _ -> []
             | Some _, PlanAction.RunReverseLeg _ -> []
+            | Some _, PlanAction.TransferPeer _ -> []
             | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
         // F0c-I/O — the blessed correction is consumed only by the synthetic load
         // (it threads `Profile ⊕ Correction` into σ + drives Faker realization);
@@ -1288,61 +1310,21 @@ module Command =
             | None, _ -> []
             | Some _, PlanAction.SynthesizeAndLoad _ -> []
             | Some _, _ -> [ "correction accepted; this action has no synthesis leg (no correction applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote; Action = action }
+        // The name-blind fallback is a silent assumption worth NAMING (the
+        // no-silent-downgrade discipline): an env→env DATA move whose
+        // renditions are unset rides the generic `Transfer`, which reads ONE
+        // contract from the source and writes with the SOURCE's physical
+        // names — correct only when the sink's names match. The peer leg
+        // (`rendition: physical` on both sides) carries the SsKey-aligned
+        // shape + subset-FK gates. 2026-07-06 (ergonomics pass, proposal 2).
+        let renditionNote =
+            match spec.Direction, spec.Data, action with
+            | MovementDirection.Down, DataOrigin.FromTarget _, PlanAction.Transfer _ ->
+                [ "this flow moves data between two live environments with `rendition` unset — the transfer assumes MATCHING physical table names on both sides. Set `rendition: physical` on both environments to run the SsKey-aligned peer leg (shape + subset-FK gates) instead." ]
+            | _ -> []
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote @ renditionNote; Action = action }
 
-    /// Route a `check` verb tail to its proof-plane action — purely.
-    let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
-        let valueOf = flagValue args
-        let connOf (raw: string) : Result<string> = resolveLiveConn cfg raw
-        let action =
-            match args with
-            | "drift" :: _ ->
-                match valueOf "--model", valueOf "--to" with
-                | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
-            | "data" :: _ ->
-                match valueOf "--before", valueOf "--after" with
-                | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
-            | "ready" :: _ -> PlanAction.CheckReady
-            | "shape" :: _ ->
-                match cfg.Readiness with
-                | None ->
-                    PlanAction.Refused (2, err "cli.check.shapeNoBlock" "projection check shape: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
-                | Some rs ->
-                    // Resolve each env name to (label, D9 conn-ref) for the OSSYS
-                    // read; a non-direct or unknown env is a NAMED refusal.
-                    let refOf (envName: string) : Result<string * string> =
-                        match Map.tryFind envName cfg.Environments with
-                        | Some env ->
-                            match env.Access with
-                            | Access.Direct r -> Result.success (envName, connSpecOf r)
-                            | _ -> Result.failureOf (err "cli.check.shapeNotDirect" (sprintf "readiness environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
-                        | None -> Result.failureOf (err "cli.check.shapeUnknownEnv" (sprintf "readiness environment '%s' is not defined." envName))
-                    let agreedR = refOf rs.Schema
-                    let confirmRs = rs.Confirm |> List.map refOf
-                    let errors =
-                        (match agreedR with Error es -> es | Ok _ -> [])
-                        @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
-                    match errors with
-                    | e :: _ -> PlanAction.Refused (6, e)
-                    | [] ->
-                        let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
-                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
-                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
-            | _ ->
-                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
-                | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
-                | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
-        { Notes = []; Action = action }
 
-    /// Route an `explain` verb tail to its understanding action — purely.
-    /// `explain <flow>` is the live preview: what publishing the flow would
-    /// change against its target's last sealed episode (B = the flow's model,
-    /// A_prior = the target store) — the preview sibling to `report`'s history.
-    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
-    /// read-only readiness compare (schema delta + data dealbreakers). The face
-    /// writes `compare.json` + prints the roll-up. Two refs are required.
     let planCompare (_cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let action =
@@ -1352,6 +1334,26 @@ module Command =
                 PlanAction.Refused (
                     2,
                     err "cli.compare.args" "projection compare: needs two references — projection compare <A> <B>.")
+        { Notes = []; Action = action }
+
+    /// `revert [--script <path>] --against <env> [--go]` — the deliberate
+    /// undo (2026-07-06): run the DELETE-by-captured-key artifact a
+    /// successful transfer wrote (`transfer-undo.sql`) — or a failed run's
+    /// `transfer-revert.sql` — against the named environment. Preview is
+    /// the default; `--go` (+ the env gate) executes.
+    let planRevert (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let script = valueOf "--script" |> Option.defaultValue "transfer-undo.sql"
+        let go = List.contains "--go" args
+        let force = List.contains "--force" args
+        let action =
+            match valueOf "--against" with
+            | None ->
+                PlanAction.Refused (2, err "cli.revert.args" "projection revert: needs --against <environment> (the sink the undo runs against). Optional: --script <path> (default ./transfer-undo.sql), --go.")
+            | Some envLabel ->
+                match resolveLiveConn cfg envLabel with
+                | Error es -> PlanAction.Refused (6, List.head es)
+                | Ok conn -> PlanAction.RevertScript (script, envLabel, conn, go, force)
         { Notes = []; Action = action }
 
     let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -1702,6 +1704,82 @@ module Command =
     /// ChangeManifest series — what changed since the last sealed episode. An
     /// explicit `--store <path>` overrides; a target with no store is refused
     /// (named, never silent). The bundle itself is built by the runner.
+    /// Route a `check` verb tail to its proof-plane action — purely.
+    let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let connOf (raw: string) : Result<string> = resolveLiveConn cfg raw
+        let action =
+            match args with
+            | "drift" :: _ ->
+                match valueOf "--model", valueOf "--to" with
+                | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
+            | "data" :: _ ->
+                match valueOf "--before", valueOf "--after" with
+                | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
+            | "ready" :: _ -> PlanAction.CheckReady
+            | "go" :: rest ->
+                // THE GO BOARD — resolve the named flow through the SAME
+                // planning path a real run takes (preview opts), so the board
+                // judges exactly what `--go` would execute (A44: the check
+                // and the run cannot drift).
+                match rest |> List.filter (fun a -> not (a.StartsWith "--")) with
+                | [ flowName ] ->
+                    match Map.tryFind flowName cfg.Flows with
+                    | None ->
+                        PlanAction.Refused (2, err "cli.check.goUnknownFlow" (sprintf "projection check go: flow '%s' is not defined in projection.json." flowName))
+                    | Some flow ->
+                        let previewOpts : FlowRunOpts =
+                            { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false
+                              Resumable = false; Streaming = false; Journal = None; NoAtomic = false
+                              AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+                        let fromLabel = match flow.From with FlowSource.Env e -> e | FlowSource.Model -> "model" | FlowSource.Synthetic _ -> "synthetic" | FlowSource.NoData -> "none"
+                        let asJson =
+                            match rest |> List.pairwise |> List.tryFind (fun (a, _) -> a = "--format") with
+                            | Some (_, v) -> v = "json"
+                            | None -> false
+                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, (planFlow cfg flow previewOpts).Action)
+                | _ ->
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow>).")
+            | "shape" :: _ ->
+                match cfg.Readiness with
+                | None ->
+                    PlanAction.Refused (2, err "cli.check.shapeNoBlock" "projection check shape: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs ->
+                    // Resolve each env name to (label, D9 conn-ref) for the OSSYS
+                    // read; a non-direct or unknown env is a NAMED refusal.
+                    let refOf (envName: string) : Result<string * string> =
+                        match Map.tryFind envName cfg.Environments with
+                        | Some env ->
+                            match env.Access with
+                            | Access.Direct r -> Result.success (envName, connSpecOf r)
+                            | _ -> Result.failureOf (err "cli.check.shapeNotDirect" (sprintf "readiness environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
+                        | None -> Result.failureOf (err "cli.check.shapeUnknownEnv" (sprintf "readiness environment '%s' is not defined." envName))
+                    let agreedR = refOf rs.Schema
+                    let confirmRs = rs.Confirm |> List.map refOf
+                    let errors =
+                        (match agreedR with Error es -> es | Ok _ -> [])
+                        @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
+                    match errors with
+                    | e :: _ -> PlanAction.Refused (6, e)
+                    | [] ->
+                        let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
+                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
+                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
+            | _ ->
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
+                | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
+                | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
+        { Notes = []; Action = action }
+
+    /// Route an `explain` verb tail to its understanding action — purely.
+    /// `explain <flow>` is the live preview: what publishing the flow would
+    /// change against its target's last sealed episode (B = the flow's model,
+    /// A_prior = the target store) — the preview sibling to `report`'s history.
+    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
+    /// read-only readiness compare (schema delta + data dealbreakers). The face
+    /// writes `compare.json` + prints the roll-up. Two refs are required.
     let planReport (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         // The flow target's bundle `out` folder, when one is configured — the
         // directory the full-export feeding this timeline wrote `fidelity.json`
@@ -1799,6 +1877,7 @@ module Command =
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "compare" :: rest -> Result.success (Intent.Compare rest)
+        | "revert" :: rest  -> Result.success (Intent.Revert rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
         // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
@@ -1865,6 +1944,7 @@ module Command =
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
         | Intent.Compare args      -> planCompare cfg args
+        | Intent.Revert args       -> planRevert cfg args
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
         | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }

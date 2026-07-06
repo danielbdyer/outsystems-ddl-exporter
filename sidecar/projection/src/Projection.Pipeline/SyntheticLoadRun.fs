@@ -112,6 +112,82 @@ module SyntheticLoadRun =
     /// the FULL estate, silently ignoring `model.modules`. An empty
     /// `model.modules` is the all-permissive identity, so the default synthetic
     /// load stays byte-identical.
+    /// The pure post-catalog preparation (module filter → Faker-coordinate
+    /// refusal → `Profile ⊕ Correction` config fold → opt-in graph analytics →
+    /// boundary realization), hoisted to module level so `run`'s `task { }`
+    /// keeps the statically-compilable `match! → match → match! → return`
+    /// spine (FS3511, survival rule 5).
+    ///
+    /// NM-08/09 — narrow the resolved estate by `model.modules` through the
+    /// shared seam BEFORE synthesis (identity when `model.modules` is empty),
+    /// so a `from: synthetic` flow honors the scope every sibling action
+    /// applies.
+    ///
+    /// F-Faker — refuse BY NAME any blessed Faker coordinate that does NOT
+    /// resolve against the model (a rename / typo), before generating: a
+    /// hand-authored binding that points nowhere is an operator error to
+    /// surface, never a silent no-op (the hand-authored-coordinate analogue of
+    /// "refuse rather than corrupt").
+    ///
+    /// F0c-I/O — fold the blessed corrections onto the config (the PURE
+    /// `Profile ⊕ Correction` hinge: Pii ⇒ Synthesize, fidelity overrides,
+    /// per-kind volume) AND build the boundary realization (Faker over the σ
+    /// tokens / preserved values, seeded per row). Both are identity when the
+    /// correction is empty, so an uncorrected load is byte-identical to the
+    /// pre-F0c flow.
+    ///
+    /// H-071 / H-072 consumers (both opt-in) — the two graph analytics reach
+    /// the synthetic path here. Both read the SAME FK-graph topology the load
+    /// already computes for its write order, so it is derived at most once.
+    /// Each is OFF by default and byte-identical when off — the whole branch
+    /// is skipped, so no analytics run.
+    ///   H-071 — weight per-kind volume by centrality (central kinds get more
+    ///           rows); operator `volume` corrections win the merge.
+    ///   H-072 — cluster FK locality by discovered bounded context (an
+    ///           intra-context reference set reads as a self-consistent
+    ///           slice). Threaded as a generic cluster map (Core stays
+    ///           decoupled from BoundedContextDiscovery).
+    let private prepareSynthesis
+        (modelSection: Config.ModelSection)
+        (correction: Correction)
+        (config: SyntheticConfig)
+        (weightVolumeByCentrality: bool)
+        (clusterFksByContext: bool)
+        (rawCatalog: Catalog) =
+        let filtered =
+            ModuleFilterBinding.fromConfig modelSection
+            |> Result.bind (fun opts -> ModuleFilter.apply opts rawCatalog)
+        match filtered with
+        | Error es -> Result.failure es
+        | Ok catalog ->
+            match Correction.unresolvedFakerCoordinates catalog correction with
+            | (bad :: _) as unresolved ->
+                Result.failureOf
+                    (ValidationError.create "synthetic.correction.unresolvedCoordinate"
+                        (sprintf "%d blessed Faker coordinate(s) name a location not in the model (e.g. %s/%s/%s); re-point them or update the artifact." (List.length unresolved) bad.Module bad.Entity bad.Attribute))
+            | [] ->
+                let baseConfig = Correction.applyToConfig catalog correction config
+                let effectiveConfig =
+                    if not (weightVolumeByCentrality || clusterFksByContext) then baseConfig
+                    else
+                        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
+                        let withVolume =
+                            if weightVolumeByCentrality then
+                                let ranking = (Projection.Core.Passes.CentralityPass.registered.Run topo).Value.Value
+                                let derived = SyntheticVolume.byCentrality centralityWeightStrength centralityWeightMaxFactor baseConfig.Scale ranking
+                                { baseConfig with VolumeByKind = SyntheticVolume.mergeUnderOperator baseConfig.VolumeByKind derived }
+                            else baseConfig
+                        if clusterFksByContext then
+                            let discovery = (Projection.Core.Passes.BoundedContextPass.registered.Run topo).Value.Value
+                            let clusters =
+                                discovery.Candidates
+                                |> List.collect (fun c -> c.Members |> List.map (fun m -> m, c.AnchorKey))
+                                |> Map.ofList
+                            { withVolume with FkLocalityClusters = clusters }
+                        else withVolume
+                let realize = FakerRealization.realize catalog correction
+                Result.success (catalog, effectiveConfig, realize)
+
     let run
         (modelOssys: string option)
         (modelFile: string option)
@@ -127,79 +203,30 @@ module SyntheticLoadRun =
         (weightVolumeByCentrality: bool)
         (clusterFksByContext: bool)
         : Task<Result<Transfer.TransferReport>> =
-        task {
-            match resolveProfile profileRef, resolveCorrection correctionRef with
-            | Error es, _ -> return Result.failure es
-            | _, Error es -> return Result.failure es
-            | Ok profile, Ok correction ->
+        // FS3511 (survival rule 5): the tuple-pattern `match` that headed the
+        // `task { }` and the deep pure middle both defeated static state-machine
+        // reduction in Release. The profile / correction resolution is
+        // synchronous boundary I/O, so it resolves BEFORE the task opens; the
+        // pure middle lives in `prepareSynthesis`; the task body keeps the
+        // reducible `match! → match → match! → match → return` spine.
+        match resolveProfile profileRef, resolveCorrection correctionRef with
+        | Error es, _ -> Task.FromResult (Result.failure es)
+        | _, Error es -> Task.FromResult (Result.failure es)
+        | Ok profile, Ok correction ->
+            task {
                 match! ModelResolution.resolveCatalog modelOssys modelFile with
                 | Error es -> return Result.failure es
                 | Ok rawCatalog ->
-                    // NM-08/09 — narrow the resolved estate by `model.modules`
-                    // through the shared seam BEFORE synthesis (identity when
-                    // `model.modules` is empty), so a `from: synthetic` flow honors
-                    // the scope every sibling action applies.
-                    let filtered =
-                        ModuleFilterBinding.fromConfig modelSection
-                        |> Result.bind (fun opts -> ModuleFilter.apply opts rawCatalog)
-                    match filtered with
+                    match prepareSynthesis modelSection correction config weightVolumeByCentrality clusterFksByContext rawCatalog with
                     | Error es -> return Result.failure es
-                    | Ok catalog ->
-                    // F-Faker — refuse BY NAME any blessed Faker coordinate that
-                    // does NOT resolve against the model (a rename / typo), before
-                    // generating: a hand-authored binding that points nowhere is an
-                    // operator error to surface, never a silent no-op (the
-                    // hand-authored-coordinate analogue of "refuse rather than corrupt").
-                    match Correction.unresolvedFakerCoordinates catalog correction with
-                    | (bad :: _) as unresolved ->
-                        return Result.failureOf
-                            (ValidationError.create "synthetic.correction.unresolvedCoordinate"
-                                (sprintf "%d blessed Faker coordinate(s) name a location not in the model (e.g. %s/%s/%s); re-point them or update the artifact." (List.length unresolved) bad.Module bad.Entity bad.Attribute))
-                    | [] ->
-                    // F0c-I/O — fold the blessed corrections onto the config (the
-                    // PURE `Profile ⊕ Correction` hinge: Pii ⇒ Synthesize, fidelity
-                    // overrides, per-kind volume) AND build the boundary realization
-                    // (Faker over the σ tokens / preserved values, seeded per row).
-                    // Both are identity when the correction is empty, so an
-                    // uncorrected load is byte-identical to the pre-F0c flow.
-                    let baseConfig = Correction.applyToConfig catalog correction config
-                    // H-071 / H-072 consumers (both opt-in) — the two graph analytics
-                    // reach the synthetic path here. Both read the SAME FK-graph
-                    // topology the load already computes for its write order, so it is
-                    // derived at most once. Each is OFF by default and byte-identical
-                    // when off — the whole branch is skipped, so no analytics run.
-                    //   H-071 — weight per-kind volume by centrality (central kinds get
-                    //           more rows); operator `volume` corrections win the merge.
-                    //   H-072 — cluster FK locality by discovered bounded context (an
-                    //           intra-context reference set reads as a self-consistent
-                    //           slice). Threaded as a generic cluster map (Core stays
-                    //           decoupled from BoundedContextDiscovery).
-                    let effectiveConfig =
-                        if not (weightVolumeByCentrality || clusterFksByContext) then baseConfig
-                        else
-                            let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle catalog).Value
-                            let withVolume =
-                                if weightVolumeByCentrality then
-                                    let ranking = (Projection.Core.Passes.CentralityPass.registered.Run topo).Value.Value
-                                    let derived = SyntheticVolume.byCentrality centralityWeightStrength centralityWeightMaxFactor baseConfig.Scale ranking
-                                    { baseConfig with VolumeByKind = SyntheticVolume.mergeUnderOperator baseConfig.VolumeByKind derived }
-                                else baseConfig
-                            if clusterFksByContext then
-                                let discovery = (Projection.Core.Passes.BoundedContextPass.registered.Run topo).Value.Value
-                                let clusters =
-                                    discovery.Candidates
-                                    |> List.collect (fun c -> c.Members |> List.map (fun m -> m, c.AnchorKey))
-                                    |> Map.ofList
-                                { withVolume with FkLocalityClusters = clusters }
-                            else withVolume
-                    let realize = FakerRealization.realize catalog correction
-                    // The sink opens through the one `ConnectionSpec.openSpec`
-                    // opener (recon #13 — `env:` / `file:` / `live:` / bare,
-                    // uniform with `transfer` / `slice`).
-                    match! ConnectionSpec.openSpec SubstrateRole.Sink "synthetic-sink" connSpec with
-                    | Error es -> return Result.failure es
-                    | Ok sink ->
-                        use sink = sink
-                        let mode = if execute then Transfer.Execute else Transfer.DryRun
-                        return! Transfer.runSynthetic mode emission allowCdc sink catalog profile effectiveConfig seed realize
-        }
+                    | Ok (catalog, effectiveConfig, realize) ->
+                        // The sink opens through the one `ConnectionSpec.openSpec`
+                        // opener (recon #13 — `env:` / `file:` / `live:` / bare,
+                        // uniform with `transfer` / `slice`).
+                        match! ConnectionSpec.openSpec SubstrateRole.Sink "synthetic-sink" connSpec with
+                        | Error es -> return Result.failure es
+                        | Ok sink ->
+                            use sink = sink
+                            let mode = if execute then Transfer.Execute else Transfer.DryRun
+                            return! Transfer.runSynthetic mode emission allowCdc sink catalog profile effectiveConfig seed realize
+            }

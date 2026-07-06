@@ -780,12 +780,53 @@ let private mkAcyclicLeveledCatalog () : Kind list =
     let indep = mkStaticLevelKind "LvlIndep" "OSUSR_TEST_LVL_INDEP" None [ "1" ]
     [ root; mid; leaf; indep ]
 
-/// The same graph PLUS a self-cycle kind. The unresolved 1-node SCC puts
-/// the WHOLE order into `Mode = Alphabetical` — the mint's degraded arm
+/// A pair of static kinds forming a genuinely UNRESOLVABLE cycle: each
+/// holds a NULLABLE FK to the other — a 2-SCC with TWO Weak edges, which
+/// the asymmetric resolver refuses by name ("multiple Weak edges; resolver
+/// refuses to choose"). Both FK columns are nullable + same-cycle, so both
+/// defer to Phase 2 (the partition law covers both phases).
+let private mkStaticMutualCycleKind (name: string) (table: string) (otherName: string) : Kind =
+    let kindKey = mkKey ["TestModule"; name]
+    let idKey = mkKey ["TestModule"; name; "Id"]
+    let peerKey = mkKey ["TestModule"; name; "PeerId"]
+    let row =
+        { Identifier = mkKey ["TestModule"; name; "Row"; "1"]
+          Values = Map.ofList [ mkName "Id", "1"; mkName "PeerId", "1" ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName name
+        Origin   = Native
+        Modality = [ Static [ row ] ]
+        Physical = mkTableId "dbo" table
+        Attributes =
+            [
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create peerKey (mkName "PeerId") Integer with Column = ColumnRealization.create ("PEERID") (true) |> Result.value }
+            ]
+        References =
+            [ Reference.create (mkKey ["TestModule"; name; "RefPeer"]) (mkName "RefPeer") peerKey (mkKey ["TestModule"; otherName]) ]
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+/// The same graph PLUS an unresolvable cycle. The unresolved SCC puts the
+/// WHOLE order into `Mode = Alphabetical` — the mint's degraded arm
 /// (singleton groups; no parallelism licensed) and the Phase-2 surface
-/// (the deferred self-FK re-points by UPDATE).
+/// (the deferred cycle FKs re-point by UPDATE).
+///
+/// Until 2026-07-06 the fixture was ONE nullable self-FK kind — the
+/// self-loop resolver rule (the peer-canary finding) now RESOLVES that
+/// shape, so the unresolvable premise needs the honest two-weak-edge
+/// 2-cycle instead. The self-FK kind stays in the partition-law sweep via
+/// `mkStaticSelfCycleKind` where its Phase-2 shape is what matters.
 let private mkCycleBearingCatalog () : Kind list =
-    mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ]
+    mkAcyclicLeveledCatalog ()
+    @ [ mkStaticMutualCycleKind "LvlCycA" "OSUSR_TEST_LVL_CYCA" "LvlCycB"
+        mkStaticMutualCycleKind "LvlCycB" "OSUSR_TEST_LVL_CYCB" "LvlCycA" ]
 
 let private composeBoth (kinds: Kind list) =
     let catalog = mkCatalog kinds
@@ -812,9 +853,14 @@ let private leveledSegmentsOf (leveled: DataEmissionComposer.LeveledDeploymentTe
 
 [<Fact>]
 let ``P2: composeRenderedLeveled PARTITIONS composeRenderedFull — segment multiset equality (faithful split, never a re-render)`` () =
-    // The law holds in BOTH modes: the Topological catalog (real levels)
-    // and the cycle-bearing one (Alphabetical fallback, singleton groups).
-    for kinds in [ mkAcyclicLeveledCatalog (); mkCycleBearingCatalog () ] do
+    // The law holds in EVERY mode: the Topological catalog (real levels),
+    // the unresolvable-cycle one (Alphabetical fallback, singleton groups),
+    // and the resolved-self-loop one (Topological since 2026-07-06 — the
+    // self-loop rule — with a Phase-2 surface).
+    for kinds in
+        [ mkAcyclicLeveledCatalog ()
+          mkCycleBearingCatalog ()
+          mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ] ] do
         let fused, leveled = composeBoth kinds
         let fusedSegments = segments fused |> List.sort
         let leveledSegments = leveledSegmentsOf leveled |> List.sort
@@ -843,17 +889,38 @@ let ``P2: the leveled plan deploys FK parents at earlier Phase-1 levels; FK-inde
 
 [<Fact>]
 let ``P2: an unresolved cycle anywhere degrades the plan to singleton groups — parallelism is never licensed on an alphabetical order`` () =
-    // One self-FK kind puts the WHOLE catalog into Mode = Alphabetical
-    // (the resolver does not break 1-node SCCs); under it "parents
-    // precede children" no longer holds, so the mint refuses multi-member
-    // groups — the leveled deploy degrades to exactly the fused
-    // sequential order, never to unproven concurrency. (The P2-wire
-    // finding: before the mode guard, this catalog collapsed the real
-    // Root←Mid←Leaf FK chain into ONE concurrent group.)
+    // One UNRESOLVABLE cycle (the mutual-weak-FK pair — the resolver
+    // refuses to choose between two Weak edges) puts the WHOLE catalog
+    // into Mode = Alphabetical; under it "parents precede children" no
+    // longer holds, so the mint refuses multi-member groups — the leveled
+    // deploy degrades to exactly the fused sequential order, never to
+    // unproven concurrency. (The P2-wire finding: before the mode guard,
+    // this catalog collapsed the real Root←Mid←Leaf FK chain into ONE
+    // concurrent group.)
     let _, leveled = composeBoth (mkCycleBearingCatalog ())
     for level in leveled.Phase1Levels @ leveled.Phase2Levels do
         Assert.Equal(1, ParallelSafe.members level |> List.length)
-    // The self-cycle kind's deferred FK still lands in Phase 2.
+    // The cycle pair's deferred FKs still land in Phase 2.
+    Assert.NotEmpty leveled.Phase2Levels
+
+[<Fact>]
+let ``P2: a nullable self-FK no longer degrades the order — the self-loop resolves, levels stay licensed, the deferral stays`` () =
+    // The 2026-07-06 self-loop rule (the peer-canary finding): the common
+    // OutSystems shape (Category.Parent / Employee.Manager) must not cost
+    // the estate its topological order — the self-edge breaks for
+    // ordering, the resolved SCC keeps the kind in `Cycles`, and the
+    // nullable self-FK still re-points by Phase-2 UPDATE.
+    let _, leveled =
+        composeBoth (mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ])
+    // The acyclic chain's root level still carries ≥2 concurrent members —
+    // parallelism is NOT surrendered to the self-loop.
+    let rootLevel =
+        leveled.Phase1Levels
+        |> List.find (fun lvl ->
+            ParallelSafe.members lvl |> List.exists (fun s -> s.Contains "OSUSR_TEST_LVL_ROOT"))
+    Assert.True(ParallelSafe.members rootLevel |> List.length >= 2,
+                "the self-loop must not degrade the acyclic chain's parallel levels")
+    // The self-FK still defers: Phase 2 re-points it.
     Assert.NotEmpty leveled.Phase2Levels
 
 [<Fact>]

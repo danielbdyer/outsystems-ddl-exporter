@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="TaskSync.fs" />
+    <Compile Include="OssysSeedBuilder.fs" />
     <Compile Include="TotalityFunctor.fs" />
     <Compile Include="IRBuilders.fs" />
     <Compile Include="Fixtures.fs" />

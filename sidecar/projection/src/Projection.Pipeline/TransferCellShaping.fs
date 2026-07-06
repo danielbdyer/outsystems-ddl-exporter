@@ -16,15 +16,31 @@ module TransferCellShaping =
     /// cell rows. Deferred FK columns are emitted as the empty raw —
     /// `KeepNulls` maps that to SQL NULL — so Phase 1 satisfies a cycle;
     /// Phase 2 re-points them.
+    ///
+    /// 2026-07-06 (the phase-2 adversarial review, HIGH #3): a SINK-ONLY
+    /// attribute (present in the sink contract, absent from the ingested
+    /// rows) is now OMITTED from the column list entirely — the sink's own
+    /// DEFAULT applies at insert. Before, it emitted the empty raw →
+    /// explicit NULL, which `KeepNulls` pinned in place: the default the
+    /// shape gate promised never fired, and a mandatory sink-only column
+    /// crashed the bulk load raw. The availability set derives from the
+    /// first row's key set (the ingest SELECT's column list is uniform per
+    /// kind) ∪ the deferred set (deferred columns are deliberately NULLed).
     let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
-        rows
-        |> List.map (fun row ->
-            attrs
-            |> List.map (fun a ->
-                let raw =
-                    if Set.contains a.Name deferred then ""
-                    else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
+        match rows with
+        | [] -> []
+        | first :: _ ->
+            let available =
+                Set.union deferred (first.Values |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+            let carried = attrs |> List.filter (fun a -> Set.contains a.Name available)
+            rows
+            |> List.map (fun row ->
+                carried
+                |> List.map (fun a ->
+                    let raw =
+                        if Set.contains a.Name deferred then ""
+                        else Map.tryFind a.Name row.Values |> Option.defaultValue ""
+                    { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
 
     let toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
         toCellsOver kind.Attributes deferred rows
@@ -48,8 +64,12 @@ module TransferCellShaping =
     /// per-attribute basis scans once — the docstring's "once per kind"
     /// made true. The row application is unchanged.
     let private quantumCellsOverStaged (basis: RowBasis) (attrs: Attribute list) (deferred: Set<Name>) : RowQuantum list -> CellValue list list =
+        // HIGH #3 (see `toCellsOver`): a sink-only attribute — absent from
+        // the stream's basis — is omitted, so the sink default applies.
         let cols =
             attrs
+            |> List.filter (fun a ->
+                Set.contains a.Name deferred || Option.isSome (RowBasis.tryOrdinal a.Name basis))
             |> List.map (fun a ->
                 let get =
                     if Set.contains a.Name deferred then (fun _ -> "")

@@ -246,34 +246,6 @@ module internal ReverseLegFixtures =
         "(1000,N'VP',1002),(1001,N'Mgr',1000),(1002,N'CEO',NULL),(1003,N'Ghost',9999); " +
         "SET IDENTITY_INSERT [dbo].[Employee] OFF;"
 
-    /// A login + db-user carrying EXACTLY the cloud sink's `grant: data`
-    /// envelope (database-scope SELECT, INSERT, UPDATE, DELETE — no ALTER,
-    /// no ddl_admin), created by the fixture's admin connection. Returns
-    /// (loginName, restricted connection string). The caller drops the
-    /// login in `finally` (the user dies with the ephemeral DB).
-    let createDmlPrincipal
-        (adminSink: Microsoft.Data.SqlClient.SqlConnection)
-        (sinkConnStr: string)
-        (grants: string)
-        : System.Threading.Tasks.Task<string * string> =
-        task {
-            let login = "l3dml_" + System.Guid.NewGuid().ToString("N").Substring(0, 8)
-            let password = "L3!dml#" + System.Guid.NewGuid().ToString("N").Substring(0, 12)
-            do! Deploy.executeBatch adminSink
-                    (sprintf "CREATE LOGIN [%s] WITH PASSWORD = N'%s'; CREATE USER [%s] FOR LOGIN [%s]; GRANT %s TO [%s];"
-                        login password login login grants login)
-            let builder = Microsoft.Data.SqlClient.SqlConnectionStringBuilder(sinkConnStr)
-            builder.UserID <- login
-            builder.Password <- password
-            return login, builder.ConnectionString
-        }
-
-    let dropLogin (adminSink: Microsoft.Data.SqlClient.SqlConnection) (login: string) : unit =
-        try
-            (Deploy.executeBatch adminSink (sprintf "DROP LOGIN [%s];" login)).GetAwaiter().GetResult()
-        with _ -> ()
-
-
 [<Xunit.Collection("Docker-SqlServer")>]
 type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
@@ -640,7 +612,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
             (fun src _ adminSink sinkConnStr logicalContract physicalContract ->
                 task {
                     let! (login, restrictedConnStr) =
-                        ReverseLegFixtures.createDmlPrincipal adminSink sinkConnStr "SELECT, INSERT, UPDATE, DELETE"
+                        DmlPrincipal.createManaged adminSink sinkConnStr
                     try
                         use sink = new Microsoft.Data.SqlClient.SqlConnection(restrictedConnStr)
                         do! sink.OpenAsync()
@@ -660,7 +632,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                             [ ("acc-a1", Some "alice@x"); ("acc-a2", Some "alice@x"); ("acc-b1", Some "bob@x") ], aAccCust)
                         Assert.Equal(4, aPayInv.Length)
                     finally
-                        ReverseLegFixtures.dropLogin adminSink login
+                        DmlPrincipal.dropLogin adminSink login
                 })
 
     [<Fact>]
@@ -670,7 +642,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
             (fun _ _ adminSink sinkConnStr _ _ ->
                 task {
                     let! (login, restrictedConnStr) =
-                        ReverseLegFixtures.createDmlPrincipal adminSink sinkConnStr "SELECT, INSERT, UPDATE, DELETE"
+                        DmlPrincipal.createManaged adminSink sinkConnStr
                     try
                         use restricted = new Microsoft.Data.SqlClient.SqlConnection(restrictedConnStr)
                         do! restricted.OpenAsync()
@@ -682,7 +654,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                                     "SET IDENTITY_INSERT [dbo].[OSUSR_L3_CUSTOMER] ON;" :> System.Threading.Tasks.Task)
                         Assert.Contains("permission", ex.Message.ToLowerInvariant())
                     finally
-                        ReverseLegFixtures.dropLogin adminSink login
+                        DmlPrincipal.dropLogin adminSink login
                 })
 
     [<Fact>]
@@ -692,7 +664,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
             (fun src _ adminSink sinkConnStr logicalContract physicalContract ->
                 task {
                     let! (login, restrictedConnStr) =
-                        ReverseLegFixtures.createDmlPrincipal adminSink sinkConnStr "SELECT"
+                        DmlPrincipal.create adminSink sinkConnStr "SELECT"
                     try
                         use sink = new Microsoft.Data.SqlClient.SqlConnection(restrictedConnStr)
                         do! sink.OpenAsync()
@@ -708,7 +680,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         let! customers = ReverseLegFixtures.countRows adminSink "[dbo].[OSUSR_L3_CUSTOMER]"
                         Assert.Equal(0, customers)
                     finally
-                        ReverseLegFixtures.dropLogin adminSink login
+                        DmlPrincipal.dropLogin adminSink login
                 })
 
     [<Fact>]
@@ -723,7 +695,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
             (fun src _ adminSink sinkConnStr logicalContract physicalContract ->
                 task {
                     let! (login, restrictedConnStr) =
-                        ReverseLegFixtures.createDmlPrincipal adminSink sinkConnStr "SELECT, INSERT, UPDATE, DELETE"
+                        DmlPrincipal.createManaged adminSink sinkConnStr
                     try
                         do! Deploy.executeBatch adminSink
                                 (sprintf "DENY INSERT ON [dbo].[OSUSR_L3_INVOICE] TO [%s];" login)
@@ -740,7 +712,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(2, customers)
                         Assert.Equal(0, invoices)
                     finally
-                        ReverseLegFixtures.dropLogin adminSink login
+                        DmlPrincipal.dropLogin adminSink login
                 })
 
     // ------------------------------------------------------------------

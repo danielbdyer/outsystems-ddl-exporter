@@ -89,6 +89,18 @@ module ReverseLegRealization =
             Result.failureOf
                 (ValidationError.create "transfer.reverseLeg.journalRequiresStreaming"
                     "--journal is the streaming realization's chunk-resume ledger; the request's table subset / --resumable / wipe forces the materialized path. Remove those to stream, or drop --journal.")
+        elif resumable && not sinkResidentResumeAvailable then
+            // 2026-07-06 (the phase-2 permission audit): the MATERIALIZED
+            // resumable envelope hosts its G10 marker in a sink-resident
+            // progress table (`TransferResume.progressTableSql` — CREATE
+            // TABLE), which the ManagedDml data grant forbids. Only the
+            // streaming∧resumable arm consulted the archetype before; a plain
+            // `--resumable` against a managed sink sailed past the selector
+            // and died RAW on error 262 mid-run. Refuse BY NAME instead —
+            // the same capability-honesty the streaming arm already had.
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.resumableSinkUnsupported"
+                    "--resumable keeps its G10 marker in a sink-resident progress table, which needs CREATE TABLE the sink's data grant forbids (archetype managed-dml/undeclared). Use --streaming --journal <dir> for a resumable estate-scale run, drop --resumable (a wipe-and-load subset re-run is idempotent by construction), or declare the sink archetype full-rights if it truly can host the table.")
         elif admissible then Result.success (ReverseLegRealization.Streaming journalDirectory)
         else Result.success ReverseLegRealization.Materialized
 
@@ -282,6 +294,19 @@ module Transfer =
     /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
     /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
 
+    /// Best-effort write of the SUCCESS-undo artifact (`transfer-undo.sql`)
+    /// — the deliberate-revert sibling of `TransferRevert.runRevert`'s
+    /// failed-run `transfer-revert.sql`. Empty script / no dir → no-op;
+    /// a write failure never fails the (successful) load.
+    let private writeUndoArtifact (sink: SqlConnection) (artifactDir: string option) (undo: string list) : unit =
+        match artifactDir with
+        | Some dir when not (List.isEmpty undo) ->
+            try
+                System.IO.Directory.CreateDirectory dir |> ignore
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-undo.sql"), String.concat "\n" (TransferRevert.artifactHeader "transfer-undo" sink :: undo)) // LINT-ALLOW: terminal file-write boundary; each entry is terminal SQL text (same convention as TransferRevert.runRevert's artifact write)
+            with _ -> ()
+        | _ -> ()
+
     let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
@@ -424,7 +449,19 @@ module Transfer =
                     return ()
                 }
             match verdict.Disposition with
-            | RunCompleted () -> return writeSkips.Value, laneDescents.Value
+            | RunCompleted () ->
+                // 2026-07-06 (the proving-loop program): the undo script is
+                // written on SUCCESS too — `transfer-undo.sql`, the precise
+                // DELETE-by-captured-key script (children first; pre-existing
+                // rows untouched). A small-subset transfer can be proven and
+                // then deliberately reverted (`projection revert`). Distinct
+                // file from `transfer-revert.sql` (the FAILED-run
+                // compensation) so the two artifacts never shadow each other.
+                // NOTE: a WipeAndLoad's wipe is NOT undone by this script —
+                // the undo removes what this run MINTED; rows the wipe
+                // deleted are gone (named in the runbook).
+                writeUndoArtifact sink revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
+                return writeSkips.Value, laneDescents.Value
             | RunStopped _ ->
                 // The body never returns Error; total match, named.
                 return invalidOp "writePlan: the load body cannot stop"
@@ -534,6 +571,55 @@ module Transfer =
                             "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
                             (SsKey.rootOriginal k)))
             | [] -> None
+
+    /// 2026-07-06 (the parity sweep): the ESCAPING-RELATIONSHIP gate at the
+    /// ENGINE level — every leg (peer, legacy reverse, forward) inherits it.
+    /// A declared subset whose FK targets an out-of-subset, un-reconciled
+    /// kind would land rows carrying the SOURCE environment's surrogate
+    /// values (silent cross-wiring; the phase-2 CRITICAL #2 class). The
+    /// peer FACE narrates rich per-edge strategy proposals before this
+    /// fires; here is the backstop that makes the hazard unreachable from
+    /// ANY entry point. `None` load-set (a full transfer) has no escapes
+    /// by definition.
+    let subsetEscapeGate (catalog: Catalog) (loadSet: Set<SsKey> option) (reconciled: Set<SsKey>) : ValidationError option =
+        match loadSet with
+        | None -> None
+        | Some set ->
+            let escapes =
+                TransferSubset.escapingEdges catalog set reconciled
+                |> List.map (fun (kind, r, target) ->
+                    sprintf "%s.%s -> %s" (Name.value kind.Name) (Name.value r.Name) (Name.value target.Name))
+            if List.isEmpty escapes then None
+            else
+                Some (ValidationError.create
+                        "transfer.subsetFkEscapes"
+                        (sprintf
+                            "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
+                            escapes.Length (String.concat "; " escapes)))
+
+    /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
+    /// whose load order fell back to the ALPHABETICAL degrade (an
+    /// unresolvable dependency cycle anywhere in the estate) would load
+    /// children before their parents estate-wide — mass FK-remap drops for
+    /// `AssignedBySink` kinds, silent cross-environment orphans for
+    /// preserved-key loads. Refuse a live run by name; a DryRun still
+    /// previews the degraded plan (the operator sees the order and the
+    /// cycle diagnostics without a write).
+    let orderedLoadGate (topo: TopologicalOrder) : ValidationError option =
+        match topo.Mode with
+        | Topological -> None
+        | _ ->
+            let cycleText =
+                topo.Cycles
+                |> List.truncate 3
+                |> List.map (fun c ->
+                    sprintf "[%s]" (c.Members |> List.map SsKey.rootOriginal |> String.concat ", "))
+                |> String.concat "; "
+            Some (ValidationError.create
+                    "transfer.loadOrderUnproven"
+                    (sprintf
+                        "the load order degraded to the alphabetical fallback (%d unresolved dependency cycle(s): %s) — a live load would land children before their parents. Make the cycle's FK columns nullable (they then defer to phase 2 automatically), or transfer without the affected kinds."
+                        topo.Cycles.Length cycleText))
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface
@@ -733,7 +819,7 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
-        (ingestion: (Catalog * Map<Name, Name>) option)
+        (ingestion: (Catalog * Map<SsKey, Map<Name, Name>>) option)
         (writeOpts: WriteOptions)
         : Task<Result<TransferReport>> =
         task {
@@ -812,8 +898,12 @@ module Transfer =
             let! rawRows = Ingestion.collectInOrderFor ingestScope source ingestCatalog topo
             let rows =
                 match ingestion with
-                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
-                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
+                | Some (_, renamesByKind) when not (Map.isEmpty renamesByKind) ->
+                    // KIND-SCOPED re-key (2026-07-06, adversarial CRITICAL #1):
+                    // each kind's rows re-point through ITS OWN rename map only
+                    // — a rename in one kind can no longer poison a same-named
+                    // column in an unrelated kind.
+                    rawRows |> Map.map (fun k rs -> RenameProjection.repointRows (RenameProjection.forKind k renamesByKind) rs)
                 | _ -> rawRows
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             // The plan-build is the ONE OperatorIntent Insertion site —
@@ -830,7 +920,13 @@ module Transfer =
                 if mode = Execute then
                     match executeGate catalog plan with
                     | Some refusal -> Some refusal
-                    | None         -> validateUserMap allowDrops reconciled
+                    | None ->
+                        match orderedLoadGate topo with
+                        | Some refusal -> Some refusal
+                        | None ->
+                            match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
+                            | Some refusal -> Some refusal
+                            | None         -> validateUserMap allowDrops reconciled
                 else None
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
@@ -1048,7 +1144,12 @@ module Transfer =
                 // correction is empty (byte-identical to the pre-F0c load).
                 let realizedRows = realize rows
                 let plan = DataLoadPlan.build catalog topo realizedRows SurrogateRemapContext.empty
-                let preWrite = if mode = Execute then executeGate catalog plan else None
+                let preWrite =
+                    if mode = Execute then
+                        match executeGate catalog plan with
+                        | Some r -> Some r
+                        | None -> orderedLoadGate topo
+                    else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
@@ -1145,7 +1246,12 @@ module Transfer =
             | Ok () ->
                 let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
                 let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
-                let preWrite = if mode = Execute then executeGate catalog plan else None
+                let preWrite =
+                    if mode = Execute then
+                        match executeGate catalog plan with
+                        | Some r -> Some r
+                        | None -> orderedLoadGate topo
+                    else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
@@ -1198,9 +1304,9 @@ module Transfer =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         : Task<Result<TransferReport>> =
-        let renameMap =
-            RenameProjection.renames diff |> RenameProjection.renameMap
-        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+        let renamesByKind =
+            RenameProjection.renames diff |> RenameProjection.renameMapByKind
+        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renamesByKind)) { WriteOptions.def with IdentityPolicy = identityPolicy }
 
     let runWithRenamesWith
         (identityPolicy: IdentityPolicy)
@@ -1325,7 +1431,7 @@ module Transfer =
         (source: SqlConnection)
         (sink: SqlConnection)
         (ingestCatalog: Catalog)
-        (renameMap: Map<Name, Name>)
+        (renamesByKind: Map<SsKey, Map<Name, Name>>)
         (catalog: Catalog)
         (plan: DataLoadPlan)
         (journal: CaptureJournal option)
@@ -1371,12 +1477,12 @@ module Transfer =
 
         // PL-9 (S22): each load-kind's renamed row basis derives ONCE and
         // threads to BOTH phases — phase 2 recomputed it from the same
-        // (renameMap, ingestKind) inputs in the same run.
+        // (per-kind rename map, ingestKind) inputs in the same run.
         let basisByKind : Map<SsKey, RowBasis> =
             plan.Loads
             |> List.choose (fun l ->
                 Catalog.tryFindKind l.Kind ingestCatalog
-                |> Option.map (fun ik -> l.Kind, RowBasis.rename renameMap (Kind.rowBasis ik)))
+                |> Option.map (fun ik -> l.Kind, RowBasis.rename (RenameProjection.forKind l.Kind renamesByKind) (Kind.rowBasis ik)))
             |> Map.ofList
 
         // Q3 + PL-9 (S16): the re-point at the quantum grain, STAGED per
@@ -1629,12 +1735,13 @@ module Transfer =
                                 |> List.map (fun a -> a.Name)
                                 |> Set.ofList
                                 |> Set.union load.DeferredFkColumns
+                            let kindRenames = RenameProjection.forKind kind.SsKey renamesByKind
                             let projectedIngest =
                                 match
                                     ingestKind.Attributes
                                     |> List.filter (fun a ->
                                         Set.contains
-                                            (Map.tryFind a.Name renameMap |> Option.defaultValue a.Name)
+                                            (Map.tryFind a.Name kindRenames |> Option.defaultValue a.Name)
                                             neededSinkNames)
                                 with
                                 | [] -> ingestKind
@@ -1644,7 +1751,7 @@ module Transfer =
                             // stream; phase 2's basis is the projection's own
                             // — a DIFFERENT fact once S11 narrows the pull,
                             // derived once per kind here.)
-                            let basis = RowBasis.rename renameMap (Kind.rowBasis projectedIngest)
+                            let basis = RowBasis.rename kindRenames (Kind.rowBasis projectedIngest)
                             let renderUpdate = TransferCellShaping.phase2UpdateSqlQuantum basis kind load.DeferredFkColumns
                             // PL-9 (S16): re-point + PK re-key staged once per
                             // kind. The re-key: the PK cell re-keys to the
@@ -1747,7 +1854,7 @@ module Transfer =
         : Task<Result<TransferReport>> =
         task {
             let diff = CatalogDiff.between sourceContract sinkContract
-            let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+            let renamesByKind = RenameProjection.renames diff |> RenameProjection.renameMapByKind
             let cdcGate : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
@@ -1791,7 +1898,7 @@ module Transfer =
                             match Catalog.tryFindKind kind sourceContract with
                             | Some ingestKind ->
                                 let! rows = AsyncStream.toList (Ingestion.streamKindRows source ingestKind)
-                                acc <- Map.add kind (RenameProjection.repointRows renameMap rows) acc
+                                acc <- Map.add kind (RenameProjection.repointRows (RenameProjection.forKind kind renamesByKind) rows) acc
                             | None -> ()
                         return acc
                     }
@@ -1804,13 +1911,20 @@ module Transfer =
                     DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
                     |> DataLoadPlan.reclassifyReconciled reconciledKinds
                 // Pre-write gates (Execute only), precedence-ordered:
-                // structural unsatisfiability first, then the validate-
+                // structural unsatisfiability first, then the load-order
+                // proof (2026-07-06 parity sweep — the streaming arm was
+                // the one Execute path without it), then the validate-
                 // user-map orphan halt (AC-I5 / NM-31 — now ON streaming).
+                // (No subset gate: streaming refuses --tables at the
+                // realization selector, so no load-set reaches here.)
                 let preWrite =
                     if mode = Execute then
                         match executeGate sinkContract plan with
                         | Some refusal -> Some refusal
-                        | None         -> validateUserMap allowDrops reconciled
+                        | None ->
+                            match orderedLoadGate topo with
+                            | Some refusal -> Some refusal
+                            | None         -> validateUserMap allowDrops reconciled
                     else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
@@ -1897,7 +2011,7 @@ module Transfer =
                         let! streamed =
                             task {
                                 try
-                                    let! r = writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds
+                                    let! r = writePlanStreaming source sink sourceContract renamesByKind sinkContract plan journal reconciled.Remap reconciledKinds
                                     return r
                                 with ex ->
                                     do! TransferRevert.runRevertFromJournal sink sinkContract plan journal autoRevert revertDir
@@ -2041,9 +2155,9 @@ module Transfer =
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        let renameMap =
-            RenameProjection.renames diff |> RenameProjection.renameMap
-        runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+        let renamesByKind =
+            RenameProjection.renames diff |> RenameProjection.renameMapByKind
+        runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renamesByKind)) { WriteOptions.def with IdentityPolicy = identityPolicy }
 
     let runReconcilingWithRenamesWith
         (identityPolicy: IdentityPolicy)
@@ -2085,23 +2199,61 @@ module Transfer =
     /// `resolveReconciliation` is a function of the reconstructed contract
     /// so the contract is read exactly once (the Source open is not
     /// duplicated to resolve reconciliation specs).
-    /// Resolve the declared table subset (logical entity names) to a load-set
-    /// of `SsKey`s against the source contract — refusing any name the schema
-    /// does not carry (total decisions, named skips). Empty list → `None` (all).
-    let private resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
+    /// Resolve the declared table subset (logical entity names, or the
+    /// module-qualified `Module.Entity` form) to a load-set of `SsKey`s
+    /// against the source contract — refusing any name the schema does not
+    /// carry, AND any bare name that resolves to more than one kind (total
+    /// decisions, named skips; 2026-07-06, adversarial MEDIUM #6 — the prior
+    /// `Map.ofList` silently last-won a duplicate logical name across
+    /// modules, transferring whichever kind sorted last). Empty list →
+    /// `None` (all). Public since the peer leg: the peer face resolves the
+    /// SAME subset ahead of its shape / subset-FK gates, one vocabulary,
+    /// one resolver.
+    let resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
         if List.isEmpty tables then Result.success None
         else
-            let byName =
-                Catalog.allKinds contract
-                |> List.map (fun k -> (Name.value k.Name).ToLowerInvariant(), k.SsKey)
-                |> Map.ofList
-            let resolved = tables |> List.map (fun t -> t, Map.tryFind (t.ToLowerInvariant()) byName)
-            match resolved |> List.choose (fun (t, o) -> if Option.isNone o then Some t else None) with
-            | [] -> Result.success (Some (resolved |> List.choose snd |> Set.ofList))
-            | missing ->
+            let all = Catalog.allModulesKinds contract
+            let resolveOne (t: string) : Choice<SsKey, string, string> =
+                let byBareName () =
+                    all
+                    |> List.filter (fun (_, k) -> System.String.Equals(Name.value k.Name, t, System.StringComparison.OrdinalIgnoreCase))
+                match t.IndexOf '.' with
+                | dot when dot > 0 ->
+                    let moduleName = t.Substring(0, dot)
+                    let entityName = t.Substring(dot + 1)
+                    match CatalogResolution.tryKindByLogical contract moduleName entityName with
+                    | Some key -> Choice1Of3 key
+                    | None ->
+                        // A dotted string may be a bare entity name that
+                        // happens to carry a '.'; fall through to the bare
+                        // lookup before refusing.
+                        match byBareName () with
+                        | [ (_, k) ] -> Choice1Of3 k.SsKey
+                        | [] -> Choice2Of3 t
+                        | _ -> Choice3Of3 t
+                | _ ->
+                    match byBareName () with
+                    | [ (_, k) ] -> Choice1Of3 k.SsKey
+                    | [] -> Choice2Of3 t
+                    | many ->
+                        let qualified =
+                            many
+                            |> List.map (fun (m, k) -> sprintf "%s.%s" (Name.value m.Name) (Name.value k.Name))
+                            |> String.concat ", "
+                        Choice3Of3 (sprintf "%s (matches %s)" t qualified)
+            let resolved  = tables |> List.map resolveOne
+            let missing   = resolved |> List.choose (function Choice2Of3 t -> Some t | _ -> None)
+            let ambiguous = resolved |> List.choose (function Choice3Of3 t -> Some t | _ -> None)
+            if not (List.isEmpty missing) then
                 Result.failureOf
                     (ValidationError.create "transfer.tablesUnknown"
                         (sprintf "table subset names not found in the source schema: %s" (String.concat ", " missing)))
+            elif not (List.isEmpty ambiguous) then
+                Result.failureOf
+                    (ValidationError.create "transfer.tablesAmbiguous"
+                        (sprintf "table subset names match more than one entity — qualify them as Module.Entity: %s" (String.concat "; " ambiguous)))
+            else
+                Result.success (Some (resolved |> List.choose (function Choice1Of3 k -> Some k | _ -> None) |> Set.ofList))
 
     /// The full apparatus-driven entry: the emission mode, the G10 resumable
     /// flag, and the declared table subset, threaded onto the `WriteOptions` the
@@ -2207,8 +2359,8 @@ module Transfer =
         : Task<Result<TransferReport>> =
         task {
             let diff = CatalogDiff.between logicalSourceContract physicalSinkContract
-            let renameMap =
-                RenameProjection.renames diff |> RenameProjection.renameMap
+            let renamesByKind =
+                RenameProjection.renames diff |> RenameProjection.renameMapByKind
             match resolveLoadSet logicalSourceContract tables with
             | Error es -> return Result.failure es
             | Ok loadSet ->
@@ -2220,7 +2372,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud

@@ -435,7 +435,7 @@ let ``J3: the rendered pair is SsKey-aligned by construction; the repoint is the
     // identity repoint. The rendition difference rides each contract's
     // physical coordinates at its own SQL boundary (source reads by B's
     // names, sink writes by A's), the LE-2-proven mechanism.
-    let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+    let renameMap = RenameProjection.renames diff |> RenameProjection.renameMapByKind
     Assert.True(Map.isEmpty renameMap)
 
 // -- planMovement routing (the pure surface→engine map) --------------------
@@ -608,10 +608,19 @@ let ``planMovement: a data move with Direction=UpLegacy routes to RunReverseLeg,
     match planOf legacy with
     | PlanAction.RunReverseLeg (ModelSource.ModelFile "m.json", None, "env:QA_CONN", "env:DEV_CONN", _, true) -> ()
     | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
+    // 2026-07-06 (the partial-transfer readiness program): a peer (UpPeer)
+    // data move routes to `TransferPeer` (SsKey-aligned, per-side OSSYS
+    // contracts + shape/subset-FK gates); an env→env move whose renditions
+    // are UNSET derives `Down` and keeps the name-blind generic `Transfer`
+    // (the identical-rendition escape hatch).
     let peer = { legacy with Direction = MovementDirection.UpPeer }
     match planOf peer with
+    | PlanAction.TransferPeer ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected TransferPeer, got %A" other)
+    let down = { legacy with Direction = MovementDirection.Down }
+    match planOf down with
     | PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
-    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+    | other -> Assert.Fail(sprintf "expected Transfer for an unset-rendition env→env move, got %A" other)
 
 // -- flow resolution (THE_CLI.md 2026-06-08; slice F2) ----------------------
 

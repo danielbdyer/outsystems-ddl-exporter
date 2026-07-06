@@ -384,6 +384,12 @@ type Intent =
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
+    /// `revert [--script <path>] --against <env> [--go]` — execute (or
+    /// preview) a transfer undo/revert artifact (`transfer-undo.sql` /
+    /// `transfer-revert.sql`) against a configured environment: the
+    /// deliberate-undo half of the proving loop (2026-07-06). Preview is the
+    /// default; a live run needs PROJECTION_ALLOW_EXECUTE=1 + --go.
+    | Revert of args: string list
     /// `slice-extract` / `slice-apply` / `slice-reset` / `slice-run` — the
     /// data-portability verbs (Slice 3/7). Lifted onto the typed `Intent` surface
     /// (recon #3) so the CLI runs ONE dispatcher; the bespoke flag parsing stays
@@ -461,6 +467,20 @@ type PlanAction =
     /// live + data source → transfer (DryRun preview when execute=false; the
     /// DML-only load when execute=true under --scope data).
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// live + data source whose DERIVED direction is `UpPeer` (A→A: two
+    /// deployed cells of ONE model, e.g. cloud-qa → cloud-uat, whose physical
+    /// `OSUSR_*` names differ per espace) → the peer SsKey-aligned transfer.
+    /// Unlike the bare `Transfer` (ONE `ReadSide` contract from the source,
+    /// physical names assumed identical on the sink), the peer runner reads a
+    /// contract from EACH side's OSSYS metamodel (`Source.ofOssys` — native
+    /// GUID identity, the espace-invariance law), gates the pair on SS_KEY-
+    /// keyed shape compatibility (`transfer.peer.shapeDivergence`, exit 5) and
+    /// on subset-escaping FK edges (`transfer.peer.subsetFkEscapes`, exit 9),
+    /// then rides the SAME rename-aware engine the reverse leg proved
+    /// (`Transfer.runReverseLegThroughConnectionsWith`) — reads with the
+    /// source's physical names, writes with the sink's. 2026-07-06, the
+    /// partial-transfer readiness program.
+    | TransferPeer of source: string * sink: string * opts: LoadOpts * execute: bool
     /// live + data source whose DERIVED direction is `UpLegacy` (B→A) → the
     /// reverse-leg runner (`Transfer.runReverseLeg` / the M3.b face). The engine
     /// distinguishes this from an A→A peer `Transfer` — which it cannot do by
@@ -501,6 +521,18 @@ type PlanAction =
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
     | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `revert [--script <path>] --against <env> [--go]` — execute (or
+    /// preview) a transfer undo/revert artifact against a configured live
+    /// environment (2026-07-06, the proving-loop program). Carries the
+    /// script path, the environment label (display), the RESOLVED conn
+    /// spec, and the per-run intent flag.
+    | RevertScript of script: string * envLabel: string * connSpec: string * go: bool * force: bool
+    /// `check go <flow>` — THE GO BOARD (2026-07-06, the preview-engine
+    /// program): the red/green go-readiness checklist for a data flow. The
+    /// action carries the flow's coordinates + the PLANNED action the flow
+    /// would run (the same `planFlow` derivation a real run takes, under
+    /// preview opts), so the board judges exactly what `--go` would execute.
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * planned: PlanAction
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool

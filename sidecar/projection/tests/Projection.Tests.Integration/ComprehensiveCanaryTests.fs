@@ -492,7 +492,7 @@ module ComprehensiveCanaryTests =
             let checkRow : OssysRowsetTypes.ColumnCheckRow =
                 { AttrId = suppAttrId
                   ConstraintName = "CHK_SUPP"
-                  Definition = "[ID] > 0"
+                  Definition = Some "[ID] > 0"
                   IsNotTrusted = false }
             let suppBundle : OssysRowsetTypes.RowsetBundle =
                 { OssysRowsetTypes.RowsetBundle.empty with

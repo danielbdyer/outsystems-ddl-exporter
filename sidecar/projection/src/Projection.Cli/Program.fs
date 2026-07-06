@@ -43,9 +43,12 @@ let private usageLines : string list =
         "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable] [--atomic] [--auto-revert]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
-        "                      | data --before <t> --after <t> | ready | shape )"
+        "                      | data --before <t> --after <t> | ready | shape | go <flow> )"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
+        "                      go    = THE GO BOARD for a data flow: every open decision +"
+        "                      the dry-run row forecast, red (exit 5) until each decision is"
+        "                      resolved, green (exit 0) when --go would execute cleanly"
         "    projection diff <a> <b> [--format json] [--depth N] [--only <channel>] [--module <name>]"
         "                      change between two refs (--only columns|relationships|indexes|"
         "                      sequences|tables scopes the display; --module scopes the diff)"
@@ -61,6 +64,12 @@ let private usageLines : string list =
         "    projection synth-correct --out <path>   propose a blessed-correction artifact (review/edit/bless)"
         "    projection inspect [<runId> [<runId>]]  a stored run (no id = latest; arrows dig, PgUp/PgDn walk runs)"
         "    projection init                 scaffold a projection.json"
+        "    projection revert [--script <p>] --against <env> [--go] [--force]   undo a transfer: run"
+        "                      the transfer-undo.sql a successful run wrote (or a failed run's"
+        "                      transfer-revert.sql) — preview by default; --go deletes the"
+        "                      captured rows in ONE transaction (pre-existing rows untouched);"
+        "                      the artifact's provenance header must match the --against"
+        "                      database (--force overrides a deliberate rename/restore)"
         "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
         "                                    --conn also probes a target (reachable + ALTER grant)"
         ""
@@ -109,7 +118,7 @@ let private usageLines : string list =
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
         "    4  Docker unavailable (a docker target; check fidelity)"
-        "    5  fidelity divergence (check canary / check drift; check shape not-ready)"
+        "    5  fidelity divergence (check canary / check drift; check shape / check go not-ready)"
         "    6  config error (file missing / unparseable / D9; connection-ref resolve; check shape env unreadable)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
         "    8  data divergence (check data row / null)"
@@ -214,7 +223,15 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // events, so their streams now open with `config.runStart` and
         // close with the §10 terminal — and the run is capturable.
         withRun "projection transfer" (fun () ->
-            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir)
+            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability.SinkResidentResume)
+    | PlanAction.TransferPeer (src, sink, opts, execute) ->
+        // The peer (A→A) leg (2026-07-06): two cells of one model, physical
+        // `OSUSR_*` names differing per espace. NO model rides the action —
+        // the face reads a contract from EACH side's OSSYS metamodel (native
+        // GUID identity), gates the pair (shape / subset-FK), and drives the
+        // same contract-pair engine path the reverse leg proved.
+        withRun "projection transfer" (fun () ->
+            runPeerTransfer src sink opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -280,6 +297,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
+    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo flowName fromLabel toLabel asJson planned)
+    | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
         shellRun "projection diff" Shell.ReadOnly (fun () -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule)
@@ -457,7 +476,11 @@ let private runList (asJson: bool) : int =
                 [ for KeyValue (name, f) in cfg.Flows ->
                     let extra =
                         [ if Option.isSome f.Rekey then yield "rekey"
-                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables)
+                          // `reconcile` is as load-bearing as `rekey` on the
+                          // golden shape (the re-key contract) — surface it so
+                          // the menu scan shows which flows carry a strategy.
+                          if not (List.isEmpty f.Reconcile) then yield sprintf "reconcile: %s" (String.concat "," f.Reconcile) ]
                     name, flowSourceText f.From, f.To, String.concat "; " extra ]
             TtyRenderer.renderAnswer asJson View.defaultDepth (TtyRenderer.buildFlowMenuView rows)
         0

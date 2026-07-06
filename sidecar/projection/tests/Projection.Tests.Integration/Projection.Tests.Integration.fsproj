@@ -14,6 +14,8 @@
   <ItemGroup>
     <Compile Include="IntegrationCollections.fs" />
     <Compile Include="EphemeralContainerFixture.fs" />
+    <Compile Include="DmlPrincipal.fs" />
+    <Compile Include="MockOutSystemsEnv.fs" />
     <Compile Include="LiveSourceDockerTests.fs" />
     <Compile Include="PayOnceCombinedVerbDockerTests.fs" />
     <Compile Include="PayOnceSchemaReadDockerTests.fs" />
@@ -34,6 +36,9 @@
     <Compile Include="VerifyDataIntegrationTests.fs" />
     <Compile Include="IngestionIntegrationTests.fs" />
     <Compile Include="TransferCanaryTests.fs" />
+    <Compile Include="PeerAlignedTransferDockerTests.fs" />
+    <Compile Include="PeerManagedGrantTransferDockerTests.fs" />
+    <Compile Include="GoBoardDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />

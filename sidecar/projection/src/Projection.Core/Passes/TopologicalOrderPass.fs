@@ -110,6 +110,20 @@ module TopologicalOrderPass =
         let initialIndegree =
             nodes |> List.map (fun n -> n, 0) |> Map.ofList
 
+        // PARALLEL edges (two references between the same (child, parent)
+        // pair — e.g. Employee.ManagerId + Employee.MentorId → Employee)
+        // contribute ONE precedence edge (2026-07-06, adversarial MEDIUM
+        // #9): the prior per-reference adjacency/indegree increments left a
+        // stale indegree after the resolver broke the (deduped) classified
+        // edge — Kahn residue, whole-catalog alphabetical degrade. Strength
+        // COMBINES across the parallel set: the pair is breakable only if
+        // EVERY parallel reference is Weak (a Cascade or non-nullable
+        // sibling still binds the dependency).
+        let strongerOf (a: EdgeStrength) (b: EdgeStrength) : EdgeStrength =
+            match a, b with
+            | EdgeStrength.Cascade, _ | _, EdgeStrength.Cascade -> EdgeStrength.Cascade
+            | EdgeStrength.Other, _ | _, EdgeStrength.Other -> EdgeStrength.Other
+            | _ -> EdgeStrength.Weak
         let folder (state: Graph) (k: Kind) : Graph =
             // Sort references by SsKey too — same invariance commitment
             // at the inner level.
@@ -127,20 +141,27 @@ module TopologicalOrderPass =
                     // dependency).
                     st
                 elif Set.contains r.TargetKind presentKeys then
-                    let children =
-                        Map.tryFind r.TargetKind st.Adjacency
-                        |> Option.defaultValue []
-                    let updatedAdjacency =
-                        st.Adjacency |> Map.add r.TargetKind (k.SsKey :: children)
-                    let currentIndegree =
-                        Map.tryFind k.SsKey st.Indegree |> Option.defaultValue 0
-                    let updatedIndegree =
-                        st.Indegree |> Map.add k.SsKey (currentIndegree + 1)
-                    { st with
-                        Adjacency       = updatedAdjacency
-                        Indegree        = updatedIndegree
-                        Edges           = edge :: st.Edges
-                        ClassifiedEdges = Map.add edge strength st.ClassifiedEdges }
+                    match Map.tryFind edge st.ClassifiedEdges with
+                    | Some existing ->
+                        // A parallel reference over an already-tracked pair:
+                        // combine strength only — adjacency/indegree/Edges
+                        // stay single-entry so break/reduce stays coherent.
+                        { st with ClassifiedEdges = Map.add edge (strongerOf existing strength) st.ClassifiedEdges }
+                    | None ->
+                        let children =
+                            Map.tryFind r.TargetKind st.Adjacency
+                            |> Option.defaultValue []
+                        let updatedAdjacency =
+                            st.Adjacency |> Map.add r.TargetKind (k.SsKey :: children)
+                        let currentIndegree =
+                            Map.tryFind k.SsKey st.Indegree |> Option.defaultValue 0
+                        let updatedIndegree =
+                            st.Indegree |> Map.add k.SsKey (currentIndegree + 1)
+                        { st with
+                            Adjacency       = updatedAdjacency
+                            Indegree        = updatedIndegree
+                            Edges           = edge :: st.Edges
+                            ClassifiedEdges = Map.add edge strength st.ClassifiedEdges }
                 else
                     { st with MissingEdges = edge :: st.MissingEdges }) state
 
@@ -324,13 +345,18 @@ module TopologicalOrderPass =
         (classified: Map<(SsKey * SsKey), EdgeStrength>)
         : ((SsKey * SsKey) * EdgeStrength) list =
         // All (source, target) pairs where both endpoints are in the
-        // SCC. Sorted by edge tuple for deterministic output.
+        // SCC. Sorted by edge tuple for deterministic output. Self-pairs
+        // (a = b) are REAL internal edges — a 1-member SCC's self-reference
+        // is exactly the (k, k) pair, and excluding it made every self-loop
+        // SCC unresolvable by construction (the resolver saw an empty edge
+        // list; found 2026-07-06 by the peer-aligned two-environment
+        // canary). The 2-cycle arm of the resolver ignores self-edges, so
+        // its semantics are unchanged.
         [ for a in members do
             for b in members do
-                if a <> b then
-                    match Map.tryFind (a, b) classified with
-                    | Some s -> yield (a, b), s
-                    | None   -> () ]
+                match Map.tryFind (a, b) classified with
+                | Some s -> yield (a, b), s
+                | None   -> () ]
         |> List.sortBy fst
 
     let private applyResolver

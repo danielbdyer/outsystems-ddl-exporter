@@ -62,12 +62,15 @@
     <Compile Include="TransferFkTrust.fs" />
     <Compile Include="TransferRevert.fs" />
     <Compile Include="TransferResume.fs" />
+    <Compile Include="TransferSubset.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
     <Compile Include="EjectRun.fs" />
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
+    <Compile Include="PeerTransfer.fs" />
+    <Compile Include="GoBoard.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

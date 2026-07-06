@@ -526,13 +526,14 @@ module OssysRowsetReader =
     let private parseColumnCheckRowFor
         (moduleName: string)
         (entityName: string)
+        (definition: string)
         (row: ColumnCheckRow)
         : Result<ColumnCheck> =
         let chkKey  = columnCheckSsKey moduleName entityName row.ConstraintName
         let chkName = Name.create row.ConstraintName
         match chkKey, chkName with
         | Ok k, Ok n ->
-            ColumnCheck.create k (Some n) row.Definition row.IsNotTrusted
+            ColumnCheck.create k (Some n) definition row.IsNotTrusted
         | _ ->
             propagateOrFallback
                 [ Result.errors chkKey
@@ -618,7 +619,16 @@ module OssysRowsetReader =
             // `Kind.ColumnChecks` is table-scoped (one entry per
             // unique constraint).
             |> List.distinctBy (fun row -> row.ConstraintName)
-            |> Bench.iterMap "adapter.osm.parse.rowsetColumnCheck" (parseColumnCheckRowFor moduleName kindRow.EntityName)
+            // A `Definition = None` row is the VIEW-DEFINITION-less read
+            // (the managed-cloud grant): the constraint exists but its
+            // body is unreadable, and `ColumnCheck` cannot represent a
+            // definition-less check — the row is SKIPPED (a named
+            // erasure: ColumnChecks are physical-realization artifacts
+            // the shape verdict strips (`Readiness.toLogicalShape`) and
+            // the data plane never consumes; a privileged read still
+            // carries them). 2026-07-06, the phase-2 mock-env program.
+            |> List.choose (fun row -> row.Definition |> Option.map (fun d -> row, d))
+            |> Bench.iterMap "adapter.osm.parse.rowsetColumnCheck" (fun (row, d) -> parseColumnCheckRowFor moduleName kindRow.EntityName d row)
         let foldedColumnChecks = Result.aggregate columnCheckResults
         // Slice 5 — TableId is typed (SchemaName / TableName).
         let physicalSchemaResult = SchemaName.create kindRow.DbSchema

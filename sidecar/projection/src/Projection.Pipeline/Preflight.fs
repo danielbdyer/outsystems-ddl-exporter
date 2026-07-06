@@ -560,6 +560,17 @@ module Preflight =
         /// the live atomic `BEGIN TRAN` wrapper stays survey-gated (see the A3
         /// scaffold above) — this is the classification half only.
         | MidWriteNotProtected
+        /// The peer leg's SS_KEY-keyed schema-compatibility gate: the source
+        /// and sink models are not one shape over the transferred set
+        /// (`PeerTransfer.shapeGate`). The same verdict class `check shape`
+        /// reports, so it carries the same exit (5) — a schema divergence, not
+        /// a connection/grant/argument failure.
+        | ShapeDivergence
+        /// The peer leg's subset-FK gate: a declared table subset carries FK
+        /// edges to kinds outside it with no strategy chosen (reconcile /
+        /// widen / --allow-drops). The drop-set class — a live run would lose
+        /// or dangle rows — so it rides the destructive-failure exit (9).
+        | SubsetFkEscape
         /// The named default for a code outside the known gate vocabulary — a
         /// generic refusal. NOT a silent pass: it still carries the generic
         /// non-zero refusal exit (3), so an unmapped gate fails loud.
@@ -577,6 +588,8 @@ module Preflight =
         | SchemaReadFailed            -> "schema read failed"
         | UndeclaredDestructiveChange -> "undeclared destructive change"
         | MidWriteNotProtected        -> "mid-write not protected"
+        | ShapeDivergence             -> "schema shapes diverge"
+        | SubsetFkEscape              -> "relationships escape the subset"
         | UnclassifiedRefusal         -> "unclassified refusal"
 
     /// The distinct CLI exit code for each gate axis — TOTAL over the closed
@@ -596,6 +609,8 @@ module Preflight =
         | SchemaReadFailed            -> 6
         | UndeclaredDestructiveChange -> 9
         | MidWriteNotProtected        -> 9
+        | ShapeDivergence             -> 5
+        | SubsetFkEscape              -> 9
         | UnclassifiedRefusal         -> 3
 
     /// Route a refusal code onto its gate axis (`GateLabel`). The explicit
@@ -633,6 +648,28 @@ module Preflight =
             // other exit-9 axes — a half-populated target is a destructive
             // outcome, not a generic refusal.
             MidWriteNotProtected
+        elif code = "transfer.peer.shapeDivergence" then
+            ShapeDivergence
+        elif code = "transfer.peer.subsetFkEscapes" || code = "transfer.subsetFkEscapes" then
+            // The peer face's rich-narration refusal AND the engine-level
+            // backstop (the parity sweep — legacy/forward legs) ride ONE
+            // axis: exit 9, the drop-set class.
+            SubsetFkEscape
+        elif code.StartsWith "source.ossys." then
+            // The peer leg's contract acquisition — an unreadable OSSYS
+            // metamodel is the schema-read failure class (exit 6), same axis
+            // the migrate verb's schema read reports under its own name.
+            SchemaReadFailed
+        elif code.StartsWith "adapter.ossysSql." || code.StartsWith "adapter.osm." then
+            // 2026-07-06 (the phase-2 mock-env program): a metamodel
+            // extraction that fails INSIDE the adapter (a rowset shape /
+            // row-mapping failure — e.g. a VIEW-DEFINITION-less principal
+            // NULLing a definition column) carries its own adapter code
+            // through the Result plane, so it never hits the
+            // `source.ossys.readFailed` exception wrapper. It is the SAME
+            // operator situation — the schema could not be read — so it
+            // rides the same axis (exit 6), never the unclassified 3.
+            SchemaReadFailed
         else
             UnclassifiedRefusal
 

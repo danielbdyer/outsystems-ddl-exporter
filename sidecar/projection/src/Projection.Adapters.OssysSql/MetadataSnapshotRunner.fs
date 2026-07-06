@@ -241,7 +241,10 @@ module MetadataSnapshotRunner =
     type OssysColumnCheckRow =
         { AttrId         : int
           ConstraintName : string
-          Definition     : string
+          /// `None` when the principal lacks VIEW DEFINITION (the
+          /// managed-cloud grant) — `sys.check_constraints.definition`
+          /// NULLs out; the read must not fail on it (2026-07-06).
+          Definition     : string option
           IsNotTrusted   : bool }
 
     /// `#PhysColsPresent` rowset (matrix row 14). Set of `AttrId` whose
@@ -551,10 +554,10 @@ module MetadataSnapshotRunner =
 
     let private mapColumnCheckRow (r: SqlDataReader) : OssysColumnCheckRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1042-1048
-        { AttrId         = readInt    r 0
-          ConstraintName = readString r 1
-          Definition     = readString r 2
-          IsNotTrusted   = readBool   r 3 }
+        { AttrId         = readInt       r 0
+          ConstraintName = readString    r 1
+          Definition     = readStringOpt r 2
+          IsNotTrusted   = readBool      r 3 }
 
     let private mapPhysColsPresentRow (r: SqlDataReader) : OssysPhysColsPresentRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1056-1059

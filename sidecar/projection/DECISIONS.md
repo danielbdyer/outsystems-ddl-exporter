@@ -26685,3 +26685,25 @@ bodies renders adjacent to teardown rather than after the panel; adapter-layer
 one-shot `eprintfn` warnings (ReadSide / BatchSplitter / SqlPolicy) cannot
 reach LogSink without cross-assembly plumbing; narrow-terminal Panel wrap is
 known-cosmetic.
+
+## 2026-07-06 — `ConnectionRef.Raw`: the in-memory carrier for an already-resolved secret (D9 amendment)
+
+**Decision.** `ConnectionRef` gains a third case, `Raw of connStr: string`, and
+`ConnectionResolver.resolve` returns it verbatim (blank-guarded). `connSpecOf` /
+`connRefToSpec` map it to the openable `live:` spec form — never back into a
+config-persistable reference, so the D9 belt (config carries references, never
+secrets) is unchanged.
+
+**Why.** D9's intent is provenance: the secret is read at the resolver and only
+there — never logged, never persisted. Two legitimate call sites already HOLD the
+resolved string in memory (the go board's dry run, handed the resolved spec by the
+dispatch plane; the peer docker fixtures' ephemeral-database strings) and, lacking a
+carrier, both worked around the type by WRITING THE SECRET TO A TEMP FILE and
+minting `ConnectionRef.File` over it — an on-disk persistence strictly worse than
+the discipline the type was protecting. `Raw` removes the disk hop; the secret's
+lifetime shrinks to the process.
+
+**Bounds.** `Raw` is in-memory-only: it never round-trips into `projection.json`
+(the config parser continues to accept `env:`/`file:` references only, and
+`looksLikeSecret` still rejects pasted connection strings). Constructed only where
+the string is already lawfully resident.
