@@ -786,4 +786,6 @@ finding applied, the explicit not-dos honored.
   escape proposals lead with the paste-able move (truncation-safe); ONE name — "the
   go board" — everywhere.
 
-Fast pool + the full peer/managed/go-board/reverse-leg docker sweep: GREEN.
+Fast pool + the full peer/managed/go-board/reverse-leg docker sweep: GREEN — and
+**the full docker pool PASSED IN FULL (510s)** with every final-pass change aboard.
+The final pass is closed; the branch is ready for live operation.
