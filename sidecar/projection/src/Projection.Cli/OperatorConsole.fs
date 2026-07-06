@@ -64,14 +64,22 @@ let dumpBench (tag: string) : unit =
         // Calm by default (REPORTING_HORIZON polish) — the table is depth,
         // shown only under -v. The snapshot is always persisted.
         if verboseMode.Value then
-            // #13 — the `-v` bench dump joins the View lens (a `View.Table` via
-            // `TtyRenderer.benchView`, so it gains color/json/`--query`); Core's
-            // `Bench.renderTable` stays for the perf scenarios. The factory pins the
-            // width and strips color for a piped sink.
-            printfn ""
-            View.write (View.consoleTo System.Console.Out) (TtyRenderer.benchView stats)
-            printfn ""
-            printfn "  bench snapshot: %s" path
+            if Shell.prettyMode.Value then
+                // Under pretty the boxed board + verdict panel own the console
+                // (§13); a raw stdout table lands adjacent to the board's
+                // teardown and spills past the frame. The depth stays in the
+                // persisted snapshot; one line names where it lives.
+                printfn ""
+                printfn "  bench counters recorded: %s" path
+            else
+                // #13 — the `-v` bench dump joins the View lens (a `View.Table` via
+                // `TtyRenderer.benchView`, so it gains color/json/`--query`); Core's
+                // `Bench.renderTable` stays for the perf scenarios. The factory pins the
+                // width and strips color for a piped sink.
+                printfn ""
+                View.write (View.consoleTo System.Console.Out) (TtyRenderer.benchView stats)
+                printfn ""
+                printfn "  bench snapshot: %s" path
 
 /// Slice 4 (verb coverage) — bracket a verb body in the structured
 /// LogSink run envelope so EVERY emitting verb (not just `full-export`)

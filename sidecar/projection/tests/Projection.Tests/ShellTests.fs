@@ -258,7 +258,7 @@ let ``echo-the-fix: a suggestedConfig-bearing envelope ticks the board's live te
     Assert.Equal(2, b2.SuggestedEdits)
     // the teaser renders through the catalog (one register)
     let console = new TestConsole()
-    console.Write(Watch.toRenderableWith [] 0 false b2)
+    console.Write(Watch.toRenderableWith [] 0 None b2)
     Assert.Contains("2 config edit(s) suggested", console.Output)
 
 [<Fact>]

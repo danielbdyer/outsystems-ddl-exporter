@@ -758,16 +758,18 @@ the dwell stays a floor on CHANGES, never added to the pulse. `rowMarkup`/`board
 passes 0). Pinned by `Theme.spinner` (cycle + total) and a board-render test (an active line
 wears the phase's frame).
 
-**The stall-aware ETA rides it too (shipped same day — #20 breathing complete).** When an
-ACTIVE stage goes quiet past `stallThresholdMs` (3s of wall-clock with no new frame, measured
-by the drain loop off `lastRenderAt`), the board calls it `stalled`: the estimate degrades
-from `~Ns remaining` to `stalled` (`progressTextStalled` — the honest §13 rule, never a
-frozen countdown that keeps lying), and the spinner FREEZES + mutes (motion stops, so the
-operator sees the stall both ways). `stalled` threads beside `phase` with NO test churn —
-`progressText`/`lineText` keep their signatures as `false`-wrappers over new
-`progressTextStalled`/`lineTextWith` siblings. Pinned by a stall test (`stalled` replaces the
-ETA, the count still shows, it threads into the active line). #20 and its breathing are
-DONE: off-thread dwell · spinner · stall-aware ETA.
+**The stall-aware ETA rides it too (shipped same day; AMENDED 2026-07-06 — the stall verdict
+retired).** When an ACTIVE stage goes quiet past `stallThresholdMs` (now 5s of wall-clock
+with no dequeued envelope), the line degrades its estimate from `~Ns remaining` to
+`processing` (`progressTextQuiet` — the honest §13 rule, never a frozen countdown that keeps
+lying) and the spinner KEEPS breathing. The original design said `stalled` with a frozen
+muted spinner — an operator report (2026-07-06) surfaced that the event stream witnesses
+SILENCE, not a stall (a long SQL query / CPU-bound emit is quiet-but-working), so the copy
+now claims only what the evidence grounds and the wording is the operator's own
+(`processing`). `quietForMs : int64 option` threads where the bool did;
+`progressText`/`lineText` stay the `None`-wrappers. Pinned by the reworked quiet tests
+(`processing` replaces the ETA, `stalled` appears nowhere, the count still shows). See
+`DECISIONS 2026-07-06` (operator-report round 2).
 
 ### 21 · Instrument the other runs onto the spine  ◐
 

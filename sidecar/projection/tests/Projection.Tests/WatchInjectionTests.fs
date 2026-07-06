@@ -152,7 +152,7 @@ let ``Watch board: an active stage breathes the phase's spinner frame (#20)`` ()
     // the static ▸, so a long-running stage visibly pulses as the drain loop advances `phase`.
     let active, _ = Watch.apply Watch.empty "extract.started" Map.empty   // one Active stage
     let console = new TestConsole()
-    console.Write(Watch.toRenderableWith [] 2 false active)   // header, phase 2, not stalled
+    console.Write(Watch.toRenderableWith [] 2 None active)   // header, phase 2, no quiet gap
     let out = console.Output
     Assert.Contains(Theme.spinner 2, out)               // the active line wears the phase-2 frame
     Assert.DoesNotContain(Theme.spinner 3, out)         // and only that frame (phase is fixed per render)
@@ -180,8 +180,8 @@ let ``renderWatchOn: a flood of foreign envelopes never starves the spinner hear
         Assert.Contains(Theme.spinner 2, out)   // ≥1 heartbeat repaint during the flood
         Assert.Contains(Theme.spinner 3, out)   // ≥2 — the spinner is breathing, not ticking once
         // A chatty pipeline is ALIVE: liveness keys off dequeued envelopes, so the
-        // flood must never read as a stall.
-        Assert.DoesNotContain("stalled", out)
+        // flood must never degrade the line to the quiet `processing` suffix.
+        Assert.DoesNotContain("processing", out)
     finally
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
 
@@ -208,10 +208,12 @@ let ``renderWatchOn: a progress backlog coalesces — no post-run frame replay (
         sprintf "10k progress envelopes took %dms — the backlog must coalesce, never replay one dwelled frame per envelope" sw.ElapsedMilliseconds)
 
 [<Fact>]
-let ``renderWatchOn: a quiet progress-less stage renders stalled after the threshold (#20 rework)`` () =
-    // The honesty half of the stall design: a stage with NO progress events (every
-    // full-export stage today) that goes quiet past the threshold must SAY stalled,
-    // not just freeze a dimmed spinner. Threshold pinned low via the env seam.
+let ``renderWatchOn: a quiet progress-less stage renders processing after the threshold (#20 rework, amended 2026-07-06)`` () =
+    // The honesty half of the quiet design: a stage with NO progress events (every
+    // full-export stage today) that goes quiet past the threshold says `processing`
+    // in words — never `stalled` (a verdict the event stream cannot ground; the
+    // stage may be quiet-but-working) and never a bare frozen spinner. Threshold
+    // pinned low via the env seam.
     Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
     Environment.SetEnvironmentVariable("PROJECTION_WATCH_STALL_MS", "50")
     try
@@ -222,7 +224,8 @@ let ``renderWatchOn: a quiet progress-less stage renders stalled after the thres
             System.Threading.Thread.Sleep 400
             0)
         |> ignore
-        Assert.Contains("stalled", console.Output)
+        Assert.Contains("processing", console.Output)
+        Assert.DoesNotContain("stalled", console.Output)
     finally
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_STALL_MS", null)
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)

@@ -937,6 +937,40 @@ module Voice =
                 |> Option.filter (fun s -> s <> "")
                 |> Option.map (fun path -> View.Action(sprintf "Review the full list at %s." path)) }
 
+    /// `fidelity.dataViolations` — the data-reality rollup (2026-07-06; the
+    /// §12 at-scale law): ONE Warn envelope per run when the profiled source
+    /// data contradicts the model's declared constraints. The statement names
+    /// the finding, the per-axis breakdown, and the consequence; the action
+    /// routes to the remediation script, where every finding carries a
+    /// locating query and a commented repair.
+    let private fidelityDataViolations : Copy =
+        { Code           = "fidelity.dataViolations"
+          DocSection     = "§12"
+          Statement      =
+            fun p ->
+                let families =
+                    [ "notNull",  "required column(s) with nulls"
+                      "unique",   "unique column(s) with duplicates"
+                      "orphans",  "relationship(s) with unmatched records"
+                      "overflow", "column(s) with values past the declared length" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p
+                        |> Option.filter (fun n -> n <> "0")
+                        |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
+                let total  = humane (textOr "total" "0" p)
+                let tables = humane (textOr "entities" "0" p)
+                match families with
+                | [] ->
+                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s). A data load can fail until the rows are repaired." total tables)
+                | fs ->
+                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s) — %s. A data load can fail until the rows are repaired." total tables (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined rollup narration
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "remediationPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — each finding carries a locating query and a commented repair." path)) }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1000,6 +1034,7 @@ module Voice =
           surveyAdvisory
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
+          fidelityDataViolations
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

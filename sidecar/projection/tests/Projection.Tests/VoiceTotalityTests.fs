@@ -62,6 +62,9 @@ let private inScopeCodes : Set<string> =
           // the §12 at-scale rollup — the model read's divergence notices
           // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
           "adapter.ossys.modelRead.noticeRollup"
+          // the §12 data-reality rollup — the fidelity report's violations
+          // condensed to one Warn envelope (2026-07-06)
+          "fidelity.dataViolations"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -124,6 +127,9 @@ let private knownEmittableCodes : Set<string> =
           // the model read's notice rollup (LiveModelRead.surfaceDivergences —
           // one Warn envelope condensing the divergence notices; §12 at-scale law)
           "adapter.ossys.modelRead.noticeRollup"
+          // the fidelity data-violation rollup (Compose.runWithConfigCore —
+          // one Warn envelope when the source data contradicts the model)
+          "fidelity.dataViolations"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"

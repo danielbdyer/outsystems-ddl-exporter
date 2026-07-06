@@ -57,9 +57,11 @@ module Watch =
 
     /// The rollup codes the board's notice strip folds (2026-07-02) — each is a
     /// producer-aggregated Warn envelope (one calm line per notice family, the
-    /// §12 at-scale law), never a per-item stream.
+    /// §12 at-scale law), never a per-item stream. 2026-07-06 — the fidelity
+    /// data-violation rollup joins the strip (the source-data-contradicts-model
+    /// finding, with its remediation-script pointer).
     let noticeCodes : Set<string> =
-        Set.ofList [ LiveModelRead.noticeRollupCode ]
+        Set.ofList [ LiveModelRead.noticeRollupCode; ModelFidelity.dataViolationsCode ]
 
     /// The board — the stage lines, plus the optional run frame (`THE_VOICE.md`
     /// §13: "the instrument speaks about its own running"). `Title` is the
@@ -318,11 +320,13 @@ module Watch =
     /// long enough to read a stage line, short enough not to drag the run).
     let defaultDwellMs : int64 = 120L
 
-    /// How long an ACTIVE stage may go without a new frame before the board calls it
-    /// `stalled` (#20) — the estimate stops counting down and the spinner freezes. Wall-clock
-    /// since the last change, measured by the drain loop. Generous (a few seconds) so normal
-    /// inter-event gaps never read as a stall; honest once the work has genuinely gone quiet.
-    let stallThresholdMs : int64 = 3000L
+    /// How long an ACTIVE stage may go without a new envelope before the line degrades
+    /// its estimate to `processing` (2026-07-06, amends #20). A long SQL query or a
+    /// CPU-bound emit is quiet-but-working, so the board never asserts `stalled` (a
+    /// verdict the event stream cannot ground) and the spinner keeps breathing (the
+    /// process is demonstrably alive). Wall-clock since the last dequeued envelope,
+    /// measured by the drain loop.
+    let stallThresholdMs : int64 = 5000L
 
     /// The sleep to enforce before showing the next frame: the remainder of the
     /// floor not already covered by the time since the last frame. A stage that
@@ -352,19 +356,32 @@ module Watch =
     /// non-positive `Total` is an unknown denominator (a lazily-streamed producer
     /// that cannot count ahead) — then it is a plain count-up, `142 applied`, no
     /// fraction, no estimate (§13 — show the count without a misstated bar).
-    let progressTextStalled (stalled: bool) (p: Progress) : string =
-        if p.Total <= 0 then sprintf "%s applied" (Theme.humane p.Done)
-        elif stalled then
-            // The estimate degrades HONESTLY (#20 / §13): a stage that has gone quiet shows
-            // `stalled`, never a frozen `~Ns remaining` that keeps lying as the clock runs.
-            sprintf "%s of %s · stalled" (Theme.humane p.Done) (Theme.humane p.Total)
-        else
-            match etaText p with
-            | Some eta -> sprintf "%s of %s · %s" (Theme.humane p.Done) (Theme.humane p.Total) eta
-            | None     -> sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+    /// The between-reports word for an active stage that has gone quiet past the
+    /// threshold (2026-07-06, amends #20's `stalled` — operator-chosen wording):
+    /// the stage is still running (the body thread lives; the spinner keeps
+    /// breathing), so the line says `processing` rather than a stall verdict the
+    /// event stream cannot ground.
+    let private processingText : string = "processing"
 
-    /// The progress fragment with no stall (the calm default — every existing caller).
-    let progressText (p: Progress) : string = progressTextStalled false p
+    let progressTextQuiet (quietForMs: int64 option) (p: Progress) : string =
+        let count =
+            if p.Total <= 0 then sprintf "%s applied" (Theme.humane p.Done)
+            else sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+        match quietForMs with
+        | Some _ ->
+            // The estimate degrades HONESTLY (#20 / §13): a stage that has gone quiet drops
+            // the countdown (a frozen `~Ns remaining` keeps lying as the clock runs) and
+            // reads `processing` — the work continues; nothing new has been reported.
+            sprintf "%s · %s" count processingText
+        | None ->
+            if p.Total <= 0 then count
+            else
+                match etaText p with
+                | Some eta -> sprintf "%s · %s" count eta
+                | None     -> count
+
+    /// The progress fragment with no quiet gap (the calm default — every existing caller).
+    let progressText (p: Progress) : string = progressTextQuiet None p
 
     /// The voiced text of a `Voice` statement code, filled from the payload. The
     /// board reuses the §13 stage copy (`<stage>.started` gerund; the resultative
@@ -381,20 +398,23 @@ module Watch =
     /// The operator line for a stage — the gerund while active, the resultative
     /// (with the measured duration) once complete. Pure + voiced, so it is
     /// testable against the twelve-rule banned list.
-    let lineTextWith (stalled: bool) (line: StageLine) : string =
+    let lineTextWith (quietForMs: int64 option) (line: StageLine) : string =
         // The gerund names the stage (its identity on the board); the glyph
-        // carries the state (faint `○` pending, `▸` active, `✓` done). `stalled`
-        // degrades only the ACTIVE+progress estimate (the drain loop's wall-clock signal).
+        // carries the state (faint `○` pending, `▸` active, `✓` done). A quiet gap
+        // degrades only the ACTIVE line (the drain loop's wall-clock signal).
         match line.State with
         | Pending -> statementText (line.Key + ".started") Map.empty
         | Active prog ->
             let baseText = statementText (line.Key + ".started") Map.empty
             match prog with
-            | Some p -> sprintf "%s · %s" baseText (progressTextStalled stalled p)
+            | Some p -> sprintf "%s · %s" baseText (progressTextQuiet quietForMs p)
             // A progress-less stage that has gone quiet says so in words, the same
             // register the progress fragment uses — a frozen dimmed spinner with no
             // explanation left the operator guessing (#20 rework; §13 honesty).
-            | None   -> if stalled then sprintf "%s · stalled" baseText else baseText
+            | None   ->
+                match quietForMs with
+                | Some _ -> sprintf "%s · %s" baseText processingText
+                | None   -> baseText
         | Done dur ->
             let baseText = statementText "summary.stageCompleted" (Map.ofList [ "stage", box line.Key ])
             match dur with
@@ -408,8 +428,8 @@ module Watch =
             | Some ms -> sprintf "%s · %s" baseText (secondsText ms)
             | None    -> baseText
 
-    /// The stage line with no stall (the calm default — every existing caller / test).
-    let lineText (line: StageLine) : string = lineTextWith false line
+    /// The stage line with no quiet gap (the calm default — every existing caller / test).
+    let lineText (line: StageLine) : string = lineTextWith None line
 
     /// The operator line for a notice-strip row — the Voice statement for the
     /// rollup code, with its action (the artifact pointer) appended when one
@@ -478,28 +498,28 @@ module Watch =
 
     // `phase` advances the ACTIVE line's breathing spinner (#20 follow-on); every other
     // state ignores it (its glyph is fixed). A static render passes phase 0.
-    let private rowMarkup (phase: int) (stalled: bool) (line: StageLine) : string =
-        let text = Markup.Escape(lineTextWith stalled line)
+    let private rowMarkup (phase: int) (quietForMs: int64 option) (line: StageLine) : string =
+        let text = Markup.Escape(lineTextWith quietForMs line)
         match line.State with
         | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)        (Theme.muted text)
         | Active _ ->
-            // A live stage spins (accent + bold); a STALLED one freezes the spinner (a fixed
-            // frame) and goes muted — the motion stops and the text reads `stalled`, so the
-            // operator sees the stall both ways. `stalled` is only ever true for an active line.
-            let glyph = if stalled then Theme.muted (Theme.spinner 0) else Theme.accent (Theme.spinner phase)
-            sprintf "%s  %s" glyph (if stalled then Theme.muted text else Theme.bold text)
+            // A live stage spins (accent + bold) — and KEEPS spinning through a quiet
+            // gap (2026-07-06, amends #20's frozen frame): the drain loop repainting IS
+            // evidence the process is alive, and a frozen glyph asserted a hang the
+            // event stream could not ground. The quiet gap reads in the line's words.
+            sprintf "%s  %s" (Theme.accent (Theme.spinner phase)) (Theme.bold text)
         | Done _   -> sprintf "%s  %s" Theme.ok                           (Theme.green text)
         | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)              (Theme.red text)
 
     /// The board's rows — the optional run-title header above, the stage arc, and
     /// the done-frame (the §13 follow-on + recorded-run identity) once the run
     /// reaches its terminal stage.
-    let private boardRows (phase: int) (stalled: bool) (board: Board) : IRenderable list =
+    let private boardRows (phase: int) (quietForMs: int64 option) (board: Board) : IRenderable list =
         let titleRow =
             match titleText board with
             | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
             | None   -> []
-        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup phase stalled s) :> IRenderable)
+        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup phase quietForMs s) :> IRenderable)
         // The notice strip (2026-07-02) — the rollup rows, muted with the warn
         // glyph, between the arc and the done-frame: present, calm, never a wall.
         let noticeRows =
@@ -529,7 +549,7 @@ module Watch =
     /// `LiveDisplayContext` updates in place. A STATIC render (stored board, tests)
     /// passes spinner phase 0; the live drain loop threads the advancing phase.
     let toRenderable (board: Board) : IRenderable =
-        Rows(boardRows 0 false board) :> IRenderable
+        Rows(boardRows 0 None board) :> IRenderable
 
     /// True iff a stage is in progress — the live drain loop pulses the spinner only
     /// when there is an active line to breathe (no idle churn otherwise).
@@ -540,8 +560,8 @@ module Watch =
     /// cutover timeline strip (`DYNAMIC_DISPLAY` §4: where this run sits on the
     /// path to the R6 gate). An empty header is the bare board (unchanged). `phase`
     /// advances the active line's breathing spinner (#20 follow-on).
-    let toRenderableWith (header: IRenderable list) (phase: int) (stalled: bool) (board: Board) : IRenderable =
-        Rows(header @ boardRows phase stalled board) :> IRenderable
+    let toRenderableWith (header: IRenderable list) (phase: int) (quietForMs: int64 option) (board: Board) : IRenderable =
+        Rows(header @ boardRows phase quietForMs board) :> IRenderable
 
     // -- the live shell --------------------------------------------------------
 
@@ -650,7 +670,7 @@ module Watch =
         // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
         // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
         let queue = new System.Collections.Concurrent.BlockingCollection<LogSink.Envelope>()
-        console.Live(boxed (toRenderableWith header 0 false board.Value)).Start(fun ctx ->
+        console.Live(boxed (toRenderableWith header 0 None board.Value)).Start(fun ctx ->
             // Enqueue-and-return: the subscriber holds emit's lock only for the `Add`. A late
             // emit after `CompleteAdding` throws — swallowed; no such emit exists in practice
             // (the body's `withWriter` returns before the queue is completed). FORWARD NOTE:
@@ -673,11 +693,18 @@ module Watch =
                 let mutable phase = 0
                 // One paint path — every repaint advances the spinner and stamps the
                 // heartbeat clock, whatever prompted it.
-                let paint (stalled: bool) =
+                let paint (quietForMs: int64 option) =
                     phase <- phase + 1
                     lastPaintAt <- sw.ElapsedMilliseconds
-                    ctx.UpdateTarget(boxed (toRenderableWith header phase stalled board.Value))
+                    ctx.UpdateTarget(boxed (toRenderableWith header phase quietForMs board.Value))
                     ctx.Refresh()
+                // The quiet gap the paint reacts to (2026-07-06, amends #20's stall
+                // verdict): wall-clock since the last DEQUEUED envelope, surfaced only
+                // past the threshold. The line degrades to `processing` (the stale ETA
+                // drops) and the spinner keeps breathing — never a `stalled` verdict.
+                let quietGap () =
+                    let gap = sw.ElapsedMilliseconds - lastEventAt
+                    if gap > stallMs then Some gap else None
                 while draining do
                     let mutable env = Unchecked.defaultof<LogSink.Envelope>
                     if queue.TryTake(&env, 100) then
@@ -705,27 +732,28 @@ module Watch =
                             let sleep = dwellMs floorMs lastTransitionAt sw.ElapsedMilliseconds
                             if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
                             lastTransitionAt <- sw.ElapsedMilliseconds
-                            paint false
+                            paint None
                         | Fold.Progressed ->
-                            paint false
+                            paint None
                         | Fold.NoChange ->
                             // A batch of foreign envelopes changed nothing visible — but
                             // the pipeline is chatty-alive, so keep the spinner breathing
                             // on the wall-clock heartbeat (the old loop never repainted
                             // here, which froze the board for the whole flood).
                             if hasActiveStage board.Value && sw.ElapsedMilliseconds - lastPaintAt >= 100L then
-                                paint (sw.ElapsedMilliseconds - lastEventAt > stallMs)
+                                paint (quietGap ())
                     elif queue.IsCompleted then
                         draining <- false
                     elif hasActiveStage board.Value then
                         // Idle wake (no envelope in 100ms) with a stage in progress — advance
                         // the spinner and refresh so the active line breathes between events. No
                         // fold, no dwell sleep (the dwell is a floor on TRANSITIONS, not added
-                        // here). If the pipeline has gone quiet past the threshold, render it
-                        // STALLED (frozen spinner + the line reads `stalled`) — honest, not a
-                        // countdown that keeps lying while nothing moves. Liveness keys off
-                        // lastEventAt: any envelope proves work, board-visible or not.
-                        paint (sw.ElapsedMilliseconds - lastEventAt > stallMs)
+                        // here). If the pipeline has gone quiet past the threshold, the line
+                        // reads `processing` — honest, not a countdown that keeps lying while
+                        // nothing new is reported, and never a `stalled` verdict the event
+                        // stream cannot ground. Liveness keys off lastEventAt: any envelope
+                        // proves work, board-visible or not.
+                        paint (quietGap ())
                 // Join the producer for its exit code — `GetAwaiter().GetResult()` so a body
                 // exception propagates as ITSELF, not wrapped in `AggregateException`.
                 code <- bodyTask.GetAwaiter().GetResult()

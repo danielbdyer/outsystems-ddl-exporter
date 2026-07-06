@@ -26707,3 +26707,70 @@ lifetime shrinks to the process.
 (the config parser continues to accept `env:`/`file:` references only, and
 `looksLikeSecret` still rejects pasted connection strings). Constructed only where
 the string is already lawfully resident.
+
+## 2026-07-06 — Operator-report round 2: the quiet line replaces the stall verdict; the pretty console belongs to the box; the fidelity report becomes actionable
+
+**Context.** Operator reports from a real `--pretty -v publish` (the first
+full-export runs after the operator-shell chapter): (1) the `-v` bench table
+sprayed an unconstrained stdout table over the boxed board; (2) so did the
+per-file artifact enumeration (the 2026-07-03 entry's first named residual,
+now fired); (3) the board said `stalled` repeatedly while stages were
+genuinely working, with the spinner deliberately frozen — read as a hang;
+(4) `fidelity.json` counted `notNullButNullsPresent` / `foreignKeyOrphans` /
+`uniqueButDuplicatesPresent` / `lengthOrTypeOverflow` findings the terminal
+never mentioned and no artifact made actionable, while `suggest-config.json`
+carried 117 fill-factor advisories ranked as "the lever."
+
+**Decisions.**
+
+1. **The stall verdict retires (amends 2026-07-03 decision 1's stall clause).**
+   The event stream can witness SILENCE, not a stall: a long SQL query or a
+   CPU-bound emit is quiet-but-working, so `stalled` asserted more than the
+   evidence grounds (THE_VOICE rule 8). An active stage quiet past the
+   threshold now degrades its line to `processing` (operator-chosen wording;
+   the stale `~Ns remaining` still drops — a frozen countdown keeps lying)
+   and the spinner KEEPS breathing (the drain loop's own repaint is real
+   liveness; a frozen glyph asserted a hang). Threshold 3s → 5s;
+   `PROJECTION_WATCH_STALL_MS` seam unchanged. `progressTextStalled` →
+   `progressTextQuiet (quietForMs: int64 option)`; the render path threads
+   the option, not a bool.
+
+2. **Under pretty, the boxed surface owns the console.** The `-v` bench table
+   does not print under pretty (the snapshot still persists; one line names
+   its path); the per-file artifact enumeration is suppressed under pretty
+   (the one-line total + the verdict panel carry the finding; piped/plain
+   runs keep the full list). This resolves the 2026-07-03 residual for the
+   publish face; the remaining faces' stdout narration (transfer/migrate)
+   stays the named residual.
+
+3. **The fidelity report becomes actionable (the diagnostics-and-remediation
+   pre-scope's "future emitter" trigger, fired by operator report).** Three
+   wires, one producer rule (the §12 at-scale law — one rollup, never a wall):
+   - `RemediationEmitter.emitWith` renders the fidelity report's data
+     violations as remediation blocks in `manifest.remediation.sql` — the
+     DecisionSet blocks stay first; a `Data reality` section follows,
+     deduplicated on (entity, column, axis). This covers the load-blocking
+     case the DecisionSets structurally never reach (nulls in a column the
+     model already declares NOT NULL — `NullabilityRules` short-circuits at
+     `PhysicallyNotNull` before the budget test) plus the overflow axis that
+     had no renderer. FK-orphan blocks resolve the concrete target table +
+     single-column PK through the catalog (`Reference.TargetKind`); the
+     placeholder form remains for composite/unresolvable targets.
+   - `Compose.runWithConfigCore` emits ONE Warn envelope
+     (`fidelity.dataViolations`, payload: total/entities/per-axis counts +
+     remediation & fidelity artifact paths) after a successful bundle write
+     when violations exist. `ModelFidelity.dataViolationsPayload` is the pure
+     payload builder (None when clean).
+   - The envelope is read by the board's notice strip (`Watch.noticeCodes`)
+     and the verdict panel (`data reality` row + a `review
+     manifest.remediation.sql` Next line that LEADS the suggest-config next
+     action — a data repair outranks an optional config edit).
+   `LogSink.tryFirstPayload` is the generic first-envelope-payload accessor
+   (the rollup code constant compiles after LogSink; the consumer passes it).
+
+**Witnesses.** `WatchTests` / `WatchInjectionTests` (quiet-line rework; the
+flood still never degrades; `processing` after threshold, `stalled` nowhere);
+`RemediationEmitterTests` (the four data-reality axes, concrete FK target,
+dedup-vs-decision, operator-safety contract held); `ModelFidelityTests`
+(payload builder Some/None); `TtyRendererTests` (panel row + next move);
+`VoiceTotalityTests` (the new code forced same-commit).

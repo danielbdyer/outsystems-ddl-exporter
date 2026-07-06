@@ -585,7 +585,23 @@ module Compose =
             Emit =
               fun ctx outputs ->
                 let n, u, f = decisionSetsOf ctx.ComposedState
-                { outputs with RemediationSql = RemediationEmitter.emit ctx.ComposedState.Catalog n u f } }
+                // 2026-07-06 — the fidelity report's data violations join the
+                // remediation script (the seed `Outputs` computes `Fidelity`
+                // before this fold, so the report is in hand). Mapped into the
+                // emitter's neutral finding shape (Targets compiles below
+                // Pipeline); dedup against the decision blocks happens inside.
+                let findings =
+                    outputs.Fidelity.DataViolations
+                    |> List.map (fun v ->
+                        { RemediationEmitter.Entity = v.Reference.Entity
+                          RemediationEmitter.Column = v.Reference.Column
+                          RemediationEmitter.Kind =
+                            match v.Kind with
+                            | ModelFidelity.NotNullButNullsPresent n    -> RemediationEmitter.NullsInNotNullColumn n
+                            | ModelFidelity.UniqueButDuplicatesPresent  -> RemediationEmitter.DuplicatesInUniqueColumn
+                            | ModelFidelity.ForeignKeyOrphans c         -> RemediationEmitter.OrphanedReference c
+                            | ModelFidelity.LengthOrTypeOverflow (o, d) -> RemediationEmitter.ValueOverflow (o, d) })
+                { outputs with RemediationSql = RemediationEmitter.emitWith ctx.ComposedState.Catalog n u f findings } }
           { Metadata = SummaryFormatter.registeredMetadata
             Emit =
               fun ctx outputs ->
@@ -1574,7 +1590,20 @@ module Compose =
                     // NM-34b (live) — `ReadCatalog = catalog`: the source model
                     // the run READ (pre-rename), surfaced so the run boundary can
                     // hash its canonical form into the live-path input digest.
-                    | Ok paths    -> Result.success ({ Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }, finalState)
+                    | Ok paths    ->
+                        // 2026-07-06 — the data-reality rollup: when the profiled
+                        // source data contradicts the declared model, ONE Warn
+                        // envelope carries the per-axis counts + the artifact
+                        // pointers (§12 at-scale law). The live board's notice
+                        // strip and the verdict panel read it, so the finding and
+                        // its remediation script are never a silent JSON-only count.
+                        ModelFidelity.dataViolationsPayload
+                            (Path.Combine(cfg.Output.Dir, ArtifactPath.remediation))
+                            (Path.Combine(cfg.Output.Dir, ArtifactPath.fidelityJson))
+                            outputs.Fidelity
+                        |> Option.iter (fun payload ->
+                            LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
+                        Result.success ({ Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }, finalState)
                     | Error errors -> Result.failure errors
                 | Error errors -> Result.failure errors
 

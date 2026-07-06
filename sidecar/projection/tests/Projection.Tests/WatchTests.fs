@@ -331,19 +331,22 @@ let ``Watch progress: an unknown total is a plain count-up — no fraction, no e
     Assert.DoesNotContain("remaining", text)
 
 [<Fact>]
-let ``Watch progress: a stalled active stage degrades the estimate to 'stalled', not a frozen countdown (#20)`` () =
+let ``Watch progress: a quiet active stage degrades the estimate to 'processing', not a frozen countdown (#20, amended 2026-07-06)`` () =
     let p : Watch.Progress = { Done = 142; Total = 300; ElapsedMs = 4000L }
     // live: the honest estimate shows
-    let live = Watch.progressTextStalled false p
+    let live = Watch.progressTextQuiet None p
     Assert.Contains("remaining", live)
-    Assert.DoesNotContain("stalled", live)
-    // stalled: the estimate degrades to `stalled` — never a countdown that keeps lying
-    let stalled = Watch.progressTextStalled true p
-    Assert.Contains("stalled", stalled)
-    Assert.DoesNotContain("remaining", stalled)
-    Assert.Contains("142 of 300", stalled)   // the honest count still shows
+    Assert.DoesNotContain("processing", live)
+    // quiet past the threshold: the estimate degrades to `processing` — never a
+    // countdown that keeps lying, and never a `stalled` verdict the event stream
+    // cannot ground (the stage may be quiet-but-working).
+    let quiet = Watch.progressTextQuiet (Some 6000L) p
+    Assert.Contains("processing", quiet)
+    Assert.DoesNotContain("remaining", quiet)
+    Assert.DoesNotContain("stalled", quiet)
+    Assert.Contains("142 of 300", quiet)   // the honest count still shows
     // it threads into the active stage line
-    Assert.Contains("stalled", Watch.lineTextWith true { Key = "load"; State = Watch.Active(Some p) })
+    Assert.Contains("processing", Watch.lineTextWith (Some 6000L) { Key = "load"; State = Watch.Active(Some p) })
 
 // ---------------------------------------------------------------------------
 // the run frame — the title header + the terminal done-frame (§13 D1)
@@ -482,27 +485,50 @@ let ``Watch fold: apply is the did-it-change shim over applyKind`` () =
         Assert.Equal(changed, fold <> Watch.Fold.NoChange)
 
 // ---------------------------------------------------------------------------
-// the stalled line for a progress-less stage (#20 rework — a quiet Active None
-// stage says `stalled` in words; a frozen dimmed spinner alone explained nothing)
+// the quiet line for a progress-less stage (#20 rework, amended 2026-07-06 — a
+// quiet Active None stage says `processing` in words; a frozen dimmed spinner
+// alone explained nothing, and `stalled` asserted more than the events proved)
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``Watch line: a stalled progress-less stage reads stalled in words`` () =
-    let text = Watch.lineTextWith true { Key = "extract"; State = Watch.Active None }
+let ``Watch line: a quiet progress-less stage reads processing in words`` () =
+    let text = Watch.lineTextWith (Some 6000L) { Key = "extract"; State = Watch.Active None }
     Assert.Contains("Reading the model", text)
-    Assert.Contains("stalled", text)
-
-[<Fact>]
-let ``Watch line: a live progress-less stage carries no stall suffix`` () =
-    let text = Watch.lineTextWith false { Key = "extract"; State = Watch.Active None }
+    Assert.Contains("processing", text)
     Assert.DoesNotContain("stalled", text)
 
 [<Fact>]
-let ``Watch line: the stalled suffix clears the twelve-rule banned list`` () =
+let ``Watch line: a live progress-less stage carries no processing suffix`` () =
+    let text = Watch.lineTextWith None { Key = "extract"; State = Watch.Active None }
+    Assert.DoesNotContain("processing", text)
+
+[<Fact>]
+let ``Watch line: the processing suffix clears the twelve-rule banned list`` () =
     let banned =
         [ "your"; "you "; " i "; " we "; "that's real"; ", not "
-          "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused" ]
-    let line = Watch.lineTextWith true { Key = "profile"; State = Watch.Active None }
+          "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused"; "stalled" ]
+    let line = Watch.lineTextWith (Some 6000L) { Key = "profile"; State = Watch.Active None }
     let lowered = line.ToLowerInvariant()
     for b in banned do
-        Assert.False(lowered.Contains b, sprintf "stalled line '%s' breaks the banned list: contains '%s'" line b)
+        Assert.False(lowered.Contains b, sprintf "quiet line '%s' breaks the banned list: contains '%s'" line b)
+
+// ---------------------------------------------------------------------------
+// the data-reality rollup on the notice strip (2026-07-06)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch notices: the fidelity data-violation rollup folds onto the notice strip`` () =
+    let p : Map<string, objnull> =
+        Map.ofList
+            [ "total", box 7; "entities", box 4; "notNull", box 3
+              "remediationPath", box "out/manifest.remediation.sql" ]
+    let code = Projection.Pipeline.ModelFidelity.dataViolationsCode
+    let b, _ = Watch.applyKind Watch.empty code p
+    Assert.Single(b.Notices) |> ignore
+    // Replace-by-code: a publish re-emitting the rollup folds to ONE row.
+    let b2, _ = Watch.applyKind b code p
+    Assert.Single(b2.Notices) |> ignore
+    // The strip's line reads the Voice copy + the remediation pointer.
+    let text = Watch.noticeText code p
+    Assert.Contains("contradicts the declared model", text)
+    Assert.Contains("out/manifest.remediation.sql", text)
