@@ -327,9 +327,14 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
     | other -> Assert.Fail(sprintf "expected RunReverseLeg for B→A, got %A" other)
     let peerCfg, peerFlow = mk Rendition.Physical Rendition.Physical
     Assert.Equal(MovementDirection.UpPeer, (Command.resolveFlowSpec peerCfg peerFlow commit |> mustOk).Direction)
+    // 2026-07-06 (the partial-transfer readiness program): the A→A peer no
+    // longer rides the name-blind `Transfer` — it routes to `TransferPeer`,
+    // the SsKey-aligned leg (per-side OSSYS contracts, shape + subset-FK
+    // gates). An env→env flow with UNSET renditions keeps `Transfer` (the
+    // identical-rendition escape hatch) — pinned below.
     match (Command.planFlow peerCfg peerFlow commit).Action with
-    | PlanAction.Transfer _ -> ()
-    | other -> Assert.Fail(sprintf "expected Transfer for A→A peer, got %A" other)
+    | PlanAction.TransferPeer _ -> ()
+    | other -> Assert.Fail(sprintf "expected TransferPeer for A→A peer, got %A" other)
 
 // ---------------------------------------------------------------------------
 // CLAUSE 2 — TOTALITY / SPANNING: `reachable ⇔ expressible` (THE forcing

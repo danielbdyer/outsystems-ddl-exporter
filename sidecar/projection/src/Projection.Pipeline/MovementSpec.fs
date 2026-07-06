@@ -461,6 +461,20 @@ type PlanAction =
     /// live + data source → transfer (DryRun preview when execute=false; the
     /// DML-only load when execute=true under --scope data).
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// live + data source whose DERIVED direction is `UpPeer` (A→A: two
+    /// deployed cells of ONE model, e.g. cloud-qa → cloud-uat, whose physical
+    /// `OSUSR_*` names differ per espace) → the peer SsKey-aligned transfer.
+    /// Unlike the bare `Transfer` (ONE `ReadSide` contract from the source,
+    /// physical names assumed identical on the sink), the peer runner reads a
+    /// contract from EACH side's OSSYS metamodel (`Source.ofOssys` — native
+    /// GUID identity, the espace-invariance law), gates the pair on SS_KEY-
+    /// keyed shape compatibility (`transfer.peer.shapeDivergence`, exit 5) and
+    /// on subset-escaping FK edges (`transfer.peer.subsetFkEscapes`, exit 9),
+    /// then rides the SAME rename-aware engine the reverse leg proved
+    /// (`Transfer.runReverseLegThroughConnectionsWith`) — reads with the
+    /// source's physical names, writes with the sink's. 2026-07-06, the
+    /// partial-transfer readiness program.
+    | TransferPeer of source: string * sink: string * opts: LoadOpts * execute: bool
     /// live + data source whose DERIVED direction is `UpLegacy` (B→A) → the
     /// reverse-leg runner (`Transfer.runReverseLeg` / the M3.b face). The engine
     /// distinguishes this from an A→A peer `Transfer` — which it cannot do by

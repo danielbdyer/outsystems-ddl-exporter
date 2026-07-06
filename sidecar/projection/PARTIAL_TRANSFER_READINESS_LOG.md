@@ -206,3 +206,162 @@ transfer with genuinely differing physical names there is **no wired path**:
 Release fix; stand up e2e #1 (the different-physical-names data-move witness); then
 either wire the peer-with-renames dispatch path or document the engine-level invocation;
 propose FK-closure strategies per table for the chosen subset.
+
+## Entry 6 — 2026-07-06, operator decisions received; the peer leg is WIRED
+
+Operator answered the four scoping questions: **full wiring** of the peer path;
+**reconcile-by-key** as the default strategy for out-of-subset FK parents; **OSSYS
+metamodel readable on both QA and UAT**; **replace-subset (WipeAndLoad)** re-run
+semantics for today.
+
+Landed since (all compiling, fast pool green):
+
+- **`PeerTransfer` module (Pipeline)** — the peer leg's support: `acquireContracts`
+  (both sides read from their own OSSYS metamodel → native GUID SsKeys, the identity
+  that aligns across environments); `shapeVerdict`/`shapeGate` (SS_KEY-keyed schema
+  compatibility scoped to the kinds the run touches: kind/attribute presence and
+  column-shape facets BLOCK by name; constraint/index drift and widenings surface as
+  advisories — nothing silent); `escapingFks` + `narrateEscapes` + `subsetFkGate`
+  (every FK edge escaping the declared subset detected, per-edge strategy proposed —
+  reconcile against the sink's own rows [candidate business-key columns derived from
+  the target's single-column unique indexes], widen the subset, or --allow-drops; a
+  live Execute with un-strategized escapes refuses by name, a preview narrates).
+- **Routing**: `MovementDirection.UpPeer` (a physical→physical env→env flow, i.e. the
+  `golden` QA→UAT shape) now routes to the new `PlanAction.TransferPeer` → the new
+  `runPeerTransfer` CLI face → gates → the SAME rename-aware contract-pair engine the
+  reverse leg proved (`runReverseLegThroughConnectionsWith` path). An env→env flow
+  with UNSET renditions keeps the old name-blind `Transfer` (the identical-rendition
+  escape hatch). Two new named refusal axes with distinct exits:
+  `transfer.peer.shapeDivergence` → exit 5 (matching `check shape`'s verdict class),
+  `transfer.peer.subsetFkEscapes` → exit 9 (drop-set class); unreadable OSSYS
+  metamodel → schema-read axis, exit 6.
+- **Routing tests updated** (the two pins that moved) + a new pin: unset-rendition
+  env→env still routes to plain `Transfer`.
+
+## Entry 7 — 2026-07-06, THE E2E TEST FOUND A REAL ENGINE BUG (the reason this test had to exist)
+
+Stood up `PeerAlignedTransferDockerTests` (Integration, Docker-SqlServer): two real
+databases on the warm container — cell A = the edge-case OSSYS estate (`OSUSR_*`),
+cell B = the same estate with every physical name shifted (`OSUSR_X*`), contracts
+OSSYS-read from each side, subset transfer executed through the contract-pair engine.
+
+**First run failed — and the failure is a genuine, previously-invisible engine defect,
+not a test bug:** the edge-case estate contains a self-referencing entity
+(`Category.ParentCategoryId`, nullable). The cycle resolver
+(`CycleResolution.asymmetric2CycleStrategy`) only handled 2-cycles; a 1-node SCC
+(self-FK) REFUSED resolution, and the topological-order pass then degraded the WHOLE
+catalog to its alphabetical fallback. Consequence: `Customer` (alphabetically before
+`City`) loaded BEFORE its FK parent, the sink-minted-key remap for City was empty at
+Customer's load time, and every Customer row's CityId FK missed → skip-and-diagnose
+dropped/diagnosed the rows (exit 9). **One nullable self-reference anywhere in the
+estate silently poisoned the load order of every unrelated table pair.** Real
+OutSystems estates are full of this shape (Category.Parent, Employee.Manager,
+Folder.Parent) — the operator's QA→UAT test today would almost certainly have hit it.
+
+**Fix (engine, minimal and targeted):** the resolver now treats a **Weak (nullable)
+self-edge** as breakable *for ordering* — the two-phase load's deferral machinery
+already re-points nullable self-FKs in phase 2 regardless of order (the F1 lift,
+2026-06-10), and the resolved SCC stays in `Cycles`, so `deferredFkColumns` still
+defers the column. A MANDATORY self-FK still refuses (honest — it genuinely cannot
+load in one pass). Pure resolver tests added for both arms.
+
+Also new pure coverage (`PeerTransferTests`): `resolveLoadSet` refusal semantics
+(previously untested anywhere), escaping-FK detection incl. nullable-edge softening +
+reconcile-candidate proposals + chain-stops-at-boundary, subset-FK gate
+refuse/downgrade contract, shape-gate blocking vs advisory classification (missing
+kind/attribute, type change, widening, nullability tightening/loosening, scoping), and
+the two new Preflight exits.
+
+## Entry 8 — 2026-07-06, the self-FK fix landed in two halves; ALL THREE e2e scenarios GREEN
+
+The resolver rule alone was not enough — a second, deeper defect sat beneath it:
+`internalEdgesOf` (the topo pass's SCC edge enumerator) explicitly excluded self-pairs
+(`if a <> b`), so a 1-member SCC's self-edge was invisible to ANY resolver by
+construction. Both halves are now fixed: self-pairs are enumerated, the resolver
+breaks a Weak (nullable) self-edge for ordering (deferral still re-points it in
+phase 2 — the resolved SCC stays in `Cycles`), and the 2-cycle arm explicitly ignores
+self-edges so its semantics are byte-preserved. A mandatory self-FK still refuses.
+
+One test-side correction along the way (the engine was right, the assertion wrong):
+`DBCC CHECKIDENT(…, RESEED, 500)` on a never-inserted table makes the NEXT minted
+value 500, not 501 — the verbatim-FK check now tests "not the source's surrogates +
+no dangling FK" instead of a numeric boundary.
+
+**The peer e2e suite is GREEN (real SQL Server, two espace-variant databases,
+`OSUSR_*` vs `OSUSR_X*`):**
+1. **A declared table subset lands in the differently-named sink** — contracts
+   OSSYS-read from each side, SsKeys align by native GUID, City loads before Customer
+   (topological, despite the estate's self-FK Category), sink mints keys, the
+   Customer→City FK re-points through the capture remap (source surrogates provably
+   absent), the (email → city-name) join identical source↔sink, zero drops.
+2. **Reconcile-by-key for an out-of-subset parent** — subset [Customer] only, City
+   reconciled `MatchByColumn NAME` against rows the sink already held under its own
+   surrogates (501/502): City written 0 rows, disposition re-keyed-by-rule, both
+   customers point at the sink's own city rows. This is the operator's chosen default
+   strategy for partial refresh, now witnessed end-to-end.
+3. **Replace-subset idempotency** — WipeAndLoad × 2 over the subset: counts stable,
+   join stable, no duplicates.
+
+Full fast + docker pools running for regression coverage of the resolver change.
+
+## Entry 9 — 2026-07-06, the operator runbook for today's QA→UAT partial-transfer test
+
+**Config (`projection.json`)** — both environments declared `rendition: physical`
+(this is what routes the flow onto the new SsKey-aligned peer leg; leaving renditions
+unset keeps the old name-blind transfer as an escape hatch):
+
+```jsonc
+{
+  "environments": {
+    "cloud-qa":  { "access": "direct", "conn": "env:CLOUD_QA_CONN",  "rendition": "physical" },
+    "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data",
+                   "rendition": "physical", "archetype": "managed-dml" }
+  },
+  "flows": {
+    "golden": { "from": "cloud-qa", "to": "cloud-uat", "scope": "data",
+                "tables": ["Customer", "Order"],
+                "reconcile": ["ServiceCenter.User:Email"],
+                "rekey": "file:./secrets/uat-users.csv",
+                "strategy": "replace" }
+  },
+  "readiness": { "schema": "cloud-qa", "confirm": ["cloud-uat"] }
+}
+```
+
+**The run sequence:**
+1. `projection check shape` — the espace-safe estate readiness gate (OSSYS-reads
+   both environments, SS_KEY-keyed, zero-delta-modulo-physical required). Exit 0 =
+   ready; 5 = real divergence/data dealbreaker; 6 = unreadable.
+2. `projection golden` — the PREVIEW (dry-run is the default): narrates the load
+   plan in dependency order, every escaping-FK edge with its proposed strategies
+   (reconcile candidates derived from the target's unique business keys), unmatched
+   identities, cycles. No writes.
+3. `PROJECTION_ALLOW_EXECUTE=1 projection golden --go` — the live run (both gates:
+   the env var authorizes the environment, `--go` states per-run intent).
+   `strategy: replace` = wipe-the-subset-then-load (the chosen idempotent re-run
+   semantics). Exit 0 clean; 9 = rows dropped or escapes un-strategized (add
+   reconcile entries or `--allow-drops` after reading the report); 5 = shape
+   divergence; 6/7 = connection/grant.
+
+**What the new gates do for you:** contract acquisition reads each side's OSSYS
+metamodel (native GUID SS_KEYs) — QA's and UAT's `OSUSR_*` names may differ freely;
+the shape gate refuses by name if the models genuinely diverge over the transferred
+set (attribute presence/type/nullability/length), with advisories for benign drift;
+the subset-FK gate refuses a live run while any relationship escapes the subset
+without a strategy. Reconciled kinds (`reconcile:` / `rekey:`) match rows the sink
+already holds by business key — nothing is inserted into them; FKs re-point.
+
+**Known residuals that could still bite today (all pre-existing, none new):**
+- Object-scope DENY is invisible to the DB-scope grant preflight (G1) — a per-table
+  DENY surfaces mid-load, not pre-flight.
+- Contract-vs-live drift: a model column missing from the deployed table is a raw
+  SqlException, not a named refusal (G2). `check shape` first mitigates.
+- Grant preflight demands INSERT over every model kind, not just the subset —
+  over-refusal possible on narrowly-granted sinks.
+- The G10 resume marker is subset-insensitive (irrelevant under `strategy: replace`).
+- `--user-map` CSV resolves tables by physical name (espace-unsafe); prefer the
+  `Module.Entity` reconcile form.
+- Composite-PK kinds refuse under sink-minted identity (named refusal, no
+  business-key fallback except via reconcile).
+- Streaming refuses `--tables` (subsets run materialized — memory scales with the
+  largest table in the subset).

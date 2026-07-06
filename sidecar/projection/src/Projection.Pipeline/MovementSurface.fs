@@ -1209,6 +1209,16 @@ module Command =
                         // to render, so the refusal is at PLAN time, named.
                         if hasModel then PlanAction.RunReverseLeg (spec.Model, modelOssys, src, conn, opts, execute)
                         else modelMissing "projection (reverse leg): the B→A reverse leg renders its contracts from the authored model. "
+                    | MovementDirection.UpPeer ->
+                        // The peer (A→A) move — two deployed cells of one model
+                        // whose physical `OSUSR_*` names differ per espace. The
+                        // peer runner reads a contract from EACH side's OSSYS
+                        // metamodel (native GUID identity), so no authored model
+                        // rides the action; the shape gate + subset-FK gate own
+                        // the pre-write refusals. 2026-07-06. (An env→env flow
+                        // with UNSET renditions keeps the name-blind `Transfer`
+                        // below — the identical-rendition escape hatch.)
+                        PlanAction.TransferPeer (src, conn, opts, execute)
                     | _ -> PlanAction.Transfer (src, conn, opts, execute)
                 if not spec.Commit then
                     match spec.Data with
@@ -1247,6 +1257,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.TransferPeer _ -> []
             | _, PlanAction.RunReverseLeg _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
@@ -1257,6 +1268,7 @@ module Command =
             match spec.Resumable, action with
             | false, _ -> []
             | true, PlanAction.Transfer _ -> []
+            | true, PlanAction.TransferPeer _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
         // D8 — seed/scale are honored on the synthetic load only; on any other
@@ -1274,11 +1286,16 @@ module Command =
             match spec.Streaming, action with
             | false, _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
+            // The peer leg rides the reverse-leg realization selector, so an
+            // explicit --streaming is honored (or refused BY NAME on an
+            // inadmissible combination — never silently dropped).
+            | true, PlanAction.TransferPeer _ -> []
             | true, _ -> [ "--streaming accepted; this action has no streaming write seam (materialized write applied)." ]
         let journalNote =
             match spec.Journal, action with
             | None, _ -> []
             | Some _, PlanAction.RunReverseLeg _ -> []
+            | Some _, PlanAction.TransferPeer _ -> []
             | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
         // F0c-I/O — the blessed correction is consumed only by the synthetic load
         // (it threads `Profile ⊕ Correction` into σ + drives Faker realization);

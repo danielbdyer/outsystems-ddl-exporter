@@ -1244,6 +1244,12 @@ module Voice =
         | Preflight.CdcTrackedSink ->
             View.Warn, "The sink is CDC-tracked. Allow the capture, or halt.",
             Some(View.Action "Allow CDC capture, or halt.")
+        | Preflight.ShapeDivergence ->
+            View.Bad, "The source and sink schemas are not one shape over the transferred set. Align the models, narrow the subset, or halt.",
+            Some(View.Action "Align the models (deploy the same version to both), narrow the table subset, or halt.")
+        | Preflight.SubsetFkEscape ->
+            View.Warn, "Some relationships point outside the chosen tables. Reconcile each against the target's rows, widen the subset, or accept the drops.",
+            Some(View.Action "Reconcile each named table against the target's rows, widen the subset, or accept the drops: --allow-drops.")
         | Preflight.UnclassifiedRefusal ->
             View.Bad, "Stopped before any change was applied. The cause is shown below.", None
 

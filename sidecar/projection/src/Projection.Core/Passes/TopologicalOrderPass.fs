@@ -324,13 +324,18 @@ module TopologicalOrderPass =
         (classified: Map<(SsKey * SsKey), EdgeStrength>)
         : ((SsKey * SsKey) * EdgeStrength) list =
         // All (source, target) pairs where both endpoints are in the
-        // SCC. Sorted by edge tuple for deterministic output.
+        // SCC. Sorted by edge tuple for deterministic output. Self-pairs
+        // (a = b) are REAL internal edges — a 1-member SCC's self-reference
+        // is exactly the (k, k) pair, and excluding it made every self-loop
+        // SCC unresolvable by construction (the resolver saw an empty edge
+        // list; found 2026-07-06 by the peer-aligned two-environment
+        // canary). The 2-cycle arm of the resolver ignores self-edges, so
+        // its semantics are unchanged.
         [ for a in members do
             for b in members do
-                if a <> b then
-                    match Map.tryFind (a, b) classified with
-                    | Some s -> yield (a, b), s
-                    | None   -> () ]
+                match Map.tryFind (a, b) classified with
+                | Some s -> yield (a, b), s
+                | None   -> () ]
         |> List.sortBy fst
 
     let private applyResolver

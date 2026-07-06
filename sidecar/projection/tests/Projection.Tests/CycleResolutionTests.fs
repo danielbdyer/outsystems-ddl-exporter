@@ -86,6 +86,24 @@ let private bKey = testKey "B"
 let private cKey = testKey "C"
 
 [<Fact>]
+let ``resolver: a Weak self-edge (nullable self-FK) is broken for ordering — phase 2 re-points it`` () =
+    // The 2026-07-06 self-loop rule (the peer-canary finding): a nullable
+    // self-reference (Category.Parent / Employee.Manager) must not degrade
+    // the whole catalog to the alphabetical fallback — the deferral
+    // machinery re-points it in phase 2 regardless of order.
+    let step =
+        CycleResolution.asymmetric2CycleStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Weak ]
+    Assert.Equal<(SsKey * SsKey) list>([ (aKey, aKey) ], step.EdgesToBreak)
+    Assert.Contains("auto-resolved", step.Reason)
+
+[<Fact>]
+let ``resolver: a non-Weak self-edge still refuses (a mandatory self-FK cannot defer)`` () =
+    let step =
+        CycleResolution.asymmetric2CycleStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Other ]
+    Assert.Empty(step.EdgesToBreak)
+    Assert.Contains("no Weak (nullable) self-edge", step.Reason)
+
+[<Fact>]
 let ``resolver: 2-cycle with exactly one Weak edge returns that edge`` () =
     let edges =
         [ (aKey, bKey), EdgeStrength.Weak

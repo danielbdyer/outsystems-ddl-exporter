@@ -265,7 +265,14 @@ let runTransfer
 // and drives `Transfer.runReverseLegThroughConnections` through the apparatus.
 // ---------------------------------------------------------------------------
 
-let runReverseLegTransfer
+/// The shared two-contract face body: the reverse leg (`legacy`, logical→
+/// physical renditions of ONE authored model) and the peer leg (A→A, two
+/// OSSYS-read per-environment contracts) drive the SAME engine path — two
+/// SsKey-aligned contracts, reads with source names, writes with sink names.
+/// `faceLabel` owns the operator-facing error prefix (THE_VOICE: the verb
+/// presents in its own words).
+let runContractPairTransfer
+    (faceLabel: string)
     (sourceSpec: string)
     (sinkSpec: string)
     (logicalSourceContract: Catalog)
@@ -306,7 +313,7 @@ let runReverseLegTransfer
         @ (parsedReconciles |> List.collect collect)
         @ collect parsedUserMap
     if not (List.isEmpty specErrors) then
-        Console.Error.WriteLine "projection move (reverse leg): argument error:"
+        Console.Error.WriteLine (faceLabel + ": argument error:")
         printErrors Console.Error specErrors
         dumpBench "transfer"
         2
@@ -321,7 +328,7 @@ let runReverseLegTransfer
     let reconcile      = not (List.isEmpty entries) || not (List.isEmpty userMapEntries)
     match TransferSpec.resolveAllReconciliation physicalSinkContract entries userMapEntries with
     | Error es ->
-        Console.Error.WriteLine "projection move (reverse leg): reconcile resolution error:"
+        Console.Error.WriteLine (faceLabel + ": reconcile resolution error:")
         printErrors Console.Error es
         dumpBench "transfer"
         2
@@ -370,7 +377,7 @@ let runReverseLegTransfer
           ConnectionRef = Result.value parsedSink }
     match TransferConnections.create sourceSub sinkSub reconcile with
     | Error es ->
-        Console.Error.WriteLine "projection move (reverse leg): apparatus invariant violation:"
+        Console.Error.WriteLine (faceLabel + ": apparatus invariant violation:")
         printErrors Console.Error es
         dumpBench "transfer"
         3
@@ -408,5 +415,150 @@ let runReverseLegTransfer
     // G0c — the advisory capability survey renders in the dispatch prologue
     // (voiced, pre-Live) since 2026-07-02; same posture as the peer transfer.
     Face.staged "transfer" executeGated Spines.transfer runBody
+
+/// The reverse-leg face under its own name — the pre-2026-07-06 signature,
+/// byte-identical behavior; the body is the shared `runContractPairTransfer`.
+let runReverseLegTransfer
+    (sourceSpec: string)
+    (sinkSpec: string)
+    (logicalSourceContract: Catalog)
+    (physicalSinkContract: Catalog)
+    (reconcileSpecs: string list)
+    (userMapPath: string option)
+    (executeRequested: bool)
+    (allowCdc: bool)
+    (allowDrops: bool)
+    (emission: EmissionMode)
+    (resumable: bool)
+    (streaming: bool)
+    (journalDirectory: string option)
+    (tables: string list)
+    (revertPolicy: RevertPolicy)
+    (revertDir: string option)
+    (sinkCapability: SinkLoadCapability)
+    : int =
+    runContractPairTransfer "projection move (reverse leg)"
+        sourceSpec sinkSpec logicalSourceContract physicalSinkContract
+        reconcileSpecs userMapPath executeRequested allowCdc allowDrops
+        emission resumable streaming journalDirectory tables
+        revertPolicy revertDir sinkCapability
+
+// ---------------------------------------------------------------------------
+// The peer (A→A) face — the QA→UAT partial transfer with differing physical
+// names (the 2026-07-06 partial-transfer readiness program). Two deployed
+// cells of ONE model: each side's contract is read from its OWN OSSYS
+// metamodel (`PeerTransfer.acquireContracts` — native GUID SsKeys, the
+// espace-invariance law), so the pair aligns by identity without an authored
+// model in the loop. Two pre-write gates ride the pair before the shared
+// contract-pair body runs:
+//   - the SHAPE gate — SS_KEY-keyed schema compatibility over the kinds this
+//     run touches (`transfer.peer.shapeDivergence`, exit 5; advisories
+//     surface, never silent), and
+//   - the SUBSET-FK gate — FK edges escaping a declared `tables` subset each
+//     get a proposed strategy (reconcile against rows the sink already holds;
+//     widen the subset; --allow-drops); a live Execute with un-strategized
+//     escapes refuses by name (`transfer.peer.subsetFkEscapes`, exit 9), a
+//     preview narrates the proposals instead.
+// ---------------------------------------------------------------------------
+
+let runPeerTransfer
+    (sourceSpec: string)
+    (sinkSpec: string)
+    (reconcileSpecs: string list)
+    (userMapPath: string option)
+    (executeRequested: bool)
+    (allowCdc: bool)
+    (allowDrops: bool)
+    (emission: EmissionMode)
+    (resumable: bool)
+    (streaming: bool)
+    (journalDirectory: string option)
+    (tables: string list)
+    (revertPolicy: RevertPolicy)
+    (revertDir: string option)
+    (sinkCapability: SinkLoadCapability)
+    : int =
+    // Acquire the two SsKey-aligned contracts (the one I/O seam this face
+    // adds). An unreadable OSSYS metamodel refuses on the schema-read axis
+    // (exit 6) before any gate or connection-opening work.
+    match (PeerTransfer.acquireContracts sourceSpec sinkSpec).GetAwaiter().GetResult() with
+    | Error errors ->
+        Console.Error.WriteLine "projection transfer (peer): contract acquisition error:"
+        printErrors Console.Error errors
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok (sourceContract, sinkContract) ->
+
+    // Resolve the gate inputs: the declared subset (against the SOURCE
+    // contract — the same resolver the engine uses) and the reconciled kind
+    // set (against the SINK contract — the same resolution the shared body
+    // performs). A spec that fails to parse/resolve here is NOT refused here:
+    // the shared body reproduces the refusal byte-identically, so the gates
+    // simply step aside (empty reconciled set / no subset) and delegate.
+    let reconciledKeys : Set<SsKey> =
+        let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+        let parsedUserMap =
+            match userMapPath with
+            | None -> Result.success []
+            | Some path ->
+                if not (System.IO.File.Exists path) then Result.success []
+                else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+        let entries = parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None)
+        match parsedUserMap with
+        | Error _ -> Set.empty
+        | Ok userMapEntries ->
+            match TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries with
+            | Ok reconciliation -> reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+            | Error _ -> Set.empty
+    match Transfer.resolveLoadSet sourceContract tables with
+    | Error errors ->
+        // The subset itself failed to resolve — same refusal the engine
+        // would give; surface it now, before any connection opens.
+        Console.Error.WriteLine "projection transfer (peer): table subset error:"
+        printErrors Console.Error errors
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok loadSet ->
+
+    // Gate 1 — SS_KEY-keyed shape compatibility over the kinds this run
+    // touches (the subset + its reconciled kinds; the whole estate when no
+    // subset is declared). Blocking divergence refuses by name (exit 5);
+    // advisories print to stderr and the run proceeds.
+    let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
+    match PeerTransfer.shapeGate gateScope sourceContract sinkContract with
+    | Error errors ->
+        errors |> List.iter TtyRenderer.renderVoicedError
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok advisories ->
+    if not (List.isEmpty advisories) then
+        Console.Error.WriteLine (sprintf "projection transfer (peer): %d shape advisory(ies) — real divergence that does not block a data load:" advisories.Length)
+        advisories |> List.iter (fun line -> Console.Error.WriteLine ("  " + line))
+
+    // Gate 2 — FK edges escaping the declared subset. A preview narrates the
+    // per-edge strategy proposals; a live Execute with un-strategized escapes
+    // refuses by name unless the operator declared the drop-set acceptable.
+    let escapes =
+        match loadSet with
+        | Some s -> PeerTransfer.escapingFks sourceContract s reconciledKeys
+        | None -> []
+    if not (List.isEmpty escapes) then
+        printfn "%d relationship(s) escape the declared table subset:" escapes.Length
+        PeerTransfer.narrateEscapes escapes |> List.iter (fun line -> printfn "  %s" line)
+    match PeerTransfer.subsetFkGate executeRequested allowDrops escapes with
+    | Error errors ->
+        errors |> List.iter TtyRenderer.renderVoicedError
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok () ->
+
+    // The shared contract-pair body: realization selector, execute/journal
+    // gates, apparatus, engine run, narration — identical to the reverse leg,
+    // with the peer pair as the contracts and the peer label on the prose.
+    runContractPairTransfer "projection transfer (peer)"
+        sourceSpec sinkSpec sourceContract sinkContract
+        reconcileSpecs userMapPath executeRequested allowCdc allowDrops
+        emission resumable streaming journalDirectory tables
+        revertPolicy revertDir sinkCapability
 
 // ---------------------------------------------------------------------------

@@ -2088,7 +2088,9 @@ module Transfer =
     /// Resolve the declared table subset (logical entity names) to a load-set
     /// of `SsKey`s against the source contract — refusing any name the schema
     /// does not carry (total decisions, named skips). Empty list → `None` (all).
-    let private resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
+    /// Public since the peer leg (2026-07-06): the peer face resolves the SAME
+    /// subset ahead of its shape / subset-FK gates, one vocabulary, one resolver.
+    let resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
         if List.isEmpty tables then Result.success None
         else
             let byName =

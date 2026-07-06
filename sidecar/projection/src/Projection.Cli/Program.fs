@@ -215,6 +215,14 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // close with the §10 terminal — and the run is capturable.
         withRun "projection transfer" (fun () ->
             runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.RevertPolicy opts.RevertDir)
+    | PlanAction.TransferPeer (src, sink, opts, execute) ->
+        // The peer (A→A) leg (2026-07-06): two cells of one model, physical
+        // `OSUSR_*` names differing per espace. NO model rides the action —
+        // the face reads a contract from EACH side's OSSYS metamodel (native
+        // GUID identity), gates the pair (shape / subset-FK), and drives the
+        // same contract-pair engine path the reverse leg proved.
+        withRun "projection transfer" (fun () ->
+            runPeerTransfer src sink opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE

@@ -78,17 +78,49 @@ module CycleResolution =
     type Resolver =
         SsKey list -> ((SsKey * SsKey) * EdgeStrength) list -> ResolutionStep
 
-    /// V1's asymmetric-2-cycle strategy. For SCCs of size 2 with
-    /// exactly one Weak edge, returns that edge as breakable. Refuses
-    /// to resolve any other shape — 0 Weak, multiple Weak, or larger
-    /// SCCs — leaving the cycle for the alphabetical fallback.
+    /// V1's asymmetric-2-cycle strategy, extended (2026-07-06) with the
+    /// self-loop rule. For SCCs of size 2 with exactly one Weak edge,
+    /// returns that edge as breakable. For SCCs of size 1 (a
+    /// self-referencing kind), a Weak self-edge is breakable FOR
+    /// ORDERING: the two-phase load's deferral machinery re-points a
+    /// nullable self-FK in phase 2 regardless of order (the F1 lift,
+    /// DECISIONS 2026-06-10), and a RESOLVED SCC stays in `Cycles`, so
+    /// `cycleMembers`/`deferredFkColumns` still defer the column — only
+    /// the ORDER stops degrading. Before this rule, one nullable
+    /// self-reference anywhere (Category.Parent, Employee.Manager — the
+    /// common OutSystems shapes) refused resolution and dropped the
+    /// WHOLE catalog to the alphabetical fallback, re-ordering every
+    /// unrelated parent/child pair; a subset transfer then loaded
+    /// children before their parents and mass-dropped FK rows (found
+    /// 2026-07-06 by the peer-aligned two-environment canary). Still
+    /// refuses every other shape — 0 Weak, multiple-Weak 2-cycles,
+    /// non-Weak self-edges, larger SCCs — leaving those for the
+    /// alphabetical fallback.
     let asymmetric2CycleStrategy : Resolver =
         fun members internalEdges ->
             match members with
+            | [ single ] ->
+                let weakSelfEdges =
+                    internalEdges
+                    |> List.filter (fun ((s, t), strength) ->
+                        s = single && t = single && strength = EdgeStrength.Weak)
+                    |> List.map fst
+                match weakSelfEdges with
+                | [] ->
+                    { EdgesToBreak = []
+                      Reason       = "self-referencing SCC has no Weak (nullable) self-edge to defer" }
+                | edges ->
+                    { EdgesToBreak = edges
+                      Reason       = "auto-resolved by deferring the nullable self-reference to phase 2" }
             | [_; _] ->
+                // Self-edges are not the 2-cycle's business — a member's
+                // self-reference rides its own deferral; only the two
+                // INTER-member edges decide asymmetry here (the pre-2026-07-06
+                // semantics, preserved now that `internalEdgesOf` reports
+                // self-pairs).
                 let weakEdges =
                     internalEdges
-                    |> List.filter (fun (_, s) -> s = EdgeStrength.Weak)
+                    |> List.filter (fun ((s, t), strength) -> s <> t && strength = EdgeStrength.Weak)
                 match weakEdges with
                 | [ (edge, _) ] ->
                     { EdgesToBreak = [ edge ]

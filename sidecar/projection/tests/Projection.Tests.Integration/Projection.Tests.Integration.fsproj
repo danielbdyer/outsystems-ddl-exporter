@@ -34,6 +34,7 @@
     <Compile Include="VerifyDataIntegrationTests.fs" />
     <Compile Include="IngestionIntegrationTests.fs" />
     <Compile Include="TransferCanaryTests.fs" />
+    <Compile Include="PeerAlignedTransferDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />
