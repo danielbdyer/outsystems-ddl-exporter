@@ -503,3 +503,63 @@ definition-less check row is SKIPPED (a named erasure — ColumnChecks are
 physical-realization artifacts the shape verdict strips and the data plane never
 reads; privileged reads still carry them). Also: adapter-level extraction failures now
 classify onto the schema-read axis (exit 6) instead of unclassified-3.
+
+## Entry 14 — 2026-07-06, THE SEMANTICS WALKTHROUGH (plain shorthand, post-fix state)
+
+**The one-line model.** Every entity and attribute has a GUID (SS_KEY) that survives
+environments; names — logical and physical — are costumes over that GUID. The transfer
+moves rows by GUID and only touches names at two well-defined seams.
+
+**1. Contracts.** Run start: read each environment's OSSYS metamodel (plain SELECTs on
+ossys_* tables over that env's own connection). Result per side: a catalog where every
+kind/attribute carries its GUID + THAT environment's names (logical AND physical).
+Nothing is authored or assumed — each side describes itself.
+
+**2. Physical names never cross the wire.** Reads SELECT using the SOURCE catalog's
+physical table/column names; writes INSERT/MERGE using the SINK catalog's physical
+names; the two sides pair up per kind by GUID. So QA's `OSUSR_ABC_CUSTOMER` vs UAT's
+`OSUSR_XYZ_CUSTOMER` is a non-event — there is no mapping table, no convention, no
+string transform; each side just uses its own physicals.
+
+**3. Renames — the exact role, when, and where.** In flight, a row is a bag of values
+keyed by LOGICAL attribute name (not physical, not position). Normal case: both
+environments carry the same logical names (same model version) → the rename machinery
+is a no-op (empty map). It exists for ONE situation: the same attribute (same GUID)
+has DIFFERENT logical names in the two environments — e.g. you renamed
+`Customer.Email → ContactEmail` in QA and haven't promoted to UAT. WHEN: computed once
+at run start — diff the two contracts; every same-GUID/different-logical-name
+attribute yields a source-name → sink-name entry, grouped BY KIND (today's critical
+fix: one kind's rename can no longer touch another kind's same-named column). WHERE:
+applied exactly once per row, between ingest and plan-build (materialized: re-key the
+row's bag; streaming: re-key the stream's header once) — after that, everything
+downstream speaks sink vocabulary. Entity-level renames need nothing at all
+(everything is GUID-keyed); the only name-sensitive input is YOUR `tables:` list,
+which resolves against the SOURCE's logical names (`Module.Entity` if ambiguous).
+
+**4. Gates (before any write).** SHAPE: diff the two contracts by GUID with
+physical-realization artifacts stripped; blocks only what breaks insertability
+(missing kind/attribute in scope, type change, narrowing, NULL→NOT-NULL); everything
+else is a printed advisory. SUBSET-FK: every FK from a chosen table to an un-chosen,
+un-reconciled table must get a strategy — reconcile it against the sink's own rows
+(proposal printed as a paste-able `Module.Entity:Column`) or widen the subset. No
+bypass: those rows would otherwise land carrying QA's key values pointing at the
+wrong UAT rows.
+
+**5. The load.** Order = FK topology (parents first; verified, or the run refuses).
+The sink MINTS every identity (managed cloud forbids IDENTITY_INSERT): each parent
+row inserts via a MERGE that captures old-key → new-key; children's FK values re-point
+through that capture before their own insert. Nullable FKs inside a cycle load NULL
+first, then a phase-2 UPDATE re-points them. Reconciled kinds (Users, reference data)
+are never inserted — their source rows match sink rows by the business key you named,
+and FKs re-key to the SINK's existing identities.
+
+**6. Re-runs.** `strategy: replace` wipes the subset's sink rows child-first, then
+reloads — run it twice, same result.
+
+**7. Permissions (now proven, not assumed).** Everything above fits database-scope
+SELECT/INSERT/UPDATE/DELETE plus tempdb #staging — the whole flow runs green with
+that exact principal on BOTH sides, including the metamodel reads. One read-side
+subtlety found and absorbed: without VIEW DEFINITION the server hides check-constraint
+bodies; those are now skipped as a named erasure (they never affect data transfer).
+The one true blind spot that remains: a table-level DENY is invisible to the
+preflight and surfaces mid-load (G1, pinned with a test).
