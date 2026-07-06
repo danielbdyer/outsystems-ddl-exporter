@@ -45,7 +45,7 @@ module private PeerAlignedFixtures =
     /// physical DDL move together; GUIDs / logical names / structure held
     /// fixed). The same transform the espace-invariance canary proved reads
     /// as ONE shape.
-    let seedB () : string = (seedA ()).Replace("OSUSR_", "OSUSR_X")
+    let seedB () : string = (seedA ()) |> OssysSeedBuilder.withEspaceKey "X"
 
     /// Deterministic source rows: two cities (known surrogates 1/2 via
     /// IDENTITY_INSERT) and two customers pointing at them. LEGACYCODE is
@@ -118,24 +118,18 @@ module private PeerAlignedFixtures =
         (body: TransferConnections -> System.Threading.Tasks.Task<'a>)
         : System.Threading.Tasks.Task<'a> =
         task {
-            let srcFile = System.IO.Path.GetTempFileName()
-            let sinkFile = System.IO.Path.GetTempFileName()
-            System.IO.File.WriteAllText(srcFile, srcConnStr)
-            System.IO.File.WriteAllText(sinkFile, sinkConnStr)
-            try
-                let srcSub : Substrate =
-                    { Environment = Projection.Core.Environment.Qa
-                      Role = SubstrateRole.Source
-                      ConnectionRef = ConnectionRef.File srcFile }
-                let sinkSub : Substrate =
-                    { Environment = Projection.Core.Environment.Uat
-                      Role = SubstrateRole.Sink
-                      ConnectionRef = ConnectionRef.File sinkFile }
-                let connections = TransferConnections.create srcSub sinkSub reconcile |> value
-                return! body connections
-            finally
-                try System.IO.File.Delete srcFile with _ -> ()
-                try System.IO.File.Delete sinkFile with _ -> ()
+            // `ConnectionRef.Raw` (DECISIONS 2026-07-06): the ephemeral-DB
+            // string is already in memory — no temp-file round trip.
+            let srcSub : Substrate =
+                { Environment = Projection.Core.Environment.Qa
+                  Role = SubstrateRole.Source
+                  ConnectionRef = ConnectionRef.Raw srcConnStr }
+            let sinkSub : Substrate =
+                { Environment = Projection.Core.Environment.Uat
+                  Role = SubstrateRole.Sink
+                  ConnectionRef = ConnectionRef.Raw sinkConnStr }
+            let connections = TransferConnections.create srcSub sinkSub reconcile |> value
+            return! body connections
         }
 
 [<Xunit.Collection("Docker-SqlServer")>]

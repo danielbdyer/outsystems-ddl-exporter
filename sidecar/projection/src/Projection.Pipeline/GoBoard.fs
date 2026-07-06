@@ -65,6 +65,43 @@ module GoBoard =
     /// shape` also uses) on red.
     let exitCode (b: Board) : int = if isGreen b then 0 else 5
 
+    /// The machine-readable projection (`--format json`) — the CI-consumable
+    /// twin of the exit code: `{flow, from, to, verdict, redCount, items:[
+    /// {axis, status, headline, remedy?, detail[]}]}`. Typed writer, never
+    /// string concatenation (the house JSON discipline).
+    let toJsonString (b: Board) : string =
+        use ms = new System.IO.MemoryStream()
+        use w = new System.Text.Json.Utf8JsonWriter(ms, System.Text.Json.JsonWriterOptions(Indented = true))
+        w.WriteStartObject()
+        w.WriteString("flow", b.Flow)
+        w.WriteString("from", b.From)
+        w.WriteString("to", b.To)
+        w.WriteString("verdict", (if isGreen b then "green" else "red"))
+        w.WriteNumber("redCount", redCount b)
+        w.WriteStartArray "items"
+        for i in b.Items do
+            w.WriteStartObject()
+            w.WriteString("axis", i.Axis)
+            (match i.Status with
+             | Status.Green note ->
+                 w.WriteString("status", "green")
+                 w.WriteString("headline", note)
+             | Status.Advisory note ->
+                 w.WriteString("status", "advisory")
+                 w.WriteString("headline", note)
+             | Status.Red (reason, remedy) ->
+                 w.WriteString("status", "red")
+                 w.WriteString("headline", reason)
+                 w.WriteString("remedy", remedy))
+            w.WriteStartArray "detail"
+            for d in i.Detail do w.WriteStringValue d
+            w.WriteEndArray()
+            w.WriteEndObject()
+        w.WriteEndArray()
+        w.WriteEndObject()
+        w.Flush()
+        System.Text.Encoding.UTF8.GetString(ms.ToArray())
+
     /// Render the board as operator-facing lines: the mark column, the axis,
     /// the headline; detail lines indented beneath; the verdict at the close
     /// with the next move named.

@@ -38,6 +38,11 @@ module ConnectionResolver =
                 let value = (File.ReadAllText path).Trim()
                 if String.IsNullOrWhiteSpace value then Result.failureOf (blank label (sprintf "file '%s'" path))
                 else Result.success value
+        | ConnectionRef.Raw connStr ->
+            // The already-in-memory secret (D9 amendment 2026-07-06): the
+            // caller resolved it upstream; never logged, never persisted.
+            if String.IsNullOrWhiteSpace connStr then Result.failureOf (blank label "raw connection string")
+            else Result.success connStr
 
     /// A diagnostic label for a substrate — `Role:ENVIRONMENT` — so a
     /// resolution / open failure names which substrate failed.

@@ -738,3 +738,52 @@ Pure pins added (`subsetEscapeGate` semantics + exit-9 classification). Fast poo
 GREEN; **the full docker pool PASSED IN FULL (519s)** — every leg's canaries
 (forward transfer, legacy reverse, streaming, peer, managed-grant, go-board,
 proving-loop) green through the new gates. The parity sweep is closed.
+
+## Entry 20 — 2026-07-06, THE FINAL PASS: two Opus critiques applied (refactor + DX)
+
+Operator directive: identify duplication/refactoring needs and polish DX before
+moving on. Two Opus critics swept the session's ~4,400-line diff; every accepted
+finding applied, the explicit not-dos honored.
+
+**Refactoring (the duplication the session created, now paid down):**
+- `ConnectionRef.Raw` (with its DECISIONS amendment): the in-memory carrier for an
+  already-resolved secret. Kills the temp-file-secret dance at FOUR sites (the go
+  board's dry run + three test fixtures) — the workaround was persisting the secret
+  to disk, strictly worse than the D9 discipline it dodged. `Raw` never round-trips
+  into config (maps to the `live:` spec form only).
+- `TransferSubset.escapingEdges`: the ONE escaping-relationship traversal, consumed
+  by both the engine backstop and the peer face's rich detector — the two
+  predicates can no longer drift (board-green-while-engine-refuses is structurally
+  impossible).
+- `parseReconcileInputs`: four near-identical reconcile/user-map parse blocks in the
+  faces collapsed to one helper (the peer face's deliberate defer-missing-file
+  divergence preserved as a named flag).
+- The `DmlPrincipal` promotion FINISHED: `ReverseLegCanaryTests`' private duplicate
+  deleted, eight call sites swapped to the shared module.
+- `PeerAlignedTransferDockerTests`' blind `String.Replace` espace shift replaced
+  with `OssysSeedBuilder.withEspaceKey`; both peer suites' `throughConnections` ride
+  `Raw`.
+- Explicit NOT-DOs (per the critique, with reasons on record): no rename of
+  `transfer.reverseLeg.resumableSinkUnsupported` (operator-facing compat > cosmetic
+  accuracy); no `runCheckGo` preamble decomposition (the linear cascade IS the
+  clearest form); no View-ification of the board render (deliberate report format;
+  pure core already split).
+
+**DX (the operator-surface polish):**
+- **THE WRONG-SINK REVERT GUARD** (the critique's top finding): every undo/revert
+  artifact now carries a provenance header naming the database its keys were
+  captured against; `projection revert` refuses by name (`revert.sinkMismatch`,
+  exit 7) when `--against` resolves elsewhere — `--force` is the deliberate
+  override; a header-less (pre-stamp) artifact proceeds with a printed note.
+  Pinned in the proving-loop e2e (pointing the undo at the SOURCE refuses).
+- **`check go --format json`**: the board's typed structure serializes
+  (`{verdict, redCount, items:[{axis, status, headline, remedy, detail}]}`) — the
+  CI-able claim now has a machine-readable surface beyond the exit code. Pure pin
+  added; runbook notes the board's exit-5 vs the live run's 5/9 refinement.
+- Copy: "no reconcile rules declared yet" (the green-at-zero contradiction gone);
+  "modulo" de-jargoned; revert preview says "row(s) to delete" (not "captured
+  key(s)"); a second revert says "Nothing to revert" instead of feigning deletion;
+  escape proposals lead with the paste-able move (truncation-safe); ONE name — "the
+  go board" — everywhere.
+
+Fast pool + the full peer/managed/go-board/reverse-leg docker sweep: GREEN.

@@ -94,11 +94,11 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
 
                         // 1. RED — subset [Customer], City escapes, no strategy.
-                        let red1 = runCheckGo "golden" "cloud-qa" "cloud-uat" (planned (GoBoardFixtures.optsWith [ "Customer" ] []))
+                        let red1 = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] []))
                         Assert.Equal(5, red1)
 
                         // 2. GREEN — the SAME flow with the proposed reconcile.
-                        let green = runCheckGo "golden" "cloud-qa" "cloud-uat" (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
 
                         // The board's dry run NEVER writes: the sink customer
@@ -113,7 +113,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo "golden" "cloud-qa" "cloud-uat" (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
                         return ()
                     }))
@@ -133,7 +133,6 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                 (fun src snk ->
                     task {
                         let undoDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "prove-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
-                        let sinkFile = System.IO.Path.GetTempFileName()
                         try
                             let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
                             let (srcContract, sinkContract) = Result.value contractsR
@@ -145,13 +144,9 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
 
                             // 1. TRANSFER the subset (revert dir threaded so the
                             //    success tail writes transfer-undo.sql).
-                            let srcSub : Substrate = { Environment = Projection.Core.Environment.Qa; Role = SubstrateRole.Source; ConnectionRef = ConnectionRef.File sinkFile }
-                            // (the source ref file carries the SOURCE conn; reuse one temp file per side)
-                            let srcFile = System.IO.Path.GetTempFileName()
-                            System.IO.File.WriteAllText(srcFile, src.EngineConnStr)
-                            System.IO.File.WriteAllText(sinkFile, snk.EngineConnStr)
-                            let srcSub = { srcSub with ConnectionRef = ConnectionRef.File srcFile }
-                            let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.File sinkFile }
+                            //    `ConnectionRef.Raw` (DECISIONS 2026-07-06).
+                            let srcSub : Substrate = { Environment = Projection.Core.Environment.Qa; Role = SubstrateRole.Source; ConnectionRef = ConnectionRef.Raw src.EngineConnStr }
+                            let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.Raw snk.EngineConnStr }
                             let connections = TransferConnections.create srcSub sinkSub true |> Result.value
                             let! runR =
                                 Transfer.runReverseLegThroughConnectionsWith
@@ -168,16 +163,23 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             Assert.True(System.IO.File.Exists undoPath, "the success tail must write transfer-undo.sql")
 
                             // 3. REVERT through the face: preview (no deletes), then live.
-                            let preview = Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("file:" + sinkFile) false
+                            let preview = Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("live:" + snk.EngineConnStr) false false
                             Assert.Equal(0, preview)
                             let! stillThere = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
                             Assert.Equal(2, stillThere)
                             let prior = System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE"
                             System.Environment.SetEnvironmentVariable("PROJECTION_ALLOW_EXECUTE", "1")
                             let live =
-                                try Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("file:" + sinkFile) true
+                                try Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-uat" ("live:" + snk.EngineConnStr) true false
                                 finally System.Environment.SetEnvironmentVariable("PROJECTION_ALLOW_EXECUTE", prior)
                             Assert.Equal(0, live)
+
+                            // 4a. THE WRONG-SINK GUARD: the artifact's
+                            //     provenance header names the sink database;
+                            //     pointing --against at the SOURCE refuses by
+                            //     name (exit 7) before any delete.
+                            let mismatch = Projection.Cli.Faces.Transfer.runRevertScript undoPath "cloud-qa" ("live:" + src.EngineConnStr) true false
+                            Assert.Equal(7, mismatch)
 
                             // 4. The sink is back to its pre-transfer state:
                             //    minted rows gone, pre-existing city rows intact.
@@ -185,9 +187,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             Assert.Equal(0, customersReverted)
                             let! cities = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XDEF_CITY]"
                             Assert.Equal(2, cities)
-                            try System.IO.File.Delete srcFile with _ -> ()
                             return ()
                         finally
-                            try System.IO.File.Delete sinkFile with _ -> ()
                             try System.IO.Directory.Delete(undoDir, true) with _ -> ()
                     }))

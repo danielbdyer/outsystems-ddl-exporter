@@ -185,7 +185,7 @@ let ``narrateEscapes: proposals carry the RESOLVABLE Module.Entity:Column reconc
     // table only — the proposal must be copy-pasteable.
     let escapes = PeerTransfer.escapingFks srcCell (keys [ "Customer" ]) Set.empty
     let lines = PeerTransfer.narrateEscapes escapes
-    Assert.True(lines |> List.exists (fun l -> l.Contains "AppCore.City:Name"),
+    Assert.True(lines |> List.exists (fun l -> l.Contains "AppCore.City:Name" && l.Contains "escapes the subset"),
                 sprintf "expected the Module.Entity:Column form, got %A" lines)
 
 // --- the shape gate -----------------------------------------------------------
@@ -343,6 +343,25 @@ let ``GoBoard: the render carries the marks, the remedy, the detail, and the ver
     let greenText = GoBoard.render green |> String.concat "\n"
     Assert.Contains("VERDICT — GREEN", greenText)
     Assert.Contains("PROJECTION_ALLOW_EXECUTE=1 projection golden --go", greenText)
+
+[<Fact>]
+let ``GoBoard: the JSON projection carries verdict, redCount, and per-item status/remedy/detail`` () =
+    let board : GoBoard.Board =
+        { Flow = "golden"; From = "qa"; To = "uat"
+          Items =
+            [ GoBoard.item "routing" (GoBoard.Status.Green "peer leg")
+              GoBoard.itemWith "relationships" (GoBoard.Status.Red ("2 escapes", "add the reconcile")) [ "Customer.CityId -> City" ] ] }
+    let json = GoBoard.toJsonString board
+    use doc = System.Text.Json.JsonDocument.Parse json
+    let root = doc.RootElement
+    Assert.Equal("red", root.GetProperty("verdict").GetString())
+    Assert.Equal(1, root.GetProperty("redCount").GetInt32())
+    let items = root.GetProperty("items")
+    Assert.Equal(2, items.GetArrayLength())
+    let rel = items.[1]
+    Assert.Equal("red", rel.GetProperty("status").GetString())
+    Assert.Equal("add the reconcile", rel.GetProperty("remedy").GetString())
+    Assert.Equal("Customer.CityId -> City", rel.GetProperty("detail").[0].GetString())
 
 // --- the Preflight classification of the two new axes -------------------------
 

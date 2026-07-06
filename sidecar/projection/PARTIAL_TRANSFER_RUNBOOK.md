@@ -67,7 +67,12 @@ projection check go golden
 Read-only (plus a dry run — real reads, zero writes). It prints one line per
 axis with `[ GO ]` / `[STOP]` / `[note]` marks and a final verdict, and exits
 **5 while red, 0 when green** — so you can wire it into CI or a pre-flight
-script and literally watch it turn green.
+script and literally watch it turn green. `--format json` emits the whole
+board as structured data (`{verdict, redCount, items:[{axis, status,
+headline, remedy, detail}]}`) for pipelines that want more than the exit
+code. One note for CI authors: the board's not-ready verdict is always
+exit 5 (the `check shape` class); the live `--go` run refines that into 5
+(shape) vs 9 (relationships / identities / drops).
 
 The axes it judges, in order — the full forecast vocabulary:
 
@@ -173,12 +178,19 @@ PROJECTION_ALLOW_EXECUTE=1 projection revert --against cloud-uat --go   # the un
 - So the small-sample proving loop is: declare a tiny `tables` subset → board
   green → `--go` → verify in the target app/DB → `revert --go` → the sink is
   back where it started. Iterate until confident, then widen the subset.
+- **The wrong-sink guard**: every artifact carries a provenance header naming
+  the database the keys were captured against; `revert` refuses by name
+  (`revert.sinkMismatch`) if `--against` resolves to a different database.
+  `--force` is the deliberate override for a legitimately renamed/restored
+  copy. Never point a revert at any environment other than the one the
+  transfer wrote.
 - Two honesty notes: (1) a `replace`-strategy run's WIPE is not undone by the
   script — the undo removes what the run MINTED; rows the wipe deleted are
   gone (on a first load into empty tables this distinction is empty). (2) the
   undo targets captured keys — run it BEFORE new app activity writes rows that
   reference the minted ones (an FK from a newer row blocks the delete; the
-  transaction rolls back and tells you).
+  transaction rolls back and tells you). A second revert of the same artifact
+  reports "Nothing to revert" rather than pretending to delete again.
 
 ## Step 7 — Re-run whenever you need
 

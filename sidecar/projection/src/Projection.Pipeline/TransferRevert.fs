@@ -15,6 +15,15 @@ open Projection.Targets.SSDT
 [<RequireQualifiedAccess>]
 module TransferRevert =
 
+    /// The provenance header stamped into every revert/undo artifact
+    /// (2026-07-06, the wrong-sink guard): the SINK the keys were captured
+    /// against, so `projection revert` can refuse a script pointed at a
+    /// DIFFERENT database (deleting by key in the wrong environment). A
+    /// comment line — harmless to any SQL consumer.
+    let artifactHeader (artifactKind: string) (sink: SqlConnection) : string =
+        sprintf "-- projection:%s server=%s database=%s generated=%s"
+            artifactKind sink.DataSource sink.Database (System.DateTime.UtcNow.ToString "o") // LINT-ALLOW: terminal artifact-header text; DataSource/Database are SqlClient-provided identifiers at this terminal file boundary
+
     /// Build A — the child-first `DELETE`-by-captured-key revert script for a
     /// failed load. For each `AssignedBySink` kind, in the REVERSE of the
     /// parent-first insert order (children first, so an FK never blocks a delete),
@@ -60,7 +69,7 @@ module TransferRevert =
                 | Some dir ->
                     try
                         System.IO.Directory.CreateDirectory dir |> ignore
-                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" script) // LINT-ALLOW: terminal file-write boundary; each script entry is already terminal SQL text, String.concat is the irreducible primitive for newline-joining the artifact
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" (artifactHeader "transfer-revert" sink :: script)) // LINT-ALLOW: terminal file-write boundary; each script entry is already terminal SQL text, String.concat is the irreducible primitive for newline-joining the artifact
                     with _ -> ()
                 | None -> ()
                 if autoRevert then

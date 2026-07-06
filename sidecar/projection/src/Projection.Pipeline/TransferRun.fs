@@ -298,12 +298,12 @@ module Transfer =
     /// — the deliberate-revert sibling of `TransferRevert.runRevert`'s
     /// failed-run `transfer-revert.sql`. Empty script / no dir → no-op;
     /// a write failure never fails the (successful) load.
-    let private writeUndoArtifact (artifactDir: string option) (undo: string list) : unit =
+    let private writeUndoArtifact (sink: SqlConnection) (artifactDir: string option) (undo: string list) : unit =
         match artifactDir with
         | Some dir when not (List.isEmpty undo) ->
             try
                 System.IO.Directory.CreateDirectory dir |> ignore
-                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-undo.sql"), String.concat "\n" undo) // LINT-ALLOW: terminal file-write boundary; each entry is terminal SQL text (same convention as TransferRevert.runRevert's artifact write)
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-undo.sql"), String.concat "\n" (TransferRevert.artifactHeader "transfer-undo" sink :: undo)) // LINT-ALLOW: terminal file-write boundary; each entry is terminal SQL text (same convention as TransferRevert.runRevert's artifact write)
             with _ -> ()
         | _ -> ()
 
@@ -460,7 +460,7 @@ module Transfer =
                 // NOTE: a WipeAndLoad's wipe is NOT undone by this script —
                 // the undo removes what this run MINTED; rows the wipe
                 // deleted are gone (named in the runbook).
-                writeUndoArtifact revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
+                writeUndoArtifact sink revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
                 return writeSkips.Value, laneDescents.Value
             | RunStopped _ ->
                 // The body never returns Error; total match, named.
@@ -586,17 +586,9 @@ module Transfer =
         | None -> None
         | Some set ->
             let escapes =
-                Catalog.allKinds catalog
-                |> List.filter (fun k -> Set.contains k.SsKey set)
-                |> List.collect (fun kind ->
-                    kind.References
-                    |> List.choose (fun r ->
-                        if Set.contains r.TargetKind set || Set.contains r.TargetKind reconciled then None
-                        else
-                            Catalog.tryFindKind r.TargetKind catalog
-                            |> Option.map (fun target ->
-                                sprintf "%s.%s -> %s" (Name.value kind.Name) (Name.value r.Name) (Name.value target.Name))))
-                |> List.sort
+                TransferSubset.escapingEdges catalog set reconciled
+                |> List.map (fun (kind, r, target) ->
+                    sprintf "%s.%s -> %s" (Name.value kind.Name) (Name.value r.Name) (Name.value target.Name))
             if List.isEmpty escapes then None
             else
                 Some (ValidationError.create

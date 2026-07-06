@@ -256,26 +256,20 @@ module PeerTransfer =
             Catalog.allModulesKinds contract
             |> List.map (fun (m, k) -> k.SsKey, m.Name)
             |> Map.ofList
-        Catalog.allKinds contract
-        |> List.filter (fun k -> Set.contains k.SsKey loadSet)
-        |> List.collect (fun kind ->
-            kind.References
-            |> List.choose (fun r ->
-                if Set.contains r.TargetKind loadSet || Set.contains r.TargetKind reconciled then None
-                else
-                    match Catalog.tryFindKind r.TargetKind contract with
-                    | None -> None // a dangling model edge is the model's own diagnostic, not this gate's
-                    | Some target ->
-                        let sourceAttr = attrIn kind r.SourceAttribute
-                        Some
-                            { Kind       = kind.SsKey
-                              KindName   = kind.Name
-                              Column     = sourceAttr |> Option.map (fun a -> a.Name) |> Option.defaultValue r.Name
-                              Nullable   = sourceAttr |> Option.map (fun a -> not a.IsMandatory) |> Option.defaultValue false
-                              Target     = r.TargetKind
-                              TargetName = target.Name
-                              TargetModule = moduleOf |> Map.tryFind r.TargetKind |> Option.defaultValue target.Name
-                              CandidateReconcileColumns = candidateKeysOf target }))
+        // The ONE traversal (`TransferSubset.escapingEdges`, shared with the
+        // engine backstop `Transfer.subsetEscapeGate`) — this detector only
+        // ENRICHES each edge for the operator narration.
+        TransferSubset.escapingEdges contract loadSet reconciled
+        |> List.map (fun (kind, r, target) ->
+            let sourceAttr = attrIn kind r.SourceAttribute
+            { Kind       = kind.SsKey
+              KindName   = kind.Name
+              Column     = sourceAttr |> Option.map (fun a -> a.Name) |> Option.defaultValue r.Name
+              Nullable   = sourceAttr |> Option.map (fun a -> not a.IsMandatory) |> Option.defaultValue false
+              Target     = r.TargetKind
+              TargetName = target.Name
+              TargetModule = moduleOf |> Map.tryFind r.TargetKind |> Option.defaultValue target.Name
+              CandidateReconcileColumns = candidateKeysOf target })
         |> List.sortBy (fun e -> Name.value e.KindName, Name.value e.Column)
 
     /// The per-edge strategy proposal lines (operator-facing; one line per
@@ -293,7 +287,9 @@ module PeerTransfer =
                     |> List.map (fun c -> sprintf "reconcile '%s:%s'" targetRef (Name.value c))
                     |> String.concat " or "
             let softening = if e.Nullable then " (optional — rows with no reference pass untouched)" else ""
-            sprintf "%s.%s -> %s is outside the subset%s. Strategies: reconcile against the rows the sink already holds (%s); or add '%s' to the subset."
+            // Lead with the paste-able move (narrow terminals truncate the
+            // tail; the remedy must survive).
+            sprintf "%s.%s -> %s escapes the subset%s. %s; or add '%s' to tables."
                 (Name.value e.KindName) (Name.value e.Column) (Name.value e.TargetName)
                 softening
                 candidates (Name.value e.TargetName))

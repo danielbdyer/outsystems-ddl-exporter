@@ -62,6 +62,7 @@
     <Compile Include="TransferFkTrust.fs" />
     <Compile Include="TransferRevert.fs" />
     <Compile Include="TransferResume.fs" />
+    <Compile Include="TransferSubset.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />

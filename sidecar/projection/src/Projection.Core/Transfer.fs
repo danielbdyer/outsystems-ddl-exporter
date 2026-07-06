@@ -66,11 +66,18 @@ module Environment =
 
 /// A *reference* to where a substrate's credentials live — never the
 /// secret (D9). Either an environment-variable name or a file path the
-/// operator supplies out of band.
+/// operator supplies out of band — or, since 2026-07-06, the already-
+/// resolved string held IN MEMORY (`Raw`): the carrier for a caller that
+/// legitimately holds the secret (a face handed the resolved spec by the
+/// dispatch plane; a test fixture's ephemeral database). Before `Raw`,
+/// those sites wrote the secret to a TEMP FILE and read it back — an
+/// on-disk persistence strictly worse than D9's provenance intent
+/// (DECISIONS 2026-07-06, the ConnectionRef.Raw amendment).
 [<RequireQualifiedAccess>]
 type ConnectionRef =
     | EnvVar of name: string
     | File of path: string
+    | Raw of connStr: string
 
 /// An `Environment` bound to the `SubstrateRole` it plays in a Transfer,
 /// with its out-of-band `ConnectionRef`. The thing you open.

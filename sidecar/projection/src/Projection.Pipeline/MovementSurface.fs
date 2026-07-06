@@ -334,6 +334,10 @@ module ProjectionConfig =
         match r with
         | ConnectionRef.EnvVar n -> "env:" + n
         | ConnectionRef.File p   -> "file:" + p
+        // Raw never comes FROM config parsing (D9 belt: the config carries
+        // references, never secrets); round-tripping one would re-embed the
+        // secret, so it maps to the openable `live:` spec form instead.
+        | ConnectionRef.Raw c    -> "live:" + c
 
     /// D9 belt: reject a value that looks like an inline secret rather than
     /// a reference (a connection string pasted into the config).
@@ -1077,6 +1081,7 @@ module Command =
         match r with
         | ConnectionRef.EnvVar n -> "env:" + n
         | ConnectionRef.File p   -> "file:" + p
+        | ConnectionRef.Raw c    -> "live:" + c
 
     /// Resolve a live-connection reference: a scheme-prefixed ref (env:/file:)
     /// or a named `direct` environment → its out-of-band connection spec.
@@ -1340,6 +1345,7 @@ module Command =
         let valueOf = flagValue args
         let script = valueOf "--script" |> Option.defaultValue "transfer-undo.sql"
         let go = List.contains "--go" args
+        let force = List.contains "--force" args
         let action =
             match valueOf "--against" with
             | None ->
@@ -1347,7 +1353,7 @@ module Command =
             | Some envLabel ->
                 match resolveLiveConn cfg envLabel with
                 | Error es -> PlanAction.Refused (6, List.head es)
-                | Ok conn -> PlanAction.RevertScript (script, envLabel, conn, go)
+                | Ok conn -> PlanAction.RevertScript (script, envLabel, conn, go, force)
         { Notes = []; Action = action }
 
     let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -1729,7 +1735,11 @@ module Command =
                               Resumable = false; Streaming = false; Journal = None; NoAtomic = false
                               AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
                         let fromLabel = match flow.From with FlowSource.Env e -> e | FlowSource.Model -> "model" | FlowSource.Synthetic _ -> "synthetic" | FlowSource.NoData -> "none"
-                        PlanAction.CheckGo (flowName, fromLabel, flow.To, (planFlow cfg flow previewOpts).Action)
+                        let asJson =
+                            match rest |> List.pairwise |> List.tryFind (fun (a, _) -> a = "--format") with
+                            | Some (_, v) -> v = "json"
+                            | None -> false
+                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, (planFlow cfg flow previewOpts).Action)
                 | _ ->
                     PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow>).")
             | "shape" :: _ ->

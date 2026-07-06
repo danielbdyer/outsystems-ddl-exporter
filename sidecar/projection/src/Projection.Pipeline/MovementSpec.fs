@@ -526,13 +526,13 @@ type PlanAction =
     /// environment (2026-07-06, the proving-loop program). Carries the
     /// script path, the environment label (display), the RESOLVED conn
     /// spec, and the per-run intent flag.
-    | RevertScript of script: string * envLabel: string * connSpec: string * go: bool
+    | RevertScript of script: string * envLabel: string * connSpec: string * go: bool * force: bool
     /// `check go <flow>` — THE GO BOARD (2026-07-06, the preview-engine
     /// program): the red/green go-readiness checklist for a data flow. The
     /// action carries the flow's coordinates + the PLANNED action the flow
     /// would run (the same `planFlow` derivation a real run takes, under
     /// preview opts), so the board judges exactly what `--go` would execute.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * planned: PlanAction
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * planned: PlanAction
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool

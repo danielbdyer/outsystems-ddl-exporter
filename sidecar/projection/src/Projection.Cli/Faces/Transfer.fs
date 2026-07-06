@@ -148,6 +148,39 @@ let private narrateUndoPointer (mode: Transfer.Mode) (revertOut: string option) 
             printfn "  Revert this run with: PROJECTION_ALLOW_EXECUTE=1 projection revert --script %s --against <sink-environment> --go" path
     | _ -> ()
 
+/// The ONE reconcile/user-map input parse (final-pass consolidation,
+/// 2026-07-06: four near-identical copies collapsed). Parses the
+/// `--reconcile` specs and the optional `--user-map` CSV, aggregating every
+/// spec error. `deferMissingUserMap` preserves the peer face's gate-scoping
+/// contract: a missing file parses as EMPTY there (the delegate re-parses
+/// and refuses `transfer.userMap.fileMissing` byte-identically); every
+/// other caller refuses the missing file here.
+let private parseReconcileInputs
+    (reconcileSpecs: string list)
+    (userMapPath: string option)
+    (deferMissingUserMap: bool)
+    : Result<TransferSpec.ReconcileEntry list * TransferSpec.UserMapEntry list> =
+    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
+        match userMapPath with
+        | None -> Result.success []
+        | Some path ->
+            if not (System.IO.File.Exists path) then
+                if deferMissingUserMap then Result.success []
+                else
+                    Result.failureOf
+                        (ValidationError.create "transfer.userMap.fileMissing"
+                            (sprintf "user-map file '%s' not found." path))
+            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+    let errors =
+        (parsedReconciles |> List.collect (function Ok _ -> [] | Error es -> es))
+        @ (match parsedUserMap with Ok _ -> [] | Error es -> es)
+    if not (List.isEmpty errors) then Result.failure errors
+    else
+        Result.success
+            (parsedReconciles |> List.choose (function Ok e -> Some e | _ -> None),
+             (match parsedUserMap with Ok es -> es | _ -> []))
+
 /// 6.A.1 — the drop-set is fail-loud, not exit-0. A successful write that
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
 /// a distinct non-zero exit unless the operator declared the drops
@@ -202,22 +235,11 @@ let runTransfer
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
     let parsedSink      = TransferSpec.parseConnectionSpec sinkSpec
-    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
-    // Slice 4.2 — read + parse the optional --user-map CSV (boundary I/O).
-    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
-        match userMapPath with
-        | None -> Result.success []
-        | Some path ->
-            if not (System.IO.File.Exists path) then
-                Result.failureOf
-                    (ValidationError.create "transfer.userMap.fileMissing"
-                        (sprintf "user-map file '%s' not found." path))
-            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+    let parsedInputs    = parseReconcileInputs reconcileSpecs userMapPath false
     let specErrors =
         collect parsedSource
         @ collect parsedSink
-        @ (parsedReconciles |> List.collect collect)
-        @ collect parsedUserMap
+        @ (match parsedInputs with Ok _ -> [] | Error es -> es)
     if not (List.isEmpty specErrors) then
         Console.Error.WriteLine "projection transfer: argument error:"
         printErrors Console.Error specErrors
@@ -237,8 +259,7 @@ let runTransfer
 
     let sourceRef    = Result.value parsedSource
     let sinkRef      = Result.value parsedSink
-    let entries      = parsedReconciles |> List.map Result.value
-    let userMapEntries = Result.value parsedUserMap
+    let entries, userMapEntries = Result.value parsedInputs
     let reconcile    = not (List.isEmpty entries) || not (List.isEmpty userMapEntries)
 
     // Bind the apparatus and DRIVE the run through it (D9: openSubstrate
@@ -344,20 +365,10 @@ let runContractPairTransfer
     // refused — the User family re-keys by business key on the up-leg. The
     // specs parse exactly as the forward face's; the named refusal that stood
     // here is lifted (DECISIONS 2026-06-15 — reconcile ∘ reverse leg).
-    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
-    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
-        match userMapPath with
-        | None -> Result.success []
-        | Some path ->
-            if not (System.IO.File.Exists path) then
-                Result.failureOf
-                    (ValidationError.create "transfer.userMap.fileMissing"
-                        (sprintf "user-map file '%s' not found." path))
-            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+    let parsedInputs = parseReconcileInputs reconcileSpecs userMapPath false
     let specErrors =
         collect parsedSource @ collect parsedSink
-        @ (parsedReconciles |> List.collect collect)
-        @ collect parsedUserMap
+        @ (match parsedInputs with Ok _ -> [] | Error es -> es)
     if not (List.isEmpty specErrors) then
         Console.Error.WriteLine (faceLabel + ": argument error:")
         printErrors Console.Error specErrors
@@ -369,8 +380,7 @@ let runContractPairTransfer
     // contract (the rendition the reverse leg writes into; `findKindByTable`
     // matches physical names, consistent with the forward face's live-read
     // contract). A bad spec refuses by name before any connection opens.
-    let entries        = parsedReconciles |> List.map Result.value
-    let userMapEntries = Result.value parsedUserMap
+    let entries, userMapEntries = Result.value parsedInputs
     let reconcile      = not (List.isEmpty entries) || not (List.isEmpty userMapEntries)
     match TransferSpec.resolveAllReconciliation physicalSinkContract entries userMapEntries with
     | Error es ->
@@ -547,22 +557,11 @@ let runPeerTransfer
     // (correctly-written but typo'd) strategy as a missing one, refusing
     // exit 9 "escapes" where the true problem was the bad spec (exit 2).
     let reconciledResolution : Result<Set<SsKey>> =
-        let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
-        let parsedUserMap =
-            match userMapPath with
-            | None -> Result.success []
-            | Some path ->
-                if not (System.IO.File.Exists path) then Result.success []   // the delegate refuses fileMissing byte-identically
-                else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
-        let specErrors =
-            (parsedReconciles |> List.collect (function Ok _ -> [] | Error es -> es))
-            @ (match parsedUserMap with Ok _ -> [] | Error es -> es)
-        if not (List.isEmpty specErrors) then Result.failure specErrors
-        else
-            let entries = parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None)
-            let userMapEntries = match parsedUserMap with Ok es -> es | Error _ -> []
+        // deferMissingUserMap: the delegate refuses fileMissing byte-identically.
+        parseReconcileInputs reconcileSpecs userMapPath true
+        |> Result.bind (fun (entries, userMapEntries) ->
             TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries
-            |> Result.map (fun reconciliation -> reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+            |> Result.map (fun reconciliation -> reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq))
     match reconciledResolution with
     | Error errors ->
         Console.Error.WriteLine "projection transfer (peer): reconcile resolution error:"
@@ -625,7 +624,7 @@ let runPeerTransfer
     // forecast, with the red/green verdict).
     if not executeRequested then
         printfn ""
-        printfn "The decision board (open decisions + row forecast + red/green verdict): projection check go <flow>"
+        printfn "The go board (open decisions + row forecast + red/green verdict): projection check go <flow>"
 
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
@@ -647,17 +646,32 @@ let runPeerTransfer
 // runs in ONE transaction (all deletes land or none do).
 // ---------------------------------------------------------------------------
 
-let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (goRequested: bool) : int =
+let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (goRequested: bool) (force: bool) : int =
     if not (System.IO.File.Exists scriptPath) then
         TtyRenderer.renderVoicedError
             (ValidationError.create "revert.scriptMissing"
                 (sprintf "revert script '%s' not found. A successful transfer writes transfer-undo.sql (a failed one transfer-revert.sql) into its --revert-dir (default: the working directory); point --script at it." scriptPath))
         2
     else
-    let statements =
+    let allLines =
         System.IO.File.ReadAllLines scriptPath
         |> Array.map (fun l -> l.Trim())
-        |> Array.filter (fun l -> l <> "" && not (l.Equals("GO", System.StringComparison.OrdinalIgnoreCase)))
+    // The provenance header the artifact writer stamps (the wrong-sink
+    // guard): `-- projection:<kind> server=<s> database=<db> generated=<t>`.
+    let stampedDatabase =
+        allLines
+        |> Array.tryPick (fun l ->
+            if l.StartsWith "-- projection:" then
+                l.Split(' ')
+                |> Array.tryPick (fun tok ->
+                    if tok.StartsWith "database=" then Some (tok.Substring 9) else None)
+            else None)
+    let statements =
+        allLines
+        |> Array.filter (fun l ->
+            l <> ""
+            && not (l.StartsWith "--")
+            && not (l.Equals("GO", System.StringComparison.OrdinalIgnoreCase)))
         |> Array.toList
     if List.isEmpty statements then
         printfn "revert: '%s' carries no statements — nothing to undo." scriptPath
@@ -689,7 +703,7 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
         |> List.map (fun (t, ss) -> t, ss |> List.sumBy keyCountOf)
     printfn "Revert '%s' against %s — %d statement(s) over %d table(s):" scriptPath envLabel statements.Length summary.Length
     for (t, keys) in summary do
-        printfn "  %-60s %d captured key(s)" t keys
+        printfn "  %-60s %d row(s) to delete" t keys
     let executeGated =
         goRequested && System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
     if goRequested && not executeGated then
@@ -708,6 +722,23 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
             6
         | Ok sink ->
             use sink = sink
+            // THE WRONG-SINK GUARD (2026-07-06, the final-pass critique's
+            // top finding): the artifact deletes BY KEY in whatever database
+            // --against resolves to. The header stamped at capture time
+            // names the database the keys belong to; a mismatch refuses by
+            // name (--force is the deliberate override — e.g. a restored
+            // copy under a new name). A header-less artifact (pre-stamp)
+            // proceeds with a printed note, never a refusal.
+            match stampedDatabase with
+            | Some stamped when not (System.String.Equals(stamped, sink.Database, System.StringComparison.OrdinalIgnoreCase)) && not force ->
+                TtyRenderer.renderVoicedError
+                    (ValidationError.create "revert.sinkMismatch"
+                        (sprintf "this undo was captured against database '%s', but --against resolves to '%s'. Re-point --against at the environment the transfer wrote, or pass --force if the database was deliberately renamed/restored." stamped sink.Database))
+                dumpBench "revert"
+                7
+            | _ ->
+            if Option.isNone stampedDatabase then
+                printfn "  (note: the script carries no provenance header — cannot verify it matches this sink.)"
             // ONE transaction: the undo lands whole or not at all (the
             // child-first order means FKs never block; a mid-script failure
             // rolls the earlier deletes back rather than leaving a
@@ -726,9 +757,12 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
                     perTable.[t] <- (match perTable.TryGetValue t with | true, n -> n | _ -> 0) + affected
                 tx.Commit()
                 printfn ""
-                printfn "Reverted — %d row(s) deleted:" total
-                for KeyValue (t, n) in perTable do
-                    printfn "  %-60s %d row(s)" t n
+                if total = 0 then
+                    printfn "Nothing to revert — the captured rows are already absent (a prior revert, or the sink was cleared)."
+                else
+                    printfn "Reverted — %d row(s) deleted:" total
+                    for KeyValue (t, n) in perTable do
+                        printfn "  %-60s %d row(s)" t n
                 dumpBench "revert"
                 0
             with ex ->
@@ -756,10 +790,11 @@ let private probeCount (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: strin
     cmd.CommandText <- sql
     System.Convert.ToInt32 (cmd.ExecuteScalar())
 
-let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned: PlanAction) : int =
+let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
-        GoBoard.render board |> List.iter (printfn "%s")
+        if asJson then printfn "%s" (GoBoard.toJsonString board)
+        else GoBoard.render board |> List.iter (printfn "%s")
         GoBoard.exitCode board
     match planned with
     | PlanAction.Refused (_, e) ->
@@ -798,23 +833,10 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned
                  | Some s -> sprintf "%d table(s) declared; all resolve." (Set.count s)
                  | None -> "no subset declared — the whole modeled estate transfers.")))
         // -- reconcile strategy resolution ----------------------------------
-        let parsedReconciles = opts.Reconcile |> List.map TransferSpec.parseReconcileSpec
-        let parsedUserMap =
-            match opts.Rekey with
-            | None -> Result.success []
-            | Some path ->
-                if not (System.IO.File.Exists path) then
-                    Result.failureOf (ValidationError.create "transfer.userMap.fileMissing" (sprintf "user-map file '%s' not found." path))
-                else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
         let reconcileResolution =
-            let specErrors =
-                (parsedReconciles |> List.collect (function Ok _ -> [] | Error es -> es))
-                @ (match parsedUserMap with Ok _ -> [] | Error es -> es)
-            if not (List.isEmpty specErrors) then Result.failure specErrors
-            else
-                TransferSpec.resolveAllReconciliation sinkContract
-                    (parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None))
-                    (match parsedUserMap with Ok es -> es | Error _ -> [])
+            parseReconcileInputs opts.Reconcile opts.Rekey false
+            |> Result.bind (fun (entries, userMapEntries) ->
+                TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries)
         match reconcileResolution with
         | Error errors ->
             items.Add (GoBoard.itemWith "reconcile"
@@ -824,7 +846,10 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned
         | Ok reconciliation ->
         let reconciledKeys = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
         items.Add (GoBoard.item "reconcile"
-            (GoBoard.Status.Green (sprintf "%d reconcile strateg(ies) resolve against the sink." (Map.count reconciliation))))
+            (GoBoard.Status.Green
+                (match Map.count reconciliation with
+                 | 0 -> "no reconcile rules declared yet."
+                 | n -> sprintf "%d reconcile rule(s) resolve against the sink." n)))
         // -- schema shape ----------------------------------------------------
         let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
         let shape = PeerTransfer.shapeVerdict gateScope sourceContract sinkContract
@@ -834,7 +859,7 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned
                 shape.Blocking)
         elif not (List.isEmpty shape.Advisory) then
             items.Add (GoBoard.itemWith "shape"
-                (GoBoard.Status.Advisory (sprintf "one shape modulo %d advisory divergence(s) — none blocks a data load." shape.Advisory.Length))
+                (GoBoard.Status.Advisory (sprintf "the two models are one shape over the transferred set, with %d advisory difference(s) that do not block a data load." shape.Advisory.Length))
                 shape.Advisory)
         else
             items.Add (GoBoard.item "shape" (GoBoard.Status.Green "the two models are one shape over the transferred set."))
@@ -864,27 +889,21 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (planned
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
         else
             let dryRun () =
-                let srcFile = System.IO.Path.GetTempFileName()
-                let sinkFile = System.IO.Path.GetTempFileName()
-                try
-                    let refOf (spec: string) (file: string) =
-                        match TransferSpec.parseConnectionSpec spec with
-                        | Ok r -> r
-                        | Error _ ->
-                            System.IO.File.WriteAllText(file, spec)
-                            ConnectionRef.File file
-                    let srcSub : Substrate = { Environment = parseEnvironment "Source" (Some fromLabel); Role = SubstrateRole.Source; ConnectionRef = refOf sourceSpec srcFile }
-                    let sinkSub : Substrate = { Environment = parseEnvironment "Sink" (Some toLabel); Role = SubstrateRole.Sink; ConnectionRef = refOf sinkSpec sinkFile }
-                    match TransferConnections.create srcSub sinkSub (not (Map.isEmpty reconciliation)) with
-                    | Error es -> Error es
-                    | Ok connections ->
-                        (Transfer.runReverseLegThroughConnections
-                            Transfer.DryRun opts.Emission false true false
-                            opts.Tables connections sourceContract sinkContract reconciliation)
-                            .GetAwaiter().GetResult()
-                finally
-                    try System.IO.File.Delete srcFile with _ -> ()
-                    try System.IO.File.Delete sinkFile with _ -> ()
+                // `ConnectionRef.Raw` (DECISIONS 2026-07-06): the resolved
+                // spec is already in memory — no temp-file round trip.
+                let refOf (spec: string) =
+                    match TransferSpec.parseConnectionSpec spec with
+                    | Ok r -> r
+                    | Error _ -> ConnectionRef.Raw spec
+                let srcSub : Substrate = { Environment = parseEnvironment "Source" (Some fromLabel); Role = SubstrateRole.Source; ConnectionRef = refOf sourceSpec }
+                let sinkSub : Substrate = { Environment = parseEnvironment "Sink" (Some toLabel); Role = SubstrateRole.Sink; ConnectionRef = refOf sinkSpec }
+                match TransferConnections.create srcSub sinkSub (not (Map.isEmpty reconciliation)) with
+                | Error es -> Error es
+                | Ok connections ->
+                    (Transfer.runReverseLegThroughConnections
+                        Transfer.DryRun opts.Emission false true false
+                        opts.Tables connections sourceContract sinkContract reconciliation)
+                        .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
                 items.Add (GoBoard.itemWith "forecast"
