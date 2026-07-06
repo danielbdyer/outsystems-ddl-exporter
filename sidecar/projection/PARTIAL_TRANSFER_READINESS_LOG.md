@@ -391,3 +391,32 @@ already holds by business key — nothing is inserted into them; FKs re-point.
    idempotent replace-subset re-runs.
 6. The operator runbook for today's live test (entry 9), incl. the named residuals
    that remain (all pre-existing, none blocking the happy path).
+
+## Entry 11 — 2026-07-06, PHASE 2 OPENED: adversarial hardening + mock-environment e2e program
+
+Operator directive: critical analysis to find remaining bugs, make the flow easier,
+and build much more robust end-to-end testing with mock OutSystems environments that
+confirm our understanding of the permissions and the tables we interact with.
+
+Four deep adversarial agents launched in parallel:
+1. **Peer-leg correctness hunt** — priority: physical COLUMN-name divergence between
+   environments (OutSystems keeps stale physical names after renames — does the
+   rename projection actually cover the column plane, or only tables?); shape-gate
+   blind spots; reconcile-resolution asymmetries; wipe-order hazards; second-order
+   effects of the self-loop resolver rule; face gate holes; metamodel-vs-deployed
+   type fidelity on the bulk write plane.
+2. **Permission-footprint inventory** — every SQL statement the peer path executes,
+   per phase, with its minimum permission and its behavior when denied (named
+   refusal / named descent / raw exception); the mock managed-grant recipe; the
+   mid-load-surprise list.
+3. **Flow ergonomics** — ranked proposals (J2 default User:Email reconcile,
+   reconcile-spec SsKey translation, preview closure sizing, config validation
+   notes, voice copy).
+4. **Mock-environment fixture + e2e matrix design** — parameterized espace prefixes
+   (not string-replace), the DML-only principal recipe, P0/P1/P2 scenario matrix.
+
+Known self-critique going in (to be verified by agent 1): today's peer e2e runs as
+an ADMIN principal — it proves identity alignment and FK re-pointing but NOT the
+managed-cloud grant envelope; the FK-retrust descent path
+(FkTrustNotRestoredOnBulkLoad) is unexercised on the peer leg; IDENTITY reseed
+mechanics differ under a real grant.
