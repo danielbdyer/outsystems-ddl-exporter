@@ -96,7 +96,30 @@ let ``parseConnectionSpec rejects a blank spec`` () =
 let ``parseReconcileSpec table:column parses to ReconcileEntry`` () =
     let r = TransferSpec.parseReconcileSpec "OSUSR_RC_USER:EMAIL" |> mustOk
     Assert.Equal("OSUSR_RC_USER", r.Table)
-    Assert.Equal("EMAIL", r.MatchColumn)
+    Assert.Equal(TransferSpec.MatchColumn "EMAIL", r.Rule)
+
+// -- the single-owner pin forms (2026-07-06) --------------------------------
+
+[<Fact>]
+let ``parseReconcileSpec table:=key parses to AssignAllTo (the single-owner pin)`` () =
+    let r = TransferSpec.parseReconcileSpec "Users.User:=1234" |> mustOk
+    Assert.Equal("Users.User", r.Table)
+    Assert.Equal(TransferSpec.AssignAllTo "1234", r.Rule)
+
+[<Fact>]
+let ``parseReconcileSpec table:column:=key parses to MatchThenAssign (dynamic first, pinned owner for the rest)`` () =
+    let r = TransferSpec.parseReconcileSpec "Users.User:Email:=1234" |> mustOk
+    Assert.Equal("Users.User", r.Table)
+    Assert.Equal(TransferSpec.MatchThenAssign ("Email", "1234"), r.Rule)
+
+[<Fact>]
+let ``parseReconcileSpec := with an empty key or table refuses by name`` () =
+    match TransferSpec.parseReconcileSpec "Users.User:=" with
+    | Error [ e ] -> Assert.Equal("transfer.reconcile.assignKeyEmpty", e.Code)
+    | other -> Assert.Fail(sprintf "expected the empty-key refusal, got %A" other)
+    match TransferSpec.parseReconcileSpec ":=5" with
+    | Error [ e ] -> Assert.Equal("transfer.reconcile.tableEmpty", e.Code)
+    | other -> Assert.Fail(sprintf "expected the empty-table refusal, got %A" other)
 
 [<Fact>]
 let ``parseReconcileSpec rejects a spec missing the colon`` () =
@@ -143,15 +166,35 @@ let private catalog : Catalog =
 let ``resolveReconciliation maps a table+column to (Kind.SsKey, MatchByColumn attribute.Name)`` () =
     let map =
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "EMAIL" } ]
         |> mustOk
     Assert.Equal(Some (ReconciliationStrategy.MatchByColumn (mkName "EMAIL")), Map.tryFind userKey map)
+
+[<Fact>]
+let ``resolveReconciliation maps the pin forms onto the FallbackToAssigned algebra`` () =
+    // Pin-all: fallback + a match-nothing primary (every reference falls to
+    // the pinned owner). Match+pin: fallback + MatchByColumn.
+    let pinAll =
+        TransferSpec.resolveReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.AssignAllTo "42" } ]
+        |> mustOk
+    Assert.Equal(
+        Some (ReconciliationStrategy.FallbackToAssigned (AssignedKey.ofString "42", ReconciliationStrategy.ManualOverride Map.empty)),
+        Map.tryFind userKey pinAll)
+    let matchPin =
+        TransferSpec.resolveReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchThenAssign ("EMAIL", "42") } ]
+        |> mustOk
+    Assert.Equal(
+        Some (ReconciliationStrategy.FallbackToAssigned (AssignedKey.ofString "42", ReconciliationStrategy.MatchByColumn (mkName "EMAIL"))),
+        Map.tryFind userKey matchPin)
+
 
 [<Fact>]
 let ``resolveReconciliation matches table and column names case-insensitively`` () =
     let map =
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "osusr_rc_user"; MatchColumn = "email" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "osusr_rc_user"; Rule = TransferSpec.MatchColumn "email" } ]
         |> mustOk
     Assert.True(Map.containsKey userKey map)
 
@@ -162,7 +205,7 @@ let ``resolveReconciliation accepts a LOGICAL Module.Entity table ref (espace-sa
     // the column by logical attribute Name. (Sweep #2 — DECISIONS 2026-06-22.)
     let map =
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "M.User"; MatchColumn = "Email" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "M.User"; Rule = TransferSpec.MatchColumn "Email" } ]
         |> mustOk
     Assert.Equal(Some (ReconciliationStrategy.MatchByColumn (mkName "EMAIL")), Map.tryFind userKey map)
 
@@ -184,7 +227,7 @@ let ``F3: physical lookup resolves case-divergent names identically from every e
     // … and TransferSpec resolves the same divergent-case ref to the same kind.
     let viaTransfer =
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OsUsr_Rc_User"; MatchColumn = "Email" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OsUsr_Rc_User"; Rule = TransferSpec.MatchColumn "Email" } ]
         |> mustOk
     Assert.True(Map.containsKey userKey viaTransfer)
 
@@ -192,7 +235,7 @@ let ``F3: physical lookup resolves case-divergent names identically from every e
 let ``resolveReconciliation surfaces tableNotFound when no kind matches`` () =
     match
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "NOT_THERE"; MatchColumn = "X" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "NOT_THERE"; Rule = TransferSpec.MatchColumn "X" } ]
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.tableNotFound")
@@ -201,7 +244,7 @@ let ``resolveReconciliation surfaces tableNotFound when no kind matches`` () =
 let ``resolveReconciliation surfaces columnNotFound when the kind has no such column`` () =
     match
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "NOT_A_COLUMN" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "NOT_A_COLUMN" } ]
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.columnNotFound")
@@ -210,8 +253,8 @@ let ``resolveReconciliation surfaces columnNotFound when the kind has no such co
 let ``resolveReconciliation aggregates every spec error in one pass`` () =
     match
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "NOT_THERE"; MatchColumn = "X" }
-              { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "NOT_A_COLUMN" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "NOT_THERE"; Rule = TransferSpec.MatchColumn "X" }
+              { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "NOT_A_COLUMN" } ]
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es ->
@@ -222,8 +265,8 @@ let ``resolveReconciliation aggregates every spec error in one pass`` () =
 let ``resolveReconciliation rejects a kind specified twice`` () =
     match
         TransferSpec.resolveReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" }
-              { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "ID" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "EMAIL" }
+              { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "ID" } ]
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.duplicateKind")
@@ -290,7 +333,7 @@ let ``resolveUserMap rejects a duplicate source key within one table`` () =
 let ``resolveAllReconciliation merges MatchByColumn and ManualOverride across distinct kinds`` () =
     let map =
         TransferSpec.resolveAllReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "EMAIL" } ]
             [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_ORDER"; Source = "1"; Assigned = "9" } ]
         |> mustOk
     Assert.Equal(2, Map.count map)
@@ -302,7 +345,7 @@ let ``resolveAllReconciliation merges MatchByColumn and ManualOverride across di
 let ``resolveAllReconciliation rejects a kind reconciled by both strategies`` () =
     match
         TransferSpec.resolveAllReconciliation catalog
-            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; MatchColumn = "EMAIL" } ]
+            [ { TransferSpec.ReconcileEntry.Table = "OSUSR_RC_USER"; Rule = TransferSpec.MatchColumn "EMAIL" } ]
             [ { TransferSpec.UserMapEntry.Table = "OSUSR_RC_USER"; Source = "280"; Assigned = "18" } ]
     with
     | Ok _    -> Assert.Fail "expected Error"

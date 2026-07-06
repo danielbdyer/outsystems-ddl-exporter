@@ -14,10 +14,23 @@ module TransferSpec =
 
     /// A parsed `--reconcile` entry: the physical table to reconcile + the
     /// column to match Source identities against the pre-existing Sink ones.
+    /// One `--reconcile` / flow `reconcile:` rule, parsed. Three forms
+    /// (2026-07-06, the single-owner program):
+    ///   `Table:Column`        — dynamic match by business column (the incumbent);
+    ///   `Table:=<key>`        — PIN ALL: every source reference re-keys to the
+    ///                            ONE sink row `<key>` (the single-owner shape —
+    ///                            configuration tables owned by one user);
+    ///   `Table:Column:=<key>` — dynamic match FIRST, the pinned owner catches
+    ///                            every unmatched row (the graceful composite).
+    type ReconcileRule =
+        | MatchColumn of column: string
+        | AssignAllTo of sinkKey: string
+        | MatchThenAssign of column: string * sinkKey: string
+
     type ReconcileEntry =
         {
-            Table       : string
-            MatchColumn : string
+            Table : string
+            Rule  : ReconcileRule
         }
 
     let private specInvalid (code: string) (message: string) : ValidationError =
@@ -39,11 +52,41 @@ module TransferSpec =
             Result.failureOf (specInvalid "transfer.reconcile.specEmpty" "reconcile spec is empty.")
         else
             let trimmed = spec.Trim()
+            // The pin split first: `:=` binds tighter than the match `:`
+            // (a `:=` spec's left half may itself carry `Table:Column`).
+            let pinIdx = trimmed.IndexOf ":="
+            if pinIdx >= 0 then
+                let left = trimmed.Substring(0, pinIdx).Trim()
+                let key  = trimmed.Substring(pinIdx + 2).Trim()
+                if String.IsNullOrWhiteSpace key then
+                    Result.failureOf
+                        (specInvalid "transfer.reconcile.assignKeyEmpty"
+                            (sprintf "reconcile spec '%s' has an empty sink key after ':='." trimmed))
+                elif String.IsNullOrWhiteSpace left then
+                    Result.failureOf
+                        (specInvalid "transfer.reconcile.tableEmpty"
+                            (sprintf "reconcile spec '%s' has an empty table name." trimmed))
+                else
+                    // `Module.Entity:Column:=key` vs `Module.Entity:=key`: the
+                    // LAST ':' of the left half separates a match column — but
+                    // only when it follows the table ref (a bare `A:=k` has none;
+                    // `Module.Entity` carries '.' not ':').
+                    match left.LastIndexOf ':' with
+                    | -1 -> Result.success { Table = left; Rule = AssignAllTo key }
+                    | c ->
+                        let table = left.Substring(0, c).Trim()
+                        let col   = left.Substring(c + 1).Trim()
+                        if String.IsNullOrWhiteSpace table || String.IsNullOrWhiteSpace col then
+                            Result.failureOf
+                                (specInvalid "transfer.reconcile.specShape"
+                                    (sprintf "reconcile spec '%s' — expected <table>:=<key>, <table>:<column>, or <table>:<column>:=<key>." trimmed))
+                        else Result.success { Table = table; Rule = MatchThenAssign (col, key) }
+            else
             match trimmed.IndexOf ':' with
             | -1 ->
                 Result.failureOf
                     (specInvalid "transfer.reconcile.specShape"
-                        (sprintf "reconcile spec '%s' missing ':' (expected <table>:<match-column>)." trimmed))
+                        (sprintf "reconcile spec '%s' missing ':' (expected <table>:<match-column>, <table>:=<sink-key>, or <table>:<column>:=<sink-key>)." trimmed))
             | i ->
                 let table = trimmed.Substring(0, i).Trim()
                 let col   = trimmed.Substring(i + 1).Trim()
@@ -56,7 +99,7 @@ module TransferSpec =
                         (specInvalid "transfer.reconcile.columnEmpty"
                             (sprintf "reconcile spec '%s' has an empty match-column name." trimmed))
                 else
-                    Result.success { Table = table; MatchColumn = col }
+                    Result.success { Table = table; Rule = MatchColumn col }
 
     // Physical-identifier comparison is case-insensitive (SQL default
     // collation) via the one named policy — `TableId.tableTextEquals` /
@@ -114,17 +157,39 @@ module TransferSpec =
                     (specInvalid "transfer.reconcile.tableNotFound"
                         (sprintf "reconcile: no kind found for '%s' (tried logical Module.Entity and physical table name). For a peer transfer between differently-named environments, use the logical 'Module.Entity:Column' form — a physical name written against the source will not resolve against the sink." e.Table))
             | Some k ->
-                let attrOpt =
-                    match findAttributeByName e.MatchColumn k with
-                    | Some _ as a -> a
-                    | None -> findAttributeByColumn e.MatchColumn k
-                match attrOpt with
-                | None ->
-                    Result.failureOf
-                        (specInvalid "transfer.reconcile.columnNotFound"
-                            (sprintf "reconcile: kind for '%s' has no attribute with name/column '%s'." e.Table e.MatchColumn))
-                | Some a ->
-                    Result.success (k.SsKey, ReconciliationStrategy.MatchByColumn a.Name)
+                let resolveColumn (col: string) : Result<Attribute> =
+                    match findAttributeByName col k with
+                    | Some a -> Result.success a
+                    | None ->
+                        match findAttributeByColumn col k with
+                        | Some a -> Result.success a
+                        | None ->
+                            Result.failureOf
+                                (specInvalid "transfer.reconcile.columnNotFound"
+                                    (sprintf "reconcile: kind for '%s' has no attribute with name/column '%s'." e.Table col))
+                // The three rules map onto the EXISTING strategy algebra —
+                // no new engine case (2026-07-06, the single-owner program):
+                //   pin-all       = FallbackToAssigned(key, ManualOverride ∅)
+                //                   (the primary matches nothing; every source
+                //                   reference falls to the pinned owner);
+                //   match+pin     = FallbackToAssigned(key, MatchByColumn col)
+                //                   (dynamic first, the owner catches the rest);
+                //   match         = MatchByColumn (the incumbent).
+                match e.Rule with
+                | MatchColumn col ->
+                    resolveColumn col
+                    |> Result.map (fun a -> k.SsKey, ReconciliationStrategy.MatchByColumn a.Name)
+                | AssignAllTo key ->
+                    Result.success
+                        (k.SsKey,
+                         ReconciliationStrategy.FallbackToAssigned
+                            (AssignedKey.ofString key, ReconciliationStrategy.ManualOverride Map.empty))
+                | MatchThenAssign (col, key) ->
+                    resolveColumn col
+                    |> Result.map (fun a ->
+                        k.SsKey,
+                        ReconciliationStrategy.FallbackToAssigned
+                            (AssignedKey.ofString key, ReconciliationStrategy.MatchByColumn a.Name))
         let resolved = entries |> List.map resolveOne
         let errors =
             resolved
