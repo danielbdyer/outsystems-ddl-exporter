@@ -365,3 +365,29 @@ already holds by business key — nothing is inserted into them; FKs re-point.
   business-key fallback except via reconcile).
 - Streaming refuses `--tables` (subsets run materialized — memory scales with the
   largest table in the subset).
+
+## Entry 10 — 2026-07-06, FINAL VERDICT: every gate green; the program is complete
+
+- **Fast pool: PASSED** (4,100+ tests, 37s) — including the new `PeerTransferTests`,
+  the self-loop resolver rules, and the re-based composer parallelism pins (the
+  unresolvable-cycle fixture moved to the honest two-weak-edge 2-cycle; a NEW pin
+  proves a nullable self-FK no longer surrenders the estate's parallel levels).
+- **Docker pool: PASSED in full** (511s) — zero regressions from the cycle-resolver
+  change across the whole transfer/reverse-leg/migration/deploy canary estate, plus
+  the three new peer e2e scenarios green.
+- **Release builds: clean** (both test assemblies + transitively every src project) —
+  including the FS3511 fix from entry 4; production binaries build again.
+
+**What today's session delivered, end to end:**
+1. The blind-spot map (entries 3, 5) — four deep studies, all findings logged.
+2. The Release-build fix (entry 4).
+3. The peer (QA→UAT) SsKey-aligned partial-transfer leg: OSSYS contract acquisition
+   per side, shape gate, subset-FK gate with strategy proposals, dispatch wiring,
+   voice/exit-code axes (entries 6, 9).
+4. A REAL engine bug found by the new e2e canary and fixed in two halves (entries
+   7–8): self-FK 1-node SCCs no longer silently degrade the entire load order.
+5. The e2e proof: data moves between two genuinely differently-named environments,
+   SS_KEY-aligned, FKs re-pointed, reconcile-by-key for out-of-subset parents,
+   idempotent replace-subset re-runs.
+6. The operator runbook for today's live test (entry 9), incl. the named residuals
+   that remain (all pre-existing, none blocking the happy path).
