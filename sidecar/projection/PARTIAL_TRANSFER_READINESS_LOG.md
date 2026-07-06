@@ -735,4 +735,6 @@ follow-on); streaming success-undo derives from the capture journal when needed
 so it sits outside the small-sample proving loop).
 
 Pure pins added (`subsetEscapeGate` semantics + exit-9 classification). Fast pool
-GREEN; the full docker pool running as the final arbiter (verdict appended below).
+GREEN; **the full docker pool PASSED IN FULL (519s)** — every leg's canaries
+(forward transfer, legacy reverse, streaming, peer, managed-grant, go-board,
+proving-loop) green through the new gates. The parity sweep is closed.
