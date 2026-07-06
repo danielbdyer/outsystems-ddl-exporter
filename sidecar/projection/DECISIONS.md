@@ -26739,9 +26739,17 @@ carried 117 fill-factor advisories ranked as "the lever."
    does not print under pretty (the snapshot still persists; one line names
    its path); the per-file artifact enumeration is suppressed under pretty
    (the one-line total + the verdict panel carry the finding; piped/plain
-   runs keep the full list). This resolves the 2026-07-03 residual for the
-   publish face; the remaining faces' stdout narration (transfer/migrate)
-   stays the named residual.
+   runs keep the full list). And the 2026-07-03 residual is resolved WHOLE,
+   not face-by-face: `Shell.executeOn` DEFERS stdout narration under pretty —
+   `Console.Out` is redirected to a buffer for the body's span and flushed
+   verbatim after the verdict panel, so every face's narration (`printfn`
+   and `renderVoicedTo Console.Out` alike — both resolve the writer at call
+   time) lands below the box in reading order instead of interleaving with
+   the Live region's repaints. One choke point at the one door; the
+   face-by-face core+narration split the residual proposed is unnecessary.
+   Prompts cannot be swallowed (the 2026-06-17 hoist rule keeps them before
+   `Shell.execute`); a crashed body restores the writer in `finally`;
+   piped/plain runs take no buffer (byte-identical stdout).
 
 3. **The fidelity report becomes actionable (the diagnostics-and-remediation
    pre-scope's "future emitter" trigger, fired by operator report).** Three

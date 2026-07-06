@@ -25,6 +25,11 @@ open Projection.Pipeline
 /// Prompts keep the 2026-06-17 rule: a gate/`Intervene` prompt hoists BEFORE
 /// `Shell.execute` — a Spectre Live region and a blocking prompt cannot share
 /// the terminal. `Navigator` (inspect) stays outside by the same law.
+///
+/// Under pretty, stdout narration inside the body is DEFERRED (2026-07-06):
+/// captured for the body's span and flushed verbatim after the verdict panel,
+/// so no face ever writes raw into the Live region's repaints. Piped / plain
+/// runs take no buffer — stdout stays byte-identical.
 [<RequireQualifiedAccess>]
 module Shell =
 
@@ -165,18 +170,36 @@ module Shell =
         : int =
         currentFrame.Value <- frame
         let run () = bracketed bracket frame.Command body
+        // Under pretty the boxed board / static frame + the verdict panel own
+        // the terminal (2026-07-06 — resolves the 2026-07-03 residual): stdout
+        // narration emitted inside the body's span is DEFERRED, captured for
+        // the duration and flushed verbatim AFTER the verdict panel, so a
+        // face's narration lands below the box in reading order instead of
+        // interleaving with the Live region's repaints. One choke point here
+        // covers every face (`printfn` and `renderVoicedTo Console.Out` both
+        // resolve the redirected writer at call time). Prompts cannot be
+        // swallowed: the 2026-06-17 hoist rule keeps every prompt BEFORE
+        // `Shell.execute`. Piped / plain runs take no buffer — byte-identical.
+        let narration = if pretty then Some (new IO.StringWriter()) else None
+        let priorOut = Console.Out
+        narration |> Option.iter (fun w -> Console.SetOut w)
         let code =
-            match spine with
-            | Some spine when live ->
-                let seed = { Watch.seededOf spine with Title = Some (titleOf frame) }
-                Watch.renderWatchOn console seed (Watch.resolveDwellMs ()) run
-            | _ when pretty ->
-                renderStaticOpenOn console frame
-                // Channel 1 is suppressed for the span (never NDJSON and a
-                // panel on the same TTY — §15.1); scoped, so an outer writer
-                // is restored (an improvement over the old unscoped null).
-                LogSink.withWriter IO.TextWriter.Null run
-            | _ -> run ()
+            try
+                match spine with
+                | Some spine when live ->
+                    let seed = { Watch.seededOf spine with Title = Some (titleOf frame) }
+                    Watch.renderWatchOn console seed (Watch.resolveDwellMs ()) run
+                | _ when pretty ->
+                    renderStaticOpenOn console frame
+                    // Channel 1 is suppressed for the span (never NDJSON and a
+                    // panel on the same TTY — §15.1); scoped, so an outer writer
+                    // is restored (an improvement over the old unscoped null).
+                    LogSink.withWriter IO.TextWriter.Null run
+                | _ -> run ()
+            finally
+                // Restore on EVERY exit path (a crashed body must not leave the
+                // process stdout pointing at a dead buffer).
+                narration |> Option.iter (fun _ -> Console.SetOut priorOut)
         // A ReadOnly answer verb (diff / explain / the check queries) never
         // joins the run ledger — the gauge reads the canary streak, and a
         // query about the ledger must not write to it (the `check ready`
@@ -186,6 +209,14 @@ module Shell =
          | ReadOnly -> ()
          | Go | Preview -> appendLedger frame code)
         if pretty then TtyRenderer.renderSummaryTo console frame.Command code
+        // The deferred narration flushes AFTER the panel, verbatim and in the
+        // order the body wrote it — the box closes, then the face speaks.
+        narration
+        |> Option.iter (fun w ->
+            let text = w.ToString()
+            if not (String.IsNullOrWhiteSpace text) then
+                Console.Out.Write text
+                Console.Out.Flush())
         // `--stat` — the aggregates table on stdout (an ANSWER, so it rides
         // the answer channel + lenses, not the injected stderr console).
         if statMode.Value then
