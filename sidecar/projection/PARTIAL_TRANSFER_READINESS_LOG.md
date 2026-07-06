@@ -622,3 +622,48 @@ permission footprint.
 
 **Final verdict:** fast pool PASSED; the full docker pool PASSED IN FULL (536s) with
 the go-board e2e aboard. The preview-engine program is closed.
+
+## Entry 17 — 2026-07-06, THE LIVE REHEARSAL: the runbook executed verbatim with the real CLI; two hotspots fixed
+
+Operator directive: identify likely-failure hotspots and course-correct; iterate the
+runbook critically, step by step.
+
+**What ran** (a mock QA/UAT pair on the warm container: espace-shifted physical names
+`OSUSR_*` vs `OSUSR_X*`, DML-only logins on BOTH sides, the operator's exact
+`projection.json` from the runbook, the REAL CLI binary — the first time the whole
+config-discovery → flow-parse → dispatch → engine path was driven end-to-end):
+
+1. `projection` (menu) — flows table with the tables tag. ✓
+2. `projection check go golden` — **RED exit 5**: both escapes named
+   (Customer.CityId→City, SalesOrder.CategoryId→Category) with paste-able remedies;
+   forecast "4 row(s) across 2 table(s)". ✓
+3. Reconcile entries pasted → **RED again, and rightly**: the identities forecast
+   caught that UAT held NO Category rows ("Category source '1'/'2' have no sink
+   match — a live run halts before any write") — the exact missing-reference-data
+   trap a live first run would hit, caught with zero writes. ✓
+4. Sink reference data fixed → **GREEN exit 0**. ✓
+5. `projection golden` (preview) → **HOTSPOT #1 FIXED**: the headline counted
+   RowsWritten (0 in a dry run) — "0 row(s) would move" over a 4-row forecast.
+   A DryRun headline now counts RowsIngested ("4 row(s) would move"). **HOTSPOT #2
+   FIXED**: the load plan printed all 15 modeled tables (13 all-zero noise); it now
+   shows the TOUCHED tables (moving or reconciled) + one collapse line for the rest.
+6. `--go` without PROJECTION_ALLOW_EXECUTE → named refusal exit 7 with remedy. ✓
+7. The live run → 4 rows moved; ground truth verified by SQL: customers minted
+   900/901 with CITYID re-pointed to the sink's OWN 501/502 (name-reconciled),
+   orders minted 9000/9001 pointing at the NEW customer keys with categories
+   name-matched to the right rows (Leaf→Leaf, not positional). ✓
+8. Re-run → idempotent (counts stable, zero dangling FKs); source untouched. ✓
+
+**Also fixed en route:** the seed needs QUOTED_IDENTIFIER ON under raw sqlcmd
+(test-infra only, engine unaffected).
+
+**Course-corrections written into the runbook** — a new "Live-environment hotspots"
+section covering what the rehearsal cannot prove: User-entity references (the gate
+cannot see an edge whose target kind is absent from the contract — check manually),
+materialized-subset memory at scale, wipe duration on large re-runs, Encrypt=True on
+real connections, command timeouts on slow links, the standing G1 DENY blind spot,
+and the cosmetic note-truncation. Plus the "Rehearsed end-to-end" section recording
+exactly what was validated.
+
+Fast pool + the peer/managed-grant/go-board docker sweep: GREEN after the narration
+fixes.

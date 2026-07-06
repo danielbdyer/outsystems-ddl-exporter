@@ -172,6 +172,53 @@ board re-validates the matches — run `check go` again first when in doubt.
 | raw SQL permission error mid-load | a TABLE-level DENY (invisible to preflight — the pinned G1 gap) | remove the DENY; the revert script (`transfer-revert.sql`) undoes sink-minted rows |
 | board green but `--go` exits 7 | `PROJECTION_ALLOW_EXECUTE` not set | set it (the board's `[note]` line reminds you) |
 
+## Rehearsed end-to-end (2026-07-06)
+
+Every step above was executed verbatim with the real CLI against a mock QA/UAT
+pair (espace-shifted physical names, DML-only principals on both sides):
+menu → board RED (2 escapes named) → reconcile entries pasted → board RED
+again (the identities forecast caught missing sink reference data BEFORE any
+write) → sink reference data fixed → GREEN → preview ("4 row(s) would move
+across 4 table(s)") → `--go` without the env var refused (exit 7, remedy
+printed) → live run (customers minted 900/901 with cities re-pointed to the
+sink's own 501/502; orders minted 9000/9001 pointing at the NEW customer keys
+and name-matched categories) → re-run idempotent (counts stable, zero dangling
+FKs, source untouched).
+
+## Live-environment hotspots (what the rehearsal CANNOT prove — read before your first real run)
+
+1. **User references.** Real estates carry `CreatedBy`/`UserId` columns
+   referencing the platform User entity (system espace). If the User kind is
+   IN the acquired contract, any such edge shows up on the board's
+   `relationships` line — reconcile it (`Users.User:Username` or by email).
+   If your subset tables carry user columns but NO such line appears, the
+   User entity may be OUTSIDE the contract — the gate cannot see a reference
+   whose target kind is absent, and user ids DIFFER between environments.
+   Check manually before trusting those columns.
+2. **Scale.** A `tables` subset runs MATERIALIZED: the subset's rows are
+   resident in memory on the machine running the CLI. Fine for thousands to
+   low millions of small rows; a very large table in the subset needs the
+   streaming realization, which does not yet support `--tables`. Start with
+   modest subsets.
+3. **Wipe duration on re-runs.** `strategy: replace` deletes with plain
+   `DELETE` (no TRUNCATE — the grant has no ALTER): a re-run over a very
+   large already-loaded subset holds a long transaction. First loads into an
+   empty sink are unaffected.
+4. **Connection strings.** Real managed environments typically require
+   `Encrypt=True` with a valid certificate chain (do not copy the
+   `TrustServerCertificate=True` from lab examples), plus VPN/IP-allowlist
+   network reach from the machine running the CLI to BOTH databases.
+5. **Command timeouts.** Contract acquisition is one metamodel batch (fast
+   even on large estates), but a multi-million-row ingest SELECT can exceed
+   default command timeouts on slow links — if you hit timeouts, narrow the
+   subset first.
+6. **The one standing preflight blind spot** — a TABLE-level DENY passes the
+   board's grant probe and surfaces mid-load (raw permission error). The
+   revert script (`transfer-revert.sql`) removes the partial rows; auto
+   revert is `--auto-revert`.
+7. **Cosmetic**: one narrow-terminal note line can render truncated with `…`
+   (a known display residual); the board and load plan are unaffected.
+
 ## What the tool touches, per environment
 
 Source: `SELECT` on `ossys_*` (contract) + `SELECT` on the subset's `OSUSR_*`

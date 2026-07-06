@@ -46,19 +46,39 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
     // §4 Move — lead with the finding (rows moved, in dependency order); the
     // load plan rides beneath. Dependency order is the engine's guarantee that
     // a row never lands before the rows it points to.
+    //
+    // 2026-07-06 (the live rehearsal): a DRY RUN's headline counts the rows
+    // that WOULD move (`RowsIngested` — a preview writes nothing by
+    // definition, so the written sum read "0 rows would move" over a
+    // 4-row forecast — actively misleading). An Execute's headline stays the
+    // written sum (the actual outcome).
     let totalWritten = report.Kinds |> List.sumBy (fun k -> k.RowsWritten)
+    let headlineCount =
+        match report.Mode with
+        | Transfer.DryRun  -> report.Kinds |> List.sumBy (fun k -> k.RowsIngested)
+        | Transfer.Execute -> totalWritten
     let verdictCode = match report.Mode with Transfer.DryRun -> "transfer.previewPlan" | Transfer.Execute -> "transfer.applied"
-    let verdictPayload : Voice.Payload = Map.ofList [ "rowCount", box totalWritten; "tableCount", box report.Kinds.Length ]
+    // The plan narration shows the tables the run TOUCHES (rows in flight or
+    // a reconcile rule); the untouched remainder collapses to one line — 13
+    // all-zero rows around the 2 that matter was noise, not information.
+    let touched, untouched =
+        report.Kinds
+        |> List.partition (fun k ->
+            k.RowsIngested > 0 || k.RowsWritten > 0
+            || k.Disposition = IdentityDisposition.ReconciledByRule)
+    let verdictPayload : Voice.Payload = Map.ofList [ "rowCount", box headlineCount; "tableCount", box touched.Length ]
     TtyRenderer.renderVoicedTo Console.Out verdictCode verdictPayload
     printfn ""
-    printfn "The load plan (%d table(s)):" report.Kinds.Length
-    for k in report.Kinds do
+    printfn "The load plan (%d table(s) touched):" touched.Length
+    for k in touched do
         printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
             (nm k.Kind)
             (dispositionName k.Disposition)
             k.RowsIngested
             k.RowsWritten
             (Set.count k.DeferredFkColumns)
+    if not (List.isEmpty untouched) then
+        printfn "  (%d other modeled table(s): no rows to move, not reconciled — untouched.)" untouched.Length
     if not (List.isEmpty report.UnbreakableCycleFks) then
         printfn ""
         printfn
