@@ -420,3 +420,86 @@ an ADMIN principal — it proves identity alignment and FK re-pointing but NOT t
 managed-cloud grant envelope; the FK-retrust descent path
 (FkTrustNotRestoredOnBulkLoad) is unexercised on the peer leg; IDENTITY reseed
 mechanics differ under a real grant.
+
+## Entry 12 — 2026-07-06, phase-2 findings triaged and FIXED (two critical, three high, five medium)
+
+The four agents returned. Every confirmed finding fixed this session, each with tests:
+
+**CRITICAL (both confirmed, both fixed):**
+1. **The rename map was kind-BLIND.** `RenameProjection` flattened per-kind attribute
+   renames into ONE `Map<Name,Name>` applied to EVERY kind's rows: renaming
+   `Invoice.Status → State` silently re-keyed `Order.Status` too — Order's value became
+   unreachable at the sink getter and the column wrote NULL. Now KIND-SCOPED
+   (`renameMapByKind` / `forKind`) through the materialized repoint, the streaming
+   basis, phase-2 projections, and the reconcile ingest; the flat API is deleted;
+   regression pins added. (This poisoning existed on the REVERSE LEG too — pre-existing,
+   now dead everywhere.)
+2. **`--allow-drops` on escaping subset FKs did not drop — it cross-wired.** No engine
+   code drops/NULLs an FK to an out-of-subset un-reconciled kind; the rows landed
+   carrying the SOURCE environment's surrogate values, silently pointing at whatever
+   sink rows own those keys (exit 0, empty drop report). The bypass is REMOVED: a live
+   run refuses (`transfer.peer.subsetFkEscapes`) until the target is reconciled or the
+   subset widened; the narration now proposes the copy-pasteable
+   `Module.Entity:Column` reconcile form.
+
+**HIGH (fixed):** sink-only attributes are now OMITTED from the bulk column list (the
+sink's default genuinely applies; before, `KeepNulls` pinned an explicit NULL and a
+mandatory sink-only column crashed raw); the shape gate's Length arm blocks
+open-ended-source→bounded-sink (was misread as "wider"); Precision/Scale block only a
+narrowing (was a false refusal on widening); Nullability judges the COLUMN plane (the
+facet's own vocabulary).
+
+**MEDIUM (fixed):** materialized `--resumable` against a managed-DML sink now refuses
+BY NAME (`transfer.reverseLeg.resumableSinkUnsupported`) instead of dying raw on the
+progress table's CREATE TABLE (only the streaming arm was archetype-guarded);
+`resolveLoadSet` refuses duplicate logical names as ambiguous and accepts
+`Module.Entity` (was silent last-wins); the peer face refuses a bad reconcile spec
+BEFORE the gates (exit 2 — was mis-blamed as exit-9 escapes); parallel FK edges
+between one pair (Employee.Manager + Employee.Mentor) no longer wedge the topo order
+via a stale indegree (strength combines: breakable only if ALL parallel edges are
+weak); a live Execute on an ALPHABETICAL (degraded) load order refuses by name
+(`transfer.loadOrderUnproven`) instead of loading children before parents.
+
+**Ergonomics landed** (from the ranked list): peer refusals render through the GATE
+surface (statement + next move; was the flat GenericStop wall); shape advisories +
+escape proposals land on STDOUT (a redirected preview no longer silently loses the
+safety info); env→env data flows with UNSET renditions get a voiced note naming the
+name-blind assumption and the `rendition: physical` fix; `--user-map` accepts the
+espace-safe `Module.Entity` form; the flow menu shows `reconcile:` tags; refusal
+messages hint the logical form for peer transfers.
+
+## Entry 13 — 2026-07-06, THE MOCK-ENVIRONMENT PROGRAM: managed-grant e2e landed, and it caught a live-test-killing bug in hour one
+
+New fixtures: `OssysSeedBuilder` (espace-key parameterization — a named transform, not
+a string hack), `DmlPrincipal` (the managed-cloud principal: EXPLICIT db-scope
+SELECT/INSERT/UPDATE/DELETE — deliberately not db_datareader/writer, whose rights
+don't surface in `fn_my_permissions` and would false-trip the grant preflight), and
+`MockOutSystemsEnv` (metamodel + espace-prefixed physical tables + optional managed
+principal; single or paired cells).
+
+`PeerManagedGrantTransferDockerTests` — five scenarios, ALL GREEN:
+1. **Grant conformance probe** — the principal's permission evidence is exactly what
+   the engine's preflight reads; IDENTITY_INSERT/CREATE TABLE/ALTER fail in their
+   documented error classes; #temp staging and MERGE…OUTPUT succeed. (Also pinned: SQL
+   Server 2022 auto-grants two VIEW ANY COLUMN * KEY DEFINITION rows to every user —
+   presence/absence assertions, not set equality.)
+2. **The peer subset happy path with DML-only principals on BOTH sides** — including
+   contract acquisition through the restricted logins. Plus a genuine mechanics
+   finding: FK-targeted kinds ride the MERGE capture lane which validates constraints
+   INLINE — the sink FK ends enabled AND TRUSTED, no ALTER ever needed. (The
+   bulk-lane untrusted tolerance belongs to non-FK-targeted kinds.)
+3. **Reconcile-by-key under the grant.**
+4. **Unreadable sink metamodel → named schema-read refusal (exit 6).**
+5. **G1 pinned on the peer dispatch** — object-scope DENY INSERT is invisible to the
+   DB-scope preflight: raw permission exception mid-load, the parent kind already
+   landed (partial write). Cross-references the reserved promotion stub.
+
+**THE BIG CATCH (would have killed today's live test at step one):** the OSSYS
+metamodel extraction FAILED ENTIRELY under the managed grant —
+`sys.check_constraints.definition` is NULL without VIEW DEFINITION, and the
+`columnChecks` rowset reader treated it as required (`adapter.ossysSql.rowMapping`,
+whole read dead). Fixed: the definition is optional through the whole chain; a
+definition-less check row is SKIPPED (a named erasure — ColumnChecks are
+physical-realization artifacts the shape verdict strips and the data plane never
+reads; privileged reads still carry them). Also: adapter-level extraction failures now
+classify onto the schema-read axis (exit 6) instead of unclassified-3.

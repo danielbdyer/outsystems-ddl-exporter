@@ -147,21 +147,41 @@ module PeerTransfer =
                         | AttributeFacet.Computed ->
                             line blocking "the computed-column definition differs between source and sink"
                         | AttributeFacet.Nullability ->
+                            // Judge on `ColumnRealization.IsNullable` — the
+                            // SAME plane the facet fires on (adversarial LOW
+                            // #12: `IsMandatory` can disagree with the column
+                            // reality, letting a sink-NOT-NULL divergence pass
+                            // as permissive).
                             match srcAttr, snkAttr with
-                            | Some s, Some t when (not s.IsMandatory) && t.IsMandatory ->
-                                line blocking "nullable in the source but mandatory in the sink — NULL values cannot land"
+                            | Some s, Some t when s.Column.IsNullable && not t.Column.IsNullable ->
+                                line blocking "nullable in the source but NOT NULL in the sink — NULL values cannot land"
                             | _ ->
                                 line advisory "the sink is more permissive on nullability (no value is refused)"
                         | AttributeFacet.Length ->
                             match srcAttr |> Option.bind (fun a -> a.Length), snkAttr |> Option.bind (fun a -> a.Length) with
                             | Some s, Some t when t < s ->
                                 line blocking (sprintf "the sink length (%d) is narrower than the source (%d) — values can overflow" t s)
+                            | None, Some t ->
+                                // 2026-07-06 (adversarial HIGH #4): source
+                                // open-ended (MAX) into a bounded sink was
+                                // misread as "wider" — it truncates.
+                                line blocking (sprintf "the source length is open-ended but the sink is bounded (%d) — values can overflow" t)
                             | _, None ->
                                 line advisory "the sink length is open-ended (no value is refused)"
                             | _ ->
                                 line advisory "the sink length is wider (no value is refused)"
                         | AttributeFacet.Precision | AttributeFacet.Scale ->
-                            line blocking "the decimal precision/scale differs between source and sink"
+                            // Block only a NARROWING (adversarial LOW #11 —
+                            // a sink-wider DECIMAL is loadable; refusing it
+                            // was a false refusal).
+                            let narrower (f: Attribute -> int option) =
+                                match srcAttr |> Option.bind f, snkAttr |> Option.bind f with
+                                | Some s, Some t when t < s -> true
+                                | _ -> false
+                            if narrower (fun a -> a.Precision) || narrower (fun a -> a.Scale) then
+                                line blocking "the sink decimal precision/scale is narrower than the source — values can overflow"
+                            else
+                                line advisory "the sink decimal precision/scale is wider (no value is refused)"
                         | AttributeFacet.DefaultValue ->
                             line advisory "the default value differs (defaults never rewrite transferred values)"
         // Constraint / index / kind-own drift: real divergence, but none of it
@@ -205,9 +225,14 @@ module PeerTransfer =
           Nullable   : bool
           Target     : SsKey
           TargetName : Name
+          /// The target's owning MODULE name — the proposal narrates the
+          /// resolvable `Module.Entity:Column` reconcile form (a bare
+          /// logical name resolves by PHYSICAL table only, which differs
+          /// per environment; adversarial MEDIUM #8).
+          TargetModule : Name
           /// Candidate reconcile columns on the target: its single-column
           /// UNIQUE indexes over non-PK attributes (the business keys a
-          /// `reconcile <Target>:<Column>` can match sink rows by).
+          /// `reconcile Module.Entity:Column` can match sink rows by).
           CandidateReconcileColumns : Name list }
 
     /// Detect every FK edge that escapes the declared subset: source kind in
@@ -227,6 +252,10 @@ module PeerTransfer =
                     |> Option.map (fun a -> a.Name)
                 | _ -> None)
             |> List.sortBy Name.value
+        let moduleOf : Map<SsKey, Name> =
+            Catalog.allModulesKinds contract
+            |> List.map (fun (m, k) -> k.SsKey, m.Name)
+            |> Map.ofList
         Catalog.allKinds contract
         |> List.filter (fun k -> Set.contains k.SsKey loadSet)
         |> List.collect (fun kind ->
@@ -245,33 +274,49 @@ module PeerTransfer =
                               Nullable   = sourceAttr |> Option.map (fun a -> not a.IsMandatory) |> Option.defaultValue false
                               Target     = r.TargetKind
                               TargetName = target.Name
+                              TargetModule = moduleOf |> Map.tryFind r.TargetKind |> Option.defaultValue target.Name
                               CandidateReconcileColumns = candidateKeysOf target }))
         |> List.sortBy (fun e -> Name.value e.KindName, Name.value e.Column)
 
     /// The per-edge strategy proposal lines (operator-facing; one line per
-    /// escaping edge, the recommended move first).
+    /// escaping edge, the recommended move first, in the RESOLVABLE
+    /// `Module.Entity:Column` reconcile form).
     let narrateEscapes (escapes: EscapingFk list) : string list =
         escapes
         |> List.map (fun e ->
+            let targetRef = sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName)
             let candidates =
                 match e.CandidateReconcileColumns with
-                | [] -> "no unique non-key column found — widen the subset or accept drops"
-                | cs -> sprintf "reconcile candidates: %s" (cs |> List.map Name.value |> String.concat ", ")
+                | [] -> "no unique non-key column found — widen the subset"
+                | cs ->
+                    cs
+                    |> List.map (fun c -> sprintf "reconcile '%s:%s'" targetRef (Name.value c))
+                    |> String.concat " or "
             let softening = if e.Nullable then " (optional — rows with no reference pass untouched)" else ""
-            sprintf "%s.%s -> %s is outside the subset%s. Strategies: reconcile '%s' against the rows the sink already holds (%s); or add '%s' to the subset; or accept the drop-set with --allow-drops."
+            sprintf "%s.%s -> %s is outside the subset%s. Strategies: reconcile against the rows the sink already holds (%s); or add '%s' to the subset."
                 (Name.value e.KindName) (Name.value e.Column) (Name.value e.TargetName)
                 softening
-                (Name.value e.TargetName) candidates (Name.value e.TargetName))
+                candidates (Name.value e.TargetName))
 
     /// The gate form: a live Execute with un-strategized escaping edges
     /// refuses by name (`transfer.peer.subsetFkEscapes` — the drop-set axis,
-    /// exit 9) unless the operator declared the drops acceptable. A DryRun
-    /// never refuses here — the preview narrates the proposals instead.
-    let subsetFkGate (execute: bool) (allowDrops: bool) (escapes: EscapingFk list) : Result<unit> =
-        if execute && not allowDrops && not (List.isEmpty escapes) then
+    /// exit 9). A DryRun never refuses here — the preview narrates the
+    /// proposals instead.
+    ///
+    /// 2026-07-06 (the phase-2 adversarial review, CRITICAL #2): the
+    /// `--allow-drops` bypass is GONE. Nothing on the engine's write plane
+    /// drops or NULLs an escaping FK — the rows would land carrying the
+    /// SOURCE environment's surrogate values, silently cross-wired to
+    /// whatever sink rows happen to own those keys (`--allow-drops` covers
+    /// the REPORTED drop-set of reconciled/remapped kinds, which these
+    /// columns never enter). Until the engine can genuinely drop/NULL
+    /// escaping references, the honest gate refuses: reconcile the target
+    /// or widen the subset.
+    let subsetFkGate (execute: bool) (escapes: EscapingFk list) : Result<unit> =
+        if execute && not (List.isEmpty escapes) then
             Result.failureOf
                 (ValidationError.create "transfer.peer.subsetFkEscapes"
-                    (sprintf "%d relationship(s) escape the declared table subset; each needs a strategy before a live run: %s"
+                    (sprintf "%d relationship(s) escape the declared table subset; each needs a strategy before a live run (their rows would keep SOURCE-environment references — --allow-drops does not cover this): %s"
                         escapes.Length
                         (String.concat " " (narrateEscapes escapes))))
         else Result.success ()

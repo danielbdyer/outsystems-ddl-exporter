@@ -465,7 +465,11 @@ let private runList (asJson: bool) : int =
                 [ for KeyValue (name, f) in cfg.Flows ->
                     let extra =
                         [ if Option.isSome f.Rekey then yield "rekey"
-                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                          if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables)
+                          // `reconcile` is as load-bearing as `rekey` on the
+                          // golden shape (the re-key contract) — surface it so
+                          // the menu scan shows which flows carry a strategy.
+                          if not (List.isEmpty f.Reconcile) then yield sprintf "reconcile: %s" (String.concat "," f.Reconcile) ]
                     name, flowSourceText f.From, f.To, String.concat "; " extra ]
             TtyRenderer.renderAnswer asJson View.defaultDepth (TtyRenderer.buildFlowMenuView rows)
         0

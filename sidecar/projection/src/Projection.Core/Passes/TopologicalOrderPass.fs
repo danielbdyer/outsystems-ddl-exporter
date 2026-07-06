@@ -110,6 +110,20 @@ module TopologicalOrderPass =
         let initialIndegree =
             nodes |> List.map (fun n -> n, 0) |> Map.ofList
 
+        // PARALLEL edges (two references between the same (child, parent)
+        // pair — e.g. Employee.ManagerId + Employee.MentorId → Employee)
+        // contribute ONE precedence edge (2026-07-06, adversarial MEDIUM
+        // #9): the prior per-reference adjacency/indegree increments left a
+        // stale indegree after the resolver broke the (deduped) classified
+        // edge — Kahn residue, whole-catalog alphabetical degrade. Strength
+        // COMBINES across the parallel set: the pair is breakable only if
+        // EVERY parallel reference is Weak (a Cascade or non-nullable
+        // sibling still binds the dependency).
+        let strongerOf (a: EdgeStrength) (b: EdgeStrength) : EdgeStrength =
+            match a, b with
+            | EdgeStrength.Cascade, _ | _, EdgeStrength.Cascade -> EdgeStrength.Cascade
+            | EdgeStrength.Other, _ | _, EdgeStrength.Other -> EdgeStrength.Other
+            | _ -> EdgeStrength.Weak
         let folder (state: Graph) (k: Kind) : Graph =
             // Sort references by SsKey too — same invariance commitment
             // at the inner level.
@@ -127,20 +141,27 @@ module TopologicalOrderPass =
                     // dependency).
                     st
                 elif Set.contains r.TargetKind presentKeys then
-                    let children =
-                        Map.tryFind r.TargetKind st.Adjacency
-                        |> Option.defaultValue []
-                    let updatedAdjacency =
-                        st.Adjacency |> Map.add r.TargetKind (k.SsKey :: children)
-                    let currentIndegree =
-                        Map.tryFind k.SsKey st.Indegree |> Option.defaultValue 0
-                    let updatedIndegree =
-                        st.Indegree |> Map.add k.SsKey (currentIndegree + 1)
-                    { st with
-                        Adjacency       = updatedAdjacency
-                        Indegree        = updatedIndegree
-                        Edges           = edge :: st.Edges
-                        ClassifiedEdges = Map.add edge strength st.ClassifiedEdges }
+                    match Map.tryFind edge st.ClassifiedEdges with
+                    | Some existing ->
+                        // A parallel reference over an already-tracked pair:
+                        // combine strength only — adjacency/indegree/Edges
+                        // stay single-entry so break/reduce stays coherent.
+                        { st with ClassifiedEdges = Map.add edge (strongerOf existing strength) st.ClassifiedEdges }
+                    | None ->
+                        let children =
+                            Map.tryFind r.TargetKind st.Adjacency
+                            |> Option.defaultValue []
+                        let updatedAdjacency =
+                            st.Adjacency |> Map.add r.TargetKind (k.SsKey :: children)
+                        let currentIndegree =
+                            Map.tryFind k.SsKey st.Indegree |> Option.defaultValue 0
+                        let updatedIndegree =
+                            st.Indegree |> Map.add k.SsKey (currentIndegree + 1)
+                        { st with
+                            Adjacency       = updatedAdjacency
+                            Indegree        = updatedIndegree
+                            Edges           = edge :: st.Edges
+                            ClassifiedEdges = Map.add edge strength st.ClassifiedEdges }
                 else
                     { st with MissingEdges = edge :: st.MissingEdges }) state
 

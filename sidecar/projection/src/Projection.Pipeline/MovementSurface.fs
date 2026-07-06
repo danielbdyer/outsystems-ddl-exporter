@@ -1305,7 +1305,19 @@ module Command =
             | None, _ -> []
             | Some _, PlanAction.SynthesizeAndLoad _ -> []
             | Some _, _ -> [ "correction accepted; this action has no synthesis leg (no correction applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote; Action = action }
+        // The name-blind fallback is a silent assumption worth NAMING (the
+        // no-silent-downgrade discipline): an env→env DATA move whose
+        // renditions are unset rides the generic `Transfer`, which reads ONE
+        // contract from the source and writes with the SOURCE's physical
+        // names — correct only when the sink's names match. The peer leg
+        // (`rendition: physical` on both sides) carries the SsKey-aligned
+        // shape + subset-FK gates. 2026-07-06 (ergonomics pass, proposal 2).
+        let renditionNote =
+            match spec.Direction, spec.Data, action with
+            | MovementDirection.Down, DataOrigin.FromTarget _, PlanAction.Transfer _ ->
+                [ "this flow moves data between two live environments with `rendition` unset — the transfer assumes MATCHING physical table names on both sides. Set `rendition: physical` on both environments to run the SsKey-aligned peer leg (shape + subset-FK gates) instead." ]
+            | _ -> []
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote @ renditionNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =

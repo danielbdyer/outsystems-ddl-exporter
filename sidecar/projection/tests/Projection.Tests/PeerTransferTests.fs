@@ -105,6 +105,29 @@ let ``resolveLoadSet: every unknown name is aggregated into one named refusal`` 
         Assert.DoesNotContain("Customer", e.Message)
     | other -> Assert.Fail(sprintf "expected the aggregated refusal, got %A" other)
 
+[<Fact>]
+let ``resolveLoadSet: a duplicate logical name refuses as ambiguous; the Module.Entity form disambiguates`` () =
+    // 2026-07-06 (adversarial MEDIUM #6): the prior Map.ofList silently
+    // last-won a duplicate name across modules.
+    let dupCity =
+        { Kind.create (SsKey.synthesizedComposite "PEER_KIND" [ "City2" ] |> Result.value) (nm "City")
+            (TableId.create "dbo" "OSUSR_ZZZ_CITY" |> Result.value)
+            [ idPk "City2" ] with Attributes = [ idPk "City2" ] }
+    let m2 =
+        Module.create (SsKey.synthesizedComposite "PEER_MOD" [ "Ops" ] |> Result.value)
+            (nm "Ops") [ dupCity ] true []
+        |> Result.value
+    let twoModules = Catalog.create [ srcCell.Modules.Head; m2 ] [] |> Result.value
+    match Transfer.resolveLoadSet twoModules [ "City" ] with
+    | Error [ e ] ->
+        Assert.Equal("transfer.tablesAmbiguous", e.Code)
+        Assert.Contains("AppCore.City", e.Message)
+        Assert.Contains("Ops.City", e.Message)
+    | other -> Assert.Fail(sprintf "expected the ambiguity refusal, got %A" other)
+    match Transfer.resolveLoadSet twoModules [ "AppCore.City" ] with
+    | Ok (Some set) -> Assert.Equal<Set<SsKey>>(keys [ "City" ], set)
+    | other -> Assert.Fail(sprintf "expected the qualified form to resolve, got %A" other)
+
 // --- the escaping-FK detector ------------------------------------------------
 
 [<Fact>]
@@ -140,17 +163,30 @@ let ``escapingFks: the chain stops at the subset boundary (Order alone escapes t
 // --- the subset-FK gate's refuse/downgrade contract ---------------------------
 
 [<Fact>]
-let ``subsetFkGate: a preview never refuses; a live run with escapes refuses by name; --allow-drops downgrades`` () =
+let ``subsetFkGate: a preview never refuses; a live run with escapes refuses by name — --allow-drops does NOT bypass`` () =
+    // 2026-07-06 (adversarial CRITICAL #2): the --allow-drops bypass is
+    // GONE — nothing on the write plane drops an escaping FK; the rows
+    // would land carrying SOURCE-environment surrogates (silent
+    // cross-wiring). The gate refuses until the target is reconciled or
+    // the subset widened.
     let escapes = PeerTransfer.escapingFks srcCell (keys [ "Customer" ]) Set.empty
-    Assert.True(Result.isSuccess (PeerTransfer.subsetFkGate false false escapes))
-    Assert.True(Result.isSuccess (PeerTransfer.subsetFkGate true true escapes))
-    Assert.True(Result.isSuccess (PeerTransfer.subsetFkGate true false []))
-    match PeerTransfer.subsetFkGate true false escapes with
+    Assert.True(Result.isSuccess (PeerTransfer.subsetFkGate false escapes))
+    Assert.True(Result.isSuccess (PeerTransfer.subsetFkGate true []))
+    match PeerTransfer.subsetFkGate true escapes with
     | Error [ e ] ->
         Assert.Equal("transfer.peer.subsetFkEscapes", e.Code)
         Assert.Contains("City", e.Message)
-        Assert.Contains("--allow-drops", e.Message)
+        Assert.Contains("SOURCE-environment references", e.Message)
     | other -> Assert.Fail(sprintf "expected the named refusal, got %A" other)
+
+[<Fact>]
+let ``narrateEscapes: proposals carry the RESOLVABLE Module.Entity:Column reconcile form`` () =
+    // Adversarial MEDIUM #8: the bare logical name resolves by PHYSICAL
+    // table only — the proposal must be copy-pasteable.
+    let escapes = PeerTransfer.escapingFks srcCell (keys [ "Customer" ]) Set.empty
+    let lines = PeerTransfer.narrateEscapes escapes
+    Assert.True(lines |> List.exists (fun l -> l.Contains "AppCore.City:Name"),
+                sprintf "expected the Module.Entity:Column form, got %A" lines)
 
 // --- the shape gate -----------------------------------------------------------
 
@@ -224,7 +260,9 @@ let ``shapeGate: a data-type divergence blocks; a widened length is advisory`` (
     | other -> Assert.Fail(sprintf "expected an advisory pass, got %A" other)
 
 [<Fact>]
-let ``shapeGate: nullable-in-source but mandatory-in-sink blocks; the reverse is advisory`` () =
+let ``shapeGate: nullable-in-source but NOT-NULL-in-sink blocks; the reverse is advisory`` () =
+    // The verdict judges the COLUMN plane (`ColumnRealization.IsNullable`) —
+    // the same plane the Nullability facet fires on (adversarial LOW #12).
     let tightened =
         sinkCell
         |> mapKind "Customer" (fun k ->
@@ -236,7 +274,7 @@ let ``shapeGate: nullable-in-source but mandatory-in-sink blocks; the reverse is
                             { a with IsMandatory = true; Column = ColumnRealization.create "SECONDCITYID" false |> Result.value }
                         else a) })
     match PeerTransfer.shapeGate (Some (keys [ "Customer" ])) srcCell tightened with
-    | Error [ e ] -> Assert.Contains("mandatory in the sink", e.Message)
+    | Error [ e ] -> Assert.Contains("NOT NULL in the sink", e.Message)
     | other -> Assert.Fail(sprintf "expected the tightening refusal, got %A" other)
     let loosened =
         sinkCell

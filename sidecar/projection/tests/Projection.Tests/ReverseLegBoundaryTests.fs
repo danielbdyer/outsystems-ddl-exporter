@@ -113,13 +113,20 @@ let ``selector: a table subset falls back to the materialized path (streaming do
     | other -> Assert.Fail(sprintf "expected Materialized fallback, got %A" other)
 
 [<Fact>]
-let ``selector: WipeAndLoad and --resumable fall back to the materialized path`` () =
+let ``selector: WipeAndLoad falls back to the materialized path; --resumable needs sink-resident resume`` () =
     match choose EmissionMode.WipeAndLoad false [] false None with
     | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
     | other -> Assert.Fail(sprintf "expected Materialized for WipeAndLoad, got %A" other)
-    match choose EmissionMode.Incremental true [] false None with
+    // 2026-07-06 (the phase-2 permission audit): a MATERIALIZED --resumable
+    // against a sink that cannot host the G10 progress table (ManagedDml /
+    // undeclared — sinkResidentResume=false) now refuses BY NAME instead of
+    // sailing into a raw CREATE TABLE permission failure mid-run. The
+    // FullRights admission is pinned below.
+    let codeOf r = match r with Error (es: ValidationError list) -> (List.head es).Code | Ok _ -> "OK"
+    Assert.Equal("transfer.reverseLeg.resumableSinkUnsupported", codeOf (choose EmissionMode.Incremental true [] false None))
+    match chooseOn EmissionMode.Incremental true [] false None true with
     | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
-    | other -> Assert.Fail(sprintf "expected Materialized for --resumable, got %A" other)
+    | other -> Assert.Fail(sprintf "expected Materialized for --resumable on a FullRights sink, got %A" other)
 
 [<Fact>]
 let ``selector: an EXPLICIT --streaming on an inadmissible request refuses BY NAME — never a silent downgrade`` () =

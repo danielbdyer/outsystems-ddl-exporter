@@ -112,7 +112,7 @@ module TransferSpec =
             | None ->
                 Result.failureOf
                     (specInvalid "transfer.reconcile.tableNotFound"
-                        (sprintf "reconcile: no kind found for '%s' (tried logical Module.Entity and physical table name)." e.Table))
+                        (sprintf "reconcile: no kind found for '%s' (tried logical Module.Entity and physical table name). For a peer transfer between differently-named environments, use the logical 'Module.Entity:Column' form — a physical name written against the source will not resolve against the sink." e.Table))
             | Some k ->
                 let attrOpt =
                     match findAttributeByName e.MatchColumn k with
@@ -197,11 +197,25 @@ module TransferSpec =
         (entries: UserMapEntry list)
         : Result<Map<SsKey, ReconciliationStrategy>> =
         let resolveTable (table: string, rows: UserMapEntry list) : Result<SsKey * ReconciliationStrategy> =
-            match findKindByTable table catalog with
+            // The table ref resolves LOGICALLY ("Module.Entity", espace-safe)
+            // when it carries a '.', else by PHYSICAL table name — the SAME
+            // two-form lookup `resolveReconciliation.resolveOne` performs.
+            // Physical-only resolution was espace-UNSAFE for the peer leg
+            // (source and sink physical names differ per environment;
+            // PARTIAL_TRANSFER_READINESS_LOG entry 5's named gap, closed
+            // 2026-07-06).
+            let kindOpt =
+                match table.IndexOf '.' with
+                | dot when dot > 0 ->
+                    match findKindByLogical (table.Substring(0, dot)) (table.Substring(dot + 1)) catalog with
+                    | Some _ as k -> k
+                    | None -> findKindByTable table catalog
+                | _ -> findKindByTable table catalog
+            match kindOpt with
             | None ->
                 Result.failureOf
                     (specInvalid "transfer.userMap.tableNotFound"
-                        (sprintf "user-map: no kind found for table '%s' in the contract." table))
+                        (sprintf "user-map: no kind found for '%s' (tried logical Module.Entity and physical table name). For a peer transfer between differently-named environments, use the logical 'Module.Entity' form." table))
             | Some k ->
                 let dupSources =
                     rows

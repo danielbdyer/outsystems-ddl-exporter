@@ -435,7 +435,7 @@ let ``J3: the rendered pair is SsKey-aligned by construction; the repoint is the
     // identity repoint. The rendition difference rides each contract's
     // physical coordinates at its own SQL boundary (source reads by B's
     // names, sink writes by A's), the LE-2-proven mechanism.
-    let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+    let renameMap = RenameProjection.renames diff |> RenameProjection.renameMapByKind
     Assert.True(Map.isEmpty renameMap)
 
 // -- planMovement routing (the pure surface→engine map) --------------------

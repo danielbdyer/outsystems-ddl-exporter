@@ -349,7 +349,13 @@ module OssysRowsetTypes =
         {
             AttrId         : int
             ConstraintName : string
-            Definition     : string
+            /// `None` when the reading principal lacks VIEW DEFINITION —
+            /// the managed-cloud grant (2026-07-06, the phase-2 mock-env
+            /// program): `sys.check_constraints.definition` NULLs out and
+            /// the constraint cannot be represented; the parse SKIPS it
+            /// (named in the parser's docstring) instead of failing the
+            /// whole extraction.
+            Definition     : string option
             IsNotTrusted   : bool
         }
 

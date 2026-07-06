@@ -483,8 +483,10 @@ let runPeerTransfer
     // (exit 6) before any gate or connection-opening work.
     match (PeerTransfer.acquireContracts sourceSpec sinkSpec).GetAwaiter().GetResult() with
     | Error errors ->
-        Console.Error.WriteLine "projection transfer (peer): contract acquisition error:"
-        printErrors Console.Error errors
+        // The gate surface owns the copy (§5): `source.ossys.*` classifies
+        // onto the schema-read axis, so the operator gets the statement +
+        // the next move, never the flat GenericStop wall.
+        TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
         (Preflight.refusalOf errors).ExitCode
     | Ok (sourceContract, sinkContract) ->
@@ -492,24 +494,35 @@ let runPeerTransfer
     // Resolve the gate inputs: the declared subset (against the SOURCE
     // contract — the same resolver the engine uses) and the reconciled kind
     // set (against the SINK contract — the same resolution the shared body
-    // performs). A spec that fails to parse/resolve here is NOT refused here:
-    // the shared body reproduces the refusal byte-identically, so the gates
-    // simply step aside (empty reconciled set / no subset) and delegate.
-    let reconciledKeys : Set<SsKey> =
+    // performs). 2026-07-06 (adversarial MEDIUM #7): a reconcile spec that
+    // fails to parse/resolve REFUSES HERE, before the gates — the prior
+    // swallow-to-empty let the subset-FK gate blame the operator's
+    // (correctly-written but typo'd) strategy as a missing one, refusing
+    // exit 9 "escapes" where the true problem was the bad spec (exit 2).
+    let reconciledResolution : Result<Set<SsKey>> =
         let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
         let parsedUserMap =
             match userMapPath with
             | None -> Result.success []
             | Some path ->
-                if not (System.IO.File.Exists path) then Result.success []
+                if not (System.IO.File.Exists path) then Result.success []   // the delegate refuses fileMissing byte-identically
                 else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
-        let entries = parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None)
-        match parsedUserMap with
-        | Error _ -> Set.empty
-        | Ok userMapEntries ->
-            match TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries with
-            | Ok reconciliation -> reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-            | Error _ -> Set.empty
+        let specErrors =
+            (parsedReconciles |> List.collect (function Ok _ -> [] | Error es -> es))
+            @ (match parsedUserMap with Ok _ -> [] | Error es -> es)
+        if not (List.isEmpty specErrors) then Result.failure specErrors
+        else
+            let entries = parsedReconciles |> List.choose (function Ok e -> Some e | Error _ -> None)
+            let userMapEntries = match parsedUserMap with Ok es -> es | Error _ -> []
+            TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries
+            |> Result.map (fun reconciliation -> reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+    match reconciledResolution with
+    | Error errors ->
+        Console.Error.WriteLine "projection transfer (peer): reconcile resolution error:"
+        printErrors Console.Error errors
+        dumpBench "transfer"
+        2
+    | Ok reconciledKeys ->
     match Transfer.resolveLoadSet sourceContract tables with
     | Error errors ->
         // The subset itself failed to resolve — same refusal the engine
@@ -527,13 +540,19 @@ let runPeerTransfer
     let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
     match PeerTransfer.shapeGate gateScope sourceContract sinkContract with
     | Error errors ->
-        errors |> List.iter TtyRenderer.renderVoicedError
+        // §5 gate surface — `transfer.peer.shapeDivergence` carries its own
+        // axis (ShapeDivergence, exit 5) and copy; never the GenericStop wall.
+        TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
         (Preflight.refusalOf errors).ExitCode
     | Ok advisories ->
+    // Advisories land on STDOUT with the rest of the preview (the answer
+    // channel): `projection golden > preview.txt` must capture the safety
+    // information the operator reviews before authorizing a live write —
+    // stderr-only advisories silently vanish from a redirected preview.
     if not (List.isEmpty advisories) then
-        Console.Error.WriteLine (sprintf "projection transfer (peer): %d shape advisory(ies) — real divergence that does not block a data load:" advisories.Length)
-        advisories |> List.iter (fun line -> Console.Error.WriteLine ("  " + line))
+        printfn "%d shape advisory(ies) — real divergence that does not block a data load:" advisories.Length
+        advisories |> List.iter (fun line -> printfn "  %s" line)
 
     // Gate 2 — FK edges escaping the declared subset. A preview narrates the
     // per-edge strategy proposals; a live Execute with un-strategized escapes
@@ -545,9 +564,11 @@ let runPeerTransfer
     if not (List.isEmpty escapes) then
         printfn "%d relationship(s) escape the declared table subset:" escapes.Length
         PeerTransfer.narrateEscapes escapes |> List.iter (fun line -> printfn "  %s" line)
-    match PeerTransfer.subsetFkGate executeRequested allowDrops escapes with
+    match PeerTransfer.subsetFkGate executeRequested escapes with
     | Error errors ->
-        errors |> List.iter TtyRenderer.renderVoicedError
+        // §5 gate surface — `transfer.peer.subsetFkEscapes` (SubsetFkEscape,
+        // exit 9) with the reconcile/widen/allow-drops next move.
+        TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
         (Preflight.refusalOf errors).ExitCode
     | Ok () ->

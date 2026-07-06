@@ -657,6 +657,16 @@ module Preflight =
             // metamodel is the schema-read failure class (exit 6), same axis
             // the migrate verb's schema read reports under its own name.
             SchemaReadFailed
+        elif code.StartsWith "adapter.ossysSql." || code.StartsWith "adapter.osm." then
+            // 2026-07-06 (the phase-2 mock-env program): a metamodel
+            // extraction that fails INSIDE the adapter (a rowset shape /
+            // row-mapping failure — e.g. a VIEW-DEFINITION-less principal
+            // NULLing a definition column) carries its own adapter code
+            // through the Result plane, so it never hits the
+            // `source.ossys.readFailed` exception wrapper. It is the SAME
+            // operator situation — the schema could not be read — so it
+            // rides the same axis (exit 6), never the unclassified 3.
+            SchemaReadFailed
         else
             UnclassifiedRefusal
 
