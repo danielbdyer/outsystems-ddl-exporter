@@ -563,3 +563,22 @@ subtlety found and absorbed: without VIEW DEFINITION the server hides check-cons
 bodies; those are now skipped as a named erasure (they never affect data transfer).
 The one true blind spot that remains: a table-level DENY is invisible to the
 preflight and surfaces mid-load (G1, pinned with a test).
+
+## Entry 15 — 2026-07-06, PHASE 2 CLOSED: every gate green
+
+- **Fast pool: PASSED** (45s) — all phase-2 fixes + updated pins + new pure suites.
+- **Docker pool: PASSED IN FULL** (536s; +25s over baseline = the five new
+  managed-grant scenarios, inside the predicted budget) — zero regressions from the
+  rename-map kind-scoping, the topo parallel-edge dedupe, the ordered-load gate, the
+  resumable capability gate, the cell-shaping sink-only omission, or the
+  check-definition optionality, across the entire transfer / reverse-leg / migration /
+  deploy / CDC canary estate.
+- Both peer suites green: identity/mechanics (admin) AND the managed-grant envelope
+  (restricted principals both sides).
+
+**Phase-2 ledger, summarized:** 2 critical + 3 high + 5 medium engine/gate bugs found
+by adversarial review and fixed with tests; 6 ergonomics improvements; the
+mock-OutSystems-environment fixture stack; 5 managed-grant e2e scenarios; 1
+live-test-killing extraction bug caught BY the new mock environments in their first
+hour (check-constraint definitions under VIEW-DEFINITION-less principals); the
+semantics walkthrough (entry 14) for operator validation.
