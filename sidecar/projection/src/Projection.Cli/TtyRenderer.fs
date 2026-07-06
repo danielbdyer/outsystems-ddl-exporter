@@ -47,17 +47,20 @@ let buildSummaryView (command: string) (code: int) : View.View =
     let transforms =
         View.PanelRow.Labeled(
             "transforms",
-            sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined,
+            sprintf "%s registered %s %s applied %s %s declined" (Theme.humane registered) Theme.dot (Theme.humane applied) Theme.dot (Theme.humane declined),
             View.Neutral)
     let edits = LogSink.suggestedConfigEdits ()
     let actionable =
-        if edits = 0 then View.PanelRow.Labeled("actionable", "none", View.Ok)
+        if edits = 0 then View.PanelRow.Labeled("recommendations", "none", View.Ok)
         else
-            // Impact-ranked — name the single biggest lever first.
+            // Impact-ranked — name the most-suggested configuration path first;
+            // these are optional (§14), so the row is informative (Neutral),
+            // never a Warn. (Rewritten 2026-07-06, the full-voice audit: the
+            // prior "actionable" label asserted action was required.)
             match LogSink.topSuggestion () with
             | Some (path, count) ->
-                View.PanelRow.Labeled("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
-            | None -> View.PanelRow.Labeled("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
+                View.PanelRow.Labeled("recommendations", sprintf "%s optional %s most suggested %s (%s)" (Theme.humane edits) Theme.dot path (Theme.humane count), View.Neutral)
+            | None -> View.PanelRow.Labeled("recommendations", sprintf "%s optional %s advisory, no action required" (Theme.humane edits) Theme.dot, View.Neutral)
     // 2026-07-06 — the data-reality finding on the verdict panel: when the
     // profiled source data contradicts the declared model, the panel names
     // the count and routes to the remediation script (the operator's next
@@ -73,7 +76,7 @@ let buildSummaryView (command: string) (code: int) : View.View =
         | Some p ->
             [ View.PanelRow.Labeled(
                 "data reality",
-                sprintf "%d violation(s) across %d table(s) %s the source data contradicts the declared model" (intOf "total" p) (intOf "entities" p) Theme.dot,
+                sprintf "%s violation(s) across %s table(s) %s the source data contradicts the declared model" (Theme.humane (intOf "total" p)) (Theme.humane (intOf "entities" p)) Theme.dot,
                 View.Warn) ]
         | None -> []
     let dataRealityNext =
@@ -124,7 +127,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
     let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
     let hero =
         if r.Eligible then
-            View.Hero(View.Ok, sprintf "ELIGIBLE %s %d consecutive green canaries" Theme.dot r.ConsecutiveGreen)
+            View.Hero(View.Ok, sprintf "ELIGIBLE %s %d consecutive green round-trip verifications" Theme.dot r.ConsecutiveGreen)
         else
             View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
     // The one lever (§8 / Appendix A.5: "One lever, named, with the next move" —
@@ -172,7 +175,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
         @ timeline
         @ [ View.Field(
               "runs",
-              sprintf "%d total %s %d with a canary %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
+              sprintf "%d total %s %d with a round-trip verification %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
               View.Neutral)
             View.Blank
             View.Note(sprintf "ledger    %s" ledgerPath) ])

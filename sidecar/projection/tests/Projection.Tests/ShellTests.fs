@@ -128,9 +128,12 @@ let ``shell: the notice rollup rides the live board as one calm strip row`` () =
             0)
         |> ignore
         let out = console.Output
-        // one calm line naming the families — never a wall
+        // one calm line naming the families — never a wall. (Single-word pins:
+        // the boxed board wraps the row at console width, so multi-word
+        // substrings can split across lines.)
         Assert.Contains("214", out)
-        Assert.Contains("nullability 180", out)
+        Assert.Contains("180", out)
+        Assert.Contains("nullability", out)
         // and the artifact pointer rides the strip row
         Assert.Contains("notices/model-read/01RUN.json", out)
     finally
@@ -259,7 +262,7 @@ let ``echo-the-fix: a suggestedConfig-bearing envelope ticks the board's live te
     // the teaser renders through the catalog (one register)
     let console = new TestConsole()
     console.Write(Watch.toRenderableWith [] 0 None b2)
-    Assert.Contains("2 config edit(s) suggested", console.Output)
+    Assert.Contains("2 optional configuration recommendation(s) gathered", console.Output)
 
 [<Fact>]
 let ``stat view: the aggregates table names category, code, and count, most-frequent first`` () =
