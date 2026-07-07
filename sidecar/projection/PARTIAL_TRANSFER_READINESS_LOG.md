@@ -969,4 +969,10 @@ survivor/shadow ids in metadata; reference re-aim; two-active still refuses on
 A4; normalization idempotent; entity-less tests re-homed onto `normalizeBundle`)
 and docker e2e (`EntityLessModuleReadDockerTests` — seed + an inactive City
 shadow in a second espace: extraction → normalize → parse succeeds, City carried
-exactly once in its active home, both erasures named). Full-sweep verdict below.
+exactly once in its active home, both erasures named).
+
+**Final verdict:** the full sweep PASSED IN FULL — fast pool 3943/3943 (52s), docker
+pool 291/291 (649s), scale pool 16/16 (111s), the normalization + scope-parity tests
+aboard. Three live-run catches (Entries 22-24) closed in one day; the contracts gate
+now reads a whole real estate — orphan attributes, entity-less espaces, and
+moved-entity shadows — under the same model scope every other verb honors.
