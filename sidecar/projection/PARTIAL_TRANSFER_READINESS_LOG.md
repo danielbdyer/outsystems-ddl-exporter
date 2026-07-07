@@ -830,3 +830,42 @@ docker sweep GREEN.
 
 **Final verdict:** the full docker pool PASSED IN FULL (484s) with the pin aboard.
 Ready for the live test.
+
+## Entry 22 — 2026-07-07, THE SEQUENTIAL-ACCESS CATCH: the live run's first real estate killed both contract reads at row-mapping
+
+**What the live run hit (step one, contracts):** both OSSYS metamodel reads died with
+`adapter.ossysSql.rowMapping: Failed to map row 0 of result set 'attributes': Invalid
+attempt to read from column ordinal '2'. With CommandBehavior.SequentialAccess, you may
+only read from column ordinal '18' or greater.` — the go board's "a metamodel could not
+be read" red line. A one-off reorder of the offending read just moves the violation
+(fix the ordinal-2 re-read by hoisting it and the very next read of ordinal 0 throws
+the same class), which is the tell that the CONTRACT, not the call site, was wrong.
+
+**Root cause.** `MetadataSnapshotRunner` executes the rowsets script with
+`CommandBehavior.SequentialAccess` (cells stream; the drained JSON rowsets skip
+without buffering), whose live-reader contract is *each ordinal visited at most once,
+strictly ascending*. The typed mappers assumed random access. One mapper violated it:
+`mapAttributeRow`'s PhysicalCol fallback — NULL `PhysicalColumnName` (ordinal 17) →
+re-read AttrName (ordinal 2). The canary never fired it because the edge-case seed
+populates every `Physical_Column_Name` and the script's sys.columns backfill covers
+the rest; a real estate carries orphan attributes (metadata outliving a dropped
+column) whose physical name survives NULL to the mapper.
+
+**The refactor (class-retiring, not site-patching):** capture-then-map. `captureRow`
+is now the ONLY cell-access site against the live reader — one ascending,
+single-visit sweep materializing each row at rest (`RowAtRest`) — and all 13 mappers
+consume the captured row, where ordinal access carries no order or visit-count
+obligation. The typed accessors (`readString`/`readInt`/`readBool`/`readGuidOpt` +
+opts) keep their NULL-guard semantics (DBNull carried verbatim from `GetValue`);
+capture failures classify through the same `RowMappingFailure` axis. SequentialAccess
+stays (its win — no double row-buffering, free JSON-rowset drain — is untouched);
+`ReadSide`'s streaming reader already honored the contract by construction and is
+unchanged.
+
+**Proven:** new `MetadataSnapshotSequentialAccessTests` (docker) seeds the edge-case
+fixture PLUS the orphan shape (active attribute, NULL `Physical_Column_Name`, name
+matching no physical column) — on the pre-refactor code it reproduces the live
+failure verbatim; on the refactored runner the extraction succeeds and the orphan
+falls back to the upper-cased attr name while its neighbors keep their real physical
+names. Fast pool green (39s); the full docker-pool sweep verdict is appended below
+when it completes.

@@ -365,24 +365,62 @@ module MetadataSnapshotRunner =
         }
 
     // -------------------------------------------------------------------
-    // Internal helpers — typed SqlDataReader column readers. Pattern
-    // mirrors V1's `Column.StringOrNull` etc. but uses ordinal-indexed
-    // access for performance + F# idioms.
+    // Internal helpers — capture-then-map row access.
+    //
+    // The runner executes with `CommandBehavior.SequentialAccess` (cells
+    // stream instead of row-buffering; the drained JSON-aggregate rowsets
+    // skip without a single cell access). Under SequentialAccess the LIVE
+    // reader permits each ordinal to be visited at most once, strictly
+    // ascending — an access contract a typed mapper's field order either
+    // honors or violates only at run time (`Invalid attempt to read from
+    // column ordinal …`). 2026-07-07: `mapAttributeRow`'s PhysicalCol
+    // fallback re-read ordinal 2 after ordinal 17 and killed BOTH
+    // contract reads of a partial transfer on an estate whose
+    // `PhysicalColumnName` resolves NULL. `captureRow` is therefore the
+    // ONLY cell-access site against the live reader — one ascending
+    // single-visit sweep materializing the row at rest — and every
+    // mapper consumes the captured `RowAtRest`, where ordinal access
+    // carries no order or visit-count obligation. Accessor surface
+    // mirrors V1's `Column.StringOrNull` etc.
     // -------------------------------------------------------------------
 
-    let private readString (reader: SqlDataReader) (ordinal: int) : string =
-        if reader.IsDBNull(ordinal) then
+    /// One result-set row at rest: every cell materialized exactly once,
+    /// in ascending ordinal order. NULL cells carry `DBNull.Value`
+    /// (exactly what `SqlDataReader.GetValue` returns), so the accessor
+    /// NULL-guards below stay faithful to the prior live `IsDBNull` reads.
+    [<Struct>]
+    type private RowAtRest = RowAtRest of cells: obj array
+
+    /// The single live-reader cell-access site (see the block comment
+    /// above): one strictly-ascending, single-visit sweep — exactly the
+    /// access contract `CommandBehavior.SequentialAccess` requires.
+    let private captureRow (reader: SqlDataReader) : RowAtRest =
+        let cells = Array.zeroCreate<obj> reader.FieldCount
+        for ordinal in 0 .. cells.Length - 1 do
+            cells.[ordinal] <- reader.GetValue(ordinal)
+        RowAtRest cells
+
+    let private cellAt (RowAtRest cells) (ordinal: int) : obj =
+        cells.[ordinal]
+
+    let private isDbNull (row: RowAtRest) (ordinal: int) : bool =
+        match cellAt row ordinal with
+        | :? DBNull -> true
+        | _ -> false
+
+    let private readString (row: RowAtRest) (ordinal: int) : string =
+        if isDbNull row ordinal then
             invalidOp (sprintf "MetadataSnapshotRunner: required column at ordinal %d was NULL" ordinal)
         else
-            reader.GetString(ordinal)
+            unbox<string> (cellAt row ordinal)
 
-    let private readStringOpt (reader: SqlDataReader) (ordinal: int) : string option =
-        if reader.IsDBNull(ordinal) then None
-        else Some (reader.GetString(ordinal))
+    let private readStringOpt (row: RowAtRest) (ordinal: int) : string option =
+        if isDbNull row ordinal then None
+        else Some (unbox<string> (cellAt row ordinal))
 
-    let private readInt (reader: SqlDataReader) (ordinal: int) : int =
+    let private readInt (row: RowAtRest) (ordinal: int) : int =
         // V1 sometimes returns int via flexible widening (Int16 / Int64);
-        // SqlDataReader.GetInt32 throws on type mismatch. Use Convert to
+        // a direct Int32 unbox throws on type mismatch. Use Convert to
         // tolerate width variation.
         //
         // Defensive-fallback (slice A.4.7'-prelude.defensive-hardening,
@@ -392,45 +430,45 @@ module MetadataSnapshotRunner =
         // produced Catalog). Raise on NULL so the caller's snapshot
         // contract is honored (any required-int column with NULL is a
         // V1-source data integrity issue, not a V2 adapter problem).
-        if reader.IsDBNull(ordinal) then
+        if isDbNull row ordinal then
             invalidOp (sprintf "MetadataSnapshotRunner: required int column at ordinal %d was NULL" ordinal)
         else
-            System.Convert.ToInt32(reader.GetValue(ordinal))
+            System.Convert.ToInt32(cellAt row ordinal)
 
-    let private readIntOpt (reader: SqlDataReader) (ordinal: int) : int option =
-        if reader.IsDBNull(ordinal) then None
-        else Some (readInt reader ordinal)
+    let private readIntOpt (row: RowAtRest) (ordinal: int) : int option =
+        if isDbNull row ordinal then None
+        else Some (readInt row ordinal)
 
-    let private readBool (reader: SqlDataReader) (ordinal: int) : bool =
-        let value = reader.GetValue(ordinal)
+    let private readBool (row: RowAtRest) (ordinal: int) : bool =
+        let value = cellAt row ordinal
         match value with
         | :? bool as b -> b
         | :? byte as b -> b <> 0uy
         | :? int as i  -> i <> 0
         | _ -> System.Convert.ToBoolean(value)
 
-    let private readBoolOpt (reader: SqlDataReader) (ordinal: int) : bool option =
-        if reader.IsDBNull(ordinal) then None
-        else Some (readBool reader ordinal)
+    let private readBoolOpt (row: RowAtRest) (ordinal: int) : bool option =
+        if isDbNull row ordinal then None
+        else Some (readBool row ordinal)
 
-    let private readGuidOpt (reader: SqlDataReader) (ordinal: int) : Guid option =
-        if reader.IsDBNull(ordinal) then None
-        else Some (reader.GetGuid(ordinal))
+    let private readGuidOpt (row: RowAtRest) (ordinal: int) : Guid option =
+        if isDbNull row ordinal then None
+        else Some (unbox<Guid> (cellAt row ordinal))
 
-    /// Read all rows of the current result set via `mapper`; advance to
-    /// the next result set when complete. Returns the rows in source
-    /// order.
+    /// Read all rows of the current result set — each row captured at
+    /// rest via `captureRow`, then handed to `mapper`; advance to the
+    /// next result set when complete. Returns the rows in source order.
     ///
-    /// Mapper failures (e.g., `InvalidCastException` from a widened SQL
-    /// type or `InvalidOperationException` from a required-but-NULL
-    /// column) re-raise as `RowMappingException` carrying the
-    /// `resultSetName` + zero-based `rowIndex` for downstream
-    /// classification (matrix row 32 cash-out — the typed
+    /// Capture + mapper failures (e.g., `InvalidCastException` from a
+    /// widened SQL type or `InvalidOperationException` from a
+    /// required-but-NULL column) re-raise as `RowMappingException`
+    /// carrying the `resultSetName` + zero-based `rowIndex` for
+    /// downstream classification (matrix row 32 cash-out — the typed
     /// `MetadataExtractionError.RowMappingFailure` variant).
     let private readResultSet<'T>
             (resultSetName: string)
             (reader: SqlDataReader)
-            (mapper: SqlDataReader -> 'T)
+            (mapper: RowAtRest -> 'T)
             : Task<'T list> =
         task {
             let acc = ResizeArray<'T>()
@@ -441,7 +479,7 @@ module MetadataSnapshotRunner =
                 if advanced then
                     let row =
                         try
-                            mapper reader
+                            mapper (captureRow reader)
                         with
                         | :? RowMappingException -> reraise ()
                         | ex -> raise (RowMappingException (resultSetName, rowIndex, ex))
@@ -463,7 +501,7 @@ module MetadataSnapshotRunner =
             return ()
         }
 
-    let private mapModuleRow (r: SqlDataReader) : OssysModuleRow =
+    let private mapModuleRow (r: RowAtRest) : OssysModuleRow =
         { EspaceId       = readInt r 0
           EspaceName     = readString r 1
           IsSystemModule = readBool r 2
@@ -471,7 +509,7 @@ module MetadataSnapshotRunner =
           EspaceKind     = readStringOpt r 4
           EspaceSsKey    = readGuidOpt r 5 }
 
-    let private mapEntityRow (r: SqlDataReader) : OssysEntityRow =
+    let private mapEntityRow (r: RowAtRest) : OssysEntityRow =
         { EntityId          = readInt r 0
           EntityName        = readString r 1
           PhysicalTableName = readString r 2
@@ -484,7 +522,7 @@ module MetadataSnapshotRunner =
           EntitySsKey       = readGuidOpt r 9
           Description       = readStringOpt r 10 }
 
-    let private mapAttributeRow (r: SqlDataReader) : OssysAttributeRow =
+    let private mapAttributeRow (r: RowAtRest) : OssysAttributeRow =
         { AttrId         = readInt r 0
           EntityId       = readInt r 1
           AttrName       = readString r 2
@@ -507,7 +545,10 @@ module MetadataSnapshotRunner =
           PhysicalCol    =
               // ordinal 17 = PhysicalColumnName; V1 reads it as
               // nullable but V2 requires non-null for `KindRow.PhysicalCol`.
-              // Fall back to AttrName when V1 source omits.
+              // Fall back to AttrName when V1 source omits. The fallback's
+              // ordinal-2 re-read is free on the captured row — against
+              // the LIVE SequentialAccess reader it was the 2026-07-07
+              // partial-transfer killer (see the capture-then-map block).
               match readStringOpt r 17 with
               | Some n when not (System.String.IsNullOrWhiteSpace n) -> n
               | _ -> (readString r 2).ToUpperInvariant()
@@ -519,13 +560,13 @@ module MetadataSnapshotRunner =
           // this is non-null on a live extraction.
           Order          = readIntOpt r 23 }
 
-    let private mapReferenceRow (r: SqlDataReader) : OssysReferenceRow =
+    let private mapReferenceRow (r: RowAtRest) : OssysReferenceRow =
         { AttrId          = readInt r 0
           RefEntityId     = readIntOpt r 1
           RefEntityName   = readStringOpt r 2
           RefPhysicalName = readStringOpt r 3 }
 
-    let private mapPhysicalTableRow (r: SqlDataReader) : OssysPhysicalTableRow =
+    let private mapPhysicalTableRow (r: RowAtRest) : OssysPhysicalTableRow =
         { EntityId   = readInt r 0
           SchemaName = readString r 1
           TableName  = readString r 2
@@ -536,7 +577,7 @@ module MetadataSnapshotRunner =
     // V1's SELECT-projection ordering in `outsystems_metadata_rowsets.sql`
     // (see line numbers cited in each mapper's docstring).
 
-    let private mapColumnRealityRow (r: SqlDataReader) : OssysColumnRealityRow =
+    let private mapColumnRealityRow (r: RowAtRest) : OssysColumnRealityRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1025-1040
         { AttrId                = readInt        r 0
           IsNullable            = readBool       r 1
@@ -552,18 +593,18 @@ module MetadataSnapshotRunner =
           DefaultDefinition     = readStringOpt  r 11
           PhysicalColumn        = readStringOpt  r 12 }
 
-    let private mapColumnCheckRow (r: SqlDataReader) : OssysColumnCheckRow =
+    let private mapColumnCheckRow (r: RowAtRest) : OssysColumnCheckRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1042-1048
         { AttrId         = readInt       r 0
           ConstraintName = readString    r 1
           Definition     = readStringOpt r 2
           IsNotTrusted   = readBool      r 3 }
 
-    let private mapPhysColsPresentRow (r: SqlDataReader) : OssysPhysColsPresentRow =
+    let private mapPhysColsPresentRow (r: RowAtRest) : OssysPhysColsPresentRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1056-1059
         { AttrId = readInt r 0 }
 
-    let private mapAllIdxRow (r: SqlDataReader) : OssysAllIdxRow =
+    let private mapAllIdxRow (r: RowAtRest) : OssysAllIdxRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1061-1082
         { EntityId             = readInt        r 0
           ObjectId             = readInt        r 1
@@ -585,7 +626,7 @@ module MetadataSnapshotRunner =
           PartitionColumnsJson = readStringOpt  r 17
           DataCompressionJson  = readStringOpt  r 18 }
 
-    let private mapIdxColMappedRow (r: SqlDataReader) : OssysIdxColMappedRow =
+    let private mapIdxColMappedRow (r: RowAtRest) : OssysIdxColMappedRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1084-1092
         { EntityId       = readInt       r 0
           IndexName      = readString    r 1
@@ -595,7 +636,7 @@ module MetadataSnapshotRunner =
           Direction      = readStringOpt r 5
           HumanAttr      = readStringOpt r 6 }
 
-    let private mapFkRealityRow (r: SqlDataReader) : OssysFkRealityRow =
+    let private mapFkRealityRow (r: RowAtRest) : OssysFkRealityRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1095-1106
         { EntityId           = readInt        r 0
           FkObjectId         = readInt        r 1
@@ -608,7 +649,7 @@ module MetadataSnapshotRunner =
           ReferencedTable    = readStringOpt  r 8
           IsNoCheck          = readBool       r 9 }
 
-    let private mapFkColumnRow (r: SqlDataReader) : OssysFkColumnRow =
+    let private mapFkColumnRow (r: RowAtRest) : OssysFkColumnRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1109-1119
         { EntityId           = readInt        r 0
           FkObjectId         = readInt        r 1
@@ -620,7 +661,7 @@ module MetadataSnapshotRunner =
           ReferencedAttrId   = readIntOpt     r 7
           ReferencedAttrName = readStringOpt  r 8 }
 
-    let private mapTriggerRow (r: SqlDataReader) : OssysTriggerRow =
+    let private mapTriggerRow (r: RowAtRest) : OssysTriggerRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1146-1151
         { EntityId          = readInt       r 0
           TriggerName       = readString    r 1
@@ -763,7 +804,7 @@ module MetadataSnapshotRunner =
                 // JSON-aggregation tail (#AttrCheckJson, #FkAttrMap,
                 // #AttrHasFK, #FkColumnsJson, #FkAttrJson, #AttrJson,
                 // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
-                let read (name: string) (mapper: SqlDataReader -> 'T) : Task<'T list> =
+                let read (name: string) (mapper: RowAtRest -> 'T) : Task<'T list> =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
