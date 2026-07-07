@@ -8,6 +8,7 @@ namespace Projection.Pipeline
 
 open System.Threading.Tasks
 open Projection.Core
+open Projection.Adapters.OssysSql
 
 /// The peer (A→A) transfer's contract + gate support: two cloud cells of ONE
 /// model whose physical `OSUSR_*` names differ per espace (the QA→UAT partial
@@ -44,15 +45,31 @@ module PeerTransfer =
     /// metamodels (D9 conn refs: `env:<var>` / `file:<path>` / raw). A failed
     /// read is the named `source.ossys.readFailed` refusal from the `Source`
     /// port, classified onto the schema-read axis (exit 6) by `Preflight`.
-    let acquireContracts (sourceConn: string) (sinkConn: string) : Task<Result<Catalog * Catalog>> =
+    ///
+    /// Scope-bearing entry point (2026-07-07) — BOTH sides read under the
+    /// same snapshot scope (the projection.json `model` binding via
+    /// `SnapshotScopeBinding.fromModel`), so the transfer's contracts see
+    /// the same modeled estate as full-export/publish. `acquireContracts`
+    /// is the zero-default sibling.
+    let acquireContractsWith
+        (parameters: MetadataSnapshotRunner.SnapshotParameters)
+        (sourceConn: string)
+        (sinkConn: string)
+        : Task<Result<Catalog * Catalog>> =
         task {
-            match! Source.read (Source.ofOssys sourceConn) with
+            match! Source.read (Source.ofOssysWith parameters sourceConn) with
             | Error es -> return Result.failure es
             | Ok sourceContract ->
-                match! Source.read (Source.ofOssys sinkConn) with
+                match! Source.read (Source.ofOssysWith parameters sinkConn) with
                 | Error es -> return Result.failure es
                 | Ok sinkContract -> return Result.success (sourceContract, sinkContract)
         }
+
+    /// Zero-default sibling — the show-me-everything `defaultParameters`
+    /// stance (the canary/mock-environment face; config-bound callers pass
+    /// their model scope through `acquireContractsWith`).
+    let acquireContracts (sourceConn: string) (sinkConn: string) : Task<Result<Catalog * Catalog>> =
+        acquireContractsWith MetadataSnapshotRunner.defaultParameters sourceConn sinkConn
 
     // ------------------------------------------------------------------
     // The shape gate — SS_KEY-keyed schema compatibility, scoped to the

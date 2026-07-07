@@ -126,7 +126,14 @@ module LiveModelRead =
             match! MetadataSnapshotRunner.runAsyncWithOptions cnn parameters options with
             | Error es -> return Result.failure es
             | Ok snapshot ->
-                let bundle = MetadataSnapshotRunner.toBundle snapshot
+                // The bundle normalization (2026-07-07, the live partial-
+                // transfer program): inactive-shadow duplicate-kind
+                // resolution + the entity-less module skip, each a NAMED
+                // erasure. `CatalogReader.parse` re-applies the (idempotent)
+                // normalization internally; calling it here is what lets the
+                // live read surface the erasure notices.
+                let bundle, erasureNotices =
+                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
                 // F9 (audit 2026-06-17) — surface, never silently discard, every
                 // logical-vs-deployed `#ColumnReality` divergence the snapshot
                 // carries (the adapter keeps the LOGICAL value; the operator is
@@ -136,13 +143,13 @@ module LiveModelRead =
                 // auto-resolve. Since 2026-07-02 the surface is the notice
                 // rollup (one Warn envelope + the detail artifact), never a
                 // per-item stderr wall fighting the live board. Since
-                // 2026-07-07 the rollup also names each entity-less module
-                // the rowset reader SKIPS (the erasure that used to fail the
-                // whole read as `module.kinds.empty`).
+                // 2026-07-07 the rollup also names each normalization erasure
+                // (the shapes that used to fail the whole read as
+                // `module.kinds.empty` / `catalog.kinds.duplicateKey`).
                 surfaceDivergences
                     (MetadataSnapshotRunner.columnRealityDivergences snapshot
                      @ MetadataSnapshotRunner.primaryKeyDivergences snapshot
-                     @ OssysRowsetReader.entityLessModules bundle)
+                     @ erasureNotices)
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
                 // (the cross-scope edges). `ModuleFilter.apply` applies

@@ -20,6 +20,7 @@ namespace Projection.Tests
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open Projection.Adapters.OssysSql
 open Projection.Cli.Faces.Transfer
 
 module private GoBoardFixtures =
@@ -94,11 +95,11 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
 
                         // 1. RED — subset [Customer], City escapes, no strategy.
-                        let red1 = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] []))
+                        let red1 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] []))
                         Assert.Equal(5, red1)
 
                         // 2. GREEN — the SAME flow with the proposed reconcile.
-                        let green = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
 
                         // The board's dry run NEVER writes: the sink customer
@@ -113,7 +114,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
                         return ()
                     }))

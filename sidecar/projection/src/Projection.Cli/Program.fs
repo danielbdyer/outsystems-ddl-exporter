@@ -234,8 +234,11 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // the face reads a contract from EACH side's OSSYS metamodel (native
         // GUID identity), gates the pair (shape / subset-FK), and drives the
         // same contract-pair engine path the reverse leg proved.
+        // The contract reads run under the projection.json `model` scope
+        // (2026-07-07) — the same modeled estate every other verb reads;
+        // an unscoped config binds to the show-me-everything default.
         withRun "projection transfer" (fun () ->
-            runPeerTransfer src sink opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
+            runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -301,7 +304,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
-    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo flowName fromLabel toLabel asJson planned)
+    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) flowName fromLabel toLabel asJson planned)
     | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
