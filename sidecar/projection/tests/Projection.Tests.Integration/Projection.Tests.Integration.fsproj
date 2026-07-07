@@ -17,6 +17,7 @@
     <Compile Include="DmlPrincipal.fs" />
     <Compile Include="MockOutSystemsEnv.fs" />
     <Compile Include="LiveSourceDockerTests.fs" />
+    <Compile Include="MetadataSnapshotSequentialAccessTests.fs" />
     <Compile Include="PayOnceCombinedVerbDockerTests.fs" />
     <Compile Include="PayOnceSchemaReadDockerTests.fs" />
     <Compile Include="ClosureOracleDockerTests.fs" />
