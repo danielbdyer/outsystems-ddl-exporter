@@ -65,6 +65,17 @@ module private GoBoardFixtures =
 
     let value (r: Result<'a>) : 'a = Result.value r
 
+    /// Run a board and capture what the operator would read (the render
+    /// goes to stdout) — the forecast-table / evidence assertions read it.
+    let captureBoard (f: unit -> int) : int * string =
+        let prior = System.Console.Out
+        use sw = new System.IO.StringWriter()
+        System.Console.SetOut sw
+        try
+            let exit = f ()
+            exit, sw.ToString()
+        finally System.Console.SetOut prior
+
     let countRows (cnn: Microsoft.Data.SqlClient.SqlConnection) (table: string) : System.Threading.Tasks.Task<int> =
         task {
             use cmd = cnn.CreateCommand()
@@ -114,12 +125,39 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
 
                         // 1. RED — subset [Customer], City escapes, no strategy.
-                        let red1 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] []))
+                        //    The escape's proposals now carry LIVE evidence
+                        //    (2026-07-07): each candidate reconcile column
+                        //    probed against the actual pair.
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
                         Assert.Equal(5, red1)
+                        Assert.Contains("evidence: reconcile 'AppCore.City:Name'", redOut)
+                        Assert.Contains("sink-unique", redOut)          // Lisbon/Porto are distinct on the sink
+                        Assert.Contains("2/2 sampled source value(s) found in the sink", redOut)
+                        Assert.Contains("STRONG", redOut)
 
-                        // 2. GREEN — the SAME flow with the proposed reconcile.
-                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        // 2. GREEN — the SAME flow with the proposed
+                        //    reconcile; `--sql` writes the planned artifact
+                        //    and the forecast carries the before→after table.
+                        let sqlPath = System.IO.Path.Combine("go-board", "golden.planned.sql")
+                        if System.IO.File.Exists sqlPath then System.IO.File.Delete sqlPath
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(0, green)
+                        // The forecast table: the customer table appears with
+                        // its adds; the reconciled city appears with matches
+                        // and no insert; a TOTAL row closes the table.
+                        Assert.Contains("before", greenOut)
+                        Assert.Contains("OSUSR_XABC_CUSTOMER", greenOut)
+                        Assert.Contains("OSUSR_XDEF_CITY", greenOut)
+                        Assert.Contains("reconciled — matched to existing sink rows", greenOut)
+                        Assert.Contains("TOTAL", greenOut)
+                        // The planned-SQL artifact: written, and it carries
+                        // the sink-side DML shape the plan would realize.
+                        Assert.True(System.IO.File.Exists sqlPath, "--sql must write go-board/golden.planned.sql")
+                        let plannedSql = System.IO.File.ReadAllText sqlPath
+                        Assert.Contains("PLANNED SQL PREVIEW", plannedSql)
+                        Assert.Contains("OSUSR_XABC_CUSTOMER", plannedSql)
+                        Assert.Contains("alice@x", plannedSql)
+                        Assert.DoesNotContain("DELETE FROM", plannedSql)   // Incremental: no wipe section
 
                         // The board's dry run NEVER writes: the sink customer
                         // table is still empty after both boards.
@@ -133,7 +171,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
                         return ()
                     }))
@@ -164,7 +202,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
                         // ...and the board still goes GREEN for the subset.
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
-                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
                         return ()
                     }))

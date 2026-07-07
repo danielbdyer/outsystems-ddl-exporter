@@ -370,3 +370,86 @@ let ``classify: the peer gates carry their own exits (shape 5; subset-FK 9; ossy
     Assert.Equal((5, Preflight.ShapeDivergence), Preflight.classify "transfer.peer.shapeDivergence")
     Assert.Equal((9, Preflight.SubsetFkEscape), Preflight.classify "transfer.peer.subsetFkEscapes")
     Assert.Equal((6, Preflight.SchemaReadFailed), Preflight.classify "source.ossys.readFailed")
+
+// --- the go-board FORECAST table + planned-SQL preview + reconcile evidence ---
+// (2026-07-07, the go-board forecast program)
+
+[<Fact>]
+let ``GoBoard.ForecastLine.after: before - deletes + adds; unprobed stays unprobed`` () =
+    let line : GoBoard.ForecastLine =
+        { Table = "dbo.T"; Before = Some 10L; Adds = 5L; Matches = None; Deletes = 10L; Note = "" }
+    Assert.Equal(Some 5L, GoBoard.ForecastLine.after line)
+    Assert.Equal(None, GoBoard.ForecastLine.after { line with Before = None })
+
+[<Fact>]
+let ``GoBoard.forecastTable: header + rows + TOTAL; ? marks unprobed; - marks non-reconciled match; totals go unprobed when any row is`` () =
+    let lines : GoBoard.ForecastLine list =
+        [ { Table = "dbo.OSUSR_BBB_CUSTOMER"; Before = Some 10L; Adds = 5L;  Matches = None;    Deletes = 10L; Note = "wiped first" }
+          { Table = "dbo.OSUSR_BBB_CITY";     Before = Some 3L;  Adds = 0L;  Matches = Some 3L; Deletes = 0L;  Note = "reconciled" } ]
+    let t = GoBoard.forecastTable lines
+    Assert.Equal(4, List.length t) // header + 2 rows + TOTAL
+    let tokens (row: string) = row.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
+    Assert.Equal<string[]>([| "table"; "before"; "+add"; "match"; "-del"; "after" |], tokens t.[0])
+    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_CUSTOMER"; "10"; "5"; "-"; "10"; "5"; "wiped"; "first" |], tokens t.[1])
+    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_CITY"; "3"; "0"; "3"; "0"; "3"; "reconciled" |], tokens t.[2])
+    Assert.Equal<string[]>([| "TOTAL"; "13"; "5"; "3"; "10"; "8" |], tokens t.[3])
+    // an unprobed row renders ? and poisons the TOTAL's before/after (never a silent 0)
+    let withUnprobed = lines @ [ { Table = "dbo.OSUSR_BBB_ORDER"; Before = None; Adds = 7L; Matches = None; Deletes = 0L; Note = "" } ]
+    let t2 = GoBoard.forecastTable withUnprobed
+    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_ORDER"; "?"; "7"; "-"; "0"; "?" |], tokens t2.[3])
+    Assert.Equal<string[]>([| "TOTAL"; "?"; "12"; "3"; "10"; "?" |], tokens t2.[4])
+    Assert.Empty(GoBoard.forecastTable [])
+
+[<Fact>]
+let ``Transfer.plannedSqlPreview: child-first wipe (loadSet-scoped), then phase-1 in plan order; the header names the contract`` () =
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle sinkCell).Value
+    let rowOf (ident: string) (values: (string * string) list) : StaticRow =
+        { Identifier = SsKey.synthesizedComposite "PEER_ROW" [ ident ] |> Result.value
+          Values     = values |> List.map (fun (k, v) -> nm k, v) |> Map.ofList }
+    let rows =
+        Map.ofList
+            [ kKey "City",     [ rowOf "c1" [ "Id", "1"; "Name", "Lisbon" ] ]
+              kKey "Customer", [ rowOf "u1" [ "Id", "1"; "Email", "a@b.c"; "CityId", "1" ] ] ]
+    let plan = DataLoadPlan.build sinkCell topo rows SurrogateRemapContext.empty
+    match Transfer.plannedSqlPreview EmissionMode.WipeAndLoad (Some (keys [ "City"; "Customer" ])) sinkCell topo plan with
+    | Error es -> Assert.Fail (es |> List.map (fun e -> e.Message) |> String.concat "; ")
+    | Ok sql ->
+        Assert.Contains("PLANNED SQL PREVIEW", sql)
+        // the wipe: child-first (Customer before City), scoped to the loadSet (no Order wipe)
+        let delCustomer = sql.IndexOf "DELETE FROM [dbo].[OSUSR_BBB_CUSTOMER]"
+        let delCity     = sql.IndexOf "DELETE FROM [dbo].[OSUSR_BBB_CITY]"
+        Assert.True(delCustomer >= 0 && delCity >= 0, "both wipe DELETEs present")
+        Assert.True(delCustomer < delCity, "the wipe deletes children before parents")
+        Assert.DoesNotContain("DELETE FROM [dbo].[OSUSR_BBB_ORDER]", sql)
+        // phase 1 follows the wipe, parents before children, rows realized
+        let insCity     = sql.IndexOf "OSUSR_BBB_CITY]"
+        Assert.Contains("Lisbon", sql)
+        Assert.True(delCity < sql.LastIndexOf "OSUSR_BBB_CITY", "the City load renders after the wipe")
+        Assert.True(sql.LastIndexOf "OSUSR_BBB_CITY" < sql.LastIndexOf "OSUSR_BBB_CUSTOMER", "phase 1 loads parents before children")
+        ignore insCity
+    // Incremental renders no wipe
+    match Transfer.plannedSqlPreview EmissionMode.Incremental (Some (keys [ "City"; "Customer" ])) sinkCell topo plan with
+    | Error es -> Assert.Fail (es |> List.map (fun e -> e.Message) |> String.concat "; ")
+    | Ok sql -> Assert.DoesNotContain("DELETE FROM", sql)
+
+[<Fact>]
+let ``PeerTransfer.narrateEvidence: the paste-able move leads; strength named; an unprobed candidate carries its reason`` () =
+    let ev (col: string) (indexBacked: bool) (verdict: PeerTransfer.EvidenceVerdict) : PeerTransfer.ReconcileEvidence =
+        { Target = kKey "City"; TargetRef = "AppCore.City"; Column = nm col; IndexBacked = indexBacked; Verdict = verdict }
+    let lines =
+        PeerTransfer.narrateEvidence
+            [ ev "Name"  true  (PeerTransfer.EvidenceVerdict.Probed (true, 12, 12))
+              ev "Label" false (PeerTransfer.EvidenceVerdict.Probed (false, 3, 12))
+              ev "Code"  true  (PeerTransfer.EvidenceVerdict.Probed (false, 12, 12))
+              ev "Alias" true  (PeerTransfer.EvidenceVerdict.Probed (true, 0, 0))
+              ev "Tag"   true  (PeerTransfer.EvidenceVerdict.Unprobed "login failed") ]
+    Assert.StartsWith("reconcile 'AppCore.City:Name'", lines.[0])
+    Assert.Contains("sink-unique", lines.[0])
+    Assert.Contains("12/12", lines.[0])
+    Assert.Contains("STRONG", lines.[0])
+    Assert.Contains("unique-indexed", lines.[0])
+    Assert.Contains("PARTIAL", lines.[1])
+    Assert.Contains("name-shaped", lines.[1])
+    Assert.Contains("ambiguous", lines.[2])
+    Assert.Contains("unproven", lines.[3])
+    Assert.Contains("could not run: login failed", lines.[4])

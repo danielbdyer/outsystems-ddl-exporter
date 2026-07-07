@@ -630,7 +630,7 @@ let runPeerTransfer
     // forecast, with the red/green verdict).
     if not executeRequested then
         printfn ""
-        printfn "The go board (open decisions + row forecast + red/green verdict): projection check go <flow>"
+        printfn "The go board (open decisions + before→after forecast + red/green verdict): projection check go <flow>  [--sql writes the planned T-SQL]"
 
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
@@ -791,16 +791,16 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
 // board is CI-able.
 // ---------------------------------------------------------------------------
 
-let private probeCount (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : int =
+let private probeCount (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : int64 =
     use cmd = cnn.CreateCommand()
     cmd.CommandText <- sql
-    System.Convert.ToInt32 (cmd.ExecuteScalar())
+    System.Convert.ToInt64 (cmd.ExecuteScalar())
 
 let runCheckGo
     // Same contract-read scope as `runPeerTransfer` — the go board must
     // forecast with the contracts the live run will actually read.
     (contractScope: MetadataSnapshotRunner.SnapshotParameters)
-    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (planned: PlanAction) : int =
+    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         if asJson then printfn "%s" (GoBoard.toJsonString board)
@@ -879,9 +879,26 @@ let runCheckGo
             | Some s -> PeerTransfer.escapingFks sourceContract s reconciledKeys
             | None -> []
         if not (List.isEmpty escapes) then
+            // Live reconcile EVIDENCE (2026-07-07): each proposed reconcile
+            // column, probed against the actual pair — sink uniqueness + a
+            // sampled source→sink value match — so the operator pastes a
+            // PROVEN rule, not a guess. A pair that will not open degrades
+            // to the static (shape-derived) proposals, named.
+            let evidenceLines =
+                match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-evidence-source" sourceSpec).GetAwaiter().GetResult() with
+                | Error _ -> [ "evidence: the source connection would not open — the proposals above are shape-derived only." ]
+                | Ok source ->
+                    use source = source
+                    match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-evidence-sink" sinkSpec).GetAwaiter().GetResult() with
+                    | Error _ -> [ "evidence: the sink connection would not open — the proposals above are shape-derived only." ]
+                    | Ok sink ->
+                        use sink = sink
+                        PeerTransfer.probeReconcileEvidence source sink sourceContract sinkContract escapes
+                        |> PeerTransfer.narrateEvidence
+                        |> List.map (sprintf "evidence: %s")
             items.Add (GoBoard.itemWith "relationships"
                 (GoBoard.Status.Red (sprintf "%d relationship(s) escape the subset — each needs a decision." escapes.Length, "add the proposed reconcile entr(ies) to the flow, or widen `tables`; then re-run."))
-                (PeerTransfer.narrateEscapes escapes))
+                (PeerTransfer.narrateEscapes escapes @ evidenceLines))
         else
             items.Add (GoBoard.item "relationships" (GoBoard.Status.Green "every relationship the subset touches is inside it or reconciled."))
         // -- load order (the EFFECTIVE transfer graph, 2026-07-07) -----------
@@ -927,13 +944,84 @@ let runCheckGo
                     (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
             | Ok report ->
                 let nm = nameOf report.Names
+                // The BEFORE → AFTER table (2026-07-07, the go-board
+                // forecast program): live sink counts beside the plan's
+                // adds / matches / deletes — the data change STATED, not
+                // gestured at. A short-lived sink connection probes
+                // `before`; a count that will not probe renders `?`,
+                // never a silent 0.
+                let wipeSet =
+                    match report.Plan with
+                    | Some plan when opts.Emission = EmissionMode.WipeAndLoad ->
+                        TransferResume.wipeTargets plan topo loadSet |> Set.ofList
+                    | _ -> Set.empty
+                let before : Map<SsKey, int64 option> =
+                    let keys = report.Kinds |> List.map (fun k -> k.Kind)
+                    match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-forecast" sinkSpec).GetAwaiter().GetResult() with
+                    | Error _ -> keys |> List.map (fun k -> k, None) |> Map.ofList
+                    | Ok cnn ->
+                        use cnn = cnn
+                        keys
+                        |> List.map (fun key ->
+                            match Catalog.tryFindKind key sinkContract with
+                            | None -> key, None
+                            | Some k ->
+                                key,
+                                (try Some (probeCount cnn (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical)))
+                                 with _ -> None))
+                        |> Map.ofList
+                let dropsByKind = report.SkippedReferences |> List.countBy fst |> Map.ofList
                 let forecastLines =
                     report.Kinds
-                    |> List.filter (fun k -> k.RowsIngested > 0 || k.Disposition = IdentityDisposition.ReconciledByRule)
-                    |> List.map (fun k -> sprintf "%s: %d row(s) will transfer (%s)" (nm k.Kind) k.RowsIngested (dispositionName k.Disposition))
+                    |> List.choose (fun k ->
+                        let beforeN = before |> Map.tryFind k.Kind |> Option.flatten
+                        let reconciled = k.Disposition = IdentityDisposition.ReconciledByRule
+                        let wiped = Set.contains k.Kind wipeSet
+                        let deletes = if wiped then (beforeN |> Option.defaultValue 0L) else 0L
+                        let drops = dropsByKind |> Map.tryFind k.Kind |> Option.defaultValue 0
+                        let note =
+                            [ if reconciled then yield "reconciled — matched to existing sink rows, no insert"
+                              if not (Set.isEmpty k.DeferredFkColumns) then yield sprintf "%d FK column(s) re-point in phase 2" (Set.count k.DeferredFkColumns)
+                              if drops > 0 then yield sprintf "%d row(s) drop (unmatched reference)" drops
+                              if wiped && Option.isNone beforeN then yield "wiped first (count unprobed)" ]
+                            |> String.concat "; "
+                        let table =
+                            match Catalog.tryFindKind k.Kind sinkContract with
+                            | Some kd -> sprintf "%s.%s" (TableId.schemaText kd.Physical) (TableId.tableText kd.Physical)
+                            | None -> nm k.Kind
+                        let line : GoBoard.ForecastLine =
+                            { Table   = table
+                              Before  = beforeN
+                              Adds    = int64 k.RowsIngested
+                              Matches = (if reconciled then Some (int64 k.RowsMatched) else None)
+                              Deletes = deletes
+                              Note    = note }
+                        if line.Adds > 0L || line.Deletes > 0L || reconciled || (wiped && Option.isNone beforeN)
+                        then Some line else None)
                 items.Add (GoBoard.itemWith "forecast"
-                    (GoBoard.Status.Green (sprintf "dry run complete — %d row(s) across %d table(s) would transfer." (report.Kinds |> List.sumBy (fun k -> k.RowsIngested)) (report.Kinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)))
-                    forecastLines)
+                    (GoBoard.Status.Green (sprintf "dry run complete — %d row(s) across %d table(s) would transfer; before → after below." (report.Kinds |> List.sumBy (fun k -> k.RowsIngested)) (report.Kinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)))
+                    (GoBoard.forecastTable forecastLines))
+                // THE PLANNED SQL (`--sql`, 2026-07-07): the dry run's plan
+                // rendered as the text realization's T-SQL and written
+                // beside the board — the exact DML shape, readable before
+                // anyone authorizes the run.
+                if emitSql then
+                    match report.Plan with
+                    | None ->
+                        items.Add (GoBoard.item "planned sql"
+                            (GoBoard.Status.Advisory "--sql: this dry run carried no materialized plan — no artifact written."))
+                    | Some plan ->
+                        match Transfer.plannedSqlPreview opts.Emission loadSet sinkContract topo plan with
+                        | Error errors ->
+                            items.Add (GoBoard.itemWith "planned sql"
+                                (GoBoard.Status.Advisory "--sql: the plan did not render to T-SQL — the live run is unaffected.")
+                                (errors |> List.map (fun e -> e.Message)))
+                        | Ok sql ->
+                            let path = System.IO.Path.Combine ("go-board", sprintf "%s.planned.sql" flowName)
+                            System.IO.Directory.CreateDirectory "go-board" |> ignore
+                            System.IO.File.WriteAllText (path, sql)
+                            items.Add (GoBoard.item "planned sql"
+                                (GoBoard.Status.Advisory (sprintf "written to %s — the wipe (if any), phase-1 inserts, then phase-2 FK re-points; AssignedBySink keys mint at run time." path)))
                 if not (List.isEmpty report.UnbreakableCycleFks) then
                     items.Add (GoBoard.itemWith "cycles"
                         (GoBoard.Status.Red (sprintf "%d relationship cycle(s) cannot be broken — the load cannot run as planned." report.UnbreakableCycleFks.Length, "make the cycle's FK columns nullable, or exclude the affected kinds."))

@@ -1028,7 +1028,7 @@ reconciled-edge drop, full-transfer identity, planned-write verbs;
 the unrelated-cycle board goes GREEN while the unscoped topology provably
 degrades on the same contract; `PeerManagedGrantTransferDockerTests` — the new
 OBJECT-scope-DML cell lands the subset with zero grant violations and no
-database-scope DML at all; both G1 promotions). Full-sweep verdict below.
+database-scope DML at all; both G1 promotions).
 
 ## Entry 26 — 2026-07-07, THE WEAK-FEEDBACK RESOLVER (v5): cycle handling made total, and the resolved-cycle refusal bug the audit caught
 
@@ -1070,4 +1070,73 @@ unprobed (database-scope fallback), and the chunk-resume crash witness holds.
 `TopologicalOrderPassTests` (v5 flips), `DataLoadPlanTests` (resolved →
 satisfiable; unresolved → named diagnostic), `DataEmissionComposerTests`
 (unresolvable fixture moved to nullable+Restrict, preserving both premises);
-full fast pool green. Full-sweep verdict below.
+full fast pool green.
+
+**Final verdict (Entries 25 + 26 together):** the full sweep PASSED IN FULL —
+fast pool 3965/3965 (35s), docker pool 293/293 (572s), scale pool 16/16 (96s),
+with the scope-parity, object-scope-grant, G1-promotion, unrelated-cycle, and
+resolver-v5 witnesses all aboard, and the Release-configuration build verified
+(the FS3511 witness caught and fixed the probe-loop shape before it shipped).
+The go board and the engine now judge the same effective transfer graph, and
+cycle handling is total over its case space with the correlated
+deferral/unsatisfiability algebra property-pinned.
+
+## Entry 27 — 2026-07-07, THE FORECAST TABLE: the board states the data change (before → after), proves its reconcile proposals, and previews the SQL
+
+**Operator request:** the forecast "gestures indirectly" at the data change —
+show the planned before and after of the target environment side by side;
+strengthen the automatic reconcile suggestions; add an option to preview the
+planned SQL.
+
+**The forecast item is now a table.** The dry run's report carries its
+`DataLoadPlan` (`TransferReport.Plan`, DryRun only — Execute never retains
+estate-scale rows past the run, and the streaming preview's plan carries no
+rows), and the face joins it against LIVE sink counts probed over a
+short-lived connection:
+
+```
+table                        before      +add     match      -del       after
+dbo.OSUSR_XABC_CUSTOMER           0         2         -         0           2
+dbo.OSUSR_XDEF_CITY               2         0         2         0           2   reconciled — matched to existing sink rows, no insert
+TOTAL                             2         2         2         0           4
+```
+
+`after = before − deletes + adds`, per row and in TOTAL; a count that will
+not probe renders `?` and poisons the totals (never a silent 0); a
+WipeAndLoad kind's `-del` is its live before-count (the wipe), scoped by the
+same `TransferResume.wipeTargets` walk the live wipe takes. `KindOutcome`
+gained `RowsMatched` (the remap's per-kind bindings) so a reconciled kind's
+"match" column is the measured match count, not an inference.
+
+**Reconcile proposals now carry LIVE evidence.** Each escaping target's
+candidate columns — the sink's single-column unique indexes, then
+name-shaped text attributes (`Name`/`Code`/`Email`/…) when no index
+nominates one, at most three per target — are probed against the actual
+pair: sink uniqueness (`COUNT` vs `COUNT DISTINCT`) plus a bounded sample
+(200 distinct source values, parameterized) matched into the sink. The
+relationships red item's detail now reads
+`evidence: reconcile 'AppCore.City:Name' (unique-indexed on the sink) —
+sink-unique; 2/2 sampled source value(s) found in the sink: a STRONG
+candidate.` — the operator pastes a PROVEN rule. A probe that cannot run is
+a NAMED `Unprobed` verdict; a pair that will not open degrades to the
+static proposals, named.
+
+**`check go <flow> --sql` writes the planned SQL.** `Transfer
+.plannedSqlPreview` renders the SAME plan the dry run built through
+`StaticSeedsEmitter.emitFromPlan` (the A35/A36 text-realization sibling of
+the live bulk lanes, the `SliceApplyRun.emit` composition): the child-first
+wipe DELETEs under strategy replace, phase-1 MERGEs in FK-safe plan order,
+then the phase-2 deferred-FK re-points — written to
+`go-board/<flow>.planned.sql` with a header naming the contract
+(AssignedBySink keys mint at run time; the artifact's values are the plan's
+source-side keys, shown for shape). An advisory board line names the path.
+
+**Also caught while here:** `check go golden --format json` REFUSED — the
+positional filter counted a value-bearing flag's value token (`json`) as a
+second flow name. The positional walk now skips `--format`'s value.
+
+**Proven:** pure — `PeerTransferTests` (forecast-table arithmetic/alignment/
+`?`-poisoning, `plannedSqlPreview` wipe order + loadSet scoping + no wipe
+under Incremental, `narrateEvidence` strength ladder); docker — the
+red/green/red board now asserts the evidence lines (STRONG, 2/2 sampled),
+the before→after table, and the `--sql` artifact's content on the live pair.

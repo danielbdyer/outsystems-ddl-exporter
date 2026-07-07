@@ -527,12 +527,14 @@ type PlanAction =
     /// script path, the environment label (display), the RESOLVED conn
     /// spec, and the per-run intent flag.
     | RevertScript of script: string * envLabel: string * connSpec: string * go: bool * force: bool
-    /// `check go <flow>` — THE GO BOARD (2026-07-06, the preview-engine
-    /// program): the red/green go-readiness checklist for a data flow. The
-    /// action carries the flow's coordinates + the PLANNED action the flow
-    /// would run (the same `planFlow` derivation a real run takes, under
-    /// preview opts), so the board judges exactly what `--go` would execute.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * planned: PlanAction
+    /// `check go <flow> [--sql]` — THE GO BOARD (2026-07-06, the
+    /// preview-engine program): the red/green go-readiness checklist for a
+    /// data flow. The action carries the flow's coordinates + the PLANNED
+    /// action the flow would run (the same `planFlow` derivation a real
+    /// run takes, under preview opts), so the board judges exactly what
+    /// `--go` would execute. `emitSql` (the `--sql` opt-in, 2026-07-07)
+    /// additionally writes the dry run's plan as a T-SQL preview artifact.
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * planned: PlanAction
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool
