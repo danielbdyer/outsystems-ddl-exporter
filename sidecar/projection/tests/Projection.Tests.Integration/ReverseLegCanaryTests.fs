@@ -684,12 +684,13 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                 })
 
     [<Fact>]
-    member this.``NAMED GAP (pinned): an object-scope DENY INSERT escapes the database-scope grant probe — the failure is a mid-load SqlException, not a preflight refusal`` () =
-        // `Preflight.captureGrantEvidence` reads sys.fn_my_permissions at
-        // DATABASE scope only (survey-gated P1 refinement). A principal with
-        // database-scope DML but a table-level DENY passes the preflight and
-        // crashes mid-load — a PARTIAL write. Pinned so the gap stays named
-        // until the object-scope probe lands; see the LE-3 report.
+    member this.``PROMOTED (was the pinned G1 gap): an object-scope DENY INSERT refuses by name pre-write — zero partial write`` () =
+        // 2026-07-07: `spanningPreflight` captures grant evidence PER
+        // PLANNED TABLE (`fn_my_permissions('<obj>','OBJECT')` — EFFECTIVE
+        // permissions, table-level DENYs subtracted), so the DENY that used
+        // to crash mid-load with upstream kinds already landed (the
+        // partial-write hazard the LE-3 report named) now refuses
+        // `transfer.insufficientGrant` before any write.
         if not (ReverseLegFixtures.skipIfNoDocker "L3Deny") then () else
         this.WithReverseLegEstates "L3Deny" ReverseLegFixtures.seedClean
             (fun src _ adminSink sinkConnStr logicalContract physicalContract ->
@@ -701,15 +702,18 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                                 (sprintf "DENY INSERT ON [dbo].[OSUSR_L3_INVOICE] TO [%s];" login)
                         use sink = new Microsoft.Data.SqlClient.SqlConnection(restrictedConnStr)
                         do! sink.OpenAsync()
-                        let! _ =
-                            Assert.ThrowsAnyAsync<Microsoft.Data.SqlClient.SqlException>(fun () ->
-                                Transfer.runWithRenames Transfer.Execute true src sink logicalContract physicalContract
-                                :> System.Threading.Tasks.Task)
-                        // The crash is mid-load: upstream kinds already landed
-                        // (the partial-write hazard the named gap documents).
+                        let! reportR =
+                            Transfer.runWithRenames Transfer.Execute true src sink logicalContract physicalContract
+                        match reportR with
+                        | Error es ->
+                            Assert.True(
+                                es |> List.exists (fun e -> e.Code = "transfer.insufficientGrant"),
+                                sprintf "expected transfer.insufficientGrant, got %A" (es |> List.map (fun e -> e.Code)))
+                        | Ok _ -> Assert.Fail "expected the object-scope DENY to refuse pre-write"
+                        // ZERO partial write — no upstream kind landed.
                         let! customers = ReverseLegFixtures.countRows adminSink "[dbo].[OSUSR_L3_CUSTOMER]"
                         let! invoices  = ReverseLegFixtures.countRows adminSink "[dbo].[OSUSR_L3_INVOICE]"
-                        Assert.Equal(2, customers)
+                        Assert.Equal(0, customers)
                         Assert.Equal(0, invoices)
                     finally
                         DmlPrincipal.dropLogin adminSink login

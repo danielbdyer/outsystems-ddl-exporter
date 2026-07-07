@@ -191,6 +191,7 @@
     <Compile Include="NormalizeStaticPopulationsTests.fs" />
     <Compile Include="SymmetricClosureTests.fs" />
     <Compile Include="TopologicalOrderPassTests.fs" />
+    <Compile Include="TransferScopeTests.fs" />
     <Compile Include="IslandDetectionTests.fs" />
     <Compile Include="CascadeShockZoneTests.fs" />
     <Compile Include="JunctionDeferredTests.fs" />

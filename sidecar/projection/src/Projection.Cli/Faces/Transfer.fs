@@ -884,15 +884,21 @@ let runCheckGo
                 (PeerTransfer.narrateEscapes escapes))
         else
             items.Add (GoBoard.item "relationships" (GoBoard.Status.Green "every relationship the subset touches is inside it or reconciled."))
-        // -- load order (the whole-estate topology) --------------------------
-        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle sinkContract).Value
+        // -- load order (the EFFECTIVE transfer graph, 2026-07-07) -----------
+        // The same `TransferScope` the engine's Execute gates build:
+        // declared tables plus reconciled kinds as isolated nodes, FK
+        // edges binding only between written kinds — an unrelated estate
+        // cycle no longer reds a partial transfer's board (and no longer
+        // refuses its live run).
+        let scope = TransferScope.create sinkContract loadSet reconciledKeys
+        let topo = TransferScope.topology Projection.Core.TreatAsCycle scope sinkContract
         (match Transfer.orderedLoadGate topo with
          | Some refusal ->
              items.Add (GoBoard.itemWith "load order"
-                 (GoBoard.Status.Red ("the load order degraded to the alphabetical fallback — a live run refuses.", "make the named cycle's FK columns nullable (they then defer automatically), or transfer without the affected kinds."))
+                 (GoBoard.Status.Red ("the load order of the transferred set degraded to the alphabetical fallback — a live run refuses.", "make the named cycle's FK columns nullable (they then defer automatically), or transfer without the affected kinds."))
                  [ refusal.Message ])
          | None ->
-             items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children, proven (topological).")))
+             items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))
         // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
@@ -959,20 +965,43 @@ let runCheckGo
                  items.Add (GoBoard.itemWith "cdc"
                      (GoBoard.Status.Red (sprintf "the sink is CDC-tracked (%d table(s)) — a live run refuses without consent." tracked.Length, "run --go with --allow-cdc (the capture will see the load), or disable capture on the sink."))
                      (tracked |> List.truncate 5)))
-            (match (Preflight.captureGrantEvidence sink).GetAwaiter().GetResult() with
+            // The PLANNED-WRITE grant evaluation (2026-07-07): the same
+            // planned writes the engine's G2 gate enforces, evaluated per
+            // transferred table against object-scope EFFECTIVE permissions
+            // (database OR object grants cover; a managed-cloud principal
+            // carrying object-scope DML with no database-scope grant is a
+            // [ GO ]). Reconciled parents additionally need SELECT (the
+            // match-by-key reads them).
+            let plannedWrites = Transfer.plannedTransferWrites scope opts.Emission sinkContract
+            let readTables =
+                Catalog.allKinds sinkContract
+                |> List.filter (fun k -> Set.contains k.SsKey scope.Nodes)
+                |> List.map (fun k -> TableId.schemaText k.Physical, TableId.tableText k.Physical)
+                |> List.distinct
+            let probeTables =
+                (plannedWrites |> List.map (fun w -> w.Schema, w.Table)) @ readTables |> List.distinct
+            (match (Preflight.captureGrantEvidenceFor probeTables sink).GetAwaiter().GetResult() with
              | Error errors ->
                  items.Add (GoBoard.itemWith "grant" (GoBoard.Status.Red ("the grant probe failed.", "check the sink connection/principal; then re-run.")) (errors |> List.map (fun e -> e.Message)))
              | Ok evidence ->
-                 let missing =
-                     [ "SELECT"; "INSERT"; "UPDATE"; "DELETE" ]
-                     |> List.filter (fun p -> not (Preflight.coversPermissionAtDatabaseScope p evidence))
-                 if List.isEmpty missing then
-                     items.Add (GoBoard.itemWith "grant"
-                         (GoBoard.Status.Green "the sink principal carries database-scope SELECT/INSERT/UPDATE/DELETE.")
-                         [ "standing note: a TABLE-level DENY is invisible to this probe and would surface mid-load (the pinned G1 gap)." ])
-                 else
+                 let writeViolations =
+                     Preflight.permissionViolations plannedWrites evidence
+                     |> List.map (fun v -> sprintf "%s on %s" (Preflight.permissionName v.Action) v.Object)
+                 let readViolations =
+                     readTables
+                     |> List.filter (fun (schema, table) -> not (Preflight.coversPermissionOn schema table "SELECT" evidence))
+                     |> List.map (fun (schema, table) -> sprintf "SELECT on %s.%s" schema table)
+                 match writeViolations @ readViolations with
+                 | [] ->
                      items.Add (GoBoard.item "grant"
-                         (GoBoard.Status.Red (sprintf "the sink principal lacks database-scope %s." (String.concat ", " missing), "grant the missing permission(s) to the sink principal; then re-run."))))
+                         (GoBoard.Status.Green
+                             (sprintf
+                                 "the sink principal covers the planned writes (%d table(s), database or object scope) and SELECT on the touched set — table-level DENYs would show here."
+                                 (plannedWrites |> List.map (fun w -> w.Schema, w.Table) |> List.distinct |> List.length))))
+                 | violations ->
+                     items.Add (GoBoard.itemWith "grant"
+                         (GoBoard.Status.Red ("the sink principal does not cover the planned writes.", "grant the missing permission(s) — database scope or per-table object scope both satisfy the gate; then re-run."))
+                         (violations |> List.truncate 10)))
             // Pinned owners (2026-07-06, the single-owner program): every
             // `Table:=<key>` / `Table:Column:=<key>` rule names a sink row
             // that must EXIST — probe each against the live sink so the

@@ -77,12 +77,16 @@ module CapabilitySurvey =
     /// against a `schema+data` target needs ALTER/CREATE but no INSERT/DELETE, so
     /// the coarse facet would over-refuse).
     let requiredFor (grant: Grant) : Set<Capability> =
+        // UPDATE joined the data write-sets 2026-07-07 alongside
+        // `Preflight.WriteAction.Update` — the data leg's Phase-2 FK
+        // re-point and MERGE lane genuinely UPDATE; INSERT coverage never
+        // implied it.
         match grant with
         | Grant.SchemaAndData ->
-            set [ Performs Preflight.Insert; Performs Preflight.Delete
+            set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete
                   Performs Preflight.Alter; Performs Preflight.CreateTable ]
         | Grant.DataOnly ->
-            set [ Performs Preflight.Insert; Performs Preflight.Delete ]
+            set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ]
 
     /// The sink-role write capabilities a flow's shape exercises — faithful to
     /// `Command.planMovement`'s routing (the obligations matrix is the spec):
@@ -98,7 +102,7 @@ module CapabilitySurvey =
     ///    so the survey requires nothing (flow validity is `planFlow`'s gate, not
     ///    the permission survey's).
     let private sinkCapabilities (targetGrant: Grant option) (source: FlowSource) : Set<Capability> =
-        let dataLoad = set [ Performs Preflight.Insert; Performs Preflight.Delete ]
+        let dataLoad = set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ]
         let schemaPublish = set [ Performs Preflight.Alter; Performs Preflight.CreateTable ]
         match targetGrant, source with
         | Some Grant.DataOnly, (FlowSource.Env _ | FlowSource.Synthetic _) -> dataLoad

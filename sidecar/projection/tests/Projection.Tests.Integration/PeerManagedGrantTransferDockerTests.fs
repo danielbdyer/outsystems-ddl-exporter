@@ -21,11 +21,13 @@ namespace Projection.Tests
 //   3. Reconcile-by-key under the grant (SELECT-only touch on the target).
 //   4. OSSYS metamodel unreadable on the sink → the NAMED contract
 //      acquisition refusal (schema-read axis, exit 6) — never a raw crash.
-//   5. Object-scope DENY INSERT mid-subset: the DB-scope preflight is blind
-//      to it (G1, PINNED) — raw permission exception mid-load, upstream
-//      kinds already landed. The named-gap witness on the peer dispatch,
-//      cross-referencing the reserved promotion stub in
-//      ReverseLegBoundaryTests.
+//   5. Object-scope DENY INSERT → PROMOTED 2026-07-07: the planned-table
+//      object probe sees the DENY (effective permissions) and refuses by
+//      name pre-write with ZERO partial write (the G1 gap closed for
+//      planned tables).
+//   6. OBJECT-scope-only DML (the 2026-07-07 live-run estate shape): the
+//      planned-write evaluation is a GO with no database-scope DML at all,
+//      and the subset lands.
 //
 // Serial via Docker-SqlServer; blocking wait via TaskSync.
 
@@ -320,14 +322,14 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                         return ()
                     }))
 
-    /// G1 PINNED on the peer dispatch: an object-scope DENY INSERT is
-    /// invisible to the DB-scope grant preflight — the load crashes RAW
-    /// mid-subset with the parent kind already landed (the partial-write
-    /// surprise). The promotion trigger lives with the reserved stub in
-    /// ReverseLegBoundaryTests (`object-scope DENY`); when an object-scope
-    /// probe lands, flip this to a named pre-write refusal.
+    /// G1 PROMOTED (2026-07-07 — was the pinned partial-write gap): the
+    /// grant preflight now captures evidence PER PLANNED TABLE
+    /// (`fn_my_permissions('<obj>','OBJECT')` — EFFECTIVE permissions,
+    /// DENYs subtracted), so an object-scope DENY INSERT refuses BY NAME
+    /// before any write. The parent kind no longer lands first: the sink
+    /// stays byte-untouched.
     [<Fact>]
-    member _.``peer under managed grant PINNED GAP: object-scope DENY INSERT crashes raw mid-load with a partial write (G1)`` () =
+    member _.``peer under managed grant PROMOTED (was pinned G1): object-scope DENY INSERT refuses by name pre-write — zero partial write`` () =
         if not (ManagedGrantFixtures.skipIfNoDocker "PeerManagedG1") then () else
         TaskSync.run (fun () ->
             MockOutSystemsEnv.withMockEnvPair fixture "PeerMgG1"
@@ -341,24 +343,71 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                         let (srcContract, sinkContract) = ManagedGrantFixtures.value contractsR
                         let! outcome =
                             ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr false (fun connections ->
-                                task {
-                                    try
-                                        let! r =
-                                            Transfer.runReverseLegThroughConnections
-                                                Transfer.Execute EmissionMode.Incremental false true false
-                                                [ "City"; "Customer" ] connections srcContract sinkContract Map.empty
-                                        return Choice1Of2 r
-                                    with ex -> return Choice2Of2 ex
-                                })
+                                Transfer.runReverseLegThroughConnections
+                                    Transfer.Execute EmissionMode.Incremental false true false
+                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty)
                         match outcome with
-                        | Choice1Of2 _ -> Assert.Fail "expected the object-scope DENY to crash the load (the pinned G1 gap)"
-                        | Choice2Of2 ex ->
-                            Assert.True(DmlPrincipal.isPermissionDenied ex, sprintf "expected the permission class, got: %s" ex.Message)
-                        // The partial write, pinned: the parent kind (City,
-                        // topologically first) already landed.
+                        | Ok _ -> Assert.Fail "expected the object-scope DENY to refuse pre-write (transfer.insufficientGrant)"
+                        | Error es ->
+                            Assert.True(
+                                es |> List.exists (fun e -> e.Code = "transfer.insufficientGrant"),
+                                sprintf "expected transfer.insufficientGrant, got %A" (es |> List.map (fun e -> e.Code)))
+                        // ZERO partial write — the refusal preceded the load;
+                        // City (topologically first) no longer lands.
                         let! cities = ManagedGrantFixtures.countRows snk.Admin "[dbo].[OSUSR_XDEF_CITY]"
-                        Assert.Equal(2, cities)
+                        Assert.Equal(0, cities)
                         let! customers = ManagedGrantFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
                         Assert.Equal(0, customers)
+                        return ()
+                    }))
+
+    /// The 2026-07-07 live-run estate shape: OBJECT-scope I/U/D per table,
+    /// NO database-scope DML. The planned-write grant evaluation (the same
+    /// computation the go board's grant item renders) reports zero
+    /// violations — the [ GO ] — and the live engine's G2 gate passes and
+    /// lands the subset.
+    [<Fact>]
+    member _.``peer under OBJECT-scope DML (no database-scope grant): the planned-write evaluation is a GO and the subset lands`` () =
+        if not (ManagedGrantFixtures.skipIfNoDocker "PeerObjDml") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "PeerObjDml"
+                "" ManagedGrantFixtures.sourceRows MockOutSystemsEnv.ObjectScopeDml
+                "X" ManagedGrantFixtures.sinkReseed MockOutSystemsEnv.ObjectScopeDml
+                (fun src snk ->
+                    task {
+                        let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
+                        let (srcContract, sinkContract) = ManagedGrantFixtures.value contractsR
+                        // (a) The board's grant computation over the effective
+                        // scope: object-scope evidence covers the planned
+                        // writes — zero violations, despite fn_my_permissions
+                        // at DATABASE scope carrying no DML at all.
+                        let loadSet =
+                            Transfer.resolveLoadSet sinkContract [ "City"; "Customer" ]
+                            |> ManagedGrantFixtures.value
+                        let scope = TransferScope.create sinkContract loadSet Set.empty
+                        let planned = Transfer.plannedTransferWrites scope EmissionMode.Incremental sinkContract
+                        use! cnn = ManagedGrantFixtures.openConn snk.EngineConnStr
+                        let! evidenceR =
+                            Preflight.captureGrantEvidenceFor
+                                (planned |> List.map (fun w -> w.Schema, w.Table) |> List.distinct) cnn
+                        let evidence = ManagedGrantFixtures.value evidenceR
+                        Assert.False(Preflight.coversPermissionAtDatabaseScope "INSERT" evidence)
+                        Assert.Empty(Preflight.permissionViolations planned evidence)
+                        // (b) The live engine passes G2 under the same evidence
+                        // and the subset lands.
+                        let! report =
+                            ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr false (fun connections ->
+                                task {
+                                    let! r =
+                                        Transfer.runReverseLegThroughConnections
+                                            Transfer.Execute EmissionMode.Incremental false true false
+                                            [ "City"; "Customer" ] connections srcContract sinkContract Map.empty
+                                    return ManagedGrantFixtures.value r
+                                })
+                        Assert.Empty(report.SkippedReferences)
+                        let! cities = ManagedGrantFixtures.countRows snk.Admin "[dbo].[OSUSR_XDEF_CITY]"
+                        let! customers = ManagedGrantFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                        Assert.Equal(2, cities)
+                        Assert.Equal(2, customers)
                         return ()
                     }))

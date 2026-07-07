@@ -200,6 +200,7 @@ table before continuing.
 
 | Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
 |---|---|---|---|
+| **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
 | **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
@@ -26782,3 +26783,56 @@ flood still never degrades; `processing` after threshold, `stalled` nowhere);
 dedup-vs-decision, operator-safety contract held); `ModelFidelityTests`
 (payload builder Some/None); `TtyRendererTests` (panel row + next move);
 `VoiceTotalityTests` (the new code forced same-commit).
+
+
+## 2026-07-07 — The weak-feedback cycle resolver (v5) + the resolved-cycle unsatisfiability fix; manual ordering overrides stay deferred
+
+**Decision.** `TopologicalOrderPass` v5 replaces the asymmetric-2-cycle
+resolver with `CycleResolution.weakFeedbackStrategy`: find a cycle
+(deterministic DFS); if every edge on it is non-Weak, refuse — naming
+exactly that cycle; otherwise break the smallest Weak edge on it and
+repeat until acyclic. The complete case map and invariants (I1
+soundness: broken ⊆ Weak ⊆ deferrable; I2 acyclicity on resolve; I3
+refusal ⟺ an all-strong cycle exists; I4 input-order independence; I5
+frugality — a pure weak ring breaks one edge) live in the resolver's
+docstring and are property-tested in `CycleResolutionTests`. The prior
+resolver's shapes are rows of the new map: single-weak 2-cycles and
+weak self-loops behave byte-identically; symmetric-weak 2-cycles and
+weak-bearing SCCs of any size now RESOLVE; only genuinely
+non-deferrable cycles refuse — with the exact cycle named instead of
+"SCC of size N".
+
+**The correlated fix the completeness audit surfaced.**
+`DataLoadPlan.buildWith` computed `UnbreakableCycleFks` over ALL cycle
+members — but a RESOLVED SCC deliberately stays in `Cycles` (its broken
+weak edges need phase-2 deferral), so every resolved asymmetric
+2-cycle's strong edge was flagged unbreakable and `executeGate` refused
+a load the proven order satisfies (latent: the canary estates carry
+only self-loop cycles, whose strong variant never resolves).
+`TopologicalOrder.unresolvedCycleMembers` (`BreakableEdges = []` is the
+discriminant) now feeds unsatisfiability; `cycleMembers` (all members)
+still feeds `deferredFkColumns`. The algebra: RESOLVED cycle → strong
+edges satisfied by ORDER, weak edges satisfied by DEFERRAL; UNRESOLVED
+cycle → nullable columns defer, non-nullable columns are the named
+`transfer.unbreakableCycleFk` refusal.
+
+**Deferral (indexed above).** V1's operator override
+(`CircularDependencyOptions` / `AllowedCycle` z-index positions —
+which DISABLES automatic detection wholesale and keys on
+espace-fragile physical names) is deliberately not carried. The
+resolver derives breakability from schema facts (nullability +
+OnDelete); the only case an override serves is a cycle whose
+breakability is not schema-inferable, and that trigger is now indexed.
+Conservative choice kept from V1: `Cascade` edges never break, even
+when nullable (deferral of a nullable cascade column remains legal
+when ordering resolves by other means; breaking on cascade evidence is
+not).
+
+**Witnesses.** `CycleResolutionTests` (case map + I1–I5 properties),
+`TopologicalOrderPassTests` (v5 flips: symmetric-weak resolves with the
+deterministic edge; all-weak 3-cycle breaks exactly one; all-strong
+3-cycle refuses by name), `DataLoadPlanTests` (resolved cycle →
+satisfiable + no unbreakable; unresolved → the named diagnostic),
+`DataEmissionComposerTests` (the unresolvable fixture moved to
+nullable+Restrict — strength Other with deferrable columns, preserving
+both the Alphabetical premise and the phase-2 partition law).

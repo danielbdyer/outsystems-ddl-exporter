@@ -279,8 +279,13 @@ module Preflight =
     // -- A2 — permission pre-flight (T-VI spanning) --------------------------
 
     /// The kind of write a planned operation needs at the sink.
+    /// `Update` joined 2026-07-07 (the go-board scoping program): the
+    /// transfer's Phase-2 FK re-point and the MERGE capture lane genuinely
+    /// UPDATE — SQL Server grants do not let UPDATE "ride" INSERT, so the
+    /// prior INSERT-only gate passed sinks that then died mid-load.
     type WriteAction =
         | Insert
+        | Update
         | Delete
         | Alter
         | CreateTable
@@ -288,7 +293,7 @@ module Preflight =
     /// Every write action — the closed vocabulary, enumerated so a derived
     /// capability catalog (the capability survey) stays total over it by
     /// construction rather than by a hand-maintained parallel list.
-    let allWriteActions : WriteAction list = [ Insert; Delete; Alter; CreateTable ]
+    let allWriteActions : WriteAction list = [ Insert; Update; Delete; Alter; CreateTable ]
 
     /// One object + action the plan will perform at the sink. Built from the
     /// migrate schema differential (`ALTER`/`ADD` → Alter/CreateTable) and the
@@ -319,6 +324,17 @@ module Preflight =
     type GrantEvidence =
         {
             Granted : Set<string * string>
+            /// The object keys (`"schema.table"`) the capture probed at
+            /// OBJECT scope (2026-07-07). For a probed object,
+            /// `fn_my_permissions('<obj>', 'OBJECT')` reports the
+            /// EFFECTIVE permissions — database-scope grants inherited,
+            /// object grants added, DENYs subtracted — so the object rows
+            /// are AUTHORITATIVE and the database-scope fallback must not
+            /// apply (a table-level DENY under a database-scope GRANT
+            /// would otherwise read as covered: the pinned G1 gap).
+            /// Empty for a database-scope-only capture — the historical
+            /// evidence shape, where the fallback is all there is.
+            ProbedObjects : Set<string>
         }
 
     /// The `sys.fn_my_permissions` permission name a write action holds at. Public
@@ -327,6 +343,7 @@ module Preflight =
     let permissionName (a: WriteAction) : string =
         match a with
         | Insert      -> "INSERT"
+        | Update      -> "UPDATE"
         | Delete      -> "DELETE"
         | Alter       -> "ALTER"
         | CreateTable -> "CREATE TABLE"
@@ -334,14 +351,25 @@ module Preflight =
     let private objectKey (w: PlannedWrite) : string =
         sprintf "%s.%s" w.Schema w.Table
 
-    /// Pure: each planned write the grant does not cover at either the object
-    /// scope or the database scope (object-key ""). Deterministic — sorted by
+    /// Pure: does the captured grant cover `permission` on `schema.table`?
+    /// A probed object's rows are authoritative (effective permissions —
+    /// see `GrantEvidence.ProbedObjects`); an unprobed object falls back
+    /// to object-row OR database-scope coverage (the historical rule).
+    /// DB-free and testable.
+    let coversPermissionOn (schema: string) (table: string) (permission: string) (grant: GrantEvidence) : bool =
+        let key = sprintf "%s.%s" schema table
+        if Set.contains key grant.ProbedObjects then
+            Set.contains (key, permission) grant.Granted
+        else
+            Set.contains (key, permission) grant.Granted
+            || Set.contains ("", permission) grant.Granted
+
+    /// Pure: each planned write the grant does not cover (per
+    /// `coversPermissionOn`'s scope rules). Deterministic — sorted by
     /// object then action. DB-free and testable.
     let permissionViolations (planned: PlannedWrite list) (grant: GrantEvidence) : PermissionViolation list =
         let covered (w: PlannedWrite) =
-            let perm = permissionName w.Action
-            Set.contains (objectKey w, perm) grant.Granted
-            || Set.contains ("", perm) grant.Granted
+            coversPermissionOn w.Schema w.Table (permissionName w.Action) grant
         planned
         |> List.filter (fun w -> not (covered w))
         |> List.map (fun w -> { Object = objectKey w; Action = w.Action })
@@ -380,33 +408,113 @@ module Preflight =
 
     /// Capture the sink's effective permissions from `sys.fn_my_permissions`.
     ///
-    /// **Survey-gated (OPEN-2 / P1).** This probes the database-scope grants
-    /// today (`sys.fn_my_permissions(NULL, 'DATABASE')`), keyed under the empty
-    /// object-key. Object-scope refinement (per-table grants) lands once the
-    /// survey (P1) confirms the managed login's grant shape; the pure gate
-    /// already consumes object-keyed evidence, so only this capture changes.
-    /// Read every database-scope permission name as a `("", name)` pair (module
-    /// level so the recursive task state machine is statically compilable —
-    /// a nested `let rec` inside a `task { }` is not, FS3511).
-    let rec private readGrantRows (reader: SqlDataReader) (acc: (string * string) list) : Task<(string * string) list> =
+    /// Two probe grains (2026-07-07 — the object-scope refinement the P1
+    /// survey gated on landed under live cloud evidence: managed estates
+    /// carry object/column-scope DML with NO database-scope grant):
+    ///   - the DATABASE probe (`fn_my_permissions(NULL, 'DATABASE')`),
+    ///     keyed under the empty object-key — the historical capture;
+    ///   - one OBJECT probe per planned table
+    ///     (`fn_my_permissions('[schema].[table]', 'OBJECT')`, object
+    ///     grain only — `subentity_name = ''`; column-grain rows are a
+    ///     named residual), keyed `"schema.table"` and recorded in
+    ///     `ProbedObjects` so the pure gate treats them as authoritative
+    ///     effective permissions (DENYs visible — the G1 closure for
+    ///     planned tables).
+    /// Read every permission name under the supplied key (module level so
+    /// the recursive task state machine is statically compilable — a
+    /// nested `let rec` inside a `task { }` is not, FS3511).
+    let rec private readGrantRows (key: string) (reader: SqlDataReader) (acc: (string * string) list) : Task<(string * string) list> =
         task {
             let! hasRow = reader.ReadAsync()
-            if hasRow then return! readGrantRows reader (("", reader.GetString(0)) :: acc)
+            if hasRow then return! readGrantRows key reader ((key, reader.GetString(0)) :: acc)
             else return acc
         }
 
-    let captureGrantEvidence (sink: SqlConnection) : Task<Result<GrantEvidence>> =
+    /// One object's effective-permission probe. `Some pairs` when the
+    /// object EXISTS (its rows are authoritative — see `ProbedObjects`);
+    /// `None` when it does not: a missing table and a deny-everything
+    /// table both report zero permission rows, but absence is a SHAPE
+    /// fact (the shape gate / drift detection own it), not a grant fact —
+    /// claiming probe authority over it would misreport a missing sink
+    /// table as `insufficientGrant`, so an absent object stays UNPROBED
+    /// (database-scope fallback applies). Module-level helper so the
+    /// capture's per-object loop is one reducible `let!` (FS3511 —
+    /// a conditional `use!` inside a task-CE loop is not statically
+    /// compilable in Release).
+    let private probeObjectGrant (sink: SqlConnection) (key: string) (securable: string) : Task<(string * string) list option> =
+        task {
+            use existsCmd = sink.CreateCommand()
+            existsCmd.CommandText <- "SELECT CASE WHEN OBJECT_ID(@obj) IS NULL THEN 0 ELSE 1 END"
+            existsCmd.Parameters.AddWithValue("@obj", securable) |> ignore
+            let! existsScalar = existsCmd.ExecuteScalarAsync()
+            if System.Convert.ToInt32 existsScalar = 1 then
+                use objCmd = sink.CreateCommand()
+                objCmd.CommandText <-
+                    "SELECT permission_name FROM sys.fn_my_permissions(@obj, 'OBJECT') WHERE subentity_name = ''"
+                objCmd.Parameters.AddWithValue("@obj", securable) |> ignore
+                use! objReader = objCmd.ExecuteReaderAsync()
+                let! objPairs = readGrantRows key objReader []
+                return Some objPairs
+            else
+                return None
+        }
+
+    /// Walk the planned objects recursively — a `let!` inside a `for` in
+    /// a task CE is not statically compilable in Release (FS3511), so the
+    /// loop is the same module-level recursion shape as `readGrantRows`.
+    let rec private probeObjects
+        (sink: SqlConnection)
+        (remaining: (string * string) list)
+        (pairs: (string * string) list)
+        (probed: Set<string>)
+        : Task<GrantEvidence> =
+        task {
+            match remaining with
+            | [] -> return { Granted = Set.ofList pairs; ProbedObjects = probed }
+            | entry :: rest ->
+                let schema = fst entry
+                let table = snd entry
+                let key = sprintf "%s.%s" schema table
+                let securable = sprintf "[%s].[%s]" schema table  // LINT-ALLOW: securable-name string for fn_my_permissions/OBJECT_ID at the probe boundary; bracketed identifier text is the functions' input format
+                let! objPairs = probeObjectGrant sink key securable
+                match objPairs with
+                | Some ps -> return! probeObjects sink rest (ps @ pairs) (Set.add key probed)
+                | None    -> return! probeObjects sink rest pairs probed
+        }
+
+    /// The probe body without the exception envelope — the public capture
+    /// wraps ONE `let!` in its `try` (FS3511 discipline).
+    let private captureGrantPairs (objects: (string * string) list) (sink: SqlConnection) : Task<GrantEvidence> =
+        task {
+            if sink.State <> System.Data.ConnectionState.Open then do! sink.OpenAsync()
+            // The DATABASE-probe reader must close before the per-object
+            // probes run — one connection, no MARS.
+            let! dbPairs =
+                task {
+                    use cmd = sink.CreateCommand()
+                    cmd.CommandText <- "SELECT permission_name FROM sys.fn_my_permissions(NULL, 'DATABASE')"
+                    use! reader = cmd.ExecuteReaderAsync()
+                    return! readGrantRows "" reader []
+                }
+            return! probeObjects sink (List.distinct objects) dbPairs Set.empty
+        }
+
+    /// Capture database-scope grants PLUS per-object effective permissions
+    /// for the supplied `(schema, table)` list — the planned-write tables.
+    /// An empty list is the historical database-scope-only capture.
+    let captureGrantEvidenceFor (objects: (string * string) list) (sink: SqlConnection) : Task<Result<GrantEvidence>> =
         task {
             try
-                if sink.State <> System.Data.ConnectionState.Open then do! sink.OpenAsync()
-                use cmd = sink.CreateCommand()
-                cmd.CommandText <- "SELECT permission_name FROM sys.fn_my_permissions(NULL, 'DATABASE')"
-                use! reader = cmd.ExecuteReaderAsync()
-                let! pairs = readGrantRows reader []
-                return Ok { Granted = Set.ofList pairs }
+                let! evidence = captureGrantPairs objects sink
+                return Ok evidence
             with ex ->
                 return Result.failureOf (ValidationError.create "migrate.grantProbeFailed" ex.Message)
         }
+
+    /// The database-scope-only capture — the historical shape (empty
+    /// `ProbedObjects`; the pure gate's database fallback applies).
+    let captureGrantEvidence (sink: SqlConnection) : Task<Result<GrantEvidence>> =
+        captureGrantEvidenceFor [] sink
 
     // -- A3 — transactional / resumable transfer (T-VI spanning) -------------
     //

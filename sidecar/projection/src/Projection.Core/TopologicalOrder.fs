@@ -244,11 +244,30 @@ module TopologicalOrder =
     /// parent levels)`. Parents not yet seen — broken edges where
     /// the cycle-resolved arrival of the cycle-participating kind
     /// precedes its broken parent in `t.Order` — contribute 0.
-    /// The set of kinds participating in an (unbroken) dependency cycle,
-    /// flattened from `Cycles`. Compute once, then pass to
-    /// `deferredFkColumns` per kind.
+    /// The set of kinds participating in ANY dependency cycle — RESOLVED
+    /// (the resolver broke weak edges; the SCC stays in `Cycles` for
+    /// audit and for exactly this membership) or UNRESOLVED. The
+    /// deferral input: a resolved SCC's broken weak edges NEED phase-2
+    /// deferral, so `deferredFkColumns` must see resolved members too.
+    /// Compute once, then pass to `deferredFkColumns` per kind.
     let cycleMembers (t: TopologicalOrder) : Set<SsKey> =
         t.Cycles
+        |> List.collect (fun c -> c.Members)
+        |> Set.ofList
+
+    /// The set of kinds participating in an UNRESOLVED cycle only —
+    /// `BreakableEdges = []` is the resolved/unresolved discriminant
+    /// (a resolved SCC records the edges it broke). The
+    /// unsatisfiability input (2026-07-07, the resolver-completeness
+    /// program): a non-nullable FK inside a RESOLVED cycle is satisfied
+    /// BY THE ORDER the resolver proved (only weak edges were broken;
+    /// every strong edge is honored), so `UnbreakableCycleFks` must
+    /// judge unresolved members only — the prior all-members
+    /// computation flagged every resolved asymmetric 2-cycle's strong
+    /// edge as unbreakable and refused a load the order satisfies.
+    let unresolvedCycleMembers (t: TopologicalOrder) : Set<SsKey> =
+        t.Cycles
+        |> List.filter (fun c -> List.isEmpty c.BreakableEdges)
         |> List.collect (fun c -> c.Members)
         |> Set.ofList
 

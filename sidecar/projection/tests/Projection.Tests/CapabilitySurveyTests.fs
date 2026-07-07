@@ -16,18 +16,18 @@ open type Projection.Pipeline.CapabilitySurvey.Capability
 [<Fact>]
 let ``requiredFor: schema+data permits the schema activities; data-only just the DML`` () =
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete
               Performs Preflight.Alter; Performs Preflight.CreateTable ],
         CapabilitySurvey.requiredFor Grant.SchemaAndData)
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete ],
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ],
         CapabilitySurvey.requiredFor Grant.DataOnly)
 
 // --- reconciliation --------------------------------------------------------
 
 [<Fact>]
 let ``reconcile: a data-only grant against a schema+data requirement misses the schema activities`` () =
-    let evidence : Preflight.GrantEvidence = { Granted = set [ ("", "INSERT"); ("", "DELETE") ] }
+    let evidence : Preflight.GrantEvidence = { Granted = set [ ("", "INSERT"); ("", "DELETE") ]; ProbedObjects = Set.empty }
     let missing = CapabilitySurvey.reconcile (CapabilitySurvey.requiredFor Grant.SchemaAndData) evidence
     Assert.Contains(Performs Preflight.Alter, missing)
     Assert.Contains(Performs Preflight.CreateTable, missing)
@@ -36,12 +36,12 @@ let ``reconcile: a data-only grant against a schema+data requirement misses the 
 [<Fact>]
 let ``reconcile: a full grant covers the schema+data requirement — nothing missing`` () =
     let evidence : Preflight.GrantEvidence =
-        { Granted = set [ ("", "INSERT"); ("", "DELETE"); ("", "ALTER"); ("", "CREATE TABLE") ] }
+        { Granted = set [ ("", "INSERT"); ("", "UPDATE"); ("", "DELETE"); ("", "ALTER"); ("", "CREATE TABLE") ]; ProbedObjects = Set.empty }
     Assert.Empty(CapabilitySurvey.reconcile (CapabilitySurvey.requiredFor Grant.SchemaAndData) evidence)
 
 [<Fact>]
 let ``reconcile: a source-read requirement misses a grant that holds no SELECT`` () =
-    let evidence : Preflight.GrantEvidence = { Granted = set [ ("", "INSERT"); ("", "DELETE") ] }
+    let evidence : Preflight.GrantEvidence = { Granted = set [ ("", "INSERT"); ("", "DELETE") ]; ProbedObjects = Set.empty }
     Assert.Equal<CapabilitySurvey.Capability list>([ Reads ], CapabilitySurvey.reconcile (set [ Reads ]) evidence)
 
 // --- the capability catalog (harvest-central) ------------------------------
@@ -49,7 +49,7 @@ let ``reconcile: a source-read requirement misses a grant that holds no SELECT``
 [<Fact>]
 let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissionOf names each`` () =
     Assert.Equal<CapabilitySurvey.Capability list>(
-        [ Reads; Performs Preflight.Insert; Performs Preflight.Delete
+        [ Reads; Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete
           Performs Preflight.Alter; Performs Preflight.CreateTable ],
         CapabilitySurvey.Capability.all)
     Assert.Equal<string>("SELECT", CapabilitySurvey.Capability.permissionOf Reads)
@@ -88,7 +88,7 @@ let ``requiredBy: a cross-substrate transfer reads the source and writes the dat
     let f = Map.find "load" cfg.Flows
     Assert.Equal<Set<CapabilitySurvey.Capability>>(set [ Reads ], CapabilitySurvey.requiredBy cfg f SubstrateRole.Source)
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete ],
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ],
         CapabilitySurvey.requiredBy cfg f SubstrateRole.Sink)
 
 [<Fact>]
@@ -98,7 +98,7 @@ let ``requiredBy: a live source to a schema+data target migrates schema and data
     let cfg = cfgWith [ source; sink ] [ flow "migrate" (FlowSource.Env "staging") "uat" ]
     let f = Map.find "migrate" cfg.Flows
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete
               Performs Preflight.Alter; Performs Preflight.CreateTable ],
         CapabilitySurvey.requiredBy cfg f SubstrateRole.Sink)
 
@@ -141,7 +141,7 @@ let ``requiredOf: a place is the union of what every flow asks of it across role
         set [ Reads; Performs Preflight.Alter; Performs Preflight.CreateTable ],
         CapabilitySurvey.requiredOf cfg "staging")
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete ],
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ],
         CapabilitySurvey.requiredOf cfg "uat")
 
 [<Fact>]
@@ -180,9 +180,10 @@ let ``EnvironmentReport carries the UserDirectory P10 field (report field, not a
     Assert.True(r.UserDirectory.Found)
     Assert.True(r.UserDirectory.EmailKeyed)
     Assert.Equal(Some "dbo.OSSYS_USER", r.UserDirectory.TableName)
-    // The Capability DU is untouched — `Capability.all` is still exactly the
-    // five Reads/Performs variants (the totality stays structural).
-    Assert.Equal(5, List.length CapabilitySurvey.Capability.all)
+    // The Capability DU is untouched by P10 — `Capability.all` is exactly the
+    // Reads/Performs variants (six since Update joined the write actions,
+    // 2026-07-07; the totality stays structural).
+    Assert.Equal(6, List.length CapabilitySurvey.Capability.all)
 
 [<Fact>]
 let ``blocked: a connected place missing a required capability is blocked; an all-clear place is not`` () =
@@ -232,7 +233,7 @@ let private envArch (name: string) (archetype: Archetype option) : Projection.Pi
 
 /// A database-scope `GrantEvidence` from a permission-name list (object-key "").
 let private grantOf (perms: string list) : Preflight.GrantEvidence =
-    { Granted = perms |> List.map (fun p -> ("", p)) |> Set.ofList }
+    { Granted = perms |> List.map (fun p -> ("", p)) |> Set.ofList; ProbedObjects = Set.empty }
 
 [<Fact>]
 let ``Slice B (Part 1): the survey routes through the archetype's derived grant — an archetype-declared sink yields the SAME required set as the equivalent grant (byte-identical)`` () =
@@ -250,7 +251,7 @@ let ``Slice B (Part 1): the survey routes through the archetype's derived grant 
     let dmlSink = envArch "cloud" (Some Archetype.ManagedDml)
     let cfgD = cfgWith [ liveSource; dmlSink ] [ flow "d" (FlowSource.Env "staging") "cloud" ]
     Assert.Equal<Set<CapabilitySurvey.Capability>>(
-        set [ Performs Preflight.Insert; Performs Preflight.Delete ],
+        set [ Performs Preflight.Insert; Performs Preflight.Update; Performs Preflight.Delete ],
         CapabilitySurvey.requiredBy cfgD (Map.find "d" cfgD.Flows) SubstrateRole.Sink)
 
 [<Fact>]

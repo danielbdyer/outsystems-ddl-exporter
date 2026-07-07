@@ -77,13 +77,17 @@ let ``classify: nullable + Restrict = Other (Restrict not breakable)`` () =
     Assert.Equal<EdgeStrength>(EdgeStrength.Other, CycleResolution.classify k r)
 
 // ---------------------------------------------------------------------------
-// asymmetric2CycleStrategy — V1's resolver heuristic. Pure function of
-// SCC members + classified internal edges.
+// weakFeedbackStrategy — THE COMPLETE CASE MAP (v5, 2026-07-07; retires
+// V1's asymmetric-2-cycle heuristic). Pure function of SCC members +
+// classified internal edges. The rows below mirror the resolver's
+// docstring table; the property suite at the end pins the invariants
+// I1-I5 over generated graphs.
 // ---------------------------------------------------------------------------
 
 let private aKey = testKey "A"
 let private bKey = testKey "B"
 let private cKey = testKey "C"
+let private dKey = testKey "D"
 
 [<Fact>]
 let ``resolver: a Weak self-edge (nullable self-FK) is broken for ordering — phase 2 re-points it`` () =
@@ -92,23 +96,23 @@ let ``resolver: a Weak self-edge (nullable self-FK) is broken for ordering — p
     // the whole catalog to the alphabetical fallback — the deferral
     // machinery re-points it in phase 2 regardless of order.
     let step =
-        CycleResolution.asymmetric2CycleStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Weak ]
+        CycleResolution.weakFeedbackStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Weak ]
     Assert.Equal<(SsKey * SsKey) list>([ (aKey, aKey) ], step.EdgesToBreak)
     Assert.Contains("auto-resolved", step.Reason)
 
 [<Fact>]
 let ``resolver: a non-Weak self-edge still refuses (a mandatory self-FK cannot defer)`` () =
     let step =
-        CycleResolution.asymmetric2CycleStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Other ]
+        CycleResolution.weakFeedbackStrategy [ aKey ] [ (aKey, aKey), EdgeStrength.Other ]
     Assert.Empty(step.EdgesToBreak)
-    Assert.Contains("no Weak (nullable) self-edge", step.Reason)
+    Assert.Contains("non-deferrable", step.Reason)
 
 [<Fact>]
 let ``resolver: 2-cycle with exactly one Weak edge returns that edge`` () =
     let edges =
         [ (aKey, bKey), EdgeStrength.Weak
           (bKey, aKey), EdgeStrength.Other ]
-    let step = CycleResolution.asymmetric2CycleStrategy [ aKey; bKey ] edges
+    let step = CycleResolution.weakFeedbackStrategy [ aKey; bKey ] edges
     Assert.Equal<(SsKey * SsKey) list>([ (aKey, bKey) ], step.EdgesToBreak)
     Assert.Contains("auto-resolved", step.Reason)
 
@@ -117,18 +121,22 @@ let ``resolver: 2-cycle with no Weak edges returns empty and explains`` () =
     let edges =
         [ (aKey, bKey), EdgeStrength.Other
           (bKey, aKey), EdgeStrength.Other ]
-    let step = CycleResolution.asymmetric2CycleStrategy [ aKey; bKey ] edges
+    let step = CycleResolution.weakFeedbackStrategy [ aKey; bKey ] edges
     Assert.Empty(step.EdgesToBreak)
-    Assert.Contains("no Weak edge", step.Reason)
+    Assert.Contains("non-deferrable", step.Reason)
 
 [<Fact>]
-let ``resolver: 2-cycle with two Weak edges returns empty and refuses to choose`` () =
+let ``resolver v5: 2-cycle with two Weak edges resolves — exactly one edge broken, the smallest, deterministically`` () =
     let edges =
         [ (aKey, bKey), EdgeStrength.Weak
           (bKey, aKey), EdgeStrength.Weak ]
-    let step = CycleResolution.asymmetric2CycleStrategy [ aKey; bKey ] edges
-    Assert.Empty(step.EdgesToBreak)
-    Assert.Contains("multiple Weak edges", step.Reason)
+    let step = CycleResolution.weakFeedbackStrategy [ aKey; bKey ] edges
+    Assert.Equal<(SsKey * SsKey) list>([ (aKey, bKey) ], step.EdgesToBreak)
+    Assert.Contains("auto-resolved", step.Reason)
+    // Input-order independence (I4): the reversed edge list breaks the
+    // same edge.
+    let reversedStep = CycleResolution.weakFeedbackStrategy [ bKey; aKey ] (List.rev edges)
+    Assert.Equal<(SsKey * SsKey) list>(step.EdgesToBreak, reversedStep.EdgesToBreak)
 
 [<Fact>]
 let ``resolver: 2-cycle with Cascade alongside Weak still uses the Weak edge`` () =
@@ -136,25 +144,79 @@ let ``resolver: 2-cycle with Cascade alongside Weak still uses the Weak edge`` (
     let edges =
         [ (aKey, bKey), EdgeStrength.Weak
           (bKey, aKey), EdgeStrength.Cascade ]
-    let step = CycleResolution.asymmetric2CycleStrategy [ aKey; bKey ] edges
+    let step = CycleResolution.weakFeedbackStrategy [ aKey; bKey ] edges
     Assert.Equal<(SsKey * SsKey) list>([ (aKey, bKey) ], step.EdgesToBreak)
 
 [<Fact>]
-let ``resolver: 3-cycle returns empty and notes the size`` () =
+let ``resolver v5: an all-weak 3-cycle resolves with exactly ONE broken edge (I5 — never a blanket sweep)`` () =
     let edges =
         [ (aKey, bKey), EdgeStrength.Weak
           (bKey, cKey), EdgeStrength.Weak
           (cKey, aKey), EdgeStrength.Weak ]
     let step =
-        CycleResolution.asymmetric2CycleStrategy [ aKey; bKey; cKey ] edges
-    Assert.Empty(step.EdgesToBreak)
-    Assert.Contains("size 3", step.Reason)
+        CycleResolution.weakFeedbackStrategy [ aKey; bKey; cKey ] edges
+    Assert.Equal(1, step.EdgesToBreak.Length)
+    Assert.Contains("auto-resolved", step.Reason)
 
 [<Fact>]
-let ``resolver: empty-edges 2-cycle (degenerate) returns empty`` () =
-    let step = CycleResolution.asymmetric2CycleStrategy [ aKey; bKey ] []
+let ``resolver v5: a 3-cycle with one strong edge resolves by breaking weak edges only (the strong edge is honored by order)`` () =
+    let edges =
+        [ (aKey, bKey), EdgeStrength.Weak
+          (bKey, cKey), EdgeStrength.Other
+          (cKey, aKey), EdgeStrength.Weak ]
+    let step =
+        CycleResolution.weakFeedbackStrategy [ aKey; bKey; cKey ] edges
+    Assert.Equal(1, step.EdgesToBreak.Length)
+    Assert.DoesNotContain((bKey, cKey), step.EdgesToBreak)
+
+[<Fact>]
+let ``resolver v5: an all-strong 3-cycle refuses, naming the exact cycle members`` () =
+    let edges =
+        [ (aKey, bKey), EdgeStrength.Other
+          (bKey, cKey), EdgeStrength.Cascade
+          (cKey, aKey), EdgeStrength.Other ]
+    let step =
+        CycleResolution.weakFeedbackStrategy [ aKey; bKey; cKey ] edges
     Assert.Empty(step.EdgesToBreak)
-    Assert.Contains("no Weak edge", step.Reason)
+    Assert.Contains("non-deferrable", step.Reason)
+    Assert.Contains("A", step.Reason)
+    Assert.Contains("B", step.Reason)
+    Assert.Contains("C", step.Reason)
+
+[<Fact>]
+let ``resolver v5: a strong cycle nested in a larger weak SCC refuses — the weak decorations cannot save it (I3)`` () =
+    // A <-> B strong (the poison pair) decorated with weak edges through
+    // C and D. Whatever weak edges break, the strong 2-cycle survives —
+    // refusal names it.
+    let edges =
+        [ (aKey, bKey), EdgeStrength.Other
+          (bKey, aKey), EdgeStrength.Other
+          (bKey, cKey), EdgeStrength.Weak
+          (cKey, dKey), EdgeStrength.Weak
+          (dKey, aKey), EdgeStrength.Weak ]
+    let step =
+        CycleResolution.weakFeedbackStrategy [ aKey; bKey; cKey; dKey ] edges
+    Assert.Empty(step.EdgesToBreak)
+    Assert.Contains("non-deferrable", step.Reason)
+
+[<Fact>]
+let ``resolver v5: two fused weak rings resolve — one break per residual cycle, graph acyclic after`` () =
+    // Ring 1: A -> B -> A; Ring 2: B -> C -> B. Sharing member B.
+    let edges =
+        [ (aKey, bKey), EdgeStrength.Weak
+          (bKey, aKey), EdgeStrength.Weak
+          (bKey, cKey), EdgeStrength.Weak
+          (cKey, bKey), EdgeStrength.Weak ]
+    let step =
+        CycleResolution.weakFeedbackStrategy [ aKey; bKey; cKey ] edges
+    Assert.Equal(2, step.EdgesToBreak.Length)
+    Assert.Contains("auto-resolved", step.Reason)
+
+[<Fact>]
+let ``resolver v5: empty-edges SCC (degenerate) returns empty and degrades legibly`` () =
+    let step = CycleResolution.weakFeedbackStrategy [ aKey; bKey ] []
+    Assert.Empty(step.EdgesToBreak)
+    Assert.Contains("no cycle found", step.Reason)
 
 // ---------------------------------------------------------------------------
 // neverResolve — opt-out resolver for callers that prefer alphabetical
@@ -199,3 +261,98 @@ let ``resolver shape: a custom resolver can be passed by callers`` () =
     let step = alwaysFirst [ aKey; bKey ] edges
     Assert.Equal<(SsKey * SsKey) list>([ (aKey, bKey) ], step.EdgesToBreak)
     Assert.Contains("custom", step.Reason)
+
+// ---------------------------------------------------------------------------
+// The invariant property suite (I1–I5 over generated graphs). Members are
+// P0..P3; edges are generated from raw byte triples so FsCheck shrinks
+// cleanly. Parallel strengths combine through `combineStrength` — the same
+// pre-processing the pass performs.
+// ---------------------------------------------------------------------------
+
+open FsCheck
+open FsCheck.Xunit
+
+let private pKey (i: int) : SsKey = testKey (sprintf "P%d" i)
+
+let private strengthFor (s: int) : EdgeStrength =
+    match ((s % 3) + 3) % 3 with
+    | 0 -> EdgeStrength.Weak
+    | 1 -> EdgeStrength.Other
+    | _ -> EdgeStrength.Cascade
+
+let private edgesFrom (raw: (byte * byte * byte) list) : ((SsKey * SsKey) * EdgeStrength) list =
+    raw
+    |> List.map (fun (a, b, st) ->
+        (pKey (int a % 4), pKey (int b % 4)), strengthFor (int st))
+    |> List.groupBy fst
+    |> List.map (fun (e, xs) -> e, xs |> List.map snd |> List.reduce CycleResolution.combineStrength)
+
+/// Simple acyclicity check by iterative source-elimination (Kahn) over
+/// FK-orientation edges — independent of the production algorithm.
+let private isAcyclic (edges: (SsKey * SsKey) list) : bool =
+    let rec strip (remaining: (SsKey * SsKey) list) : bool =
+        if List.isEmpty remaining then true
+        else
+            let nodes = remaining |> List.collect (fun (s, t) -> [ s; t ]) |> List.distinct
+            let withIncoming = remaining |> List.map snd |> Set.ofList
+            let sources = nodes |> List.filter (fun n -> not (Set.contains n withIncoming))
+            if List.isEmpty sources then false   // every node has an incoming edge → cycle
+            else
+                let sourceSet = Set.ofList sources
+                strip (remaining |> List.filter (fun (s, _) -> not (Set.contains s sourceSet)))
+    strip (edges |> List.filter (fun (s, t) -> s <> t))
+    && not (edges |> List.exists (fun (s, t) -> s = t))   // any self-edge is a cycle
+
+[<Property>]
+let ``I1 soundness: every edge the resolver breaks is Weak (hence nullable, hence phase-2 deferrable)`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.weakFeedbackStrategy members edges
+    let strengths = Map.ofList edges
+    step.EdgesToBreak
+    |> List.forall (fun e -> Map.tryFind e strengths = Some EdgeStrength.Weak)
+
+[<Property>]
+let ``I2 acyclicity: when the resolver resolves, the SCC minus the broken edges is acyclic`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.weakFeedbackStrategy members edges
+    List.isEmpty step.EdgesToBreak
+    || isAcyclic (edges |> List.map fst |> List.filter (fun e -> not (List.contains e step.EdgesToBreak)))
+
+[<Property>]
+let ``I3 refusal precision: the resolver refuses a cyclic graph exactly when removing every Weak edge still leaves a cycle`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.weakFeedbackStrategy members edges
+    let allEdges = edges |> List.map fst
+    let strongOnly =
+        edges |> List.choose (fun (e, st) -> if st <> EdgeStrength.Weak then Some e else None)
+    if isAcyclic allEdges then
+        // No cycle to resolve — the resolver breaks nothing.
+        List.isEmpty step.EdgesToBreak
+    elif isAcyclic strongOnly then
+        // Every cycle passes through a Weak edge — must resolve.
+        not (List.isEmpty step.EdgesToBreak)
+    else
+        // Some all-strong cycle — must refuse, by name.
+        List.isEmpty step.EdgesToBreak && step.Reason.Contains "non-deferrable"
+
+[<Property>]
+let ``I4 determinism: the broken set is independent of input edge order`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let forward = CycleResolution.weakFeedbackStrategy members edges
+    let reversed = CycleResolution.weakFeedbackStrategy (List.rev members) (List.rev edges)
+    forward.EdgesToBreak = reversed.EdgesToBreak
+
+[<Property>]
+let ``I5 frugality: the resolver never breaks more Weak edges than the graph has residual cycles to break (a pure ring breaks one)`` (n: byte) =
+    // A pure weak ring of size 2..4 breaks EXACTLY one edge.
+    let size = 2 + int n % 3
+    let members = [ 0 .. size - 1 ] |> List.map pKey
+    let edges =
+        [ 0 .. size - 1 ]
+        |> List.map (fun i -> (pKey i, pKey ((i + 1) % size)), EdgeStrength.Weak)
+    let step = CycleResolution.weakFeedbackStrategy members edges
+    step.EdgesToBreak.Length = 1

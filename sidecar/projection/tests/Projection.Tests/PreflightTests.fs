@@ -152,7 +152,7 @@ let ``A1: a reachable endpoint with no authenticated login is a connection viola
 // ---------------------------------------------------------------------------
 
 let private granted (pairs: (string * string) list) : Preflight.GrantEvidence =
-    { Granted = Set.ofList pairs }
+    { Granted = Set.ofList pairs; ProbedObjects = Set.empty }
 
 [<Fact>]
 let ``A2: a planned INSERT the grant covers (object scope) is not a violation`` () =
@@ -317,3 +317,53 @@ let ``G2: a transfer INSERT against a read-only sink grant is a permission viola
     match Preflight.permissionPreflight grant planned with
     | Ok () -> Assert.Fail "expected a refusal: a read-only sink would transfer zero rows and exit clean"
     | Error errs -> Assert.Contains(errs, fun (e: ValidationError) -> e.Code = "migrate.insufficientGrant")
+
+// ---------------------------------------------------------------------------
+// Object-scope grant evaluation (2026-07-07, the go-board scoping program).
+// A probed object's rows are EFFECTIVE permissions (fn_my_permissions at
+// OBJECT scope: database grants inherited, object grants added, DENYs
+// subtracted) — authoritative, no database fallback. An unprobed object
+// keeps the historical object-OR-database rule.
+// ---------------------------------------------------------------------------
+
+let private grantedProbed (pairs: (string * string) list) (probed: string list) : Preflight.GrantEvidence =
+    { Granted = Set.ofList pairs; ProbedObjects = Set.ofList probed }
+
+[<Fact>]
+let ``object scope: object-scope-only DML covers the planned writes (no database grant needed)`` () =
+    let planned =
+        [ { Preflight.Schema = "dbo"; Preflight.Table = "Customer"; Preflight.Action = Preflight.Insert }
+          { Preflight.Schema = "dbo"; Preflight.Table = "Customer"; Preflight.Action = Preflight.Update }
+          { Preflight.Schema = "dbo"; Preflight.Table = "Customer"; Preflight.Action = Preflight.Delete } ]
+    let grant =
+        grantedProbed
+            [ ("dbo.Customer", "INSERT"); ("dbo.Customer", "UPDATE"); ("dbo.Customer", "DELETE") ]
+            [ "dbo.Customer" ]
+    Assert.Empty(Preflight.permissionViolations planned grant)
+
+[<Fact>]
+let ``object scope: a probed object is authoritative — a table-level DENY under a database-scope GRANT is a violation (the G1 closure)`` () =
+    // Database-scope INSERT granted, but the probed object reports no
+    // INSERT (a DENY subtracted it from the effective set). The old
+    // object-OR-database rule would read this as covered and crash
+    // mid-load; the probed-object precedence refuses pre-write.
+    let planned = [ { Preflight.Schema = "dbo"; Preflight.Table = "Customer"; Preflight.Action = Preflight.Insert } ]
+    let grant = grantedProbed [ ("", "INSERT"); ("dbo.Customer", "SELECT") ] [ "dbo.Customer" ]
+    match Preflight.permissionViolations planned grant with
+    | [ v ] -> Assert.Equal("dbo.Customer", v.Object)
+    | other -> Assert.Fail(sprintf "expected one violation, got %A" other)
+
+[<Fact>]
+let ``object scope: an UNPROBED object keeps the database-scope fallback (historical evidence shape)`` () =
+    let planned = [ { Preflight.Schema = "dbo"; Preflight.Table = "Customer"; Preflight.Action = Preflight.Insert } ]
+    let grant = grantedProbed [ ("", "INSERT") ] []
+    Assert.Empty(Preflight.permissionViolations planned grant)
+
+[<Fact>]
+let ``object scope: coversPermissionOn agrees with the violation gate on all three shapes`` () =
+    let probedDeny = grantedProbed [ ("", "UPDATE") ] [ "dbo.T" ]
+    Assert.False(Preflight.coversPermissionOn "dbo" "T" "UPDATE" probedDeny)
+    let probedGranted = grantedProbed [ ("dbo.T", "UPDATE") ] [ "dbo.T" ]
+    Assert.True(Preflight.coversPermissionOn "dbo" "T" "UPDATE" probedGranted)
+    let unprobedDbScope = grantedProbed [ ("", "UPDATE") ] []
+    Assert.True(Preflight.coversPermissionOn "dbo" "T" "UPDATE" unprobedDbScope)

@@ -169,16 +169,24 @@ module DataLoadPlan =
         let loads   = loadAndSkipped |> List.map fst
         let skipped = loadAndSkipped |> List.collect snd
 
+        // Unsatisfiability judges UNRESOLVED cycles only (2026-07-07, the
+        // resolver-completeness program): a strong edge inside a RESOLVED
+        // SCC is satisfied by the proven order (the resolver breaks weak
+        // edges only), so flagging it here refused loads the order
+        // handles. `members` (all cycle participants) still drives the
+        // DEFERRAL above — a resolved SCC's broken weak edges genuinely
+        // defer to phase 2.
+        let unresolvedMembers = TopologicalOrder.unresolvedCycleMembers topo
         let unbreakable =
             topo.Order
             |> List.collect (fun key ->
                 match Catalog.tryFindKind key catalog with
                 | None -> []
-                | Some k when not (Set.contains key members) -> []
+                | Some k when not (Set.contains key unresolvedMembers) -> []
                 | Some k ->
                     k.References
                     |> List.choose (fun r ->
-                        if Set.contains r.TargetKind members then
+                        if Set.contains r.TargetKind unresolvedMembers then
                             Kind.tryFindAttribute r.SourceAttribute k
                             |> Option.bind (fun a ->
                                 if a.Column.IsNullable then None

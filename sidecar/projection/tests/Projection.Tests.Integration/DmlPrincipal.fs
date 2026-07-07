@@ -51,6 +51,26 @@ module DmlPrincipal =
     let createManaged (admin: SqlConnection) (adminConnStr: string) =
         create admin adminConnStr ManagedGrants
 
+    /// The OBJECT-SCOPE DML profile (2026-07-07 — the live-run estate shape:
+    /// object/column-scope DML, NO database-scope DML at all). Database-scope
+    /// SELECT (the metamodel/contract reads span ossys_* + sys views) plus
+    /// INSERT/UPDATE/DELETE granted PER OBJECT on every non-ossys table. A
+    /// database-scope-only grant probe reads this principal as write-less;
+    /// the planned-table object probe reads the truth.
+    let createObjectDml (admin: SqlConnection) (adminConnStr: string) : System.Threading.Tasks.Task<string * string> =
+        task {
+            let! login, connStr = create admin adminConnStr "SELECT"
+            do! Deploy.executeBatch admin
+                    (sprintf
+                        "DECLARE @sql NVARCHAR(MAX) = N''; \
+                         SELECT @sql = @sql + N'GRANT INSERT, UPDATE, DELETE ON ' + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) + N' TO [%s]; ' \
+                         FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id \
+                         WHERE t.name NOT LIKE N'ossys[_]%%'; \
+                         EXEC sys.sp_executesql @sql;"
+                        login)
+            return login, connStr
+        }
+
     /// Best-effort login cleanup (the per-run database drops with the
     /// ephemeral fixture; the LOGIN is instance-scoped and must go too).
     let dropLogin (admin: SqlConnection) (login: string) : unit =
