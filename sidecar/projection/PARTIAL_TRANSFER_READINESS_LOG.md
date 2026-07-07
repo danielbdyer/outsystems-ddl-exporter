@@ -1028,7 +1028,7 @@ reconciled-edge drop, full-transfer identity, planned-write verbs;
 the unrelated-cycle board goes GREEN while the unscoped topology provably
 degrades on the same contract; `PeerManagedGrantTransferDockerTests` — the new
 OBJECT-scope-DML cell lands the subset with zero grant violations and no
-database-scope DML at all; both G1 promotions). Full-sweep verdict below.
+database-scope DML at all; both G1 promotions).
 
 ## Entry 26 — 2026-07-07, THE WEAK-FEEDBACK RESOLVER (v5): cycle handling made total, and the resolved-cycle refusal bug the audit caught
 
@@ -1070,4 +1070,13 @@ unprobed (database-scope fallback), and the chunk-resume crash witness holds.
 `TopologicalOrderPassTests` (v5 flips), `DataLoadPlanTests` (resolved →
 satisfiable; unresolved → named diagnostic), `DataEmissionComposerTests`
 (unresolvable fixture moved to nullable+Restrict, preserving both premises);
-full fast pool green. Full-sweep verdict below.
+full fast pool green.
+
+**Final verdict (Entries 25 + 26 together):** the full sweep PASSED IN FULL —
+fast pool 3965/3965 (35s), docker pool 293/293 (572s), scale pool 16/16 (96s),
+with the scope-parity, object-scope-grant, G1-promotion, unrelated-cycle, and
+resolver-v5 witnesses all aboard, and the Release-configuration build verified
+(the FS3511 witness caught and fixed the probe-loop shape before it shipped).
+The go board and the engine now judge the same effective transfer graph, and
+cycle handling is total over its case space with the correlated
+deferral/unsatisfiability algebra property-pinned.
