@@ -710,37 +710,137 @@ module OssysRowsetReader =
                             "Failed to build module '%s' from rowset bundle."
                             moduleRow.EspaceName))
 
-    /// NAME the entity-less-module erasure (2026-07-07, the live
-    /// partial-transfer catch). An espace with no entities — a UI /
-    /// theme / service module, routine on a real estate — carries
-    /// nothing this engine publishes or transfers, and `Module.create`
-    /// (LR1 / A39) rightly refuses an empty-kinds module; feeding it
-    /// one killed the whole metamodel read (`module.kinds.empty`).
-    /// `parseRowsetBundle` skips those espaces (V1 parity: "Module 'X'
-    /// contains no entities and will be skipped" — V1's
-    /// `ModuleDocumentMapper` / `ModelDeserializerFacade` /
-    /// `FullExportApplicationService`); this pure producer names each
-    /// skip so the live read surfaces the erasure instead of silence.
-    /// Info severity — the normal shape of a real estate, individually
-    /// listed in the notice artifact. Deterministic — ordered by module
-    /// name then espace id.
-    let entityLessModules (bundle: RowsetBundle) : DiagnosticEntry list =
+    /// Stable notice codes for the bundle-normalization erasures (the
+    /// `<domain>.<subject>.<problem>` convention; sites emit codes, the
+    /// Voice owns copy).
+    [<Literal>]
+    let CodeModuleEntityLess = "adapter.ossys.module.entityLess"
+
+    [<Literal>]
+    let CodeKindInactiveShadow = "adapter.ossys.kind.inactiveShadow"
+
+    /// The bundle NORMALIZATION pass — the named erasures a raw OSSYS
+    /// rowset bundle needs before the aggregate-root smart constructors
+    /// see it (2026-07-07, the live partial-transfer program; readiness
+    /// log Entries 23 + 24). Two steps, applied in order:
+    ///
+    ///   1. **Inactive-shadow resolution** (`CodeKindInactiveShadow`).
+    ///      The same entity SS_Key on multiple kind rows is the routine
+    ///      trace of an entity MOVED between modules — the old espace
+    ///      keeps an INACTIVE `ossys_Entity` row with the same SS_Key
+    ///      (visible whenever the read includes inactive entities).
+    ///      When exactly one duplicate is active, the active row is
+    ///      carried, each inactive shadow is dropped, and references
+    ///      aimed at a shadow's EntityId re-aim at the survivor (same
+    ///      identity — the GUID is the conserved charge). Any other
+    ///      duplicate shape (two active; all inactive) is carried
+    ///      UNCHANGED — the A4 refusal at `Catalog.create` is the
+    ///      correct terminal for a contradiction only the operator can
+    ///      adjudicate.
+    ///
+    ///   2. **Entity-less module skip** (`CodeModuleEntityLess`; V1
+    ///      parity — "Module 'X' contains no entities and will be
+    ///      skipped", V1's `ModuleDocumentMapper` /
+    ///      `ModelDeserializerFacade` / `FullExportApplicationService`).
+    ///      An espace with no entities carries nothing this engine
+    ///      publishes or transfers, and `Module.create` (LR1 / A39)
+    ///      rightly refuses an empty-kinds module. Computed AFTER step 1,
+    ///      so a module whose only entity was a dropped shadow skips too.
+    ///
+    /// Pure, deterministic (notices ordered by name then id within each
+    /// step), and idempotent — a normalized bundle re-normalizes to
+    /// itself with zero notices. `parseRowsetBundle` applies it
+    /// internally (every consumer gets the semantics); the live read
+    /// (`LiveModelRead`) calls it directly to surface the notices, so
+    /// no erasure is ever silent.
+    let normalizeBundle (bundle: RowsetBundle) : RowsetBundle * DiagnosticEntry list =
+        // -- step 1: inactive-shadow resolution ---------------------------
+        let moduleNameByEspaceId =
+            bundle.Modules |> List.map (fun m -> m.EspaceId, m.EspaceName) |> Map.ofList
+        let moduleNameOf (espaceId: int) : string =
+            Map.tryFind espaceId moduleNameByEspaceId
+            |> Option.defaultValue (sprintf "espace-%d" espaceId)
+        let resolvedDuplicates =
+            bundle.Kinds
+            |> List.choose (fun k -> k.EntitySsKey |> Option.map (fun g -> g, k))
+            |> List.groupBy fst
+            |> List.choose (fun (ssKey, pairs) ->
+                let kinds = pairs |> List.map snd
+                if List.length kinds < 2 then None
+                else
+                    match kinds |> List.partition (fun k -> k.IsActive) with
+                    | [ survivor ], shadows -> Some (ssKey, survivor, shadows)
+                    | _ -> None)
+        let shadowEntityIds =
+            resolvedDuplicates
+            |> List.collect (fun (_, _, shadows) -> shadows |> List.map (fun s -> s.EntityId))
+            |> Set.ofList
+        let survivorEntityIdByShadow =
+            resolvedDuplicates
+            |> List.collect (fun (_, survivor, shadows) ->
+                shadows |> List.map (fun s -> s.EntityId, survivor.EntityId))
+            |> Map.ofList
+        let shadowNotices =
+            resolvedDuplicates
+            |> List.sortBy (fun (_, survivor, _) -> survivor.EntityName, survivor.EntityId)
+            |> List.collect (fun (ssKey, survivor, shadows) ->
+                shadows
+                |> List.sortBy (fun s -> s.EntityId)
+                |> List.map (fun s ->
+                    { DiagnosticEntry.create
+                        "adapter:OSSYS" DiagnosticSeverity.Info
+                        CodeKindInactiveShadow
+                        (sprintf
+                            "Entity %s (id %d, inactive) in module %s carries the same SS_Key %O as the active entity %s (id %d) in module %s — the trace of an entity moved between modules. The inactive shadow is dropped; the active entity is carried."
+                            s.EntityName s.EntityId (moduleNameOf s.EspaceId)
+                            ssKey survivor.EntityName survivor.EntityId (moduleNameOf survivor.EspaceId))
+                      with Metadata =
+                            Map.ofList
+                                [ "ssKey",            string ssKey
+                                  "shadowEntityId",   string s.EntityId
+                                  "shadowModule",     moduleNameOf s.EspaceId
+                                  "survivorEntityId", string survivor.EntityId
+                                  "survivorModule",   moduleNameOf survivor.EspaceId ] }))
+        let survivingKinds =
+            bundle.Kinds
+            |> List.filter (fun k -> not (Set.contains k.EntityId shadowEntityIds))
+        // Re-aim references that target a dropped shadow's EntityId at the
+        // survivor — same SS_Key, so the resolved reference identity is
+        // unchanged; only the join id moves.
+        let reaimedReferences =
+            if Map.isEmpty survivorEntityIdByShadow then bundle.References
+            else
+                bundle.References
+                |> List.map (fun r ->
+                    match r.RefEntityId with
+                    | Some id when Map.containsKey id survivorEntityIdByShadow ->
+                        { r with RefEntityId = Some (Map.find id survivorEntityIdByShadow) }
+                    | _ -> r)
+        // -- step 2: entity-less module skip (post-shadow-drop) -----------
         let populatedEspaces =
-            bundle.Kinds |> List.map (fun k -> k.EspaceId) |> Set.ofList
-        bundle.Modules
-        |> List.filter (fun m -> not (Set.contains m.EspaceId populatedEspaces))
-        |> List.sortBy (fun m -> m.EspaceName, m.EspaceId)
-        |> List.map (fun m ->
-            { DiagnosticEntry.create
-                "adapter:OSSYS" DiagnosticSeverity.Info
-                "adapter.ossys.module.entityLess"
-                (sprintf
-                    "Module %s (espace %d) contains no entities and is skipped from the model read — nothing to publish or transfer."
-                    m.EspaceName m.EspaceId)
-              with Metadata =
-                    Map.ofList
-                        [ "espaceId", string m.EspaceId
-                          "moduleName", m.EspaceName ] })
+            survivingKinds |> List.map (fun k -> k.EspaceId) |> Set.ofList
+        let populatedModules, entityLess =
+            bundle.Modules
+            |> List.partition (fun m -> Set.contains m.EspaceId populatedEspaces)
+        let entityLessNotices =
+            entityLess
+            |> List.sortBy (fun m -> m.EspaceName, m.EspaceId)
+            |> List.map (fun m ->
+                { DiagnosticEntry.create
+                    "adapter:OSSYS" DiagnosticSeverity.Info
+                    CodeModuleEntityLess
+                    (sprintf
+                        "Module %s (espace %d) contains no entities and is skipped from the model read — nothing to publish or transfer."
+                        m.EspaceName m.EspaceId)
+                  with Metadata =
+                        Map.ofList
+                            [ "espaceId", string m.EspaceId
+                              "moduleName", m.EspaceName ] })
+        { bundle with
+            Modules    = populatedModules
+            Kinds      = survivingKinds
+            References = reaimedReferences },
+        shadowNotices @ entityLessNotices
 
     /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
     /// path). The flat-list bundle joins by FK ID columns at load time
@@ -750,9 +850,12 @@ module OssysRowsetReader =
     /// existing `Module.create` / `Catalog.create` aggregate-root
     /// smart constructors, so referential-integrity invariants are
     /// checked at the boundary identically to the JSON path.
-    /// Entity-less modules are SKIPPED as a named erasure (see
-    /// `entityLessModules` above — the notice producer the live read
-    /// wires so the skip is never silent).
+    /// The bundle is normalized first (`normalizeBundle` above —
+    /// inactive-shadow resolution + entity-less module skip); the
+    /// notices are surfaced by the live read, which calls
+    /// `normalizeBundle` directly, so the parse-side application here
+    /// is an idempotent re-run that guarantees EVERY consumer gets the
+    /// normalized semantics.
     ///
     /// Big-O / pillar 7 perf clause: O(N + E + A + R) for the input
     /// bundle plus O(E + A) for the three Map.ofList constructions
@@ -760,7 +863,8 @@ module OssysRowsetReader =
     /// with O(1) Map lookups; per-kind reference assembly is O(R_e)
     /// with O(1) Map lookups. Linear in the bundle's total size;
     /// matches `parseDocument`'s complexity class.
-    let parseRowsetBundle (bundle: RowsetBundle) : Result<Catalog> =
+    let parseRowsetBundle (rawBundle: RowsetBundle) : Result<Catalog> =
+        let bundle, _erasureNotices = normalizeBundle rawBundle
         let attributesByEntity =
             bundle.Attributes |> List.groupBy (fun a -> a.EntityId) |> Map.ofList
         let kindsByEspace =
@@ -831,16 +935,8 @@ module OssysRowsetReader =
               IndexColumnsByIndex  = indexColumnsByIndex
               TriggersByEntity     = triggersByEntity
               ColumnChecksByEntity = columnChecksByEntity }
-        // The entity-less skip (the erasure `entityLessModules` names):
-        // only espaces with at least one entity reach `Module.create`,
-        // whose non-empty-kinds invariant (LR1 / A39) is for CORRUPT
-        // shapes, not for the routine entity-less espaces of a real
-        // estate.
-        let populatedModules =
-            bundle.Modules
-            |> List.filter (fun m -> Map.containsKey m.EspaceId kindsByEspace)
         let moduleResults =
-            populatedModules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
+            bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
         match Result.aggregate moduleResults with
         | Ok modules ->
             Catalog.create modules []

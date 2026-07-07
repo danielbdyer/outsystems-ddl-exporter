@@ -1506,13 +1506,18 @@ let ``PK recovery: the fallback requires a native attribute SS_Key to compare (s
     Assert.Empty(attrs |> List.filter (fun a -> a.IsPrimaryKey))
 
 // ---------------------------------------------------------------------------
-// The entity-less-module skip (2026-07-07, the live partial-transfer catch).
-// A real estate routinely carries espaces with no entities (UI / theme /
-// service modules); V1 skips them ("Module 'X' contains no entities and
-// will be skipped"). V2's rowset path used to feed them to `Module.create`,
-// whose LR1/A39 non-empty-kinds invariant failed the WHOLE metamodel read
-// (`module.kinds.empty`). The skip is a NAMED erasure: `entityLessModules`
-// produces one Info notice per skipped module.
+// The bundle normalization (2026-07-07, the live partial-transfer catches;
+// readiness log Entries 23 + 24). A real estate routinely carries shapes the
+// canary seed lacks:
+//   * espaces with no entities (UI / theme / service modules) — V1 skips
+//     them ("Module 'X' contains no entities and will be skipped"); feeding
+//     them to `Module.create` failed the WHOLE read (`module.kinds.empty`);
+//   * inactive duplicate entities — an entity moved between modules leaves
+//     an inactive `ossys_Entity` row in the old espace with the SAME
+//     SS_Key; carrying both trips A4 (`catalog.kinds.duplicateKey`).
+// `normalizeBundle` resolves both as NAMED erasures (one Info notice each);
+// a duplicate with no single active row is carried unchanged — the A4
+// refusal stays the terminal for a genuine contradiction.
 // ---------------------------------------------------------------------------
 
 let private entityLessPortalRow : OssysRowsetTypes.ModuleRow =
@@ -1525,19 +1530,37 @@ let private entityLessPortalRow : OssysRowsetTypes.ModuleRow =
         EspaceSsKey    = None
     }
 
+let private appCoreOldRow : OssysRowsetTypes.ModuleRow =
+    { entityLessPortalRow with EspaceId = 3; EspaceName = "AppCoreOld" }
+
+let private userShadowGuid = System.Guid.Parse "aaaaaaaa-bbbb-4ccc-8ddd-000000000011"
+
+/// The inactive shadow of `userKindRow` — same entity SS_Key, different
+/// espace (AppCoreOld) + EntityId, Is_Active = 0 (the moved-entity trace).
+let private userShadowKindRow : OssysRowsetTypes.KindRow =
+    { userKindRow (Some userShadowGuid) with
+        EntityId = 99
+        EspaceId = 3
+        IsActive = false }
+
+let private normalizationBundle
+    (modules: OssysRowsetTypes.ModuleRow list)
+    (kinds: OssysRowsetTypes.KindRow list)
+    : OssysRowsetTypes.RowsetBundle =
+    {
+        Modules      = modules
+        Kinds        = kinds
+        Attributes   = [ idAttrRow None; emailAttrRow None ]
+        References   = []
+        Indexes      = []
+        IndexColumns = []
+        Triggers     = []
+        ColumnChecks = []
+    }
+
 [<Fact>]
 let ``V1 parity: an entity-less espace is skipped, not a module.kinds.empty failure of the whole read`` () =
-    let bundle : OssysRowsetTypes.RowsetBundle =
-        {
-            Modules      = [ moduleRow None; entityLessPortalRow ]
-            Kinds        = [ userKindRow None ]
-            Attributes   = [ idAttrRow None; emailAttrRow None ]
-            References   = []
-            Indexes      = []
-            IndexColumns = []
-            Triggers     = []
-            ColumnChecks = []
-        }
+    let bundle = normalizationBundle [ moduleRow None; entityLessPortalRow ] [ userKindRow None ]
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> failwithf "expected Ok; got Error: %A" errors
     | Ok catalog ->
@@ -1546,22 +1569,80 @@ let ``V1 parity: an entity-less espace is skipped, not a module.kinds.empty fail
 
 [<Fact>]
 let ``the entity-less skip is a NAMED erasure: one Info notice per skipped module, none when every module is populated`` () =
-    let bundle : OssysRowsetTypes.RowsetBundle =
-        {
-            Modules      = [ moduleRow None; entityLessPortalRow ]
-            Kinds        = [ userKindRow None ]
-            Attributes   = [ idAttrRow None; emailAttrRow None ]
-            References   = []
-            Indexes      = []
-            IndexColumns = []
-            Triggers     = []
-            ColumnChecks = []
-        }
-    let notices = OssysRowsetReader.entityLessModules bundle
+    let bundle = normalizationBundle [ moduleRow None; entityLessPortalRow ] [ userKindRow None ]
+    let _, notices = OssysRowsetReader.normalizeBundle bundle
     let notice = Assert.Single(notices)
-    Assert.Equal("adapter.ossys.module.entityLess", notice.Code)
+    Assert.Equal(OssysRowsetReader.CodeModuleEntityLess, notice.Code)
     Assert.Equal(DiagnosticSeverity.Info, notice.Severity)
     Assert.Contains("PortalTheme", notice.Message)
     Assert.Equal(Some "2", Map.tryFind "espaceId" notice.Metadata)
-    let populatedOnly = { bundle with Modules = [ moduleRow None ] }
-    Assert.Empty(OssysRowsetReader.entityLessModules populatedOnly)
+    let populatedOnly = normalizationBundle [ moduleRow None ] [ userKindRow None ]
+    Assert.Empty(snd (OssysRowsetReader.normalizeBundle populatedOnly))
+
+[<Fact>]
+let ``an inactive duplicate SS_Key kind is dropped as a NAMED shadow; the active kind is carried and the read succeeds`` () =
+    let bundle =
+        normalizationBundle
+            [ moduleRow None; appCoreOldRow ]
+            [ userKindRow (Some userShadowGuid); userShadowKindRow ]
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> failwithf "expected Ok; got Error: %A" errors
+    | Ok catalog ->
+        // Only AppCore survives — AppCoreOld's sole entity was the shadow,
+        // so it skips entity-less (the two normalization steps compose).
+        let names = catalog.Modules |> List.map (fun m -> Name.value m.Name)
+        Assert.Equal<string list>([ "AppCore" ], names)
+        Assert.Equal(1, Catalog.allKinds catalog |> List.length)
+    let _, notices = OssysRowsetReader.normalizeBundle bundle
+    Assert.Equal<string list>(
+        [ OssysRowsetReader.CodeKindInactiveShadow; OssysRowsetReader.CodeModuleEntityLess ],
+        notices |> List.map (fun n -> n.Code))
+    let shadow = notices |> List.find (fun n -> n.Code = OssysRowsetReader.CodeKindInactiveShadow)
+    Assert.Contains("AppCoreOld", shadow.Message)
+    Assert.Equal(Some "99", Map.tryFind "shadowEntityId" shadow.Metadata)
+    Assert.Equal(Some "11", Map.tryFind "survivorEntityId" shadow.Metadata)
+
+[<Fact>]
+let ``a reference aimed at a dropped shadow's EntityId re-aims at the survivor (same SS_Key, only the join id moves)`` () =
+    let bundle =
+        { normalizationBundle
+            [ moduleRow None; appCoreOldRow ]
+            [ userKindRow (Some userShadowGuid); userShadowKindRow ] with
+            References =
+                [ { AttrId              = 112
+                    RefEntityName       = "User"
+                    RefEntityId         = Some 99   // the shadow's id
+                    DeleteRuleCode      = None
+                    HasDbConstraint     = true
+                    OnUpdate            = None
+                    IsConstraintTrusted = true } ] }
+    let normalized, _ = OssysRowsetReader.normalizeBundle bundle
+    let reference = Assert.Single(normalized.References)
+    Assert.Equal(Some 11, reference.RefEntityId)
+
+[<Fact>]
+let ``two ACTIVE kinds sharing an SS_Key are carried unchanged — the A4 refusal remains the terminal for a real contradiction`` () =
+    let bundle =
+        normalizationBundle
+            [ moduleRow None; appCoreOldRow ]
+            [ userKindRow (Some userShadowGuid)
+              { userShadowKindRow with IsActive = true } ]
+    // No shadow resolution fires (no single active row to prefer)...
+    Assert.Empty(snd (OssysRowsetReader.normalizeBundle bundle))
+    // ...and the parse refuses on A4, exactly as before.
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Ok _ -> failwith "expected the A4 duplicate-kind refusal"
+    | Error errors ->
+        Assert.Contains("catalog.kinds.duplicateKey", errors |> List.map (fun e -> e.Code))
+
+[<Fact>]
+let ``normalizeBundle is idempotent: a normalized bundle re-normalizes to itself with zero notices`` () =
+    let bundle =
+        normalizationBundle
+            [ moduleRow None; appCoreOldRow; entityLessPortalRow ]
+            [ userKindRow (Some userShadowGuid); userShadowKindRow ]
+    let once, firstNotices = OssysRowsetReader.normalizeBundle bundle
+    Assert.NotEmpty firstNotices
+    let twice, secondNotices = OssysRowsetReader.normalizeBundle once
+    Assert.Empty secondNotices
+    Assert.Equal<OssysRowsetTypes.RowsetBundle>(once, twice)

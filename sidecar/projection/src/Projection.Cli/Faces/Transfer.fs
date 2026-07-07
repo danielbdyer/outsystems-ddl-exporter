@@ -10,6 +10,7 @@ open System
 open System.Diagnostics
 open System.IO
 open Projection.Core
+open Projection.Adapters.OssysSql
 open Projection.Adapters.Sql
 open Projection.Pipeline
 open Projection.Targets.SSDT
@@ -519,6 +520,11 @@ let runReverseLegTransfer
 // ---------------------------------------------------------------------------
 
 let runPeerTransfer
+    // The snapshot scope BOTH contract reads run under — the dispatcher
+    // binds it from the projection.json `model` section
+    // (`SnapshotScopeBinding.fromModel`), so the transfer reads the same
+    // modeled estate as full-export/publish (2026-07-07).
+    (contractScope: MetadataSnapshotRunner.SnapshotParameters)
     (sourceSpec: string)
     (sinkSpec: string)
     (reconcileSpecs: string list)
@@ -538,7 +544,7 @@ let runPeerTransfer
     // Acquire the two SsKey-aligned contracts (the one I/O seam this face
     // adds). An unreadable OSSYS metamodel refuses on the schema-read axis
     // (exit 6) before any gate or connection-opening work.
-    match (PeerTransfer.acquireContracts sourceSpec sinkSpec).GetAwaiter().GetResult() with
+    match (PeerTransfer.acquireContractsWith contractScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
     | Error errors ->
         // The gate surface owns the copy (§5): `source.ossys.*` classifies
         // onto the schema-read axis, so the operator gets the statement +
@@ -790,7 +796,11 @@ let private probeCount (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: strin
     cmd.CommandText <- sql
     System.Convert.ToInt32 (cmd.ExecuteScalar())
 
-let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (planned: PlanAction) : int =
+let runCheckGo
+    // Same contract-read scope as `runPeerTransfer` — the go board must
+    // forecast with the contracts the live run will actually read.
+    (contractScope: MetadataSnapshotRunner.SnapshotParameters)
+    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         if asJson then printfn "%s" (GoBoard.toJsonString board)
@@ -809,7 +819,7 @@ let runCheckGo (flowName: string) (fromLabel: string) (toLabel: string) (asJson:
         let items = ResizeArray<GoBoard.Item>()
         items.Add (GoBoard.item "routing" (GoBoard.Status.Green "the SsKey-aligned peer leg (both renditions physical)."))
         // -- contracts (the two OSSYS metamodel reads) ---------------------
-        match (PeerTransfer.acquireContracts sourceSpec sinkSpec).GetAwaiter().GetResult() with
+        match (PeerTransfer.acquireContractsWith contractScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
         | Error errors ->
             items.Add (GoBoard.itemWith "contracts"
                 (GoBoard.Status.Red

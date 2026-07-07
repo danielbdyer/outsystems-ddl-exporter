@@ -911,4 +911,68 @@ rowset path on both sides); fix deferred until a JSON-path consumer meets one.
 catalog; the notice producer emits exactly one Info entry per skipped module, zero
 when all are populated) and docker e2e (`EntityLessModuleReadDockerTests` — edge-case
 seed + an entity-less espace: extraction → bundle → catalog parse succeeds, module
-absent, erasure named). Full-sweep verdict below.
+absent, erasure named).
+
+**Final verdict:** the full sweep PASSED IN FULL — fast pool 3939/3939 (51s), docker
+pool 290/290 (629s), scale pool 16/16 (113s), the new tests aboard both pools. Both
+live-run catches of this program (Entries 22 + 23) are closed; the contracts gate
+reads real estates carrying orphan attributes AND entity-less espaces.
+
+## Entry 24 — 2026-07-07, THE DUPLICATE SS_KEY: scope parity for contract reads + the inactive-shadow erasure
+
+**What the live run hit (contracts, take three):** `catalog.kinds.duplicateKey:
+Catalog has Kind SsKey OssysOriginal <guid> duplicated across modules; A4 requires
+Kind identity to be globally unique.` The estate didn't change — each prior fix
+(Entries 22, 23) peeled the read one stage deeper into what a whole real estate
+actually looks like.
+
+**Root cause, two-ply:**
+
+1. **The transfer's contract reads ignored the projection.json model scope.**
+   Full-export/publish read through `readConfigModel` →
+   `SnapshotScopeBinding.fromModel cfg.Model` (declared `model.modules` narrow at
+   query time; `includeInactiveModules` defaults false; `onlyActiveAttributes`
+   defaults true). The peer transfer's `acquireContracts` → `Source.ofOssys` →
+   `LiveModelRead.fromConnSpec` read with `defaultParameters` — the
+   show-me-everything stance (all modules, system included, INACTIVE ENTITIES
+   included). The transfer saw strictly more estate than any other verb.
+2. **What the wider view exposed:** an entity MOVED between modules leaves an
+   inactive `ossys_Entity` row in the old espace with the SAME SS_Key as the
+   active row in its new home. Load both → two Kinds, one SsKey → A4 refusal
+   kills the whole read.
+
+**Fix 1 — scope parity (one modeled estate, every verb reads it the same way).**
+`Source.ofOssysWith` + `PeerTransfer.acquireContractsWith` are the new
+scope-bearing siblings (zero-default `ofOssys` / `acquireContracts` delegate, per
+the sibling-wrapper discipline); `runPeerTransfer` + `runCheckGo` take the
+contract scope and the dispatcher binds it from `SnapshotScopeBinding.fromModel
+shaping.Model` — the transfer and its go board now read the SAME modeled estate
+as full-export/publish, on both sides. An unscoped config still binds
+`onlyActiveAttributes=true` (the config default), which also pre-empts the
+inactive-duplicate-attribute layer beneath this one.
+
+**Fix 2 — the inactive-shadow erasure (robustness inside any scope).** The
+entity-less skip generalizes into `OssysRowsetReader.normalizeBundle` — the ONE
+normalization pass every rowset parse applies (idempotent; the live read calls it
+directly to surface the notices):
+- step 1, inactive-shadow resolution (`adapter.ossys.kind.inactiveShadow`, Info):
+  duplicate SS_Key with EXACTLY ONE active row → the active row is carried, each
+  inactive shadow dropped + named, and references aimed at a shadow's EntityId
+  re-aim at the survivor (same GUID — identity is the conserved charge). Two
+  active, or all inactive → carried UNCHANGED; the A4 refusal stays the terminal
+  for a contradiction only the operator can adjudicate.
+- step 2, the Entry-23 entity-less skip, computed AFTER step 1 — a module whose
+  only entity was a dropped shadow skips too.
+
+**Proven:** pure (`OsmRowsetReaderTests` — shadow dropped + named with the
+survivor/shadow ids in metadata; reference re-aim; two-active still refuses on
+A4; normalization idempotent; entity-less tests re-homed onto `normalizeBundle`)
+and docker e2e (`EntityLessModuleReadDockerTests` — seed + an inactive City
+shadow in a second espace: extraction → normalize → parse succeeds, City carried
+exactly once in its active home, both erasures named).
+
+**Final verdict:** the full sweep PASSED IN FULL — fast pool 3943/3943 (52s), docker
+pool 291/291 (649s), scale pool 16/16 (111s), the normalization + scope-parity tests
+aboard. Three live-run catches (Entries 22-24) closed in one day; the contracts gate
+now reads a whole real estate — orphan attributes, entity-less espaces, and
+moved-entity shadows — under the same model scope every other verb honors.

@@ -5,6 +5,7 @@ open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Osm
+open Projection.Adapters.OssysSql
 open Projection.Adapters.Sql
 open Projection.Targets.Json
 
@@ -191,13 +192,20 @@ module Source =
     /// (`CROSS_ENVIRONMENT_READINESS.md`). `conn` is a D9 connection reference
     /// (`env:<var>` / `file:<path>`). Carries ReadCatalog (the OSSYS model) +
     /// Profile (the live data — the readiness gate's dealbreaker evidence).
-    let ofOssys (conn: string) : Source =
+    ///
+    /// Scope-bearing entry point — `parameters` is the snapshot scope the
+    /// model read runs under (`SnapshotScopeBinding.fromModel` binds it from
+    /// the projection.json `model` section), so a scoped consumer (the peer
+    /// transfer's contract reads, 2026-07-07) sees the SAME modeled estate
+    /// as full-export/publish (`Compose.readConfigModel`). `ofOssys` is the
+    /// zero-default sibling (the show-me-everything `defaultParameters`).
+    let ofOssysWith (parameters: MetadataSnapshotRunner.SnapshotParameters) (conn: string) : Source =
         { Identity       = "ossys:" + conn  // LINT-ALLOW: terminal Source-identity tag string at the resolution boundary; no use-case-specific AST
           Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
           ReadCatalog    =
             (fun () ->
                 task {
-                    try return! LiveModelRead.fromConnSpec conn
+                    try return! LiveModelRead.fromConnSpecWith parameters conn
                     with ex ->
                         return
                             Result.failureOf
@@ -222,6 +230,12 @@ module Source =
                                 (ValidationError.create "source.ossys.profileFailed"
                                     (System.String.Concat("ossys source ", conn, ": ", ex.Message)))  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat is the right primitive
                 }) }
+
+    /// Zero-default sibling of `ofOssysWith` — the show-me-everything
+    /// stance (`defaultParameters`): all modules, system + inactive
+    /// included. The canary/baseline face.
+    let ofOssys (conn: string) : Source =
+        ofOssysWith MetadataSnapshotRunner.defaultParameters conn
 
     /// Enrich a source with the `Profile` capability (the live / profilable
     /// form). The capability is the presence of the function — cf.
