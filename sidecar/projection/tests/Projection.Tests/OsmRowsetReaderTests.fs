@@ -1504,3 +1504,64 @@ let ``PK recovery: the fallback requires a native attribute SS_Key to compare (s
               emailAttrRow None ]
     let attrs = parsedUserAttrs bundle
     Assert.Empty(attrs |> List.filter (fun a -> a.IsPrimaryKey))
+
+// ---------------------------------------------------------------------------
+// The entity-less-module skip (2026-07-07, the live partial-transfer catch).
+// A real estate routinely carries espaces with no entities (UI / theme /
+// service modules); V1 skips them ("Module 'X' contains no entities and
+// will be skipped"). V2's rowset path used to feed them to `Module.create`,
+// whose LR1/A39 non-empty-kinds invariant failed the WHOLE metamodel read
+// (`module.kinds.empty`). The skip is a NAMED erasure: `entityLessModules`
+// produces one Info notice per skipped module.
+// ---------------------------------------------------------------------------
+
+let private entityLessPortalRow : OssysRowsetTypes.ModuleRow =
+    {
+        EspaceId       = 2
+        EspaceName     = "PortalTheme"
+        IsSystemModule = false
+        IsActive       = true
+        EspaceKind     = Some "eSpace"
+        EspaceSsKey    = None
+    }
+
+[<Fact>]
+let ``V1 parity: an entity-less espace is skipped, not a module.kinds.empty failure of the whole read`` () =
+    let bundle : OssysRowsetTypes.RowsetBundle =
+        {
+            Modules      = [ moduleRow None; entityLessPortalRow ]
+            Kinds        = [ userKindRow None ]
+            Attributes   = [ idAttrRow None; emailAttrRow None ]
+            References   = []
+            Indexes      = []
+            IndexColumns = []
+            Triggers     = []
+            ColumnChecks = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> failwithf "expected Ok; got Error: %A" errors
+    | Ok catalog ->
+        let names = catalog.Modules |> List.map (fun m -> Name.value m.Name)
+        Assert.Equal<string list>([ "AppCore" ], names)
+
+[<Fact>]
+let ``the entity-less skip is a NAMED erasure: one Info notice per skipped module, none when every module is populated`` () =
+    let bundle : OssysRowsetTypes.RowsetBundle =
+        {
+            Modules      = [ moduleRow None; entityLessPortalRow ]
+            Kinds        = [ userKindRow None ]
+            Attributes   = [ idAttrRow None; emailAttrRow None ]
+            References   = []
+            Indexes      = []
+            IndexColumns = []
+            Triggers     = []
+            ColumnChecks = []
+        }
+    let notices = OssysRowsetReader.entityLessModules bundle
+    let notice = Assert.Single(notices)
+    Assert.Equal("adapter.ossys.module.entityLess", notice.Code)
+    Assert.Equal(DiagnosticSeverity.Info, notice.Severity)
+    Assert.Contains("PortalTheme", notice.Message)
+    Assert.Equal(Some "2", Map.tryFind "espaceId" notice.Metadata)
+    let populatedOnly = { bundle with Modules = [ moduleRow None ] }
+    Assert.Empty(OssysRowsetReader.entityLessModules populatedOnly)

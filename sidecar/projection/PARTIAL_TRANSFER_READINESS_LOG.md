@@ -872,3 +872,43 @@ names.
 **Final verdict:** the full sweep PASSED IN FULL — fast pool 3937/3937 (39s), docker
 pool 289/289 (518s, regression test aboard), scale pool 16/16 (79s). The contracts
 gate no longer dies on estates carrying orphan attributes.
+
+## Entry 23 — 2026-07-07, THE ENTITY-LESS ESPACE: the read that survived row-mapping died at module assembly
+
+**What the live run hit (contracts, take two):** with the SequentialAccess fix aboard,
+the extraction completed and the metamodel read died one stage later —
+`module.kinds.empty: Module OssysOriginal <guid> must contain at least one Kind.`
+(The `OssysOriginal <guid>` is the module's SsKey rendered via `%A`; the guid is the
+espace's SS_Key.)
+
+**Root cause.** A real estate routinely carries espaces with NO entities — UI, theme,
+and service modules. The rowsets script's `#E` exports every espace (module filter +
+IncludeSystem only; no entity-existence condition), and `parseRowsetBundle` fed every
+module row to `Module.create`, whose LR1/A39 non-empty-kinds invariant (shipped
+2026-05-18, deliberately) refuses the empty module — one entity-less espace failed the
+WHOLE read. V1's posture is explicit and triplicated: "Module 'X' contains no entities
+and will be skipped" (`ModuleDocumentMapper` / `ModelDeserializerFacade` /
+`FullExportApplicationService`) — a parity gap the canary never exposed because every
+seeded espace has entities.
+
+**The fix (skip as a NAMED erasure, per the compensating constraint the LR1 decision
+codified — "adapters always produce non-empty modules"):** `parseRowsetBundle` now
+skips espaces with no entity rows, and the new pure producer
+`OssysRowsetReader.entityLessModules` names each skip (`adapter.ossys.module.entityLess`,
+Info — the normal shape of a real estate); `LiveModelRead` wires it into the existing
+notice rollup alongside the columnReality/primaryKey divergences, so the erasure rides
+the notice artifact + the one calm Warn line, never silence. `Module.create`'s
+invariant is UNTOUCHED — it remains the guard against corrupt shapes; the adapter now
+honors its side of the contract.
+
+**Named residual:** the JSON path (`OssysJsonReader.parseModule`) carries the same
+latent shape — a V1 `osm_model.json` bearing an entities-less module (V1's own mapper
+guards against reading one, so V1 tools skip it at read time) would still fail V2's
+JSON read with `module.kinds.empty`. Not the live-transfer path (contracts ride the
+rowset path on both sides); fix deferred until a JSON-path consumer meets one.
+
+**Proven:** pure (`OsmRowsetReaderTests` — skip yields the populated-modules-only
+catalog; the notice producer emits exactly one Info entry per skipped module, zero
+when all are populated) and docker e2e (`EntityLessModuleReadDockerTests` — edge-case
+seed + an entity-less espace: extraction → bundle → catalog parse succeeds, module
+absent, erasure named). Full-sweep verdict below.

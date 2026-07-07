@@ -710,6 +710,38 @@ module OssysRowsetReader =
                             "Failed to build module '%s' from rowset bundle."
                             moduleRow.EspaceName))
 
+    /// NAME the entity-less-module erasure (2026-07-07, the live
+    /// partial-transfer catch). An espace with no entities — a UI /
+    /// theme / service module, routine on a real estate — carries
+    /// nothing this engine publishes or transfers, and `Module.create`
+    /// (LR1 / A39) rightly refuses an empty-kinds module; feeding it
+    /// one killed the whole metamodel read (`module.kinds.empty`).
+    /// `parseRowsetBundle` skips those espaces (V1 parity: "Module 'X'
+    /// contains no entities and will be skipped" — V1's
+    /// `ModuleDocumentMapper` / `ModelDeserializerFacade` /
+    /// `FullExportApplicationService`); this pure producer names each
+    /// skip so the live read surfaces the erasure instead of silence.
+    /// Info severity — the normal shape of a real estate, individually
+    /// listed in the notice artifact. Deterministic — ordered by module
+    /// name then espace id.
+    let entityLessModules (bundle: RowsetBundle) : DiagnosticEntry list =
+        let populatedEspaces =
+            bundle.Kinds |> List.map (fun k -> k.EspaceId) |> Set.ofList
+        bundle.Modules
+        |> List.filter (fun m -> not (Set.contains m.EspaceId populatedEspaces))
+        |> List.sortBy (fun m -> m.EspaceName, m.EspaceId)
+        |> List.map (fun m ->
+            { DiagnosticEntry.create
+                "adapter:OSSYS" DiagnosticSeverity.Info
+                "adapter.ossys.module.entityLess"
+                (sprintf
+                    "Module %s (espace %d) contains no entities and is skipped from the model read — nothing to publish or transfer."
+                    m.EspaceName m.EspaceId)
+              with Metadata =
+                    Map.ofList
+                        [ "espaceId", string m.EspaceId
+                          "moduleName", m.EspaceName ] })
+
     /// V1 rowset bundle → V2 Catalog. Sibling to `parseDocument` (JSON
     /// path). The flat-list bundle joins by FK ID columns at load time
     /// (`AttributeRow.EntityId` ↔ `KindRow.EntityId`; `KindRow.EspaceId`
@@ -718,6 +750,9 @@ module OssysRowsetReader =
     /// existing `Module.create` / `Catalog.create` aggregate-root
     /// smart constructors, so referential-integrity invariants are
     /// checked at the boundary identically to the JSON path.
+    /// Entity-less modules are SKIPPED as a named erasure (see
+    /// `entityLessModules` above — the notice producer the live read
+    /// wires so the skip is never silent).
     ///
     /// Big-O / pillar 7 perf clause: O(N + E + A + R) for the input
     /// bundle plus O(E + A) for the three Map.ofList constructions
@@ -796,8 +831,16 @@ module OssysRowsetReader =
               IndexColumnsByIndex  = indexColumnsByIndex
               TriggersByEntity     = triggersByEntity
               ColumnChecksByEntity = columnChecksByEntity }
+        // The entity-less skip (the erasure `entityLessModules` names):
+        // only espaces with at least one entity reach `Module.create`,
+        // whose non-empty-kinds invariant (LR1 / A39) is for CORRUPT
+        // shapes, not for the routine entity-less espaces of a real
+        // estate.
+        let populatedModules =
+            bundle.Modules
+            |> List.filter (fun m -> Map.containsKey m.EspaceId kindsByEspace)
         let moduleResults =
-            bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
+            populatedModules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
         match Result.aggregate moduleResults with
         | Ok modules ->
             Catalog.create modules []
