@@ -761,6 +761,16 @@ module LogSink =
     let suggestedConfigEdits () : int =
         lock lockObj (fun () -> state.Value.SuggestedConfigEdits)
 
+    /// Tier-4 ledger — the first accumulated envelope's payload for `code`,
+    /// `None` when the run emitted none. The generic sibling of the coded
+    /// accessors below (`canaryVerdict` / `cdcMeasure`) for rollup codes whose
+    /// constants live in modules that compile AFTER this one (e.g. the
+    /// fidelity data-violation rollup) — the consumer passes the constant in.
+    let tryFirstPayload (code: string) : Map<string, objnull> option =
+        lock lockObj (fun () ->
+            state.Value.Envelopes
+            |> Seq.tryPick (fun e -> if e.Code = code then Some e.Payload else None))
+
     /// Tier-4 ledger — the run's canary verdict derived from the accumulated
     /// `canary.*` events: `Some "red"` if any `canary.divergence` fired,
     /// else `Some "green"` if a `canary.diffEmpty` fired, else `None` (the

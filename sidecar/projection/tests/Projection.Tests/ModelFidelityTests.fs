@@ -348,3 +348,25 @@ let ``ModelFidelity: violations sort deterministically by category then referenc
     let refsOf (r: ModelFidelity.ModelFidelityReport) =
         r.DataViolations |> List.map (fun v -> ModelFidelity.entityColumnText v.Reference, v.Kind)
     Assert.Equal<(string * ModelFidelity.ViolationKind) list>(refsOf a, refsOf b)
+
+// -- the data-violation rollup envelope payload (2026-07-06) -----------------
+
+[<Fact>]
+let ``ModelFidelity: a violating report yields ONE rollup payload with counts + artifact pointers`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    Assert.NotEmpty(report.DataViolations)
+    match ModelFidelity.dataViolationsPayload "out/manifest.remediation.sql" "out/fidelity.json" report with
+    | None -> Assert.Fail "expected a payload for a violating report"
+    | Some p ->
+        Assert.Equal(box (List.length report.DataViolations), p.["total"])
+        Assert.Equal(box "out/manifest.remediation.sql", p.["remediationPath"])
+        Assert.Equal(box "out/fidelity.json", p.["fidelityPath"])
+        // The per-axis keys are always present (0 when the axis is clean).
+        for key in [ "notNull"; "unique"; "orphans"; "overflow"; "entities" ] do
+            Assert.True(Map.containsKey key p, sprintf "payload missing %s" key)
+
+[<Fact>]
+let ``ModelFidelity: a clean report yields NO rollup payload (no envelope to emit)`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] } []
+    Assert.Empty(report.DataViolations)
+    Assert.True((ModelFidelity.dataViolationsPayload "r" "f" report).IsNone)

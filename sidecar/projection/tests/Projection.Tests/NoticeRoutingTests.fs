@@ -121,8 +121,12 @@ let ``the rollup copy reads as one calm line naming families, and points at the 
         match copy.Statement payload with
         | Projection.Cli.View.Note t ->
             Assert.Contains("214", t)
-            Assert.Contains("nullability 180", t)
-            Assert.Contains("identity 34", t)
+            // Count-first, concrete family labels (2026-07-06 full-voice audit) —
+            // and the internal compound "model-reality" never reaches the surface.
+            Assert.Contains("180 nullability difference(s)", t)
+            Assert.Contains("34 identity-flag difference(s)", t)
+            Assert.Contains("no action is required", t)
+            Assert.DoesNotContain("model-reality", t)
         | other -> Assert.Fail(sprintf "expected a Note statement, got %A" other)
         match copy.Action payload with
         | Some (Projection.Cli.View.Action a) -> Assert.Contains("notices/model-read/01RUN.json", a)

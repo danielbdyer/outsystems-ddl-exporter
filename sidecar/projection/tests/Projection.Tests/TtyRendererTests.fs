@@ -80,6 +80,26 @@ let ``Tier-3: a run with no CDC-measured leg shows no data line`` () =
     let text = renderToString "projection check" 0 (fun () -> ())
     Assert.DoesNotContain("CDC captured", text)
 
+[<Fact>]
+let ``Tier-3: the data-reality finding rides the panel with the remediation next move (2026-07-06)`` () =
+    let payload : Map<string, objnull> =
+        Map.ofList
+            [ "total", box 7; "entities", box 4
+              "notNull", box 3; "unique", box 1; "orphans", box 2; "overflow", box 1
+              "remediationPath", box "./dist/full-export/manifest.remediation.sql"
+              "fidelityPath",    box "./dist/full-export/fidelity.json" ]
+    let text =
+        renderToString "projection publish" 0 (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
+    Assert.Contains("data reality", text)
+    Assert.Contains("7 violation(s) across 4 table(s)", text)
+    Assert.Contains("review ./dist/full-export/manifest.remediation.sql", text)
+
+[<Fact>]
+let ``Tier-3: a run with no data-reality finding shows no data-reality row`` () =
+    let text = renderToString "projection publish" 0 (fun () -> ())
+    Assert.DoesNotContain("data reality", text)
+
 let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string =
     use sw = new StringWriter()
     let console =

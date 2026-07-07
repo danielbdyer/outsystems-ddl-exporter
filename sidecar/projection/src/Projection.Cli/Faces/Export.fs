@@ -68,10 +68,16 @@ let runFullExport
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
         printfn "%d artifact(s) written to %s." report.Paths.Length effectiveOutput
-        report.Paths
-        |> List.iter (fun p ->
-            let info = FileInfo p
-            printfn "  %s (%d bytes)" p info.Length)
+        // Under pretty the boxed board + verdict panel own the console (§13 / the
+        // operator-shell charter): the per-file enumeration — hundreds of lines on
+        // a full estate — would land raw against the board's teardown (the named
+        // residual, 2026-07-03). The one-line total above carries the finding; the
+        // bundle directory holds the files. Piped / plain runs keep the full list.
+        if not Shell.prettyMode.Value then
+            report.Paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
         storeLeg
         |> Option.iter (fun leg ->
             printfn "This run recorded — episode %d on timeline %s; %d refactorlog entr(ies) accumulated."

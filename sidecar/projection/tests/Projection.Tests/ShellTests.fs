@@ -128,13 +128,60 @@ let ``shell: the notice rollup rides the live board as one calm strip row`` () =
             0)
         |> ignore
         let out = console.Output
-        // one calm line naming the families — never a wall
+        // one calm line naming the families — never a wall. (Single-word pins:
+        // the boxed board wraps the row at console width, so multi-word
+        // substrings can split across lines.)
         Assert.Contains("214", out)
-        Assert.Contains("nullability 180", out)
+        Assert.Contains("180", out)
+        Assert.Contains("nullability", out)
         // and the artifact pointer rides the strip row
         Assert.Contains("notices/model-read/01RUN.json", out)
     finally
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``shell: under pretty, stdout narration defers and flushes after the verdict panel (2026-07-06)`` () =
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    LogSink.reset ()
+    let priorOut = Console.Out
+    use captured = new StringWriter()
+    Console.SetOut captured
+    try
+        let console = newConsole ()
+        Shell.executeOn console true true (goFrame "projection full-export") Shell.Bracket.SelfBracketed (Some (Spines.publishWith false false)) (fun () ->
+            printfn "42 artifact(s) written to ./dist/full-export."
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Extract "extract.started" Map.empty)
+            LogSink.recordStageEvent "extract" 3L LogSink.Succeeded
+            LogSink.recordStageStart "profile"
+            LogSink.recordStageEvent "profile" 3L LogSink.Succeeded
+            LogSink.recordStageStart "emit"
+            LogSink.recordStageEvent "emit" 3L LogSink.Succeeded
+            0)
+        |> ignore
+        // The narration reached the real stdout — deferred, never lost...
+        Assert.Contains("42 artifact(s) written", captured.ToString())
+        // ...and never the box surface (the board + panel own that console).
+        Assert.DoesNotContain("42 artifact(s) written", console.Output)
+    finally
+        Console.SetOut priorOut
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``shell: a non-pretty run's stdout narration is untouched (no buffer)`` () =
+    LogSink.reset ()
+    let priorOut = Console.Out
+    use captured = new StringWriter()
+    Console.SetOut captured
+    try
+        let console = newConsole ()
+        LogSink.withWriter TextWriter.Null (fun () ->
+            Shell.executeOn console false false (goFrame "projection emit") Shell.Bracket.Bracketed None (fun () ->
+                printfn "plain narration line"
+                0))
+        |> ignore
+        Assert.Contains("plain narration line", captured.ToString())
+    finally
+        Console.SetOut priorOut
 
 [<Fact>]
 let ``shell: boardOfStored reconstructs the notice row from a stored run (R1e)`` () =
@@ -258,8 +305,8 @@ let ``echo-the-fix: a suggestedConfig-bearing envelope ticks the board's live te
     Assert.Equal(2, b2.SuggestedEdits)
     // the teaser renders through the catalog (one register)
     let console = new TestConsole()
-    console.Write(Watch.toRenderableWith [] 0 false b2)
-    Assert.Contains("2 config edit(s) suggested", console.Output)
+    console.Write(Watch.toRenderableWith [] 0 None b2)
+    Assert.Contains("2 optional configuration recommendation(s) gathered", console.Output)
 
 [<Fact>]
 let ``stat view: the aggregates table names category, code, and count, most-frequent first`` () =

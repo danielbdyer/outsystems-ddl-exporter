@@ -409,6 +409,41 @@ module ModelFidelity =
             [ NotNullCategory; UniqueCategory; OrphanCategory; OverflowCategory ]
             |> List.map (fun c -> rollupCategory c report.DataViolations) }
 
+    /// The structured-channel code for the data-violation rollup — ONE Warn
+    /// envelope per run when the source data contradicts the declared model
+    /// (2026-07-06; the §12 at-scale law: the fidelity artifact holds the
+    /// detail, the wire carries the constant-size rollup). The live board's
+    /// notice strip and the verdict panel both read it, so the finding and
+    /// its remediation artifact are never a silent JSON-only count.
+    let dataViolationsCode : string = "fidelity.dataViolations"
+
+    /// The rollup envelope's payload — per-category counts + the artifact
+    /// pointers. `None` when the report carries no violations (the envelope
+    /// is only emitted when there is a finding to surface).
+    let dataViolationsPayload
+        (remediationPath: string)
+        (fidelityPath: string)
+        (report: ModelFidelityReport)
+        : Map<string, objnull> option =
+        let dv = dataViolationRollup report
+        if dv.Total = 0 then None
+        else
+            let countOf (category: ViolationCategory) : int =
+                dv.Categories
+                |> List.tryFind (fun c -> c.Category = category)
+                |> Option.map (fun c -> c.Count)
+                |> Option.defaultValue 0
+            Some
+                (Map.ofList
+                    [ "total",           box dv.Total
+                      "entities",        box dv.Entities
+                      "notNull",         box (countOf NotNullCategory)
+                      "unique",          box (countOf UniqueCategory)
+                      "orphans",         box (countOf OrphanCategory)
+                      "overflow",        box (countOf OverflowCategory)
+                      "remediationPath", box remediationPath
+                      "fidelityPath",    box fidelityPath ])
+
     // ----------------------------------------------------------------------
     // The rolled-up text renderer (THE_VOICE register: stative, count-first,
     // estate framed neutrally, the proof one level beneath the finding).

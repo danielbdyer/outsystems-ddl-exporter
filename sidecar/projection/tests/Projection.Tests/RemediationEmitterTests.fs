@@ -175,3 +175,82 @@ let ``5.13.remediation: deterministic — repeated emit yields byte-identical ou
     let sql2 =
         RemediationEmitter.emit sampleCatalog nullability emptyUniqueIndex fk
     Assert.Equal(sql1, sql2)
+
+// ----------------------------------------------------------------------
+// Data reality (2026-07-06) — the fidelity report's violations render as
+// remediation blocks, deduplicated against the decision blocks.
+// ----------------------------------------------------------------------
+
+let private finding (entity: string) (column: string) (kind: RemediationEmitter.DataRealityKind) : RemediationEmitter.DataRealityFinding =
+    { Entity = entity; Column = column; Kind = kind }
+
+[<Fact>]
+let ``data reality: nulls in a NOT NULL column emit the 3 options with the observed count`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "Customer" "Name" (RemediationEmitter.NullsInNotNullColumn 5L) ]
+    Assert.Contains("data reality: nulls in a NOT NULL column", sql)
+    Assert.Contains("5 null value(s) observed", sql)
+    Assert.Contains("SELECT * FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
+    Assert.Contains("-- UPDATE [dbo].[OSUSR_S1S_CUSTOMER] SET [NAME] = <DEFAULT> WHERE [NAME] IS NULL;", sql)
+    Assert.Contains("-- DELETE FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
+    Assert.DoesNotContain("No remediation candidates surfaced", sql)
+
+[<Fact>]
+let ``data reality: an orphaned reference resolves the target table + PK to concrete SQL`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "Order" "CustomerId" (RemediationEmitter.OrphanedReference 7L) ]
+    Assert.Contains("data reality: relationship values without a matching record", sql)
+    Assert.Contains("7 source row(s) reference a target record that does not exist", sql)
+    // The target resolves through the catalog — the concrete Customer PK, no placeholders.
+    Assert.Contains("NOT IN (SELECT [ID] FROM [dbo].[OSUSR_S1S_CUSTOMER])", sql)
+    Assert.DoesNotContain("<TargetTable>", sql)
+
+[<Fact>]
+let ``data reality: a length overflow emits the LEN locate + commented truncation`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "Customer" "Name" (RemediationEmitter.ValueOverflow ("300", "200")) ]
+    Assert.Contains("data reality: values past the declared length", sql)
+    Assert.Contains("SELECT * FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE LEN([NAME]) > 200;", sql)
+    Assert.Contains("-- UPDATE [dbo].[OSUSR_S1S_CUSTOMER] SET [NAME] = LEFT([NAME], 200) WHERE LEN([NAME]) > 200;", sql)
+
+[<Fact>]
+let ``data reality: duplicates in a unique column emit the GROUP BY locate`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "Customer" "Name" RemediationEmitter.DuplicatesInUniqueColumn ]
+    Assert.Contains("data reality: duplicates in a unique column", sql)
+    Assert.Contains("SELECT [NAME], COUNT(*) AS RowCount FROM [dbo].[OSUSR_S1S_CUSTOMER] GROUP BY [NAME] HAVING COUNT(*) > 1;", sql)
+
+[<Fact>]
+let ``data reality: a finding covered by a decision block is deduplicated, never stated twice`` () =
+    let fk : ForeignKeyDecisionSet = { Decisions = [ fkOrphans orderRefToCustomer 7L ] }
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex fk
+            [ finding "Order" "CustomerId" (RemediationEmitter.OrphanedReference 7L) ]
+    // The decision block renders (with its intervention id); the fidelity
+    // sibling on the same (entity, column, axis) is suppressed.
+    Assert.Contains("intervention: fk-orphans", sql)
+    Assert.DoesNotContain("data reality: relationship values without a matching record", sql)
+
+[<Fact>]
+let ``data reality: an unresolvable entity renders nothing and never throws`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "NoSuchEntity" "NoSuchColumn" (RemediationEmitter.NullsInNotNullColumn 1L) ]
+    Assert.Contains("No remediation candidates surfaced", sql)
+
+[<Fact>]
+let ``data reality: destructive statements ship commented-out (the operator-safety contract holds)`` () =
+    let sql =
+        RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
+            [ finding "Customer" "Name" (RemediationEmitter.NullsInNotNullColumn 5L)
+              finding "Customer" "Name" (RemediationEmitter.ValueOverflow ("300", "200"))
+              finding "Order" "CustomerId" (RemediationEmitter.OrphanedReference 7L) ]
+    let lines = sql.Split([| '\n' |])
+    let destructive =
+        lines |> Array.filter (fun l -> l.Contains "UPDATE [dbo]" || l.Contains "DELETE FROM [dbo]")
+    Assert.NotEmpty(destructive)
+    Assert.All(destructive, fun l -> Assert.StartsWith("-- ", l.TrimStart()))

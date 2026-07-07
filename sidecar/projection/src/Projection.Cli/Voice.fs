@@ -848,18 +848,21 @@ module Voice =
           Action         = fun _ -> None }
 
     // ------------------------------------------------------------------
-    /// `watch.suggestedEdits` — the live board's config-edit teaser (#6
-    /// echo-the-fix): envelopes carrying a `suggestedConfig` payload tick this
-    /// count as the run happens; the verdict panel ranks the single biggest
-    /// lever afterward.
+    /// `watch.suggestedEdits` — the live board's config-recommendation teaser
+    /// (#6 echo-the-fix): envelopes carrying a `suggestedConfig` payload tick
+    /// this count as the run happens; the run's closing panel summarizes them,
+    /// most-suggested first. Rewritten 2026-07-06 (the full-voice audit): the
+    /// prior copy leaked "the verdict panel" (internal surface name) and "the
+    /// lever" (figurative, §2.2) and never said the recommendations are
+    /// optional (§14).
     let private watchSuggestedEdits : Copy =
         { Code           = "watch.suggestedEdits"
           DocSection     = "§13"
           Statement      =
             fun p ->
                 match text "count" p with
-                | Some n -> View.Note(sprintf "%s config edit(s) suggested so far — the verdict panel ranks the lever." (humane n))
-                | None   -> View.Note "Config edits suggested — the verdict panel ranks the lever."
+                | Some n -> View.Note(sprintf "%s optional configuration recommendation(s) gathered so far. Each is advisory and needs no action to complete this run; a summary follows at the end." (humane n))
+                | None   -> View.Note "Optional configuration recommendations gathered. Each is advisory and needs no action to complete this run; a summary follows at the end."
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -910,32 +913,69 @@ module Voice =
     /// condensed to one calm line (`THE_VOICE.md` §12 at-scale law: the surface is
     /// a constant size; only the numbers grow). The per-item detail is the run's
     /// notice artifact; the action points there — never a wall of lines.
+    /// Rewritten 2026-07-06 (the full-voice audit): "model-reality notices" was
+    /// an internal compound the operator could not parse (§2.1 boundary; rule
+    /// 10/11), and the line never said no action is required (§14).
     let private modelReadNoticeRollup : Copy =
         { Code           = "adapter.ossys.modelRead.noticeRollup"
           DocSection     = "§12"
           Statement      =
             fun p ->
                 let families =
-                    [ "nullability", "nullability"
-                      "identity",    "identity"
-                      "primaryKey",  "primary key"
-                      "other",       "other" ]
+                    [ "nullability", "nullability difference(s)"
+                      "identity",    "identity-flag difference(s)"
+                      "primaryKey",  "primary-key difference(s)"
+                      "other",       "other difference(s)" ]
                     |> List.choose (fun (key, label) ->
-                        text key p |> Option.map (fun n -> sprintf "%s %s" label (humane n)))
+                        text key p |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
                 let total = humane (textOr "total" "0" p)
                 match families with
-                | [] -> View.Note(sprintf "%s model-reality notices. The model's declared values were kept." total)
-                | fs -> View.Note(sprintf "%s model-reality notices — %s. The model's declared values were kept." total (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined notice narration
+                | [] -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s place(s). The model's declared values were kept and the run continues; no action is required." total)
+                | fs -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s place(s) — %s. The model's declared values were kept and the run continues; no action is required." total (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined notice narration
           Substantiation =
             fun p ->
                 match text "samples" p with
-                | Some s when s <> "" -> [ View.Disclosure("the first notices", View.Neutral, [ View.Note s ]) ]
+                | Some s when s <> "" -> [ View.Disclosure("the first differences", View.Neutral, [ View.Note s ]) ]
                 | _ -> []
           Action         =
             fun p ->
                 text "artifactPath" p
                 |> Option.filter (fun s -> s <> "")
-                |> Option.map (fun path -> View.Action(sprintf "Review the full list at %s." path)) }
+                |> Option.map (fun path -> View.Action(sprintf "Review the full list of differences at %s." path)) }
+
+    /// `fidelity.dataViolations` — the data-reality rollup (2026-07-06; the
+    /// §12 at-scale law): ONE Warn envelope per run when the profiled source
+    /// data contradicts the model's declared constraints. The statement names
+    /// the finding, the per-axis breakdown, and the consequence; the action
+    /// routes to the remediation script, where every finding carries a
+    /// locating query and a commented repair.
+    let private fidelityDataViolations : Copy =
+        { Code           = "fidelity.dataViolations"
+          DocSection     = "§12"
+          Statement      =
+            fun p ->
+                let families =
+                    [ "notNull",  "required column(s) with nulls"
+                      "unique",   "unique column(s) with duplicates"
+                      "orphans",  "relationship(s) with unmatched records"
+                      "overflow", "column(s) with values past the declared length" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p
+                        |> Option.filter (fun n -> n <> "0")
+                        |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
+                let total  = humane (textOr "total" "0" p)
+                let tables = humane (textOr "entities" "0" p)
+                match families with
+                | [] ->
+                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s). A data load can fail until the rows are repaired." total tables)
+                | fs ->
+                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s) — %s. A data load can fail until the rows are repaired." total tables (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined rollup narration
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "remediationPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — each finding carries a locating query and a commented repair." path)) }
 
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
@@ -1000,6 +1040,7 @@ module Voice =
           surveyAdvisory
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
+          fidelityDataViolations
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing
