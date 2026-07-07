@@ -63,6 +63,8 @@ module private GoBoardFixtures =
           Correction  = None
           SinkCapability = SinkLoadCapability.structural }
 
+    let value (r: Result<'a>) : 'a = Result.value r
+
     let countRows (cnn: Microsoft.Data.SqlClient.SqlConnection) (table: string) : System.Threading.Tasks.Task<int> =
         task {
             use cmd = cnn.CreateCommand()
@@ -78,6 +80,23 @@ module private GoBoardFixtures =
             let! _ = cmd.ExecuteNonQueryAsync()
             return ()
         }
+
+    /// An UNRELATED, UNRESOLVABLE dependency cycle injected into a cell's
+    /// metamodel (2026-07-07, the effective-transfer-graph program):
+    /// CycleA ↔ CycleB, both FK attributes MANDATORY (non-nullable →
+    /// EdgeStrength `Other`, which the asymmetric-2-cycle resolver refuses
+    /// to break). Same SS_Keys in both cells so the contracts align; direct
+    /// `Referenced_Entity_Id` linkage; no physical tables needed — the pair
+    /// stays outside the transferred subset, so no data path touches it.
+    let unrelatedCycleBatch =
+        [ "INSERT INTO [dbo].[ossys_Entity] ([Id], [Name], [Physical_Table_Name], [Espace_Id], [Is_Active], [Is_System], [Is_External], [Data_Kind], [PrimaryKey_SS_Key], [SS_Key], [Description]) VALUES \
+             (98001, N'CycleA', N'OSUSR_CYC_A', 100, 1, 0, 0, N'entity', NULL, '000000c1-0000-4000-8000-00000000000a', NULL), \
+             (98002, N'CycleB', N'OSUSR_CYC_B', 100, 1, 0, 0, N'entity', NULL, '000000c1-0000-4000-8000-00000000000b', NULL); \
+           INSERT INTO [dbo].[ossys_Entity_Attr] ([Id], [Entity_Id], [Name], [SS_Key], [Data_Type], [Is_Mandatory], [Is_Active], [Is_AutoNumber], [Is_Identifier], [Referenced_Entity_Id], [Delete_Rule], [Physical_Column_Name], [Order_Num]) VALUES \
+             (98011, 98001, N'Id',   '000000a1-0000-4000-8000-00000000c1a1', N'Identifier', 1, 1, 1, 1, NULL,  NULL,       N'ID',  1), \
+             (98012, 98001, N'BRef', '000000a1-0000-4000-8000-00000000c1a2', N'Identifier', 1, 1, 0, 0, 98002, N'Protect', N'BID', 10), \
+             (98021, 98002, N'Id',   '000000a1-0000-4000-8000-00000000c1b1', N'Identifier', 1, 1, 1, 1, NULL,  NULL,       N'ID',  1), \
+             (98022, 98002, N'ARef', '000000a1-0000-4000-8000-00000000c1b2', N'Identifier', 1, 1, 0, 0, 98001, N'Protect', N'AID', 10);" ]
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
@@ -116,6 +135,37 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
                         let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
+                        return ()
+                    }))
+
+    /// The unrelated-cycle witness (2026-07-07): an UNRESOLVABLE dependency
+    /// cycle elsewhere in the estate no longer reds a partial transfer's
+    /// board — the load-order gate and the dry run's cycle report judge the
+    /// EFFECTIVE transfer graph (declared tables + reconciled parents as
+    /// isolated nodes), not the whole sink contract. The same flow that goes
+    /// green in the red/green/red scenario stays green with CycleA ↔ CycleB
+    /// (both FKs mandatory — the resolver refuses it) sitting outside the
+    /// subset in BOTH cells.
+    [<Fact>]
+    member _.``go board: an unrelated estate cycle does not block a partial transfer — load order and cycles judge the transferred set only`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardUnrelatedCycle") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardCyc"
+                "" (GoBoardFixtures.sourceRows @ GoBoardFixtures.unrelatedCycleBatch) MockOutSystemsEnv.ManagedDml
+                "X" (GoBoardFixtures.sinkCityRows @ GoBoardFixtures.unrelatedCycleBatch) MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        // The cycle is REAL at the whole-estate grain: the
+                        // unscoped topology degrades to alphabetical on the
+                        // sink contract (the contrast that pins the fix).
+                        let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
+                        let (_, sinkContract) = GoBoardFixtures.value contractsR
+                        let whole = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle sinkContract).Value
+                        Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
+                        // ...and the board still goes GREEN for the subset.
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        Assert.Equal(0, green)
                         return ()
                     }))
 

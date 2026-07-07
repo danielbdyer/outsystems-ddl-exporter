@@ -95,9 +95,34 @@ module TopologicalOrderPass =
             // is plugged in.
     }
 
-    let private buildGraph (selfLoops: SelfLoopPolicy) (c: Catalog) : Graph =
-        let allKinds = Catalog.allKinds c
+    /// Optional graph restriction (2026-07-07, the effective-transfer-graph
+    /// program). `Nodes` are the kinds admitted to the graph at all;
+    /// `EdgeKinds` are the kinds whose FK edges bind ordering — an edge is
+    /// kept only when BOTH endpoints are edge kinds. A node outside
+    /// `EdgeKinds` (a reconciled kind: present for reporting, never
+    /// written) rides as an ISOLATED node — no edge can enter or leave it,
+    /// so no cycle can pass through it. `None` = the whole catalog with
+    /// every edge (the historical behavior, byte-identical).
+    type GraphScope =
+        {
+            Nodes     : Set<SsKey>
+            EdgeKinds : Set<SsKey>
+        }
+
+    let private buildGraphWithin (selfLoops: SelfLoopPolicy) (scope: GraphScope option) (c: Catalog) : Graph =
+        let allKinds =
+            match scope with
+            | None -> Catalog.allKinds c
+            | Some s -> Catalog.allKinds c |> List.filter (fun k -> Set.contains k.SsKey s.Nodes)
         let presentKeys = allKinds |> List.map (fun k -> k.SsKey) |> Set.ofList
+        // Under a scope, an edge binds ordering only when BOTH endpoints
+        // are edge kinds. An FK leaving the scope is not "missing" — it is
+        // deliberately out of the ordering problem (the subset-escape gate
+        // owns reporting those edges), so it is dropped silently.
+        let edgeAdmitted (source: SsKey) (target: SsKey) : bool =
+            match scope with
+            | None -> true
+            | Some s -> Set.contains source s.EdgeKinds && Set.contains target s.EdgeKinds
 
         // Sort the iteration source by SsKey — this is the
         // permutation-invariance commitment in code.
@@ -139,6 +164,13 @@ module TopologicalOrderPass =
                     // no graph mutation, no MissingEdge entry (the
                     // target IS present — we just don't track the
                     // dependency).
+                    st
+                elif not (edgeAdmitted k.SsKey r.TargetKind) then
+                    // Scope-dropped edge: at least one endpoint is not an
+                    // edge kind (reconciled, or outside the transfer
+                    // subset). Deliberately silent here — the
+                    // subset-escape gate owns reporting edges that leave
+                    // the transferred set.
                     st
                 elif Set.contains r.TargetKind presentKeys then
                     match Map.tryFind edge st.ClassifiedEdges with
@@ -433,95 +465,108 @@ module TopologicalOrderPass =
     let private touchedEvent (key: SsKey) : LineageEvent =
         LineageEvent.forPass passName version classification key Touched
 
-    /// Parameterized form. Per session-36 — `selfLoops` selects how a
-    /// kind's reference to itself is handled during graph construction.
+    /// Order construction over a built graph — the shared core behind
+    /// `runWith` (whole catalog) and `runScopedWith` (the effective
+    /// transfer graph). Per session-36 — `selfLoops` (applied at graph
+    /// construction) selects how a kind's reference to itself is handled:
     /// `TreatAsCycle` (default) preserves pre-session-36 semantics;
-    /// `SkipSelfEdges` drops self-references during construction so
-    /// emitters whose target syntax allows inline self-FK constraints
-    /// see the kind in topological position. Same algorithm, two
-    /// projections — replaces the `RawTextEmitter.emissionOrder`
-    /// duplicate (Agent 4 #6).
-    let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
-        let graph = buildGraph selfLoops c
+    /// `SkipSelfEdges` drops self-references so emitters whose target
+    /// syntax allows inline self-FK constraints see the kind in
+    /// topological position. Same algorithm, two projections — replaces
+    /// the `RawTextEmitter.emissionOrder` duplicate (Agent 4 #6).
+    let private orderOf (graph: Graph) : TopologicalOrder =
         let sorted, unprocessed = kahnSort graph
 
-        let result =
-            if List.isEmpty unprocessed then
-                // Acyclic — the output order is the topological sort.
-                { Mode         = Topological
-                  Order        = sorted
-                  Edges        = graph.Edges
-                  MissingEdges = graph.MissingEdges
-                  Cycles       = []
-                  Diagnostics  = [
-                      sprintf "topologicalOrder v%d: %d nodes, %d edges, %d missing"
-                          version graph.Nodes.Length graph.Edges.Length graph.MissingEdges.Length
-                  ] }
-            else
-                // Cycle present. Run Tarjan's SCC on the unprocessed
-                // residue, then ask the asymmetric-2-cycle resolver
-                // which Weak edges it's willing to break.
-                let sccs = tarjanScc unprocessed graph.Adjacency
-                let resolution =
-                    applyResolver CycleResolution.asymmetric2CycleStrategy graph sccs
+        if List.isEmpty unprocessed then
+            // Acyclic — the output order is the topological sort.
+            { Mode         = Topological
+              Order        = sorted
+              Edges        = graph.Edges
+              MissingEdges = graph.MissingEdges
+              Cycles       = []
+              Diagnostics  = [
+                  sprintf "topologicalOrder v%d: %d nodes, %d edges, %d missing"
+                      version graph.Nodes.Length graph.Edges.Length graph.MissingEdges.Length
+              ] }
+        else
+            // Cycle present. Run Tarjan's SCC on the unprocessed
+            // residue, then ask the asymmetric-2-cycle resolver
+            // which Weak edges it's willing to break.
+            let sccs = tarjanScc unprocessed graph.Adjacency
+            let resolution =
+                applyResolver CycleResolution.asymmetric2CycleStrategy graph sccs
 
-                if List.isEmpty resolution.UnresolvedDiagnostics then
-                    // Every SCC resolved. Re-run Kahn on the reduced graph.
-                    let reduced = reduceGraph graph resolution.RemovedPrecedenceEdges
-                    let resorted, residue = kahnSort reduced
-                    if List.isEmpty residue then
-                        { Mode         = Topological
-                          Order        = resorted
-                          Edges        = graph.Edges
-                          MissingEdges = graph.MissingEdges
-                          // Resolved cycles stay in Cycles for audit —
-                          // they record the SCCs found and the edges
-                          // broken to resolve them.
-                          Cycles       = resolution.ResolvedDiagnostics
-                          Diagnostics  = [
-                              sprintf "topologicalOrder v%d: %d cycle(s) auto-resolved via Weak-edge removal"
-                                  version resolution.ResolvedDiagnostics.Length
-                          ] }
-                    else
-                        // Defensive: removing the resolver's chosen edges
-                        // should always make the graph acyclic, but if a
-                        // bug or unforeseen graph shape leaves residue
-                        // we degrade gracefully.
-                        let leftover = tarjanScc residue reduced.Adjacency
-                        let leftoverDiagnostics =
-                            leftover
-                            |> List.map (fun members ->
-                                { Members        = members
-                                  BreakableEdges = []
-                                  Reason         = "residual SCC after resolver; please report" })
-                        { Mode         = Alphabetical
-                          Order        = graph.Nodes
-                          Edges        = graph.Edges
-                          MissingEdges = graph.MissingEdges
-                          Cycles       = resolution.ResolvedDiagnostics @ leftoverDiagnostics
-                          Diagnostics  = [
-                              sprintf "topologicalOrder v%d: resolver left residue; alphabetical fallback"
-                                  version
-                          ] }
-                else
-                    // At least one SCC the resolver can't handle. Fall
-                    // back to alphabetical; record both the resolved and
-                    // unresolved diagnostics so callers can audit.
-                    let alphabeticalAll = graph.Nodes
-                    { Mode         = Alphabetical
-                      Order        = alphabeticalAll
+            if List.isEmpty resolution.UnresolvedDiagnostics then
+                // Every SCC resolved. Re-run Kahn on the reduced graph.
+                let reduced = reduceGraph graph resolution.RemovedPrecedenceEdges
+                let resorted, residue = kahnSort reduced
+                if List.isEmpty residue then
+                    { Mode         = Topological
+                      Order        = resorted
                       Edges        = graph.Edges
                       MissingEdges = graph.MissingEdges
-                      Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
+                      // Resolved cycles stay in Cycles for audit —
+                      // they record the SCCs found and the edges
+                      // broken to resolve them.
+                      Cycles       = resolution.ResolvedDiagnostics
                       Diagnostics  = [
-                          sprintf "topologicalOrder v%d: %d resolved, %d unresolved; alphabetical fallback"
-                              version
-                              resolution.ResolvedDiagnostics.Length
-                              resolution.UnresolvedDiagnostics.Length
+                          sprintf "topologicalOrder v%d: %d cycle(s) auto-resolved via Weak-edge removal"
+                              version resolution.ResolvedDiagnostics.Length
                       ] }
+                else
+                    // Defensive: removing the resolver's chosen edges
+                    // should always make the graph acyclic, but if a
+                    // bug or unforeseen graph shape leaves residue
+                    // we degrade gracefully.
+                    let leftover = tarjanScc residue reduced.Adjacency
+                    let leftoverDiagnostics =
+                        leftover
+                        |> List.map (fun members ->
+                            { Members        = members
+                              BreakableEdges = []
+                              Reason         = "residual SCC after resolver; please report" })
+                    { Mode         = Alphabetical
+                      Order        = graph.Nodes
+                      Edges        = graph.Edges
+                      MissingEdges = graph.MissingEdges
+                      Cycles       = resolution.ResolvedDiagnostics @ leftoverDiagnostics
+                      Diagnostics  = [
+                          sprintf "topologicalOrder v%d: resolver left residue; alphabetical fallback"
+                              version
+                      ] }
+            else
+                // At least one SCC the resolver can't handle. Fall
+                // back to alphabetical; record both the resolved and
+                // unresolved diagnostics so callers can audit.
+                let alphabeticalAll = graph.Nodes
+                { Mode         = Alphabetical
+                  Order        = alphabeticalAll
+                  Edges        = graph.Edges
+                  MissingEdges = graph.MissingEdges
+                  Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
+                  Diagnostics  = [
+                      sprintf "topologicalOrder v%d: %d resolved, %d unresolved; alphabetical fallback"
+                          version
+                          resolution.ResolvedDiagnostics.Length
+                          resolution.UnresolvedDiagnostics.Length
+                  ] }
 
+    let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
         let events = graph.Nodes |> List.map touchedEvent
-        Lineage.ofValueAndEvents events result
+        Lineage.ofValueAndEvents events (orderOf graph)
+
+    let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
+        lineageOf (buildGraphWithin selfLoops None c)
+
+    /// Scoped variant (2026-07-07, the effective-transfer-graph program):
+    /// the graph restricted to `scope.Nodes`, with FK edges binding only
+    /// between `scope.EdgeKinds` members (see `GraphScope`). A subset
+    /// transfer orders — and cycle-checks — only what it actually writes;
+    /// reconciled kinds ride as isolated nodes (reported, never ordered);
+    /// an unrelated estate cycle can no longer degrade the order. Same
+    /// algorithm, one graph-construction parameter (A40).
+    let runScopedWith (selfLoops: SelfLoopPolicy) (scope: GraphScope) (c: Catalog) : Lineage<TopologicalOrder> =
+        lineageOf (buildGraphWithin selfLoops (Some scope) c)
 
     /// Run the topological-order pass with the default self-loop
     /// policy. Returns a `Lineage<TopologicalOrder>`; the catalog

@@ -976,3 +976,56 @@ pool 291/291 (649s), scale pool 16/16 (111s), the normalization + scope-parity t
 aboard. Three live-run catches (Entries 22-24) closed in one day; the contracts gate
 now reads a whole real estate — orphan attributes, entity-less espaces, and
 moved-entity shadows — under the same model scope every other verb honors.
+
+## Entry 25 — 2026-07-07, THE EFFECTIVE TRANSFER GRAPH: the board and the engine stop judging the whole estate
+
+**What the live run hit (the go board, post-contracts):** three related reds on a
+small declared subset — (1) `grant` STOP because the cloud principal carries
+object/column-scope DML with NO database-scope grant, and the probe read
+`fn_my_permissions(NULL,'DATABASE')` only; (2) `load order` STOP because the
+topology ran on the WHOLE sink contract, so an unrelated estate cycle degraded the
+order alphabetical; (3) dry-run `cycles` naming unbreakable-cycle FKs entirely
+outside the requested subset. The diagnosis (operator review, confirmed): an
+ABSTRACTION GAP — the engine had every ingredient of "what does this transfer
+actually touch" (LoadSet, reconciled kinds, ingestScope, the face's gateScope) but
+no reified carrier, so every consumer that predates subsets (topology, plan
+cycles, grant planning) silently evaluated the estate.
+
+**The carrier:** `TransferScope` (Core) — WriteKinds (declared or whole estate,
+minus reconciled), Nodes (write ∪ reconciled as ISOLATED graph nodes — reported,
+never ordered), and `TransferScope.topology` over the induced subgraph
+(`TopologicalOrderPass.runScopedWith` — FK edges bind only between written kinds;
+same algorithm, one graph-construction parameter). Built ONCE from the inputs
+every gate already holds; consumed by the engine's Execute gates AND the go
+board, so the forecast and the live run cannot evaluate different graphs. A full
+non-reconciling transfer is the identity scope (byte-identical; property-pinned).
+
+**Engine deltas (Execute gates, per the operator-approved review):**
+`orderedLoadGate` and `executeGate`/`UnbreakableCycleFks` judge the scoped graph
+(unrelated cycles stop refusing subset runs; a cycle THROUGH a reconciled kind
+correctly breaks — it is never written); `DeferredFkColumns` shrink to scoped
+cycle members (fewer Phase-2 UPDATEs); the slice apply (`runGoldenApply`) scopes
+to its slice's kinds; the streaming leg gets the reconciled-edge drop; synthetic
+legs unchanged (whole estate is their true graph).
+
+**Grant deltas:** `Preflight.WriteAction` gains `Update` (Phase-2 re-point and
+the MERGE lane genuinely UPDATE — INSERT never implied it; the capability survey's
+data sets follow); `plannedTransferWrites` is scope × emission (INSERT+UPDATE per
+written kind; DELETE under a wipe — previously ungated); `captureGrantEvidenceFor`
+probes per planned table at OBJECT scope (`fn_my_permissions('<obj>','OBJECT')`,
+object grain), recorded in `GrantEvidence.ProbedObjects` — a probed object's rows
+are EFFECTIVE permissions and AUTHORITATIVE (no database fallback), so **the
+pinned G1 gap closes for planned tables**: a table-level DENY refuses
+`transfer.insufficientGrant` pre-write with ZERO partial write (both pinned tests
+PROMOTED — `ReverseLegCanaryTests` L3Deny + the peer scenario 5). The go board's
+grant item renders the SAME planned-write evaluation the engine enforces —
+object-scope-only DML is a [ GO ].
+
+**Proven:** pure (`TransferScopeTests` — scoped topo ignores unrelated cycles,
+reconciled-edge drop, full-transfer identity, planned-write verbs;
+`PreflightTests` — probed-object precedence incl. the DENY-under-db-grant shape;
+`CapabilitySurveyTests` re-pinned with Update) and docker (`GoBoardDockerTests` —
+the unrelated-cycle board goes GREEN while the unscoped topology provably
+degrades on the same contract; `PeerManagedGrantTransferDockerTests` — the new
+OBJECT-scope-DML cell lands the subset with zero grant violations and no
+database-scope DML at all; both G1 promotions). Full-sweep verdict below.

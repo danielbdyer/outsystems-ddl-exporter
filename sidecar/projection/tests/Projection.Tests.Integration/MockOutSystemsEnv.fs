@@ -25,6 +25,10 @@ module MockOutSystemsEnv =
         /// A `DmlPrincipal.ManagedGrants` login drives the engine — the
         /// managed-cloud envelope (no ALTER / CREATE TABLE / IDENTITY_INSERT).
         | ManagedDml
+        /// A `DmlPrincipal.createObjectDml` login drives the engine —
+        /// database-scope SELECT with OBJECT-scope I/U/D per table (the
+        /// 2026-07-07 live-run estate shape: no database-scope DML).
+        | ObjectScopeDml
 
     type MockEnv =
         { /// Admin-scope connection (setup, DENY injection, assertions).
@@ -59,6 +63,12 @@ module MockOutSystemsEnv =
                     return! body { Admin = admin; AdminConnStr = adminConnStr; EngineConnStr = adminConnStr; Login = None; EspaceKey = espaceKey }
                 | ManagedDml ->
                     let! login, restricted = DmlPrincipal.createManaged admin adminConnStr
+                    try
+                        return! body { Admin = admin; AdminConnStr = adminConnStr; EngineConnStr = restricted; Login = Some login; EspaceKey = espaceKey }
+                    finally
+                        DmlPrincipal.dropLogin admin login
+                | ObjectScopeDml ->
+                    let! login, restricted = DmlPrincipal.createObjectDml admin adminConnStr
                     try
                         return! body { Admin = admin; AdminConnStr = adminConnStr; EngineConnStr = restricted; Login = Some login; EspaceKey = espaceKey }
                     finally

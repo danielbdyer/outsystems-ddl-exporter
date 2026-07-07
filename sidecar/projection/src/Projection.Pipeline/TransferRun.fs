@@ -676,27 +676,40 @@ module Transfer =
     // `transfer.connectionUnavailable`) and G2 (the sink grant covers the
     // planned INSERTs, `transfer.insufficientGrant`).
 
-    /// The writes a straight load performs at the sink: one INSERT per kind
-    /// (the FK-repoint Phase 2 is an UPDATE on the same tables INSERT covers, so
-    /// INSERT is the grant the gate requires). Deterministic — catalog order.
-    let private plannedTransferWrites (catalog: Catalog) : Preflight.PlannedWrite list =
+    /// The writes the load performs at the sink, over the EFFECTIVE transfer
+    /// scope (2026-07-07, the go-board scoping program): INSERT + UPDATE per
+    /// written kind (the Phase-2 FK re-point and the MERGE capture lane
+    /// genuinely UPDATE — a grant that covers INSERT alone dies mid-load),
+    /// plus DELETE under a WipeAndLoad (the child-first wipe was previously
+    /// ungated). Deterministic — catalog order. Public: the go board derives
+    /// its grant item from the SAME planned writes the engine's G2 gate
+    /// enforces, so the forecast and the live gate cannot disagree.
+    let plannedTransferWrites (scope: TransferScope) (emission: EmissionMode) (catalog: Catalog) : Preflight.PlannedWrite list =
         Catalog.allKinds catalog
-        |> List.map (fun k ->
-            { Preflight.Schema = TableId.schemaText k.Physical
-              Preflight.Table  = TableId.tableText k.Physical
-              Preflight.Action = Preflight.Insert })
+        |> List.filter (fun k -> Set.contains k.SsKey scope.WriteKinds)
+        |> List.collect (fun k ->
+            let write (action: Preflight.WriteAction) : Preflight.PlannedWrite =
+                { Preflight.Schema = TableId.schemaText k.Physical
+                  Preflight.Table  = TableId.tableText k.Physical
+                  Preflight.Action = action }
+            [ write Preflight.Insert; write Preflight.Update ]
+            @ (if emission = EmissionMode.WipeAndLoad then [ write Preflight.Delete ] else []))
         |> List.distinct
 
     /// G1 + G2 for an Execute transfer: probe both endpoints (connection
-    /// liveness/credential) and the sink grant against the planned INSERTs,
-    /// refusing before any write. Re-codes the migrate-named refusals under the
-    /// `transfer.*` namespace so the CLI can map them to the connection/
-    /// permission exit codes. A grant-probe failure is itself a refusal (a sink
-    /// we cannot survey is a sink we will not write to blind).
+    /// liveness/credential) and the sink grant against the planned writes,
+    /// refusing before any write. The grant evidence is captured PER PLANNED
+    /// TABLE (object-scope effective permissions — managed cloud estates
+    /// carry object/column-scope DML with no database-scope grant, and a
+    /// table-level DENY is now visible pre-write: the G1 closure for planned
+    /// tables). Re-codes the migrate-named refusals under the `transfer.*`
+    /// namespace so the CLI can map them to the connection/permission exit
+    /// codes. A grant-probe failure is itself a refusal (a sink we cannot
+    /// survey is a sink we will not write to blind).
     let spanningPreflight
         (source: SqlConnection)
         (sink: SqlConnection)
-        (catalog: Catalog)
+        (planned: Preflight.PlannedWrite list)
         : Task<Result<unit>> =
         task {
             match! Preflight.connectionPreflight source sink with
@@ -705,13 +718,14 @@ module Transfer =
                     Result.failure
                         (es |> List.map (fun e -> ValidationError.create "transfer.connectionUnavailable" e.Message))
             | Ok () ->
-                match! Preflight.captureGrantEvidence sink with
+                let plannedTables = planned |> List.map (fun w -> w.Schema, w.Table) |> List.distinct
+                match! Preflight.captureGrantEvidenceFor plannedTables sink with
                 | Error es ->
                     return
                         Result.failure
                             (es |> List.map (fun e -> ValidationError.create "transfer.grantProbeFailed" e.Message))
                 | Ok grant ->
-                    match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                    match Preflight.permissionPreflight grant planned with
                     | Ok () -> return Ok ()
                     | Error es ->
                         return
@@ -883,16 +897,25 @@ module Transfer =
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
+            // The EFFECTIVE TRANSFER GRAPH (2026-07-07): the one scope value
+            // the grant gate, the topology, and (through the scoped topo) the
+            // plan's cycle analysis all consume — declared subset plus
+            // reconciled kinds as isolated nodes, FK edges binding only
+            // between written kinds. A full non-reconciling transfer is the
+            // identity scope (byte-identical to the historical whole-estate
+            // evaluation). The go board builds the SAME value.
+            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+            let scope = TransferScope.create catalog writeOpts.LoadSet reconciledKinds
             let spanningGate : Task<Result<unit>> =
                 task {
-                    if mode = Execute then return! spanningPreflight source sink catalog
+                    if mode = Execute then
+                        return! spanningPreflight source sink (plannedTransferWrites scope writeOpts.Emission catalog)
                     else return Ok ()
                 }
             match! Preflight.all [ cdcGate; spanningGate ] with
             | Error es -> return Result.failure es
             | Ok () ->
-            let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
-            let topo = topoLineage.Value
+            let topo = TransferScope.topology TreatAsCycle scope catalog
             // 6.B.2 — RefactorLog-aware ingestion. With a rename context,
             // ingest with the SOURCE contract (old physical columns) and
             // re-point each row's values onto the sink's names (by SsKey,
@@ -900,7 +923,6 @@ module Transfer =
             // contract B). With no rename context, source and sink share the
             // schema and ingestion uses `catalog` directly (byte-identical).
             let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
-            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // Item 5 — the declared table subset (golden data). Restrict the
             // load to the named kinds; the catalog stays whole (FK context),
             // so non-listed sink tables are simply never written (untouched).
@@ -1149,7 +1171,8 @@ module Transfer =
                                 Result.failure
                                     (es |> List.map (fun e -> ValidationError.create "synthetic.grantProbeFailed" e.Message))
                         | Ok grant ->
-                            match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                            // σ loads the whole estate — the identity scope.
+                            match Preflight.permissionPreflight grant (plannedTransferWrites (TransferScope.create catalog None Set.empty) emission catalog) with
                             | Ok () -> return Ok ()
                             | Error es ->
                                 return
@@ -1249,16 +1272,24 @@ module Transfer =
             match cdcGate with
             | Error e -> return Result.failure e
             | Ok () ->
+            // A slice IS a subset load — its effective scope is the slice's
+            // own kind set (2026-07-07): the grant gate demands writes on
+            // exactly the sliced tables, and the ordering/cycle analysis
+            // runs on the induced subgraph (an unrelated estate cycle no
+            // longer blocks a two-table slice).
+            let scope =
+                TransferScope.create catalog (Some (rows |> Map.toSeq |> Seq.map fst |> Set.ofSeq)) Set.empty
             let! grantGate =
                 task {
                     if mode = Execute then
-                        match! Preflight.captureGrantEvidence sink with
+                        let planned = plannedTransferWrites scope EmissionMode.Incremental catalog
+                        match! Preflight.captureGrantEvidenceFor (planned |> List.map (fun w -> w.Schema, w.Table) |> List.distinct) sink with
                         | Error es ->
                             return
                                 Result.failure
                                     (es |> List.map (fun e -> ValidationError.create "slice.apply.grantProbeFailed" e.Message))
                         | Ok grant ->
-                            match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                            match Preflight.permissionPreflight grant planned with
                             | Ok () -> return Ok ()
                             | Error es ->
                                 return
@@ -1269,7 +1300,7 @@ module Transfer =
             match grantGate with
             | Error es -> return Result.failure es
             | Ok () ->
-                let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                let topo = TransferScope.topology TreatAsCycle scope catalog
                 let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
                 let preWrite =
                     if mode = Execute then
@@ -1899,16 +1930,23 @@ module Transfer =
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
+            // The streaming leg refuses `--tables` at the realization
+            // selector, so its scope is the whole estate MINUS the
+            // reconciled kinds (never written; FK edges into them drop —
+            // a cycle through a reconciled kind correctly breaks). The
+            // streaming arm never wipes, so Incremental verbs.
+            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+            let scope = TransferScope.create sinkContract None reconciledKinds
             let spanningGate : Task<Result<unit>> =
                 task {
-                    if mode = Execute then return! spanningPreflight source sink sinkContract
+                    if mode = Execute then
+                        return! spanningPreflight source sink (plannedTransferWrites scope EmissionMode.Incremental sinkContract)
                     else return Ok ()
                 }
             match! Preflight.all [ cdcGate; spanningGate ] with
             | Error es -> return Result.failure es
             | Ok () ->
-                let topo = (TopologicalOrderPass.runWith TreatAsCycle sinkContract).Value
-                let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                let topo = TransferScope.topology TreatAsCycle scope sinkContract
                 // Reconcile the named kinds against the sink (read-only,
                 // safe in DryRun): ingest each reconciled kind's SOURCE
                 // rows (re-pointed to the sink's names — the only kinds
