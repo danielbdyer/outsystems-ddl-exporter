@@ -430,39 +430,83 @@ module Preflight =
             else return acc
         }
 
+    /// One object's effective-permission probe. `Some pairs` when the
+    /// object EXISTS (its rows are authoritative — see `ProbedObjects`);
+    /// `None` when it does not: a missing table and a deny-everything
+    /// table both report zero permission rows, but absence is a SHAPE
+    /// fact (the shape gate / drift detection own it), not a grant fact —
+    /// claiming probe authority over it would misreport a missing sink
+    /// table as `insufficientGrant`, so an absent object stays UNPROBED
+    /// (database-scope fallback applies). Module-level helper so the
+    /// capture's per-object loop is one reducible `let!` (FS3511 —
+    /// a conditional `use!` inside a task-CE loop is not statically
+    /// compilable in Release).
+    let private probeObjectGrant (sink: SqlConnection) (key: string) (securable: string) : Task<(string * string) list option> =
+        task {
+            use existsCmd = sink.CreateCommand()
+            existsCmd.CommandText <- "SELECT CASE WHEN OBJECT_ID(@obj) IS NULL THEN 0 ELSE 1 END"
+            existsCmd.Parameters.AddWithValue("@obj", securable) |> ignore
+            let! existsScalar = existsCmd.ExecuteScalarAsync()
+            if System.Convert.ToInt32 existsScalar = 1 then
+                use objCmd = sink.CreateCommand()
+                objCmd.CommandText <-
+                    "SELECT permission_name FROM sys.fn_my_permissions(@obj, 'OBJECT') WHERE subentity_name = ''"
+                objCmd.Parameters.AddWithValue("@obj", securable) |> ignore
+                use! objReader = objCmd.ExecuteReaderAsync()
+                let! objPairs = readGrantRows key objReader []
+                return Some objPairs
+            else
+                return None
+        }
+
+    /// Walk the planned objects recursively — a `let!` inside a `for` in
+    /// a task CE is not statically compilable in Release (FS3511), so the
+    /// loop is the same module-level recursion shape as `readGrantRows`.
+    let rec private probeObjects
+        (sink: SqlConnection)
+        (remaining: (string * string) list)
+        (pairs: (string * string) list)
+        (probed: Set<string>)
+        : Task<GrantEvidence> =
+        task {
+            match remaining with
+            | [] -> return { Granted = Set.ofList pairs; ProbedObjects = probed }
+            | entry :: rest ->
+                let schema = fst entry
+                let table = snd entry
+                let key = sprintf "%s.%s" schema table
+                let securable = sprintf "[%s].[%s]" schema table  // LINT-ALLOW: securable-name string for fn_my_permissions/OBJECT_ID at the probe boundary; bracketed identifier text is the functions' input format
+                let! objPairs = probeObjectGrant sink key securable
+                match objPairs with
+                | Some ps -> return! probeObjects sink rest (ps @ pairs) (Set.add key probed)
+                | None    -> return! probeObjects sink rest pairs probed
+        }
+
+    /// The probe body without the exception envelope — the public capture
+    /// wraps ONE `let!` in its `try` (FS3511 discipline).
+    let private captureGrantPairs (objects: (string * string) list) (sink: SqlConnection) : Task<GrantEvidence> =
+        task {
+            if sink.State <> System.Data.ConnectionState.Open then do! sink.OpenAsync()
+            // The DATABASE-probe reader must close before the per-object
+            // probes run — one connection, no MARS.
+            let! dbPairs =
+                task {
+                    use cmd = sink.CreateCommand()
+                    cmd.CommandText <- "SELECT permission_name FROM sys.fn_my_permissions(NULL, 'DATABASE')"
+                    use! reader = cmd.ExecuteReaderAsync()
+                    return! readGrantRows "" reader []
+                }
+            return! probeObjects sink (List.distinct objects) dbPairs Set.empty
+        }
+
     /// Capture database-scope grants PLUS per-object effective permissions
     /// for the supplied `(schema, table)` list — the planned-write tables.
     /// An empty list is the historical database-scope-only capture.
     let captureGrantEvidenceFor (objects: (string * string) list) (sink: SqlConnection) : Task<Result<GrantEvidence>> =
         task {
             try
-                if sink.State <> System.Data.ConnectionState.Open then do! sink.OpenAsync()
-                // The DATABASE-probe reader must close before the per-object
-                // probes run — one connection, no MARS.
-                let! dbPairs =
-                    task {
-                        use cmd = sink.CreateCommand()
-                        cmd.CommandText <- "SELECT permission_name FROM sys.fn_my_permissions(NULL, 'DATABASE')"
-                        use! reader = cmd.ExecuteReaderAsync()
-                        return! readGrantRows "" reader []
-                    }
-                let mutable pairs = dbPairs
-                let mutable probed : Set<string> = Set.empty
-                // Single-value `for` binding (no tuple pattern in a task CE —
-                // the FS3511 Release-reducibility rule).
-                for entry in List.distinct objects do
-                    let schema = fst entry
-                    let table = snd entry
-                    let key = sprintf "%s.%s" schema table
-                    use objCmd = sink.CreateCommand()
-                    objCmd.CommandText <-
-                        "SELECT permission_name FROM sys.fn_my_permissions(@obj, 'OBJECT') WHERE subentity_name = ''"
-                    objCmd.Parameters.AddWithValue("@obj", sprintf "[%s].[%s]" schema table) |> ignore  // LINT-ALLOW: securable-name string for fn_my_permissions at the probe boundary; bracketed identifier text is the function's input format
-                    use! objReader = objCmd.ExecuteReaderAsync()
-                    let! objPairs = readGrantRows key objReader []
-                    pairs <- objPairs @ pairs
-                    probed <- Set.add key probed
-                return Ok { Granted = Set.ofList pairs; ProbedObjects = probed }
+                let! evidence = captureGrantPairs objects sink
+                return Ok evidence
             with ex ->
                 return Result.failureOf (ValidationError.create "migrate.grantProbeFailed" ex.Message)
         }

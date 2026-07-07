@@ -99,9 +99,9 @@ module StrategyRegistrations =
           Domain = CrossCutting
           StageBinding = Pass
           Sites =
-            [ { SiteName = "asymmetric2CycleStrategy"
+            [ { SiteName = "weakFeedbackStrategy"
                 Classification = DataIntent
-                Rationale = "Asymmetric-2-cycle resolver: when a 2-cycle has exactly one Weak precedence edge, remove it to resolve. The choice is algorithm-internal (the resolver's heuristic); no operator opinion at the per-cycle level. Operator-supplied SelfLoopPolicy is a separate concern handled at TopologicalOrderPass.registered's selfLoopHandling site (OperatorIntent Ordering — Q9-trigger-fires worked example)." } ]
+                Rationale = "Weak-feedback cycle resolver (v5, 2026-07-07 — generalizes the retired asymmetric-2-cycle heuristic): break the smallest Weak (nullable, hence phase-2-deferrable) edge on each residual cycle until the SCC is acyclic; refuse — naming the exact cycle — when a cycle of non-deferrable (non-nullable / cascade) edges exists. The choice is algorithm-internal, derived entirely from schema facts (nullability + OnDelete); no operator opinion at the per-cycle level. Operator-supplied SelfLoopPolicy is a separate concern handled at TopologicalOrderPass.registered's selfLoopHandling site (OperatorIntent Ordering — Q9-trigger-fires worked example)." } ]
           Status = Active }
 
     /// All five strategy registrations in one list. Slice ζ's

@@ -1029,3 +1029,45 @@ the unrelated-cycle board goes GREEN while the unscoped topology provably
 degrades on the same contract; `PeerManagedGrantTransferDockerTests` — the new
 OBJECT-scope-DML cell lands the subset with zero grant violations and no
 database-scope DML at all; both G1 promotions). Full-sweep verdict below.
+
+## Entry 26 — 2026-07-07, THE WEAK-FEEDBACK RESOLVER (v5): cycle handling made total, and the resolved-cycle refusal bug the audit caught
+
+**Why (operator-directed completeness follow-on to Entry 25):** the review of
+V1's manual cycle-ordering override (`CircularDependencyOptions` — z-index
+positions that DISABLE automatic detection wholesale, keyed on espace-fragile
+physical names) concluded V2 should overcome it with a complete resolver rather
+than carry the knob. The gap named there: the asymmetric-2-cycle resolver refused
+symmetric-weak 2-cycles and every SCC ≥ 3 — shapes the two-phase deferral can
+provably load.
+
+**The resolver (`CycleResolution.weakFeedbackStrategy`, pass v5):** find a cycle
+(deterministic DFS); every edge on it non-Weak → refuse, naming EXACTLY that
+cycle (and the remedy: make one of its FK columns nullable — it then defers);
+otherwise break the smallest Weak edge on it and repeat until acyclic. The
+complete case map (self-loops, 2-cycles asymmetric/symmetric/strong, SCCs ≥ 3
+weak-bearing/strong-cored, fused rings, cascade conservatism) is the docstring
+table; invariants I1–I5 (broken ⊆ Weak ⊆ deferrable; acyclic on resolve;
+refuse ⟺ an all-strong cycle exists; input-order independence; a pure weak ring
+breaks ONE edge) are property-tested. Manual overrides stay DEFERRED with a
+named trigger in the DECISIONS index (a cycle whose breakability is not
+schema-inferable).
+
+**The correlated catch:** `UnbreakableCycleFks` judged ALL cycle members, but a
+RESOLVED SCC deliberately stays in `Cycles` for deferral — so a resolved
+asymmetric 2-cycle's strong edge was flagged unbreakable and `executeGate`
+refused a load the proven order satisfies (latent until now: the canary estates
+only carry self-loop cycles). `TopologicalOrder.unresolvedCycleMembers` now
+feeds unsatisfiability; `cycleMembers` still feeds deferral. The algebra reads
+cleanly: resolved → strong edges satisfied by ORDER, weak by DEFERRAL;
+unresolved → nullable defers, non-nullable is the named refusal.
+
+**Also caught while here (the sweep's one red):** the per-object grant probe
+treated a MISSING sink table as zero permissions — a misleading
+`insufficientGrant` for what is a shape fact. An absent object now stays
+unprobed (database-scope fallback), and the chunk-resume crash witness holds.
+
+**Proven:** pure — `CycleResolutionTests` (case map + I1–I5 FsCheck properties),
+`TopologicalOrderPassTests` (v5 flips), `DataLoadPlanTests` (resolved →
+satisfiable; unresolved → named diagnostic), `DataEmissionComposerTests`
+(unresolvable fixture moved to nullable+Restrict, preserving both premises);
+full fast pool green. Full-sweep verdict below.

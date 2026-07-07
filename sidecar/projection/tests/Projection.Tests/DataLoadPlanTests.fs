@@ -111,8 +111,28 @@ let ``DataLoadPlan: nullable same-cycle FK is deferred, non-nullable is not`` ()
     Assert.True(Set.isEmpty (loadFor bKey plan).DeferredFkColumns)
 
 [<Fact>]
-let ``DataLoadPlan: non-nullable same-cycle FK surfaces as an unbreakable diagnostic`` () =
+let ``DataLoadPlan: a RESOLVED cycle's non-nullable FK is satisfied by the proven order — no unbreakable diagnostic, plan satisfiable`` () =
+    // The fixture topo's A<->B SCC is RESOLVED (BreakableEdges = [(A,B)]):
+    // the resolver broke A's weak (nullable, deferred) edge, and the order
+    // [.. A; B] honors B's strong edge — B loads after A, so B.A_ID is
+    // satisfied by ORDER, not deferral. The pre-2026-07-07 computation
+    // judged ALL cycle members and flagged B.A_ID unbreakable, refusing a
+    // load the proven order satisfies (the resolver-completeness catch).
     let plan = build Map.empty
+    Assert.True(DataLoadPlan.isSatisfiable plan)
+    Assert.Empty(plan.UnbreakableCycleFks)
+
+/// The same catalog under an UNRESOLVED A<->B cycle (BreakableEdges = [] —
+/// the resolved/unresolved discriminant): the alphabetical fallback cannot
+/// prove B's strong edge, so the non-nullable FK is genuinely unbreakable.
+let private unresolvedTopo : TopologicalOrder =
+    { topo with
+        Mode   = OrderingMode.Alphabetical
+        Cycles = [ { Members = [ aKey; bKey ]; BreakableEdges = []; Reason = "test unresolved 2-cycle" } ] }
+
+[<Fact>]
+let ``DataLoadPlan: an UNRESOLVED cycle's non-nullable FK surfaces as the unbreakable diagnostic (the nullable side does not)`` () =
+    let plan = DataLoadPlan.build catalog unresolvedTopo Map.empty SurrogateRemapContext.empty
     Assert.False(DataLoadPlan.isSatisfiable plan)
     Assert.Contains(
         plan.UnbreakableCycleFks,

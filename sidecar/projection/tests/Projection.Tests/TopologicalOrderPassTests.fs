@@ -281,14 +281,14 @@ let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
     // The synthetic fixture uses non-nullable FK columns on both sides
     // of the back-reference, so the resolver classifies both edges as
     // Other and refuses to break either one. The Reason field records
-    // the class of failure.
+    // the class of failure — v5 names the non-deferrable cycle itself.
     let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
-    Assert.Contains("Weak edge", scc.Reason)
+    Assert.Contains("non-deferrable", scc.Reason)
 
 // ---------------------------------------------------------------------------
 // Self-loop detection (v4) — surfaced by chapter 4.1.B slice δ.
@@ -505,25 +505,31 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
     Assert.Equal(Alphabetical, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
-    Assert.Contains("no Weak edge", diag.Reason)
+    Assert.Contains("non-deferrable", diag.Reason)
 
 [<Fact>]
-let ``resolver: 2-cycle with two Weak edges remains unresolved`` () =
-    // Both edges nullable + NoAction = Weak / Weak. Resolver refuses
-    // to choose; cycle is unresolved.
+let ``resolver v5: 2-cycle with two Weak edges resolves — one edge broken, deterministically chosen`` () =
+    // Both edges nullable + NoAction = Weak / Weak. The v5 weak-feedback
+    // resolver breaks the smallest weak edge on the found cycle (one
+    // deferral, not two — I5 frugality) and the order proves topological.
     let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") true NoAction
     let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") true NoAction
     let cyclic : Catalog =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(Topological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Empty(diag.BreakableEdges)
-    Assert.Contains("multiple Weak edges", diag.Reason)
+    Assert.Equal(1, diag.BreakableEdges.Length)
+    Assert.Contains("auto-resolved", diag.Reason)
+    // The kept edge is honored by the order: breaking (Audit -> Parent)
+    // leaves Parent's FK to Audit, so Audit loads first. Deterministic —
+    // the smallest edge by SsKey pair breaks.
+    Assert.Equal((mkKey "Audit", mkKey "Parent"), diag.BreakableEdges.[0])
+    Assert.True(TopologicalOrder.precedes (mkKey "Audit") (mkKey "Parent") result.Value)
 
 [<Fact>]
-let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles only)`` () =
+let ``resolver v5: an all-weak 3-cycle resolves with exactly ONE broken edge (I5 — a pure weak ring never blanket-defers)`` () =
     let a = kindWithRef "A" "AtoB" (mkKey "B") true NoAction
     let b = kindWithRef "B" "BtoC" (mkKey "C") true NoAction
     let c = kindWithRef "C" "CtoA" (mkKey "A") true NoAction
@@ -531,10 +537,25 @@ let ``resolver: 3-cycle remains unresolved (current resolver handles 2-cycles on
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(Topological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Equal(3, diag.Members.Length)
-    Assert.Contains("size 3", diag.Reason)
+    Assert.Equal(1, diag.BreakableEdges.Length)
+    Assert.Contains("auto-resolved", diag.Reason)
+
+[<Fact>]
+let ``resolver v5: a 3-cycle whose every edge is STRONG refuses, naming the cycle`` () =
+    let a = kindWithRef "A" "AtoB" (mkKey "B") false NoAction
+    let b = kindWithRef "B" "BtoC" (mkKey "C") false NoAction
+    let c = kindWithRef "C" "CtoA" (mkKey "A") false NoAction
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+    let result = topoRun cyclic
+    Assert.Equal(Alphabetical, result.Value.Mode)
+    let diag = result.Value.Cycles |> List.head
+    Assert.Empty(diag.BreakableEdges)
+    Assert.Contains("non-deferrable", diag.Reason)
 
 [<Fact>]
 let ``resolver: Cascade edges are never broken`` () =

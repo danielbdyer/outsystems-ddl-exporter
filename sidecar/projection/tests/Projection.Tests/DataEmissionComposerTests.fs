@@ -781,10 +781,13 @@ let private mkAcyclicLeveledCatalog () : Kind list =
     [ root; mid; leaf; indep ]
 
 /// A pair of static kinds forming a genuinely UNRESOLVABLE cycle: each
-/// holds a NULLABLE FK to the other — a 2-SCC with TWO Weak edges, which
-/// the asymmetric resolver refuses by name ("multiple Weak edges; resolver
-/// refuses to choose"). Both FK columns are nullable + same-cycle, so both
-/// defer to Phase 2 (the partition law covers both phases).
+/// holds a NULLABLE + ON DELETE RESTRICT FK to the other — strength
+/// `Other` on both edges (nullable + Restrict is never breakable), so the
+/// v5 weak-feedback resolver refuses by name. Both FK columns are still
+/// NULLABLE + same-cycle, so both defer to Phase 2 (the partition law
+/// covers both phases). Until 2026-07-07 the fixture used two Weak
+/// (nullable + NoAction) edges — the v5 resolver now RESOLVES that shape,
+/// so the unresolvable premise moves to the Restrict strength.
 let private mkStaticMutualCycleKind (name: string) (table: string) (otherName: string) : Kind =
     let kindKey = mkKey ["TestModule"; name]
     let idKey = mkKey ["TestModule"; name; "Id"]
@@ -804,7 +807,7 @@ let private mkStaticMutualCycleKind (name: string) (table: string) (otherName: s
                 { Attribute.create peerKey (mkName "PeerId") Integer with Column = ColumnRealization.create ("PEERID") (true) |> Result.value }
             ]
         References =
-            [ Reference.create (mkKey ["TestModule"; name; "RefPeer"]) (mkName "RefPeer") peerKey (mkKey ["TestModule"; otherName]) ]
+            [ { Reference.create (mkKey ["TestModule"; name; "RefPeer"]) (mkName "RefPeer") peerKey (mkKey ["TestModule"; otherName]) with OnDelete = Restrict } ]
         Indexes    = []
         Description = None
         IsActive = true

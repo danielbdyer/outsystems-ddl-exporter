@@ -59,8 +59,16 @@ module TopologicalOrderPass =
     ///       refuse 1-cycles (its name names the shape it handles);
     ///       the diagnostic surfaces for emitters that consume cycle
     ///       membership directly.
+    /// v5 — The weak-feedback resolver (2026-07-07): replaces the
+    ///       asymmetric-2-cycle strategy with `CycleResolution
+    ///       .weakFeedbackStrategy` — ANY SCC whose every cycle carries
+    ///       at least one Weak edge auto-resolves (one break per
+    ///       residual cycle); refusal fires exactly on a cycle of
+    ///       non-deferrable edges, naming its members. 2-cycle and
+    ///       self-loop behavior unchanged except symmetric weak
+    ///       2-cycles, which now resolve.
     [<Literal>]
-    let version : int = 4
+    let version : int = 5
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -144,11 +152,6 @@ module TopologicalOrderPass =
         // COMBINES across the parallel set: the pair is breakable only if
         // EVERY parallel reference is Weak (a Cascade or non-nullable
         // sibling still binds the dependency).
-        let strongerOf (a: EdgeStrength) (b: EdgeStrength) : EdgeStrength =
-            match a, b with
-            | EdgeStrength.Cascade, _ | _, EdgeStrength.Cascade -> EdgeStrength.Cascade
-            | EdgeStrength.Other, _ | _, EdgeStrength.Other -> EdgeStrength.Other
-            | _ -> EdgeStrength.Weak
         let folder (state: Graph) (k: Kind) : Graph =
             // Sort references by SsKey too — same invariance commitment
             // at the inner level.
@@ -178,7 +181,7 @@ module TopologicalOrderPass =
                         // A parallel reference over an already-tracked pair:
                         // combine strength only — adjacency/indegree/Edges
                         // stay single-entry so break/reduce stays coherent.
-                        { st with ClassifiedEdges = Map.add edge (strongerOf existing strength) st.ClassifiedEdges }
+                        { st with ClassifiedEdges = Map.add edge (CycleResolution.combineStrength existing strength) st.ClassifiedEdges }
                     | None ->
                         let children =
                             Map.tryFind r.TargetKind st.Adjacency
@@ -360,10 +363,11 @@ module TopologicalOrderPass =
     // The algebra here is: enumerate SCCs (Tarjan); ask the
     // domain-supplied resolver which FK edges to break per SCC; remove
     // the precedence-graph edges; re-run Kahn. The choice of resolver
-    // is V1-flavored domain policy and lives in `CycleResolution`. This
-    // pass currently uses `CycleResolution.asymmetric2CycleStrategy`;
-    // pluggable resolvers arrive when an admire pass surfaces a need
-    // (e.g., manual cycle overrides for known fixtures).
+    // is domain policy and lives in `CycleResolution`. This pass uses
+    // `CycleResolution.weakFeedbackStrategy` (v5, 2026-07-07); manual
+    // cycle overrides stay deferred with a named trigger (a cycle whose
+    // breakability is not inferable from schema — see DECISIONS
+    // 2026-07-07).
     // -----------------------------------------------------------------------
 
     type private ResolverOutcome = {
@@ -490,11 +494,11 @@ module TopologicalOrderPass =
               ] }
         else
             // Cycle present. Run Tarjan's SCC on the unprocessed
-            // residue, then ask the asymmetric-2-cycle resolver
-            // which Weak edges it's willing to break.
+            // residue, then ask the weak-feedback resolver which
+            // edges it's willing to break.
             let sccs = tarjanScc unprocessed graph.Adjacency
             let resolution =
-                applyResolver CycleResolution.asymmetric2CycleStrategy graph sccs
+                applyResolver CycleResolution.weakFeedbackStrategy graph sccs
 
             if List.isEmpty resolution.UnresolvedDiagnostics then
                 // Every SCC resolved. Re-run Kahn on the reduced graph.
