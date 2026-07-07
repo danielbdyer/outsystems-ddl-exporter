@@ -867,5 +867,8 @@ fixture PLUS the orphan shape (active attribute, NULL `Physical_Column_Name`, na
 matching no physical column) — on the pre-refactor code it reproduces the live
 failure verbatim; on the refactored runner the extraction succeeds and the orphan
 falls back to the upper-cased attr name while its neighbors keep their real physical
-names. Fast pool green (39s); the full docker-pool sweep verdict is appended below
-when it completes.
+names.
+
+**Final verdict:** the full sweep PASSED IN FULL — fast pool 3937/3937 (39s), docker
+pool 289/289 (518s, regression test aboard), scale pool 16/16 (79s). The contracts
+gate no longer dies on estates carrying orphan attributes.
