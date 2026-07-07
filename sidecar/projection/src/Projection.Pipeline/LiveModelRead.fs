@@ -126,6 +126,7 @@ module LiveModelRead =
             match! MetadataSnapshotRunner.runAsyncWithOptions cnn parameters options with
             | Error es -> return Result.failure es
             | Ok snapshot ->
+                let bundle = MetadataSnapshotRunner.toBundle snapshot
                 // F9 (audit 2026-06-17) — surface, never silently discard, every
                 // logical-vs-deployed `#ColumnReality` divergence the snapshot
                 // carries (the adapter keeps the LOGICAL value; the operator is
@@ -134,11 +135,14 @@ module LiveModelRead =
                 // The carried value is unchanged — diagnostic only, no
                 // auto-resolve. Since 2026-07-02 the surface is the notice
                 // rollup (one Warn envelope + the detail artifact), never a
-                // per-item stderr wall fighting the live board.
+                // per-item stderr wall fighting the live board. Since
+                // 2026-07-07 the rollup also names each entity-less module
+                // the rowset reader SKIPS (the erasure that used to fail the
+                // whole read as `module.kinds.empty`).
                 surfaceDivergences
                     (MetadataSnapshotRunner.columnRealityDivergences snapshot
-                     @ MetadataSnapshotRunner.primaryKeyDivergences snapshot)
-                let bundle = MetadataSnapshotRunner.toBundle snapshot
+                     @ MetadataSnapshotRunner.primaryKeyDivergences snapshot
+                     @ OssysRowsetReader.entityLessModules bundle)
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
                 // (the cross-scope edges). `ModuleFilter.apply` applies
