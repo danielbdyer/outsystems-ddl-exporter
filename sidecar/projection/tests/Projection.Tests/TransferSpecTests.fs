@@ -28,6 +28,7 @@ let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
       SkippedReferences   = []
       CaptureLaneDescents = []
       ReplayedPriorDrops  = replayed
+      Plan                = None
       SyntheticUnsatisfiableFks = []
       Names = Map.empty }
 

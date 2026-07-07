@@ -26836,3 +26836,52 @@ satisfiable + no unbreakable; unresolved → the named diagnostic),
 `DataEmissionComposerTests` (the unresolvable fixture moved to
 nullable+Restrict — strength Other with deferrable columns, preserving
 both the Alphabetical premise and the phase-2 partition law).
+
+## 2026-07-07 — The go-board data forecast: before→after table, evidence-backed reconcile proposals, and the `--sql` plan preview
+
+**Decision.** Three semantic additions to the go board (operator-requested;
+`PARTIAL_TRANSFER_READINESS_LOG.md` Entry 27):
+
+1. **`TransferReport.Plan : DataLoadPlan option`** — the dry run's built
+   plan rides the report (`Some` on DryRun's materialized/synthetic/golden
+   legs; `None` on Execute — never retain estate-scale rows past the run —
+   and on the streaming preview, whose plan carries no rows). It exists so
+   preview surfaces derive forecasts and text realizations WITHOUT
+   re-ingesting. **`KindOutcome.RowsMatched`** carries a reconciled kind's
+   measured match count (the remap's per-kind bindings) — `RowsIngested`
+   stays 0-by-design for reconciled kinds, and the forecast's "match"
+   column must be a measurement, not an inference.
+2. **`GoBoard.ForecastLine` / `forecastTable`** (pure) render the
+   before→after table: `after = before − deletes + adds`; an unprobed count
+   renders `?` and poisons the TOTAL (never a silent 0). The face joins the
+   plan against live sink counts on a short-lived connection; WipeAndLoad
+   deletes ride the SAME `TransferResume.wipeTargets` walk the live wipe
+   takes.
+3. **`PeerTransfer.probeReconcileEvidence` / `narrateEvidence`** — each
+   escaping target's candidate reconcile columns (unique-index-backed,
+   then name-shaped TEXT attributes when no index nominates, ≤3 per
+   target) probed live: sink uniqueness + a bounded 200-value
+   parameterized sample matched into the sink; verdicts are total
+   (`Probed` strength ladder / `Unprobed reason`). **`Transfer
+   .plannedSqlPreview`** (pure) renders the same plan through
+   `StaticSeedsEmitter.emitFromPlan` — the `SliceApplyRun.emit`
+   composition: child-first wipe under replace, phase-1 in plan order,
+   phase-2 re-points — behind the new `check go <flow> --sql` opt-in,
+   written to `go-board/<flow>.planned.sql`.
+
+**Also.** The `check go` positional filter counted a value-bearing flag's
+value token as a positional (`--format json` refused as "two flow names");
+the walk now skips `--format`'s value.
+
+**Why.** The board previously narrated row counts as prose — the operator
+had to derive the target's end state. Confidence to execute comes from the
+change STATED (a table with a TOTAL row), proposals PROVEN (live evidence,
+not name-shape guesses), and the DML READABLE before authorization. All
+three reuse existing algebra (the plan carrier, the wipe walk, the A35/A36
+realization sibling) — no new write-plane semantics.
+
+**Witnesses.** `PeerTransferTests` (forecast arithmetic/alignment/
+`?`-poisoning; `plannedSqlPreview` wipe order + loadSet scoping +
+Incremental-no-wipe; `narrateEvidence` strength ladder);
+`GoBoardDockerTests` red/green/red extended (evidence lines, the table,
+the `--sql` artifact content, on the live managed-grant pair).

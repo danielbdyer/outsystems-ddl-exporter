@@ -1724,7 +1724,18 @@ module Command =
                 // planning path a real run takes (preview opts), so the board
                 // judges exactly what `--go` would execute (A44: the check
                 // and the run cannot drift).
-                match rest |> List.filter (fun a -> not (a.StartsWith "--")) with
+                // Positionals skip flags AND a value-bearing flag's value
+                // token (`--format json` previously counted `json` as a
+                // second positional and refused; caught 2026-07-07).
+                let positionals =
+                    let rec walk (args: string list) =
+                        match args with
+                        | [] -> []
+                        | a :: _ :: tl when a = "--format" -> walk tl
+                        | a :: tl when a.StartsWith "--" -> walk tl
+                        | a :: tl -> a :: walk tl
+                    walk rest
+                match positionals with
                 | [ flowName ] ->
                     match Map.tryFind flowName cfg.Flows with
                     | None ->
@@ -1739,9 +1750,10 @@ module Command =
                             match rest |> List.pairwise |> List.tryFind (fun (a, _) -> a = "--format") with
                             | Some (_, v) -> v = "json"
                             | None -> false
-                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, (planFlow cfg flow previewOpts).Action)
+                        let emitSql = List.contains "--sql" rest
+                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, emitSql, (planFlow cfg flow previewOpts).Action)
                 | _ ->
-                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow>).")
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--format json]).")
             | "shape" :: _ ->
                 match cfg.Readiness with
                 | None ->

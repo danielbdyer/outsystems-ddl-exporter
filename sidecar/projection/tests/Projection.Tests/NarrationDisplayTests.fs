@@ -65,7 +65,7 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
     let kindK = SsKey.ossysOriginal (System.Guid("d0000000-0000-0000-0000-000000000006"))
     let report : Transfer.TransferReport =
         { Mode                     = Transfer.DryRun
-          Kinds                    = [ { Kind = kindK; Disposition = IdentityDisposition.AssignedBySink; RowsIngested = 5; DeferredFkColumns = Set.empty; RowsWritten = 5 } ]
+          Kinds                    = [ { Kind = kindK; Disposition = IdentityDisposition.AssignedBySink; RowsIngested = 5; DeferredFkColumns = Set.empty; RowsWritten = 5; RowsMatched = 0 } ]
           UnbreakableCycleFks      = []
           UnmatchedIdentities      = []
           AmbiguousIdentities      = []
@@ -73,6 +73,7 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           SkippedReferences        = []
           CaptureLaneDescents      = []
           ReplayedPriorDrops       = None
+          Plan                     = None
           SyntheticUnsatisfiableFks = []
           Names                    = Map.ofList [ kindK, "Orders" ] }
     let out = capture (fun () -> Faces.Transfer.narrateTransferReport report)

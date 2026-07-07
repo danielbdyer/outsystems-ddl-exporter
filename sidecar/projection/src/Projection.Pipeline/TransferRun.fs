@@ -151,6 +151,10 @@ module Transfer =
             RowsIngested      : int
             DeferredFkColumns : Set<Name>
             RowsWritten       : int
+            /// For a `ReconciledByRule` kind: source rows MATCHED to
+            /// existing sink rows (the remap's bindings; no insert — the
+            /// forecast's "match" column). 0 for a non-reconciled kind.
+            RowsMatched       : int
         }
 
     type TransferReport =
@@ -193,6 +197,16 @@ module Transfer =
             /// `UnresolvedReference`s are not re-listed, only the verdict-bearing
             /// count is persisted in the progress marker).
             ReplayedPriorDrops  : int option
+            /// The built load plan, carried on a DRY RUN only (2026-07-07,
+            /// the go-board forecast program): the plan already exists in
+            /// memory at report time and lets the preview surface derive the
+            /// before/after forecast table and the planned-SQL text
+            /// realization (`StaticSeedsEmitter.emitFromPlan` — the A35/A36
+            /// sibling of the live realization) without re-ingesting.
+            /// `None` on Execute (never retain estate-scale rows past the
+            /// run) and on the STREAMING dry run (its plan carries no rows —
+            /// an empty-INSERT artifact would mislead).
+            Plan                : DataLoadPlan option
             /// NM-21 — the named `synthetic.fk.unsatisfiable` events σ raised:
             /// a non-nullable FK column forced to NULL because its synthetic
             /// parent pool was empty. Surfaced here so a DryRun preview (which
@@ -696,6 +710,53 @@ module Transfer =
             @ (if emission = EmissionMode.WipeAndLoad then [ write Preflight.Delete ] else []))
         |> List.distinct
 
+    /// The planned-SQL preview (2026-07-07, the go-board forecast program):
+    /// render the DRY RUN's load plan as the T-SQL a text realization would
+    /// execute — the wipe's child-first DELETEs (WipeAndLoad only, the same
+    /// `TransferResume.wipeTargets` order the live wipe walks), then every
+    /// kind's Phase-1 MERGE in FK-safe plan order, then the Phase-2
+    /// deferred-FK re-points. PURE — the same
+    /// `StaticSeedsEmitter.emitFromPlan` realization `SliceApplyRun.emit`
+    /// composes (A35/A36: the plan is the contract; realizations are
+    /// siblings). The live run executes the SAME plan through the
+    /// bulk-write lanes; AssignedBySink surrogates mint at run time (the
+    /// capture lane binds them), so the preview's values for those kinds
+    /// are the plan's source-side keys.
+    let plannedSqlPreview
+        (emission: EmissionMode)
+        (loadSet: Set<SsKey> option)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        (plan: DataLoadPlan)
+        : Result<string> =
+        match Projection.Targets.Data.StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan with
+        | Error emitErr ->
+            Result.failureOf (ValidationError.create "transfer.plannedSql.emit" (sprintf "%A" emitErr))
+        | Ok artifact ->
+            let map = ArtifactByKind.toMap artifact
+            let order = plan.Loads |> List.map (fun l -> l.Kind)
+            let rendered (pick: Projection.Targets.Data.DataInsertScript -> string) =
+                order |> List.choose (fun k -> Map.tryFind k map |> Option.map pick)
+            let wipe =
+                if emission = EmissionMode.WipeAndLoad then
+                    let deletes =
+                        TransferResume.wipeTargets plan topo loadSet
+                        |> List.choose (fun k -> Catalog.tryFindKind k catalog)
+                        |> List.map (fun kind -> System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";\n"))  // LINT-ALLOW: terminal SQL-text boundary; the table name is a validated TableId via Render.tableQualified
+                    match deletes with
+                    | [] -> []
+                    | ds -> ("-- The wipe (strategy replace): child-first, the same order the live run deletes in.\n" :: ds) @ [ "\n" ]
+                else []
+            let header =
+                String.concat "\n"
+                    [ "-- PLANNED SQL PREVIEW — rendered from the dry run's load plan; `check go` never executes it."
+                      "-- The live run carries this same plan through the bulk-write lanes: phase-1 inserts in"
+                      "-- FK-safe order, then the phase-2 deferred-FK re-points. AssignedBySink surrogates mint"
+                      "-- at run time (the capture lane binds them) — their values below are the plan's"
+                      "-- source-side keys, shown for shape."
+                      ""; "" ]
+            Ok (String.concat "" (header :: (wipe @ rendered (fun s -> s.RenderedPhase1) @ rendered (fun s -> s.RenderedPhase2))))
+
     /// G1 + G2 for an Execute transfer: probe both endpoints (connection
     /// liveness/credential) and the sink grant against the planned writes,
     /// refusing before any write. The grant evidence is captured PER PLANNED
@@ -780,7 +841,12 @@ module Transfer =
 
     // -- orchestration ------------------------------------------------------
 
-    let private reportKinds (mode: Mode) (plan: DataLoadPlan) : KindOutcome list =
+    /// Per-kind match count from the reconcile remap: the bindings a
+    /// `ReconciledByRule` kind carries (matched sink rows, no insert).
+    let private matchedOf (remap: SurrogateRemapContext) (kind: SsKey) : int =
+        remap.Assignments |> Map.tryFind kind |> Option.map Map.count |> Option.defaultValue 0
+
+    let private reportKinds (mode: Mode) (remap: SurrogateRemapContext) (plan: DataLoadPlan) : KindOutcome list =
         plan.Loads
         |> List.map (fun l ->
             // RowsIngested reflects the source-side count; for reconciled
@@ -788,12 +854,14 @@ module Transfer =
             // reconciled-kind set's source count IS the rows that became
             // the remap, not rows that get inserted. The operator-facing
             // distinction: `Rows.Length` is what would be written; for
-            // ReconciledByRule that's 0 by design.
+            // ReconciledByRule that's 0 by design — `RowsMatched` carries
+            // the matched count (the remap's bindings) instead.
             { Kind              = l.Kind
               Disposition       = l.Disposition
               RowsIngested      = l.Rows.Length
               DeferredFkColumns = l.DeferredFkColumns
-              RowsWritten       = (match mode with Execute -> l.Rows.Length | DryRun -> 0) })
+              RowsWritten       = (match mode with Execute -> l.Rows.Length | DryRun -> 0)
+              RowsMatched       = matchedOf remap l.Kind })
 
     /// The write-seam policy (Wave 3): the D10 `EmissionMode` (incremental MERGE
     /// vs operator-selected wipe-and-load) and the G10 resumability flag. The
@@ -1019,7 +1087,7 @@ module Transfer =
                 return
                     Result.success
                         { Mode                = mode
-                          Kinds               = reportKinds mode plan
+                          Kinds               = reportKinds mode reconciled.Remap plan
                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                           UnmatchedIdentities = reconciled.Unmatched
                           AmbiguousIdentities = reconciled.Ambiguous
@@ -1031,6 +1099,7 @@ module Transfer =
                           ReplayedPriorDrops  = replayedPriorDrops
                           // NM-21 — only the σ path can raise these; ingested
                           // Transfer never draws against a synthetic pool.
+                          Plan                = (match mode with DryRun -> Some plan | Execute -> None)
                           SyntheticUnsatisfiableFks = []
                           Names = Catalog.nameIndex catalog }
         }
@@ -1216,7 +1285,7 @@ module Transfer =
                     return
                         Result.success
                             { Mode                = mode
-                              Kinds               = reportKinds mode plan
+                              Kinds               = reportKinds mode SurrogateRemapContext.empty plan
                               UnbreakableCycleFks = plan.UnbreakableCycleFks
                               UnmatchedIdentities = []
                               AmbiguousIdentities = []
@@ -1226,6 +1295,7 @@ module Transfer =
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
                               // NM-21 — σ's named unsatisfiable-FK lineage.
+                              Plan                = (match mode with DryRun -> Some plan | Execute -> None)
                               SyntheticUnsatisfiableFks = syntheticDiags
                               Names = Catalog.nameIndex catalog }
         }
@@ -1319,7 +1389,7 @@ module Transfer =
                     return
                         Result.success
                             { Mode                = mode
-                              Kinds               = reportKinds mode plan
+                              Kinds               = reportKinds mode SurrogateRemapContext.empty plan
                               UnbreakableCycleFks = plan.UnbreakableCycleFks
                               UnmatchedIdentities = []
                               AmbiguousIdentities = []
@@ -1327,6 +1397,7 @@ module Transfer =
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
+                              Plan                = (match mode with DryRun -> Some plan | Execute -> None)
                               SyntheticUnsatisfiableFks = []
                               Names = Catalog.nameIndex catalog }
         }
@@ -2021,7 +2092,8 @@ module Transfer =
                                           Disposition       = l.Disposition
                                           RowsIngested      = estimate
                                           DeferredFkColumns = l.DeferredFkColumns
-                                          RowsWritten       = 0 } :: acc
+                                          RowsWritten       = 0
+                                          RowsMatched       = matchedOf reconciled.Remap l.Kind } :: acc
                                 return List.rev acc
                             }
                         return
@@ -2037,6 +2109,7 @@ module Transfer =
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
                                   // NM-21 — streaming Transfer ingests source rows, not σ.
+                                  Plan                = None   // streaming plan carries no rows
                                   SyntheticUnsatisfiableFks = []
                                   Names = Catalog.nameIndex sourceContract }
                     else
@@ -2095,7 +2168,8 @@ module Transfer =
                                       Disposition       = l.Disposition
                                       RowsIngested      = t.Ingested
                                       DeferredFkColumns = l.DeferredFkColumns
-                                      RowsWritten       = t.Written })
+                                      RowsWritten       = t.Written
+                                      RowsMatched       = matchedOf reconciled.Remap l.Kind })
                             return
                                 Result.success
                                     { Mode                = mode
@@ -2111,6 +2185,7 @@ module Transfer =
                                       // own drops); no G10 marker replay here.
                                       ReplayedPriorDrops  = None
                                       // NM-21 — streaming Transfer ingests source rows, not σ.
+                                      Plan                = None   // streaming plan carries no rows
                                       SyntheticUnsatisfiableFks = []
                                       Names = Catalog.nameIndex sourceContract }
         }

@@ -7,6 +7,7 @@ namespace Projection.Pipeline
 //   pure-core / I/O-one-layer-up split.
 
 open System.Threading.Tasks
+open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.OssysSql
 
@@ -333,3 +334,144 @@ module PeerTransfer =
                         escapes.Length
                         (String.concat " " (narrateEscapes escapes))))
         else Result.success ()
+
+    // ------------------------------------------------------------------
+    // Reconcile-candidate EVIDENCE (2026-07-07, the go-board forecast
+    // program): each proposed reconcile column, validated against the
+    // LIVE pair — is the column unique on the sink (the duplicate-key
+    // tiebreaker never fires), and do the source's ACTUAL values find
+    // sink rows? Read-only scalar counts plus a bounded sample; a probe
+    // that cannot run degrades to a NAMED `Unprobed` verdict, never a
+    // crash and never silence.
+    // ------------------------------------------------------------------
+
+    /// Distinct source values sampled per candidate column — bounded so
+    /// the probe stays cheap on an estate-scale table, and far under the
+    /// 2100-parameter cap the match query spends them against.
+    [<Literal>]
+    let private EvidenceSampleCap = 200
+
+    [<RequireQualifiedAccess>]
+    type EvidenceVerdict =
+        /// The probe ran: sink uniqueness over non-null values + how many
+        /// sampled distinct source values found a sink row.
+        | Probed of sinkUnique: bool * sampleHits: int * sampleSize: int
+        /// The probe could not run — the reason is named, never silent.
+        | Unprobed of reason: string
+
+    /// One candidate reconcile column's live evidence.
+    type ReconcileEvidence =
+        { Target      : SsKey
+          /// `Module.Entity` — the resolvable, paste-able reconcile form.
+          TargetRef   : string
+          Column      : Name
+          /// Nominated by a single-column unique sink index (the
+          /// detector's candidates) vs proposed by name shape alone.
+          IndexBacked : bool
+          Verdict     : EvidenceVerdict }
+
+    let private sampleSourceValues (source: SqlConnection) (schema: string) (table: string) (col: string) : obj list =
+        use cmd = source.CreateCommand()
+        cmd.CommandText <- sprintf "SELECT DISTINCT TOP (%d) [%s] FROM [%s].[%s] WHERE [%s] IS NOT NULL;" EvidenceSampleCap col schema table col  // LINT-ALLOW: terminal SQL-text boundary; identifiers come from validated TableId/ColumnRealization coordinates
+        use r = cmd.ExecuteReader()
+        let rec read (acc: obj list) = if r.Read() then read (r.GetValue 0 :: acc) else List.rev acc
+        read []
+
+    /// `(non-null count, distinct count)` of the candidate column on the
+    /// sink — equal (and > 0) means the reconcile key never tiebreaks.
+    let private sinkUniqueness (sink: SqlConnection) (schema: string) (table: string) (col: string) : int64 * int64 =
+        use cmd = sink.CreateCommand()
+        cmd.CommandText <- sprintf "SELECT COUNT_BIG([%s]), COUNT_BIG(DISTINCT [%s]) FROM [%s].[%s];" col col schema table  // LINT-ALLOW: terminal SQL-text boundary; identifiers come from validated coordinates
+        use r = cmd.ExecuteReader()
+        if r.Read() then r.GetInt64 0, r.GetInt64 1 else 0L, 0L
+
+    /// How many of the sampled source values exist on the sink —
+    /// parameterized VALUES row set, one round trip.
+    let private sinkSampleHits (sink: SqlConnection) (schema: string) (table: string) (col: string) (values: obj list) : int =
+        if List.isEmpty values then 0
+        else
+            use cmd = sink.CreateCommand()
+            let rows = values |> List.mapi (fun i _ -> sprintf "(@p%d)" i) |> String.concat ","
+            cmd.CommandText <- sprintf "SELECT COUNT_BIG(*) FROM (VALUES %s) AS v(x) WHERE EXISTS (SELECT 1 FROM [%s].[%s] WHERE [%s] = v.x);" rows schema table col  // LINT-ALLOW: terminal SQL-text boundary; values ride parameters, identifiers come from validated coordinates
+            values |> List.iteri (fun i v -> cmd.Parameters.AddWithValue(sprintf "@p%d" i, v) |> ignore)
+            System.Convert.ToInt32 (cmd.ExecuteScalar())
+
+    /// The name shapes that make a non-PK TEXT attribute a plausible
+    /// business key when no unique index nominates one. Heuristic
+    /// candidates are always PROBED before proposed, and the narration
+    /// marks them "no unique index" — the evidence, not the name, carries
+    /// the recommendation.
+    let private nameShapedCandidate (a: Attribute) : bool =
+        not a.IsPrimaryKey
+        && a.Type = PrimitiveType.Text
+        && (let n = (Name.value a.Name).ToLowerInvariant()
+            [ "name"; "code"; "email"; "username"; "login"; "key"; "label"; "abbreviation"; "identifier"; "number" ]
+            |> List.exists (fun shape -> n = shape || n.EndsWith shape))
+
+    /// Probe live evidence for each escaping target's candidate reconcile
+    /// columns (index-backed first, then name-shaped; at most three per
+    /// target). Synchronous scalar reads on the two open connections —
+    /// the go board's short-lived probe pair.
+    let probeReconcileEvidence
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (escapes: EscapingFk list)
+        : ReconcileEvidence list =
+        escapes
+        |> List.distinctBy (fun e -> e.Target)
+        |> List.collect (fun e ->
+            match Catalog.tryFindKind e.Target sourceContract, Catalog.tryFindKind e.Target sinkContract with
+            | Some srcKind, Some sinkKind ->
+                let heuristic =
+                    sinkKind.Attributes
+                    |> List.filter nameShapedCandidate
+                    |> List.map (fun a -> a.Name)
+                    |> List.filter (fun n -> not (List.contains n e.CandidateReconcileColumns))
+                    |> List.sortBy Name.value
+                let targetRef = sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName)
+                ((e.CandidateReconcileColumns |> List.map (fun c -> c, true))
+                 @ (heuristic |> List.map (fun c -> c, false)))
+                |> List.truncate 3
+                |> List.map (fun (col, indexBacked) ->
+                    let verdict =
+                        match srcKind.Attributes |> List.tryFind (fun a -> a.Name = col),
+                              sinkKind.Attributes |> List.tryFind (fun a -> a.Name = col) with
+                        | Some srcAttr, Some sinkAttr ->
+                            try
+                                let sample =
+                                    sampleSourceValues source
+                                        (TableId.schemaText srcKind.Physical) (TableId.tableText srcKind.Physical)
+                                        (ColumnRealization.columnNameText srcAttr.Column)
+                                let kSchema, kTable = TableId.schemaText sinkKind.Physical, TableId.tableText sinkKind.Physical
+                                let kCol = ColumnRealization.columnNameText sinkAttr.Column
+                                let total, distinct = sinkUniqueness sink kSchema kTable kCol
+                                let hits = sinkSampleHits sink kSchema kTable kCol sample
+                                EvidenceVerdict.Probed (total = distinct && total > 0L, hits, sample.Length)
+                            with ex -> EvidenceVerdict.Unprobed ex.Message
+                        | _ -> EvidenceVerdict.Unprobed "the column is not present on both sides"
+                    { Target = e.Target; TargetRef = targetRef; Column = col; IndexBacked = indexBacked; Verdict = verdict })
+            | _ -> [])
+
+    /// The per-candidate evidence lines (operator-facing; the paste-able
+    /// move leads, the proof follows).
+    let narrateEvidence (evidence: ReconcileEvidence list) : string list =
+        evidence
+        |> List.map (fun ev ->
+            let paste = sprintf "reconcile '%s:%s'" ev.TargetRef (Name.value ev.Column)
+            let basis = if ev.IndexBacked then "unique-indexed on the sink" else "name-shaped, no unique index"
+            match ev.Verdict with
+            | EvidenceVerdict.Probed (sinkUnique, hits, size) ->
+                let uniq = if sinkUnique then "sink-unique" else "NOT sink-unique (duplicate values tiebreak to the oldest sink row)"
+                let sample =
+                    if size = 0 then "no non-null source values to sample"
+                    else sprintf "%d/%d sampled source value(s) found in the sink" hits size
+                let strength =
+                    if size = 0 then "unproven"
+                    elif hits < size then "PARTIAL — the unmatched source rows would halt a live reconcile"
+                    elif sinkUnique then "a STRONG candidate"
+                    else "a full match, but ambiguous"
+                sprintf "%s (%s) — %s; %s: %s." paste basis uniq sample strength
+            | EvidenceVerdict.Unprobed reason ->
+                sprintf "%s (%s) — the evidence probe could not run: %s" paste basis reason)

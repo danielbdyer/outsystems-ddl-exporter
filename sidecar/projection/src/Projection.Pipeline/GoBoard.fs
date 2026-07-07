@@ -102,6 +102,64 @@ module GoBoard =
         w.Flush()
         System.Text.Encoding.UTF8.GetString(ms.ToArray())
 
+    /// One row of the BEFORE → AFTER data forecast (2026-07-07, the
+    /// go-board forecast program): what the sink table holds now, what the
+    /// planned run adds / matches / deletes, and what it holds after —
+    /// derived from the dry run's plan + live sink counts, never guessed.
+    type ForecastLine =
+        { /// Sink physical coordinate (`schema.table`).
+          Table   : string
+          /// Live sink row count before the run (`None` when the probe
+          /// could not run — rendered `?`, never silently 0).
+          Before  : int64 option
+          /// Rows the run INSERTs (post-drop).
+          Adds    : int64
+          /// For a reconciled kind: source rows matched to EXISTING sink
+          /// rows (no insert). `None` for non-reconciled kinds.
+          Matches : int64 option
+          /// Rows the run DELETEs first (the wipe, under strategy replace).
+          Deletes : int64
+          /// The note column: disposition, phase-2 re-points, drops.
+          Note    : string }
+
+    [<RequireQualifiedAccess>]
+    module ForecastLine =
+
+        let after (l: ForecastLine) : int64 option =
+            l.Before |> Option.map (fun b -> b - l.Deletes + l.Adds)
+
+    /// Render the forecast lines as one aligned BEFORE → AFTER table
+    /// (pure; the face supplies probed counts). Numbers right-aligned;
+    /// a totals row closes the table; `?` marks an unprobed count.
+    let forecastTable (lines: ForecastLine list) : string list =
+        if List.isEmpty lines then []
+        else
+            let num (v: int64 option) = match v with Some n -> string n | None -> "?"
+            let width =
+                lines |> List.map (fun l -> l.Table.Length) |> List.max |> max (String.length "table")
+            let row (table: string) (before: string) (adds: string) (matches: string) (deletes: string) (after: string) (note: string) =
+                sprintf "%-*s  %10s  %8s  %8s  %8s  %10s  %s" width table before adds matches deletes after note
+            let total (f: ForecastLine -> int64 option) =
+                lines |> List.fold (fun acc l -> match acc, f l with Some a, Some v -> Some (a + v) | _ -> None) (Some 0L)
+            [ yield row "table" "before" "+add" "match" "-del" "after" ""
+              for l in lines do
+                  yield row
+                      l.Table
+                      (num l.Before)
+                      (string l.Adds)
+                      (match l.Matches with Some m -> string m | None -> "-")
+                      (string l.Deletes)
+                      (num (ForecastLine.after l))
+                      l.Note
+              yield row
+                  "TOTAL"
+                  (num (total (fun l -> l.Before)))
+                  (string (lines |> List.sumBy (fun l -> l.Adds)))
+                  (string (lines |> List.sumBy (fun l -> l.Matches |> Option.defaultValue 0L)))
+                  (string (lines |> List.sumBy (fun l -> l.Deletes)))
+                  (num (total ForecastLine.after))
+                  "" ]
+
     /// Render the board as operator-facing lines: the mark column, the axis,
     /// the headline; detail lines indented beneath; the verdict at the close
     /// with the next move named.
