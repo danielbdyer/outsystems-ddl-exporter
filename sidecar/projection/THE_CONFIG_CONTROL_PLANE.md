@@ -209,3 +209,25 @@ named residual set is now **∅** (`residualActions = Set.empty`), the strongest
 Regression guards at every slice: `MovementSurfaceTests` (incl. the `planMovement`/`ModelSource`
 totality sweeps), `ConfigTests`, `RegisteredAllTransformsBidirectionalTests` (`registered ⇔
 executed`), and the operator-reality **canary** (the wide guard for S3).
+
+## 9. The authorization predicates on a flow (`signoff`)
+
+`supportingScope` and `signoff` are BOTH per-flow config arrays, but they are different KINDS
+of claim, and the distinction is load-bearing:
+
+- **`supportingScope` is STRUCTURAL** — a claim about the relationship graph (this table is an
+  owned-child of that parent; this reference matches the target's own rows). The go board
+  VERIFIES it against the graph and reds when the declaration contradicts the topology.
+- **`signoff` is AUTHORIZATION** — a claim about intent (the operator understands this
+  destructive write and approves it). There is no graph fact to check; the go board reds and the
+  engine refuses BY NAME until the mode a run actually performs is greenlit. It is the durable,
+  per-flow, auditable member of the `PROJECTION_ALLOW_EXECUTE` / `--go` / `--allow-drops` /
+  `--allow-cdc` authorization family — where those are transient per-run flags, `signoff` is a
+  standing declaration in `projection.json`.
+
+The `signoff` array enumerates the destructive modes a flow may perform
+(`replace/fresh/drops/cdc/identity-insert` transfer-side; `delete-scope` emission-lane — its
+gate a named follow-on). Default-on: a destructive Execute is refused until the mode is
+greenlit. A declared `tables` scope is VERIFIED to cover the actual wipe (a stale, too-narrow
+approval cannot rubber-stamp a wider blast radius). A44 holds — `signoff` renders omit-when-empty,
+so `parse ∘ render = id`. See `DECISIONS 2026-07-08 — The write-signoff greenlight`.

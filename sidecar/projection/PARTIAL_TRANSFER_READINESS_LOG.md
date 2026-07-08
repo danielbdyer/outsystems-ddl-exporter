@@ -1429,3 +1429,48 @@ current + config edit, every option a non-empty why, the THE_VOICE scan, `resele
 `toJsonString`), `TransferPlanViewTests` (the `Rule`/`Tree` render). Manual — `check plan
 golden` renders the full decision tree (plain + `--format json`) reflecting the flow's real
 settings. Release build clean (FS3511 verified).
+
+---
+
+## 2026-07-08 — The write-signoff greenlight: a verified, first-class approval for destructive write modes
+
+The partial transfer could WIPE (`strategy: replace`), assume-empty (`fresh`), drop rows
+(`--allow-drops`), flood CDC, or write explicit keys — all on the two run-time gates
+(`PROJECTION_ALLOW_EXECUTE` + `--go`) with **no durable, per-flow record that the operator
+understood and approved the specific destruction**. This closes that: `flows.<flow>.signoff`
+is a first-class, declarative array enumerating each destructive mode a flow may perform, the
+run REFUSED until the declaration exists (default-on, breaking by design).
+
+- **A new kind of predicate.** `supportingScope` is STRUCTURAL (the graph confirms or
+  contradicts it); a signoff is AUTHORIZATION — there is no graph fact, the board reds and the
+  engine refuses BY NAME until the mode is greenlit. It joins the
+  `PROJECTION_ALLOW_EXECUTE`/`--go`/`--allow-drops`/`--allow-cdc` family, but durable and
+  auditable. `WriteSignoff.fs` (pure): the closed `WriteMode` DU (a new destructive mode is a
+  compiler event forcing its impact arm), `parseMode`/`modeLabel`, the `guaranteeOf`-style
+  `impactOf` (stative, THE_VOICE), and the total `verify` (`Confirmed | Missing | ScopeMismatch`).
+- **The two-traversal.** Board and engine read the SAME `TransferScope.WriteKinds` (the DELETE
+  targets — NOT `Nodes`, which folds in reconciled kinds that are matched, never wiped), so the
+  "covered" verdict cannot drift. The go-board `signoff` axis reds-until-greenlit (and reds on a
+  scope-mismatched approval whose declared `tables` do not cover the wipe); the engine mirrors
+  it at the live-write seam (`transfer.writeSignoff.ungreenlit`), belt-and-suspenders for a
+  scripted `--go` that never ran `check go`.
+- **Rich + verified.** Each entry carries the required `mode` + optional `tables` scope
+  (empty = the whole flow's set; a declared scope is verified to cover the wipe, so a stale
+  approval cannot rubber-stamp a wider blast radius) + `acknowledgedImpact` (echoed on the
+  board) + `approvedBy`/`date`.
+- **Boundary.** The transfer five (`replace/fresh/drops/cdc/identity-insert`) enforce here;
+  `delete-scope` is emission-lane (`emission.deleteScope`, a different config plane) — enumerated
+  in the vocabulary, its gate a named follow-on (Active deferral). Streaming already refuses
+  WipeAndLoad, so the materialized path is the only wipe path and the gate covers it.
+- **The `_comment` skip (Part 0).** A `_`-prefixed key in `flows`/`environments`/`defaults`/
+  `slices`/`sliceFlows` no longer crashes the parser — one `isCommentKey` predicate guards all
+  five map-style loops (the house `_`-skip the codebase lacked); A44 unaffected (render never
+  emits `_`-keys).
+
+**Proven:** pure — `WriteSignoffTests` (the six-mode label bridge, the THE_VOICE impact scan,
+`verify`'s missing/covering/scope-mismatch/wrong-mode/empty-plan verdicts, the A44 config
+round-trip incl. omit-when-empty). Docker — `GoBoardDockerTests` (a WipeAndLoad reds without a
+signoff, greens when `replace` is greenlit, reds on a too-narrow scope); `PeerAligned…` (the
+engine refuses an ungreenlit WipeAndLoad BY NAME, sink untouched). The four wiping fixtures now
+declare their greenlight; the sample's `golden-with-scope` carries a worked example. Release
+clean (FS3511).

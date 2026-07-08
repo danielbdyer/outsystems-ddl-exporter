@@ -200,6 +200,7 @@ table before continuing.
 
 | Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
 |---|---|---|---|
+| **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer (`MergeRender.fs`), a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). Wiring the cross-plane acknowledgement (flow-level signoff vs. an `emission`-level greenlight) is its own operator decision — not a cross-plane hack forced at the transfer arc. | Deferred (2026-07-08). The transfer five modes (`replace/fresh/drops/cdc/identity-insert`) enforce at the transfer two-traversal today; `emission.deleteScope` still ships with ZERO acknowledgement gate (the pre-existing hole this arc names but does not close). The cash-out adds a refusal at the emission composer requiring a `delete-scope` greenlight on the emitting flow (or an emission-level acknowledgement). |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
@@ -27172,3 +27173,77 @@ first-seen order; the off-thread teardown, channel-1 suppression, exception prop
 edit, every option a non-empty why, the THE_VOICE scan, `reselectStrategy`, `toJsonString`);
 `TransferPlanViewTests` (the `Rule`/`Tree` render, the marked branch, the config edits).
 Full sweep + Release clean (FS3511).
+
+## 2026-07-08 — The write-signoff greenlight: a first-class, verified approval for destructive write modes (+ the `_comment` config skip)
+
+A destructive transfer — `strategy: replace` (child-first wipe-and-load), `fresh`
+(genesis), `--allow-drops` (row loss), a CDC-flooding run, an `IDENTITY_INSERT` write —
+ran on the two run-time gates alone (`PROJECTION_ALLOW_EXECUTE=1` + `--go`) with **no
+per-flow record that the operator understood and approved the specific destruction**.
+The operator asked for a first-class, declarative **greenlight**: an explicit config
+array enumerating each destructive mode a flow may perform, its impact acknowledged, and
+the run REFUSED until that declaration exists. Locked operator decisions (all
+maximal-safety): **per-flow array** (`flows.<flow>.signoff`, co-located, mirroring
+`supportingScope`); **hard gate, default-on** (a destructive Execute REFUSES and the go
+board goes RED until greenlit — breaking by design); **all six cases**
+(`replace/fresh/drops/cdc/identity-insert` transfer-side + `delete-scope` emission-lane);
+**rich + verified** (mode + optional `tables` scope + `acknowledgedImpact` +
+`approvedBy`/`date`; the board VERIFIES a declared scope covers the actual wipe).
+
+**A new KIND of predicate — authorization, not structure.** Unlike `supportingScope` (a
+STRUCTURAL claim the relationship graph confirms or contradicts), a signoff is an
+AUTHORIZATION predicate: there is no graph fact to verify — the go board reds and the
+engine refuses BY NAME until the mode a run actually performs is greenlit. It joins the
+`PROJECTION_ALLOW_EXECUTE` / `--go` / `--allow-drops` / `--allow-cdc` family — but
+DURABLE, per-flow, and auditable in config. `WriteSignoff.fs` (pure Pipeline, mirrors
+`SupportingScope.fs`): the closed `WriteMode` DU (a new destructive mode is a compiler
+event that forces its impact arm), the `WriteApproval` record, `parseMode`/`modeLabel`
+(the six canonical labels), a `guaranteeOf`-style **`impactOf`** (the stative,
+evidence-grounded default impact per mode, THE_VOICE, LINT-ALLOW like `GoBoard`), and the
+total `verify` (`Confirmed | Missing | ScopeMismatch`). It compiles ahead of
+`TransferRun.fs` so the engine reads `WriteOptions.Signoffs`.
+
+**The two-traversal, honored.** The signoff rides BOTH surfaces reading the SAME
+`TransferScope.WriteKinds` (the shared Core derivation), so board and engine cannot drift:
+- **The go-board `signoff` axis** (`runCheckGo`) — RED-until-greenlit; RED on a
+  scope-mismatched approval whose declared `tables` do not cover the wiped set; GREEN
+  echoing the acknowledged impact. A WipeAndLoad collapses `replace`/`fresh`, so the axis
+  accepts EITHER greenlit (prefers `replace`, the `strategy` common case). Pure over
+  `scope.WriteKinds` — the DELETE targets, NOT `Nodes` (reconciled kinds are matched,
+  never wiped) — independent of the live sink probe.
+- **The engine pre-write refusal** (`TransferRun.runCore`, adjacent to the inbound-orphan
+  gate) — `transfer.writeSignoff.ungreenlit` before any wipe; belt-and-suspenders for a
+  scripted `--go` that never ran `check go`. `preWrite` still precedes it, so a
+  pinned-owner / user-map halt keeps its own refusal.
+
+**Architectural boundary.** `replace/fresh/drops/cdc/identity-insert` are transfer-side;
+`delete-scope` is `emission.deleteScope` (the publish-bundle MERGE lane, a DIFFERENT
+config plane — the shaping/emission config, not `flows`). The vocabulary enumerates all
+six so the mode is nameable, but the **delete-scope emission gate is a named follow-on**:
+wiring a cross-plane acknowledgement (flow `signoff` vs. emission-level) is its own
+operator decision, not a cross-plane hack forced here. **Trigger to re-open:** the first
+flow that ships an `emission.deleteScope` arm intended for a live publish. (Active
+deferral — indexed at the top.)
+
+**The `_comment` config skip (Part 0, independent).** `flows` / `environments` /
+`defaults` / `slices` / `sliceFlows` all `EnumerateObject()` and treated EVERY key as an
+entry, so a `_supportingScope_comment` string crashed `parseFlow`. One predicate
+(`isCommentKey n = n.StartsWith "_"`) now guards all five map-style loops — the house
+`_`-skip convention the codebase lacked. `renderConfig` never emits `_`-keys, so A44 is
+unaffected (comments are author-only, dropped on render like `SourcePath`).
+
+**The breaking sweep.** Every destructive WipeAndLoad Execute now declares its greenlight:
+the four wiping fixtures (`PeerAligned` ×2, `ReverseLegCanary`, `MigrationCanary`) pass an
+explicit `replace` via `WriteSignoff.greenlit`; the ungated Incremental callers thread
+`[]`. `runReverseLegThroughConnections` gained a trailing `signoffs` param;
+`runWithEmissionMode`'s one wipe caller moved to `runWithOptions`. The streaming reverse
+leg already refuses WipeAndLoad, so the materialized path is the only wipe path and the
+gate covers it.
+
+**Witnesses.** Pure — `WriteSignoffTests` (the six-mode label bridge, the THE_VOICE impact
+scan, `verify`'s missing/covering/scope-mismatch/wrong-mode/empty-plan verdicts, the A44
+config round-trip incl. omit-when-empty). Docker — `GoBoardDockerTests` (a WipeAndLoad
+reds without a signoff, greens when `replace` is greenlit, reds again on a too-narrow
+scope); `PeerAlignedTransferDockerTests` (the engine refuses an ungreenlit WipeAndLoad BY
+NAME, sink untouched). The sample config's `golden-with-scope` carries a worked `signoff`
++ a `_signoff_comment`. Full sweep + Release clean (FS3511).
