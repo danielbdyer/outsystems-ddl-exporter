@@ -196,6 +196,14 @@ module Transfer =
             /// `reconcileIgnore` set. The sink value is KEPT at load time —
             /// this is surfaced information, never a pending write.
             ReconcileDivergences : ReconcileDivergence list
+            /// 2026-07-09 (the guarantee-hardening program) — the AIRTIGHT
+            /// static-lookup identity per declared `static-lookup` kind: the
+            /// bidirectional matched-pair column drift PLUS the row-set
+            /// membership faults (extra-on-target / missing-on-target). A
+            /// non-clean entry is a hard fault — the go board reds and a live
+            /// Execute refuses (`transfer.staticLookup.diverged`). Empty for a
+            /// run declaring no static-lookup kinds, or when every one is identical.
+            StaticLookupDivergences : StaticLookupDivergence list
             /// Every capture-ladder rung descent the write took (a sink
             /// capability refusal — e.g. triggers reject OUTPUT-without-
             /// INTO — degraded the lane, named per kind). Empty when every
@@ -909,13 +917,50 @@ module Transfer =
     /// A read-only step — safe in `DryRun`. Re-captures through
     /// `SurrogateRemapContext.capture` so the merged context carries
     /// the construction-time invariant.
+    /// The business-key column a reconcile strategy matches on — the column a
+    /// `static-lookup` asserts identity over. `MatchByColumn(s)` names it directly;
+    /// `FallbackToAssigned` defers to its primary. `ManualOverride` has no single
+    /// column (the map IS the match), so a static-lookup on it declares nothing.
+    let rec private businessKeyOf (strategy: ReconciliationStrategy) : Name option =
+        match strategy with
+        | ReconciliationStrategy.MatchByColumn c        -> Some c
+        | ReconciliationStrategy.MatchByColumns (c :: _) -> Some c
+        | ReconciliationStrategy.MatchByColumns []       -> None
+        | ReconciliationStrategy.FallbackToAssigned (_, primary) -> businessKeyOf primary
+        | ReconciliationStrategy.ManualOverride _        -> None
+
+    /// The static-lookup refusal (2026-07-09), shared by the materialized and
+    /// streaming Execute paths so both name the same fault identically: a kind
+    /// declared `static-lookup` whose dataset is NOT identical across the
+    /// environments (value drift, an extra sink row, or a missing row). `None`
+    /// when every declared lookup is clean.
+    let private staticLookupRefusalOf (catalog: Catalog) (divs: StaticLookupDivergence list) : ValidationError option =
+        match divs |> List.filter (fun d -> not d.IsClean) with
+        | [] -> None
+        | dirty ->
+            let kindName (key: SsKey) =
+                match Catalog.tryFindKind key catalog with
+                | Some k -> Name.value k.Name
+                | None   -> SsKey.rootOriginal key
+            let describe (d: StaticLookupDivergence) =
+                [ if not (List.isEmpty d.ColumnDrifts)    then yield sprintf "%d column(s) drifted" (List.length d.ColumnDrifts)
+                  if not (List.isEmpty d.ExtraOnTarget)   then yield sprintf "%d extra sink row(s)" (List.length d.ExtraOnTarget)
+                  if not (List.isEmpty d.MissingOnTarget) then yield sprintf "%d missing row(s)" (List.length d.MissingOnTarget) ]
+                |> String.concat ", "
+                |> sprintf "%s (%s)" (kindName d.Kind)
+            Some
+                (ValidationError.create "transfer.staticLookup.diverged"
+                    (sprintf "%d static-lookup table(s) are NOT identical across the environments: %s. A static-lookup asserts the reference data is held identical; reconcile the rows (or reclassify the table as existing-reference) before authorizing the run."
+                        (List.length dirty) (dirty |> List.map describe |> String.concat "; ")))
+
     let private reconcileAgainstSink
         (ignore: Set<Name>)
+        (staticLookupKinds: Set<SsKey>)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (sourceRows: Map<SsKey, StaticRow list>)
-        : Task<ReconciledIdentity> =
+        : Task<ReconciledIdentity * StaticLookupDivergence list> =
         task {
             let mutable remap = SurrogateRemapContext.empty
             let mutable unmatched : (SsKey * SourceKey) list = []
@@ -924,6 +969,7 @@ module Transfer =
             let mutable ambiguous : (SsKey * SourceKey) list = []
             let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
             let mutable missingPinned : (SsKey * AssignedKey) list = []
+            let mutable staticLookup : StaticLookupDivergence list = []
             for KeyValue (kind, strategy) in reconciliation do
                 match Catalog.tryFindKind kind catalog with
                 | None -> ()
@@ -946,8 +992,21 @@ module Transfer =
                         ambiguous <- ambiguous @ result.Ambiguous
                         ambiguousTargets <- ambiguousTargets @ result.AmbiguousTargetKeys
                         missingPinned <- missingPinned @ result.MissingPinnedOwners
+                        // The AIRTIGHT static-lookup identity (2026-07-09): for a
+                        // kind declared `static-lookup`, assert the environments
+                        // hold the IDENTICAL dataset over its business key — the
+                        // strict, bidirectional, set-complete check (distinct from
+                        // `reconcileKindWith`'s source-column matched-pair drift).
+                        if Set.contains kind staticLookupKinds then
+                            match businessKeyOf strategy with
+                            | Some bk ->
+                                let div = Reconciliation.staticLookupIdentity ignore kind bk pk.Name srcRows sinkRows
+                                if not div.IsClean then staticLookup <- staticLookup @ [ div ]
+                            | None -> ()
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched; UnmatchedRows = unmatchedRows; Divergences = divergences; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
+            return
+                { Remap = remap; Unmatched = unmatched; UnmatchedRows = unmatchedRows; Divergences = divergences; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned },
+                staticLookup
         }
 
     // -- orchestration ------------------------------------------------------
@@ -1042,11 +1101,19 @@ module Transfer =
           /// so a scripted `--go` that never ran `check go` is still caught.
           /// Empty (the `def` default) means no greenlight — a destructive
           /// Execute refuses; a non-destructive Incremental is unaffected.
-          Signoffs : WriteSignoff.WriteApproval list }
+          Signoffs : WriteSignoff.WriteApproval list
+          /// 2026-07-09 (the guarantee-hardening program) — the kinds a
+          /// `static-lookup` supportingScope entry declared IDENTICAL across the
+          /// environments. Each is matched by its business key and asserted to
+          /// hold the identical dataset; a divergence (value drift, extra, or
+          /// missing rows) reds the go board and refuses a live Execute
+          /// (`transfer.staticLookup.diverged`). Empty (the `def` default) asserts
+          /// nothing. Sourced from `SupportingScope.resolve`'s `StaticLookupKinds`.
+          StaticLookupKinds : Set<SsKey> }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = [] }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1152,7 +1219,8 @@ module Transfer =
                     // column in an unrelated kind.
                     rawRows |> Map.map (fun k rs -> RenameProjection.repointRows (RenameProjection.forKind k renamesByKind) rs)
                 | _ -> rawRows
-            let! reconciled = reconcileAgainstSink writeOpts.ReconcileIgnore sink catalog reconciliation rows
+            let! reconcileResult = reconcileAgainstSink writeOpts.ReconcileIgnore writeOpts.StaticLookupKinds sink catalog reconciliation rows
+            let reconciled, staticLookupDivs = reconcileResult
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row
             // is in target identity space.
@@ -1226,11 +1294,20 @@ module Transfer =
                         Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
                             (sprintf "the %s signoff does not cover the wipe — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." (WriteSignoff.modeLabel m) reason))
                 else None
-            match preWrite, inboundRefusal, signoffRefusal with
-            | Some refusal, _, _ -> return Result.failureOf refusal
-            | _, Some refusal, _ -> return Result.failureOf refusal
-            | _, _, Some refusal -> return Result.failureOf refusal
-            | None, None, None ->
+            // The static-lookup gate (2026-07-09): a kind declared `static-lookup`
+            // asserts the environments hold the IDENTICAL dataset. A live Execute
+            // over a diverged lookup would silently transfer against reference data
+            // that has drifted (value drift, an extra sink row, or a missing row),
+            // so refuse BY NAME before any write. Mirrors the go board's axis over
+            // the SAME `report.StaticLookupDivergences` — the two-traversal.
+            let staticLookupRefusal =
+                if mode = Execute then staticLookupRefusalOf catalog staticLookupDivs else None
+            match preWrite, inboundRefusal, signoffRefusal, staticLookupRefusal with
+            | Some refusal, _, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _, _ -> return Result.failureOf refusal
+            | _, _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -1283,6 +1360,7 @@ module Transfer =
                           DroppedRows         = plan.DroppedRows
                           UnmatchedRows       = reconciled.UnmatchedRows
                           ReconcileDivergences = reconciled.Divergences
+                          StaticLookupDivergences = staticLookupDivs
                           CaptureLaneDescents = laneDescents
                           ReplayedPriorDrops  = replayedPriorDrops
                           // NM-21 — only the σ path can raise these; ingested
@@ -1482,6 +1560,7 @@ module Transfer =
                               DroppedRows         = plan.DroppedRows
                               UnmatchedRows       = []
                               ReconcileDivergences = []
+                              StaticLookupDivergences = []
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
@@ -1589,6 +1668,7 @@ module Transfer =
                               DroppedRows         = plan.DroppedRows
                               UnmatchedRows       = []
                               ReconcileDivergences = []
+                              StaticLookupDivergences = []
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
                               Plan                = (match mode with DryRun -> Some plan | Execute -> None)
@@ -2167,6 +2247,9 @@ module Transfer =
         // 2026-07-08 — audit columns the matched-pair diff ignores
         // (the flow's `reconcileIgnore`); empty diffs every non-key column.
         (reconcileIgnore: Set<Name>)
+        // 2026-07-09 — the static-lookup kinds asserted identical across the
+        // environments; a divergence refuses `transfer.staticLookup.diverged`.
+        (staticLookupKinds: Set<SsKey>)
         (journalDirectory: string option)
         // D — the streaming arm of the data-leg compensating-undo (M23 on the
         // estate-scale path). On a mid-stream crash the partial sink-minted rows
@@ -2233,7 +2316,8 @@ module Transfer =
                             | None -> ()
                         return acc
                     }
-                let! reconciled = reconcileAgainstSink reconcileIgnore sink sinkContract reconciliation reconciledSourceRows
+                let! reconcileResult = reconcileAgainstSink reconcileIgnore staticLookupKinds sink sinkContract reconciliation reconciledSourceRows
+                let reconciled, staticLookupDivs = reconcileResult
                 // Structure only — order, dispositions, deferred columns;
                 // the rows STREAM at write time (the whole point).
                 // `reclassifyReconciled` marks the reconciled kinds skip-
@@ -2260,9 +2344,12 @@ module Transfer =
                                 | Some refusal -> Some refusal
                                 | None         -> validateUserMap allowDrops reconciled
                     else None
-                match preWrite with
-                | Some refusal -> return Result.failureOf refusal
-                | None ->
+                let staticLookupRefusal =
+                    if mode = Execute then staticLookupRefusalOf sinkContract staticLookupDivs else None
+                match preWrite, staticLookupRefusal with
+                | Some refusal, _ -> return Result.failureOf refusal
+                | _, Some refusal -> return Result.failureOf refusal
+                | None, None ->
                     if mode <> Execute then
                         // Phase 4 — the movement DryRun preview. Estimate
                         // each kind's rows-would-move with a cheap exact
@@ -2305,6 +2392,7 @@ module Transfer =
                                   DroppedRows         = []   // streaming plan carries no rows
                                   UnmatchedRows       = reconciled.UnmatchedRows
                                   ReconcileDivergences = reconciled.Divergences
+                                  StaticLookupDivergences = staticLookupDivs
                                   CaptureLaneDescents = []
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
@@ -2382,6 +2470,7 @@ module Transfer =
                                       DroppedRows         = []   // streaming drops surface as counts
                                       UnmatchedRows       = reconciled.UnmatchedRows
                                       ReconcileDivergences = reconciled.Divergences
+                                      StaticLookupDivergences = staticLookupDivs
                                       CaptureLaneDescents = descents
                                       // Streaming-journal resume is per-run by
                                       // design (the journaled run reported its
@@ -2410,7 +2499,7 @@ module Transfer =
         // The straight load supplies the inert revert levers (`false None`) the
         // caller did not name — D's compensating-undo is reachable only through the
         // reconciling / reverse-leg faces that carry the per-environment policy.
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty journalDirectory false None
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty Set.empty journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2434,6 +2523,9 @@ module Transfer =
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         // 2026-07-08 — the flow's `reconcileIgnore` audit columns.
         (reconcileIgnore: Set<Name>)
+        // 2026-07-09 — the static-lookup kinds asserted identical across the
+        // environments; a divergence refuses `transfer.staticLookup.diverged`.
+        (staticLookupKinds: Set<SsKey>)
         // D — the per-environment revert policy, collapsed at the RunFaces face
         // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
         // materialized reverse-leg face consumed them.
@@ -2449,7 +2541,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore journalDirectory autoRevert revertDir
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore staticLookupKinds journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -2709,6 +2801,9 @@ module Transfer =
         // 2026-07-08 — the flow's write-signoff greenlights; a destructive
         // WipeAndLoad Execute refuses BY NAME until the mode is greenlit.
         (signoffs: WriteSignoff.WriteApproval list)
+        // 2026-07-09 — the static-lookup kinds asserted identical across the
+        // environments; a divergence refuses `transfer.staticLookup.diverged`.
+        (staticLookupKinds: Set<SsKey>)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2727,7 +2822,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2749,8 +2844,12 @@ module Transfer =
         // Incremental Execute is ungated, so `[]` is correct there; a
         // destructive WipeAndLoad Execute must declare the greenlit mode.
         (signoffs: WriteSignoff.WriteApproval list)
+        // 2026-07-09 — the static-lookup kinds asserted identical across the
+        // environments (the go board's dry run threads its resolved set so the
+        // board reds on a diverged lookup; a straight load passes `Set.empty`).
+        (staticLookupKinds: Set<SsKey>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

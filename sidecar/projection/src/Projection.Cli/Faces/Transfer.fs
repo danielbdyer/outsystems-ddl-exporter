@@ -480,10 +480,10 @@ let runContractPairTransfer
                 // policy the materialized branch consumes (`revertAuto`/`revertOut`
                 // derived above via `RevertPolicy.toEngine`): a mid-stream crash
                 // reverts (auto) or scripts (script) the partial sink-minted rows.
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet revertAuto revertOut)
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -1059,6 +1059,18 @@ let runCheckGo
          | None ->
              items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))
         // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
+        // The static-lookup kinds (2026-07-09): the dry run threads them so the
+        // engine computes the AIRTIGHT identity into `report.StaticLookupDivergences`
+        // — the same set the live Execute reads (the two-traversal). Bound before
+        // the dry run so the forecast branch below reuses it for the axis.
+        let staticLookupKeys : Set<SsKey> =
+            opts.SupportingScope
+            |> List.choose (fun e ->
+                match e.Relationship with
+                | SupportingScope.SupportingRelationship.StaticLookup _ ->
+                    SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
+                | _ -> None)
+            |> Set.ofList
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
@@ -1081,7 +1093,7 @@ let runCheckGo
                         |> Set.ofList
                     (Transfer.runReverseLegThroughConnections
                         Transfer.DryRun opts.Emission false true false
-                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [])
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [] staticLookupKeys)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
@@ -1179,14 +1191,6 @@ let runCheckGo
                     |> Map.ofList
                 // static-lookup kinds are held to ZERO divergence: a drifted
                 // lookup is a real integrity fault, not an advisory.
-                let staticLookupKeys : Set<SsKey> =
-                    opts.SupportingScope
-                    |> List.choose (fun e ->
-                        match e.Relationship with
-                        | SupportingScope.SupportingRelationship.StaticLookup _ ->
-                            SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
-                        | _ -> None)
-                    |> Set.ofList
                 // A kind OUTSIDE the declared subset rides along because a
                 // declared table's relationship needs it — name the pulling
                 // edge(s) in Table.Column -> Target form.
@@ -1279,8 +1283,14 @@ let runCheckGo
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the
                 // reconcileIgnore move named for expected audit drift.
+                // The match-drift axis speaks ONLY to NON-static-lookup reconcile
+                // drift (advisory — the sink value is KEPT). Static-lookup kinds are
+                // owned by the dedicated airtight axis below (the strict, bidirectional,
+                // set-complete identity), so they are excluded here to avoid a
+                // double report on the same table.
                 if not (Map.isEmpty reconciliation) then
-                    match report.ReconcileDivergences with
+                    let nonLookupDivs = report.ReconcileDivergences |> List.filter (fun d -> not (Set.contains d.Kind staticLookupKeys))
+                    match nonLookupDivs with
                     | [] ->
                         items.Add (GoBoard.item "match drift"
                             (GoBoard.Status.Green
@@ -1295,24 +1305,40 @@ let runCheckGo
                                     |> List.tryFind (fun k -> k.Kind = d.Kind)
                                     |> Option.map (fun k -> k.RowsMatched)
                                     |> Option.defaultValue 0
-                                let lookup = Set.contains d.Kind staticLookupKeys
-                                yield sprintf "%s.%s differs on %d of %d matched row(s)%s:" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched (if lookup then " — declared a STATIC LOOKUP (must be identical)" else "")
+                                yield sprintf "%s.%s differs on %d of %d matched row(s):" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched
                                 for (ak, srcV, sinkV) in d.Samples do
                                     yield sprintf "  target key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
-                                yield
-                                    (if lookup then sprintf "  -> the environments' %s reference data has diverged; reconcile the lookup, or reclassify it as existing-reference." (nm d.Kind)
-                                     else sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column)) ]
-                        // A static-lookup divergence is a hard fault; ordinary
-                        // reconcile drift stays advisory (the sink value wins).
-                        let lookupDrift = ds |> List.filter (fun d -> Set.contains d.Kind staticLookupKeys)
-                        if not (List.isEmpty lookupDrift) then
-                            items.Add (GoBoard.itemWith "match drift"
-                                (GoBoard.Status.Red (sprintf "%d static-lookup column(s) differ between the environments — a lookup declared identical has drifted." lookupDrift.Length, "reconcile the lookup rows, or reclassify the table as existing-reference; then re-run."))
-                                detailLines)
-                        else
-                            items.Add (GoBoard.itemWith "match drift"
-                                (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
-                                detailLines)
+                                yield sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column) ]
+                        items.Add (GoBoard.itemWith "match drift"
+                            (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
+                            detailLines)
+                // THE STATIC-LOOKUP IDENTITY (2026-07-09, the guarantee-hardening
+                // program): a `static-lookup` entry asserts the two environments hold
+                // the IDENTICAL dataset for the table. The airtight verdict reads the
+                // engine's `report.StaticLookupDivergences` (the SAME computation the
+                // live Execute refuses on — the two-traversal): any value drift, an
+                // extra sink row, or a missing row is a hard RED. Honors the flow's
+                // reconcileIgnore (env-specific audit fields are not part of "identical").
+                if not (Set.isEmpty staticLookupKeys) then
+                    match report.StaticLookupDivergences with
+                    | [] ->
+                        items.Add (GoBoard.item "static lookup"
+                            (GoBoard.Status.Green (sprintf "%d static-lookup table(s) hold the identical dataset across the environments — matched by business key, every non-key column agrees, no extra or missing rows." (Set.count staticLookupKeys))))
+                    | divs ->
+                        let detailLines =
+                            [ for d in divs do
+                                yield sprintf "%s:" (nm d.Kind)
+                                for cd in d.ColumnDrifts do
+                                    yield sprintf "  column %s differs on %d matched row(s):" (Name.value cd.Column) cd.DifferingPairs
+                                    for (ak, srcV, sinkV) in cd.Samples do
+                                        yield sprintf "    key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
+                                if not (List.isEmpty d.ExtraOnTarget) then
+                                    yield sprintf "  %d row(s) on the target the source does not hold (extra): %s" d.ExtraOnTarget.Length (d.ExtraOnTarget |> List.truncate 5 |> String.concat ", ")
+                                if not (List.isEmpty d.MissingOnTarget) then
+                                    yield sprintf "  %d row(s) the source holds but the target lacks (missing): %s" d.MissingOnTarget.Length (d.MissingOnTarget |> List.truncate 5 |> String.concat ", ") ]
+                        items.Add (GoBoard.itemWith "static lookup"
+                            (GoBoard.Status.Red (sprintf "%d static-lookup table(s) are NOT identical across the environments — a lookup declared identical has diverged (value drift / extra / missing rows)." divs.Length, "reconcile the reference data so the environments match, or reclassify the table as existing-reference (matched, not asserted-identical); then re-run."))
+                            detailLines)
                 // THE PLANNED SQL (`--sql`, 2026-07-07): the dry run's plan
                 // rendered as the text realization's T-SQL and written
                 // beside the board — the exact DML shape, readable before

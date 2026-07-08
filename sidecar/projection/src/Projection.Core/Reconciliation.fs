@@ -40,6 +40,35 @@ type ReconcileDivergence =
         Samples        : (AssignedKey * string * string) list
     }
 
+/// The AIRTIGHT identity a `static-lookup` supportingScope entry asserts
+/// (2026-07-09, the guarantee-hardening program): the two environments hold the
+/// IDENTICAL dataset for the table — matched by the business key, agreeing on
+/// EVERY non-key, non-ignored column (BOTH directions — a column present on one
+/// side only counts), with NO extra rows on the sink and NO missing rows. Where
+/// `reconcileKindWith`'s `Divergences` compares matched pairs' SOURCE columns
+/// (the ordinary reconcile-drift advisory), this is the strict, bidirectional,
+/// set-complete assertion: any non-empty field is a fault the go board reds and
+/// the engine refuses (`transfer.staticLookup.diverged`). Honors the flow's
+/// `reconcileIgnore` (env-specific audit fields are not part of "identical").
+type StaticLookupDivergence =
+    {
+        Kind : SsKey
+        /// Matched business-key pairs whose columns differ — bidirectional
+        /// (the union of both sides' columns), minus the business key and the
+        /// `reconcileIgnore` audit fields. A sink NULL against a source value
+        /// (or the reverse) is a real difference.
+        ColumnDrifts : ReconcileDivergence list
+        /// Business-key values present in the SOURCE but absent from the sink —
+        /// the lookup is missing rows the source holds.
+        MissingOnTarget : string list
+        /// Business-key values present in the SINK but absent from the source —
+        /// the lookup carries rows the source does not (an "identical" set fails).
+        ExtraOnTarget : string list
+    }
+    /// True when the datasets are identical — the assertion holds.
+    member this.IsClean : bool =
+        List.isEmpty this.ColumnDrifts && List.isEmpty this.MissingOnTarget && List.isEmpty this.ExtraOnTarget
+
 type ReconciledIdentity =
     {
         Remap     : SurrogateRemapContext
@@ -307,6 +336,78 @@ module Reconciliation =
         (sinkRows: StaticRow list)
         : ReconciledIdentity =
         reconcileKindWith Set.empty kind pkColumn strategy sourceRows sinkRows
+
+    /// The AIRTIGHT static-lookup identity (2026-07-09): assert the two
+    /// environments hold the IDENTICAL dataset for a `static-lookup` kind.
+    /// Matched by `businessKey` (a blank key on either side is "no key", so it
+    /// never matches — it lands in the missing/extra sets, never a silent
+    /// blank-to-blank match). Total + deterministic (every output sorted). The
+    /// caller supplies the `ignore` audit fields (the flow's `reconcileIgnore`),
+    /// which are excluded from "identical" exactly as `reconcileKindWith` excludes
+    /// them from its matched-pair drift.
+    let staticLookupIdentity
+        (ignore: Set<Name>)
+        (kind: SsKey)
+        (businessKey: Name)
+        // The surrogate PK column — environment-specific by construction (the sink
+        // mints its own keys), so it is NEVER part of "identical" and is excluded
+        // from the compare alongside the business key and the ignore set.
+        (surrogatePk: Name)
+        (sourceRows: StaticRow list)
+        (sinkRows: StaticRow list)
+        : StaticLookupDivergence =
+        let hasKey (v: string) : bool = not (System.String.IsNullOrWhiteSpace v)
+        let keyOf (r: StaticRow) : string option =
+            Map.tryFind businessKey r.Values |> Option.filter hasKey
+        // Index by business key; a duplicate key keeps the first (PK-ascending
+        // input → oldest wins, matching `reconcileKindWith`'s tiebreaker).
+        let indexBy (rows: StaticRow list) : Map<string, StaticRow> =
+            rows
+            |> List.choose (fun r -> keyOf r |> Option.map (fun k -> k, r))
+            |> List.rev
+            |> Map.ofList
+        let srcByKey  = indexBy sourceRows
+        let sinkByKey = indexBy sinkRows
+        let srcKeys   = srcByKey  |> Map.toList |> List.map fst |> Set.ofList
+        let sinkKeys  = sinkByKey |> Map.toList |> List.map fst |> Set.ofList
+        let missingOnTarget = Set.difference srcKeys sinkKeys |> Set.toList |> List.sort
+        let extraOnTarget   = Set.difference sinkKeys srcKeys |> Set.toList |> List.sort
+        let valueOr (col: Name) (r: StaticRow) = Map.tryFind col r.Values |> Option.defaultValue ""
+        let drifts =
+            Set.intersect srcKeys sinkKeys
+            |> Set.toList
+            |> List.sort
+            |> List.fold
+                (fun (acc: Map<Name, int * (AssignedKey * string * string) list>) bk ->
+                    let s = Map.find bk srcByKey
+                    let t = Map.find bk sinkByKey
+                    // The UNION of both sides' columns — a value present on the
+                    // sink but absent from the source (or the reverse) is a real
+                    // difference (bidirectional, unlike the source-driven
+                    // `reconcileKindWith` diff).
+                    let cols =
+                        Set.union
+                            (s.Values |> Map.toList |> List.map fst |> Set.ofList)
+                            (t.Values |> Map.toList |> List.map fst |> Set.ofList)
+                    cols
+                    |> Set.fold
+                        (fun acc col ->
+                            if col = businessKey || col = surrogatePk || Set.contains col ignore then acc
+                            else
+                                let sv = valueOr col s
+                                let tv = valueOr col t
+                                if sv = tv then acc
+                                else
+                                    let count, samples = Map.tryFind col acc |> Option.defaultValue (0, [])
+                                    let samples' = if count < 3 then (AssignedKey.ofString bk, sv, tv) :: samples else samples
+                                    Map.add col (count + 1, samples') acc)
+                        acc)
+                Map.empty
+            |> Map.toList
+            |> List.map (fun (col, (n, samples)) ->
+                { Kind = kind; Column = col; DifferingPairs = n; Samples = List.rev samples })
+            |> List.sortBy (fun d -> Name.value d.Column)
+        { Kind = kind; ColumnDrifts = drifts; MissingOnTarget = missingOnTarget; ExtraOnTarget = extraOnTarget }
 
     /// Translate the User kind's `UserMatchingStrategy` into the generic
     /// `ReconciliationStrategy` so all four operator-chosen user-match

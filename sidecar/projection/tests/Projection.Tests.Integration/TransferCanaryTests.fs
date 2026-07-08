@@ -589,7 +589,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                         try
                                             let! _ =
                                                 Transfer.runStreamingReconcilingWithRenames
-                                                    Transfer.Execute true false src sink contract contract Map.empty Set.empty
+                                                    Transfer.Execute true false src sink contract contract Map.empty Set.empty Set.empty
                                                     (Some journalDir) false (Some dir)
                                             return false
                                         with _ -> return true
@@ -631,7 +631,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                         try
                                             let! _ =
                                                 Transfer.runStreamingReconcilingWithRenames
-                                                    Transfer.Execute true false src sink contract contract Map.empty Set.empty
+                                                    Transfer.Execute true false src sink contract contract Map.empty Set.empty Set.empty
                                                     (Some journalDir) true None
                                             return false
                                         with _ -> return true
