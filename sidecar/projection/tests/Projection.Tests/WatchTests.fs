@@ -331,6 +331,22 @@ let ``Watch progress: an unknown total is a plain count-up — no fraction, no e
     Assert.DoesNotContain("remaining", text)
 
 [<Fact>]
+let ``Watch progress: a determinate stage draws a bar; an unknown total draws NONE (§13 honesty)`` () =
+    // The bar is drawn precisely when a real fraction exists (Total > 0) — the
+    // honest reading of §13's "never a bar that misstates".
+    let determinate = Watch.progressText { Done = 150; Total = 300; ElapsedMs = 4000L }
+    Assert.Contains("▇", determinate)                 // filled cells
+    Assert.Contains("░", determinate)                 // empty cells (150/300 → half)
+    Assert.Contains("150 of 300", determinate)        // the count still rides beside the bar
+    // an unknown denominator draws no bar — the count-up carries it alone
+    let indeterminate = Watch.progressText { Done = 142; Total = 0; ElapsedMs = 3000L }
+    Assert.DoesNotContain("▇", indeterminate)
+    Assert.DoesNotContain("░", indeterminate)
+    // the bar is fixed-width (not `Total` blocks) — a 30 000-row stage is not 30 000 cells
+    let huge = Watch.progressBar { Done = 15000; Total = 30000; ElapsedMs = 1000L }
+    Assert.True(huge.Trim().Length <= 24, sprintf "bar was %d cells wide" (huge.Trim().Length))
+
+[<Fact>]
 let ``Watch progress: a quiet active stage degrades the estimate to 'processing', not a frozen countdown (#20, amended 2026-07-06)`` () =
     let p : Watch.Progress = { Done = 142; Total = 300; ElapsedMs = 4000L }
     // live: the honest estimate shows

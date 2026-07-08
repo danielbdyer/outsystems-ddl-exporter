@@ -76,29 +76,33 @@ let private groupStatus (claims: GoBoard.ScopeClaim list) : Status =
     if claims |> List.exists (fun c -> match c.Status with GoBoard.Status.Red _ -> true | _ -> false)
     then Bad else Ok
 
-let private claimNode (c: GoBoard.ScopeClaim) : View =
-    let detail =
-        [ if not (List.isEmpty c.JoinEdges) then yield Note (sprintf "← %s" (String.concat ", " c.JoinEdges))
-          yield Note (sprintf "intent: %s" c.Reason)
-          match c.Status with
-          | GoBoard.Status.Green _ when c.Guarantee <> "" -> yield Note (sprintf "guarantee: %s" c.Guarantee)
-          | GoBoard.Status.Red (_, remedy)                -> yield Action remedy
-          | _ -> () ]
-    Disclosure (sprintf "%s %s" c.Relationship c.Table, statusV c.Status, detail)
+let private leaf (status: Status) (label: string) : TreeNode = { Label = label; Status = status; Children = [] }
 
-/// The References / Dependents claim tree as one `Disclosure` — the shared
-/// hierarchical lens both the go board and the live-run report render (the
+let private claimNode (c: GoBoard.ScopeClaim) : TreeNode =
+    let leaves =
+        [ if not (List.isEmpty c.JoinEdges) then yield leaf Neutral (sprintf "← %s" (String.concat ", " c.JoinEdges))
+          yield leaf Neutral (sprintf "intent: %s" c.Reason)
+          match c.Status with
+          | GoBoard.Status.Green _ when c.Guarantee <> "" -> yield leaf Neutral (sprintf "guarantee: %s" c.Guarantee)
+          | GoBoard.Status.Red (_, remedy)                -> yield leaf Bad (sprintf "→ %s" remedy)
+          | _ -> () ]
+    { Label = sprintf "%s %s" c.Relationship c.Table; Status = statusV c.Status; Children = leaves }
+
+/// The References / Dependents claim tree as one fully-expanded `View.Tree` — the
+/// shared hierarchical lens both the go board and the live-run report render (the
 /// guarantee tree is built ONCE in `SupportingScope.scopeGroups`, so the two
-/// surfaces cannot disagree).
+/// surfaces cannot disagree). A `Tree` (not the depth-gated `Disclosure`) because
+/// the board renders it fully expanded; Spectre's connector lines read the
+/// family → claim → guarantee nesting at a glance.
 let scopeTree (headline: string) (status: Status) (groups: GoBoard.ScopeGroup list) (unaccounted: string list) : View =
     let families =
         groups
         |> List.filter (fun g -> not (List.isEmpty g.Claims))
         |> List.map (fun g ->
-            Disclosure (sprintf "%s (%d)" (familyLabel g.Family) (List.length g.Claims),
-                        groupStatus g.Claims,
-                        g.Claims |> List.map claimNode))
-    Disclosure (headline, status, families @ (unaccounted |> List.map Note))
+            { Label = sprintf "%s (%d)" (familyLabel g.Family) (List.length g.Claims)
+              Status = groupStatus g.Claims
+              Children = g.Claims |> List.map claimNode })
+    Tree (headline, status, families @ (unaccounted |> List.map (leaf Bad)))
 
 // -- item → block ------------------------------------------------------------
 
@@ -140,7 +144,11 @@ let ofBoard (board: GoBoard.Board) : View =
             Panel ("verdict",
                 [ PanelRow.Labeled ("verdict", sprintf "RED — %d open decision(s) / blocking fault(s)." (GoBoard.redCount board), Bad)
                   PanelRow.Next (sprintf "resolve each [STOP] line above, then re-run projection check go %s" board.Flow) ])
-    Doc ([ hero; Blank ] @ (board.Items |> List.map blockOfItem) @ [ Blank; verdict ])
+    // A titleless Rule underlines the masthead; a `verdict`-titled Rule (tinted by
+    // the outcome) opens the closing panel — the section breaks the raw board never
+    // had (2026-07-08, the widget-elevation program).
+    let verdictStatus = if GoBoard.isGreen board then Ok else Bad
+    Doc ([ hero; Rule (None, Neutral) ] @ (board.Items |> List.map blockOfItem) @ [ Rule (Some "verdict", verdictStatus); verdict ])
 
 /// Whether a writer is a non-terminal sink (an in-memory / file writer, or a
 /// redirected standard stream) — the same predicate `View.consoleTo` derives

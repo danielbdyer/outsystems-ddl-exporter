@@ -27057,3 +27057,62 @@ next-move, `toJsonString` byte-identity under a `Body`-bearing item) +
 banned-word scan; `scopeGroups` family split with join edges). Docker —
 `GoBoardDockerTests` (the board + supporting-scope substrings survive the
 Table/tree format). Release build clean (FS3511 verified).
+
+## 2026-07-08 — The widget elevation: the three unused Spectre widgets (Tree, Rule, Progress) put to use, each where it honestly fits
+
+Three Spectre.Console widgets the `View` engine had never used — `Tree`, `Rule`,
+`Progress` — parked Tier 3 in `REPORTING_HORIZON.md`. Each is now in use, placed by
+where it fits the substrate honestly rather than sprayed everywhere. A cross-surface
+survey (three subagents) found the fit for each.
+
+**`Tree` — the go board's References / Dependents guarantee hierarchy, and only
+there.** New `View.Tree of headline * Status * TreeNode list` (a `TreeNode` is
+label + status + children — a leaf-or-branch of TEXT, so the Spectre `Tree` mapping
+and the `toJson` shape stay total). Rendered with connector lines (`├─`/`└─`/`│`),
+ALWAYS fully expanded. It is the counterpart to `Disclosure`, NOT a replacement:
+`Disclosure` is the depth-gated dig (the `Navigator` cursor, the `▸ N more` collapse,
+the `OpenPath` surgical reveal all ride it), and Spectre's `Tree` has no depth budget.
+So the survey's rule held — `Tree` fits exactly ONE site: a static, one-shot,
+already-fully-expanded hierarchy (the go board's scope tree, which opts out of gating
+via `boardDepth`/`Width=MaxValue`). Everywhere else (the at-scale `Comparison`
+groupings, `Lane`, `Trail`, the whole `Disclosure`/`Navigator` substrate) STAYS
+hand-rolled — a `Tree` there would regress progressive disclosure and break the
+`Navigator`/`toJson` coupling. `GoBoardView.scopeTree` now builds a `View.Tree`, the
+shared lens both the board and the live-run guarantee report project.
+
+**`Rule` — titled section dividers at the mastheads and captions.** New
+`View.Rule of title option * Status` — a full-width divider that NAMES the band it
+opens (unlike `Blank`, a mute gap). Applied at: the go board's masthead underline +
+verdict separator (tinted by the outcome); the readiness board's `cutover readiness`
+masthead + `ledger` footer; the `Bench` / `Run events` / `Flows` table captions;
+`Comparison`'s `by module` rollup header. **The width hazard the survey flagged and
+the docker run would have caught:** the go board widens a redirected sink's profile
+to 100 000 columns so proof never wraps — a full-width Spectre `Rule` there would be a
+100 000-char line. The render arm caps the rule's width to `plainWidth` when the
+profile is the widened sentinel (`> 400`), restoring it after; the forecast `Table`
+(which sizes to its own content) is unaffected.
+
+**`Progress` — a determinate bar in the live Watch, honoring §13.** The honest,
+in-discipline reading: Spectre's `Progress` widget owns the console with its OWN
+render loop (incompatible with the Watch's existing `Live` region), and its row-118
+`SpectreProgressAdapter` cash-out has an UNFIRED trigger (chapter 5.1). So rather than
+force the widget or build a premature deferred feature, the Watch's active-stage line
+gains a fixed-width determinate bar (`▇▇▇▇▇░░░░░`), driven by the already-shipped
+`summary.stageProgress` feed. It is drawn PRECISELY when a real denominator exists
+(`Total > 0`) — the honest reading of `THE_VOICE.md` §13's "never a progress bar that
+misstates"; an unknown total (a lazily-streamed producer) draws NO bar, the plain
+count-up carries it. The fill is scaled to a constant width (the R6 `Theme.meter`
+takes the TOTAL as its width, so a 30 000-row stage would draw 30 000 blocks).
+
+**One substrate, three lenses (unchanged law).** Both new `View` cases carry a
+`toJson` arm (`{kind:"rule",title?,status}`, `{kind:"tree",headline,status,nodes[]}`),
+a plain-lens fallback (Spectre's box-drawing survives NoColors), and the `Navigator`'s
+`labelOf`/`filterView` gained arms (a `Rule` filters like a leaf on its title; a `Tree`
+prunes like a `Disclosure`). A `Red` item's remedy became a red tree leaf.
+
+**Witnesses.** Pure — `ViewTests` (the `Rule` title + json + the width cap on a
+widened sink; the `Tree` connectors + fully-expanded leaves + nested json);
+`WatchTests` (a determinate stage draws a bar, an unknown total draws none, the bar is
+fixed-width). Docker — `GoBoardDockerTests` (the scope tree's substrings survive the
+`Tree` connectors; the masthead/verdict rules do not break the board). Full sweep +
+Release clean (FS3511).

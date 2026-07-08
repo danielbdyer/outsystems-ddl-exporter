@@ -46,6 +46,15 @@ type PanelRow =
     /// The next-action row; the historical `action`.
     | Next of string
 
+/// One node of a `Tree` (2026-07-08, the widget-elevation program) — a labelled,
+/// status-glyphed row over its own children. Deliberately NOT a `View`: a tree
+/// node is a leaf-or-branch of TEXT, not an arbitrary block, which keeps the
+/// Spectre `Tree` mapping total (every node is exactly label + status + children)
+/// and the `toJson` shape closed. The connector-lined counterpart to the
+/// depth-gated `Disclosure`, for a static, always-fully-expanded hierarchy.
+type TreeNode =
+    { Label: string; Status: Status; Children: TreeNode list }
+
 type View =
     /// A sequence of blocks, rendered as lines (the board shape).
     | Doc of View list
@@ -100,6 +109,18 @@ type View =
     | Action of string
     /// A blank line.
     | Blank
+    /// A full-width divider with an optional left-anchored title (Spectre `Rule`) —
+    /// the titled section break (2026-07-08). Unlike `Blank` (a mute gap), a `Rule`
+    /// NAMES the band it opens; the `Status` tints the line. Width-capped on a
+    /// widened report sink so it never draws a 100 000-column line. `toJson` carries
+    /// `{title?, status}`.
+    | Rule of title: string option * Status
+    /// A fully-expanded hierarchy rendered with connector lines (Spectre `Tree`,
+    /// 2026-07-08): the always-shown counterpart to the depth-gated `Disclosure`,
+    /// for a static one-shot report tree (the go board's References / Dependents
+    /// guarantee tree). Every node is a `TreeNode` (label + status + children), so
+    /// the render + JSON stay total. NOT depth-gated — that is `Disclosure`'s job.
+    | Tree of headline: string * Status * TreeNode list
 
 // --- Status → presentation -------------------------------------------------
 
@@ -411,6 +432,34 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                     (Theme.muted (sprintf "%d more" (List.length detail))))
     | Note text -> safeMarkupLine console (sprintf "%s%s" lead (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
     | Action text -> safeMarkupLine console (sprintf "%s%s %s" lead Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
+    | Rule (title, st) ->
+        // The titled section divider (Spectre `Rule`). A report widens a redirected
+        // sink's profile so proof never wraps (`GoBoardView.writeView`), which would
+        // make a full-width rule a 100 000-column line — so cap the rule's width to
+        // `plainWidth` when the profile is the widened sentinel, restoring it after.
+        // The title rides the status color; a titleless rule is a plain divider. The
+        // Write is wrapped defensively (#3) like every other markup arm.
+        let saved = console.Profile.Width
+        let rule =
+            match title with
+            | Some t -> Spectre.Console.Rule(colorOf st (Markup.Escape t))
+            | None   -> Spectre.Console.Rule()
+        rule.Justification <- Justify.Left
+        console.Profile.Width <- (if saved > 400 then plainWidth else saved)
+        (try console.Write(rule) with :? System.InvalidOperationException -> console.WriteLine(defaultArg title ""))
+        console.Profile.Width <- saved
+    | Tree (headline, st, nodes) ->
+        // A fully-expanded hierarchy with connector lines (Spectre `Tree`). Every
+        // node always shows — the static counterpart to `Disclosure`'s depth-gated
+        // dig; the width cap does not apply (labels are short). The node labels are
+        // pre-styled markup (glyph + escaped text), wrapped in `Markup` renderables.
+        let mk (markup: string) : Spectre.Console.Rendering.IRenderable = Markup(markup) :> Spectre.Console.Rendering.IRenderable
+        let tree = Spectre.Console.Tree(mk (styled st headline))
+        let rec add (parent: IHasTreeNodes) (n: TreeNode) : unit =
+            let child = parent.AddNode(mk (styled n.Status n.Label))
+            for c in n.Children do add child c
+        for n in nodes do add tree n
+        (try console.Write(tree) with :? System.InvalidOperationException -> safeMarkupLine console (styled st headline))
 
 /// Render with an explicit policy (#4) — the single carrier #11 (width) and #15
 /// (breadth) read. `opts.Width` is respected verbatim (the caller owns the
@@ -588,3 +637,19 @@ let rec toJson (v: View) : JsonNode =
     | Note text -> obj [ "kind", s "note"; "text", s text ]
     | Action text -> obj [ "kind", s "action"; "text", s text ]
     | Blank -> obj [ "kind", s "blank" ]
+    | Rule (title, st) ->
+        let o = JsonObject()
+        o.["kind"] <- s "rule"
+        (match title with Some t -> o.["title"] <- s t | None -> ())
+        o.["status"] <- s (statusTag st)
+        o :> JsonNode
+    | Tree (headline, st, nodes) ->
+        // The full hierarchy rides the structure — every node, its status, its
+        // children — so a `--query` walks the tree the connectors draw.
+        let rec nodeJson (n: TreeNode) : JsonNode =
+            let ch = JsonArray()
+            for c in n.Children do ch.Add(nodeJson c)
+            obj [ "label", s n.Label; "status", s (statusTag n.Status); "children", ch ]
+        let a = JsonArray()
+        for n in nodes do a.Add(nodeJson n)
+        obj [ "kind", s "tree"; "headline", s headline; "status", s (statusTag st); "nodes", a ]

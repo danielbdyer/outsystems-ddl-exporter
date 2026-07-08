@@ -608,3 +608,58 @@ let ``View: the readiness board renders the changeset sparkline beside the dots 
         |> Seq.map (fun b -> nonNull (b.GetProperty("kind").GetString())) |> Seq.toList
     Assert.Contains("spark", kinds)     // the changeset trend joined the board
     Assert.Contains("dots", kinds)      // beside the canary dots
+
+// --- the widget-elevation cases: Rule + Tree (2026-07-08) -------------------
+
+[<Fact>]
+let ``View: a titled Rule renders a divider carrying its title, and carries {title,status} in json`` () =
+    let v = View.Rule(Some "cutover readiness", View.Neutral)
+    let p = plain v
+    Assert.Contains("cutover readiness", p)   // the title rides the divider
+    Assert.Contains("─", p)                    // the rule line (box-drawing survives NoColors)
+    let j = json v
+    Assert.Equal("rule", j.GetProperty("kind").GetString())
+    Assert.Equal("cutover readiness", j.GetProperty("title").GetString())
+    Assert.Equal("neutral", j.GetProperty("status").GetString())
+
+[<Fact>]
+let ``View: a Rule caps its width on a widened report sink (never a 100k-column line)`` () =
+    // The go board widens a redirected profile to 100_000 so proof never wraps; a
+    // full-width rule there would be a 100_000-char line. The render arm caps it.
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors, Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 100000
+    View.writeWith { View.defaultOptions with Width = System.Int32.MaxValue } console (View.Rule(Some "verdict", View.Neutral))
+    let longestLine = sw.ToString().Split('\n') |> Array.map (fun l -> l.TrimEnd().Length) |> Array.max
+    Assert.True(longestLine <= 120, sprintf "rule ran to %d columns" longestLine)
+
+[<Fact>]
+let ``View: a Tree renders connector lines fully expanded and carries the nested nodes in json`` () =
+    let v =
+        View.Tree("supporting scope", View.Ok,
+            [ { Label = "References (1)"; Status = View.Ok
+                Children = [ { Label = "existing-reference City"; Status = View.Ok
+                               Children = [ { Label = "guarantee: no reference row is written."; Status = View.Neutral; Children = [] } ] } ] }
+              { Label = "Dependents (1)"; Status = View.Bad
+                Children = [ { Label = "owned-child City"; Status = View.Bad; Children = [] } ] } ])
+    // pretty/plain lens — connector lines + every node fully expanded (not depth-gated)
+    let p = plain v
+    Assert.Contains("supporting scope", p)
+    Assert.Contains("References (1)", p)
+    Assert.Contains("existing-reference City", p)
+    Assert.Contains("guarantee: no reference row is written.", p)   // the deepest leaf shows
+    Assert.Contains("Dependents (1)", p)
+    Assert.True([ "├"; "└"; "│" ] |> List.exists p.Contains, sprintf "no tree connector in %s" p)
+    // json lens — SAME value: the full nested hierarchy + per-node status
+    let j = json v
+    Assert.Equal("tree", j.GetProperty("kind").GetString())
+    Assert.Equal("ok", j.GetProperty("status").GetString())
+    let nodes = j.GetProperty("nodes").EnumerateArray() |> Seq.toList
+    Assert.Equal(2, nodes.Length)
+    let refs = nodes |> List.find (fun n -> nonNull (n.GetProperty("label").GetString()) = "References (1)")
+    let child = refs.GetProperty("children").EnumerateArray() |> Seq.head
+    Assert.Equal("existing-reference City", child.GetProperty("label").GetString())
+    let deps = nodes |> List.find (fun n -> nonNull (n.GetProperty("label").GetString()) = "Dependents (1)")
+    Assert.Equal("bad", deps.GetProperty("status").GetString())
