@@ -183,7 +183,7 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                             let! r =
                                                 Transfer.runReverseLegThroughConnections
                                                     Transfer.Execute EmissionMode.Incremental false true false
-                                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty
+                                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty
                                             return PeerAlignedFixtures.value r
                                         })
 
@@ -267,7 +267,7 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                             let! r =
                                                 Transfer.runReverseLegThroughConnections
                                                     Transfer.Execute EmissionMode.Incremental false true false
-                                                    [ "Customer" ] connections srcContract sinkContract reconciliation
+                                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty
                                             return PeerAlignedFixtures.value r
                                         })
 
@@ -319,7 +319,7 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                             let! r =
                                                 Transfer.runReverseLegThroughConnections
                                                     Transfer.Execute EmissionMode.WipeAndLoad false true false
-                                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty
+                                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty
                                             return PeerAlignedFixtures.value r
                                         })
 
@@ -374,7 +374,7 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                             let! r =
                                                 Transfer.runReverseLegThroughConnections
                                                     Transfer.Execute EmissionMode.Incremental false true false
-                                                    [ "Customer" ] connections srcContract sinkContract reconciliation
+                                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty
                                             return PeerAlignedFixtures.value r
                                         })
                                 Assert.Empty(report.UnmatchedIdentities)
@@ -397,7 +397,7 @@ type PeerAlignedTransferDockerTests(fixture: EphemeralContainerFixture) =
                                     PeerAlignedFixtures.throughConnections srcConnStr sinkConnStr true (fun connections ->
                                         Transfer.runReverseLegThroughConnections
                                             Transfer.Execute EmissionMode.WipeAndLoad false true false
-                                            [ "Customer" ] connections srcContract sinkContract badReconciliation)
+                                            [ "Customer" ] connections srcContract sinkContract badReconciliation Set.empty)
                                 match refused with
                                 | Ok _ -> Assert.Fail "expected the pinned-owner refusal"
                                 | Error errors ->

@@ -106,8 +106,16 @@ module GoBoard =
     /// go-board forecast program): what the sink table holds now, what the
     /// planned run adds / matches / deletes, and what it holds after —
     /// derived from the dry run's plan + live sink counts, never guessed.
+    /// 2026-07-08 (the board-clarity program): the row carries BOTH
+    /// physical coordinates — the source table read and the sink table
+    /// written differ per espace on the peer leg.
     type ForecastLine =
-        { /// Sink physical coordinate (`schema.table`).
+        { /// Source physical coordinate (`schema.table`) — where the rows
+          /// are read from. Empty when the kind has no source side (a
+          /// wipe-only line).
+          Source  : string
+          /// Sink physical coordinate (`schema.table`) — where the change
+          /// lands; the before/after counts are THIS table's.
           Table   : string
           /// Live sink row count before the run (`None` when the probe
           /// could not run — rendered `?`, never silently 0).
@@ -119,7 +127,8 @@ module GoBoard =
           Matches : int64 option
           /// Rows the run DELETEs first (the wipe, under strategy replace).
           Deletes : int64
-          /// The note column: disposition, phase-2 re-points, drops.
+          /// The note column: disposition, phase-2 re-points, drops,
+          /// brought-along-by edges.
           Note    : string }
 
     [<RequireQualifiedAccess>]
@@ -135,15 +144,18 @@ module GoBoard =
         if List.isEmpty lines then []
         else
             let num (v: int64 option) = match v with Some n -> string n | None -> "?"
-            let width =
-                lines |> List.map (fun l -> l.Table.Length) |> List.max |> max (String.length "table")
-            let row (table: string) (before: string) (adds: string) (matches: string) (deletes: string) (after: string) (note: string) =
-                sprintf "%-*s  %10s  %8s  %8s  %8s  %10s  %s" width table before adds matches deletes after note
+            let widthOf (header: string) (f: ForecastLine -> string) =
+                lines |> List.map (fun l -> (f l).Length) |> List.max |> max header.Length
+            let srcWidth  = widthOf "source (read)" (fun l -> l.Source)
+            let sinkWidth = widthOf "target (written)" (fun l -> l.Table)
+            let row (source: string) (table: string) (before: string) (adds: string) (matches: string) (deletes: string) (after: string) (note: string) =
+                sprintf "%-*s  %-*s  %10s  %8s  %8s  %8s  %10s  %s" srcWidth source sinkWidth table before adds matches deletes after note
             let total (f: ForecastLine -> int64 option) =
                 lines |> List.fold (fun acc l -> match acc, f l with Some a, Some v -> Some (a + v) | _ -> None) (Some 0L)
-            [ yield row "table" "before" "+add" "match" "-del" "after" ""
+            [ yield row "source (read)" "target (written)" "before" "+add" "match" "-del" "after" ""
               for l in lines do
                   yield row
+                      l.Source
                       l.Table
                       (num l.Before)
                       (string l.Adds)
@@ -152,6 +164,7 @@ module GoBoard =
                       (num (ForecastLine.after l))
                       l.Note
               yield row
+                  ""
                   "TOTAL"
                   (num (total (fun l -> l.Before)))
                   (string (lines |> List.sumBy (fun l -> l.Adds)))

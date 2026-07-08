@@ -428,7 +428,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         let runLeg () =
                             Transfer.runReverseLegThroughConnections
                                 Transfer.Execute EmissionMode.WipeAndLoad false true false []
-                                connections logicalContract physicalContract Map.empty
+                                connections logicalContract physicalContract Map.empty Set.empty
 
                         let! firstR = runLeg ()
                         let first = ReverseLegFixtures.value firstR

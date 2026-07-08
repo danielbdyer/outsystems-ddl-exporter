@@ -182,6 +182,20 @@ module Transfer =
             /// had no matched assigned counterpart — paired with the
             /// owning kind. Empty for a non-reconciling Transfer.
             SkippedReferences   : (SsKey * UnresolvedReference) list
+            /// The FULL rows behind the PLAN-BUILD portion of
+            /// `SkippedReferences` (2026-07-08, the board-clarity program):
+            /// each dropped record with the reference that failed it, for
+            /// the operator's drop preview. Plan-build drops only —
+            /// write-time skips surface as counts; empty on streaming.
+            DroppedRows         : (SsKey * UnresolvedReference * StaticRow) list
+            /// The FULL source rows behind `UnmatchedIdentities`
+            /// (2026-07-08) — the actual records that found no sink match.
+            UnmatchedRows       : (SsKey * StaticRow) list
+            /// Per-column drift between MATCHED source/sink pairs on
+            /// reconciled kinds (2026-07-08), against the flow's
+            /// `reconcileIgnore` set. The sink value is KEPT at load time —
+            /// this is surfaced information, never a pending write.
+            ReconcileDivergences : ReconcileDivergence list
             /// Every capture-ladder rung descent the write took (a sink
             /// capability refusal — e.g. triggers reject OUTPUT-without-
             /// INTO — degraded the lane, named per kind). Empty when every
@@ -804,6 +818,7 @@ module Transfer =
     /// `SurrogateRemapContext.capture` so the merged context carries
     /// the construction-time invariant.
     let private reconcileAgainstSink
+        (ignore: Set<Name>)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
@@ -812,6 +827,8 @@ module Transfer =
         task {
             let mutable remap = SurrogateRemapContext.empty
             let mutable unmatched : (SsKey * SourceKey) list = []
+            let mutable unmatchedRows : (SsKey * StaticRow) list = []
+            let mutable divergences : ReconcileDivergence list = []
             let mutable ambiguous : (SsKey * SourceKey) list = []
             let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
             let mutable missingPinned : (SsKey * AssignedKey) list = []
@@ -823,7 +840,7 @@ module Transfer =
                     | pk :: _ ->
                         let srcRows = Map.tryFind kind sourceRows |> Option.defaultValue []
                         let! sinkRows = AsyncStream.toList (Ingestion.streamKindRows sink k)
-                        let result = Reconciliation.reconcileKind kind pk.Name strategy srcRows sinkRows
+                        let result = Reconciliation.reconcileKindWith ignore kind pk.Name strategy srcRows sinkRows
                         for KeyValue (rk, inner) in result.Remap.Assignments do
                             for KeyValue (src, assigned) in inner do
                                 match SurrogateRemapContext.capture rk src assigned remap with
@@ -832,11 +849,13 @@ module Transfer =
                                 // conflict instead of discarding the named error.
                                 | Error _ -> ambiguous <- (rk, src) :: ambiguous
                         unmatched <- unmatched @ result.Unmatched
+                        unmatchedRows <- unmatchedRows @ result.UnmatchedRows
+                        divergences <- divergences @ result.Divergences
                         ambiguous <- ambiguous @ result.Ambiguous
                         ambiguousTargets <- ambiguousTargets @ result.AmbiguousTargetKeys
                         missingPinned <- missingPinned @ result.MissingPinnedOwners
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
+            return { Remap = remap; Unmatched = unmatched; UnmatchedRows = unmatchedRows; Divergences = divergences; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
         }
 
     // -- orchestration ------------------------------------------------------
@@ -907,11 +926,17 @@ module Transfer =
           /// artifact — byte-identical to the pre-Build-A path. `Some dir` → the
           /// child-first `DELETE`-by-captured-key script lands at
           /// `<dir>/transfer-revert.sql` on a failed load.
-          RevertArtifactDir : string option }
+          RevertArtifactDir : string option
+          /// 2026-07-08 (the board-clarity program) — attribute names the
+          /// matched-pair column diff IGNORES on reconciled kinds (the
+          /// operator's audit fields: CreatedOn / UpdatedOn). Sourced from
+          /// the flow's `reconcileIgnore` list; empty (the `def` default)
+          /// diffs every non-key column.
+          ReconcileIgnore : Set<Name> }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1017,7 +1042,7 @@ module Transfer =
                     // column in an unrelated kind.
                     rawRows |> Map.map (fun k rs -> RenameProjection.repointRows (RenameProjection.forKind k renamesByKind) rs)
                 | _ -> rawRows
-            let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
+            let! reconciled = reconcileAgainstSink writeOpts.ReconcileIgnore sink catalog reconciliation rows
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row
             // is in target identity space.
@@ -1095,6 +1120,9 @@ module Transfer =
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
+                          DroppedRows         = plan.DroppedRows
+                          UnmatchedRows       = reconciled.UnmatchedRows
+                          ReconcileDivergences = reconciled.Divergences
                           CaptureLaneDescents = laneDescents
                           ReplayedPriorDrops  = replayedPriorDrops
                           // NM-21 — only the σ path can raise these; ingested
@@ -1291,6 +1319,9 @@ module Transfer =
                               AmbiguousIdentities = []
                               AmbiguousTargetMatchKeys = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              DroppedRows         = plan.DroppedRows
+                              UnmatchedRows       = []
+                              ReconcileDivergences = []
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
@@ -1395,6 +1426,9 @@ module Transfer =
                               AmbiguousIdentities = []
                               AmbiguousTargetMatchKeys = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              DroppedRows         = plan.DroppedRows
+                              UnmatchedRows       = []
+                              ReconcileDivergences = []
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
                               Plan                = (match mode with DryRun -> Some plan | Execute -> None)
@@ -1970,6 +2004,9 @@ module Transfer =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — audit columns the matched-pair diff ignores
+        // (the flow's `reconcileIgnore`); empty diffs every non-key column.
+        (reconcileIgnore: Set<Name>)
         (journalDirectory: string option)
         // D — the streaming arm of the data-leg compensating-undo (M23 on the
         // estate-scale path). On a mid-stream crash the partial sink-minted rows
@@ -2036,7 +2073,7 @@ module Transfer =
                             | None -> ()
                         return acc
                     }
-                let! reconciled = reconcileAgainstSink sink sinkContract reconciliation reconciledSourceRows
+                let! reconciled = reconcileAgainstSink reconcileIgnore sink sinkContract reconciliation reconciledSourceRows
                 // Structure only — order, dispositions, deferred columns;
                 // the rows STREAM at write time (the whole point).
                 // `reclassifyReconciled` marks the reconciled kinds skip-
@@ -2105,6 +2142,9 @@ module Transfer =
                                   AmbiguousIdentities = reconciled.Ambiguous
                                   AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                   SkippedReferences   = plan.SkippedReferences
+                                  DroppedRows         = []   // streaming plan carries no rows
+                                  UnmatchedRows       = reconciled.UnmatchedRows
+                                  ReconcileDivergences = reconciled.Divergences
                                   CaptureLaneDescents = []
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
@@ -2179,6 +2219,9 @@ module Transfer =
                                       AmbiguousIdentities = reconciled.Ambiguous
                                       AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                       SkippedReferences   = skips
+                                      DroppedRows         = []   // streaming drops surface as counts
+                                      UnmatchedRows       = reconciled.UnmatchedRows
+                                      ReconcileDivergences = reconciled.Divergences
                                       CaptureLaneDescents = descents
                                       // Streaming-journal resume is per-run by
                                       // design (the journaled run reported its
@@ -2207,7 +2250,7 @@ module Transfer =
         // The straight load supplies the inert revert levers (`false None`) the
         // caller did not name — D's compensating-undo is reachable only through the
         // reconciling / reverse-leg faces that carry the per-environment policy.
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty journalDirectory false None
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2229,6 +2272,8 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — the flow's `reconcileIgnore` audit columns.
+        (reconcileIgnore: Set<Name>)
         // D — the per-environment revert policy, collapsed at the RunFaces face
         // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
         // materialized reverse-leg face consumed them.
@@ -2244,7 +2289,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation journalDirectory autoRevert revertDir
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -2495,6 +2540,8 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — the flow's `reconcileIgnore` audit columns.
+        (reconcileIgnore: Set<Name>)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2513,7 +2560,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2530,8 +2577,9 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (reconcileIgnore: Set<Name>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

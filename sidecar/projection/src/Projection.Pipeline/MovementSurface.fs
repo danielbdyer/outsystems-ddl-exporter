@@ -674,12 +674,24 @@ module ProjectionConfig =
                     | true, r when r.ValueKind <> JsonValueKind.Null ->
                         Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
                     | _ -> Result.success []
+                // 2026-07-08 — the audit-field ignore list beside `reconcile`:
+                // plain attribute names (shared across reconciled kinds), no
+                // <table>: prefix — the diff keys on logical column Name.
+                let reconcileIgnore =
+                    match el.TryGetProperty "reconcileIgnore" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        [ for v in r.EnumerateArray() do
+                            if v.ValueKind = JsonValueKind.String then
+                                match Option.ofObj (v.GetString()) with
+                                | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                | _ -> () ]
+                    | _ -> []
                 match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el with
                 | Error es, _, _, _, _ | _, Error es, _, _, _ | _, _, Error es, _, _ | _, _, _, Error es, _ | _, _, _, _, Error es -> Result.failure es
                 | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -975,6 +987,10 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.Reconcile do a.Add(JsonValue.Create r)
             o.["reconcile"] <- a)
+        (if not (List.isEmpty flow.ReconcileIgnore) then
+            let a = JsonArray()
+            for r in flow.ReconcileIgnore do a.Add(JsonValue.Create r)
+            o.["reconcileIgnore"] <- a)
         // AUDIT (config-primary) — the execution profile. Each omits its default
         // (Merge / false / None) so an existing flow round-trips byte-identically.
         setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
@@ -1152,6 +1168,7 @@ module Command =
         { Declaration = (if spec.AllowDrops then DeclareAll else DeclareNone)
           Emission    = emissionOf spec.Strategy
           Reconcile   = spec.Reconcile
+          ReconcileIgnore = spec.ReconcileIgnore
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Resumable   = spec.Resumable
@@ -1632,6 +1649,7 @@ module Command =
                         // (e.g. the golden flow's User-by-email reconcile) ride
                         // the spec into the transfer leg's `LoadOpts.Reconcile`.
                         Reconcile = flow.Reconcile
+                        ReconcileIgnore = flow.ReconcileIgnore
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc

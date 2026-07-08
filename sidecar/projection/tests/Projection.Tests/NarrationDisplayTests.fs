@@ -71,6 +71,9 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           AmbiguousIdentities      = []
           AmbiguousTargetMatchKeys = []
           SkippedReferences        = []
+          DroppedRows              = []
+          UnmatchedRows            = []
+          ReconcileDivergences     = []
           CaptureLaneDescents      = []
           ReplayedPriorDrops       = None
           Plan                     = None

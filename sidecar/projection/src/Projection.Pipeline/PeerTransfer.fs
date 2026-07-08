@@ -81,10 +81,18 @@ module PeerTransfer =
     /// row insertion (kind presence, attribute presence, column-shape facets);
     /// `Advisory` divergences are real but do not block a data load
     /// (constraint/index/kind-facet drift, logical renames, widenings) — they
-    /// surface so nothing is silent.
+    /// surface so nothing is silent. `Proven` states AFFIRMATIVELY which
+    /// comparison tiers matched over the transferred set (2026-07-08, the
+    /// board-clarity program): an advisory like "indexes differ" must never
+    /// leave the operator guessing whether table names, column names, column
+    /// definitions, and foreign keys DID match — each tier that held is named.
     type ShapeVerdict =
         { Blocking : string list
-          Advisory : string list }
+          Advisory : string list
+          /// The comparison tiers that MATCHED, in ladder order (entity
+          /// names → column names → column definitions → foreign keys →
+          /// indexes → entity-level facets). Operator-facing phrases.
+          Proven   : string list }
 
     let private kindNameIn (c: Catalog) (key: SsKey) : string =
         match Catalog.tryFindKind key c with
@@ -204,14 +212,44 @@ module PeerTransfer =
                             line advisory "the default value differs (defaults never rewrite transferred values)"
         // Constraint / index / kind-own drift: real divergence, but none of it
         // refuses a row — advisory by design (the migrate verb owns schema).
-        let advisoryCount (label: string) (keys: Set<SsKey>) =
+        // Each class carries its OWN action language (2026-07-08): the
+        // operator must never have to derive whether an advisory needs a
+        // move before this transfer.
+        let advisoryDrift (label: string) (keys: Set<SsKey>) (action: string) =
             if not (Set.isEmpty keys) then
                 let names = keys |> Set.toList |> List.map (kindNameIn src) |> String.concat ", "
-                advisory.Add (sprintf "%s differ(s) on: %s (schema drift — does not block a data load)." label names)
-        advisoryCount "foreign-key constraints" (CatalogDiff.referenceDiffs diff |> Map.filter (fun k _ -> inScope k) |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
-        advisoryCount "indexes" (CatalogDiff.indexDiffs diff |> Map.filter (fun k _ -> inScope k) |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
-        advisoryCount "entity-level facets (modality/triggers/checks/activation)" (CatalogDiff.kindFacetDiffs diff |> Map.filter (fun k _ -> inScope k) |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
-        { Blocking = List.ofSeq blocking; Advisory = List.ofSeq advisory }
+                advisory.Add (sprintf "%s differ(s) on: %s — %s" label names action)
+        let scopedKeys (m: Map<SsKey, 'a>) : Set<SsKey> =
+            m |> Map.filter (fun k _ -> inScope k) |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        let fkDrift    = scopedKeys (CatalogDiff.referenceDiffs diff)
+        let indexDrift = scopedKeys (CatalogDiff.indexDiffs diff)
+        let facetDrift = scopedKeys (CatalogDiff.kindFacetDiffs diff)
+        advisoryDrift "foreign-key constraints" fkDrift
+            "the load follows the SOURCE model's relationships, so ordering is unaffected; a sink-only constraint can still refuse a violating row at write time. No action before this transfer unless the run refuses — then compare these entities' FK definitions."
+        advisoryDrift "indexes" indexDrift
+            "index shape is performance-only; every row loads identically with or without it. No action needed before this transfer — align the index definitions at the next schema deploy if parity matters."
+        advisoryDrift "entity-level facets (modality/triggers/checks/activation)" facetDrift
+            "these never rewrite a transferred row. No action needed before this transfer."
+        // The AFFIRMATIVE tiers — what DID match, in ladder order, so an
+        // advisory never reads as "something differs, guess how deep".
+        let attributeDiffsInScope = CatalogDiff.attributeDiffs diff |> Map.filter (fun k _ -> inScope k)
+        let entityNamesMatch =
+            Set.isEmpty (CatalogDiff.removed diff |> Set.filter inScope)
+            && (CatalogDiff.renamed diff |> Map.filter (fun k _ -> inScope k) |> Map.isEmpty)
+            && (match scope with Some _ -> true | None -> Set.isEmpty (CatalogDiff.added diff))
+        let columnNamesMatch =
+            attributeDiffsInScope
+            |> Map.forall (fun _ ad -> Set.isEmpty ad.Removed && Set.isEmpty ad.Added && Map.isEmpty ad.Renamed)
+        let columnDefsMatch =
+            attributeDiffsInScope |> Map.forall (fun _ ad -> List.isEmpty ad.Reshaped)
+        let proven =
+            [ if entityNamesMatch then yield "entity names"
+              if columnNamesMatch then yield "column names"
+              if columnDefsMatch then yield "column definitions (type/length/precision/nullability)"
+              if Set.isEmpty fkDrift then yield "foreign keys"
+              if Set.isEmpty indexDrift then yield "indexes"
+              if Set.isEmpty facetDrift then yield "entity-level facets" ]
+        { Blocking = List.ofSeq blocking; Advisory = List.ofSeq advisory; Proven = proven }
 
     /// The gate form of the verdict: blocking divergence refuses by name
     /// (`transfer.peer.shapeDivergence` — the shape-divergence axis, exit 5,

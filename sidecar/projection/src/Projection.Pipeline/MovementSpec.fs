@@ -160,6 +160,9 @@ type MovementSpec =
         Rekey       : string option
         /// `--reconcile <table>:<col>` entries (MatchByColumn re-key rules).
         Reconcile   : string list
+        /// 2026-07-08 — the flow's `reconcileIgnore` audit columns (shared
+        /// attribute names the matched-pair diff skips).
+        ReconcileIgnore : string list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -222,6 +225,7 @@ module MovementSpec =
             Shape       = Shape.Bundle
             Rekey       = None
             Reconcile   = []
+            ReconcileIgnore = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -280,6 +284,11 @@ type Flow =
         /// declarative flow carries the User re-key without a per-run tail).
         /// Empty = no reconcile (byte-identical).
         Reconcile : string list
+        /// 2026-07-08 — shared attribute names the reconciled-kind
+        /// matched-pair diff IGNORES (the audit fields: CreatedOn /
+        /// UpdatedOn). One global list beside `reconcile`, applied to
+        /// every reconciled kind. Empty = diff every non-key column.
+        ReconcileIgnore : string list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -406,6 +415,9 @@ type LoadOpts =
         Declaration : LossDeclaration
         Emission    : EmissionMode
         Reconcile   : string list
+        /// 2026-07-08 — audit columns the reconciled-kind matched-pair
+        /// diff ignores (shared attribute names; from `reconcileIgnore`).
+        ReconcileIgnore : string list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.

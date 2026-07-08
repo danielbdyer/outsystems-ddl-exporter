@@ -153,6 +153,34 @@ let ``DataLoadPlan: deferredLoads lists only the cycle-broken kinds`` () =
     Assert.Equal<SsKey list>([ aKey ], DataLoadPlan.deferredLoads plan |> List.map (fun l -> l.Kind))
 
 [<Fact>]
+let ``DataLoadPlan.DroppedRows: a row whose FK targets an unmatched remap identity carries its FULL row + the failed reference`` () =
+    // A child kind with a mandatory FK to a REMAPPED parent (Customer).
+    // The remap covers source customer "1" but not "2"; the child row
+    // pointing at "2" drops — and `DroppedRows` must carry that row whole,
+    // paired with the reference that failed it.
+    let childKey = mkKey ["Child"]
+    let childRef = { Reference.create (mkKey ["Child"; "CustRef"]) (mkName "CustId") (mkKey ["Child"; "CUSTID"]) customerKey with ConstraintState = ConstraintState.TrustedConstraint }
+    let child = kindOf ["Child"] "OSUSR_CHILD" [ pk ["Child"] "ID" false; fkAttr ["Child"] "CUSTID" false ] [ childRef ]
+    let localCatalog = IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["M2"]) (mkName "M2") [ customer; child ] ]
+    let localTopo : TopologicalOrder =
+        { Mode = OrderingMode.Topological; Order = [ customerKey; childKey ]; Edges = [ (childKey, customerKey) ]; MissingEdges = []; Cycles = []; Diagnostics = [] }
+    // Remap: source customer surrogate "1" → assigned "100" (but NOT "2").
+    let remap = SurrogateRemapContext.capture customerKey (SourceKey.ofString "1") (AssignedKey.ofString "100") SurrogateRemapContext.empty |> mustOk
+    let rows =
+        Map.ofList
+            [ childKey, [ rowOf "k1" [ "ID", "1"; "CUSTID", "1" ]   // kept — parent "1" is in the remap
+                          rowOf "k2" [ "ID", "2"; "CUSTID", "2" ] ] ] // dropped — parent "2" is unmatched
+    let plan = DataLoadPlan.build localCatalog localTopo rows remap
+    // One skip, and its full row is carried.
+    let (dropKind, uref, row) = List.exactlyOne plan.DroppedRows
+    Assert.Equal(childKey, dropKind)
+    Assert.Equal("CUSTID", Name.value uref.Column)
+    Assert.Equal("2", SourceKey.value uref.UnresolvedSource)
+    Assert.Equal("2", row.Values.[mkName "ID"])   // the k2 row, whole
+    // The kept row survived, re-pointed to the assigned surrogate.
+    Assert.Equal(1, (plan.Loads |> List.find (fun l -> l.Kind = childKey)).Rows.Length)
+
+[<Fact>]
 let ``DataLoadPlan: reclassifyReconciled overrides only the named kinds to ReconciledByRule`` () =
     let plan = build Map.empty |> DataLoadPlan.reclassifyReconciled (Set.singleton customerKey)
     Assert.Equal(IdentityDisposition.ReconciledByRule, (loadFor customerKey plan).Disposition)

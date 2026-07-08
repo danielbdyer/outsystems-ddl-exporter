@@ -78,6 +78,45 @@ let ``reconcileKind skips-and-diagnoses a Source identity absent from the Sink``
     Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "999" ], result.Unmatched)
     Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
 
+// --- matched-pair drift + audit-field ignore + full unmatched rows -----------
+// (2026-07-08, the board-clarity program)
+
+[<Fact>]
+let ``reconcileKind carries the FULL unmatched source row, aligned with Unmatched`` () =
+    let source = [ row "280" [ "Email", "alice@x" ]; row "999" [ "Email", "ghost@x"; "Name", "Ghost" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    let (k, ghost) = List.exactlyOne result.UnmatchedRows
+    Assert.Equal(userKey, k)
+    Assert.Equal("ghost@x", ghost.Values.[mkName "Email"])
+    Assert.Equal("Ghost", ghost.Values.[mkName "Name"])
+
+[<Fact>]
+let ``reconcileKindWith: matched pairs whose non-key columns differ surface as Divergences; the sink value is reported`` () =
+    // Both match by email; their Name and UpdatedOn differ between source/sink.
+    let source = [ row "280" [ "Email", "alice@x"; "Name", "Alice A"; "UpdatedOn", "2026-01-02" ] ]
+    let sink   = [ row "18"  [ "Email", "alice@x"; "Name", "Alice B"; "UpdatedOn", "2026-07-01" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    // Two columns drift (Name, UpdatedOn); Email is the match key but not ignored,
+    // and it agrees, so it never registers.
+    let cols = result.Divergences |> List.map (fun d -> Name.value d.Column) |> Set.ofList
+    Assert.Equal<Set<string>>(Set.ofList [ "Name"; "UpdatedOn" ], cols)
+    let nameDiff = result.Divergences |> List.find (fun d -> Name.value d.Column = "Name")
+    Assert.Equal(1, nameDiff.DifferingPairs)
+    let (ak, srcV, sinkV) = List.exactlyOne nameDiff.Samples
+    Assert.Equal(AssignedKey.ofString "18", ak)
+    Assert.Equal("Alice A", srcV)
+    Assert.Equal("Alice B", sinkV)
+
+[<Fact>]
+let ``reconcileKindWith: an ignored audit column never registers as drift`` () =
+    let source = [ row "280" [ "Email", "alice@x"; "Name", "Alice A"; "UpdatedOn", "2026-01-02" ] ]
+    let sink   = [ row "18"  [ "Email", "alice@x"; "Name", "Alice A"; "UpdatedOn", "2026-07-01" ] ]
+    // Ignore UpdatedOn — only genuine content drift should remain, and here
+    // Name agrees, so the matched pair is clean.
+    let result = Reconciliation.reconcileKindWith (Set.ofList [ mkName "UpdatedOn" ]) userKey idCol byEmail source sink
+    Assert.Empty result.Divergences
+
 [<Fact>]
 let ``reconcileKind ManualOverride maps explicit Source->Sink; sources outside the map fall through`` () =
     let source = [ row "280" []; row "281" [] ]
