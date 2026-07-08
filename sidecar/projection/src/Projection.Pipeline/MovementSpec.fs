@@ -577,7 +577,7 @@ type PlanAction =
     /// run takes, under preview opts), so the board judges exactly what
     /// `--go` would execute. `emitSql` (the `--sql` opt-in, 2026-07-07)
     /// additionally writes the dry run's plan as a T-SQL preview artifact.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * planned: PlanAction
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * emitImpact: bool * planned: PlanAction
     /// `check plan <flow>` — THE TRANSFER PLAN (2026-07-08, the guided-wizard
     /// program): the declarative counterpart to the go board. Where `check go`
     /// verdicts readiness, `check plan` walks each transfer decision axis with its

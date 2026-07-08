@@ -1947,9 +1947,10 @@ module Command =
                             | Some (_, v) -> v = "json"
                             | None -> false
                         let emitSql = List.contains "--sql" rest
-                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, emitSql, (planFlow cfg flow previewOpts).Action)
+                        let emitImpact = List.contains "--impact" rest
+                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, emitSql, emitImpact, (planFlow cfg flow previewOpts).Action)
                 | _ ->
-                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--format json]).")
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--impact] [--format json]).")
             | "plan" :: rest ->
                 // THE TRANSFER PLAN — the declarative guided counterpart to the go
                 // board. Built pure from the flow's CURRENT choices (no DB): each

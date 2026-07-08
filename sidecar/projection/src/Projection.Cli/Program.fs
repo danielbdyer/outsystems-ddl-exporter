@@ -308,7 +308,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
-    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, emitSql, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) flowName fromLabel toLabel asJson emitSql planned)
+    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, emitSql, emitImpact, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) flowName fromLabel toLabel asJson emitSql emitImpact planned)
     | PlanAction.CheckPlan (flow, plan, asJson) -> shellRun "projection check plan" Shell.ReadOnly (fun () -> runTransferPlan flow plan asJson)
     | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)
     // explain ------------------------------------------------------------

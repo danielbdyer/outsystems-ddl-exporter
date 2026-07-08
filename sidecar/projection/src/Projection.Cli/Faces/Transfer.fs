@@ -681,7 +681,7 @@ let runPeerTransfer
     // forecast, with the red/green verdict).
     if not executeRequested then
         printfn ""
-        printfn "The go board (open decisions + before→after forecast + red/green verdict): projection check go <flow>  [--sql writes the planned T-SQL]"
+        printfn "The go board (open decisions + before→after forecast + red/green verdict): projection check go <flow>  [--sql writes the planned T-SQL] [--impact writes the denormalized before/after data artifact]"
 
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
@@ -851,7 +851,7 @@ let runCheckGo
     // Same contract-read scope as `runPeerTransfer` — the go board must
     // forecast with the contracts the live run will actually read.
     (contractScope: MetadataSnapshotRunner.SnapshotParameters)
-    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (planned: PlanAction) : int =
+    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (emitImpact: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         // The machine lens is the stable `toJsonString` CI contract (untouched);
@@ -1279,6 +1279,79 @@ let runCheckGo
                     forecastLines
                     (wipePreviews |> List.filter (fun s -> s <> ""))
                     forecastDetail)
+                // THE IMPACT ARTIFACT (2026-07-09, `--impact`): the operator's
+                // "show me EXACTLY what happens to the data". The dry run already
+                // holds the AFTER rows (the plan) and the sink holds the BEFORE
+                // rows; `TransferImpact` segments the transfer graph, denormalizes
+                // each component into nested documents, and classifies every row
+                // (add / delete / change / unchanged). Written as a self-contained
+                // HTML artifact + a JSON twin — never inline on the board.
+                if emitImpact then
+                    match report.Plan with
+                    | None ->
+                        items.Add (GoBoard.item "impact"
+                            (GoBoard.Status.Advisory "--impact: this dry run carried no materialized plan — no artifact written."))
+                    | Some plan ->
+                        // BEFORE — the sink's current rows for the transferred scope,
+                        // capped (an --impact review is over the golden subset, not the
+                        // estate); a table over the cap is noted, never silently cut.
+                        let impactCap = 10000
+                        let mutable truncated : string list = []
+                        let readBefore (k: Kind) : StaticRow list =
+                            match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-impact" sinkSpec).GetAwaiter().GetResult() with
+                            | Error _ -> []
+                            | Ok cnn ->
+                                use cnn = cnn
+                                try
+                                    use cmd = cnn.CreateCommand()
+                                    cmd.CommandText <- sprintf "SELECT TOP (%d) * FROM [%s].[%s];" (impactCap + 1) (TableId.schemaText k.Physical) (TableId.tableText k.Physical)
+                                    use r = cmd.ExecuteReader()
+                                    let ord = [ for i in 0 .. r.FieldCount - 1 -> r.GetName i, i ] |> Map.ofList
+                                    let acc = System.Collections.Generic.List<StaticRow>()
+                                    while r.Read () do
+                                        let values =
+                                            k.Attributes
+                                            |> List.choose (fun a ->
+                                                match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
+                                                | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                                                | None -> None)
+                                            |> Map.ofList
+                                        acc.Add { Identifier = k.SsKey; Values = values }
+                                    if acc.Count > impactCap then truncated <- Name.value k.Name :: truncated
+                                    acc |> Seq.truncate impactCap |> List.ofSeq
+                                with _ -> []
+                        let scopeKinds = Catalog.allKinds sinkContract |> List.filter (fun k -> Set.contains k.SsKey scope.Nodes)
+                        let before = scopeKinds |> List.map (fun k -> k.SsKey, readBefore k) |> Map.ofList
+                        let after = plan.Loads |> List.map (fun l -> l.Kind, l.Rows) |> Map.ofList
+                        // Business keys: the reconciled/static-lookup kinds matched by
+                        // a column (MatchByColumn) — the key that lets before↔after
+                        // resolve to change/unchanged rather than delete-all + add-all.
+                        let rec bkOf (s: ReconciliationStrategy) : Name option =
+                            match s with
+                            | ReconciliationStrategy.MatchByColumn c -> Some c
+                            | ReconciliationStrategy.MatchByColumns (c :: _) -> Some c
+                            | ReconciliationStrategy.FallbackToAssigned (_, primary) -> bkOf primary
+                            | _ -> None
+                        let businessKeys = reconciliation |> Map.toList |> List.choose (fun (k, s) -> bkOf s |> Option.map (fun c -> k, c)) |> Map.ofList
+                        let inputs : TransferImpact.Inputs =
+                            { Catalog = sinkContract
+                              Scope = scope.Nodes
+                              Reconciled = scope.Reconciled
+                              Wiped = wipeSet
+                              BusinessKeys = businessKeys
+                              Before = before
+                              After = after
+                              Ignore = opts.ReconcileIgnore |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None) |> Set.ofList }
+                        let strategyLabel = match opts.Emission with EmissionMode.WipeAndLoad -> "replace (wipe & load)" | _ -> "merge (upsert)"
+                        let impact = TransferImpact.build flowName strategyLabel inputs
+                        System.IO.Directory.CreateDirectory "go-board" |> ignore
+                        let htmlPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.html" flowName)
+                        let jsonPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.json" flowName)
+                        System.IO.File.WriteAllText (htmlPath, TransferImpactView.toHtml sinkContract impact)
+                        System.IO.File.WriteAllText (jsonPath, TransferImpactView.toJson sinkContract impact)
+                        let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %d row(s): %s)" impactCap (String.concat ", " truncated)
+                        items.Add (GoBoard.item "impact"
+                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — +%d added, -%d deleted, ~%d changed, %d unchanged across %d segment(s)%s." htmlPath impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged (List.length impact.Segments) truncNote)))
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the
