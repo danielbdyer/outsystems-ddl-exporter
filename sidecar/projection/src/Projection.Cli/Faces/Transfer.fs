@@ -349,6 +349,11 @@ let runContractPairTransfer
     // 2026-07-08 — the flow's `reconcileIgnore` audit columns (attribute
     // names the reconciled-kind matched-pair diff skips).
     (reconcileIgnore: string list)
+    // 2026-07-08 — the typed supporting scope; resolved here (against the sink
+    // contract) into the seed / acknowledged-exclusion sets the write path
+    // consumes. The reference/anchor entries already rode in via the desugared
+    // `reconcileSpecs`/`tables`; this carries only the WRITE-plane markings.
+    (supportingScope: SupportingScope.SupportingScopeEntry list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -366,6 +371,10 @@ let runContractPairTransfer
         reconcileIgnore
         |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None)
         |> Set.ofList
+    let resolvedScope =
+        match SupportingScope.resolve physicalSinkContract supportingScope with
+        | Ok r -> r
+        | Error _ -> SupportingScope.empty
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource = TransferSpec.parseConnectionSpec sourceSpec
     let parsedSink   = TransferSpec.parseConnectionSpec sinkSpec
@@ -467,7 +476,7 @@ let runContractPairTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -508,7 +517,7 @@ let runReverseLegTransfer
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -657,7 +666,7 @@ let runPeerTransfer
     // with the peer pair as the contracts and the peer label on the prose.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 

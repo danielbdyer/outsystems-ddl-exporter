@@ -47,7 +47,7 @@ module private GoBoardFixtures =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
-          ReconcileIgnore = []
+          ReconcileIgnore = []; SupportingScope = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false
@@ -252,7 +252,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             let! runR =
                                 Transfer.runReverseLegThroughConnectionsWith
                                     IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
-                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty
+                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
                                     false (Some undoDir)
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
