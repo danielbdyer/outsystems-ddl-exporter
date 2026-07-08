@@ -47,7 +47,7 @@ module private GoBoardFixtures =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
-          ReconcileIgnore = []; SupportingScope = []
+          ReconcileIgnore = []; SupportingScope = []; Signoff = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false
@@ -188,6 +188,52 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         return ()
                     }))
 
+    /// The write-signoff greenlight (2026-07-08): a destructive WipeAndLoad is
+    /// an OPEN DECISION until the flow greenlights the `replace` mode. The SAME
+    /// subset+reconcile that goes green under Incremental (test above) now reds
+    /// on the `signoff` axis under WipeAndLoad; greens when the mode is greenlit;
+    /// and reds again when the declared `tables` scope does not cover the wipe
+    /// (a stale approval cannot rubber-stamp a wider blast radius). The board's
+    /// wiped set is `scope.WriteKinds` — the same the engine's live gate reads.
+    [<Fact>]
+    member _.``go board: a WipeAndLoad reds without a signoff, greens when replace is greenlit, reds again on a too-narrow scope`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardSignoff") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardSignoff"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        let wipeOpts signoff =
+                            { GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ] with
+                                Emission = EmissionMode.WipeAndLoad
+                                Signoff  = signoff }
+
+                        // 1. RED — WipeAndLoad, no signoff: the wipe is ungreenlit.
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (wipeOpts [])))
+                        Assert.Equal(5, red1)
+                        Assert.Contains("signoff", redOut)
+                        Assert.Contains("deleted child-first", redOut)   // the impact the operator is approving
+                        Assert.Contains("declare it greenlit", redOut)   // the remedy names the exact edit
+
+                        // 2. GREEN — the `replace` mode greenlit (scopeless).
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
+                        Assert.Equal(0, green)
+                        Assert.Contains("wipe is greenlit", greenOut)
+
+                        // 3. RED — a declared scope that MISSES the wiped Customer.
+                        let mismatch = [ { WriteSignoff.greenlit WriteSignoff.WriteMode.Replace with Tables = [ "SomeOtherTable" ] } ]
+                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (wipeOpts mismatch)))
+                        Assert.Equal(5, red2)
+                        Assert.Contains("does not cover", red2Out)
+
+                        // The board's dry run never wrote: sink Customer still empty.
+                        let! customers = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                        Assert.Equal(0, customers)
+                        return ()
+                    }))
+
     /// The unrelated-cycle witness (2026-07-07): an UNRESOLVABLE dependency
     /// cycle elsewhere in the estate no longer reds a partial transfer's
     /// board — the load-order gate and the dry run's cycle report judge the
@@ -290,7 +336,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                                 Transfer.runReverseLegThroughConnectionsWith
                                     IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
                                     [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
-                                    false (Some undoDir)
+                                    [] false (Some undoDir)
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
                             let! customersAfter = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"

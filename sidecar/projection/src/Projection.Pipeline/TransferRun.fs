@@ -2745,8 +2745,12 @@ module Transfer =
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (reconcileIgnore: Set<Name>)
+        // 2026-07-08 — the flow's write-signoff greenlights. A DryRun / an
+        // Incremental Execute is ungated, so `[]` is correct there; a
+        // destructive WipeAndLoad Execute must declare the greenlit mode.
+        (signoffs: WriteSignoff.WriteApproval list)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty [] false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

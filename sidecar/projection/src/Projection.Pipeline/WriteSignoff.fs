@@ -51,6 +51,13 @@ module WriteSignoff =
           ApprovedBy         : string option
           Date               : string option }
 
+    /// A scopeless greenlight for one mode — the whole flow's set for that
+    /// mode, no audit fields. The minimal declaration the gate accepts (and the
+    /// shape the interactive `check plan` persist writes before the operator
+    /// annotates it).
+    let greenlit (m: WriteMode) : WriteApproval =
+        { Mode = m; Tables = []; AcknowledgedImpact = None; ApprovedBy = None; Date = None }
+
     /// The canonical config label for a mode.
     let modeLabel (m: WriteMode) : string =
         match m with

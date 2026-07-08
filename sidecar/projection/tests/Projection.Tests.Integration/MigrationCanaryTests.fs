@@ -962,7 +962,10 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             // PK-collide an incremental load).
                             do! Deploy.executeBatch sink
                                     "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'stale@x');"
-                            let! r = Transfer.runWithEmissionMode Transfer.Execute WipeAndLoad true source sink catalogA
+                            // The destructive wipe is greenlit (the write-signoff gate;
+                            // the mechanics under test are the wipe/reload, not the gate).
+                            let wipeOpts = { Transfer.WriteOptions.ofEmission WipeAndLoad with Signoffs = [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] }
+                            let! r = Transfer.runWithOptions Transfer.Execute wipeOpts true source sink catalogA
                             match r with
                             | Error es -> Assert.Fail(sprintf "wipe-and-load failed: %A" es)
                             | Ok _ ->

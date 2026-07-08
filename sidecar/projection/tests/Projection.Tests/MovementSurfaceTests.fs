@@ -458,7 +458,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
+      Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Signoff = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -684,7 +684,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Signoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]

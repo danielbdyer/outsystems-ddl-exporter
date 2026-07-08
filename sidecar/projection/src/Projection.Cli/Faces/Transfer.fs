@@ -1081,7 +1081,7 @@ let runCheckGo
                         |> Set.ofList
                     (Transfer.runReverseLegThroughConnections
                         Transfer.DryRun opts.Emission false true false
-                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet)
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [])
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
