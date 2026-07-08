@@ -1211,3 +1211,59 @@ and the OUTBOUND-relationship wording on the live managed-grant pair.
 whole-row-preview, and re-run-direction witnesses aboard, and the Release
 build verified (FS3511 clean). Shipped as a new PR from the branch restarted on
 main after #659's squash-merge.
+
+## Entry 29 — 2026-07-08, SUPPORTING SCOPE: the config models the business intent of the supporting rows
+
+**Operator request:** a `supportingScope` array of typed objects, sibling to
+`tables`, that says WHY each supporting (non-payload) table is touched — "these
+rows are not the payload, but they support the payload's integrity." Max out the
+vocabulary against the graph relationship tree; instead of secondary
+dependencies hiding under `tables`, the config confidently says: this is an owned
+child / a seeded reference / an existing reference / a shared anchor / a static
+lookup, and these are the dependent rows I refuse to harvest.
+
+**The vocabulary — six relationships, two families.** References the payload
+points AT (outbound escaping edges): `existing-reference` (match the target's own
+rows by a business `key`, never copy), `reference-seed` (insert the referenced
+rows the target lacks), `shared-anchor` (re-point every reference to one target
+row, optional dynamic match first), `static-lookup` (match by `key` and hold to
+ZERO divergence). Dependents that point AT the payload (inbound edges):
+`owned-child` (`of` the parent; copied along, cascade-verified), `blocked-dependent`
+(`of` the parent; deliberately not harvested). The terse `reconcile` strings are
+the shorthand — `T:Col` → existing-reference, `T:=k` → shared-anchor,
+`T:Col:=k` → shared-anchor-with-match — resolved into the SAME model
+(`SupportingScope.ofReconcileEntries`); supportingScope is canonical.
+
+**The decisive lever — the graph already carries the truth.** OutSystems
+"Delete Rule = Delete" already reads as `OnDelete = Cascade` /
+`EdgeStrength.Cascade`; escaping edges are already traversed. So the config
+DECLARES intent and the board VERIFIES it: an owned-child whose edge is a
+protect-rule (not cascade) is caught red; a reference nothing in the payload
+points at is caught red; a blocked-dependent that is not a real inbound dependent
+is caught red. `TransferSubset.dependentEdges` (the net-new inbound mirror of
+`escapingEdges`) supplies the dependent-family evidence, and completeness now
+closes both directions: every escaping reference and every inbound dependent is
+either classified or named as unaccounted.
+
+**Desugar over new plumbing.** Each relationship projects onto a primitive that
+already exists — `SupportingScope.desugarToStrings` appends to the flow's
+`tables` / `reconcile` string lists the engine already threads, so the reconcile
+and load-set portions need NO new engine field. Two genuinely-new write behaviors
+land, both gated to empty defaults: `reference-seed` insert-only-missing (a
+`WriteOptions.SeedKinds` pre-filter that drops the rows a preserved-key target
+already holds, never overwriting), and the inbound-orphan gate (Execute +
+WipeAndLoad refuses by name when an out-of-payload dependent holds referencing
+rows, with `blocked-dependent` as the acknowledgement channel).
+
+**The board.** A new `supporting scope` axis verifies each declared intent and
+reports unaccounted escapes; the forecast note reads the declared intent
+("owned child of Movie", "seeded reference", "existing reference — matched to the
+target's own rows") instead of the ownership-blind "brought along by K.col -> T";
+a static-lookup whose matched rows drift reds the match-drift axis.
+
+**Proven:** pure — `SupportingScopeTests` (the reconcile bridge, desugar, typed
+resolve, the six verify claims, `dependentEdges`, completeness),
+`MovementSurfaceTests` (parse→render→parse round-trip byte-identity + the
+also-payload / no-reason named refusals). Docker — `GoBoardDockerTests`: the
+axis confirms a declared City reference and catches a mislabeled owned-child red
+on the live managed-grant pair. Release build clean (FS3511 verified).
