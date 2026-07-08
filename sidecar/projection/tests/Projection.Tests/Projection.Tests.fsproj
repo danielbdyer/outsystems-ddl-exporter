@@ -166,6 +166,7 @@
     <Compile Include="PeerTransferTests.fs" />
     <Compile Include="SupportingScopeTests.fs" />
     <Compile Include="WriteSignoffTests.fs" />
+    <Compile Include="TransferImpactTests.fs" />
     <Compile Include="CaptureJournalTests.fs" />
     <Compile Include="RowQuantumTests.fs" />
     <Compile Include="ModelResolutionTests.fs" />
