@@ -8,13 +8,6 @@ namespace Osm.Validation.Tightening;
 
 internal sealed class UniqueIndexDecisionOrchestrator
 {
-    private readonly OpportunityBuilder _opportunityBuilder;
-
-    public UniqueIndexDecisionOrchestrator(OpportunityBuilder opportunityBuilder)
-    {
-        _opportunityBuilder = opportunityBuilder ?? throw new ArgumentNullException(nameof(opportunityBuilder));
-    }
-
     public UniqueIndexAggregation Evaluate(
         OsmModel model,
         UniqueIndexDecisionStrategy uniqueStrategy,
@@ -54,12 +47,6 @@ internal sealed class UniqueIndexDecisionOrchestrator
                     }
 
                     builder.AddUniqueDecision(analysis.Decision);
-
-                    var opportunity = _opportunityBuilder.TryCreate(analysis, column);
-                    if (opportunity is not null)
-                    {
-                        builder.AddOpportunity(opportunity);
-                    }
                 }
             }
         }

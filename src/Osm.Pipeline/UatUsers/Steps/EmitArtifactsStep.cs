@@ -29,24 +29,24 @@ public sealed class EmitArtifactsStep : IPipelineStep<UatUsersContext>
         }
 
         var previewRows = BuildPreviewRows(context).ToList();
-        context.Artifacts.WriteCsv("01_preview.csv", previewRows);
+        context.Artifacts.WriteCsv(UatUsersArtifactNames.Preview, previewRows);
         _logger.LogInformation(
             "Preview artifact written to {Path} with {DataRowCount} data rows.",
-            Path.Combine(context.Artifacts.Root, "uat-users", "01_preview.csv"),
+            Path.Combine(context.Artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.Preview),
             Math.Max(previewRows.Count - 1, 0));
 
         var script = SqlScriptEmitter.BuildScript(context);
-        context.Artifacts.WriteText("02_apply_user_remap.sql", script);
+        context.Artifacts.WriteText(UatUsersArtifactNames.ApplyScript, script);
         _logger.LogInformation(
             "Apply script emitted to {Path} (Length={Length} characters).",
-            Path.Combine(context.Artifacts.Root, "uat-users", "02_apply_user_remap.sql"),
+            Path.Combine(context.Artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.ApplyScript),
             script.Length);
 
         var matchingRows = BuildMatchingReportRows(context).ToList();
-        context.Artifacts.WriteCsv("04_matching_report.csv", matchingRows);
+        context.Artifacts.WriteCsv(UatUsersArtifactNames.MatchingReport, matchingRows);
         _logger.LogInformation(
             "Matching report written to {Path} with {RowCount} rows.",
-            Path.Combine(context.Artifacts.Root, "uat-users", "04_matching_report.csv"),
+            Path.Combine(context.Artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.MatchingReport),
             Math.Max(matchingRows.Count - 1, 0));
         return Task.CompletedTask;
     }

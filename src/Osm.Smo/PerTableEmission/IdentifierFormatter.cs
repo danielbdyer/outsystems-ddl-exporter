@@ -1,5 +1,6 @@
 using System;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Osm.Domain.Sql;
 
 namespace Osm.Smo.PerTableEmission;
 
@@ -105,7 +106,7 @@ internal sealed class IdentifierFormatter
         {
             IdentifierQuoteStrategy.DoubleQuote => $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"",
             IdentifierQuoteStrategy.None => identifier,
-            _ => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]",
+            _ => SqlIdentifier.Quote(identifier),
         };
     }
 

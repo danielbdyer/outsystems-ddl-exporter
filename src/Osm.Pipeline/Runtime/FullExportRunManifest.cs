@@ -139,7 +139,7 @@ public sealed record FullExportRunManifest(
 
         var context = result.Context;
         var artifacts = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
-        var uatRoot = Path.Combine(context.Artifacts.Root, "uat-users");
+        var uatRoot = Path.Combine(context.Artifacts.Root, UatUsersArtifactNames.Directory);
 
         artifacts["enabled"] = "true";
         artifacts["artifactRoot"] = Path.GetFullPath(uatRoot);
@@ -156,11 +156,11 @@ public sealed record FullExportRunManifest(
         AddPathIfPresent(artifacts, "userMapPath", context.UserMapPath);
         var defaultMapPath = context.Artifacts.GetDefaultUserMapPath();
         AddPathIfPresent(artifacts, "defaultUserMapPath", defaultMapPath);
-        AddPathIfPresent(artifacts, "userMapTemplatePath", Path.Combine(uatRoot, "00_user_map.template.csv"));
-        AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, "01_preview.csv"));
-        AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, "02_apply_user_remap.sql"));
-        AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, "03_catalog.txt"));
-        AddPathIfPresent(artifacts, "matchingReportPath", Path.Combine(uatRoot, "04_matching_report.csv"));
+        AddPathIfPresent(artifacts, "userMapTemplatePath", Path.Combine(uatRoot, UatUsersArtifactNames.UserMapTemplate));
+        AddPathIfPresent(artifacts, "previewPath", Path.Combine(uatRoot, UatUsersArtifactNames.Preview));
+        AddPathIfPresent(artifacts, "applyScriptPath", Path.Combine(uatRoot, UatUsersArtifactNames.ApplyScript));
+        AddPathIfPresent(artifacts, "catalogPath", Path.Combine(uatRoot, UatUsersArtifactNames.Catalog));
+        AddPathIfPresent(artifacts, "matchingReportPath", Path.Combine(uatRoot, UatUsersArtifactNames.MatchingReport));
         AddPathIfPresent(artifacts, "uatUserInventoryPath", context.UatUserInventoryPath);
         AddPathIfPresent(artifacts, "qaUserInventoryPath", context.QaUserInventoryPath);
         AddPathIfPresent(artifacts, "snapshotPath", context.SnapshotPath);

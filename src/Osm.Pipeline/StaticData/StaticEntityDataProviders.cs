@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using Osm.Domain.Abstractions;
+using Osm.Domain.Sql;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Sql;
 
@@ -330,8 +331,8 @@ public sealed class SqlStaticEntityDataProvider : IStaticEntityDataProvider
     }
 
     private static string FormatTwoPartName(string schema, string name)
-        => $"[{schema.Replace("]", "]]", StringComparison.Ordinal)}].[{name.Replace("]", "]]", StringComparison.Ordinal)}]";
+        => SqlIdentifier.Qualify(schema, name);
 
     private static string FormatColumnName(string name)
-        => $"[{name.Replace("]", "]]", StringComparison.Ordinal)}]";
+        => SqlIdentifier.Quote(name);
 }

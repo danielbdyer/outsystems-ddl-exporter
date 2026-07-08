@@ -33,7 +33,7 @@ public class EntityEmissionContextTests
             activeIdentifier,
             createdOn);
 
-        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+        var snapshot = EmittableEntityProjection.Create("Sales", entity);
         var context = EntityEmissionContext.Create("Sales", entity);
         var preferred = context.GetPreferredIdentifier();
 
@@ -70,7 +70,7 @@ public class EntityEmissionContextTests
             inactiveIdentifier,
             nameAttribute);
 
-        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+        var snapshot = EmittableEntityProjection.Create("Sales", entity);
         var context = EntityEmissionContext.Create("Sales", entity);
         var preferred = context.GetPreferredIdentifier();
 

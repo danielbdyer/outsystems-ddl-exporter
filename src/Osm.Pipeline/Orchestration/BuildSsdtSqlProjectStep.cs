@@ -11,13 +11,13 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtSqlProjectStep : IBuildSsdtStep<EmissionReady, SqlProjectSynthesized>
+public sealed class BuildSsdtSqlProjectStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private const string ProjectNamespace = "http://schemas.microsoft.com/developer/msbuild/2003";
     private const string DefaultProjectName = "OutSystemsModel";
 
-    public Task<Result<SqlProjectSynthesized>> ExecuteAsync(
-        EmissionReady state,
+    public Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -61,20 +61,11 @@ public sealed class BuildSsdtSqlProjectStep : IBuildSsdtStep<EmissionReady, SqlP
                 .WithCount("postDeployScripts", seeds.Count)
                 .Build());
 
-        return Task.FromResult(Result<SqlProjectSynthesized>.Success(new SqlProjectSynthesized(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            projectPath)));
+        return Task.FromResult(Result<BuildSsdtState>.Success(state with
+        {
+            Manifest = manifest,
+            SqlProjectPath = projectPath,
+        }));
     }
 
     private static (ImmutableArray<string> Relative, int Count) EnumerateProjectItems(string root, string directory)
@@ -182,7 +173,7 @@ public sealed class BuildSsdtSqlProjectStep : IBuildSsdtStep<EmissionReady, SqlP
         return group;
     }
 
-    private static string ResolveProjectPath(EmissionReady state)
+    private static string ResolveProjectPath(BuildSsdtState state)
     {
         var hint = state.Request.SqlProjectPathHint;
         if (!string.IsNullOrWhiteSpace(hint))
