@@ -165,7 +165,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
             [ View.Note(shape + here) ]
     let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
     View.Doc(
-        [ View.Blank
+        [ View.Rule(Some "cutover readiness", View.Neutral)
           hero
           View.Blank
           View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
@@ -177,8 +177,8 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
               "runs",
               sprintf "%d total %s %d with a round-trip verification %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
               View.Neutral)
-            View.Blank
-            View.Note(sprintf "ledger    %s" ledgerPath) ])
+            View.Rule(Some "ledger", View.Neutral)
+            View.Note ledgerPath ])
 
 let renderReadinessBoardTo
     (console: IAnsiConsole)
@@ -333,7 +333,7 @@ let benchView (stats: Bench.Stats list) : View.View =
           string s.P95Ms,          View.Neutral
           string s.P99Ms,          View.Neutral
           string s.MaxMs,          View.Neutral ]
-    View.Doc [ View.Note "Bench (sorted by total time)"; View.Table(headers, stats |> List.map row) ]
+    View.Doc [ View.Rule(Some "Bench (sorted by total time)", View.Neutral); View.Table(headers, stats |> List.map row) ]
 
 /// Build the `--stat` rollup `View` (2026-07-02) — the run's §11 aggregates
 /// as one table (category / code / count / first samples' grain elided): the
@@ -348,7 +348,7 @@ let buildStatView (groups: LogSink.GroupAccumulator list) : View.View =
         groups
         |> List.sortByDescending (fun g -> g.Count)
         |> List.map row
-    View.Doc [ View.Note "Run events, rolled up (category · code · count)"; View.Table(headers, rows) ]
+    View.Doc [ View.Rule(Some "Run events, rolled up (category · code · count)", View.Neutral); View.Table(headers, rows) ]
 
 /// Build the flow-menu `View` — the no-argument `projection` answer ("the
 /// config IS the menu", THE_CLI.md §4.4), as one document the three lenses
@@ -363,7 +363,8 @@ let buildFlowMenuView (flows: (string * string * string * string) list) : View.V
           target, View.Neutral
           extras, View.Neutral ]
     View.Doc
-        [ View.Note "Flows — the daily act is `projection <flow>` (preview by default; --go applies)."
+        [ View.Rule(Some "Flows", View.Neutral)
+          View.Note "the daily act is `projection <flow>` (preview by default; --go applies)."
           View.Table(headers, flows |> List.map row) ]
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : unit =

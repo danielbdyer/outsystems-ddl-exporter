@@ -94,6 +94,31 @@ module SupportingScope =
         /// The graph contradicts the declaration: what is wrong + the remedy.
         | Contradicted of reason: string * remedy: string
 
+    /// The INVARIANT a Confirmed claim earns — the guarantee the operator can
+    /// rely on (2026-07-08, the rendering-elevation program). Each states, in
+    /// THE_VOICE register (stative, agentless, no pronouns, the true verb,
+    /// evidence beneath), exactly what the load will and will not do to the
+    /// target for this relationship — so a verified no-op READS as a no-op. A
+    /// Contradicted verdict earns no guarantee (empty): the claim node shows the
+    /// verdict's reason + remedy instead.
+    let guaranteeOf (r: SupportingRelationship) (v: ScopeClaimVerdict) : string =
+        match v with
+        | ScopeClaimVerdict.Contradicted _ -> ""
+        | ScopeClaimVerdict.Confirmed _ ->
+            match r with
+            | SupportingRelationship.ExistingReference _ ->
+                "Matched to the target's own rows by business key; no reference row is written — every foreign key resolves against data already present, and the reference table is left untouched."
+            | SupportingRelationship.ReferenceSeed ->
+                "Rows the target lacks are seeded; rows already present are preserved — every foreign key resolves after the seed, and no existing reference row is overwritten."
+            | SupportingRelationship.SharedAnchor _ ->
+                "Every payload reference is re-pointed to one designated target row; the referenced rows collapse to a single anchor, and no divergent reference survives the load."
+            | SupportingRelationship.StaticLookup _ ->
+                "Matched by business key and held to zero divergence — every matched pair is byte-identical, so no row on the target changes: a verified no-op on the lookup."
+            | SupportingRelationship.OwnedChild parent ->
+                sprintf "Owned by %s under the delete-rule cascade; copied with the parent and wiped with it under replace — the child rows share the parent's lifecycle exactly." parent
+            | SupportingRelationship.BlockedDependent parent ->
+                sprintf "A real dependent of %s, deliberately not harvested; the exclusion is acknowledged, so a replace-wipe does not refuse on its account and no environment-specific row is copied." parent
+
     // -- the canonical bridge: terse `reconcile` strings ARE supporting scope --
 
     /// Project the parsed terse `reconcile` entries into the unified model.
@@ -332,3 +357,81 @@ module SupportingScope =
         let covered = Set.unionMany [ payload; resolved.LoadSetAdditions; resolved.AcknowledgedExclusions ]
         TransferSubset.dependentEdges catalog payload
         |> List.filter (fun (source, _, _) -> not (Set.contains source.SsKey covered))
+
+    // -- the hierarchical lens: the References / Dependents claim tree ----------
+
+    /// The relationship's config label (`existing-reference` … `blocked-dependent`).
+    let relationshipLabel (r: SupportingRelationship) : string =
+        match r with
+        | SupportingRelationship.ExistingReference _ -> "existing-reference"
+        | SupportingRelationship.ReferenceSeed        -> "reference-seed"
+        | SupportingRelationship.SharedAnchor _       -> "shared-anchor"
+        | SupportingRelationship.StaticLookup _       -> "static-lookup"
+        | SupportingRelationship.OwnedChild _         -> "owned-child"
+        | SupportingRelationship.BlockedDependent _   -> "blocked-dependent"
+
+    /// The family a relationship belongs to: "references" (the payload points AT
+    /// this table) or "dependents" (this table points at the payload).
+    let familyOf (r: SupportingRelationship) : string =
+        match r with
+        | SupportingRelationship.ExistingReference _
+        | SupportingRelationship.ReferenceSeed
+        | SupportingRelationship.SharedAnchor _
+        | SupportingRelationship.StaticLookup _ -> "references"
+        | SupportingRelationship.OwnedChild _
+        | SupportingRelationship.BlockedDependent _ -> "dependents"
+
+    /// The typed References / Dependents hierarchy for the rich lens (2026-07-08,
+    /// the rendering-elevation program) — the ONE builder both the go board
+    /// (`check go`) and the live-run report project, so the guarantee tree can
+    /// never drift between the readiness surface and the run itself. Each claim
+    /// carries its verify status, the normalized JOIN edges (which payload columns
+    /// point at a reference; which dependent columns point back at the payload),
+    /// the authored reason, and the guarantee a Confirmed claim earns. Primitive
+    /// carriers (`GoBoard.ScopeClaim`/`ScopeGroup`) so the assembly boundary holds
+    /// — `GoBoard` compiles first and knows nothing of these DUs.
+    let scopeGroups
+        (catalog: Catalog)
+        (payload: Set<SsKey>)
+        (reconciled: Set<SsKey>)
+        (entries: SupportingScopeEntry list)
+        : GoBoard.ScopeGroup list =
+        let colOf (k: Kind) (r: Reference) : string =
+            k.Attributes
+            |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+            |> Option.map (fun a -> Name.value a.Name)
+            |> Option.defaultValue (Name.value r.Name)
+        let escaping = TransferSubset.escapingEdges catalog payload reconciled
+        let dependents = TransferSubset.dependentEdges catalog payload
+        let joinEdgesFor (e: SupportingScopeEntry) : string list =
+            match tryResolveTable catalog e.Table with
+            | None -> []
+            | Some k ->
+                match familyOf e.Relationship with
+                | "references" ->
+                    escaping
+                    |> List.filter (fun (_, _, target) -> target.SsKey = k.SsKey)
+                    |> List.map (fun (src, r, _) -> sprintf "%s.%s" (Name.value src.Name) (colOf src r))
+                    |> List.distinct
+                | _ ->
+                    dependents
+                    |> List.filter (fun (source, _, _) -> source.SsKey = k.SsKey)
+                    |> List.map (fun (source, r, target) -> sprintf "%s.%s -> %s" (Name.value source.Name) (colOf source r) (Name.value target.Name))
+                    |> List.distinct
+        let claims : GoBoard.ScopeClaim list =
+            verify catalog payload reconciled entries
+            |> List.map (fun (e, v) ->
+                let status =
+                    match v with
+                    | ScopeClaimVerdict.Confirmed note -> GoBoard.Status.Green note
+                    | ScopeClaimVerdict.Contradicted (reason, remedy) -> GoBoard.Status.Red (reason, remedy)
+                { Family = familyOf e.Relationship
+                  Relationship = relationshipLabel e.Relationship
+                  Table = e.Table
+                  Status = status
+                  JoinEdges = joinEdgesFor e
+                  Reason = e.Reason
+                  Guarantee = guaranteeOf e.Relationship v })
+        [ { GoBoard.ScopeGroup.Family = "references"; GoBoard.ScopeGroup.Claims = claims |> List.filter (fun c -> c.Family = "references") }
+          { GoBoard.ScopeGroup.Family = "dependents"; GoBoard.ScopeGroup.Claims = claims |> List.filter (fun c -> c.Family = "dependents") } ]
+        |> List.filter (fun g -> not (List.isEmpty g.Claims))

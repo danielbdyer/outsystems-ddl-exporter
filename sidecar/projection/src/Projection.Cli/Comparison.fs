@@ -688,8 +688,7 @@ let moduleRollup (d: CatalogDiff) : View.View list =
     if List.length perModule < 2 then []
     else
         let rows = perModule |> List.map (fun (m, n) -> [ (m, View.Neutral); (Theme.humane n, View.Neutral) ])
-        [ View.Blank
-          View.Note "by module (most-changed first)"
+        [ View.Rule(Some "by module (most-changed first)", View.Neutral)
           View.Table([ "module"; "changes" ], rows) ]
 
 let changeSurfaceScoped (chan: string option) (d: CatalogDiff) : Surface.Surface =

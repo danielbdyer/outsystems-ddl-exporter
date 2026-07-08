@@ -66,6 +66,8 @@ let labelOf (v: View.View) : string =
     | View.Note t -> t
     | View.Action t -> t
     | View.Blank -> ""
+    | View.Rule (title, _) -> defaultArg title ""
+    | View.Tree (h, _, _) -> h
 
 // --- The filter (L1): a PROJECTION of the tree, never a second copy ---------
 // `/` filters the dig to the branches matching a substring — the canonical
@@ -123,6 +125,20 @@ let rec filterView (q: string) (v: View.View) : View.View option =
     | View.Spark (l, _)           -> if hits q l then Some v else None
     | View.Timeline (l, _, _, _, _) -> if hits q l then Some v else None
     | View.Blank                  -> None
+    // A `Rule` is a divider: kept only when its own title matches (like a leaf),
+    // dropped otherwise (as `Blank` is) so a filtered view is not littered with
+    // section rules whose band was pruned away.
+    | View.Rule (title, _)        -> if (match title with Some t -> hits q t | None -> false) then Some v else None
+    | View.Tree (h, st, nodes)    ->
+        // A `Tree` prunes like a `Disclosure`: an OWN-headline match keeps the whole
+        // tree; else each node is pruned recursively (a node's own-label match keeps
+        // its subtree).
+        if hits q h then Some v
+        else
+            let rec filterNode (n: View.TreeNode) : View.TreeNode option =
+                if hits q n.Label then Some n
+                else match n.Children |> List.choose filterNode with [] -> None | kept -> Some { n with Children = kept }
+            match nodes |> List.choose filterNode with [] -> None | kept -> Some (View.Tree (h, st, kept))
 
 // --- The Model + the pure reducer ------------------------------------------
 

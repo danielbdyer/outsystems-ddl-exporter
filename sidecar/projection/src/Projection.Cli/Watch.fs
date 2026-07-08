@@ -363,10 +363,24 @@ module Watch =
     /// event stream cannot ground.
     let private processingText : string = "processing"
 
+    /// The determinate progress BAR (2026-07-08, the widget-elevation program) — a
+    /// fixed-width `▇▇▇▇▇░░░░░` gauge, shown ONLY when a real denominator is known.
+    /// This is the honest reading of §13's "never a progress bar that misstates": a
+    /// bar is drawn precisely when `Total > 0` (a genuine fraction), and an unknown
+    /// total (`Total <= 0`, a lazily-streamed producer) draws NO bar — the plain
+    /// count-up carries it instead. The R6 `Theme.meter` takes the TOTAL as its
+    /// width (a 300-row stage would draw 300 blocks), so the fill is scaled to a
+    /// constant `barCells` width here.
+    let private barCells = 20
+    let progressBar (p: Progress) : string =
+        if p.Total <= 0 then ""
+        else sprintf "%s " (Theme.meter (p.Done * barCells / p.Total) barCells)
+
     let progressTextQuiet (quietForMs: int64 option) (p: Progress) : string =
+        let bar = progressBar p
         let count =
             if p.Total <= 0 then sprintf "%s applied" (Theme.humane p.Done)
-            else sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+            else sprintf "%s%s of %s" bar (Theme.humane p.Done) (Theme.humane p.Total)
         match quietForMs with
         | Some _ ->
             // The estimate degrades HONESTLY (#20 / §13): a stage that has gone quiet drops

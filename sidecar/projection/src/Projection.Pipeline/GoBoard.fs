@@ -37,13 +37,82 @@ module GoBoard =
         /// remedy that turns the line green.
         | Red of reason: string * remedy: string
 
+    /// One row of the BEFORE → AFTER data forecast (2026-07-07, the
+    /// go-board forecast program): what the sink table holds now, what the
+    /// planned run adds / matches / deletes, and what it holds after —
+    /// derived from the dry run's plan + live sink counts, never guessed.
+    /// 2026-07-08 (the board-clarity program): the row carries BOTH
+    /// physical coordinates — the source table read and the sink table
+    /// written differ per espace on the peer leg.
+    type ForecastLine =
+        { /// Source physical coordinate (`schema.table`) — where the rows
+          /// are read from. Empty when the kind has no source side (a
+          /// wipe-only line).
+          Source  : string
+          /// Sink physical coordinate (`schema.table`) — where the change
+          /// lands; the before/after counts are THIS table's.
+          Table   : string
+          /// Live sink row count before the run (`None` when the probe
+          /// could not run — rendered `?`, never silently 0).
+          Before  : int64 option
+          /// Rows the run INSERTs (post-drop).
+          Adds    : int64
+          /// For a reconciled kind: source rows matched to EXISTING sink
+          /// rows (no insert). `None` for non-reconciled kinds.
+          Matches : int64 option
+          /// Rows the run DELETEs first (the wipe, under strategy replace).
+          Deletes : int64
+          /// The note column: disposition, phase-2 re-points, drops,
+          /// brought-along-by edges.
+          Note    : string }
+
+    /// One supporting-scope claim, normalized for the hierarchical lens
+    /// (2026-07-08, the rendering-elevation program). Primitive-typed (strings
+    /// + `Status`) so the pure `GoBoard` model stays free of the
+    /// `SupportingScope` types it compiles before; the face maps its verdicts
+    /// + join edges + guarantee onto this.
+    type ScopeClaim =
+        { /// "references" (the payload points at this) | "dependents" (points at the payload).
+          Family       : string
+          /// The relationship label — `existing-reference` … `blocked-dependent`.
+          Relationship : string
+          /// The supporting table's logical label (`Module.Entity`).
+          Table        : string
+          /// The verify verdict (Green confirmed / Red contradicted).
+          Status       : Status
+          /// The normalized join: the payload columns that point at this table
+          /// (`Order.UserId`), or the dependent's inbound edges.
+          JoinEdges    : string list
+          /// The operator's authored intent, echoed.
+          Reason       : string
+          /// The invariant a Confirmed claim earns (empty when contradicted).
+          Guarantee    : string }
+
+    /// A family grouping of claims (References / Dependents) for the tree.
+    type ScopeGroup =
+        { Family : string
+          Claims : ScopeClaim list }
+
+    /// The typed body an item carries for the RICH (Spectre `View`) lens
+    /// (2026-07-08). Additive: `Plain` is the default, so every existing
+    /// `item`/`itemWith` site and the JSON writer are untouched — `Detail`
+    /// stays the authoritative plain/JSON path; `Body` is read only by the
+    /// CLI `GoBoardView` builder.
+    type ItemBody =
+        | Plain
+        | Forecast of lines: ForecastLine list * previews: string list
+        | Scope    of groups: ScopeGroup list * unaccounted: string list
+
     type Item =
         { /// The axis label (short, stable — the operator scans these).
           Axis   : string
           Status : Status
           /// Optional per-line proof/detail beneath the headline (escaping
-          /// edges, divergence lines, unmatched identities…).
-          Detail : string list }
+          /// edges, divergence lines, unmatched identities…). The plain/JSON
+          /// lens renders these; `Body` carries the typed twin for the rich lens.
+          Detail : string list
+          /// The typed body for the Spectre `View` lens (`Plain` by default).
+          Body   : ItemBody }
 
     type Board =
         { Flow  : string
@@ -51,8 +120,19 @@ module GoBoard =
           To    : string
           Items : Item list }
 
-    let item (axis: string) (status: Status) : Item = { Axis = axis; Status = status; Detail = [] }
-    let itemWith (axis: string) (status: Status) (detail: string list) : Item = { Axis = axis; Status = status; Detail = detail }
+    let item (axis: string) (status: Status) : Item = { Axis = axis; Status = status; Detail = []; Body = ItemBody.Plain }
+    let itemWith (axis: string) (status: Status) (detail: string list) : Item = { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Plain }
+
+    /// The forecast axis (2026-07-08): the typed `ForecastLine list` rides in
+    /// `Body` for the responsive-table lens; `detail` is the plain/JSON twin
+    /// (the aligned strings + wipe-preview lines) — kept byte-identical.
+    let forecastItem (axis: string) (status: Status) (lines: ForecastLine list) (previews: string list) (detail: string list) : Item =
+        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Forecast (lines, previews) }
+
+    /// The supporting-scope axis (2026-07-08): the typed `ScopeGroup list` rides
+    /// in `Body` for the hierarchical lens; `detail` is the plain/JSON twin.
+    let scopeItem (axis: string) (status: Status) (groups: ScopeGroup list) (unaccounted: string list) (detail: string list) : Item =
+        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Scope (groups, unaccounted) }
 
     let private isRed (i: Item) = match i.Status with Status.Red _ -> true | _ -> false
 
@@ -101,35 +181,6 @@ module GoBoard =
         w.WriteEndObject()
         w.Flush()
         System.Text.Encoding.UTF8.GetString(ms.ToArray())
-
-    /// One row of the BEFORE → AFTER data forecast (2026-07-07, the
-    /// go-board forecast program): what the sink table holds now, what the
-    /// planned run adds / matches / deletes, and what it holds after —
-    /// derived from the dry run's plan + live sink counts, never guessed.
-    /// 2026-07-08 (the board-clarity program): the row carries BOTH
-    /// physical coordinates — the source table read and the sink table
-    /// written differ per espace on the peer leg.
-    type ForecastLine =
-        { /// Source physical coordinate (`schema.table`) — where the rows
-          /// are read from. Empty when the kind has no source side (a
-          /// wipe-only line).
-          Source  : string
-          /// Sink physical coordinate (`schema.table`) — where the change
-          /// lands; the before/after counts are THIS table's.
-          Table   : string
-          /// Live sink row count before the run (`None` when the probe
-          /// could not run — rendered `?`, never silently 0).
-          Before  : int64 option
-          /// Rows the run INSERTs (post-drop).
-          Adds    : int64
-          /// For a reconciled kind: source rows matched to EXISTING sink
-          /// rows (no insert). `None` for non-reconciled kinds.
-          Matches : int64 option
-          /// Rows the run DELETEs first (the wipe, under strategy replace).
-          Deletes : int64
-          /// The note column: disposition, phase-2 re-points, drops,
-          /// brought-along-by edges.
-          Note    : string }
 
     [<RequireQualifiedAccess>]
     module ForecastLine =

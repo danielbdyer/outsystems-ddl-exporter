@@ -18,6 +18,7 @@
     <Compile Include="Comparison.fs" />
     <Compile Include="Voice.fs" />
     <Compile Include="TtyRenderer.fs" />
+    <Compile Include="GoBoardView.fs" />
     <Compile Include="Watch.fs" />
     <Compile Include="Shell.fs" />
     <Compile Include="Intervene.fs" />

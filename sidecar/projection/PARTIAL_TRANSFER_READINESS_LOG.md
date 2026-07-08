@@ -1267,3 +1267,118 @@ resolve, the six verify claims, `dependentEdges`, completeness),
 also-payload / no-reason named refusals). Docker — `GoBoardDockerTests`: the
 axis confirms a declared City reference and catches a mislabeled owned-child red
 on the live managed-grant pair. Release build clean (FS3511 verified).
+
+## Entry 30 — 2026-07-08, THE RENDERING ELEVATION: the board (and the live run) route through the `View` engine — responsive forecast, per-claim guarantees, the References/Dependents tree
+
+**Operator request:** make the board rendering responsive to terminal size using
+the Spectre implementation — "really zhush it up." Print the GUARANTEE each
+references/dependents claim makes, grouped by category, so the operator FEELS the
+confidence (an identical-match static entity should read as a stated no-op, green).
+Normalize the presentation across the joins that make sense. Present the
+multi-relationship information as a hierarchical / graphical interface. Scope:
+board AND the live run; hierarchy fully expanded.
+
+**The move.** The go board and the live-run report were the last two operator
+surfaces still on raw `printfn` + fixed-width `sprintf`. Both now BUILD a `View`
+(the Spectre-backed `REPORTING_HORIZON` substrate) and render through the one
+engine — "one substrate, many lenses", the `TtyRenderer` precedent. The pure
+`GoBoard.Board` stays the ONE substrate; the machine lens (`GoBoard.toJsonString`)
+is byte-for-byte untouched (the CI contract).
+
+**Typed carriers, additive.** `GoBoard.Item` gains `Body : ItemBody`
+(`Plain | Forecast | Scope`) with `forecastItem` / `scopeItem` constructors that
+ALSO set the existing flat `Detail` strings; `render` / `toJsonString` never match
+`Body`, so every existing site and the JSON are unchanged. Primitive-typed
+carriers (strings + `Status`) because `GoBoard` compiles before `SupportingScope`
+— the assembly boundary held.
+
+**The forecast is now a responsive `View.Table`** — Spectre auto-sizes its columns
+to the terminal, so the wide physical-name columns reflow instead of clipping;
+`+add` reads green, `-del` red; a `TOTAL` row closes it; the free-text note drops
+to a per-row `Note` beneath so it never fights the table's width.
+
+**The supporting-scope axis is a fully-expanded hierarchy** — grouped References /
+Dependents → per-claim `Disclosure` carrying the normalized JOIN edges (which
+payload columns point at a reference; which dependent columns point back), the
+authored intent, and the GUARANTEE a Confirmed claim earns. `guaranteeOf` states
+each of the six invariants in THE_VOICE register: a static-lookup identical-match
+reads as "a verified no-op on the lookup", green — the confidence made explicit.
+`SupportingScope.scopeGroups` is the ONE builder both the board and the live-run
+report project, so the guarantee tree cannot drift between the readiness surface
+and the run.
+
+**The live run too.** `narrateTransferReport` is rebuilt on `View`: the load plan
+is a responsive table, the cycle / unmatched / drop sections are status-glyphed
+`Disclosure` blocks, and a declared-scope flow closes with the same guarantee tree
+("the invariants that held", threaded from the resolved supporting scope).
+
+**The width discipline the docker run taught.** The board is a REPORT — its proof
+lines (reconcile evidence, dropped rows, wipe previews) must print in FULL, exactly
+as the raw-`printfn` predecessor emitted them. So the `View` text cap is unbound,
+and a REDIRECTED sink widens its console `Profile.Width` so Spectre never wraps a
+proof line mid-phrase (the captured evidence substring had straddled the width-100
+wrap); a real TTY keeps its width so the forecast table reflows. The table
+auto-sizes to its own content regardless. One gap fixed in passing: a `Red` item
+with a remedy but no detail now still surfaces the remedy in the rich lens (the
+plain renderer always printed it).
+
+**Proven:** pure — `GoBoardViewTests` (responsive forecast render, the
+Confirmed-claim guarantee + join edge under the family tree, the green/red verdict
+next-move, `toJsonString` byte-identity under a `Body`-bearing item) +
+`SupportingScopeTests` (`guaranteeOf` per relationship + the THE_VOICE
+banned-word scan; `scopeGroups` family split with join edges); docker —
+`GoBoardDockerTests` (the board + supporting-scope substrings survive the
+Table/tree format on the live pair). Release build clean (FS3511 verified).
+
+## Entry 31 — 2026-07-08, THE WIDGET ELEVATION: the three unused Spectre widgets (Tree, Rule, Progress), each placed where it honestly fits
+
+**Operator request:** an agent noted three Spectre widgets never used by the TTY —
+progress among them. Find every use case across the rendered surfaces and implement
+each fully, as seen fit.
+
+**The three, and the survey that placed them.** Three subagents cross-surveyed every
+renderable surface. The finding: a widget is worth adding only where the substrate
+already wants its shape — forcing it elsewhere regresses what the hand-rolled form
+does better.
+
+**`Tree` → exactly one site.** New `View.Tree` (+ a `TreeNode` = label + status +
+children, so the Spectre `Tree` mapping + `toJson` stay total). Connector lines
+(`├─`/`└─`/`│`), always fully expanded. The go board's References / Dependents
+guarantee hierarchy is the one clean fit — deep, static, one-shot, and already
+rendered fully-expanded with gating disabled. Everywhere else the nesting is
+depth-gated (`Disclosure`, the `Navigator` dig, the `▸ N more` collapse) or
+breadth-capped (`Lane`, `Trail`) or navigator-coupled (the at-scale `Comparison`
+groupings) — Spectre's non-gated `Tree` would regress those, so they stay hand-rolled.
+`GoBoardView.scopeTree` now builds the `Tree`, the shared lens for both the board and
+the live-run guarantee report.
+
+**`Rule` → the mastheads and captions.** New `View.Rule of title option * Status` — a
+titled divider that NAMES the band it opens. Applied at the go board masthead + a
+verdict separator tinted by the outcome; the readiness board's `cutover readiness`
+masthead + `ledger` footer; the `Bench` / `Run events` / `Flows` table captions;
+`Comparison`'s `by module` rollup. **The width hazard the docker path would have
+caught:** the board widens a redirected profile to 100 000 columns (so proof never
+wraps); a full-width rule there would be a 100 000-char line — the render arm caps it
+to `plainWidth` on the widened sentinel, leaving the content-sized forecast table
+untouched.
+
+**`Progress` → a determinate bar in the live Watch, honoring §13.** Spectre's
+`Progress` widget owns the console with its own render loop (incompatible with the
+Watch's `Live` region) and its row-118 cash-out trigger has not fired — so rather than
+force the widget or build a deferred feature early, the Watch's active-stage line
+gained a fixed-width bar (`▇▇▇▇▇░░░░░`) off the already-shipped `stageProgress` feed.
+It draws PRECISELY when a real denominator is known (`Total > 0`) — the honest reading
+of §13's "never a bar that misstates"; an unknown total draws no bar, the count-up
+carries it. Fill scaled to a constant width (the R6 meter uses the total AS its width).
+
+**One substrate, three lenses held.** Both new cases carry a `toJson` arm and a
+plain-lens fallback (Spectre box-drawing survives NoColors); the `Navigator`'s
+`labelOf`/`filterView` gained arms (a `Rule` filters on its title like a leaf; a
+`Tree` prunes like a `Disclosure`).
+
+**Proven:** pure — `ViewTests` (the `Rule` title + json + the width cap on a widened
+sink; the `Tree` connectors + fully-expanded leaves + nested json), `WatchTests` (a
+determinate stage draws a bar; an unknown total draws none; the bar is fixed-width);
+docker — `GoBoardDockerTests` (the scope tree's substrings survive the `Tree`
+connectors; the masthead/verdict rules do not break the board). Release build clean
+(FS3511 verified).

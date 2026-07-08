@@ -174,3 +174,45 @@ let ``completeness: City reference covers the escape; AuditLog stays an unaccoun
     // Acknowledge AuditLog → fully accounted.
     let r2 = SupportingScope.resolve catalog (entries @ [ { Table = "App.AuditLog"; Relationship = SupportingScope.SupportingRelationship.BlockedDependent "App.Order"; Reason = "r" } ]) |> mustOk
     Assert.Empty(SupportingScope.unaccountedDependents catalog payload r2)
+
+// -- the guarantee statements + the hierarchical builder ----------------------
+// (2026-07-08, the rendering-elevation program.)
+
+let private everyRelationship : SupportingScope.SupportingRelationship list =
+    [ SupportingScope.SupportingRelationship.ExistingReference "Name"
+      SupportingScope.SupportingRelationship.ReferenceSeed
+      SupportingScope.SupportingRelationship.SharedAnchor ("7", None)
+      SupportingScope.SupportingRelationship.StaticLookup "IsoCode"
+      SupportingScope.SupportingRelationship.OwnedChild "App.Order"
+      SupportingScope.SupportingRelationship.BlockedDependent "App.Order" ]
+
+[<Fact>]
+let ``guaranteeOf: every Confirmed relationship earns a non-empty invariant; a Contradicted one earns none`` () =
+    for r in everyRelationship do
+        Assert.False(System.String.IsNullOrWhiteSpace(SupportingScope.guaranteeOf r (SupportingScope.ScopeClaimVerdict.Confirmed "x")))
+        Assert.Equal("", SupportingScope.guaranteeOf r (SupportingScope.ScopeClaimVerdict.Contradicted ("reason", "remedy")))
+
+[<Fact>]
+let ``guaranteeOf: the invariants stay in THE_VOICE register — no first/second-person pronouns`` () =
+    // The register (THE_VOICE): stative, agentless, no pronouns. A leaked
+    // "you"/"we"/"our" would break the operator-facing voice contract.
+    let banned = [ " you "; " your "; " we "; " our "; " us "; " i "; "please" ]
+    for r in everyRelationship do
+        let g = (" " + SupportingScope.guaranteeOf r (SupportingScope.ScopeClaimVerdict.Confirmed "x") + " ").ToLowerInvariant()
+        for b in banned do
+            Assert.False(g.Contains(b), sprintf "guarantee leaked '%s': %s" b g)
+
+[<Fact>]
+let ``scopeGroups: references and dependents split, each claim carrying its join edges and a guarantee`` () =
+    let entries : SupportingScope.SupportingScopeEntry list =
+        [ { Table = "App.City";      Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the target's cities" }
+          { Table = "App.OrderLine"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "App.Order"; Reason = "lines belong to the order" } ]
+    let groups = SupportingScope.scopeGroups catalog payload Set.empty entries
+    Assert.Equal<Set<string>>(Set.ofList [ "references"; "dependents" ], groups |> List.map (fun g -> g.Family) |> Set.ofList)
+    let refClaim = (groups |> List.find (fun g -> g.Family = "references")).Claims |> List.head
+    Assert.Equal("existing-reference", refClaim.Relationship)
+    Assert.Contains("Order.CityId", refClaim.JoinEdges)                          // the normalized join: which payload column points here
+    Assert.False(System.String.IsNullOrWhiteSpace refClaim.Guarantee)
+    let depClaim = (groups |> List.find (fun g -> g.Family = "dependents")).Claims |> List.head
+    Assert.Equal("owned-child", depClaim.Relationship)
+    Assert.Contains("OrderLine.OrderId", depClaim.JoinEdges |> String.concat " ")  // the inbound edge back at the payload
