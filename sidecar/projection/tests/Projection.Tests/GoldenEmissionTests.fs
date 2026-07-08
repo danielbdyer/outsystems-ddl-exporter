@@ -67,7 +67,12 @@ let private scenarios : (string * Config.Config * Catalog) list =
         { baseConfig with
             Emission =
                 { baseConfig.Emission with
-                    DeleteScope = Some { Terms = [ { Column = (ColumnName.create "TenantId" |> Result.value); Value = "42" } ] } } },
+                    DeleteScope = Some { Terms = [ { Column = (ColumnName.create "TenantId" |> Result.value); Value = "42" } ] }
+                    // The delete-scope emission gate (2026-07-09): the convergent-delete
+                    // arm must be greenlit in emission.signoff, or buildPolicyFromConfig
+                    // refuses. The golden scenario declares it — the emitted corpus is
+                    // unchanged (the greenlight gates emission, it does not alter output).
+                    Signoff = [ WriteSignoff.greenlit WriteSignoff.WriteMode.DeleteScope ] } },
         GoldenCatalog.catalog
       "pruned-platform-auto",
         { baseConfig with
