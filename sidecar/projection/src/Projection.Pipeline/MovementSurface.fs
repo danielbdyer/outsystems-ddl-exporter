@@ -345,6 +345,16 @@ module ProjectionConfig =
         let v = value.ToLowerInvariant()
         v.Contains "password" || v.Contains "pwd=" || v.Contains ";"
 
+    /// A `_`-prefixed key is an author-only comment/annotation, ignored by every
+    /// map-style section (2026-07-08). The known-key sections tolerate `_comment`
+    /// already (they only look up named properties), but the FIVE map sections that
+    /// `EnumerateObject()` and treat each key as an ENTRY — `environments`, `flows`,
+    /// `defaults`, `slices`, `sliceFlows` — would otherwise parse a `_comment` as a
+    /// (malformed) entry. This is the house `_`-skip convention the codebase lacked.
+    /// `renderConfig` never emits `_`-keys, so the A44 round-trip is unaffected
+    /// (comments are author-only affordances, dropped on render like `SourcePath`).
+    let private isCommentKey (name: string) : bool = name.StartsWith "_"
+
     let private getString (el: JsonElement) (name: string) : string option =
         match el.TryGetProperty name with
         | true, v when v.ValueKind = JsonValueKind.String ->
@@ -402,6 +412,7 @@ module ProjectionConfig =
         match root.TryGetProperty "slices" with
         | true, slicesEl when slicesEl.ValueKind = JsonValueKind.Object ->
             slicesEl.EnumerateObject()
+            |> Seq.filter (fun p -> not (isCommentKey p.Name))
             |> Seq.map (fun p ->
                 match Projection.Targets.Json.SliceCodec.deserialize (p.Value.GetRawText()) with
                 | Ok spec  -> p.Name, spec
@@ -419,6 +430,7 @@ module ProjectionConfig =
         match root.TryGetProperty "sliceFlows" with
         | true, flowsEl when flowsEl.ValueKind = JsonValueKind.Object ->
             flowsEl.EnumerateObject()
+            |> Seq.filter (fun p -> not (isCommentKey p.Name))
             |> Seq.map (fun p ->
                 let req (field: string) =
                     match getString p.Value field with
@@ -700,6 +712,62 @@ module ProjectionConfig =
                     Result.failure (dupes |> List.map (fun t -> err "cli.config.supportingScopeDuplicate" (sprintf "flow '%s' supportingScope names table '%s' more than once." name t)))
                 else Result.success entries
 
+    /// The per-flow write-signoff greenlight (2026-07-08, the greenlight program):
+    /// an array of `{ mode, tables?, acknowledgedImpact?, approvedBy?, date? }`.
+    /// `mode` is required + closed (`WriteSignoff.parseMode`); a duplicate mode is
+    /// refused. Every error aggregates in one pass — the `parseSupportingScope`
+    /// shape.
+    let private parseSignoff (name: string) (el: JsonElement) : Result<WriteSignoff.WriteApproval list> =
+        match el.TryGetProperty "signoff" with
+        | false, _ -> Result.success []
+        | true, arr when arr.ValueKind = JsonValueKind.Null -> Result.success []
+        | true, arr when arr.ValueKind <> JsonValueKind.Array ->
+            Result.failureOf (err "cli.config.signoffShape" (sprintf "flow '%s' 'signoff' must be an array of objects." name))
+        | true, arr ->
+            let field (o: JsonElement) (f: string) : string option =
+                match o.TryGetProperty f with
+                | true, v when v.ValueKind = JsonValueKind.String ->
+                    match Option.ofObj (v.GetString()) with
+                    | Some s when not (String.IsNullOrWhiteSpace s) -> Some (s.Trim())
+                    | _ -> None
+                | _ -> None
+            let strings (o: JsonElement) (f: string) : string list =
+                match o.TryGetProperty f with
+                | true, a when a.ValueKind = JsonValueKind.Array ->
+                    [ for v in a.EnumerateArray() do
+                        if v.ValueKind = JsonValueKind.String then
+                            match Option.ofObj (v.GetString()) with
+                            | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                            | _ -> () ]
+                | _ -> []
+            let entryOf (o: JsonElement) : Result<WriteSignoff.WriteApproval> =
+                if o.ValueKind <> JsonValueKind.Object then
+                    Result.failureOf (err "cli.config.signoffShape" (sprintf "flow '%s' signoff entries must be objects." name))
+                else
+                    match field o "mode" with
+                    | None -> Result.failureOf (err "cli.config.signoffNoMode" (sprintf "flow '%s' signoff entry sets no 'mode'." name))
+                    | Some modeStr ->
+                        match WriteSignoff.parseMode modeStr with
+                        | None -> Result.failureOf (err "cli.config.signoffModeUnknown" (sprintf "flow '%s' signoff mode '%s' is not replace | fresh | drops | cdc | identity-insert | delete-scope." name modeStr))
+                        | Some mode ->
+                            Result.success
+                                { WriteSignoff.Mode = mode
+                                  WriteSignoff.Tables = strings o "tables"
+                                  WriteSignoff.AcknowledgedImpact = field o "acknowledgedImpact"
+                                  WriteSignoff.ApprovedBy = field o "approvedBy"
+                                  WriteSignoff.Date = field o "date" }
+            let parsed = [ for o in arr.EnumerateArray() -> entryOf o ]
+            let errors = parsed |> List.collect (function Ok _ -> [] | Error es -> es)
+            if not (List.isEmpty errors) then Result.failure errors
+            else
+                let entries = parsed |> List.choose (function Ok e -> Some e | _ -> None)
+                let dupes =
+                    entries |> List.countBy (fun e -> WriteSignoff.modeLabel e.Mode)
+                    |> List.choose (fun (m, n) -> if n > 1 then Some m else None)
+                if not (List.isEmpty dupes) then
+                    Result.failure (dupes |> List.map (fun m -> err "cli.config.signoffDuplicate" (sprintf "flow '%s' signoff names mode '%s' more than once." name m)))
+                else Result.success entries
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -752,12 +820,12 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el with
-                | Error es, _, _, _, _, _ | _, Error es, _, _, _, _ | _, _, Error es, _, _, _ | _, _, _, Error es, _, _ | _, _, _, _, Error es, _ | _, _, _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope ->
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el with
+                | Error es, _, _, _, _, _, _ | _, Error es, _, _, _, _, _ | _, _, Error es, _, _, _, _ | _, _, _, Error es, _, _, _ | _, _, _, _, Error es, _, _ | _, _, _, _, _, Error es, _ | _, _, _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; SupportingScope = supportingScope; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -792,12 +860,12 @@ module ProjectionConfig =
                 let envResults =
                     match root.TryGetProperty "environments" with
                     | true, e when e.ValueKind = JsonValueKind.Object ->
-                        [ for p in e.EnumerateObject() -> parseEnvironment p.Name p.Value ]
+                        [ for p in e.EnumerateObject() do if not (isCommentKey p.Name) then yield parseEnvironment p.Name p.Value ]
                     | _ -> []
                 let flowResults =
                     match root.TryGetProperty "flows" with
                     | true, f when f.ValueKind = JsonValueKind.Object ->
-                        [ for p in f.EnumerateObject() -> parseFlow p.Name p.Value ]
+                        [ for p in f.EnumerateObject() do if not (isCommentKey p.Name) then yield parseFlow p.Name p.Value ]
                     | _ -> []
                 // NM-10 — a flow named after a reserved secondary verb is
                 // shadowed by `Command.parse` (the verb arms precede the
@@ -827,9 +895,10 @@ module ProjectionConfig =
                         match root.TryGetProperty "defaults" with
                         | true, d when d.ValueKind = JsonValueKind.Object ->
                             [ for p in d.EnumerateObject() do
-                                match getString d p.Name with
-                                | Some v -> yield (p.Name, v)
-                                | None -> () ]
+                                if not (isCommentKey p.Name) then
+                                    match getString d p.Name with
+                                    | Some v -> yield (p.Name, v)
+                                    | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
                     // The legacy top-level movement forms.
@@ -1079,6 +1148,23 @@ module ProjectionConfig =
                 eo.["reason"] <- JsonValue.Create e.Reason
                 a.Add eo
             o.["supportingScope"] <- a)
+        // 2026-07-08 — the write-signoff greenlight, in a fixed field order
+        // (mode, tables?, acknowledgedImpact?, approvedBy?, date?) so `parse ∘
+        // render = id` holds; the empty default round-trips through the absent arm.
+        (if not (List.isEmpty flow.Signoff) then
+            let a = JsonArray()
+            for s in flow.Signoff do
+                let so = JsonObject()
+                so.["mode"] <- JsonValue.Create (WriteSignoff.modeLabel s.Mode)
+                (if not (List.isEmpty s.Tables) then
+                    let ta = JsonArray()
+                    for t in s.Tables do ta.Add(JsonValue.Create t)
+                    so.["tables"] <- ta)
+                setOptStr so "acknowledgedImpact" s.AcknowledgedImpact
+                setOptStr so "approvedBy" s.ApprovedBy
+                setOptStr so "date" s.Date
+                a.Add so
+            o.["signoff"] <- a)
         // AUDIT (config-primary) — the execution profile. Each omits its default
         // (Merge / false / None) so an existing flow round-trips byte-identically.
         setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
@@ -1258,6 +1344,7 @@ module Command =
           Reconcile   = spec.Reconcile
           ReconcileIgnore = spec.ReconcileIgnore
           SupportingScope = spec.SupportingScope
+          Signoff     = spec.Signoff
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Resumable   = spec.Resumable
@@ -1740,6 +1827,7 @@ module Command =
                         Reconcile = flow.Reconcile
                         ReconcileIgnore = flow.ReconcileIgnore
                         SupportingScope = flow.SupportingScope
+                        Signoff  = flow.Signoff
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc

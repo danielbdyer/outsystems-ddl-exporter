@@ -357,6 +357,10 @@ let runContractPairTransfer
     // consumes. The reference/anchor entries already rode in via the desugared
     // `reconcileSpecs`/`tables`; this carries only the WRITE-plane markings.
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    // 2026-07-08 — the flow's write-signoff greenlights; threaded onto the
+    // engine's `WriteOptions.Signoffs` so a destructive Execute refuses BY
+    // NAME (`transfer.writeSignoff.ungreenlit`) until the mode is greenlit.
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -479,7 +483,7 @@ let runContractPairTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -516,6 +520,7 @@ let runReverseLegTransfer
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -533,7 +538,7 @@ let runReverseLegTransfer
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -566,6 +571,7 @@ let runPeerTransfer
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -682,7 +688,7 @@ let runPeerTransfer
     // with the peer pair as the contracts and the peer label on the prose.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 
@@ -1502,6 +1508,41 @@ let runCheckGo
                          blockers)
              | _ ->
                  items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "the transferred set is empty on the sink — first load; both strategies behave identically.")))
+        // THE WRITE-SIGNOFF GREENLIGHT (2026-07-08): a destructive WIPE (strategy
+        // replace/fresh → WipeAndLoad) is an OPEN DECISION until the flow declares
+        // the mode greenlit in `signoff`; a declared table scope must COVER the
+        // tables the wipe deletes (verified against the SAME forecast the board
+        // shows, so board and engine cannot drift). The engine mirrors this refusal
+        // (`transfer.writeSignoff.ungreenlit`) at the live-write seam.
+        (match opts.Emission with
+         | EmissionMode.WipeAndLoad ->
+             // The wiped set is the WRITE kinds (the DELETE targets), the same
+             // `scope.WriteKinds` the engine's live gate reads — NOT `Nodes`
+             // (which folds in reconciled kinds that are matched, never wiped).
+             // A pure authorization check over the plan, independent of sink
+             // state; board and engine share `TransferScope.create` so the
+             // "covered" verdict cannot drift.
+             let wipedTables =
+                 Catalog.allKinds sinkContract
+                 |> List.filter (fun k -> Set.contains k.SsKey scope.WriteKinds)
+                 |> List.map (fun k -> Name.value k.Name)
+             let approved = WriteSignoff.approvedModes opts.Signoff
+             // A WipeAndLoad is either `replace` or `fresh`; accept whichever the
+             // flow declared (prefer `replace`, the config-`strategy` common case).
+             let mode =
+                 if Set.contains WriteSignoff.WriteMode.Fresh approved && not (Set.contains WriteSignoff.WriteMode.Replace approved)
+                 then WriteSignoff.WriteMode.Fresh else WriteSignoff.WriteMode.Replace
+             let status =
+                 match WriteSignoff.verify flowName opts.Signoff mode wipedTables with
+                 | WriteSignoff.Confirmed note -> GoBoard.Status.Green (sprintf "the %s wipe is greenlit — %s" (WriteSignoff.modeLabel mode) note)
+                 | WriteSignoff.Missing (reason, remedy)       -> GoBoard.Status.Red (reason, remedy)
+                 | WriteSignoff.ScopeMismatch (reason, remedy) -> GoBoard.Status.Red (reason, remedy)
+             items.Add (GoBoard.itemWith "signoff" status (wipedTables |> List.map (sprintf "wipes %s")))
+         | EmissionMode.Incremental ->
+             // Upsert-only — no destructive wipe, so no signoff is required for the
+             // write strategy (drops / cdc / identity-insert / delete-scope carry
+             // their own acknowledgements).
+             items.Add (GoBoard.item "signoff" (GoBoard.Status.Green "no destructive wipe — merge/incremental is upsert-only; no write-mode greenlight required.")))
         // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
         // `check plan` walks the strategy options + the WHY of each. Advisory, so it
         // never affects the verdict — just names the companion surface.

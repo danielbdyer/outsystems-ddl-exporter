@@ -166,6 +166,9 @@ type MovementSpec =
         /// 2026-07-08 — the typed supporting-scope vocabulary (owned children,
         /// references, anchors, lookups, blocked dependents). Empty = none.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 — the per-flow write-signoff greenlight (the destructive
+        /// modes the operator approved). Empty = nothing greenlit.
+        Signoff     : WriteSignoff.WriteApproval list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -230,6 +233,7 @@ module MovementSpec =
             Reconcile   = []
             ReconcileIgnore = []
             SupportingScope = []
+            Signoff     = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -301,6 +305,15 @@ type Flow =
         /// the relationship graph. Empty = no supporting scope (byte-identical);
         /// the terse `reconcile` strings resolve into the same model.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 (the greenlight program) — the per-flow WRITE SIGNOFF: the
+        /// destructive write modes (replace / fresh / drops / cdc / identity-insert /
+        /// delete-scope) the operator has EXPLICITLY approved for this flow, each
+        /// with its acknowledged impact + optional table scope. A destructive live
+        /// run is REFUSED (and the go board reds) until the mode it performs is
+        /// greenlit here — an authorization predicate beside `PROJECTION_ALLOW_EXECUTE`
+        /// / `--go`, but durable and auditable. Empty = nothing greenlit (a
+        /// destructive flow will not run until it declares one).
+        Signoff : WriteSignoff.WriteApproval list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -433,6 +446,9 @@ type LoadOpts =
         /// 2026-07-08 — the typed supporting-scope vocabulary; the face
         /// desugars it onto `Tables`/`Reconcile` + the seed/exclusion sets.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 — the per-flow write-signoff greenlight; the go board reds
+        /// and the engine refuses a destructive live run until its mode is here.
+        Signoff     : WriteSignoff.WriteApproval list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.

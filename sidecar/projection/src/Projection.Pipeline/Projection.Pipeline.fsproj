@@ -63,6 +63,7 @@
     <Compile Include="TransferRevert.fs" />
     <Compile Include="TransferResume.fs" />
     <Compile Include="TransferSubset.fs" />
+    <Compile Include="WriteSignoff.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />

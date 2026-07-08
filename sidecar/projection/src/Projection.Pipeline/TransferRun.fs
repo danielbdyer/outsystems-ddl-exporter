@@ -1034,11 +1034,19 @@ module Transfer =
           /// 2026-07-08 — the blocked-dependent kinds: inbound dependents the
           /// operator has deliberately NOT harvested, so a replace-wipe does
           /// not refuse on their account (the inbound-orphan gate consults it).
-          AcknowledgedExclusions : Set<SsKey> }
+          AcknowledgedExclusions : Set<SsKey>
+          /// 2026-07-08 (the write-signoff greenlight) — the flow's declared
+          /// destructive-write approvals. A destructive Execute mirrors the go
+          /// board's refusal at the live-write seam: an ungreenlit WipeAndLoad
+          /// (or a scope-mismatched approval) refuses BY NAME before any wipe,
+          /// so a scripted `--go` that never ran `check go` is still caught.
+          /// Empty (the `def` default) means no greenlight — a destructive
+          /// Execute refuses; a non-destructive Incremental is unaffected.
+          Signoffs : WriteSignoff.WriteApproval list }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = [] }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1189,10 +1197,40 @@ module Transfer =
                         | None -> return None
                     else return None
                 }
-            match preWrite, inboundRefusal with
-            | Some refusal, _ -> return Result.failureOf refusal
-            | _, Some refusal -> return Result.failureOf refusal
-            | None, None ->
+            // The write-signoff gate (2026-07-08): a destructive WipeAndLoad is
+            // REFUSED at the live-write seam until the flow greenlights the mode
+            // (`replace`/`fresh`) in its `signoff` — and, when a table scope is
+            // declared, until it covers the wipe. Mirrors the go board's axis
+            // over the SAME `TransferScope.WriteKinds` (the shared Core
+            // derivation), so board and engine cannot drift; belt-and-suspenders
+            // for a scripted `--go` that never ran `check go`. Pure over the plan.
+            let signoffRefusal =
+                if mode = Execute && writeOpts.Emission = EmissionMode.WipeAndLoad then
+                    let scope = TransferScope.create catalog writeOpts.LoadSet reconciledKinds
+                    let wipedTables =
+                        Catalog.allKinds catalog
+                        |> List.filter (fun k -> Set.contains k.SsKey scope.WriteKinds)
+                        |> List.map (fun k -> Name.value k.Name)
+                    let approved = WriteSignoff.approvedModes writeOpts.Signoffs
+                    // A WipeAndLoad is `replace` or `fresh`; accept whichever the
+                    // flow declared (prefer `replace`, the config-`strategy` case).
+                    let m =
+                        if Set.contains WriteSignoff.WriteMode.Fresh approved && not (Set.contains WriteSignoff.WriteMode.Replace approved)
+                        then WriteSignoff.WriteMode.Fresh else WriteSignoff.WriteMode.Replace
+                    match WriteSignoff.verify "the flow" writeOpts.Signoffs m wipedTables with
+                    | WriteSignoff.Confirmed _ -> None
+                    | WriteSignoff.Missing (reason, _) ->
+                        Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                            (sprintf "the destructive %s write is not greenlit — %s Declare it in the flow's `signoff` array (run `check go` for the exact edit) before authorizing the run." (WriteSignoff.modeLabel m) reason))
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                            (sprintf "the %s signoff does not cover the wipe — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." (WriteSignoff.modeLabel m) reason))
+                else None
+            match preWrite, inboundRefusal, signoffRefusal with
+            | Some refusal, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -2668,6 +2706,9 @@ module Transfer =
         // blocked-dependent kinds (inbound-orphan acknowledgement).
         (seedKinds: Set<SsKey>)
         (acknowledgedExclusions: Set<SsKey>)
+        // 2026-07-08 — the flow's write-signoff greenlights; a destructive
+        // WipeAndLoad Execute refuses BY NAME until the mode is greenlit.
+        (signoffs: WriteSignoff.WriteApproval list)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2686,7 +2727,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2705,7 +2746,7 @@ module Transfer =
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (reconcileIgnore: Set<Name>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty [] false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //
