@@ -159,3 +159,43 @@ let ``build: totals sum the per-table deltas across segments`` () =
     let impact = TransferImpact.build "golden" "replace" inputs
     Assert.Equal(1, impact.Totals.Added)       // Porto
     Assert.Equal(1, impact.Totals.Unchanged)   // Lisbon
+
+// -- 4. the HTML artifact + JSON twin (TransferImpactView) -------------------
+
+open Projection.Cli
+
+let private richImpact () =
+    let inputs =
+        { baseInputs with
+            Before = Map.ofList [ kKey "City", [ row "City" "1" [ "Name", "Lisbon" ] ] ]
+            After  =
+                Map.ofList
+                    [ kKey "City",      [ row "City" "1" [ "Name", "Lisbon" ] ]
+                      kKey "Customer",  [ row "Customer" "10" [ "Email", "bob@x"; "CityId", "1" ] ]
+                      kKey "Order",     [ row "Order" "90" [ "CustomerId", "10"; "Amount", "120" ] ]
+                      kKey "OrderLine", [ row "OrderLine" "900" [ "OrderId", "90"; "Item", "Widget" ] ] ] }
+    TransferImpact.build "golden" "replace" inputs
+
+[<Fact>]
+let ``toHtml renders a self-contained page with the nested segment and doc cards`` () =
+    let html = TransferImpactView.toHtml catalog (richImpact ())
+    Assert.StartsWith("<!doctype html>", html)
+    Assert.Contains("<title>Transfer impact — golden</title>", html)
+    Assert.Contains("class=\"segment\"", html)
+    Assert.Contains("class=\"doc add\"", html)          // the added Customer
+    Assert.Contains("owned children", html)              // the nested Order
+    Assert.Contains("references", html)                  // the inlined City
+    Assert.Contains("rows added", html)                  // the delta tiles
+    Assert.DoesNotContain("<script", html)               // no JS; CSP-safe static artifact
+
+[<Fact>]
+let ``toJson emits a parseable machine twin with totals and nested children`` () =
+    let json = TransferImpactView.toJson catalog (richImpact ())
+    let doc = System.Text.Json.JsonDocument.Parse(json)
+    let root = doc.RootElement
+    Assert.Equal("golden", root.GetProperty("flow").GetString())
+    Assert.Equal(3, root.GetProperty("totals").GetProperty("added").GetInt32())   // Customer + Order + OrderLine
+    let seg0 = root.GetProperty("segments").[0]
+    let cust = seg0.GetProperty("documents").[0]
+    Assert.Equal("Customer", cust.GetProperty("kind").GetString())
+    Assert.True(cust.GetProperty("children").GetArrayLength() > 0)
