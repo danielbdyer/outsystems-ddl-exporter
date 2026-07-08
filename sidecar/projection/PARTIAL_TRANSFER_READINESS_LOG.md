@@ -1474,3 +1474,31 @@ signoff, greens when `replace` is greenlit, reds on a too-narrow scope); `PeerAl
 engine refuses an ungreenlit WipeAndLoad BY NAME, sink untouched). The four wiping fixtures now
 declare their greenlight; the sample's `golden-with-scope` carries a worked example. Release
 clean (FS3511).
+
+---
+
+## 2026-07-09 — The transfer-guarantees program: wizard greenlight-write, airtight static-lookup, delete-scope emission gate, precise-impact artifact
+
+Four hardenings so the operator blesses a destructive run on EVIDENCE and every declared
+guarantee is held to its literal promise (full detail in `DECISIONS 2026-07-09`).
+
+- **`check plan` greenlight-write** — after the wizard flips a flow to `replace`/`fresh`, a
+  second prompt writes the matching `signoff` (`RelaxationStore.setFlowSignoff`), so the flow
+  is not left immediately RED. The A44 move applied to the greenlight.
+- **Airtight `static-lookup`** — `Reconciliation.staticLookupIdentity` asserts the two
+  environments hold the IDENTICAL dataset (bidirectional column diff + extra/missing rows,
+  surrogate-PK and `reconcileIgnore` excluded), enforced on the go board (`static lookup` axis)
+  AND the engine (`transfer.staticLookup.diverged`, both realization paths) over the same
+  `report.StaticLookupDivergences` — the two-traversal.
+- **`delete-scope` emission gate** — `emission.signoff` (reusing the `WriteSignoff` vocabulary)
+  greenlights the convergent-delete arm; `buildPolicyFromConfig` refuses
+  `emission.deleteScope.ungreenlit` otherwise. Resolves the Active-deferral logged when the
+  transfer signoff shipped.
+- **Precise-impact artifact (`check go --impact`)** — `TransferImpact` segments the transfer
+  graph, denormalizes each component into nested documents (owned children conjoined, refs
+  inlined), and classifies every row (add/delete/change/unchanged); `TransferImpactView` writes
+  a self-contained HTML artifact + JSON twin to `go-board/<flow>.impact.*`. Delta rows in full;
+  the unchanged remainder counted. Design pinned by an approved mockup.
+
+Pure suites green (Reconciliation +8, TransferImpact +10, delete-scope gate +3); Release clean.
+Docker witnesses for `--impact` and the static-lookup board case are the named follow-on.

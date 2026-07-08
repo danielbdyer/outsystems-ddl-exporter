@@ -231,3 +231,19 @@ gate a named follow-on). Default-on: a destructive Execute is refused until the 
 greenlit. A declared `tables` scope is VERIFIED to cover the actual wipe (a stale, too-narrow
 approval cannot rubber-stamp a wider blast radius). A44 holds — `signoff` renders omit-when-empty,
 so `parse ∘ render = id`. See `DECISIONS 2026-07-08 — The write-signoff greenlight`.
+
+## 10. The emission-plane signoff + the impact artifact (2026-07-09)
+
+Two additions extend the authorization/evidence surfaces:
+
+- **`emission.signoff`** — the write-signoff greenlight on the EMISSION (shaping) plane, a
+  sibling of the flow plane's `flows.<flow>.signoff` (§9). It reuses the same
+  `WriteSignoff.WriteApproval` vocabulary; today its one enforced member is `delete-scope`: a
+  configured `emission.deleteScope` arm is refused (`emission.deleteScope.ungreenlit`) until
+  greenlit here. Two planes, one vocabulary — the transfer plane gates env→env movement, the
+  emission plane gates the publish bundle's convergent delete. (`WriteSignoff.fs` compiles
+  ahead of `Config.fs` so both planes share the type.)
+- **`check go <flow> --impact`** — not config, but the evidence surface the config authorizes:
+  a per-flow `go-board/<flow>.impact.{html,json}` artifact denormalizing the transfer graph
+  into nested before/after/delta documents, so the operator blesses `tables` + `supportingScope`
+  on the concrete data outcome, not the declaration alone. See `DECISIONS 2026-07-09`.

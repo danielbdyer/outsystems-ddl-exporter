@@ -200,7 +200,7 @@ table before continuing.
 
 | Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
 |---|---|---|---|
-| **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer (`MergeRender.fs`), a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). Wiring the cross-plane acknowledgement (flow-level signoff vs. an `emission`-level greenlight) is its own operator decision — not a cross-plane hack forced at the transfer arc. | Deferred (2026-07-08). The transfer five modes (`replace/fresh/drops/cdc/identity-insert`) enforce at the transfer two-traversal today; `emission.deleteScope` still ships with ZERO acknowledgement gate (the pre-existing hole this arc names but does not close). The cash-out adds a refusal at the emission composer requiring a `delete-scope` greenlight on the emitting flow (or an emission-level acknowledgement). |
+| **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer, a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). | **Cashed out 2026-07-09** — a new top-level **`emission.signoff` array** (reusing `WriteSignoff.WriteApproval` + `verify`) greenlights the emission plane's destructive modes; `buildPolicyFromConfig` refuses `emission.deleteScope.ungreenlit` when a `deleteScope` arm is present without the `delete-scope` greenlight. `WriteSignoff.fs` moved ahead of `Config.fs` in the compile order (dependency-free) so the shaping config shares the vocabulary. Presence-gated (the arm is a WHERE predicate, not a table set). See `DECISIONS 2026-07-09 — The transfer-guarantees program`. |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
@@ -27247,3 +27247,64 @@ reds without a signoff, greens when `replace` is greenlit, reds again on a too-n
 scope); `PeerAlignedTransferDockerTests` (the engine refuses an ungreenlit WipeAndLoad BY
 NAME, sink untouched). The sample config's `golden-with-scope` carries a worked `signoff`
 + a `_signoff_comment`. Full sweep + Release clean (FS3511).
+
+## 2026-07-09 — The transfer-guarantees program: the greenlight wizard-write, the airtight static-lookup, the delete-scope emission gate, and the precise-impact artifact
+
+Four operator-directed hardenings on the partial transfer, all stacking on the write-signoff
+greenlight (PR #662). One thread: **let the operator bless a destructive run on EVIDENCE of
+exactly what it does, and hold every declared guarantee to its literal promise.**
+
+**1 — The `check plan` greenlight-write (A44 applied to signoff).** The wizard already
+persisted a write-strategy pick to `projection.json`; flipping a flow to `replace`/`fresh`
+left it immediately RED (`ungreenlit`). Now, right after the strategy write, a second
+`Intervene` prompt offers to write the matching `signoff` (impact echoed from
+`WriteSignoff.impactOf`), via a new `RelaxationStore.setFlowSignoff` (a surgical JSON-array
+merge, field order matching `renderFlow`). Headless/piped is untouched. The interactive
+choice becomes the durable, hand-reachable config edit — the Migrate-relaxation move, now on
+the greenlight.
+
+**2 — The airtight `static-lookup` identity (verification depth, not a new predicate).** A
+`static-lookup` supportingScope entry was already a STRUCTURAL claim; the go board surfaced
+only matched-pair source-column drift. The operator asked for the literal promise: the two
+environments hold the IDENTICAL dataset. `Reconciliation.staticLookupIdentity` (Core, pure)
+now asserts it — match by business key, diff the UNION of both sides' columns (minus the
+business key, the env-specific surrogate PK, and `reconcileIgnore`), PLUS the row-set
+membership (extra-on-target / missing-on-target). Enforced on BOTH surfaces of the transfer
+two-traversal reading the same `report.StaticLookupDivergences`: a dedicated go-board `static
+lookup` axis (RED on any divergence) + the engine's `transfer.staticLookup.diverged` Execute
+refusal (materialized AND streaming paths). `WriteOptions.StaticLookupKinds` threads the
+resolved set; the go board's dry run threads it too, so board and Execute cannot drift. The
+prior `match drift` axis now owns only NON-static-lookup reconcile drift (advisory). Witnessed
+by 8 `ReconciliationTests`.
+
+**3 — The `delete-scope` emission gate (the Active-deferral cash-out).** `emission.deleteScope`
+(a convergent `WHEN NOT MATCHED BY SOURCE … DELETE`) shipped with ZERO acknowledgement — the
+biggest hole the signoff arc named. Closed by a new top-level **`emission.signoff` array** that
+REUSES the `WriteSignoff.WriteApproval` vocabulary (`WriteSignoff.fs` moved ahead of `Config.fs`
+in the compile order — dependency-free — so the shaping plane shares it). `buildPolicyFromConfig`
+refuses `emission.deleteScope.ungreenlit` when a delete arm is present without the greenlight.
+Presence-gated: the arm's blast radius is a WHERE predicate, not a table set, so `tables` is
+accepted but not verified. The emission-plane counterpart of the flow-plane signoff — a
+different config plane, one vocabulary. The sample's `deleteScope` carries its greenlight.
+
+**4 — The precise-impact artifact (`check go <flow> --impact`).** The operator's "show me
+EXACTLY what happens to the data", not "trust that `tables` + `supportingScope` are blessed".
+`TransferImpact` (Pipeline, pure): **segment** the transfer graph into weakly-connected
+components; **denormalize** each into nested DOCUMENTS (owned children conjoined recursively
+beneath a root, referenced parents inlined); **classify** every row against the sink's current
+state — a business-keyed kind matches into Added / Deleted / Changed (per-column diffs) /
+Unchanged (surrogate PK + `reconcileIgnore` excluded), a no-key wiped kind is delete-all +
+add-all. `TransferImpactView` (Cli) renders a self-contained, theme-aware HTML artifact
+(collapsible per-segment sections, delta rows in full, the unchanged remainder COUNTED — never
+inline) + a JSON twin (a `System.Text.Json` node tree — the typed side of the LINT-ALLOW HTML
+boundary). Wired at the go board's dry run: the AFTER rows come from the materialized plan, the
+BEFORE rows from a capped (10k/table, over-cap noted) sink read; written to
+`go-board/<flow>.impact.{html,json}`. The design was pinned by an approved mockup before the
+generator was built. Witnessed by 10 `TransferImpactTests` (segmentation, the four verdicts,
+recursive nesting, the HTML/JSON render).
+
+**Witnesses & discipline.** All pure suites green (4051+); Release clean (FS3511 — the new
+`let! ()` gate in the `validation` CE, the `while r.Read()` sink read, no `let rec` in a
+`task`). The two-traversal discipline holds on both new gates (static-lookup, delete-scope):
+one computation, two surfaces, no drift. Docker witnesses for `--impact` and the static-lookup
+board case are the named follow-on to this entry.
