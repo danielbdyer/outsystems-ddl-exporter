@@ -1204,3 +1204,10 @@ with sample values; audit-field ignore), `DataLoadPlanTests` (DroppedRows carrie
 the whole row + failed reference); docker — the red/green/red board asserts the
 source+target physical names, the brought-along note, the match-drift green line,
 and the OUTBOUND-relationship wording on the live managed-grant pair.
+
+**Final verdict (Entry 28):** the full sweep PASSED IN FULL — fast pool
+3975/3975 (47s), docker pool 293/293 (632s), scale pool 16/16 (109s), all exit
+0, with the Proven-tier, forecast-origin/dual-name, match-drift/reconcileIgnore,
+whole-row-preview, and re-run-direction witnesses aboard, and the Release
+build verified (FS3511 clean). Shipped as a new PR from the branch restarted on
+main after #659's squash-merge.
