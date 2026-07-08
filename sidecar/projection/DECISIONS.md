@@ -27116,3 +27116,59 @@ widened sink; the `Tree` connectors + fully-expanded leaves + nested json);
 fixed-width). Docker — `GoBoardDockerTests` (the scope tree's substrings survive the
 `Tree` connectors; the masthead/verdict rules do not break the board). Full sweep +
 Release clean (FS3511).
+
+## 2026-07-08 — The standalone Progress widget + the guided transfer "plan" wizard (`check plan`)
+
+Two operator-experience programs on the partial transfer, both riding the `View` /
+`LogSink` substrates already in place.
+
+**The standalone Progress widget (`--progress`) — the row-118 cash-out fired.** The
+prior arc put a determinate bar on the live Watch line; this is the separate animated
+Spectre `Progress` display for the long legs. New `ProgressRenderer.fs`: a
+**mutually-exclusive ALTERNATIVE to the Watch board** (both own the channel-2 `Live`
+region — two live contexts corrupt each other), attaching to the SAME
+`summary.stageProgress` feed via a pure fold (`apply` — envelope → model) mirrored onto
+Spectre `ProgressTask`s. It mirrors the Watch's off-thread discipline exactly: the
+subscriber only enqueues (never sleeps `emit`); `body` runs on a background task under
+`withWriter Null`; `finally` reaps the body on every exit path and `clearSubscribers`.
+Determinacy is honest (§13): a real bar only when a genuine denominator arrives
+(`extract`'s fixed result-sets, `deploy`'s write count, `load`'s KIND count); an unknown
+total is an indeterminate spinner. Wired at the `Shell.executeOn` fork behind
+`shouldProgress = requested && not IsErrorRedirected` (a pipe stays clean NDJSON), and
+`execute` suppresses the auto-Watch when `--progress` is set. **The row-118 trigger fires
+by operator pull** (the prior arc noted it unfired) — recorded here per the trigger
+discipline.
+
+**The guided transfer "plan" wizard (`check plan <flow>`) — hybrid, config-is-the-menu.**
+The declarative counterpart to the go board: where `check go` verdicts readiness,
+`check plan` walks each transfer decision axis (write strategy / identity / scope /
+realization / staging) with the CURRENT choice, the ALTERNATIVES, the tradeoff each
+carries, and the exact `projection.json` edit — the transfer's strategy space (already
+expressible in config, A44) made one legible menu. It surfaces the strategies rather than
+adding a new engine mode (the operator's "surface + explain" choice; no new
+`EmissionMode`/`WipeKind`).
+- **`TransferPlan.fs` (pure Pipeline)** — the closed decision model (`PlanOption` /
+  `PlanDecision` / `Plan`) + `ofCurrent` (built from the flow's current choices, no DB, so
+  the reasons are testable) + `toJsonString` (the `--format json` twin) + `reselectStrategy`.
+  The WHY prose is authored at the reporting boundary (LINT-ALLOW, like `GoBoard`), stative
+  and evidence-grounded, pinned by a THE_VOICE banned-word test.
+- **`TransferPlanView.fs` (CLI)** — `ofPlan` dogfoods the widget-elevation cases: one `Rule`
+  section per decision, the alternatives as a fully-expanded `Tree` (each branch → its why +
+  its config edit). Shares `GoBoardView.writeView`'s redirected-report width policy.
+- **`runTransferPlan` (the face)** — piped / CI is a one-shot declarative report on stdout,
+  **never a prompt** (headless-total). On a real terminal (`Intervene.isInteractive ()`) it
+  renders on channel 2 and offers the write-strategy pick (the most consequential axis, the
+  go board's `re-run` decision), **persisting the choice to `projection.json`** via
+  `RelaxationStore.setFlowString` — the A44 move the Migrate relaxation gate pioneered: an
+  interactive choice becomes a durable, hand-reachable config edit. Every branch is equally
+  reachable by hand; the wizard invents no stored knob.
+- **Dispatch** — `check plan` is a new `PlanAction.CheckPlan` (built pure at parse time from
+  the flow's settings), a `Shell.ReadOnly` verb beside `check go`; the go board gains an
+  advisory `strategy options` pointer to it.
+
+**Witnesses.** Pure — `ProgressRendererTests` (the fold: determinate/spinner/completed/
+first-seen order; the off-thread teardown, channel-1 suppression, exception propagation);
+`TransferPlanTests` (one decision per axis, the current branch marked + carrying its config
+edit, every option a non-empty why, the THE_VOICE scan, `reselectStrategy`, `toJsonString`);
+`TransferPlanViewTests` (the `Rule`/`Tree` render, the marked branch, the config edits).
+Full sweep + Release clean (FS3511).

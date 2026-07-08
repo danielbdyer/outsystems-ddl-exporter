@@ -81,3 +81,28 @@ let persist (path: string) (keys: string seq) : Result<unit, string> =
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
         Ok ()
     with ex -> Error ex.Message
+
+/// Surgically set a flow's SCALAR string field under `flows.<flow>.<field>` in
+/// `projection.json`, preserving every other key byte-for-byte (2026-07-08, the
+/// guided-plan wizard's persist). This is the A44 move the Migrate relaxation gate
+/// pioneered: an interactive choice becomes a durable, hand-reachable config edit,
+/// so a future headless run honors it without prompting. `Ok ()` on a successful
+/// write; `Error cause` names the failure (downgrades never silent).
+let setFlowString (path: string) (flow: string) (field: string) (value: string) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        flowObj.[field] <- JsonValue.Create value
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message

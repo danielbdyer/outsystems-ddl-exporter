@@ -1382,3 +1382,50 @@ determinate stage draws a bar; an unknown total draws none; the bar is fixed-wid
 docker — `GoBoardDockerTests` (the scope tree's substrings survive the `Tree`
 connectors; the masthead/verdict rules do not break the board). Release build clean
 (FS3511 verified).
+
+## Entry 32 — 2026-07-08, THE PROGRESS WIDGET + THE PLAN WIZARD: the animated bars for the long legs, and a guided decision-walkthrough that names the WHY of every transfer choice
+
+**Operator request:** take the Progress widget further (the full animated display, not
+just the Watch bar); and drive up the transfer's strategy space + operator experience —
+"almost like a wizard where you can decide what path you want and be perfectly clear on
+WHY."
+
+**The standalone Progress widget (`--progress`).** The row-118 cash-out, fired by operator
+pull. `ProgressRenderer.fs` opens Spectre's animated `Progress` display as a
+**mutually-exclusive alternative** to the Watch board (both own the channel-2 `Live`
+region), a second rendering of the SAME `summary.stageProgress` feed via a pure fold
+mirrored onto `ProgressTask`s. It copies the Watch's off-thread teardown discipline exactly
+(enqueue-only subscriber, background body under `withWriter Null`, `clearSubscribers` on
+every exit). Honest determinacy (§13): a real bar only where a genuine denominator arrives
+(`extract` / `deploy` / `load`-by-kind); a spinner otherwise. Gated on a real terminal, so a
+pipe is untouched clean NDJSON, and it suppresses the auto-Watch when set.
+
+**The guided transfer "plan" wizard (`check plan <flow>`).** The DECLARATIVE counterpart to
+the go board — the hybrid the operator chose. `check go` verdicts readiness; `check plan`
+walks each transfer decision axis (write strategy / identity / scope / realization /
+staging) and, for each, names the CURRENT choice, the ALTERNATIVES, the tradeoff each
+carries, and the exact config edit. This is the "more strategies" surface: the transfer's
+strategy space, already expressible in config but scattered, made one legible menu (the A44
+`expressible ⇔ reachable` half) — no new engine mode.
+
+- Pure `TransferPlan.fs` (the decision model + `ofCurrent` + `toJsonString`), rich
+  `TransferPlanView.fs` (a `Rule` section per decision, the alternatives as a fully-expanded
+  `Tree` — dogfooding the widget arc). Piped / CI: a one-shot declarative report on stdout,
+  never a prompt. A real terminal: the plan on channel 2 + an optional `Intervene` prompt to
+  pick the write strategy, which **persists to `projection.json`** (`RelaxationStore.setFlowString`
+  — the A44 move the Migrate relaxation gate pioneered). Every branch is a hand-reachable
+  config edit; the wizard invents no stored knob the engine doesn't already derive.
+- Dispatched as `check plan` (a `Shell.ReadOnly` verb beside `check go`); the go board gains
+  an advisory `strategy options` pointer to it.
+
+**A note on the verb name.** The plan proposed `transfer plan`; it shipped as `check plan`
+— it is a read-only flow analysis exactly like `check go`, so it slots into the check family
+with minimal plumbing and pairs in discoverability ("go" = ready?, "plan" = what are my
+options?).
+
+**Proven:** pure — `ProgressRendererTests` (the fold + the off-thread teardown / channel-1
+suppression / exception propagation), `TransferPlanTests` (one decision per axis, the marked
+current + config edit, every option a non-empty why, the THE_VOICE scan, `reselectStrategy`,
+`toJsonString`), `TransferPlanViewTests` (the `Rule`/`Tree` render). Manual — `check plan
+golden` renders the full decision tree (plain + `--format json`) reflecting the flow's real
+settings. Release build clean (FS3511 verified).

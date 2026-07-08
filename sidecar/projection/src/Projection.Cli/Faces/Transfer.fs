@@ -1502,6 +1502,12 @@ let runCheckGo
                          blockers)
              | _ ->
                  items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "the transferred set is empty on the sink — first load; both strategies behave identically.")))
+        // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
+        // `check plan` walks the strategy options + the WHY of each. Advisory, so it
+        // never affects the verdict — just names the companion surface.
+        items.Add (GoBoard.item "strategy options"
+            (GoBoard.Status.Advisory
+                (sprintf "weigh the write strategy (merge = upsert-only / replace = wipe-and-load / fresh) and every other transfer decision with `projection check plan %s`." flowName)))
         // -- the run-time gates (never red here: they are per-run intent) ----
         let envGate = System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
         items.Add (GoBoard.item "execute gates"
@@ -1512,5 +1518,53 @@ let runCheckGo
     | _ ->
         Console.Error.WriteLine (sprintf "projection check go: flow '%s' is not a live data-transfer flow (the go board covers env->env data flows)." flowName)
         2
+
+// ---------------------------------------------------------------------------
+// THE TRANSFER PLAN (2026-07-08, the guided-wizard program) — the DECLARATIVE
+// counterpart to the go board. `check go` answers "is this flow executable NOW?";
+// `check plan` answers "what path do I want, and WHY?" — it walks each transfer
+// decision axis with its alternatives, the tradeoff each carries, and the exact
+// config edit. On a real terminal it additionally offers to pick the write
+// strategy and PERSISTS the choice to projection.json (the A44 move — an
+// interactive choice becomes a hand-reachable config edit); piped / CI is a
+// one-shot declarative report on stdout, never a prompt (headless-total).
+// ---------------------------------------------------------------------------
+
+let runTransferPlan (flow: string) (plan: TransferPlan.Plan) (asJson: bool) : int =
+    if asJson then
+        printfn "%s" (TransferPlan.toJsonString plan)
+        0
+    elif not (Intervene.isInteractive ()) then
+        // Piped / CI — the declarative answer on stdout (pipeable / --query-able),
+        // no prompt. The config edits are named for hand-editing (the menu).
+        TransferPlanView.write Console.Out plan
+        0
+    else
+        // A real terminal — render on channel 2 (stderr, where the prompt lives) so
+        // the plan precedes the prompt in reading order, then offer the write-strategy
+        // pick (the most consequential axis, the go board's `re-run` decision) and
+        // persist it. The label is caller-resolved copy (the Intervene no-copy rule).
+        TransferPlanView.write Console.Error plan
+        let wordOf (code: string) = code.Substring(code.LastIndexOf('.') + 1)
+        match plan.Decisions |> List.tryFind (fun d -> d.Axis = "write strategy") with
+        | Some d ->
+            let choices : Intervene.Choice<string> list =
+                d.Options |> List.map (fun o -> { Code = o.Code; Label = o.Label; Value = wordOf o.Code })
+            let currentWord =
+                d.Options |> List.tryFind (fun o -> o.Chosen) |> Option.map (fun o -> wordOf o.Code) |> Option.defaultValue "merge"
+            let fallback =
+                choices |> List.tryFind (fun c -> c.Value = currentWord) |> Option.defaultValue (List.head choices)
+            match Intervene.chooseOrDefault "Pick the write strategy — the choice is written to projection.json:" choices fallback with
+            | Intervene.Chosen w when w <> currentWord ->
+                let path = RelaxationStore.configPath ()
+                match RelaxationStore.setFlowString path flow "strategy" w with
+                | Ok () ->
+                    eprintfn ""
+                    eprintfn "Wrote \"strategy\": \"%s\" to %s for flow '%s'." w path flow
+                    TransferPlanView.write Console.Error (TransferPlan.reselectStrategy w plan)
+                | Error e -> eprintfn "Could not update %s: %s" path e
+            | _ -> ()
+        | None -> ()
+        0
 
 // ---------------------------------------------------------------------------

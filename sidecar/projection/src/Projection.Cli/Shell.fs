@@ -45,6 +45,12 @@ module Shell =
     /// pipe-friendly answer to "where did my notices go").
     let statMode : bool ref = ref false
 
+    /// `--progress` (2026-07-08, the row-118 cash-out) — render the animated
+    /// Spectre `Progress` bars (`ProgressRenderer`) INSTEAD of the Watch board for
+    /// this run. Mutually exclusive with the Watch board (both own the channel-2
+    /// Live region); the fork below suppresses the auto-Watch when this is set.
+    let progressMode : bool ref = ref false
+
     /// The run's register — what kind of act the operator is watching. A
     /// `Preview` writes nothing (the daily `projection <flow>` without
     /// `--go`); `Go` is a live write; `ReadOnly` is an answer verb (diff /
@@ -189,6 +195,12 @@ module Shell =
                 | Some spine when live ->
                     let seed = { Watch.seededOf spine with Title = Some (titleOf frame) }
                     Watch.renderWatchOn console seed (Watch.resolveDwellMs ()) run
+                // `--progress` picks the animated bars over the Watch board (both
+                // are channel-2 Live regions, so exactly one renders). `execute`
+                // already suppressed `live` when progress is on, so this arm only
+                // reaches a real run whose operator asked for bars.
+                | Some _ when ProgressRenderer.shouldProgress progressMode.Value ->
+                    ProgressRenderer.renderProgressOn console run
                 | _ when pretty ->
                     renderStaticOpenOn console frame
                     // Channel 1 is suppressed for the span (never NDJSON and a
@@ -232,5 +244,7 @@ module Shell =
         executeOn
             (View.consoleTo Console.Error)
             (TtyRenderer.shouldRender prettyMode.Value)
-            (Watch.shouldWatch prettyMode.Value)
+            // `--progress` and the Watch board are mutually exclusive channel-2 Live
+            // regions — when the operator asked for the bars, the auto-Watch stands down.
+            (Watch.shouldWatch prettyMode.Value && not (ProgressRenderer.shouldProgress progressMode.Value))
             frame bracket spine body

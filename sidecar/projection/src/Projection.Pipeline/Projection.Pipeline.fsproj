@@ -72,6 +72,7 @@
     <Compile Include="PeerTransfer.fs" />
     <Compile Include="GoBoard.fs" />
     <Compile Include="SupportingScope.fs" />
+    <Compile Include="TransferPlan.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

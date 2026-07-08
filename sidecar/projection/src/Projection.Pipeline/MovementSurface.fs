@@ -1862,6 +1862,50 @@ module Command =
                         PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, emitSql, (planFlow cfg flow previewOpts).Action)
                 | _ ->
                     PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--format json]).")
+            | "plan" :: rest ->
+                // THE TRANSFER PLAN — the declarative guided counterpart to the go
+                // board. Built pure from the flow's CURRENT choices (no DB): each
+                // decision axis with its alternatives + the tradeoff + the config
+                // edit. The face renders it and, on a terminal, offers to pick.
+                let positionals =
+                    let rec walk (args: string list) =
+                        match args with
+                        | [] -> []
+                        | a :: _ :: tl when a = "--format" -> walk tl
+                        | a :: tl when a.StartsWith "--" -> walk tl
+                        | a :: tl -> a :: walk tl
+                    walk rest
+                match positionals with
+                | [ flowName ] ->
+                    match Map.tryFind flowName cfg.Flows with
+                    | None ->
+                        PlanAction.Refused (2, err "cli.check.planUnknownFlow" (sprintf "projection check plan: flow '%s' is not defined in projection.json." flowName))
+                    | Some flow ->
+                        let strategyStr =
+                            match flow.Strategy with
+                            | Some Strategy.Merge   -> "merge"
+                            | Some Strategy.Replace -> "replace"
+                            | Some Strategy.Fresh   -> "fresh"
+                            | None                  -> "merge"
+                        // Staging is an `emission`-global posture (not per-flow), so the
+                        // plan shows the default `auto` and the options; the emission
+                        // block is edited directly for a non-default. (Not resolved from
+                        // the movement-surface `cfg`, which carries no emission facet.)
+                        let current : TransferPlan.Current =
+                            { Strategy = strategyStr
+                              Reconciles = not (List.isEmpty flow.Reconcile) || Option.isSome flow.Rekey
+                              HasSubset = not (List.isEmpty flow.Tables)
+                              SupportingScope = List.length flow.SupportingScope
+                              Streaming = flow.Streaming
+                              Staging = "auto" }
+                        let fromLabel = match flow.From with FlowSource.Env e -> e | FlowSource.Model -> "model" | FlowSource.Synthetic _ -> "synthetic" | FlowSource.NoData -> "none"
+                        let asJson =
+                            match rest |> List.pairwise |> List.tryFind (fun (a, _) -> a = "--format") with
+                            | Some (_, v) -> v = "json"
+                            | None -> false
+                        PlanAction.CheckPlan (flowName, TransferPlan.ofCurrent flowName fromLabel flow.To current, asJson)
+                | _ ->
+                    PlanAction.Refused (2, err "cli.check.planArgs" "projection check plan: requires exactly one flow name (projection check plan <flow> [--format json]).")
             | "shape" :: _ ->
                 match cfg.Readiness with
                 | None ->
