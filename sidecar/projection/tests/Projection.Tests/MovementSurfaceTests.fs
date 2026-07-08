@@ -1323,6 +1323,35 @@ let ``render: a flow's reconcile rules round-trip (J2; parse-render = id)`` () =
     | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
 
 [<Fact>]
+let ``render: a flow's supportingScope round-trips (business-intent; parse-render = id)`` () =
+    let entries : SupportingScope.SupportingScopeEntry list =
+        [ { Table = "App.City";   Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" }
+          { Table = "App.Scene";  Relationship = SupportingScope.SupportingRelationship.OwnedChild "App.Movie"; Reason = "scenes are part of the movie" }
+          { Table = "App.Ref";    Relationship = SupportingScope.SupportingRelationship.ReferenceSeed; Reason = "seed the lookup" }
+          { Table = "App.Tenant"; Relationship = SupportingScope.SupportingRelationship.SharedAnchor ("1", Some "Key"); Reason = "one tenant" }
+          { Table = "App.Cur";    Relationship = SupportingScope.SupportingRelationship.StaticLookup "IsoCode"; Reason = "identical currencies" }
+          { Table = "App.Audit";  Relationship = SupportingScope.SupportingRelationship.BlockedDependent "App.Movie"; Reason = "environment-specific" } ]
+    let flow = { flowOf "golden" with SupportingScope = entries }
+    let cfg = { ProjectionConfig.empty with Flows = Map.ofList [ flow.Name, flow ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<SupportingScope.SupportingScopeEntry list>(entries, (Map.find "golden" back.Flows).SupportingScope)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``parse: a supportingScope entry that is also in tables is refused by name`` () =
+    let json = """{ "flows": { "f": { "to": "x", "tables": ["App.City"], "supportingScope": [ { "relationship": "existing-reference", "table": "App.City", "key": "Name", "reason": "r" } ] } } }"""
+    match ProjectionConfig.parse json with
+    | Ok _ -> Assert.Fail "expected the also-payload refusal"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.supportingScopeAlsoPayload")
+
+[<Fact>]
+let ``parse: a supportingScope entry with no reason is refused by name`` () =
+    let json = """{ "flows": { "f": { "to": "x", "supportingScope": [ { "relationship": "reference-seed", "table": "App.Ref" } ] } } }"""
+    match ProjectionConfig.parse json with
+    | Ok _ -> Assert.Fail "expected the no-reason refusal"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.supportingScopeNoReason")
+
+[<Fact>]
 let ``render: a config's named slices round-trip (data-portability; parse-render = id)`` () =
     let nm s = Name.create s |> mustOk
     let spec =

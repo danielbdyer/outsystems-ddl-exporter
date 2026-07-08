@@ -219,6 +219,43 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         return ()
                     }))
 
+    /// SUPPORTING SCOPE (2026-07-08, the business-intent program): declaring
+    /// the City reference as an `existing-reference` supporting-scope entry
+    /// resolves the escape AND the board's `supporting scope` axis confirms it
+    /// against the graph; a MISLABELED owned-child (City is a reference of
+    /// Customer, not a cascade-owned child) is caught red by the same axis.
+    [<Fact>]
+    member _.``go board: supportingScope declares the City reference (confirmed); a mislabeled owned-child is caught red`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardSupportingScope") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardScope"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // 1. existing-reference City:Name via supportingScope —
+                        //    the escape is classified; the axis confirms it.
+                        let refScope : SupportingScope.SupportingScopeEntry list =
+                            [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" } ]
+                        let refOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = refScope }
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned refOpts))
+                        Assert.Equal(0, green)
+                        Assert.Contains("supporting scope", greenOut)
+                        Assert.Contains("existing-reference AppCore.City", greenOut)
+                        Assert.Contains("match the sink's own cities", greenOut)   // the reason echoes
+                        // 2. MISLABELED owned-child: City is a reference of
+                        //    Customer, not a cascade-owned child — the axis reds.
+                        let badScope : SupportingScope.SupportingScopeEntry list =
+                            [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "AppCore.Customer"; Reason = "wrong classification" } ]
+                        let badOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = badScope }
+                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned badOpts))
+                        Assert.Equal(5, red)
+                        Assert.Contains("supporting scope", badOut)
+                        Assert.Contains("owned-child AppCore.City", badOut)
+                        return ()
+                    }))
+
     /// THE PROVING LOOP (2026-07-06): transfer a small declared subset, prove
     /// it landed, then DELIBERATELY REVERT it — the success-undo artifact
     /// (`transfer-undo.sql`, written by the engine's success tail) executed
