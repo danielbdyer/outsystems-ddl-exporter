@@ -182,6 +182,20 @@ module Transfer =
             /// had no matched assigned counterpart — paired with the
             /// owning kind. Empty for a non-reconciling Transfer.
             SkippedReferences   : (SsKey * UnresolvedReference) list
+            /// The FULL rows behind the PLAN-BUILD portion of
+            /// `SkippedReferences` (2026-07-08, the board-clarity program):
+            /// each dropped record with the reference that failed it, for
+            /// the operator's drop preview. Plan-build drops only —
+            /// write-time skips surface as counts; empty on streaming.
+            DroppedRows         : (SsKey * UnresolvedReference * StaticRow) list
+            /// The FULL source rows behind `UnmatchedIdentities`
+            /// (2026-07-08) — the actual records that found no sink match.
+            UnmatchedRows       : (SsKey * StaticRow) list
+            /// Per-column drift between MATCHED source/sink pairs on
+            /// reconciled kinds (2026-07-08), against the flow's
+            /// `reconcileIgnore` set. The sink value is KEPT at load time —
+            /// this is surfaced information, never a pending write.
+            ReconcileDivergences : ReconcileDivergence list
             /// Every capture-ladder rung descent the write took (a sink
             /// capability refusal — e.g. triggers reject OUTPUT-without-
             /// INTO — degraded the lane, named per kind). Empty when every
@@ -321,7 +335,92 @@ module Transfer =
             with _ -> ()
         | _ -> ()
 
-    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
+    /// The PK values already present on the target for a kind — the seed
+    /// pre-filter's evidence (2026-07-08, the business-intent program). One
+    /// SELECT of the PK column; reference tables are small, so this is bounded.
+    let private existingPkValues (sink: SqlConnection) (kind: Kind) (pk: Attribute) : Task<Set<string>> =
+        task {
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <- sprintf "SELECT [%s] FROM [%s].[%s];" (ColumnRealization.columnNameText pk.Column) (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)  // LINT-ALLOW: terminal SQL-text boundary; identifiers are validated coordinates
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.HashSet<string>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if not has then go <- false
+                elif not (reader.IsDBNull 0) then acc.Add(string (reader.GetValue 0)) |> ignore
+            return Set.ofSeq acc
+        }
+
+    /// reference-seed insert-only-missing (2026-07-08): keep only the rows
+    /// whose PK is ABSENT on the target, so an existing reference row is never
+    /// overwritten. Applies to a PRESERVED-key kind (a business PK stable
+    /// across environments); an identity-keyed reference should reconcile by
+    /// business key (existing-reference) instead, so it is left untouched here.
+    let private filterSeedRows (sink: SqlConnection) (kind: Kind) (rows: StaticRow list) : Task<StaticRow list> =
+        task {
+            match Kind.primaryKey kind with
+            | pk :: _ ->
+                let! existing = existingPkValues sink kind pk
+                return rows |> List.filter (fun r -> match Map.tryFind pk.Name r.Values with Some v -> not (existing.Contains v) | None -> true)
+            | [] -> return rows
+        }
+
+    /// Pre-filter every seed kind's rows ONCE before the load loop — the
+    /// insert-only-missing map the loop consults. Module-level `let rec` task
+    /// recursion (the FS3511-safe shape: no `let!` inside a `for`).
+    let rec private buildSeedFilter
+        (sink: SqlConnection) (catalog: Catalog) (seedKinds: Set<SsKey>)
+        (loads: DataLoadKind list) (acc: Map<SsKey, StaticRow list>) : Task<Map<SsKey, StaticRow list>> =
+        task {
+            match loads with
+            | [] -> return acc
+            | load :: rest ->
+                match Catalog.tryFindKind load.Kind catalog with
+                | Some kind when Set.contains load.Kind seedKinds && load.Disposition = IdentityDisposition.PreservedFromSource ->
+                    let! filtered = filterSeedRows sink kind load.Rows
+                    return! buildSeedFilter sink catalog seedKinds rest (Map.add load.Kind filtered acc)
+                | _ -> return! buildSeedFilter sink catalog seedKinds rest acc
+        }
+
+    /// One scalar count off the sink (the inbound-orphan scan's probe). `use`
+    /// is unconditional here, so the reader closes before any recursion — the
+    /// FS3511-safe shape (no conditional `use!` in a task loop).
+    let private probeInboundCount (sink: SqlConnection) (sql: string) : Task<int64> =
+        task {
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <- sql
+            let! scalar = cmd.ExecuteScalarAsync()
+            return System.Convert.ToInt64 scalar
+        }
+
+    /// Inbound-orphan scan (2026-07-08, the business-intent program): every
+    /// OUT-of-payload dependent that holds rows pointing at a payload parent
+    /// would be orphaned when a replace-wipe deletes that parent (a raw FK
+    /// 547). An ACKNOWLEDGED dependent (blocked-dependent) is the operator's
+    /// declared invariant — skipped. Module-level `let rec` (FS3511-safe).
+    let rec private scanInboundOrphans
+        (sink: SqlConnection) (acknowledged: Set<SsKey>)
+        (edges: (Kind * Reference * Kind) list) (acc: string list) : Task<string list> =
+        task {
+            match edges with
+            | [] -> return List.rev acc
+            | (source, r, target) :: rest ->
+                if Set.contains source.SsKey acknowledged then
+                    return! scanInboundOrphans sink acknowledged rest acc
+                else
+                    match source.Attributes |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute) with
+                    | None -> return! scanInboundOrphans sink acknowledged rest acc
+                    | Some a ->
+                        let sql = sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] IS NOT NULL;" (TableId.schemaText source.Physical) (TableId.tableText source.Physical) (ColumnRealization.columnNameText a.Column)  // LINT-ALLOW: terminal SQL-text boundary; validated coordinates
+                        let! n = probeInboundCount sink sql
+                        if n > 0L then
+                            let line = sprintf "%s has %d row(s) whose %s points at %s — the replace-wipe of %s would orphan them" (Name.value source.Name) n (Name.value a.Name) (Name.value target.Name) (Name.value target.Name)
+                            return! scanInboundOrphans sink acknowledged rest (line :: acc)
+                        else return! scanInboundOrphans sink acknowledged rest acc
+        }
+
+    let private writePlan (sink: SqlConnection) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
                 plan.Loads
@@ -369,6 +468,9 @@ module Transfer =
             let loadTotal = List.length plan.Loads
             let loadSw = System.Diagnostics.Stopwatch.StartNew()
             let loaded = ref 0
+            // reference-seed insert-only-missing: pre-filter every seed kind's
+            // rows ONCE (empty map when no seeds — the byte-identical default).
+            let! seedFilter = buildSeedFilter sink catalog seedKinds plan.Loads Map.empty
             // Card S4c — the load bracket is the `staged { }` CE's
             // (`Spines.transfer`): an exception mid-load now CLOSES the stage
             // `aborted` on the wire (the board line goes Halted) instead of
@@ -376,7 +478,11 @@ module Transfer =
             // unchanged.
             let loadBody () : Task<Result<unit, ValidationError list>> =
               task {
-                for load in plan.Loads do
+                for load0 in plan.Loads do
+                    // reference-seed: on a PRESERVED-key kind, the pre-pass
+                    // already dropped the rows the target holds (insert-only-
+                    // missing); consult its map, else the original rows.
+                    let load = { load0 with Rows = seedFilter |> Map.tryFind load0.Kind |> Option.defaultValue load0.Rows }
                     if not (List.isEmpty load.Rows) then
                         match Catalog.tryFindKind load.Kind catalog with
                         | None      -> ()
@@ -517,7 +623,7 @@ module Transfer =
     /// drop-set — re-listing the exact `UnresolvedReference`s would need a codec
     /// that ripples too far; the count replays the VERDICT, and the report marks
     /// it as a replay, not as freshly-observed drops).
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
             // PL-6 (S14): a fixed GO-free DDL literal — one pre-split segment.
             do! Deploy.executeSegments sink [ TransferResume.progressTableSql ]
@@ -530,7 +636,7 @@ module Transfer =
                 return [], [], Some priorDrops
             | None ->
                 do! TransferResume.wipeFkOrdered sink catalog plan topo loadSet
-                let! (writeSkips, laneDescents) = writePlan sink catalog plan autoRevert revertArtifactDir
+                let! (writeSkips, laneDescents) = writePlan sink catalog seedKinds plan autoRevert revertArtifactDir
                 // The drop count = plan-build drops + this write's drops; the same
                 // sum `SkippedReferences` (and thus `hasDrops`) sees this run.
                 let dropCount = plan.SkippedReferences.Length + writeSkips.Length
@@ -804,6 +910,7 @@ module Transfer =
     /// `SurrogateRemapContext.capture` so the merged context carries
     /// the construction-time invariant.
     let private reconcileAgainstSink
+        (ignore: Set<Name>)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
@@ -812,6 +919,8 @@ module Transfer =
         task {
             let mutable remap = SurrogateRemapContext.empty
             let mutable unmatched : (SsKey * SourceKey) list = []
+            let mutable unmatchedRows : (SsKey * StaticRow) list = []
+            let mutable divergences : ReconcileDivergence list = []
             let mutable ambiguous : (SsKey * SourceKey) list = []
             let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
             let mutable missingPinned : (SsKey * AssignedKey) list = []
@@ -823,7 +932,7 @@ module Transfer =
                     | pk :: _ ->
                         let srcRows = Map.tryFind kind sourceRows |> Option.defaultValue []
                         let! sinkRows = AsyncStream.toList (Ingestion.streamKindRows sink k)
-                        let result = Reconciliation.reconcileKind kind pk.Name strategy srcRows sinkRows
+                        let result = Reconciliation.reconcileKindWith ignore kind pk.Name strategy srcRows sinkRows
                         for KeyValue (rk, inner) in result.Remap.Assignments do
                             for KeyValue (src, assigned) in inner do
                                 match SurrogateRemapContext.capture rk src assigned remap with
@@ -832,11 +941,13 @@ module Transfer =
                                 // conflict instead of discarding the named error.
                                 | Error _ -> ambiguous <- (rk, src) :: ambiguous
                         unmatched <- unmatched @ result.Unmatched
+                        unmatchedRows <- unmatchedRows @ result.UnmatchedRows
+                        divergences <- divergences @ result.Divergences
                         ambiguous <- ambiguous @ result.Ambiguous
                         ambiguousTargets <- ambiguousTargets @ result.AmbiguousTargetKeys
                         missingPinned <- missingPinned @ result.MissingPinnedOwners
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
+            return { Remap = remap; Unmatched = unmatched; UnmatchedRows = unmatchedRows; Divergences = divergences; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets; MissingPinnedOwners = missingPinned }
         }
 
     // -- orchestration ------------------------------------------------------
@@ -907,11 +1018,27 @@ module Transfer =
           /// artifact — byte-identical to the pre-Build-A path. `Some dir` → the
           /// child-first `DELETE`-by-captured-key script lands at
           /// `<dir>/transfer-revert.sql` on a failed load.
-          RevertArtifactDir : string option }
+          RevertArtifactDir : string option
+          /// 2026-07-08 (the board-clarity program) — attribute names the
+          /// matched-pair column diff IGNORES on reconciled kinds (the
+          /// operator's audit fields: CreatedOn / UpdatedOn). Sourced from
+          /// the flow's `reconcileIgnore` list; empty (the `def` default)
+          /// diffs every non-key column.
+          ReconcileIgnore : Set<Name>
+          /// 2026-07-08 (the business-intent program) — the reference-seed
+          /// kinds: written INSERT-ONLY-MISSING (only the rows whose PK is
+          /// absent on the target; existing content is never overwritten).
+          /// Sourced from `supportingScope`; empty (the `def` default) writes
+          /// every loaded kind with the full straight-insert.
+          SeedKinds : Set<SsKey>
+          /// 2026-07-08 — the blocked-dependent kinds: inbound dependents the
+          /// operator has deliberately NOT harvested, so a replace-wipe does
+          /// not refuse on their account (the inbound-orphan gate consults it).
+          AcknowledgedExclusions : Set<SsKey> }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1017,7 +1144,7 @@ module Transfer =
                     // column in an unrelated kind.
                     rawRows |> Map.map (fun k rs -> RenameProjection.repointRows (RenameProjection.forKind k renamesByKind) rs)
                 | _ -> rawRows
-            let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
+            let! reconciled = reconcileAgainstSink writeOpts.ReconcileIgnore sink catalog reconciliation rows
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row
             // is in target identity space.
@@ -1043,9 +1170,29 @@ module Transfer =
                                 | Some refusal -> Some refusal
                                 | None         -> validateUserMap allowDrops reconciled
                 else None
-            match preWrite with
-            | Some refusal -> return Result.failureOf refusal
-            | None ->
+            // The inbound-orphan gate (2026-07-08): a replace-wipe of a payload
+            // parent fails (FK 547) if an out-of-payload dependent still holds
+            // referencing rows. Refuse BY NAME before the wipe — a
+            // blocked-dependent acknowledgement is the operator's channel to
+            // proceed. Probes the sink, so it lives outside the pure preWrite.
+            let! inboundRefusal =
+                task {
+                    if mode = Execute && writeOpts.Emission = EmissionMode.WipeAndLoad then
+                        match writeOpts.LoadSet with
+                        | Some payload ->
+                            let! blockers = scanInboundOrphans sink writeOpts.AcknowledgedExclusions (TransferSubset.dependentEdges catalog payload) []
+                            if List.isEmpty blockers then return None
+                            else
+                                return Some
+                                    (ValidationError.create "transfer.supportingScope.inboundOrphan"
+                                        (sprintf "%d table(s) outside the transfer reference a table inside it; the replace-wipe would orphan their rows (FK 547): %s. Add the referencing table(s) to `tables`, clear their rows, or declare them blocked-dependent." (List.length blockers) (String.concat "; " blockers)))
+                        | None -> return None
+                    else return None
+                }
+            match preWrite, inboundRefusal with
+            | Some refusal, _ -> return Result.failureOf refusal
+            | _, Some refusal -> return Result.failureOf refusal
+            | None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -1068,15 +1215,15 @@ module Transfer =
                                 // Restricted to the LoadSet so an excluded family
                                 // (golden user-exclusion) is untouched, not wiped.
                                 do! TransferResume.wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
-                                let! (skips, descents) = writePlan sink catalog plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                let! (skips, descents) = writePlan sink catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
                                 return skips, descents, None
                             | EmissionMode.Incremental, true ->
                                 // G10 — resumable/idempotent envelope. NM-53 — the
                                 // third component REPLAYS a prior no-op run's drop
                                 // count so exit-9 is not silently lost on re-run.
-                                return! writePlanResumable sink catalog plan topo writeOpts.LoadSet writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                return! writePlanResumable sink catalog writeOpts.SeedKinds plan topo writeOpts.LoadSet writeOpts.AutoRevert writeOpts.RevertArtifactDir
                             | EmissionMode.Incremental, false ->
-                                let! (skips, descents) = writePlan sink catalog plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                let! (skips, descents) = writePlan sink catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
                                 return skips, descents, None
                     }
                 // Option C — restore the trust the bulk load stripped (exactly the
@@ -1095,6 +1242,9 @@ module Transfer =
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
+                          DroppedRows         = plan.DroppedRows
+                          UnmatchedRows       = reconciled.UnmatchedRows
+                          ReconcileDivergences = reconciled.Divergences
                           CaptureLaneDescents = laneDescents
                           ReplayedPriorDrops  = replayedPriorDrops
                           // NM-21 — only the σ path can raise these; ingested
@@ -1278,9 +1428,9 @@ module Transfer =
                                 | EmissionMode.WipeAndLoad ->
                                     // σ generation has no declared subset — wipe all.
                                     do! TransferResume.wipeFkOrdered sink catalog plan topo None
-                                    return! writePlan sink catalog plan false None
+                                    return! writePlan sink catalog Set.empty plan false None
                                 | EmissionMode.Incremental ->
-                                    return! writePlan sink catalog plan false None
+                                    return! writePlan sink catalog Set.empty plan false None
                         }
                     return
                         Result.success
@@ -1291,6 +1441,9 @@ module Transfer =
                               AmbiguousIdentities = []
                               AmbiguousTargetMatchKeys = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              DroppedRows         = plan.DroppedRows
+                              UnmatchedRows       = []
+                              ReconcileDivergences = []
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
@@ -1384,7 +1537,7 @@ module Transfer =
                     let! writeSkips, laneDescents =
                         task {
                             if mode <> Execute then return [], []
-                            else return! writePlan sink catalog plan false None
+                            else return! writePlan sink catalog Set.empty plan false None
                         }
                     return
                         Result.success
@@ -1395,6 +1548,9 @@ module Transfer =
                               AmbiguousIdentities = []
                               AmbiguousTargetMatchKeys = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              DroppedRows         = plan.DroppedRows
+                              UnmatchedRows       = []
+                              ReconcileDivergences = []
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
                               Plan                = (match mode with DryRun -> Some plan | Execute -> None)
@@ -1970,6 +2126,9 @@ module Transfer =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — audit columns the matched-pair diff ignores
+        // (the flow's `reconcileIgnore`); empty diffs every non-key column.
+        (reconcileIgnore: Set<Name>)
         (journalDirectory: string option)
         // D — the streaming arm of the data-leg compensating-undo (M23 on the
         // estate-scale path). On a mid-stream crash the partial sink-minted rows
@@ -2036,7 +2195,7 @@ module Transfer =
                             | None -> ()
                         return acc
                     }
-                let! reconciled = reconcileAgainstSink sink sinkContract reconciliation reconciledSourceRows
+                let! reconciled = reconcileAgainstSink reconcileIgnore sink sinkContract reconciliation reconciledSourceRows
                 // Structure only — order, dispositions, deferred columns;
                 // the rows STREAM at write time (the whole point).
                 // `reclassifyReconciled` marks the reconciled kinds skip-
@@ -2105,6 +2264,9 @@ module Transfer =
                                   AmbiguousIdentities = reconciled.Ambiguous
                                   AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                   SkippedReferences   = plan.SkippedReferences
+                                  DroppedRows         = []   // streaming plan carries no rows
+                                  UnmatchedRows       = reconciled.UnmatchedRows
+                                  ReconcileDivergences = reconciled.Divergences
                                   CaptureLaneDescents = []
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
@@ -2179,6 +2341,9 @@ module Transfer =
                                       AmbiguousIdentities = reconciled.Ambiguous
                                       AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                       SkippedReferences   = skips
+                                      DroppedRows         = []   // streaming drops surface as counts
+                                      UnmatchedRows       = reconciled.UnmatchedRows
+                                      ReconcileDivergences = reconciled.Divergences
                                       CaptureLaneDescents = descents
                                       // Streaming-journal resume is per-run by
                                       // design (the journaled run reported its
@@ -2207,7 +2372,7 @@ module Transfer =
         // The straight load supplies the inert revert levers (`false None`) the
         // caller did not name — D's compensating-undo is reachable only through the
         // reconciling / reverse-leg faces that carry the per-environment policy.
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty journalDirectory false None
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2229,6 +2394,8 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — the flow's `reconcileIgnore` audit columns.
+        (reconcileIgnore: Set<Name>)
         // D — the per-environment revert policy, collapsed at the RunFaces face
         // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
         // materialized reverse-leg face consumed them.
@@ -2244,7 +2411,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation journalDirectory autoRevert revertDir
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -2495,6 +2662,12 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // 2026-07-08 — the flow's `reconcileIgnore` audit columns.
+        (reconcileIgnore: Set<Name>)
+        // 2026-07-08 — reference-seed kinds (insert-only-missing) and
+        // blocked-dependent kinds (inbound-orphan acknowledgement).
+        (seedKinds: Set<SsKey>)
+        (acknowledgedExclusions: Set<SsKey>)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2513,7 +2686,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2530,8 +2703,9 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (reconcileIgnore: Set<Name>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

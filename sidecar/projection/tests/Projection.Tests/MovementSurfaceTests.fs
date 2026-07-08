@@ -458,7 +458,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
+      Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -684,7 +684,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -1321,6 +1321,35 @@ let ``render: a flow's reconcile rules round-trip (J2; parse-render = id)`` () =
     match ProjectionConfig.parse (ProjectionConfig.render cfg) with
     | Ok back -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], (Map.find "golden" back.Flows).Reconcile)
     | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``render: a flow's supportingScope round-trips (business-intent; parse-render = id)`` () =
+    let entries : SupportingScope.SupportingScopeEntry list =
+        [ { Table = "App.City";   Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" }
+          { Table = "App.Scene";  Relationship = SupportingScope.SupportingRelationship.OwnedChild "App.Movie"; Reason = "scenes are part of the movie" }
+          { Table = "App.Ref";    Relationship = SupportingScope.SupportingRelationship.ReferenceSeed; Reason = "seed the lookup" }
+          { Table = "App.Tenant"; Relationship = SupportingScope.SupportingRelationship.SharedAnchor ("1", Some "Key"); Reason = "one tenant" }
+          { Table = "App.Cur";    Relationship = SupportingScope.SupportingRelationship.StaticLookup "IsoCode"; Reason = "identical currencies" }
+          { Table = "App.Audit";  Relationship = SupportingScope.SupportingRelationship.BlockedDependent "App.Movie"; Reason = "environment-specific" } ]
+    let flow = { flowOf "golden" with SupportingScope = entries }
+    let cfg = { ProjectionConfig.empty with Flows = Map.ofList [ flow.Name, flow ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<SupportingScope.SupportingScopeEntry list>(entries, (Map.find "golden" back.Flows).SupportingScope)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``parse: a supportingScope entry that is also in tables is refused by name`` () =
+    let json = """{ "flows": { "f": { "to": "x", "tables": ["App.City"], "supportingScope": [ { "relationship": "existing-reference", "table": "App.City", "key": "Name", "reason": "r" } ] } } }"""
+    match ProjectionConfig.parse json with
+    | Ok _ -> Assert.Fail "expected the also-payload refusal"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.supportingScopeAlsoPayload")
+
+[<Fact>]
+let ``parse: a supportingScope entry with no reason is refused by name`` () =
+    let json = """{ "flows": { "f": { "to": "x", "supportingScope": [ { "relationship": "reference-seed", "table": "App.Ref" } ] } } }"""
+    match ProjectionConfig.parse json with
+    | Ok _ -> Assert.Fail "expected the no-reason refusal"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.supportingScopeNoReason")
 
 [<Fact>]
 let ``render: a config's named slices round-trip (data-portability; parse-render = id)`` () =

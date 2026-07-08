@@ -57,6 +57,13 @@ type DataLoadPlan =
         /// paired with the owning kind. Empty when remap is empty or
         /// no rows referenced unmatched identities.
         SkippedReferences   : (SsKey * UnresolvedReference) list
+        /// The FULL rows behind `SkippedReferences`, in the same order
+        /// (2026-07-08, the board-clarity program): each dropped row with
+        /// the reference that failed it, so a preview can show the actual
+        /// record being lost, not just its failed FK coordinate. Row
+        /// values are references into the already-materialized ingest —
+        /// no copy.
+        DroppedRows         : (SsKey * UnresolvedReference * StaticRow) list
     }
 
 [<RequireQualifiedAccess>]
@@ -193,9 +200,29 @@ module DataLoadPlan =
                                 else Some { Kind = key; Column = a.Name; Target = r.TargetKind })
                         else None))
 
+        // The dropped rows, recovered by identifier difference per kind
+        // (2026-07-08): `remapRowFksWith` is order-preserving and drops a
+        // row exactly when it appends a skip, so the raw rows whose
+        // Identifier vanished from the kept set align one-to-one, in
+        // order, with that kind's skip diagnostics. (`Seq.zip` truncates
+        // defensively if a duplicate identifier ever breaks the
+        // alignment precondition — a unique PK is the ingest contract.)
+        let droppedRows =
+            loadAndSkipped
+            |> List.collect (fun (load, skips) ->
+                if List.isEmpty skips then []
+                else
+                    let keptIds = load.Rows |> List.map (fun r -> r.Identifier) |> Set.ofList
+                    let raw = Map.tryFind load.Kind rawRowsByKind |> Option.defaultValue []
+                    let dropped = raw |> List.filter (fun r -> not (Set.contains r.Identifier keptIds))
+                    Seq.zip skips dropped
+                    |> Seq.map (fun ((kindKey, uref), row) -> kindKey, uref, row)
+                    |> List.ofSeq)
+
         { Loads               = loads
           UnbreakableCycleFks = unbreakable
-          SkippedReferences   = skipped }
+          SkippedReferences   = skipped
+          DroppedRows         = droppedRows }
 
     /// The structural-policy build — `ofKind` from the PK shape, byte-identical
     /// to every path before Slice C. The emit-side realizations and the

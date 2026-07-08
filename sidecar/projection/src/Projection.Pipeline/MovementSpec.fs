@@ -160,6 +160,12 @@ type MovementSpec =
         Rekey       : string option
         /// `--reconcile <table>:<col>` entries (MatchByColumn re-key rules).
         Reconcile   : string list
+        /// 2026-07-08 — the flow's `reconcileIgnore` audit columns (shared
+        /// attribute names the matched-pair diff skips).
+        ReconcileIgnore : string list
+        /// 2026-07-08 — the typed supporting-scope vocabulary (owned children,
+        /// references, anchors, lookups, blocked dependents). Empty = none.
+        SupportingScope : SupportingScope.SupportingScopeEntry list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -222,6 +228,8 @@ module MovementSpec =
             Shape       = Shape.Bundle
             Rekey       = None
             Reconcile   = []
+            ReconcileIgnore = []
+            SupportingScope = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -280,6 +288,19 @@ type Flow =
         /// declarative flow carries the User re-key without a per-run tail).
         /// Empty = no reconcile (byte-identical).
         Reconcile : string list
+        /// 2026-07-08 — shared attribute names the reconciled-kind
+        /// matched-pair diff IGNORES (the audit fields: CreatedOn /
+        /// UpdatedOn). One global list beside `reconcile`, applied to
+        /// every reconciled kind. Empty = diff every non-key column.
+        ReconcileIgnore : string list
+        /// 2026-07-08 (the business-intent program) — the typed vocabulary
+        /// for the SUPPORTING (non-payload) rows a partial transfer touches:
+        /// owned children, seeded/matched references, shared anchors, static
+        /// lookups, and deliberately-blocked dependents. Each entry declares
+        /// WHY a table is in play and the board VERIFIES the intent against
+        /// the relationship graph. Empty = no supporting scope (byte-identical);
+        /// the terse `reconcile` strings resolve into the same model.
+        SupportingScope : SupportingScope.SupportingScopeEntry list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -406,6 +427,12 @@ type LoadOpts =
         Declaration : LossDeclaration
         Emission    : EmissionMode
         Reconcile   : string list
+        /// 2026-07-08 — audit columns the reconciled-kind matched-pair
+        /// diff ignores (shared attribute names; from `reconcileIgnore`).
+        ReconcileIgnore : string list
+        /// 2026-07-08 — the typed supporting-scope vocabulary; the face
+        /// desugars it onto `Tables`/`Reconcile` + the seed/exclusion sets.
+        SupportingScope : SupportingScope.SupportingScopeEntry list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.

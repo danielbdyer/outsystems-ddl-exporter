@@ -634,6 +634,72 @@ module ProjectionConfig =
             | other ->
                 Result.failureOf (err "cli.config.flowStrategyUnknown" (sprintf "flow '%s' strategy '%s' is not merge | replace | fresh." name other))
 
+    /// 2026-07-08 (the business-intent program) — parse the `supportingScope`
+    /// array of typed objects. Each element names a `relationship`, a `table`,
+    /// a `reason`, and the per-relationship payload (`key` / `anchor` / `of`).
+    /// Validation is by NAMED error (the `flowScope`/`flowStrategy` idiom); the
+    /// `tables` list is passed so a supporting table that is ALSO payload is
+    /// refused (a payload table is not "supporting"). Cross-entry duplicates are
+    /// refused too. Every error is aggregated in one pass.
+    let private parseSupportingScope (name: string) (tables: string list) (el: JsonElement) : Result<SupportingScope.SupportingScopeEntry list> =
+        match el.TryGetProperty "supportingScope" with
+        | false, _ -> Result.success []
+        | true, arr when arr.ValueKind = JsonValueKind.Null -> Result.success []
+        | true, arr when arr.ValueKind <> JsonValueKind.Array ->
+            Result.failureOf (err "cli.config.supportingScopeShape" (sprintf "flow '%s' 'supportingScope' must be an array of objects." name))
+        | true, arr ->
+            let tableSet = tables |> List.map (fun t -> t.ToLowerInvariant()) |> Set.ofList
+            let field (o: JsonElement) (f: string) : string option =
+                match o.TryGetProperty f with
+                | true, v when v.ValueKind = JsonValueKind.String ->
+                    match Option.ofObj (v.GetString()) with
+                    | Some s when not (String.IsNullOrWhiteSpace s) -> Some (s.Trim())
+                    | _ -> None
+                | _ -> None
+            let entryOf (o: JsonElement) : Result<SupportingScope.SupportingScopeEntry> =
+                if o.ValueKind <> JsonValueKind.Object then
+                    Result.failureOf (err "cli.config.supportingScopeShape" (sprintf "flow '%s' supportingScope entries must be objects." name))
+                else
+                    match field o "relationship", field o "table", field o "reason" with
+                    | None, _, _       -> Result.failureOf (err "cli.config.supportingScopeShape" (sprintf "flow '%s' supportingScope entry sets no 'relationship'." name))
+                    | _, None, _       -> Result.failureOf (err "cli.config.supportingScopeNoTable" (sprintf "flow '%s' supportingScope entry sets no 'table'." name))
+                    | _, _, None       -> Result.failureOf (err "cli.config.supportingScopeNoReason" (sprintf "flow '%s' supportingScope entry for a table sets no 'reason' (the surface records WHY a table is in play)." name))
+                    | Some rel, Some table, Some reason ->
+                        let missing (code: string) (field: string) =
+                            Result.failureOf (err code (sprintf "flow '%s' supportingScope '%s' entry for '%s' needs a '%s'." name rel table field))
+                        let relationshipR : Result<SupportingScope.SupportingRelationship> =
+                            match rel with
+                            | "existing-reference" ->
+                                match field o "key" with Some k -> Result.success (SupportingScope.SupportingRelationship.ExistingReference k) | None -> missing "cli.config.supportingScopeMissingKey" "key"
+                            | "static-lookup" ->
+                                match field o "key" with Some k -> Result.success (SupportingScope.SupportingRelationship.StaticLookup k) | None -> missing "cli.config.supportingScopeMissingKey" "key"
+                            | "reference-seed" -> Result.success SupportingScope.SupportingRelationship.ReferenceSeed
+                            | "shared-anchor" ->
+                                match field o "anchor" with
+                                | Some a -> Result.success (SupportingScope.SupportingRelationship.SharedAnchor (a, field o "key"))
+                                | None   -> missing "cli.config.supportingScopeMissingAnchor" "anchor"
+                            | "owned-child" ->
+                                match field o "of" with Some p -> Result.success (SupportingScope.SupportingRelationship.OwnedChild p) | None -> missing "cli.config.supportingScopeMissingOf" "of"
+                            | "blocked-dependent" ->
+                                match field o "of" with Some p -> Result.success (SupportingScope.SupportingRelationship.BlockedDependent p) | None -> missing "cli.config.supportingScopeMissingOf" "of"
+                            | other -> Result.failureOf (err "cli.config.supportingScopeRelationshipUnknown" (sprintf "flow '%s' supportingScope relationship '%s' is not existing-reference | reference-seed | shared-anchor | static-lookup | owned-child | blocked-dependent." name other))
+                        relationshipR
+                        |> Result.bind (fun relationship ->
+                            if Set.contains (table.ToLowerInvariant()) tableSet then
+                                Result.failureOf (err "cli.config.supportingScopeAlsoPayload" (sprintf "flow '%s' supportingScope table '%s' is also in `tables` — a payload table is not supporting; remove it from one." name table))
+                            else Result.success { SupportingScope.Table = table; SupportingScope.Relationship = relationship; SupportingScope.Reason = reason })
+            let parsed = [ for o in arr.EnumerateArray() -> entryOf o ]
+            let errors = parsed |> List.collect (function Ok _ -> [] | Error es -> es)
+            if not (List.isEmpty errors) then Result.failure errors
+            else
+                let entries = parsed |> List.choose (function Ok e -> Some e | _ -> None)
+                let dupes =
+                    entries |> List.countBy (fun e -> e.Table.ToLowerInvariant())
+                    |> List.choose (fun (t, n) -> if n > 1 then Some t else None)
+                if not (List.isEmpty dupes) then
+                    Result.failure (dupes |> List.map (fun t -> err "cli.config.supportingScopeDuplicate" (sprintf "flow '%s' supportingScope names table '%s' more than once." name t)))
+                else Result.success entries
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -674,12 +740,24 @@ module ProjectionConfig =
                     | true, r when r.ValueKind <> JsonValueKind.Null ->
                         Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
                     | _ -> Result.success []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el with
-                | Error es, _, _, _, _ | _, Error es, _, _, _ | _, _, Error es, _, _ | _, _, _, Error es, _ | _, _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy ->
+                // 2026-07-08 — the audit-field ignore list beside `reconcile`:
+                // plain attribute names (shared across reconciled kinds), no
+                // <table>: prefix — the diff keys on logical column Name.
+                let reconcileIgnore =
+                    match el.TryGetProperty "reconcileIgnore" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        [ for v in r.EnumerateArray() do
+                            if v.ValueKind = JsonValueKind.String then
+                                match Option.ofObj (v.GetString()) with
+                                | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                | _ -> () ]
+                    | _ -> []
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el with
+                | Error es, _, _, _, _, _ | _, Error es, _, _, _, _ | _, _, Error es, _, _, _ | _, _, _, Error es, _, _ | _, _, _, _, Error es, _ | _, _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; SupportingScope = supportingScope; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -975,6 +1053,32 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.Reconcile do a.Add(JsonValue.Create r)
             o.["reconcile"] <- a)
+        (if not (List.isEmpty flow.ReconcileIgnore) then
+            let a = JsonArray()
+            for r in flow.ReconcileIgnore do a.Add(JsonValue.Create r)
+            o.["reconcileIgnore"] <- a)
+        // 2026-07-08 — the supporting-scope entries render in a fixed field
+        // order (relationship, table, per-relationship payload, reason) so the
+        // round-trip `parse ∘ render = id` holds on the canonical DOM.
+        (if not (List.isEmpty flow.SupportingScope) then
+            let a = JsonArray()
+            for e in flow.SupportingScope do
+                let eo = JsonObject()
+                let relName, payload =
+                    match e.Relationship with
+                    | SupportingScope.SupportingRelationship.ExistingReference key -> "existing-reference", [ "key", key ]
+                    | SupportingScope.SupportingRelationship.StaticLookup key      -> "static-lookup", [ "key", key ]
+                    | SupportingScope.SupportingRelationship.ReferenceSeed         -> "reference-seed", []
+                    | SupportingScope.SupportingRelationship.SharedAnchor (anchor, None)     -> "shared-anchor", [ "anchor", anchor ]
+                    | SupportingScope.SupportingRelationship.SharedAnchor (anchor, Some key) -> "shared-anchor", [ "anchor", anchor; "key", key ]
+                    | SupportingScope.SupportingRelationship.OwnedChild ofParent       -> "owned-child", [ "of", ofParent ]
+                    | SupportingScope.SupportingRelationship.BlockedDependent ofParent -> "blocked-dependent", [ "of", ofParent ]
+                eo.["relationship"] <- JsonValue.Create relName
+                eo.["table"] <- JsonValue.Create e.Table
+                for (k, v) in payload do eo.[k] <- JsonValue.Create v
+                eo.["reason"] <- JsonValue.Create e.Reason
+                a.Add eo
+            o.["supportingScope"] <- a)
         // AUDIT (config-primary) — the execution profile. Each omits its default
         // (Merge / false / None) so an existing flow round-trips byte-identically.
         setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
@@ -1152,6 +1256,8 @@ module Command =
         { Declaration = (if spec.AllowDrops then DeclareAll else DeclareNone)
           Emission    = emissionOf spec.Strategy
           Reconcile   = spec.Reconcile
+          ReconcileIgnore = spec.ReconcileIgnore
+          SupportingScope = spec.SupportingScope
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Resumable   = spec.Resumable
@@ -1632,6 +1738,8 @@ module Command =
                         // (e.g. the golden flow's User-by-email reconcile) ride
                         // the spec into the transfer leg's `LoadOpts.Reconcile`.
                         Reconcile = flow.Reconcile
+                        ReconcileIgnore = flow.ReconcileIgnore
+                        SupportingScope = flow.SupportingScope
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc

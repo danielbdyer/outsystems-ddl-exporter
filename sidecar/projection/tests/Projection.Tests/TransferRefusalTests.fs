@@ -53,7 +53,7 @@ let private load (key: SsKey) (disp: IdentityDisposition) (deferred: string list
       Rows              = [] }
 
 let private planOf (loads: DataLoadKind list) : DataLoadPlan =
-    { Loads = loads; UnbreakableCycleFks = []; SkippedReferences = [] }
+    { Loads = loads; UnbreakableCycleFks = []; SkippedReferences = []; DroppedRows = [] }
 
 // --- 6.A.2 LIFTED (operator-authorized 2026-06-10) ------------------------
 // A cyclic AssignedBySink shape no longer refuses: Phase 2 re-points the
@@ -110,7 +110,7 @@ let ``executeGate: a clean single-PK AssignedBySink plan passes`` () =
 // runs through with `--allow-drops` (the 6.A.1 same-decision pattern).
 
 let private reconciledWith (unmatched: (SsKey * SourceKey) list) : ReconciledIdentity =
-    { Remap = SurrogateRemapContext.empty; Unmatched = unmatched; Ambiguous = []; AmbiguousTargetKeys = []; MissingPinnedOwners = [] }
+    { Remap = SurrogateRemapContext.empty; Unmatched = unmatched; UnmatchedRows = []; Divergences = []; Ambiguous = []; AmbiguousTargetKeys = []; MissingPinnedOwners = [] }
 
 [<Fact>]
 let ``AC-I5: an unmatched Source identity refuses pre-write with transfer.unmappedIdentities`` () =

@@ -1140,3 +1140,130 @@ second flow name. The positional walk now skips `--format`'s value.
 under Incremental, `narrateEvidence` strength ladder); docker — the
 red/green/red board now asserts the evidence lines (STRONG, 2/2 sampled),
 the before→after table, and the `--sql` artifact's content on the live pair.
+
+## Entry 28 — 2026-07-08, THE BOARD-CLARITY PASS: the go board says exactly what it means
+
+**Operator request (nine parts):** the shape advisory must name what MATCHED,
+not only what differs; the forecast must split declared rows from
+brought-along rows (naming the pulling edge) and show BOTH physical names;
+reconciled matches must report which columns differ, with a config to ignore
+audit fields; drops/identities/deletes must show whole rows; the re-run
+"in-subset parent" line was opaque; the relationships-GO vs re-run-STOP read as
+contradictory; and the whole thing should be more tabular.
+
+**Shape — the affirmative tiers.** `ShapeVerdict` gained `Proven : string list`:
+the comparison ladder that HELD over the transferred set (entity names → column
+names → column definitions → foreign keys → indexes → entity-level facets). The
+board's shape line now closes with `Matched: entity names, column names, column
+definitions (type/length/precision/nullability), foreign keys.` — so "indexes
+differ" can never again leave the operator guessing how deep the agreement runs.
+Each advisory class carries its OWN action language: an index difference is
+"performance-only … No action needed before this transfer"; an FK difference is
+"the load follows the SOURCE model's relationships … No action unless the run
+refuses"; entity-facet drift "never rewrites a transferred row."
+
+**Forecast — origins, both physical names, match drift.** `ForecastLine` gained
+`Source` (the source physical coordinate) beside `Table` (the sink's); the table
+now renders `source (read) | target (written) | before | +add | match | -del |
+after`. Declared tables render first; kinds pulled in by a relationship render
+after, each noting `brought along by Customer.CityId -> City`. Reconciled kinds
+carry a new `match drift` axis: `Reconciliation.reconcileKindWith` compares every
+matched source/sink pair column-by-column (excluding the PK and the operator's
+`reconcileIgnore` set), and the board reports which columns differ with sample
+values — GREEN when they agree, ADVISORY when they drift, always naming the
+`reconcileIgnore` move for expected audit drift (CreatedOn / UpdatedOn). The
+`reconcileIgnore` config is one shared list of attribute names beside `reconcile`
+in projection.json, threaded through the whole engine (`WriteOptions
+.ReconcileIgnore`, every reverse-leg/streaming/peer entry).
+
+**Whole rows.** `DataLoadPlan.DroppedRows` and `ReconciledIdentity.UnmatchedRows`
+carry the FULL records behind the drop-set and the unmatched-identity set; the
+board's `drops` and `identities` axes render the first five rows in full with the
+reference that failed each. The wipe preview under strategy-replace samples the
+first five rows each `-del` would delete (`SELECT TOP 5`), so `deletes` shows the
+actual records, not a count.
+
+**Re-run — plain and non-contradictory.** The opaque `X.Y -> in-subset parent (N
+referencing row(s))` became `<child> has N row(s) whose <col> points at <parent>
+(in the transferred set) — the wipe of <parent> would orphan them`. And the
+apparent contradiction is resolved by naming DIRECTION: `relationships` judges the
+subset's OUTBOUND foreign keys (do its rows dangle?), `re-run` judges INBOUND
+references from OTHER sink tables (would a replace-wipe orphan them?) — two
+different questions, now labelled as such on both axes.
+
+**The drops-under-replace question the operator asked.** A dropped row (unmatched
+reference) is dropped at plan-build, so `+add` is already net of it and it is NOT
+re-inserted after the wipe; the `-del` column is the WIPE count (every existing
+row), a separate quantity. The forecast note now says so explicitly on a wiped
+kind that also drops: "wiped but NOT re-inserted."
+
+**Proven:** pure — `PeerTransferTests` (Proven tiers: clean pair affirms all,
+index-only diff keeps deep tiers + drops 'indexes'; forecast source+target
+columns), `ReconciliationTests` (full unmatched rows; matched-pair divergence
+with sample values; audit-field ignore), `DataLoadPlanTests` (DroppedRows carries
+the whole row + failed reference); docker — the red/green/red board asserts the
+source+target physical names, the brought-along note, the match-drift green line,
+and the OUTBOUND-relationship wording on the live managed-grant pair.
+
+**Final verdict (Entry 28):** the full sweep PASSED IN FULL — fast pool
+3975/3975 (47s), docker pool 293/293 (632s), scale pool 16/16 (109s), all exit
+0, with the Proven-tier, forecast-origin/dual-name, match-drift/reconcileIgnore,
+whole-row-preview, and re-run-direction witnesses aboard, and the Release
+build verified (FS3511 clean). Shipped as a new PR from the branch restarted on
+main after #659's squash-merge.
+
+## Entry 29 — 2026-07-08, SUPPORTING SCOPE: the config models the business intent of the supporting rows
+
+**Operator request:** a `supportingScope` array of typed objects, sibling to
+`tables`, that says WHY each supporting (non-payload) table is touched — "these
+rows are not the payload, but they support the payload's integrity." Max out the
+vocabulary against the graph relationship tree; instead of secondary
+dependencies hiding under `tables`, the config confidently says: this is an owned
+child / a seeded reference / an existing reference / a shared anchor / a static
+lookup, and these are the dependent rows I refuse to harvest.
+
+**The vocabulary — six relationships, two families.** References the payload
+points AT (outbound escaping edges): `existing-reference` (match the target's own
+rows by a business `key`, never copy), `reference-seed` (insert the referenced
+rows the target lacks), `shared-anchor` (re-point every reference to one target
+row, optional dynamic match first), `static-lookup` (match by `key` and hold to
+ZERO divergence). Dependents that point AT the payload (inbound edges):
+`owned-child` (`of` the parent; copied along, cascade-verified), `blocked-dependent`
+(`of` the parent; deliberately not harvested). The terse `reconcile` strings are
+the shorthand — `T:Col` → existing-reference, `T:=k` → shared-anchor,
+`T:Col:=k` → shared-anchor-with-match — resolved into the SAME model
+(`SupportingScope.ofReconcileEntries`); supportingScope is canonical.
+
+**The decisive lever — the graph already carries the truth.** OutSystems
+"Delete Rule = Delete" already reads as `OnDelete = Cascade` /
+`EdgeStrength.Cascade`; escaping edges are already traversed. So the config
+DECLARES intent and the board VERIFIES it: an owned-child whose edge is a
+protect-rule (not cascade) is caught red; a reference nothing in the payload
+points at is caught red; a blocked-dependent that is not a real inbound dependent
+is caught red. `TransferSubset.dependentEdges` (the net-new inbound mirror of
+`escapingEdges`) supplies the dependent-family evidence, and completeness now
+closes both directions: every escaping reference and every inbound dependent is
+either classified or named as unaccounted.
+
+**Desugar over new plumbing.** Each relationship projects onto a primitive that
+already exists — `SupportingScope.desugarToStrings` appends to the flow's
+`tables` / `reconcile` string lists the engine already threads, so the reconcile
+and load-set portions need NO new engine field. Two genuinely-new write behaviors
+land, both gated to empty defaults: `reference-seed` insert-only-missing (a
+`WriteOptions.SeedKinds` pre-filter that drops the rows a preserved-key target
+already holds, never overwriting), and the inbound-orphan gate (Execute +
+WipeAndLoad refuses by name when an out-of-payload dependent holds referencing
+rows, with `blocked-dependent` as the acknowledgement channel).
+
+**The board.** A new `supporting scope` axis verifies each declared intent and
+reports unaccounted escapes; the forecast note reads the declared intent
+("owned child of Movie", "seeded reference", "existing reference — matched to the
+target's own rows") instead of the ownership-blind "brought along by K.col -> T";
+a static-lookup whose matched rows drift reds the match-drift axis.
+
+**Proven:** pure — `SupportingScopeTests` (the reconcile bridge, desugar, typed
+resolve, the six verify claims, `dependentEdges`, completeness),
+`MovementSurfaceTests` (parse→render→parse round-trip byte-identity + the
+also-payload / no-reason named refusals). Docker — `GoBoardDockerTests`: the
+axis confirms a declared City reference and catches a mislabeled owned-child red
+on the live managed-grant pair. Release build clean (FS3511 verified).

@@ -290,6 +290,31 @@ let ``shapeGate: nullable-in-source but NOT-NULL-in-sink blocks; the reverse is 
     | Ok advisories -> Assert.True(advisories |> List.exists (fun l -> l.Contains "permissive"), sprintf "expected the loosening advisory, got %A" advisories)
     | other -> Assert.Fail(sprintf "expected an advisory pass, got %A" other)
 
+// --- the affirmative shape tiers (2026-07-08, the board-clarity program) -----
+
+[<Fact>]
+let ``shapeVerdict.Proven: a clean identical pair affirms every tier (entity/column names, definitions, FKs, indexes, facets)`` () =
+    let v = PeerTransfer.shapeVerdict (Some (keys [ "City"; "Customer" ])) srcCell sinkCell
+    Assert.Empty v.Blocking
+    // The whole ladder holds — the operator sees WHAT matched, not just silence.
+    for tier in [ "entity names"; "column names"; "column definitions (type/length/precision/nullability)"; "foreign keys"; "indexes"; "entity-level facets" ] do
+        Assert.Contains(tier, v.Proven)
+
+[<Fact>]
+let ``shapeVerdict.Proven: an index-only difference is advisory, keeps the deep tiers proven, and drops 'indexes' from Proven`` () =
+    // Drop the sink City's unique NAME index — a pure index difference.
+    let indexDropped = sinkCell |> mapKind "City" (fun k -> { k with Indexes = [] })
+    let v = PeerTransfer.shapeVerdict (Some (keys [ "City"; "Customer" ])) srcCell indexDropped
+    Assert.Empty v.Blocking
+    Assert.NotEmpty v.Advisory
+    // The advisory names the performance-only, no-action-needed character.
+    Assert.True(v.Advisory |> List.exists (fun l -> l.Contains "indexes differ" && l.Contains "performance-only"), sprintf "expected the index advisory with its action language, got %A" v.Advisory)
+    // The affirmative tiers still say the deeper agreement held...
+    for tier in [ "entity names"; "column names"; "column definitions (type/length/precision/nullability)"; "foreign keys" ] do
+        Assert.Contains(tier, v.Proven)
+    // ...but 'indexes' is no longer claimed as matched.
+    Assert.DoesNotContain("indexes", v.Proven)
+
 // --- the ENGINE-level subset-escape gate (the parity sweep, 2026-07-06) -------
 // The peer FACE narrates rich proposals; this backstop refuses from ANY leg
 // (legacy reverse / forward transfer) so the cross-wiring hazard is
@@ -377,26 +402,26 @@ let ``classify: the peer gates carry their own exits (shape 5; subset-FK 9; ossy
 [<Fact>]
 let ``GoBoard.ForecastLine.after: before - deletes + adds; unprobed stays unprobed`` () =
     let line : GoBoard.ForecastLine =
-        { Table = "dbo.T"; Before = Some 10L; Adds = 5L; Matches = None; Deletes = 10L; Note = "" }
+        { Source = "dbo.S"; Table = "dbo.T"; Before = Some 10L; Adds = 5L; Matches = None; Deletes = 10L; Note = "" }
     Assert.Equal(Some 5L, GoBoard.ForecastLine.after line)
     Assert.Equal(None, GoBoard.ForecastLine.after { line with Before = None })
 
 [<Fact>]
-let ``GoBoard.forecastTable: header + rows + TOTAL; ? marks unprobed; - marks non-reconciled match; totals go unprobed when any row is`` () =
+let ``GoBoard.forecastTable: source+target columns, header + rows + TOTAL; ? marks unprobed; - marks non-reconciled match; totals go unprobed when any row is`` () =
     let lines : GoBoard.ForecastLine list =
-        [ { Table = "dbo.OSUSR_BBB_CUSTOMER"; Before = Some 10L; Adds = 5L;  Matches = None;    Deletes = 10L; Note = "wiped first" }
-          { Table = "dbo.OSUSR_BBB_CITY";     Before = Some 3L;  Adds = 0L;  Matches = Some 3L; Deletes = 0L;  Note = "reconciled" } ]
+        [ { Source = "dbo.OSUSR_AAA_CUSTOMER"; Table = "dbo.OSUSR_BBB_CUSTOMER"; Before = Some 10L; Adds = 5L;  Matches = None;    Deletes = 10L; Note = "wiped first" }
+          { Source = "dbo.OSUSR_AAA_CITY";     Table = "dbo.OSUSR_BBB_CITY";     Before = Some 3L;  Adds = 0L;  Matches = Some 3L; Deletes = 0L;  Note = "reconciled" } ]
     let t = GoBoard.forecastTable lines
     Assert.Equal(4, List.length t) // header + 2 rows + TOTAL
     let tokens (row: string) = row.Split([|' '|], System.StringSplitOptions.RemoveEmptyEntries)
-    Assert.Equal<string[]>([| "table"; "before"; "+add"; "match"; "-del"; "after" |], tokens t.[0])
-    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_CUSTOMER"; "10"; "5"; "-"; "10"; "5"; "wiped"; "first" |], tokens t.[1])
-    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_CITY"; "3"; "0"; "3"; "0"; "3"; "reconciled" |], tokens t.[2])
+    Assert.Equal<string[]>([| "source"; "(read)"; "target"; "(written)"; "before"; "+add"; "match"; "-del"; "after" |], tokens t.[0])
+    Assert.Equal<string[]>([| "dbo.OSUSR_AAA_CUSTOMER"; "dbo.OSUSR_BBB_CUSTOMER"; "10"; "5"; "-"; "10"; "5"; "wiped"; "first" |], tokens t.[1])
+    Assert.Equal<string[]>([| "dbo.OSUSR_AAA_CITY"; "dbo.OSUSR_BBB_CITY"; "3"; "0"; "3"; "0"; "3"; "reconciled" |], tokens t.[2])
     Assert.Equal<string[]>([| "TOTAL"; "13"; "5"; "3"; "10"; "8" |], tokens t.[3])
     // an unprobed row renders ? and poisons the TOTAL's before/after (never a silent 0)
-    let withUnprobed = lines @ [ { Table = "dbo.OSUSR_BBB_ORDER"; Before = None; Adds = 7L; Matches = None; Deletes = 0L; Note = "" } ]
+    let withUnprobed = lines @ [ { Source = "dbo.OSUSR_AAA_ORDER"; Table = "dbo.OSUSR_BBB_ORDER"; Before = None; Adds = 7L; Matches = None; Deletes = 0L; Note = "" } ]
     let t2 = GoBoard.forecastTable withUnprobed
-    Assert.Equal<string[]>([| "dbo.OSUSR_BBB_ORDER"; "?"; "7"; "-"; "0"; "?" |], tokens t2.[3])
+    Assert.Equal<string[]>([| "dbo.OSUSR_AAA_ORDER"; "dbo.OSUSR_BBB_ORDER"; "?"; "7"; "-"; "0"; "?" |], tokens t2.[3])
     Assert.Equal<string[]>([| "TOTAL"; "?"; "12"; "3"; "10"; "?" |], tokens t2.[4])
     Assert.Empty(GoBoard.forecastTable [])
 

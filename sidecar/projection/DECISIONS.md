@@ -26885,3 +26885,112 @@ realization sibling) — no new write-plane semantics.
 Incremental-no-wipe; `narrateEvidence` strength ladder);
 `GoBoardDockerTests` red/green/red extended (evidence lines, the table,
 the `--sql` artifact content, on the live managed-grant pair).
+
+## 2026-07-08 — The go-board clarity pass: affirmative shape tiers, forecast origins/dual-names/match-drift, whole-row previews, reconcileIgnore config
+
+**Decision.** Nine operator-requested legibility changes to `projection check
+go`, each backed by a new report carrier (no cosmetic-only edits;
+`PARTIAL_TRANSFER_READINESS_LOG.md` Entry 28):
+
+1. **`ShapeVerdict.Proven : string list`** — the comparison tiers that MATCHED
+   (entity names → column names → column definitions → FKs → indexes → facets).
+   An advisory must state what held, not only what drifted. Each advisory
+   class also carries its own action language (index = performance-only, no
+   pre-transfer action; FK = load follows source relationships; facets = never
+   rewrite a row).
+2. **`ForecastLine.Source`** beside `.Table` — the forecast renders both the
+   source-read and target-written physical coordinates (they differ per espace
+   on the peer leg). Declared kinds render before brought-along kinds; a
+   brought-along kind names its pulling edge (`brought along by
+   Customer.CityId -> City`).
+3. **`Reconciliation.reconcileKindWith ignore` → `ReconcileDivergence list`**
+   plus **`ReconciledIdentity.UnmatchedRows`** — matched source/sink pairs are
+   compared column-by-column (excluding PK + the operator's ignore set), and
+   the full unmatched source rows are carried. Reconcile matches identity and
+   never rewrites data (the sink value wins), so drift is surfaced
+   information, not a pending write — the `match drift` board axis.
+4. **`reconcileIgnore` config** — one shared list of attribute names beside
+   `reconcile` in projection.json (`Flow.ReconcileIgnore` →
+   `MovementSpec`/`LoadOpts` → `WriteOptions.ReconcileIgnore`), threaded through
+   every reverse-leg/streaming/peer engine entry. Names the audit fields
+   (CreatedOn / UpdatedOn) the matched-pair diff skips.
+5. **`DataLoadPlan.DroppedRows`** — the full rows behind `SkippedReferences`
+   (plan-build drops), recovered by identifier-difference against the kept set
+   (order-preserving `remapRowFksWith` makes the alignment exact). The board's
+   `drops` axis renders the first five whole, with the failed reference.
+6. **`TransferReport.DroppedRows` / `.UnmatchedRows` / `.ReconcileDivergences`**
+   carry all three to the face; `identities` renders whole unmatched rows, and
+   the wipe preview samples `SELECT TOP 5` of the rows each `-del` deletes.
+7. **Re-run wording** — the opaque `X.Y -> in-subset parent (N)` is now
+   `<child> has N row(s) whose <col> points at <parent> … the wipe would orphan
+   them`, with the remedy naming the widen/clear move.
+8. **Direction labelling** — `relationships` (OUTBOUND: does the subset's own
+   FKs dangle?) and `re-run` (INBOUND: would a replace-wipe orphan OTHER sink
+   tables?) are now explicitly labelled, resolving the apparent
+   GO-vs-STOP contradiction.
+9. **Drops-under-replace semantics stated** — a plan-build drop is net of
+   `+add` and NOT re-inserted after the wipe; `-del` is the separate wipe count.
+   The note says "wiped but NOT re-inserted" on a wiped-and-dropping kind.
+
+**Compatibility.** `reconcileKind` / `runReverseLegThroughConnections` keep
+their old arity via empty-default wrappers (sibling-wrapper discipline); the new
+`reconcileIgnore` config field and the three report carriers default empty, so
+every existing flow and call site is byte-identical.
+
+**Witnesses.** Pure — `PeerTransferTests` (Proven tiers; forecast
+source+target columns), `ReconciliationTests` (full unmatched rows; matched-pair
+divergence + sample values; audit-field ignore), `DataLoadPlanTests`
+(DroppedRows whole row + failed reference). Docker — `GoBoardDockerTests`
+red/green/red extended (source+target physical names, brought-along note,
+match-drift green, OUTBOUND wording) on the live managed-grant pair.
+
+## 2026-07-08 — supportingScope: a business-intent vocabulary for the supporting rows of a partial transfer
+
+**Decision.** A new `supportingScope` config array (sibling of `tables`) declares
+WHY each supporting (non-payload) table is touched, in business terms, and the
+engine verifies the declared intent against the relationship graph. Six
+relationships in two families, each desugaring onto an existing primitive:
+
+- **References** (payload → table, verified via `TransferSubset.escapingEdges`):
+  `existing-reference key` → `MatchByColumn`; `reference-seed` → load-set
+  addition + insert-only-missing; `shared-anchor anchor [key]` →
+  `FallbackToAssigned` (pin-all / match-then-pin); `static-lookup key` →
+  `MatchByColumn` + a zero-divergence invariant (match-drift promoted to red).
+- **Dependents** (table → payload, verified via the net-new
+  `TransferSubset.dependentEdges` inbound mirror): `owned-child of` → load-set
+  addition, cascade-verified against `EdgeStrength.Cascade` (== OutSystems
+  Delete Rule = Delete); `blocked-dependent of` → an acknowledged exclusion.
+
+**supportingScope is canonical.** The terse `reconcile` strings resolve INTO the
+same model (`SupportingScope.ofReconcileEntries`): `T:Col` → existing-reference,
+`T:=k` / `T:Col:=k` → shared-anchor. One conceptual surface, one resolution
+pipeline (`SupportingScope.fs`: `desugarToStrings` for the engine string path;
+`resolve` / `verify` for the board).
+
+**Why.** The flat `tables` list forced the operator to reason in graph mechanics
+(which FK escapes, which parent to reconcile). The graph already classifies the
+signals the vocabulary needs (Cascade edges, escaping edges), so the config
+declares intent and the board CONFIRMS it — a mislabeled owned-child, a dead
+reference, a vacuous exclusion are all caught. Completeness closes both edge
+directions: every escaping reference and inbound dependent is classified or named
+unaccounted.
+
+**New write semantics (both empty-default, gated to their trigger).**
+`WriteOptions.SeedKinds` — reference-seed insert-only-missing: a preserved-key
+kind's rows are pre-filtered to those whose PK is absent on the target (never
+overwrite existing content; the pre-pass is FS3511-safe module-level task
+recursion). `WriteOptions.AcknowledgedExclusions` + the inbound-orphan gate —
+under Execute + WipeAndLoad, an out-of-payload dependent holding referencing rows
+refuses by name (`transfer.supportingScope.inboundOrphan`) before the wipe;
+blocked-dependent suppresses it.
+
+**Compatibility.** `SupportingScope` threads through `Flow` / `MovementSpec` /
+`LoadOpts` + parse (6-way tuple) + renderFlow round-trip dual + the two CLI faces
++ the engine (`runReverseLegThroughConnectionsWith` gains `seedKinds` /
+`acknowledgedExclusions`); every field and set defaults empty, so existing flows
+and call sites are byte-identical. The reconcile/load-set desugar adds no new
+engine field (it rides the existing `tables`/`reconcile` string lists).
+
+**Witnesses.** `SupportingScopeTests` (bridge / desugar / resolve / the six
+verify claims / dependentEdges / completeness), `MovementSurfaceTests`
+(round-trip + named refusals), `GoBoardDockerTests` (the axis on the live pair).

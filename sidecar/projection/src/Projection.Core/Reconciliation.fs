@@ -22,10 +22,36 @@ namespace Projection.Core
 /// remap, plus the Source surrogates the ruleset could not match to a
 /// pre-existing Sink identity (downstream re-point skips-and-diagnoses
 /// these). Generalizes `UserFkReflowPass.discover` to any kind.
+/// One reconciled kind's per-column drift between MATCHED source and sink
+/// rows (2026-07-08, the board-clarity program): reconcile matches
+/// IDENTITY and never rewrites data — the sink row's values are KEPT — so
+/// a matched pair whose non-key columns differ is real information the
+/// operator must see: audit drift (CreatedOn / UpdatedOn) or genuine
+/// content divergence. Columns in the operator's `reconcileIgnore` set
+/// never register.
+type ReconcileDivergence =
+    {
+        Kind           : SsKey
+        Column         : Name
+        /// Matched source→sink pairs whose values differ in this column.
+        DifferingPairs : int
+        /// Up to three samples: (matched sink surrogate, source value,
+        /// sink value) — enough to recognize audit drift at a glance.
+        Samples        : (AssignedKey * string * string) list
+    }
+
 type ReconciledIdentity =
     {
         Remap     : SurrogateRemapContext
         Unmatched : (SsKey * SourceKey) list
+        /// The FULL source rows behind `Unmatched`, same order (2026-07-08,
+        /// the board-clarity program) — the operator reads the actual
+        /// record that found no sink match, not just its surrogate.
+        UnmatchedRows : (SsKey * StaticRow) list
+        /// Per-column drift between MATCHED pairs (`columnDivergences`,
+        /// against the caller's ignore set). Empty for a non-reconciling
+        /// run or when every matched pair agrees.
+        Divergences : ReconcileDivergence list
         /// NM-51 — Source surrogates whose PK column value is NOT unique among
         /// the rows reconciled: `SurrogateRemapContext.capture` refused the
         /// second binding (kept the first). Surfaced, never silently dropped —
@@ -82,8 +108,11 @@ module Reconciliation =
     /// (PK) column whose value is the Source / Assigned key. A Source row
     /// with no Sink match lands in `Unmatched` (sorted by SourceKey for
     /// T1 determinism). Duplicate Source surrogates keep the first (a
-    /// unique PK is a precondition).
-    let reconcileKind
+    /// unique PK is a precondition). `ignore` names columns (the operator's
+    /// audit fields — CreatedOn / UpdatedOn) that never register in the
+    /// matched-pair `Divergences`.
+    let reconcileKindWith
+        (ignore: Set<Name>)
         (kind: SsKey)
         (pkColumn: Name)
         (strategy: ReconciliationStrategy)
@@ -185,6 +214,7 @@ module Reconciliation =
 
         let mutable remap = SurrogateRemapContext.empty
         let mutable unmatched : (SsKey * SourceKey) list = []
+        let mutable unmatchedRows : (SsKey * StaticRow) list = []
         let mutable ambiguous : (SsKey * SourceKey) list = []
         for row in sourceRows do
             match surrogateOf row with
@@ -199,7 +229,9 @@ module Reconciliation =
                     // a non-unique reconcile key surfaces instead of silently
                     // dropping the row's identity.
                     | Error _ -> ambiguous <- (kind, src) :: ambiguous
-                | None -> unmatched <- (kind, src) :: unmatched
+                | None ->
+                    unmatched <- (kind, src) :: unmatched
+                    unmatchedRows <- (kind, row) :: unmatchedRows
 
         // The pinned-owner existence check (2026-07-06): every fallback key
         // the strategy carries (recursively) must name a row the sink holds.
@@ -214,11 +246,67 @@ module Reconciliation =
             |> List.filter (fun (AssignedKey a) -> not (Set.contains a sinkSurrogates))
             |> List.map (fun k -> kind, k)
 
+        // The matched-pair column diff (2026-07-08): for every source row
+        // the remap bound to a sink row, compare the shared non-key,
+        // non-ignored columns. The sink value WINS at load time (reconcile
+        // never rewrites data), so a difference is surfaced information,
+        // never a pending write. A column absent from one side compares as
+        // blank — a sink NULL against a source value is a real difference.
+        let divergences : ReconcileDivergence list =
+            let assignments = remap.Assignments |> Map.tryFind kind |> Option.defaultValue Map.empty
+            let sinkByPk : Map<string, StaticRow> =
+                sinkRows
+                |> List.choose (fun r -> Map.tryFind pkColumn r.Values |> Option.map (fun pk -> pk, r))
+                |> List.rev   // PK-ascending input; first (oldest) wins the fold below
+                |> Map.ofList
+            let valueOr (col: Name) (r: StaticRow) = Map.tryFind col r.Values |> Option.defaultValue ""
+            sourceRows
+            |> List.fold
+                (fun (acc: Map<Name, int * (AssignedKey * string * string) list>) row ->
+                    match surrogateOf row |> Option.bind (fun src -> Map.tryFind src assignments) with
+                    | None -> acc
+                    | Some (AssignedKey assigned as ak) ->
+                        match Map.tryFind assigned sinkByPk with
+                        | None -> acc
+                        | Some sinkRow ->
+                            row.Values
+                            |> Map.fold
+                                (fun acc col srcValue ->
+                                    if col = pkColumn || Set.contains col ignore then acc
+                                    else
+                                        let sinkValue = valueOr col sinkRow
+                                        if srcValue = sinkValue then acc
+                                        else
+                                            let count, samples = Map.tryFind col acc |> Option.defaultValue (0, [])
+                                            let samples' = if count < 3 then (ak, srcValue, sinkValue) :: samples else samples
+                                            Map.add col (count + 1, samples') acc)
+                                acc)
+                Map.empty
+            |> Map.toList
+            |> List.map (fun (col, (n, samples)) ->
+                { Kind = kind; Column = col; DifferingPairs = n; Samples = List.rev samples })
+            |> List.sortBy (fun d -> Name.value d.Column)
         { Remap     = remap
           Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s)
+          UnmatchedRows =
+            unmatchedRows
+            |> List.sortBy (fun (_, r) -> match surrogateOf r with Some (SourceKey s) -> s | None -> "")
+          Divergences = divergences
           Ambiguous = ambiguous |> List.sortBy (fun (_, SourceKey s) -> s)
           AmbiguousTargetKeys = ambiguousTargets |> List.sortBy (fun (_, AssignedKey a) -> a)
           MissingPinnedOwners = missingPinned }
+
+    /// `reconcileKindWith` under an empty ignore set — the pre-2026-07-08
+    /// callers' shape (sibling-wrapper discipline: the wrapper supplies the
+    /// default the caller did not name).
+    let reconcileKind
+        (kind: SsKey)
+        (pkColumn: Name)
+        (strategy: ReconciliationStrategy)
+        (sourceRows: StaticRow list)
+        (sinkRows: StaticRow list)
+        : ReconciledIdentity =
+        reconcileKindWith Set.empty kind pkColumn strategy sourceRows sinkRows
 
     /// Translate the User kind's `UserMatchingStrategy` into the generic
     /// `ReconciliationStrategy` so all four operator-chosen user-match

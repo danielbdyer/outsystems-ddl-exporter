@@ -47,6 +47,7 @@ module private GoBoardFixtures =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
+          ReconcileIgnore = []; SupportingScope = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false
@@ -142,14 +143,25 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         if System.IO.File.Exists sqlPath then System.IO.File.Delete sqlPath
                         let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(0, green)
-                        // The forecast table: the customer table appears with
-                        // its adds; the reconciled city appears with matches
-                        // and no insert; a TOTAL row closes the table.
-                        Assert.Contains("before", greenOut)
-                        Assert.Contains("OSUSR_XABC_CUSTOMER", greenOut)
-                        Assert.Contains("OSUSR_XDEF_CITY", greenOut)
-                        Assert.Contains("reconciled — matched to existing sink rows", greenOut)
+                        // The forecast table (2026-07-08): source AND target
+                        // physical names side by side; the declared customer
+                        // with its adds; the reconciled city brought along,
+                        // matched with no insert; a TOTAL row closes it.
+                        Assert.Contains("source (read)", greenOut)
+                        Assert.Contains("target (written)", greenOut)
+                        Assert.Contains("OSUSR_ABC_CUSTOMER", greenOut)   // the SOURCE physical name
+                        Assert.Contains("OSUSR_XABC_CUSTOMER", greenOut)  // the SINK physical name
+                        Assert.Contains("OSUSR_DEF_CITY", greenOut)       // source city
+                        Assert.Contains("OSUSR_XDEF_CITY", greenOut)      // sink city
+                        Assert.Contains("matched to existing target rows, no insert", greenOut)
+                        Assert.Contains("brought along by", greenOut)     // City is pulled in by Customer.CityId
                         Assert.Contains("TOTAL", greenOut)
+                        // Match drift (2026-07-08): the reconciled City's
+                        // matched pairs agree on every compared column
+                        // (Name/IsActive match; the PK is excluded) — GREEN.
+                        Assert.Contains("carry identical values", greenOut)
+                        // The relationships GO now names its OUTBOUND direction.
+                        Assert.Contains("every OUTBOUND reference", greenOut)
                         // The planned-SQL artifact: written, and it carries
                         // the sink-side DML shape the plan would realize.
                         Assert.True(System.IO.File.Exists sqlPath, "--sql must write go-board/golden.planned.sql")
@@ -207,6 +219,43 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         return ()
                     }))
 
+    /// SUPPORTING SCOPE (2026-07-08, the business-intent program): declaring
+    /// the City reference as an `existing-reference` supporting-scope entry
+    /// resolves the escape AND the board's `supporting scope` axis confirms it
+    /// against the graph; a MISLABELED owned-child (City is a reference of
+    /// Customer, not a cascade-owned child) is caught red by the same axis.
+    [<Fact>]
+    member _.``go board: supportingScope declares the City reference (confirmed); a mislabeled owned-child is caught red`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardSupportingScope") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardScope"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // 1. existing-reference City:Name via supportingScope —
+                        //    the escape is classified; the axis confirms it.
+                        let refScope : SupportingScope.SupportingScopeEntry list =
+                            [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" } ]
+                        let refOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = refScope }
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned refOpts))
+                        Assert.Equal(0, green)
+                        Assert.Contains("supporting scope", greenOut)
+                        Assert.Contains("existing-reference AppCore.City", greenOut)
+                        Assert.Contains("match the sink's own cities", greenOut)   // the reason echoes
+                        // 2. MISLABELED owned-child: City is a reference of
+                        //    Customer, not a cascade-owned child — the axis reds.
+                        let badScope : SupportingScope.SupportingScopeEntry list =
+                            [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "AppCore.Customer"; Reason = "wrong classification" } ]
+                        let badOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = badScope }
+                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned badOpts))
+                        Assert.Equal(5, red)
+                        Assert.Contains("supporting scope", badOut)
+                        Assert.Contains("owned-child AppCore.City", badOut)
+                        return ()
+                    }))
+
     /// THE PROVING LOOP (2026-07-06): transfer a small declared subset, prove
     /// it landed, then DELIBERATELY REVERT it — the success-undo artifact
     /// (`transfer-undo.sql`, written by the engine's success tail) executed
@@ -240,7 +289,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             let! runR =
                                 Transfer.runReverseLegThroughConnectionsWith
                                     IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
-                                    [ "Customer" ] connections srcContract sinkContract reconciliation
+                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
                                     false (Some undoDir)
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))

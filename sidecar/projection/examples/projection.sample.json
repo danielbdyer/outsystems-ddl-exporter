@@ -98,6 +98,16 @@
 
     "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "reconcile": ["ServiceCenter.User:Email"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
 
+    "_supportingScope_comment": "`supportingScope` (sibling of `tables`) declares WHY each SUPPORTING (non-payload) table is touched, in business terms; the go board verifies the intent against the relationship graph. References the payload points at: existing-reference (match the target's own rows by a business `key`, never copy), reference-seed (insert the referenced rows the target lacks), shared-anchor (re-point every reference to one target row named by `anchor`), static-lookup (match by `key` and hold identical — drift is a fault). Dependents that point at the payload: owned-child (`of` the parent; copied along, cascade-verified against the OutSystems delete rule), blocked-dependent (`of` the parent; deliberately not harvested — a confirmed invariant that a replace-wipe may still enforce). The terse `reconcile` strings are the shorthand for existing-reference / shared-anchor.",
+    "golden-with-scope": { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Movie"], "strategy": "replace",
+      "supportingScope": [
+        { "relationship": "owned-child",        "table": "Movie_CS.MovieScene", "of": "Movie_CS.Movie", "reason": "scenes are part of the movie's definition" },
+        { "relationship": "existing-reference", "table": "ServiceCenter.User",  "key": "Email",         "reason": "match the target's own users, never copy" },
+        { "relationship": "reference-seed",     "table": "Ref.Country",         "reason": "countries must exist for the address relationship" },
+        { "relationship": "static-lookup",      "table": "Ref.Currency",        "key": "IsoCode",       "reason": "currencies are identical across environments" },
+        { "relationship": "blocked-dependent",  "table": "Audit.MovieAuditLog", "of": "Movie_CS.Movie", "reason": "audit logs are environment-specific; never harvested" }
+      ] },
+
     "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
     "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat", "correction": "file:./corrections/uat.correction.json" }
