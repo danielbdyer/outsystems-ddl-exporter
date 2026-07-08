@@ -490,6 +490,7 @@ let runReverseLegTransfer
     (physicalSinkContract: Catalog)
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
+    (supportingScope: SupportingScope.SupportingScopeEntry list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -503,10 +504,12 @@ let runReverseLegTransfer
     (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
     : int =
+    // Desugar supporting scope onto the terse string inputs (see runPeerTransfer).
+    let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        reconcileSpecs reconcileIgnore userMapPath executeRequested allowCdc allowDrops
-        emission resumable streaming journalDirectory tables
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore userMapPath executeRequested allowCdc allowDrops
+        emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
 // ---------------------------------------------------------------------------
@@ -537,6 +540,7 @@ let runPeerTransfer
     (sinkSpec: string)
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
+    (supportingScope: SupportingScope.SupportingScopeEntry list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -550,6 +554,13 @@ let runPeerTransfer
     (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
     : int =
+    // Desugar the supporting-scope vocabulary onto the terse string inputs the
+    // gates + engine already consume (2026-07-08): reference-family entries
+    // become reconcile specs, owned-child / reference-seed become subset
+    // tables. The typed model (seed / blocked sets) rides the write path.
+    let scopeDesugar = SupportingScope.desugarToStrings supportingScope
+    let reconcileSpecs = reconcileSpecs @ scopeDesugar.ExtraReconcile
+    let tables = tables @ scopeDesugar.ExtraTables
     // Acquire the two SsKey-aligned contracts (the one I/O seam this face
     // adds). An unreadable OSSYS metamodel refuses on the schema-read axis
     // (exit 6) before any gate or connection-opening work.
@@ -838,8 +849,17 @@ let runCheckGo
             finish (List.ofSeq items)
         | Ok (sourceContract, sinkContract) ->
         items.Add (GoBoard.item "contracts" (GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."))
+        // Supporting scope (2026-07-08, the business-intent program): the
+        // typed vocabulary desugars onto the EFFECTIVE subset the downstream
+        // axes judge — the payload is `opts.Tables` alone; owned-child /
+        // reference-seed expand the written set, the reference family expands
+        // the reconcile set. The dedicated axis below verifies each declared
+        // intent against the graph.
+        let scopeDesugar = SupportingScope.desugarToStrings opts.SupportingScope
+        let effectiveTables = opts.Tables @ scopeDesugar.ExtraTables
+        let effectiveReconcile = opts.Reconcile @ scopeDesugar.ExtraReconcile
         // -- the declared subset -------------------------------------------
-        match Transfer.resolveLoadSet sourceContract opts.Tables with
+        match Transfer.resolveLoadSet sourceContract effectiveTables with
         | Error errors ->
             items.Add (GoBoard.itemWith "tables"
                 (GoBoard.Status.Red ("the declared table subset does not resolve.", "fix the flow's `tables` list (use Module.Entity for ambiguous names); then re-run."))
@@ -849,11 +869,14 @@ let runCheckGo
         items.Add (GoBoard.item "tables"
             (GoBoard.Status.Green
                 (match loadSet with
-                 | Some s -> sprintf "%d table(s) declared; all resolve." (Set.count s)
+                 | Some s ->
+                     match scopeDesugar.ExtraTables with
+                     | [] -> sprintf "%d table(s) declared; all resolve." (Set.count s)
+                     | extra -> sprintf "%d payload table(s) + %d brought in by supporting scope; all resolve." (List.length opts.Tables) (List.length extra)
                  | None -> "no subset declared — the whole modeled estate transfers.")))
         // -- reconcile strategy resolution ----------------------------------
         let reconcileResolution =
-            parseReconcileInputs opts.Reconcile opts.Rekey false
+            parseReconcileInputs effectiveReconcile opts.Rekey false
             |> Result.bind (fun (entries, userMapEntries) ->
                 TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries)
         match reconcileResolution with
@@ -869,6 +892,60 @@ let runCheckGo
                 (match Map.count reconciliation with
                  | 0 -> "no reconcile rules declared yet."
                  | n -> sprintf "%d reconcile rule(s) resolve against the sink." n)))
+        // -- supporting scope: the declared business intent, verified --------
+        (if not (List.isEmpty opts.SupportingScope) then
+            let payloadSet =
+                match Transfer.resolveLoadSet sourceContract opts.Tables with
+                | Ok (Some s) -> s
+                | _ -> Set.empty
+            let baseReconciled =
+                match parseReconcileInputs opts.Reconcile opts.Rekey false with
+                | Ok (entries, userMapEntries) ->
+                    match TransferSpec.resolveAllReconciliation sinkContract entries userMapEntries with
+                    | Ok m -> m |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                    | Error _ -> Set.empty
+                | Error _ -> Set.empty
+            // Verify each entry against the SINK graph (the physical side the
+            // live run writes); the payload is the declared `tables`.
+            let verdicts = SupportingScope.verify sinkContract payloadSet baseReconciled opts.SupportingScope
+            let contradictions =
+                verdicts |> List.choose (fun (e, v) ->
+                    match v with
+                    | SupportingScope.ScopeClaimVerdict.Contradicted (reason, remedy) -> Some (e, reason, remedy)
+                    | _ -> None)
+            let resolvedScope =
+                match SupportingScope.resolve sinkContract opts.SupportingScope with
+                | Ok r -> r
+                | Error _ -> SupportingScope.empty
+            let unaccounted = SupportingScope.unaccountedEscapes sinkContract payloadSet baseReconciled resolvedScope
+            let relName (e: SupportingScope.SupportingScopeEntry) =
+                match e.Relationship with
+                | SupportingScope.SupportingRelationship.ExistingReference _ -> "existing-reference"
+                | SupportingScope.SupportingRelationship.ReferenceSeed -> "reference-seed"
+                | SupportingScope.SupportingRelationship.SharedAnchor _ -> "shared-anchor"
+                | SupportingScope.SupportingRelationship.StaticLookup _ -> "static-lookup"
+                | SupportingScope.SupportingRelationship.OwnedChild _ -> "owned-child"
+                | SupportingScope.SupportingRelationship.BlockedDependent _ -> "blocked-dependent"
+            let confirmedLines =
+                verdicts |> List.choose (fun (e, v) ->
+                    match v with
+                    | SupportingScope.ScopeClaimVerdict.Confirmed note -> Some (sprintf "%s %s — %s (%s)" (relName e) e.Table note e.Reason)
+                    | _ -> None)
+            match contradictions, unaccounted with
+            | [], [] ->
+                items.Add (GoBoard.itemWith "supporting scope"
+                    (GoBoard.Status.Green (sprintf "%d supporting table(s) declared with intent; every one is borne out by a relationship, and no escaping reference is unaccounted." (List.length opts.SupportingScope)))
+                    confirmedLines)
+            | cs, un ->
+                let detail =
+                    [ for (e, reason, remedy) in cs do
+                        yield sprintf "%s %s — %s" (relName e) e.Table reason
+                        yield sprintf "  -> %s" remedy
+                      for (k, r, target) in un do
+                        yield sprintf "%s.%s -> %s escapes the payload and no supporting-scope entry classifies it" (Name.value k.Name) (Name.value r.Name) (Name.value target.Name) ]
+                items.Add (GoBoard.itemWith "supporting scope"
+                    (GoBoard.Status.Red (sprintf "%d declared intent(s) the graph contradicts, %d escaping reference(s) unaccounted." (List.length cs) (List.length un), "correct the entr(ies) named below, or classify the unaccounted reference(s); then re-run."))
+                    detail))
         // -- schema shape ----------------------------------------------------
         let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
         let shape = PeerTransfer.shapeVerdict gateScope sourceContract sinkContract
@@ -955,7 +1032,7 @@ let runCheckGo
                         |> Set.ofList
                     (Transfer.runReverseLegThroughConnections
                         Transfer.DryRun opts.Emission false true false
-                        opts.Tables connections sourceContract sinkContract reconciliation ignoreSet)
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
@@ -1029,6 +1106,38 @@ let runCheckGo
                 let dropsByKind = report.SkippedReferences |> List.countBy fst |> Map.ofList
                 let isDeclared (key: SsKey) =
                     match loadSet with None -> true | Some s -> Set.contains key s
+                // The PAYLOAD (opts.Tables alone) vs the supporting additions:
+                // a supporting kind carries its DECLARED intent in the note,
+                // upgrading the ownership-blind "brought along by K.col -> T".
+                let payloadKeys : Set<SsKey> =
+                    match Transfer.resolveLoadSet sourceContract opts.Tables with
+                    | Ok (Some s) -> s
+                    | _ -> (match loadSet with Some s -> s | None -> Set.empty)
+                let declaredIntent : Map<SsKey, string> =
+                    opts.SupportingScope
+                    |> List.choose (fun e ->
+                        SupportingScope.tryResolveTable sinkContract e.Table
+                        |> Option.map (fun k ->
+                            let note =
+                                match e.Relationship with
+                                | SupportingScope.SupportingRelationship.ExistingReference _ -> sprintf "existing reference — matched to the target's own rows (%s)" e.Reason
+                                | SupportingScope.SupportingRelationship.StaticLookup _      -> sprintf "static lookup — matched, held identical (%s)" e.Reason
+                                | SupportingScope.SupportingRelationship.ReferenceSeed        -> sprintf "seeded reference — inserted where the target lacks it (%s)" e.Reason
+                                | SupportingScope.SupportingRelationship.SharedAnchor _       -> sprintf "shared anchor — every reference re-points to one row (%s)" e.Reason
+                                | SupportingScope.SupportingRelationship.OwnedChild ofParent  -> sprintf "owned child of %s (%s)" ofParent e.Reason
+                                | SupportingScope.SupportingRelationship.BlockedDependent _   -> ""
+                            k.SsKey, note))
+                    |> Map.ofList
+                // static-lookup kinds are held to ZERO divergence: a drifted
+                // lookup is a real integrity fault, not an advisory.
+                let staticLookupKeys : Set<SsKey> =
+                    opts.SupportingScope
+                    |> List.choose (fun e ->
+                        match e.Relationship with
+                        | SupportingScope.SupportingRelationship.StaticLookup _ ->
+                            SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
+                        | _ -> None)
+                    |> Set.ofList
                 // A kind OUTSIDE the declared subset rides along because a
                 // declared table's relationship needs it — name the pulling
                 // edge(s) in Table.Column -> Target form.
@@ -1057,10 +1166,13 @@ let runCheckGo
                     let drops = dropsByKind |> Map.tryFind k.Kind |> Option.defaultValue 0
                     let drift = report.ReconcileDivergences |> List.filter (fun d -> d.Kind = k.Kind) |> List.length
                     let note =
-                        [ if not (isDeclared k.Kind) then
-                              match broughtAlongBy k.Kind with
-                              | []    -> yield "brought along (reconciled)"
-                              | edges -> yield sprintf "brought along by %s" (String.concat ", " edges)
+                        [ match Map.tryFind k.Kind declaredIntent with
+                          | Some intent when intent <> "" -> yield intent
+                          | _ ->
+                              if not (Set.contains k.Kind payloadKeys) then
+                                  match broughtAlongBy k.Kind with
+                                  | []    -> yield "brought along (reconciled)"
+                                  | edges -> yield sprintf "brought along by %s" (String.concat ", " edges)
                           if reconciled then
                               yield
                                   (if drift = 0 then "matched to existing target rows, no insert"
@@ -1123,18 +1235,31 @@ let runCheckGo
                                  | [] -> "matched source/target rows carry identical values in every compared column."
                                  | ignored -> sprintf "matched source/target rows carry identical values (ignored audit fields: %s)." (String.concat ", " ignored))))
                     | ds ->
-                        items.Add (GoBoard.itemWith "match drift"
-                            (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
+                        let detailLines =
                             [ for d in ds do
                                 let matched =
                                     report.Kinds
                                     |> List.tryFind (fun k -> k.Kind = d.Kind)
                                     |> Option.map (fun k -> k.RowsMatched)
                                     |> Option.defaultValue 0
-                                yield sprintf "%s.%s differs on %d of %d matched row(s):" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched
+                                let lookup = Set.contains d.Kind staticLookupKeys
+                                yield sprintf "%s.%s differs on %d of %d matched row(s)%s:" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched (if lookup then " — declared a STATIC LOOKUP (must be identical)" else "")
                                 for (ak, srcV, sinkV) in d.Samples do
                                     yield sprintf "  target key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
-                                yield sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column) ])
+                                yield
+                                    (if lookup then sprintf "  -> the environments' %s reference data has diverged; reconcile the lookup, or reclassify it as existing-reference." (nm d.Kind)
+                                     else sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column)) ]
+                        // A static-lookup divergence is a hard fault; ordinary
+                        // reconcile drift stays advisory (the sink value wins).
+                        let lookupDrift = ds |> List.filter (fun d -> Set.contains d.Kind staticLookupKeys)
+                        if not (List.isEmpty lookupDrift) then
+                            items.Add (GoBoard.itemWith "match drift"
+                                (GoBoard.Status.Red (sprintf "%d static-lookup column(s) differ between the environments — a lookup declared identical has drifted." lookupDrift.Length, "reconcile the lookup rows, or reclassify the table as existing-reference; then re-run."))
+                                detailLines)
+                        else
+                            items.Add (GoBoard.itemWith "match drift"
+                                (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
+                                detailLines)
                 // THE PLANNED SQL (`--sql`, 2026-07-07): the dry run's plan
                 // rendered as the text realization's T-SQL and written
                 // beside the board — the exact DML shape, readable before

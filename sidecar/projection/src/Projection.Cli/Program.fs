@@ -238,7 +238,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // (2026-07-07) — the same modeled estate every other verb reads;
         // an unscoped config binds to the show-me-everything default.
         withRun "projection transfer" (fun () ->
-            runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.ReconcileIgnore opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
+            runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -249,7 +249,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.ReconcileIgnore opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
