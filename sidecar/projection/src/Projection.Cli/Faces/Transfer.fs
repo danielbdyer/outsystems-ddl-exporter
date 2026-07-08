@@ -42,7 +42,16 @@ let dispositionName (d: IdentityDisposition) : string =
 /// The load-plan / cycle-FK / unmatched-identity narration, named by the transfer
 /// report's own `Names` index (populated from the engine's contract catalog;
 /// empty ⇒ `rootOriginal` fallback, byte-identical to pre-displayName behaviour).
-let narrateTransferReport (report: Transfer.TransferReport) : unit =
+/// The live-run report, rendered through the `View` engine (2026-07-08, the
+/// rendering-elevation program): the load plan becomes a responsive
+/// `View.Table` (Spectre auto-sizes it to the terminal), the cycle / unmatched
+/// / drop sections become status-glyphed `Disclosure` blocks, and — when the
+/// flow declared a `supportingScope` — the SAME References / Dependents
+/// guarantee tree the go board shows closes the report ("the invariants that
+/// held"). The verdict line stays the Voice-owned `renderVoicedTo`. `scopeGroups`
+/// is the shared `SupportingScope.scopeGroups` output (empty for a run with no
+/// declared scope — the generic `transfer` verb).
+let narrateTransferReportWithScope (report: Transfer.TransferReport) (scopeGroups: GoBoard.ScopeGroup list) : unit =
     let nm = nameOf report.Names
     // §4 Move — lead with the finding (rows moved, in dependency order); the
     // load plan rides beneath. Dependency order is the engine's guarantee that
@@ -69,72 +78,66 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
             || k.Disposition = IdentityDisposition.ReconciledByRule)
     let verdictPayload : Voice.Payload = Map.ofList [ "rowCount", box headlineCount; "tableCount", box touched.Length ]
     TtyRenderer.renderVoicedTo Console.Out verdictCode verdictPayload
-    printfn ""
-    printfn "The load plan (%d table(s) touched):" touched.Length
-    for k in touched do
-        printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
-            (nm k.Kind)
-            (dispositionName k.Disposition)
-            k.RowsIngested
-            k.RowsWritten
-            (Set.count k.DeferredFkColumns)
-    if not (List.isEmpty untouched) then
-        printfn "  (%d other modeled table(s): no rows to move, not reconciled — untouched.)" untouched.Length
-    if not (List.isEmpty report.UnbreakableCycleFks) then
-        printfn ""
-        printfn
-            "%d relationship cycle(s) cannot be broken — the load cannot run as planned:"
-            report.UnbreakableCycleFks.Length
-        for u in report.UnbreakableCycleFks do
-            printfn
-                "  %s.%s → %s"
-                (nm u.Kind)
-                (Name.value u.Column)
-                (nm u.Target)
-    if not (List.isEmpty report.UnmatchedIdentities) then
-        printfn ""
-        printfn
-            "%d identity(ies) unmatched — source records with no match in the target:"
-            report.UnmatchedIdentities.Length
-        for (k, s) in report.UnmatchedIdentities do
-            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
-    if not (List.isEmpty report.AmbiguousIdentities) then
-        printfn ""
-        printfn
-            "%d source record(s) had a non-unique reconcile key — the first binding was kept:"
-            report.AmbiguousIdentities.Length
-        for (k, s) in report.AmbiguousIdentities do
-            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
-    if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
-        printfn ""
-        printfn
-            "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won):"
-            report.AmbiguousTargetMatchKeys.Length
-        for (k, a) in report.AmbiguousTargetMatchKeys do
-            printfn "  %s target '%s' (displaced)" (nm k) (AssignedKey.value a)
-    if not (List.isEmpty report.SkippedReferences) then
-        printfn ""
-        printfn
-            "%d row(s) dropped — a relationship points to an unmatched record:"
-            report.SkippedReferences.Length
-        for (owner, r) in report.SkippedReferences do
-            printfn
-                "  %s.%s → %s (unmatched source '%s')"
-                (nm owner)
-                (Name.value r.Column)
-                (nm r.Target)
-                (SourceKey.value r.UnresolvedSource)
-    // NM-53 — a resumable G10 no-op re-run replays the prior run's drop count
-    // (the marker persists the count, not the exact references), so the re-run
-    // is not silently clean. Surfaced explicitly as a replay, not freshly
-    // observed drops.
-    match report.ReplayedPriorDrops with
-    | Some n when n > 0 ->
-        printfn ""
-        printfn
-            "already complete; prior run dropped %d row(s) — re-surfacing that verdict (exact references not replayed)."
-            n
-    | _ -> ()
+    // The load plan as one responsive table — the engine measures each column
+    // against the terminal budget, so the wide table-name column reflows.
+    let planHeaders = [ "table"; "disposition"; "ingested"; "written"; "deferred FK" ]
+    let planRow (k: Transfer.KindOutcome) : (string * View.Status) list =
+        let deferred = Set.count k.DeferredFkColumns
+        [ nm k.Kind, View.Neutral
+          dispositionName k.Disposition, View.Neutral
+          string k.RowsIngested, (if k.RowsIngested > 0 then View.Ok else View.Neutral)
+          string k.RowsWritten, (if k.RowsWritten > 0 then View.Ok else View.Neutral)
+          string deferred, (if deferred > 0 then View.Warn else View.Neutral) ]
+    // A status-glyphed disclosure for a fault/advisory section — the headline
+    // carries the count + verdict, the rows reveal beneath (fully expanded at
+    // the board depth).
+    let section (status: View.Status) (headline: string) (rows: string list) : View.View option =
+        match rows with
+        | [] -> None
+        | _  -> Some (View.Disclosure (headline, status, rows |> List.map View.Note))
+    let blocks : View.View list =
+        [ yield View.Field ("load plan", sprintf "%d table(s) touched" touched.Length, View.Neutral)
+          yield View.Table (planHeaders, touched |> List.map planRow)
+          if not (List.isEmpty untouched) then
+              yield View.Note (sprintf "%d other modeled table(s): no rows to move, not reconciled — untouched." untouched.Length)
+          match section View.Bad
+                    (sprintf "%d relationship cycle(s) cannot be broken — the load cannot run as planned" report.UnbreakableCycleFks.Length)
+                    (report.UnbreakableCycleFks |> List.map (fun u -> sprintf "%s.%s -> %s" (nm u.Kind) (Name.value u.Column) (nm u.Target))) with
+          | Some v -> yield v | None -> ()
+          match section View.Warn
+                    (sprintf "%d identity(ies) unmatched — source records with no match in the target" report.UnmatchedIdentities.Length)
+                    (report.UnmatchedIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))) with
+          | Some v -> yield v | None -> ()
+          match section View.Warn
+                    (sprintf "%d source record(s) had a non-unique reconcile key — the first binding was kept" report.AmbiguousIdentities.Length)
+                    (report.AmbiguousIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))) with
+          | Some v -> yield v | None -> ()
+          match section View.Warn
+                    (sprintf "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won)" report.AmbiguousTargetMatchKeys.Length)
+                    (report.AmbiguousTargetMatchKeys |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))) with
+          | Some v -> yield v | None -> ()
+          match section View.Bad
+                    (sprintf "%d row(s) dropped — a relationship points to an unmatched record" report.SkippedReferences.Length)
+                    (report.SkippedReferences |> List.map (fun (owner, r) -> sprintf "%s.%s -> %s (unmatched source '%s')" (nm owner) (Name.value r.Column) (nm r.Target) (SourceKey.value r.UnresolvedSource))) with
+          | Some v -> yield v | None -> ()
+          // NM-53 — a resumable G10 no-op re-run replays the prior run's drop
+          // count (the marker persists the count, not the exact references), so
+          // the re-run is not silently clean.
+          match report.ReplayedPriorDrops with
+          | Some n when n > 0 ->
+              yield View.Note (sprintf "already complete; prior run dropped %d row(s) — re-surfacing that verdict (exact references not replayed)." n)
+          | _ -> ()
+          // The guarantee tree — when the flow declared a supporting scope, the
+          // invariants that governed this run (the same lens `check go` shows).
+          if not (List.isEmpty scopeGroups) then
+              yield GoBoardView.scopeTree "supporting scope — the invariants that held" View.Ok scopeGroups [] ]
+    GoBoardView.writeView Console.Out (View.Doc blocks)
+
+/// The live-run report for the generic `transfer` verb (no declared supporting
+/// scope) — the historical one-argument entry point every caller and test still
+/// holds. Delegates to the scope-aware form with an empty guarantee tree.
+let narrateTransferReport (report: Transfer.TransferReport) : unit =
+    narrateTransferReportWithScope report []
 
 /// After a successful EXECUTE, the undo artifact (`transfer-undo.sql`,
 /// written by the engine's success tail into the revert dir) is the
@@ -480,7 +483,20 @@ let runContractPairTransfer
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
-            narrateTransferReport report
+            // The guarantee tree for a declared-scope flow — the same References /
+            // Dependents hierarchy `check go` shows, now closing the run report
+            // (the invariants that held). Empty when no `supportingScope` was
+            // declared, so the tree only appears where it means something.
+            let scopeGroups =
+                if List.isEmpty supportingScope then []
+                else
+                    let payloadSet =
+                        match Transfer.resolveLoadSet physicalSinkContract tables with
+                        | Ok (Some s) -> s
+                        | _ -> Set.empty
+                    let baseReconciled = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                    SupportingScope.scopeGroups physicalSinkContract payloadSet baseReconciled supportingScope
+            narrateTransferReportWithScope report scopeGroups
             narrateUndoPointer mode revertOut
             narrateDropExit allowDrops report
         | Error errors ->
@@ -832,8 +848,13 @@ let runCheckGo
     (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
+        // The machine lens is the stable `toJsonString` CI contract (untouched);
+        // the human lens routes through `GoBoardView` — the Spectre-backed `View`
+        // engine (2026-07-08, the rendering-elevation program): the forecast reflows
+        // to the terminal width, the supporting-scope axis reveals as a fully-expanded
+        // References / Dependents tree with the per-claim guarantee named.
         if asJson then printfn "%s" (GoBoard.toJsonString board)
-        else GoBoard.render board |> List.iter (printfn "%s")
+        else GoBoardView.write Console.Out board
         GoBoard.exitCode board
     match planned with
     | PlanAction.Refused (_, e) ->
@@ -940,20 +961,33 @@ let runCheckGo
                     match v with
                     | SupportingScope.ScopeClaimVerdict.Confirmed note -> Some (sprintf "%s %s — %s (%s)" (relName e) e.Table note e.Reason)
                     | _ -> None)
+            // The hierarchical lens (2026-07-08, the rendering-elevation program):
+            // the References / Dependents claim tree — each claim with its family,
+            // normalized JOIN edges, authored reason, and the GUARANTEE a Confirmed
+            // claim earns. `SupportingScope.scopeGroups` is the SHARED pure builder
+            // the live-run report projects too, so the tree cannot drift between the
+            // readiness surface and the run itself.
+            let groups = SupportingScope.scopeGroups sinkContract payloadSet baseReconciled opts.SupportingScope
+            let unaccountedStrings =
+                unaccounted |> List.map (fun (k, r, target) ->
+                    sprintf "%s.%s -> %s escapes the payload and no supporting-scope entry classifies it" (Name.value k.Name) (Name.value r.Name) (Name.value target.Name))
             match contradictions, unaccounted with
             | [], [] ->
-                items.Add (GoBoard.itemWith "supporting scope"
+                items.Add (GoBoard.scopeItem "supporting scope"
                     (GoBoard.Status.Green (sprintf "%d supporting table(s) declared with intent; every one is borne out by a relationship, and no escaping reference is unaccounted." (List.length opts.SupportingScope)))
+                    groups
+                    []
                     confirmedLines)
             | cs, un ->
                 let detail =
                     [ for (e, reason, remedy) in cs do
                         yield sprintf "%s %s — %s" (relName e) e.Table reason
                         yield sprintf "  -> %s" remedy
-                      for (k, r, target) in un do
-                        yield sprintf "%s.%s -> %s escapes the payload and no supporting-scope entry classifies it" (Name.value k.Name) (Name.value r.Name) (Name.value target.Name) ]
-                items.Add (GoBoard.itemWith "supporting scope"
+                      yield! unaccountedStrings ]
+                items.Add (GoBoard.scopeItem "supporting scope"
                     (GoBoard.Status.Red (sprintf "%d declared intent(s) the graph contradicts, %d escaping reference(s) unaccounted." (List.length cs) (List.length un), "correct the entr(ies) named below, or classify the unaccounted reference(s); then re-run."))
+                    groups
+                    unaccountedStrings
                     detail))
         // -- schema shape ----------------------------------------------------
         let gateScope = loadSet |> Option.map (Set.union reconciledKeys)
@@ -1207,22 +1241,24 @@ let runCheckGo
                 // the operator reads their own list before the closure's.
                 let declaredKinds, broughtKinds = report.Kinds |> List.partition (fun k -> isDeclared k.Kind)
                 let forecastLines = (declaredKinds |> List.choose lineFor) @ (broughtKinds |> List.choose lineFor)
-                let forecastDetail =
-                    [ yield! GoBoard.forecastTable forecastLines
-                      // The rows a strategy-replace wipe would DELETE, in
-                      // full — the operator sees the actual records, not a
-                      // count. (A dropped row under replace shows in `-del`
-                      // as part of the wipe; the drop means it is NOT
-                      // re-inserted afterwards — the `+add` column is
-                      // already net of drops.)
-                      for k in report.Kinds do
+                // The rows a strategy-replace wipe would DELETE, in full — the
+                // operator sees the actual records, not a count. (A dropped row
+                // under replace shows in `-del` as part of the wipe; the drop
+                // means it is NOT re-inserted afterwards — the `+add` column is
+                // already net of drops.)
+                let wipePreviews =
+                    [ for k in report.Kinds do
                           match sinkProbes |> Map.tryFind k.Kind with
                           | Some (Some n, (_ :: _ as sample)) when n > 0L ->
                               yield ""
                               yield sprintf "wipe preview — %s (first %d of %d row(s) the wipe deletes):" (physicalIn sinkContract k.Kind) sample.Length n
                               for line in sample do yield sprintf "  %s" line
                           | _ -> () ]
-                items.Add (GoBoard.itemWith "forecast"
+                // `detail` is the plain/JSON twin (the aligned strings + previews),
+                // kept byte-identical; the typed `forecastLines`/`previews` ride in
+                // `Body` for the responsive-table lens (2026-07-08).
+                let forecastDetail = GoBoard.forecastTable forecastLines @ wipePreviews
+                items.Add (GoBoard.forecastItem "forecast"
                     (GoBoard.Status.Green
                         (sprintf "dry run complete — %d row(s) into %d declared table(s)%s; before → after below."
                             (report.Kinds |> List.sumBy (fun k -> k.RowsIngested))
@@ -1230,6 +1266,8 @@ let runCheckGo
                             (match broughtKinds |> List.choose lineFor |> List.length with
                              | 0 -> ""
                              | n -> sprintf ", %d table(s) brought along by relationships" n)))
+                    forecastLines
+                    (wipePreviews |> List.filter (fun s -> s <> ""))
                     forecastDetail)
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched

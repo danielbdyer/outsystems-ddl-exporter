@@ -26994,3 +26994,66 @@ engine field (it rides the existing `tables`/`reconcile` string lists).
 **Witnesses.** `SupportingScopeTests` (bridge / desugar / resolve / the six
 verify claims / dependentEdges / completeness), `MovementSurfaceTests`
 (round-trip + named refusals), `GoBoardDockerTests` (the axis on the live pair).
+
+## 2026-07-08 — The go-board rendering elevation: the report routes through the `View` engine (responsive forecast table, the References/Dependents guarantee tree)
+
+The go board (`projection check go`) and the live-run report were the last two
+operator surfaces still on raw `printfn` + fixed-width `sprintf`. They now build
+a `View` (the Spectre-backed `REPORTING_HORIZON` substrate) and render through the
+one engine — "one substrate, many lenses", the `TtyRenderer` precedent. The pure
+`GoBoard.Board` stays the ONE substrate; the machine lens (`GoBoard.toJsonString`)
+is byte-for-byte untouched (the CI contract).
+
+**Typed carriers, additive.** `GoBoard.Item` gains a `Body : ItemBody` field
+(`Plain | Forecast of ForecastLine list * previews | Scope of ScopeGroup list *
+unaccounted`) with `forecastItem` / `scopeItem` constructors that ALSO set the
+existing flat `Detail` strings. `render` / `toJsonString` never match `Body`, so
+every existing `item` / `itemWith` site and the JSON output are unchanged. The
+carriers are primitive-typed (strings + `GoBoard.Status`) because `GoBoard`
+compiles before `SupportingScope` — the assembly boundary that kept `GoBoard`
+free of the DUs it precedes.
+
+**The forecast becomes a responsive `View.Table`.** Spectre measures its own
+columns against the terminal, so the wide physical-name columns reflow instead of
+clipping; per-cell `Status` colors `+add` green / `-del` red; a `TOTAL` row
+closes it. The free-text note drops OUT of the table to a per-row `Note` beneath
+(it never fights the table's width).
+
+**The supporting-scope axis becomes a fully-expanded hierarchy.** Grouped
+References / Dependents → per-claim `Disclosure` carrying the normalized JOIN
+edges (which payload columns point at a reference; which dependent columns point
+back), the authored intent, and — the operator's ask — the GUARANTEE a Confirmed
+claim earns. `SupportingScope.guaranteeOf` states each invariant in THE_VOICE
+register (a static-lookup identical-match reads as a stated no-op, green, so the
+operator FEELS the confidence). `SupportingScope.scopeGroups` is the ONE builder
+both the board and the live-run report project, so the guarantee tree cannot
+drift between the readiness surface and the run itself.
+
+**Board + live run.** `narrateTransferReport` is rebuilt on `View` too — the load
+plan is a responsive table, the cycle / unmatched / drop sections are
+status-glyphed `Disclosure` blocks, and a declared-scope flow closes with the
+same guarantee tree ("the invariants that held", threaded from the resolved
+supporting scope at the flow-config call site).
+
+**The width discipline (two channels, resolved independently).** The board is a
+REPORT: its proof lines (reconcile evidence, dropped rows, wipe previews) must
+print in FULL, exactly as the raw-`printfn` predecessor emitted them. So the
+`View` text cap (`RenderOptions.Width`) is unbound, and a REDIRECTED sink (pipe /
+file / capture) widens its console `Profile.Width` so Spectre never wraps a proof
+line mid-phrase. A real TTY keeps its width — the forecast `Table` reflows to the
+terminal (the responsive lens the operator asked for), long proof soft-wraps.
+The forecast `Table` auto-sizes to its own content regardless, so widening the
+redirected profile does not blow the table out. (Discovered by `GoBoardDockerTests`:
+the captured evidence substring straddled the width-100 wrap.)
+
+**One gap fixed in passing.** A `Red` item with a remedy but no detail must still
+surface the remedy in the rich lens (the plain renderer always printed it); a bare
+`Field` is reserved for the case with neither remedy nor detail.
+
+**Witnesses.** Pure — `GoBoardViewTests` (the responsive forecast render, the
+Confirmed-claim guarantee + join edge under the family tree, the green/red verdict
+next-move, `toJsonString` byte-identity under a `Body`-bearing item) +
+`SupportingScopeTests` (`guaranteeOf` per relationship + the THE_VOICE
+banned-word scan; `scopeGroups` family split with join edges). Docker —
+`GoBoardDockerTests` (the board + supporting-scope substrings survive the
+Table/tree format). Release build clean (FS3511 verified).
