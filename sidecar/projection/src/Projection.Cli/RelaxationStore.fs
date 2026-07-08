@@ -106,3 +106,43 @@ let setFlowString (path: string) (flow: string) (field: string) (value: string) 
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
         Ok ()
     with ex -> Error ex.Message
+
+/// Surgically set a flow's `signoff` array under `flows.<flow>.signoff` (2026-07-09,
+/// the guided-plan wizard's greenlight-write). The A44 move applied to the write-signoff:
+/// after the wizard flips a flow to a destructive strategy, the interactive greenlight
+/// becomes a durable, hand-reachable config edit, so the go board goes GREEN and a later
+/// headless Execute honors it without re-declaring. Every OTHER key is preserved
+/// byte-for-byte; the field order mirrors `renderFlow`'s signoff block so a subsequent
+/// `parse ∘ render` is stable. `Ok ()` on a successful write; `Error cause` names the
+/// failure (downgrades never silent).
+let setFlowSignoff (path: string) (flow: string) (approvals: Projection.Pipeline.WriteSignoff.WriteApproval list) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    let objOf (a: Projection.Pipeline.WriteSignoff.WriteApproval) : JsonObject =
+        let o = JsonObject()
+        o.["mode"] <- JsonValue.Create (Projection.Pipeline.WriteSignoff.modeLabel a.Mode)
+        if not (List.isEmpty a.Tables) then
+            let arr = JsonArray()
+            for t in a.Tables do arr.Add(JsonValue.Create t)
+            o.["tables"] <- arr
+        a.AcknowledgedImpact |> Option.iter (fun v -> o.["acknowledgedImpact"] <- JsonValue.Create v)
+        a.ApprovedBy         |> Option.iter (fun v -> o.["approvedBy"]         <- JsonValue.Create v)
+        a.Date               |> Option.iter (fun v -> o.["date"]               <- JsonValue.Create v)
+        o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for a in approvals do arr.Add(objOf a)
+        flowObj.["signoff"] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message

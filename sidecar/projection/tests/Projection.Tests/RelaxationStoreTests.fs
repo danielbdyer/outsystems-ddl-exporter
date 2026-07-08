@@ -4,6 +4,7 @@ open System
 open System.IO
 open Xunit
 open Projection.Cli
+open Projection.Pipeline
 
 /// Relax-ALWAYS persistence — the blessed tightening relaxations recorded in
 /// projection.json. The load-bearing property: the surgical JSON merge records
@@ -52,5 +53,36 @@ let ``persist is a SURGICAL merge — every other projection.json key survives``
         Assert.Contains("ossys.conn", text)
         Assert.Contains("publish", text)
         Assert.Equal<Set<string>>(Set.singleton "T.c", RelaxationStore.read path)
+    finally
+        (try File.Delete path with _ -> ())
+
+/// The guided-plan wizard's greenlight-write (2026-07-09): `setFlowSignoff` writes
+/// `flows.<flow>.signoff` as an array the config parser reads back to the SAME
+/// approvals, and — the surgical-merge invariant — leaves every other key intact.
+[<Fact>]
+let ``setFlowSignoff writes a signoff the config parser reads back to the same approvals`` () =
+    let path = tempFile ()
+    try
+        File.WriteAllText(
+            path,
+            """{ "model": { "path": "m.json" }, "output": { "dir": "out/" },
+                "environments": {
+                  "qa":  { "access": "direct", "conn": "file:./q.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data" },
+                  "uat": { "access": "direct", "conn": "file:./u.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data" } },
+                "flows": { "golden": { "from": "qa", "to": "uat", "scope": "data", "tables": ["Customer"], "strategy": "replace" } } }""")
+        let approval =
+            { WriteSignoff.greenlit WriteSignoff.WriteMode.Replace with
+                AcknowledgedImpact = Some (WriteSignoff.impactOf WriteSignoff.WriteMode.Replace) }
+        Assert.Equal<Result<unit, string>>(Ok (), RelaxationStore.setFlowSignoff path "golden" [ approval ])
+        // the config parser reads the written array back to the same approvals.
+        match ProjectionConfig.parse (File.ReadAllText path) with
+        | Error es -> Assert.Fail(sprintf "reparse failed: %A" es)
+        | Ok cfg ->
+            let flow = Map.find "golden" cfg.Flows
+            Assert.Equal<WriteSignoff.WriteApproval list>([ approval ], flow.Signoff)
+            // the surgical merge preserved the flow's other keys (strategy/tables).
+            let text = File.ReadAllText path
+            Assert.Contains("Customer", text)
+            Assert.Contains("replace", text)
     finally
         (try File.Delete path with _ -> ())

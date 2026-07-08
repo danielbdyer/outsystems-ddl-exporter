@@ -1603,6 +1603,28 @@ let runTransferPlan (flow: string) (plan: TransferPlan.Plan) (asJson: bool) : in
                     eprintfn ""
                     eprintfn "Wrote \"strategy\": \"%s\" to %s for flow '%s'." w path flow
                     TransferPlanView.write Console.Error (TransferPlan.reselectStrategy w plan)
+                    // The greenlight companion (2026-07-09): a destructive wipe
+                    // (`replace`/`fresh` → WipeAndLoad) is REFUSED by the go board
+                    // and the engine until the flow declares the mode in `signoff`.
+                    // Having just flipped the flow destructive, offer to write the
+                    // matching greenlight in the same breath (the A44 move) so the
+                    // operator is not left staring at a fresh RED. `merge` needs none.
+                    match (match w with
+                           | "replace" -> Some WriteSignoff.WriteMode.Replace
+                           | "fresh"   -> Some WriteSignoff.WriteMode.Fresh
+                           | _         -> None) with
+                    | Some mode ->
+                        let yes : Intervene.Choice<bool> = { Code = "signoff.write"; Label = "Yes — write the greenlight to projection.json now."; Value = true }
+                        let no  : Intervene.Choice<bool> = { Code = "signoff.skip";  Label = "No — the signoff will be declared by hand."; Value = false }
+                        let title = sprintf "\"%s\" is a destructive wipe. %s Write the greenlight now?" w (WriteSignoff.impactOf mode)
+                        match Intervene.chooseOrDefault title [ yes; no ] no with
+                        | Intervene.Chosen true ->
+                            let approval = { WriteSignoff.greenlit mode with AcknowledgedImpact = Some (WriteSignoff.impactOf mode) }
+                            match RelaxationStore.setFlowSignoff path flow [ approval ] with
+                            | Ok () -> eprintfn "Wrote the %s greenlight to %s for flow '%s' — the go board's `signoff` axis now greens." w path flow
+                            | Error e -> eprintfn "Could not write the signoff to %s: %s" path e
+                        | _ -> ()
+                    | None -> ()
                 | Error e -> eprintfn "Could not update %s: %s" path e
             | _ -> ()
         | None -> ()
