@@ -132,6 +132,26 @@ let ``load: a corrupt (non-JSON) line throws — the resume surface is not silen
         File.AppendAllText(CaptureJournal.filePath j, "this-is-not-json\n")
         Assert.ThrowsAny<exn>(fun () -> CaptureJournal.load j |> ignore) |> ignore)
 
+// -- torn trailing line (2026-07-09): a mid-crash partial with NO closing --
+// newline is SKIPPED, not thrown on, so a hard crash never wedges resume /
+// revert behind a hand-truncation. The tolerance is keyed on the missing
+// trailing newline (a newline-terminated corrupt line is complete → still
+// throws, per the test above), never on mere position.
+
+[<Fact>]
+let ``load: a TORN trailing line (no closing newline) is skipped; prior chunks still load`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        // Simulate a crash mid-append: a half-written final record, no newline.
+        File.AppendAllText(CaptureJournal.filePath j, "{\"Kind\":\"OS_USER\",\"ChunkIx\":2,\"First")
+        let loaded = CaptureJournal.load j
+        Assert.Equal(2, loaded.Count)
+        Assert.True(loaded.ContainsKey(("OS_USER", 0)))
+        Assert.True(loaded.ContainsKey(("OS_USER", 1)))
+        Assert.False(loaded.ContainsKey(("OS_USER", 2))))
+
 // -- L2: the journal grain on the ledger contract (R3 / RI-3) --------------
 // The contract instance over REAL journal records: the chain form, the
 // resume point, drift detection, and the effectful remap fold adapted at
@@ -221,6 +241,19 @@ let ``ResumeIndex: blank and literal-null lines are skipped; valid records still
         let index = CaptureJournal.openResumeIndex j
         Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 0).IsSome)
         Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 1).IsSome))
+
+[<Fact>]
+let ``ResumeIndex: a TORN trailing line (no closing newline) is skipped; prior chunks still resolve`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        // A crash mid-append: a half-written final record with no closing newline.
+        File.AppendAllText(CaptureJournal.filePath j, "{\"Kind\":\"OS_USER\",\"ChunkIx\":2,\"First")
+        let index = CaptureJournal.openResumeIndex j
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 0).IsSome)
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 1).IsSome)
+        Assert.Equal(None, CaptureJournal.tryFindRecord index "OS_USER" 2))
 
 [<Fact>]
 let ``ResumeIndex: byte offsets stay correct across multi-byte UTF-8 lines`` () =
