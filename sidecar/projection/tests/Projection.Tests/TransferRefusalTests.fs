@@ -265,3 +265,31 @@ let ``revert guard: a legacy header without server= still verifies on database=`
     Assert.Equal(None, p.Server)
     Assert.Equal(None, TransferRevert.guardVerdict false p "anySrv" "dbA")   // matching db passes
     Assert.True((TransferRevert.guardVerdict false p "anySrv" "dbB").IsSome)   // mismatching db still refuses
+
+// --- Witnesses for shipped-but-unproven named refusals (audit follow-on) ---
+// staticLookup.diverged + loadOrderUnproven gated a live write yet had no
+// by-name witness. Pure decisions the go board, the engine, and the fast pool
+// now all share (the 6.A.1 pattern).
+
+[<Fact>]
+let ``witness staticLookup: a diverged static-lookup refuses transfer.staticLookup.diverged; a clean one passes`` () =
+    let dirty : StaticLookupDivergence =
+        { Kind = singleKey; ColumnDrifts = []; MissingOnTarget = [ "42" ]; ExtraOnTarget = [] }
+    Assert.False dirty.IsClean
+    match Transfer.staticLookupRefusalOf catalog [ dirty ] with
+    | Some e -> Assert.Equal("transfer.staticLookup.diverged", e.Code)
+    | None   -> Assert.Fail "a diverged static-lookup must refuse by name"
+    let clean : StaticLookupDivergence = { Kind = singleKey; ColumnDrifts = []; MissingOnTarget = []; ExtraOnTarget = [] }
+    Assert.True clean.IsClean
+    Assert.True((Transfer.staticLookupRefusalOf catalog [ clean ]).IsNone)
+
+[<Fact>]
+let ``witness loadOrder: an alphabetical-degraded order refuses transfer.loadOrderUnproven; a topological order passes`` () =
+    let degraded =
+        { TopologicalOrder.empty with
+            Mode   = Alphabetical
+            Cycles = [ { Members = [ singleKey; compositeKey ]; BreakableEdges = []; Reason = "every edge non-nullable (an all-strong cycle)" } ] }
+    match Transfer.orderedLoadGate degraded with
+    | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
+    | None   -> Assert.Fail "an unproven (degraded) load order must refuse by name"
+    Assert.True((Transfer.orderedLoadGate TopologicalOrder.empty).IsNone)

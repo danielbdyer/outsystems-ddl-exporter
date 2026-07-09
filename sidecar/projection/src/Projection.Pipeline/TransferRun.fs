@@ -955,7 +955,10 @@ module Transfer =
     /// declared `static-lookup` whose dataset is NOT identical across the
     /// environments (value drift, an extra sink row, or a missing row). `None`
     /// when every declared lookup is clean.
-    let private staticLookupRefusalOf (catalog: Catalog) (divs: StaticLookupDivergence list) : ValidationError option =
+    // Public (not private) so the pure pool witnesses `transfer.staticLookup.diverged`
+    // BY NAME — the 6.A.1 pattern: one pure decision the go board, the engine, and
+    // the fast pool all share.
+    let staticLookupRefusalOf (catalog: Catalog) (divs: StaticLookupDivergence list) : ValidationError option =
         match divs |> List.filter (fun d -> not d.IsClean) with
         | [] -> None
         | dirty ->
