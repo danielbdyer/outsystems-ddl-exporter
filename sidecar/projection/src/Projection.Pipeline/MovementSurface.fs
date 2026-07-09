@@ -856,7 +856,18 @@ module ProjectionConfig =
                             Result.failureOf (err "cli.config.alignMapShape" (sprintf "flow '%s' 'alignMap' must be an object of \"sourceModule\": \"sinkModule\" strings." name))
                         | _ -> Result.success Map.empty
                     match modeR, mapR with
-                    | Ok mode, Ok map -> Result.success (mode, map)
+                    | Ok mode, Ok map ->
+                        // The mode and the map must AGREE — a set-but-inert config
+                        // is a silent footgun: `by-name` with no map would fall
+                        // through to a misleading downstream shape refusal, and a
+                        // map under `by-sskey` would be silently ignored. Refuse BY
+                        // NAME at parse so the operator's intent is unambiguous.
+                        match mode, Map.isEmpty map with
+                        | AlignmentMode.ByName, true ->
+                            Result.failureOf (err "cli.config.alignmentNoMap" (sprintf "flow '%s' sets alignment 'by-name' but declares no 'alignMap' — name-alignment needs the source->sink module correspondence." name))
+                        | AlignmentMode.BySsKey, false ->
+                            Result.failureOf (err "cli.config.alignMapWithoutByName" (sprintf "flow '%s' declares an 'alignMap' but alignment is not 'by-name' — set \"alignment\": \"by-name\" to use it, or remove the map." name))
+                        | _ -> Result.success (mode, map)
                     | Error e1, Error e2 -> Result.failure (e1 @ e2)
                     | Error es, _ | _, Error es -> Result.failure es
                 match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el, alignmentR with

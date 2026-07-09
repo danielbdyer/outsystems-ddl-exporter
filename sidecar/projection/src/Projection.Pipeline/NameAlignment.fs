@@ -120,6 +120,14 @@ module NameAlignment =
     /// Rewrite `source` so its SsKeys equal `sink`'s by name, within `alignMap`
     /// (source-module-name → sink-module-name). See the module docstring.
     let align (alignMap: Map<string, string>) (source: Catalog) (sink: Catalog) : Result<Catalog> =
+        // An empty map is not identity — under `ByName` it would silently no-op
+        // and hand a misleading shape refusal downstream. Refuse BY NAME so a
+        // programmatic caller (and the config path's mirror guard) fail loud.
+        if Map.isEmpty alignMap then
+            Result.failureOf
+                (ValidationError.create "alignment.mapEmpty"
+                    "name-alignment requires a non-empty source->sink module map.")
+        else
         // Match + shape-check on the ESPACE-SAFE logical shape — the SAME
         // normalization the shape gate uses (`Readiness.toLogicalShape`): it
         // blanks the physical-realization artifacts (default-constraint NAME,

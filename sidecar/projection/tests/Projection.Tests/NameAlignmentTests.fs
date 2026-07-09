@@ -145,6 +145,11 @@ let ``align refuses alignment.module.unmatched when a mapped module is absent`` 
     Assert.Contains("alignment.module.unmatched", codesOf r)
 
 [<Fact>]
+let ``align refuses alignment.mapEmpty — ByName with no map is not a silent no-op`` () =
+    let r = NameAlignment.align Map.empty source clone
+    Assert.Contains("alignment.mapEmpty", codesOf r)
+
+[<Fact>]
 let ``align is deterministic — identical inputs yield identical output`` () =
     let a = NameAlignment.align map source clone
     let b = NameAlignment.align map source clone

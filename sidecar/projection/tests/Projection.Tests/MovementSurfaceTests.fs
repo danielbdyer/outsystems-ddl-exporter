@@ -1305,6 +1305,29 @@ let ``config refuses a malformed flow reconcile entry, named (J2)`` () =
     Assert.Contains("cli.config.flowReconcileShape", errCodes (ProjectionConfig.parse json))
 
 [<Fact>]
+let ``config refuses an unknown alignment token, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-guid" } } }"""
+    Assert.Contains("alignment.mode.unknown", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses by-name alignment with no module map, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name" } } }"""
+    Assert.Contains("cli.config.alignmentNoMap", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses an alignMap without by-name alignment, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignMap": { "AppCore": "AppCoreClone" } } } }"""
+    Assert.Contains("cli.config.alignMapWithoutByName", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config parses a by-name flow with a module map`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } } }"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    let flow = Map.find "g" cfg.Flows
+    Assert.Equal(AlignmentMode.ByName, flow.Alignment)
+    Assert.Equal<Map<string,string>>(Map.ofList [ "AppCore", "AppCoreClone" ], flow.AlignMap)
+
+[<Fact>]
 let ``flow reconcile threads onto the spec and into the transfer's LoadOpts (J2)`` () =
     match specOf "golden" commit with
     | Ok s -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], s.Reconcile)
