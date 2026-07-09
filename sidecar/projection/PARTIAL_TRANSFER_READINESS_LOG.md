@@ -1579,3 +1579,23 @@ defense-in-depth, needs threading signoffs into the streaming signature); T0.3
 path, since platform-`User` FK ubiquity makes a hard refusal too broad); the shared
 two-environment peer fixture; and docker witnesses for `--impact`, the
 static-lookup board case, and `supportingScope.inboundOrphan`.
+
+### Addendum — T1.6 + T0.3 landed (same session)
+
+- **T1.6 — drops/cdc via the durable signoff.** Row loss / CDC-flood is now
+  acknowledged by the `--allow-drops`/`--allow-cdc` flag OR the flow's durable
+  `Drops`/`Cdc` signoff (`Transfer.dropsAcknowledged`/`cdcAcknowledged`). `runCore`
+  folds the signoff into the effective flags so the pre-write gates and the face's
+  exit code read one acknowledgement — closing the "scripted `--go --allow-drops`
+  drops rows with nothing durable to audit" gap. Streaming keeps flag-only (noted).
+- **T0.3 — out-of-contract FK escapes refused; durable `foreignRefs` ack.** An
+  in-subset FK to a NON-User kind absent from the acquired contract loaded the raw
+  source surrogate (a silent cross-wire). The engine now refuses
+  `transfer.subsetFkEscapes.targetOutOfContract` unless the flow declares the
+  reference stable in `foreignRefs` (a first-class, A44-round-tripping config field
+  threaded onto `WriteOptions.ForeignRefsAcknowledged`); the platform-User path is
+  excluded (`Reference.IsUserFk`). Widening the acquisition is the other remedy.
+
+Remaining named follow-on: T1.8 (incremental populated-sink refusal), T1.10
+(streaming signoff arm), the shared two-environment fixture, and docker witnesses
+for `--impact` / the static-lookup board / `supportingScope.inboundOrphan`.
