@@ -725,6 +725,29 @@ module Transfer =
                             "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
                             escapes.Length (String.concat "; " escapes)))
 
+    /// T0.3 (2026-07-09) — the OUT-OF-CONTRACT foreign-reference gate. An in-subset
+    /// FK to a NON-User kind ABSENT from the acquired contract loads the raw source
+    /// surrogate into the sink (a silent cross-environment mis-key — runbook live
+    /// hotspot #1). `escapingEdges` skips these, so refuse BY NAME unless the flow
+    /// declares the reference environment-stable in `foreignRefs` (the durable,
+    /// auditable ack). Fail-closed; the platform-User path is excluded upstream in
+    /// `outOfContractEscapes` (the User-reflow re-points it). No load-set (a full
+    /// transfer) has no out-of-contract escapes by definition.
+    let subsetForeignRefsGate (catalog: Catalog) (loadSet: Set<SsKey> option) (reconciled: Set<SsKey>) (acknowledged: Set<string>) : ValidationError option =
+        match loadSet with
+        | None -> None
+        | Some set ->
+            let unacked =
+                TransferSubset.outOfContractEscapes catalog set reconciled
+                |> List.filter (fun (owner, r) -> not (Set.contains (TransferSubset.foreignRefToken owner r) acknowledged))
+            if List.isEmpty unacked then None
+            else
+                let tokens = unacked |> List.map (fun (owner, r) -> TransferSubset.foreignRefToken owner r)
+                Some (ValidationError.create
+                        "transfer.subsetFkEscapes.targetOutOfContract"
+                        (sprintf "%d reference(s) target a kind OUTSIDE the acquired contract; their rows would keep SOURCE-environment surrogates (a silent cross-wire): %s. Declare each environment-stable in the flow's `foreignRefs`, or widen the acquisition to include the target's espace."
+                            unacked.Length (String.concat "; " tokens)))
+
     /// T1.5 (2026-07-09) — the plan-derivable IDENTITY-INSERT detection. A load
     /// whose disposition is `PreservedFromSource` onto a kind with an IDENTITY PK
     /// writes explicit source keys straight into the identity column (SqlBulkCopy
@@ -1133,11 +1156,17 @@ module Transfer =
           /// missing rows) reds the go board and refuses a live Execute
           /// (`transfer.staticLookup.diverged`). Empty (the `def` default) asserts
           /// nothing. Sourced from `SupportingScope.resolve`'s `StaticLookupKinds`.
-          StaticLookupKinds : Set<SsKey> }
+          StaticLookupKinds : Set<SsKey>
+          /// 2026-07-09 (T0.3) — the operator's `foreignRefs`: the acknowledged
+          /// OUT-OF-CONTRACT references (each `OwnerKind.ReferenceName`), declared
+          /// environment-stable so `subsetForeignRefsGate` does not refuse them.
+          /// Empty (the `def` default) means every out-of-contract escape is a
+          /// pre-write refusal (`transfer.subsetFkEscapes.targetOutOfContract`).
+          ForeignRefsAcknowledged : Set<string> }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1283,9 +1312,12 @@ module Transfer =
                             match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
                             | Some refusal -> Some refusal
                             | None ->
-                                match validatePinnedOwners reconciled with
+                                match subsetForeignRefsGate catalog writeOpts.LoadSet reconciledKinds writeOpts.ForeignRefsAcknowledged with
                                 | Some refusal -> Some refusal
-                                | None         -> validateUserMap allowDrops reconciled
+                                | None ->
+                                    match validatePinnedOwners reconciled with
+                                    | Some refusal -> Some refusal
+                                    | None         -> validateUserMap allowDrops reconciled
                 else None
             // The inbound-orphan gate (2026-07-08): a replace-wipe of a payload
             // parent fails (FK 547) if an out-of-payload dependent still holds
@@ -2877,6 +2909,9 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T0.3) — the acknowledged out-of-contract references
+        // (`OwnerKind.ReferenceName`), so `subsetForeignRefsGate` does not refuse.
+        (foreignRefsAck: Set<string>)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2895,7 +2930,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2922,7 +2957,7 @@ module Transfer =
         // board reds on a diverged lookup; a straight load passes `Set.empty`).
         (staticLookupKinds: Set<SsKey>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds Set.empty false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

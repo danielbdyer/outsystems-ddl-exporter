@@ -293,3 +293,50 @@ let ``witness loadOrder: an alphabetical-degraded order refuses transfer.loadOrd
     | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
     | None   -> Assert.Fail "an unproven (degraded) load order must refuse by name"
     Assert.True((Transfer.orderedLoadGate TopologicalOrder.empty).IsNone)
+
+// --- T0.3: the out-of-contract foreign-reference gate ---------------------
+// An in-subset FK to a NON-User kind ABSENT from the acquired contract loads the
+// raw source surrogate (a silent cross-wire). Refuse by name unless the flow
+// acknowledges it in `foreignRefs`; the platform-User path is excluded (the User
+// reflow re-points it), and an in-contract escape stays the existing gate's job.
+
+let private foreignTargetKey = mkKey ["ForeignSystemEntity"]   // never added to a catalog
+
+let private ownerRef (name: string) (isUserFk: bool) : Reference =
+    { Reference.create (mkKey ["Owner"; name]) (mkName name) (mkKey ["Owner"; "ID"]) foreignTargetKey with
+        IsUserFk = isUserFk }
+
+let private ownerCatalog (refs: Reference list) : Catalog =
+    let owner = { kindOf ["Owner"] "OSUSR_OWNER" [ pk ["Owner"] "ID" true ] with References = refs }
+    IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["M3"]) (mkName "M3") [ owner ] ]
+
+let private ownerLoadSet = Set.ofList [ mkKey ["Owner"] ]
+
+[<Fact>]
+let ``T0.3: an FK to a target OUTSIDE the contract is an out-of-contract escape and refuses by name`` () =
+    let cat = ownerCatalog [ ownerRef "FkToForeign" false ]
+    Assert.Equal(1, (TransferSubset.outOfContractEscapes cat ownerLoadSet Set.empty).Length)
+    match Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty Set.empty with
+    | Some e -> Assert.Equal("transfer.subsetFkEscapes.targetOutOfContract", e.Code)
+    | None   -> Assert.Fail "an unacknowledged out-of-contract FK must refuse by name"
+
+[<Fact>]
+let ``T0.3: a foreignRefs acknowledgement clears the out-of-contract refusal`` () =
+    let cat = ownerCatalog [ ownerRef "FkToForeign" false ]
+    Assert.True((Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty (Set.ofList [ "Owner.FkToForeign" ])).IsNone)
+
+[<Fact>]
+let ``T0.3: a platform-User FK (IsUserFk) is NOT an out-of-contract escape (the User reflow re-points it)`` () =
+    let cat = ownerCatalog [ ownerRef "CreatedByUser" true ]
+    Assert.Empty(TransferSubset.outOfContractEscapes cat ownerLoadSet Set.empty)
+    Assert.True((Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty Set.empty).IsNone)
+
+[<Fact>]
+let ``T0.3: an IN-contract escape (target present but out of subset) is NOT out-of-contract`` () =
+    // compositeKind references singleKey, which IS in the catalog but out of the
+    // loadSet — the existing subsetEscapeGate's business, not this gate's.
+    let compositeRefSingle =
+        { compositeKind with
+            References = [ { Reference.create (mkKey ["Composite"; "toSingle"]) (mkName "ToSingle") (mkKey ["Composite"; "ID"]) singleKey with IsUserFk = false } ] }
+    let cat = IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["Module"]) (mkName "M") [ compositeRefSingle; singleKind ] ]
+    Assert.Empty(TransferSubset.outOfContractEscapes cat (Set.ofList [ compositeKey ]) Set.empty)

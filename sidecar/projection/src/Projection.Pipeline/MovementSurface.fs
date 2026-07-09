@@ -820,12 +820,25 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
+                // T0.3 (2026-07-09) — the acknowledged OUT-OF-CONTRACT references
+                // (each `OwnerKind.ReferenceName`), declared environment-stable so
+                // `subsetForeignRefsGate` does not refuse them. Same shape as
+                // `reconcileIgnore`: a plain string array.
+                let foreignRefs =
+                    match el.TryGetProperty "foreignRefs" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        [ for v in r.EnumerateArray() do
+                            if v.ValueKind = JsonValueKind.String then
+                                match Option.ofObj (v.GetString()) with
+                                | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                | _ -> () ]
+                    | _ -> []
                 match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el with
                 | Error es, _, _, _, _, _, _ | _, Error es, _, _, _, _, _ | _, _, Error es, _, _, _, _ | _, _, _, Error es, _, _, _ | _, _, _, _, Error es, _, _ | _, _, _, _, _, Error es, _ | _, _, _, _, _, _, Error es -> Result.failure es
                 | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -1126,6 +1139,12 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.ReconcileIgnore do a.Add(JsonValue.Create r)
             o.["reconcileIgnore"] <- a)
+        // T0.3 — the acknowledged out-of-contract references (empty default
+        // round-trips through the absent arm, mirroring `reconcileIgnore`).
+        (if not (List.isEmpty flow.ForeignRefs) then
+            let a = JsonArray()
+            for r in flow.ForeignRefs do a.Add(JsonValue.Create r)
+            o.["foreignRefs"] <- a)
         // 2026-07-08 — the supporting-scope entries render in a fixed field
         // order (relationship, table, per-relationship payload, reason) so the
         // round-trip `parse ∘ render = id` holds on the canonical DOM.
@@ -1343,6 +1362,7 @@ module Command =
           Emission    = emissionOf spec.Strategy
           Reconcile   = spec.Reconcile
           ReconcileIgnore = spec.ReconcileIgnore
+          ForeignRefs = spec.ForeignRefs
           SupportingScope = spec.SupportingScope
           Signoff     = spec.Signoff
           Rekey       = spec.Rekey
@@ -1826,6 +1846,7 @@ module Command =
                         // the spec into the transfer leg's `LoadOpts.Reconcile`.
                         Reconcile = flow.Reconcile
                         ReconcileIgnore = flow.ReconcileIgnore
+                        ForeignRefs = flow.ForeignRefs
                         SupportingScope = flow.SupportingScope
                         Signoff  = flow.Signoff
                         Tables   = flow.Tables

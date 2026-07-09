@@ -163,6 +163,9 @@ type MovementSpec =
         /// 2026-07-08 — the flow's `reconcileIgnore` audit columns (shared
         /// attribute names the matched-pair diff skips).
         ReconcileIgnore : string list
+        /// 2026-07-09 (T0.3) — acknowledged out-of-contract references
+        /// (`OwnerKind.ReferenceName`), declared environment-stable.
+        ForeignRefs : string list
         /// 2026-07-08 — the typed supporting-scope vocabulary (owned children,
         /// references, anchors, lookups, blocked dependents). Empty = none.
         SupportingScope : SupportingScope.SupportingScopeEntry list
@@ -232,6 +235,7 @@ module MovementSpec =
             Rekey       = None
             Reconcile   = []
             ReconcileIgnore = []
+            ForeignRefs = []
             SupportingScope = []
             Signoff     = []
             Tables      = []
@@ -297,6 +301,10 @@ type Flow =
         /// UpdatedOn). One global list beside `reconcile`, applied to
         /// every reconciled kind. Empty = diff every non-key column.
         ReconcileIgnore : string list
+        /// 2026-07-09 (T0.3) — acknowledged OUT-OF-CONTRACT references
+        /// (`OwnerKind.ReferenceName` each), declared environment-stable so the
+        /// engine's `subsetForeignRefsGate` does not refuse them.
+        ForeignRefs : string list
         /// 2026-07-08 (the business-intent program) — the typed vocabulary
         /// for the SUPPORTING (non-payload) rows a partial transfer touches:
         /// owned children, seeded/matched references, shared anchors, static
@@ -443,6 +451,9 @@ type LoadOpts =
         /// 2026-07-08 — audit columns the reconciled-kind matched-pair
         /// diff ignores (shared attribute names; from `reconcileIgnore`).
         ReconcileIgnore : string list
+        /// 2026-07-09 (T0.3) — acknowledged out-of-contract references
+        /// (`OwnerKind.ReferenceName`), declared environment-stable.
+        ForeignRefs : string list
         /// 2026-07-08 — the typed supporting-scope vocabulary; the face
         /// desugars it onto `Tables`/`Reconcile` + the seed/exclusion sets.
         SupportingScope : SupportingScope.SupportingScopeEntry list

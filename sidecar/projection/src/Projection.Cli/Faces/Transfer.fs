@@ -364,6 +364,9 @@ let runContractPairTransfer
     // engine's `WriteOptions.Signoffs` so a destructive Execute refuses BY
     // NAME (`transfer.writeSignoff.ungreenlit`) until the mode is greenlit.
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -486,7 +489,7 @@ let runContractPairTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -524,6 +527,9 @@ let runReverseLegTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -541,7 +547,7 @@ let runReverseLegTransfer
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -575,6 +581,9 @@ let runPeerTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -691,7 +700,7 @@ let runPeerTransfer
     // with the peer pair as the contracts and the peer label on the prose.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 
