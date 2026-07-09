@@ -1719,3 +1719,15 @@ strict-scope-*bites* path, the collision + mis-route + FK-escape + sequence
 refusals/behaviors, the `AlignmentMode` round-trip, and — at the live seam — the
 FK re-point at ROW level (reseed the sink identities, then assert no verbatim and
 no dangling FK), the one hazard the pass exists to prevent.
+
+**Board forecast ⇔ execute on one seam.** The go board's dry run went through
+`runReverseLegThroughConnections` (the zero-default sibling) while the live run
+used `...With`, so the forecast omitted the flow's SEED kinds, acknowledged
+EXCLUSIONS, `foreignRefs` ack, and the sink's IDENTITY POLICY — a board could red
+(or mis-forecast rows) where execute would proceed, and vice versa. The dry run
+now calls the SAME `runReverseLegThroughConnectionsWith` entry with the SAME
+resolved supporting-scope (`SupportingScope.resolve`, the canonical resolver the
+live face uses) + `opts.ForeignRefs` + `opts.SinkCapability.IdentityPolicy` —
+board and engine read the same fact (two-traversal parity). Behavior-identical for
+flows that use none of these (empty scope / structural sink → the two calls are
+the same), so the whole existing board suite is unchanged.

@@ -1098,18 +1098,18 @@ let runCheckGo
          | None ->
              items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))
         // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
-        // The static-lookup kinds (2026-07-09): the dry run threads them so the
-        // engine computes the AIRTIGHT identity into `report.StaticLookupDivergences`
-        // — the same set the live Execute reads (the two-traversal). Bound before
-        // the dry run so the forecast branch below reuses it for the axis.
-        let staticLookupKeys : Set<SsKey> =
-            opts.SupportingScope
-            |> List.choose (fun e ->
-                match e.Relationship with
-                | SupportingScope.SupportingRelationship.StaticLookup _ ->
-                    SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
-                | _ -> None)
-            |> Set.ofList
+        // The dry run forecasts EXACTLY what Execute writes (two-traversal parity):
+        // it goes through the SAME `runReverseLegThroughConnectionsWith` entry with
+        // the SAME resolved supporting-scope the live run threads — seed kinds,
+        // acknowledged exclusions, static lookups (`SupportingScope.resolve`, the
+        // canonical resolver the live face at `runContractPairTransfer` uses) plus
+        // the flow's `foreignRefs` ack and the sink's identity policy. Bound before
+        // the dry run; the forecast axis below reuses `staticLookupKeys`.
+        let boardScope =
+            match SupportingScope.resolve sinkContract opts.SupportingScope with
+            | Ok r -> r
+            | Error _ -> SupportingScope.empty
+        let staticLookupKeys : Set<SsKey> = boardScope.StaticLookupKinds
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
@@ -1130,9 +1130,11 @@ let runCheckGo
                         opts.ReconcileIgnore
                         |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None)
                         |> Set.ofList
-                    (Transfer.runReverseLegThroughConnections
-                        Transfer.DryRun opts.Emission false true false
-                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [] staticLookupKeys)
+                    (Transfer.runReverseLegThroughConnectionsWith
+                        opts.SinkCapability.IdentityPolicy Transfer.DryRun opts.Emission false true false
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet
+                        boardScope.SeedKinds boardScope.AcknowledgedExclusions [] boardScope.StaticLookupKinds
+                        (Set.ofList opts.ForeignRefs) false None)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
