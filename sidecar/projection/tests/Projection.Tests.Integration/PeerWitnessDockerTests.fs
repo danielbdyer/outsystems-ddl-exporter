@@ -98,3 +98,39 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                 | Ok _ -> failwith "a diverged static-lookup dataset must refuse at the live seam"
                 | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.staticLookup.diverged")
             })
+
+    /// `check go --impact` (`TransferImpact`) — the add/delete/change/unchanged
+    /// classification against a REAL two-DB delta (pinned pure against hand-built
+    /// rows; here it reads live rows and classifies). City is matched by NAME under
+    /// a wipe: source {Lisbon, Porto, Faro} vs sink {Lisbon, Porto(ISACTIVE flipped),
+    /// Madrid} ⇒ Faro Added, Madrid Deleted, Porto Changed, Lisbon Unchanged.
+    [<Fact>]
+    member _.``witness: TransferImpact classifies a real two-DB delta (add/delete/change/unchanged)`` () =
+        if not (skipIfNoDocker "PeerImpact") then () else
+        run2Cell fixture "PeerImpact" (fun src sink srcConnStr sinkConnStr srcContract sinkContract ->
+            task {
+                do! Deploy.executeBatch src
+                        "SET IDENTITY_INSERT [dbo].[OSUSR_DEF_CITY] ON; INSERT INTO [dbo].[OSUSR_DEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (1, N'Lisbon', 1), (2, N'Porto', 1), (3, N'Faro', 1); SET IDENTITY_INSERT [dbo].[OSUSR_DEF_CITY] OFF;"
+                do! Deploy.executeBatch sink
+                        "SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] ON; INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Porto', 0), (503, N'Madrid', 1); SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;"
+                let sinkCity = kindByLogicalName sinkContract "City"
+                let srcCity  = kindByLogicalName srcContract "City"
+                let nameAttr = sinkCity.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "NAME")
+                let! before = readKindRows sink sinkCity   // the sink's current rows
+                let! after  = readKindRows src srcCity      // the rows the transfer would load
+                let inputs : TransferImpact.Inputs =
+                    { Catalog      = sinkContract
+                      Scope        = Set.ofList [ sinkCity.SsKey ]
+                      Reconciled   = Set.empty
+                      Wiped        = Set.ofList [ sinkCity.SsKey ]
+                      BusinessKeys = Map.ofList [ sinkCity.SsKey, nameAttr.Name ]
+                      Before       = Map.ofList [ sinkCity.SsKey, before ]
+                      After        = Map.ofList [ sinkCity.SsKey, after ]
+                      Ignore       = Set.empty
+                      Roles        = Map.empty }
+                let impact = TransferImpact.build "witness" "replace" inputs
+                Assert.Equal(1, impact.Totals.Added)     // Faro
+                Assert.Equal(1, impact.Totals.Deleted)   // Madrid
+                Assert.Equal(1, impact.Totals.Changed)   // Porto (ISACTIVE flipped)
+                Assert.Equal(1, impact.Totals.Unchanged) // Lisbon
+            })

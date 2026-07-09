@@ -65,6 +65,33 @@ module PeerEstateHarness =
         Catalog.allKinds contract
         |> List.find (fun k -> System.String.Equals(Name.value k.Name, name, System.StringComparison.OrdinalIgnoreCase))
 
+    /// Read a kind's live rows into `StaticRow`s (Values keyed by the LOGICAL
+    /// attribute Name, so two SsKey-aligned cells' rows compare directly) — the
+    /// shape `TransferImpact.Inputs` consumes, mirroring the go board's
+    /// `--impact` read.
+    let readKindRows (cnn: SqlConnection) (kind: Kind) : Task<StaticRow list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sprintf "SELECT * FROM [%s].[%s];" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)  // LINT-ALLOW: terminal test-SQL boundary; validated TableId coordinates
+            use! r = cmd.ExecuteReaderAsync()
+            let ord = [ for i in 0 .. r.FieldCount - 1 -> r.GetName i, i ] |> Map.ofList
+            let acc = System.Collections.Generic.List<StaticRow>()
+            let mutable go = true
+            while go do
+                let! more = r.ReadAsync()
+                if more then
+                    let values =
+                        kind.Attributes
+                        |> List.choose (fun a ->
+                            match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
+                            | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                            | None -> None)
+                        |> Map.ofList
+                    acc.Add { Identifier = kind.SsKey; Values = values }
+                else go <- false
+            return List.ofSeq acc
+        }
+
     /// The apparatus over the two ephemeral databases (D9 `ConnectionRef.Raw`).
     let throughConnections (srcConnStr: string) (sinkConnStr: string) (reconcile: bool) (body: TransferConnections -> Task<'a>) : Task<'a> =
         task {
