@@ -1599,3 +1599,27 @@ static-lookup board case, and `supportingScope.inboundOrphan`.
 Remaining named follow-on: T1.8 (incremental populated-sink refusal), T1.10
 (streaming signoff arm), the shared two-environment fixture, and docker witnesses
 for `--impact` / the static-lookup board / `supportingScope.inboundOrphan`.
+
+### Addendum — T1.10 + T1.8 + the shared harness landed (same session)
+
+- **T1.10 — streaming signoff arm.** `runStreamingReconcilingWithRenames` now
+  threads the flow's `signoffs` and carries the same identity-insert gate runCore
+  does, so the materialized and streaming gate blocks cannot drift. Inert on
+  today's sink-mint streaming plan; a guard for a future preserve-keys path.
+- **T1.8 — populated-sink refusal.** A merge/Incremental Execute into a sink that
+  already holds rows in the transferred set now refuses
+  `transfer.incremental.populatedSink` at the live-write seam — mirroring the go
+  board's `re-run` axis over the same `populated` fact — instead of silently
+  re-minting (duplicating) AssignedBySink rows. The escape is `strategy: replace`.
+  The `re-run honesty` canary that pinned the old duplication is updated to the
+  refusal. WipeAndLoad and first-loads are unaffected.
+- **T3 — shared two-cell harness + witnesses.** `PeerEstateHarness.run2Cell`
+  bootstraps two SsKey-aligned cells (source `OSUSR_*` / sink `OSUSR_X*`), reads
+  both OSSYS contracts, and hands them to a body — a new two-cell witness is one
+  call. Landed two docker witnesses over it for the shipped-but-unproven engine
+  refusals: `transfer.supportingScope.inboundOrphan` and (peer-path)
+  `transfer.incremental.populatedSink`.
+
+Remaining named follow-on: docker witnesses for `check go --impact` and the
+static-lookup board case (the `PeerEstateHarness` makes these cheap now); the
+streaming write-ahead intent protocol (T0.4's core duplication window).
