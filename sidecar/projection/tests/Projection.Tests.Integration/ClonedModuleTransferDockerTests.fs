@@ -42,16 +42,27 @@ type ClonedModuleTransferDockerTests(fixture: EphemeralContainerFixture) =
                 match PeerTransfer.shapeGate subset aligned sinkContract with
                 | Error es -> failwithf "the aligned pair must read as one shape: %A" (es |> List.map (fun e -> e.Code))
                 | Ok _ -> ()
+                // Reseed the sink IDENTITY ranges away from the source surrogates
+                // (City→501+, Customer→901+) so a verbatim FK copy CANNOT pass — only
+                // a genuine remap through sink-minted keys satisfies the join below.
+                do! Deploy.executeBatch sink reseedSinkIdentities
                 let! r =
                     throughConnections srcConnStr sinkConnStr false (fun connections ->
                         Transfer.runReverseLegThroughConnections
                             Transfer.Execute EmissionMode.Incremental false true false
                             [ "City"; "Customer" ] connections aligned sinkContract Map.empty Set.empty [] Set.empty)
                 let _ = value r     // the name-aligned load succeeds
-                // The subset rows land in the CLONE sink (its own physical layout),
-                // the Customer→City FK re-pointed through sink-minted keys.
+                // The subset rows land in the CLONE sink (its own physical layout).
                 let! cities = countRows sink "[dbo].[OSUSR_XDEF_CITY]"
                 let! customers = countRows sink "[dbo].[OSUSR_XABC_CUSTOMER]"
                 Assert.Equal(2, cities)
                 Assert.Equal(2, customers)
+                // The Customer→City FK is re-pointed through sink-minted keys, NOT
+                // copied verbatim: no customer keeps a source CityId (1/2), and no
+                // customer dangles (every CITYID resolves to a sink City row).
+                let! verbatimFks = countRows sink "[dbo].[OSUSR_XABC_CUSTOMER] WHERE [CITYID] IN (1, 2)"
+                Assert.Equal(0, verbatimFks)
+                let! danglingFks =
+                    countRows sink "[dbo].[OSUSR_XABC_CUSTOMER] c WHERE NOT EXISTS (SELECT 1 FROM [dbo].[OSUSR_XDEF_CITY] ci WHERE ci.[ID] = c.[CITYID])"
+                Assert.Equal(0, danglingFks)
             })

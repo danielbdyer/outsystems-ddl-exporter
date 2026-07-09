@@ -867,7 +867,20 @@ module ProjectionConfig =
                             Result.failureOf (err "cli.config.alignmentNoMap" (sprintf "flow '%s' sets alignment 'by-name' but declares no 'alignMap' — name-alignment needs the source->sink module correspondence." name))
                         | AlignmentMode.BySsKey, false ->
                             Result.failureOf (err "cli.config.alignMapWithoutByName" (sprintf "flow '%s' declares an 'alignMap' but alignment is not 'by-name' — set \"alignment\": \"by-name\" to use it, or remove the map." name))
-                        | _ -> Result.success (mode, map)
+                        | AlignmentMode.ByName, false ->
+                            // The map must be ONE-TO-ONE on the sink side: two source
+                            // modules pointed at one sink would collapse two source
+                            // identities onto one sink identity and silently drop the
+                            // second module's rows. Refuse here (the pass's
+                            // `alignment.identityCollision` is the run-time net).
+                            let oversubscribed =
+                                map |> Map.toList |> List.map snd
+                                |> List.countBy (fun v -> v.ToLowerInvariant())
+                                |> List.choose (fun (v, n) -> if n > 1 then Some v else None)
+                            if List.isEmpty oversubscribed then Result.success (mode, map)
+                            else
+                                Result.failureOf (err "cli.config.alignMapNotInjective" (sprintf "flow '%s' 'alignMap' points more than one source module at the same sink module (%s) — the correspondence must be one-to-one." name (String.concat ", " oversubscribed)))
+                        | AlignmentMode.BySsKey, true -> Result.success (mode, map)
                     | Error e1, Error e2 -> Result.failure (e1 @ e2)
                     | Error es, _ | _, Error es -> Result.failure es
                 match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el, alignmentR with
@@ -1790,6 +1803,15 @@ module Command =
     /// environments; the per-run intent finishes it. Pure; env-resolution
     /// failures are `Error` (the grant gate is a `planFlow` refusal).
     let resolveFlowSpec (cfg: ProjectionConfig) (flow: Flow) (opts: FlowRunOpts) : Result<MovementSpec> =
+        // by-name alignment is consumed ONLY on the peer leg (`UpPeer` — both
+        // endpoints `rendition: physical`). Any other route drops `alignMap`
+        // silently and a live run would cross-wire the clone the pass exists to
+        // align. Refuse here, where the direction is known (the parser cannot see
+        // renditions). Total-decision discipline: a declared safety feature is
+        // never silently downgraded.
+        if flow.Alignment = AlignmentMode.ByName && directionOf cfg flow <> MovementDirection.UpPeer then
+            Result.failureOf (err "cli.flow.alignmentNotPeer" (sprintf "flow '%s' sets alignment 'by-name' but is not a peer (env->env) move with both endpoints 'rendition: physical' — set both renditions to physical, or remove the by-name alignment." flow.Name))
+        else
         match Map.tryFind flow.To cfg.Environments with
         | None ->
             Result.failureOf (err "cli.flow.toUnknown" (sprintf "flow '%s' target environment '%s' is not defined." flow.Name flow.To))

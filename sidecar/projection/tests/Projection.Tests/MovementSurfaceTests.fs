@@ -1328,6 +1328,54 @@ let ``config parses a by-name flow with a module map`` () =
     Assert.Equal<Map<string,string>>(Map.ofList [ "AppCore", "AppCoreClone" ], flow.AlignMap)
 
 [<Fact>]
+let ``config refuses a non-injective alignMap (two source modules -> one sink), named`` () =
+    // Two clones merged into one sink would collapse two identities onto one and
+    // silently drop the second module's rows — refuse at parse.
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": { "Sales_A": "Shared", "Sales_B": "Shared" } } } }"""
+    Assert.Contains("cli.config.alignMapNotInjective", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses a malformed alignMap (not an object of strings), named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": [ "AppCore" ] } } }"""
+    Assert.Contains("cli.config.alignMapShape", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``resolveFlowSpec refuses a by-name flow that is not a physical->physical peer move, named`` () =
+    // logical -> physical routes to the reverse leg (UpLegacy), which ignores
+    // alignMap — the guard refuses instead of silently dropping it.
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "onprem-legacy": { "access": "direct", "conn": "env:L", "rendition": "logical" },
+            "cloud-uat":     { "access": "direct", "conn": "env:U", "grant": "data", "rendition": "physical" }
+          },
+          "flows": { "misrouted": { "from": "onprem-legacy", "to": "cloud-uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Contains("cli.flow.alignmentNotPeer", errCodes (Command.resolveFlowSpec cfg (Map.find "misrouted" cfg.Flows) previewOpts))
+
+[<Fact>]
+let ``resolveFlowSpec accepts a by-name flow on a physical->physical peer move`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "cloud-peer": { "access": "direct", "conn": "env:P", "rendition": "physical" },
+            "cloud-uat":  { "access": "direct", "conn": "env:U", "grant": "data", "rendition": "physical" }
+          },
+          "flows": { "clonepeer": { "from": "cloud-peer", "to": "cloud-uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    match Command.resolveFlowSpec cfg (Map.find "clonepeer" cfg.Flows) previewOpts with
+    | Ok s ->
+        Assert.Equal(MovementDirection.UpPeer, s.Direction)
+        Assert.Equal(AlignmentMode.ByName, s.Alignment)
+    | Error es -> Assert.Fail(sprintf "the peer by-name flow must resolve: %A" es)
+
+[<Fact>]
 let ``flow reconcile threads onto the spec and into the transfer's LoadOpts (J2)`` () =
     match specOf "golden" commit with
     | Ok s -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], s.Reconcile)

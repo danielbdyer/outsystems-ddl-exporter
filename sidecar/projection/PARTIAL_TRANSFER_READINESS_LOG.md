@@ -1692,3 +1692,30 @@ transfer (no subset) stays strict estate-wide. `alignForMode` resolves the
 declared `tables` against the source (names are rewrite-invariant) and the face
 / board pass it in — so an unrelated drifted table can no longer block a scoped
 transfer, while the transferred set is still held to the strict-clone bar.
+
+**Hardening (multi-agent review) — the identity re-keying can no longer silently
+corrupt or be silently dropped.** Three adversarial reviews confirmed the pass's
+core safe (bypass surface, reconcile/align SsKey-space consistency, board/engine
+parity, `toLogicalShape` completeness, determinism, feature-interaction matrix)
+and surfaced two defects, both now closed:
+
+- **Identity injectivity.** `align` guarded sink-side ambiguity but trusted
+  source-side and map-value uniqueness; `Map.ofList` on source-keyed pairs would
+  launder a many-to-one VALUE collision (two source identities → one sink) into
+  duplicate SsKeys that `CatalogDiff` silently collapses (rows vanish). Reachable
+  from config (`alignMap: {A: Shared, B: Shared}`). Now refused two ways: a
+  value-injectivity guard in `align` (`alignment.identityCollision` — the run-time
+  net over module/entity/attribute/reference/index/sequence collisions) and a
+  parse-time `cli.config.alignMapNotInjective`. A clean clone is 1:1, so neither
+  fires on a genuine clone.
+- **Silent drop on mis-route.** `alignment: by-name` is consumed only on the
+  `UpPeer` route; a by-name flow that forgot `rendition: physical` routed to the
+  name-blind leg and dropped `alignMap` silently. `resolveFlowSpec` now refuses
+  `cli.flow.alignmentNotPeer` when a by-name flow is not a physical→physical peer.
+
+Plus: the shape-divergence refusal renders facet names cleanly (no `%A`); the
+three best-effort by-name loops collapsed to one helper. New tests pin the
+strict-scope-*bites* path, the collision + mis-route + FK-escape + sequence
+refusals/behaviors, the `AlignmentMode` round-trip, and — at the live seam — the
+FK re-point at ROW level (reseed the sink identities, then assert no verbatim and
+no dangling FK), the one hazard the pass exists to prevent.

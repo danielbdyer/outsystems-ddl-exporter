@@ -168,6 +168,67 @@ let ``align does NOT refuse drift OUTSIDE the strict scope — only the transfer
     | FsResult.Error es -> Assert.Fail(sprintf "scoped align must ignore out-of-scope drift: %A" (es |> List.map (fun e -> e.Code)))
     // The same drift IS a blocker when the whole estate is in scope.
     Assert.Contains("alignment.attribute.shapeDivergence", codesOf (NameAlignment.align map None source driftedClone))
+    // And it is a blocker when the DRIFTED entity is itself in the strict scope
+    // (this is the path that proves `Some` enforces its members, not just `None`).
+    let customerKey = (findKind source "Customer").SsKey
+    Assert.Contains("alignment.attribute.shapeDivergence",
+                    codesOf (NameAlignment.align map (Some (Set.singleton customerKey)) source driftedClone))
+
+[<Fact>]
+let ``align refuses alignment.identityCollision when two source entities share a name (non-injective)`` () =
+    // A malformed source with two "City" entities: both name-match the clone's
+    // single City → two source identities collapse onto one sink identity. The
+    // injectivity guard refuses rather than let CatalogDiff silently drop one.
+    let dupSource =
+        { source with
+            Modules = source.Modules |> List.map (fun m ->
+                let city = m.Kinds |> List.find (fun k -> Name.value k.Name = "City")
+                { m with Kinds = m.Kinds @ [ { city with SsKey = OssysOriginal (System.Guid "a9999999-0000-0000-0000-000000000000") } ] }) }
+    Assert.Contains("alignment.identityCollision", codesOf (NameAlignment.align map None dupSource clone))
+
+[<Fact>]
+let ``align remaps a catalog-level sequence by name`` () =
+    let srcSeq =
+        Sequence.create (OssysOriginal (System.Guid "a0000050-0000-0000-0000-000000000000")) (nm "SEQ_Order") "dbo" "bigint" None None None None false SequenceCacheMode.Unspecified None
+        |> Result.value
+    let snkSeq = { srcSeq with SsKey = OssysOriginal (System.Guid "b0000050-0000-0000-0000-000000000000") }
+    match NameAlignment.align map None { source with Sequences = [ srcSeq ] } { clone with Sequences = [ snkSeq ] } with
+    | FsResult.Ok aligned -> Assert.Equal(snkSeq.SsKey, (aligned.Sequences |> List.exactlyOne).SsKey)
+    | FsResult.Error es -> Assert.Fail(sprintf "%A" (es |> List.map (fun e -> e.Code)))
+
+[<Fact>]
+let ``AlignmentMode round-trips parse ∘ serialize over both cases`` () =
+    for m in [ AlignmentMode.BySsKey; AlignmentMode.ByName ] do
+        Assert.Equal<Result<AlignmentMode>>(Result.success m, AlignmentMode.parse (AlignmentMode.serialize m))
+
+/// A two-module catalog: mapped "Sales" (Customer, FK RegionId → Region) + an
+/// UN-mapped "Geo" (Region). Prefix distinguishes source ("d") from clone ("e").
+let private buildEscape (p: string) : Catalog =
+    let k (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "%s%07d-0000-0000-0000-000000000000" p n))
+    let pk (n: int) (col: string) : Attribute =
+        { Attribute.create (k n) (nm col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true }
+    let fk (n: int) (col: string) : Attribute =
+        { Attribute.create (k n) (nm col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) true |> Result.value }
+    let region = Kind.create (k 5) (nm "Region") (tid "OSUSR_G_REGION") [ pk 50 "Id" ]
+    let custRegion = fk 61 "RegionId"
+    let customer =
+        { Kind.create (k 6) (nm "Customer") (tid "OSUSR_S_CUSTOMER") [ pk 60 "Id"; custRegion ] with
+            References = [ Reference.create (k 62) (nm "FK_Customer_Region") custRegion.SsKey region.SsKey ] }
+    mkCatalog [ mkModule (k 500) (nm "Sales") [ customer ]; mkModule (k 501) (nm "Geo") [ region ] ]
+
+[<Fact>]
+let ``align leaves an out-of-contract FK target unmapped — the escape is the T0.3 gate's, not a rewrite`` () =
+    // Only "Sales" is mapped; Customer's FK into the un-mapped "Geo" module keeps
+    // its SOURCE Region identity so the subset-FK / T0.3 gate owns the escape.
+    let escapeMap = Map.ofList [ "Sales", "Sales" ]
+    match NameAlignment.align escapeMap None (buildEscape "d") (buildEscape "e") with
+    | FsResult.Ok aligned ->
+        let fk = (findKind aligned "Customer").References |> List.exactlyOne
+        Assert.Equal((findKind (buildEscape "d") "Region").SsKey, fk.TargetKind)
+    | FsResult.Error es -> Assert.Fail(sprintf "%A" (es |> List.map (fun e -> e.Code)))
 
 [<Fact>]
 let ``align is deterministic — identical inputs yield identical output`` () =

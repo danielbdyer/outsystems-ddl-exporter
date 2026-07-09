@@ -72,11 +72,40 @@ module AlignmentMode =
 [<RequireQualifiedAccess>]
 module NameAlignment =
 
-    let private nameEq (a: Name) (b: Name) : bool =
-        System.String.Equals(Name.value a, Name.value b, System.StringComparison.OrdinalIgnoreCase)
-
     let private strEq (a: string) (b: string) : bool =
         System.String.Equals(a, b, System.StringComparison.OrdinalIgnoreCase)
+
+    let private nameEq (a: Name) (b: Name) : bool = strEq (Name.value a) (Name.value b)
+
+    /// Operator-facing name for a changed attribute facet — THE_VOICE register,
+    /// no raw `%A` reflection output in a refusal message.
+    let private facetName (f: AttributeFacet) : string =
+        match f with
+        | AttributeFacet.DataType     -> "data type"
+        | AttributeFacet.Nullability  -> "nullability"
+        | AttributeFacet.PrimaryKey   -> "primary-key flag"
+        | AttributeFacet.Length       -> "length"
+        | AttributeFacet.Precision    -> "precision"
+        | AttributeFacet.Scale        -> "scale"
+        | AttributeFacet.Identity     -> "identity flag"
+        | AttributeFacet.DefaultValue -> "default value"
+        | AttributeFacet.Computed     -> "computed expression"
+
+    /// Best-effort by-name correspondence into `pairs`: each source element that
+    /// UNIQUELY name-matches a sink element contributes its SsKey pair; no match
+    /// is silently skipped (the identity-collision guard below catches any
+    /// many-to-one). Shared by the reference / index / sequence channels.
+    let private addByNameInto
+        (pairs: ResizeArray<SsKey * SsKey>)
+        (nameOf: 'a -> Name)
+        (keyOf: 'a -> SsKey)
+        (srcs: 'a list)
+        (snks: 'a list)
+        : unit =
+        for s in srcs do
+            match snks |> List.tryFind (fun t -> nameEq (nameOf t) (nameOf s)) with
+            | Some t -> pairs.Add (keyOf s, keyOf t)
+            | None -> ()
 
     // -- the identity rewriters — apply the source→sink map at every SsKey-bearing
     //    field; any SsKey NOT in the map (an unmapped module, a `DerivedFrom`
@@ -229,37 +258,49 @@ module NameAlignment =
                                 pairs.Add (srcAttr.SsKey, sinkAttr.SsKey)
                             else
                                 let facetText =
-                                    facets |> Set.toList |> List.map (sprintf "%A") |> String.concat ", "
+                                    facets |> Set.toList |> List.map facetName |> String.concat ", "
                                 entityErrors.Add
                                     (ValidationError.create "alignment.attribute.shapeDivergence"
                                         (System.String.Concat
                                             [ Name.value srcKind.Name; "."; Name.value srcAttr.Name
                                               " differs from the sink on: "; facetText
                                               " — a cloned entity's attributes must be identical." ]))
-                    // references — best-effort name match (no refusal); a source-only
-                    // reference keeps its SsKey and falls to the FK gates downstream.
-                    for srcRef in srcKind.References do
-                        match sinkKind.References |> List.tryFind (fun r -> nameEq r.Name srcRef.Name) with
-                        | Some sinkRef -> pairs.Add (srcRef.SsKey, sinkRef.SsKey)
-                        | None -> ()
-                    // indexes — best-effort name match (no refusal).
-                    for srcIdx in srcKind.Indexes do
-                        match sinkKind.Indexes |> List.tryFind (fun i -> nameEq i.Name srcIdx.Name) with
-                        | Some sinkIdx -> pairs.Add (srcIdx.SsKey, sinkIdx.SsKey)
-                        | None -> ()
+                    // references + indexes — best-effort name match (no refusal); a
+                    // source-only one keeps its SsKey and falls to the FK gates.
+                    addByNameInto pairs (fun (r: Reference) -> r.Name) (fun r -> r.SsKey) srcKind.References sinkKind.References
+                    addByNameInto pairs (fun (i: Index) -> i.Name) (fun i -> i.SsKey) srcKind.Indexes sinkKind.Indexes
 
-        // sequences are catalog-level — best-effort name match (no refusal).
-        for srcSeq in srcL.Sequences do
-            match snkL.Sequences |> List.tryFind (fun s -> nameEq s.Name srcSeq.Name) with
-            | Some sinkSeq -> pairs.Add (srcSeq.SsKey, sinkSeq.SsKey)
-            | None -> ()
+        // Sequences are catalog-level (no module linkage), so this is a
+        // best-effort by-name re-key across the whole catalog — the identity
+        // collision guard below is what keeps it safe.
+        addByNameInto pairs (fun (s: Sequence) -> s.Name) (fun s -> s.SsKey) srcL.Sequences snkL.Sequences
 
         if entityErrors.Count > 0 then Result.failure (List.ofSeq entityErrors) else
 
-        // -- 3. Rewrite the source catalog through the correspondence map. Any
-        //    unmapped SsKey passes through, so unmapped modules ride unchanged.
-        let map = pairs |> List.ofSeq |> Map.ofList
-        Result.success (rewriteCatalog map source)
+        // -- 3. Guard IDENTITY INJECTIVITY, then rewrite. `pairs` is keyed on the
+        //    unique SOURCE SsKey, so `Map.ofList` would silently launder a
+        //    many-to-one VALUE collision (two source identities → one sink
+        //    identity — e.g. two modules pointed at one sink, or a duplicated
+        //    entity/attribute name) into duplicate SsKeys that `CatalogDiff`
+        //    then collapses (rows vanish). Refuse instead: a clean clone is 1:1,
+        //    so this never fires on a genuine clone.
+        let assoc = pairs |> List.ofSeq
+        let collisions =
+            assoc
+            |> List.groupBy snd
+            |> List.choose (fun (sinkKey, srcs) ->
+                if List.length srcs > 1 then Some (sinkKey, List.length srcs) else None)
+        if not (List.isEmpty collisions) then
+            Result.failure
+                (collisions
+                 |> List.map (fun (sinkKey, n) ->
+                     ValidationError.create "alignment.identityCollision"
+                        (System.String.Concat
+                            [ string n; " source identities align to one sink identity '"
+                              SsKey.rootOriginal sinkKey
+                              "' — the correspondence is not injective (two modules mapped to one, or a duplicated entity/attribute name)." ])))
+        else
+            Result.success (rewriteCatalog (Map.ofList assoc) source)
 
     /// The mode router — the ONE call the peer face and the go board both make so
     /// they align on the SAME fact (board/engine two-traversal parity). `BySsKey`
