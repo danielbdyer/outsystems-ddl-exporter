@@ -1338,6 +1338,42 @@ module Transfer =
                         | None -> return None
                     else return None
                 }
+            // T1.8 (2026-07-09) — the populated-sink gate. A merge/Incremental
+            // Execute into a sink that already holds rows in the transferred set
+            // RE-MINTS every AssignedBySink row (fresh identities each run), silently
+            // DUPLICATING them — the runbook's admitted re-run hazard, previously
+            // board-only. Refuse BY NAME at the live-write seam over the SAME
+            // `populated` fact the go board's `re-run` axis reads (the two-traversal),
+            // so a scripted `--go` that skips `check go` cannot duplicate. The escape
+            // is `strategy: replace` (wipe-then-load, idempotent) or clearing the
+            // subset — exactly the board's remedy. Probes the sink, so it lives
+            // outside the pure preWrite.
+            let! populatedSinkRefusal =
+                task {
+                    if mode = Execute && writeOpts.Emission = EmissionMode.Incremental then
+                        // The subset kinds the board's re-run axis probes: the
+                        // declared load-set, or (a full transfer) every kind minus
+                        // the reconciled ones (matched, never inserted).
+                        let subsetKinds =
+                            match writeOpts.LoadSet with
+                            | Some s -> Catalog.allKinds catalog |> List.filter (fun k -> Set.contains k.SsKey s)
+                            | None   -> Catalog.allKinds catalog |> List.filter (fun k -> not (Set.contains k.SsKey reconciledKinds))
+                        let mutable populated : string list = []
+                        for k in subsetKinds do
+                            use cmd = sink.CreateCommand()
+                            cmd.CommandText <-
+                                sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical)  // LINT-ALLOW: terminal SQL-text boundary; validated TableId coordinates (mirrors countKindRows)
+                            let! scalar = cmd.ExecuteScalarAsync()
+                            let n = int (unbox<int64> scalar)
+                            if n > 0 then populated <- sprintf "%s: %d row(s)" (Name.value k.Name) n :: populated
+                        match List.rev populated with
+                        | []   -> return None
+                        | rows ->
+                            return Some
+                                (ValidationError.create "transfer.incremental.populatedSink"
+                                    (sprintf "the sink already holds rows in the transferred set and the strategy is merge/incremental — a re-run would DUPLICATE sink-minted rows: %s. Set \"strategy\": \"replace\" on the flow (wipe-the-subset-then-load, idempotent), or clear the subset first." (String.concat "; " rows)))
+                    else return None
+                }
             // The write-signoff gate (2026-07-08): a destructive WipeAndLoad is
             // REFUSED at the live-write seam until the flow greenlights the mode
             // (`replace`/`fresh`) in its `signoff` — and, when a table scope is
@@ -1396,13 +1432,14 @@ module Transfer =
                             Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
                                 (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
                 else None
-            match preWrite, inboundRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal with
-            | Some refusal, _, _, _, _ -> return Result.failureOf refusal
-            | _, Some refusal, _, _, _ -> return Result.failureOf refusal
-            | _, _, Some refusal, _, _ -> return Result.failureOf refusal
-            | _, _, _, Some refusal, _ -> return Result.failureOf refusal
-            | _, _, _, _, Some refusal -> return Result.failureOf refusal
-            | None, None, None, None, None ->
+            match preWrite, inboundRefusal, populatedSinkRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal with
+            | Some refusal, _, _, _, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _, _, _, _ -> return Result.failureOf refusal
+            | _, _, Some refusal, _, _, _ -> return Result.failureOf refusal
+            | _, _, _, Some refusal, _, _ -> return Result.failureOf refusal
+            | _, _, _, _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, _, _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None, None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent

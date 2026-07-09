@@ -580,11 +580,13 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                 })
 
     [<Fact>]
-    member this.``re-run honesty: a second Incremental Execute into a populated sink DUPLICATES AssignedBySink rows (the named open question, pinned)`` () =
-        // The data path is INSERT-based and the sink mints fresh surrogates,
-        // so an Incremental re-run cannot collide on the PK — it duplicates.
-        // Today's honest modes are WipeAndLoad (D10) or the G10 resumable
-        // marker; this pin keeps the gap named until idempotent re-run lands.
+    member this.``re-run honesty (T1.8): a second Incremental Execute into a populated sink REFUSES by name, not duplicates — the sink is untouched`` () =
+        // The data path is INSERT-based and the sink mints fresh surrogates, so an
+        // Incremental re-run used to DUPLICATE (4 customers / 8 payments). T1.8
+        // closes that: the second run refuses `transfer.incremental.populatedSink`
+        // at the live-write seam (mirroring the go board's re-run axis) and leaves
+        // the sink untouched — the first run's 2 / 4 rows. The idempotent path is
+        // `strategy: replace` (WipeAndLoad, D10).
         if not (ReverseLegFixtures.skipIfNoDocker "L3Rerun") then () else
         this.WithReverseLegEstates "L3Rerun" ReverseLegFixtures.seedClean
             (fun src _ sink _ logicalContract physicalContract ->
@@ -594,11 +596,16 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     let! firstR = runLeg ()
                     let _ = ReverseLegFixtures.value firstR
                     let! secondR = runLeg ()
-                    let _ = ReverseLegFixtures.value secondR
+                    match secondR with
+                    | Ok _ -> failwith "the second Incremental Execute into a populated sink must refuse (T1.8), not duplicate"
+                    | Error errs ->
+                        Assert.Contains(errs, fun (e: ValidationError) -> e.Code = "transfer.incremental.populatedSink")
+                    // the refused re-run wrote nothing — the sink still holds exactly
+                    // the first run's rows (no duplication).
                     let! customers = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"
                     let! payments  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_PAYMENT]"
-                    Assert.Equal(4, customers)
-                    Assert.Equal(8, payments)
+                    Assert.Equal(2, customers)
+                    Assert.Equal(4, payments)
                 })
 
     // ------------------------------------------------------------------
