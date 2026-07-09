@@ -66,3 +66,35 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                 let! customers = countRows sink "[dbo].[OSUSR_XABC_CUSTOMER]"
                 Assert.Equal(2, customers)
             })
+
+    /// `transfer.staticLookup.diverged` — a kind declared `static-lookup` (reference
+    /// data asserted IDENTICAL across the environments, matched by a business key)
+    /// refuses at the live seam when the datasets differ. Here the sink holds an
+    /// EXTRA city the source does not (so every source city still MATCHES — no
+    /// unmatched drop precedes it — but the set is not identical). Pinned pure in
+    /// ReconciliationTests / TransferRefusalTests; here it fires against a live pair.
+    [<Fact>]
+    member _.``witness: a static-lookup kind whose sink dataset diverges refuses transfer.staticLookup.diverged`` () =
+        if not (skipIfNoDocker "PeerStaticLookup") then () else
+        run2Cell fixture "PeerStaticLookup" (fun src sink srcConnStr sinkConnStr srcContract sinkContract ->
+            task {
+                do! Deploy.executeBatch src sourceRows
+                // The sink's City reference data is a SUPERSET (Lisbon/Porto match
+                // the source; Madrid is extra) — every source city matches (no
+                // unmatched), but the datasets are NOT identical.
+                do! Deploy.executeBatch sink
+                        "SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] ON; INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Porto', 1), (503, N'Madrid', 1); SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;"
+                let cityKind = kindByLogicalName sinkContract "City"
+                let cityNameAttr =
+                    cityKind.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "NAME")
+                let reconciliation = Map.ofList [ cityKind.SsKey, ReconciliationStrategy.MatchByColumn cityNameAttr.Name ]
+                let staticLookup = Set.ofList [ cityKind.SsKey ]
+                let! r =
+                    throughConnections srcConnStr sinkConnStr true (fun connections ->
+                        Transfer.runReverseLegThroughConnections
+                            Transfer.Execute EmissionMode.Incremental false true false
+                            [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] staticLookup)
+                match r with
+                | Ok _ -> failwith "a diverged static-lookup dataset must refuse at the live seam"
+                | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.staticLookup.diverged")
+            })
