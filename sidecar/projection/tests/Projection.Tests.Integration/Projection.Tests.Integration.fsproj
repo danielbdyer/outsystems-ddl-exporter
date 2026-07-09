@@ -38,8 +38,10 @@
     <Compile Include="VerifyDataIntegrationTests.fs" />
     <Compile Include="IngestionIntegrationTests.fs" />
     <Compile Include="TransferCanaryTests.fs" />
+    <Compile Include="PeerEstateHarness.fs" />
     <Compile Include="PeerAlignedTransferDockerTests.fs" />
     <Compile Include="PeerManagedGrantTransferDockerTests.fs" />
+    <Compile Include="PeerWitnessDockerTests.fs" />
     <Compile Include="GoBoardDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
