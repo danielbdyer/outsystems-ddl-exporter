@@ -78,6 +78,31 @@ let ``NM-58: a non-empty AmbiguousTargetMatchKeys is fail-loud (exit-9) and down
     Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false displaced)
     Assert.Equal(0, Transfer.exitCodeForReport true displaced)
 
+// -- T1.6: drops/cdc acknowledged by the flag OR the durable signoff --------
+
+[<Fact>]
+let ``T1.6: drops and cdc are acknowledged by the ephemeral flag OR the durable signoff`` () =
+    let dropsSign = [ WriteSignoff.greenlit WriteSignoff.WriteMode.Drops ]
+    let cdcSign   = [ WriteSignoff.greenlit WriteSignoff.WriteMode.Cdc ]
+    // the flag alone acknowledges
+    Assert.True(Transfer.dropsAcknowledged true [])
+    Assert.False(Transfer.dropsAcknowledged false [])
+    // the durable signoff alone acknowledges (no flag needed) — and is mode-specific
+    Assert.True(Transfer.dropsAcknowledged false dropsSign)
+    Assert.False(Transfer.dropsAcknowledged false cdcSign)
+    Assert.True(Transfer.cdcAcknowledged false cdcSign)
+    Assert.False(Transfer.cdcAcknowledged false dropsSign)
+    Assert.True(Transfer.cdcAcknowledged true [])
+
+[<Fact>]
+let ``T1.6: a durable Drops signoff suppresses the exit-9 exactly as --allow-drops does`` () =
+    let dropped =
+        { reportWithReplay None with
+            AmbiguousTargetMatchKeys = [ mkKey [ "User" ], AssignedKey.ofString "30" ] }
+    Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false dropped)   // no ack → exit 9
+    let acked = Transfer.dropsAcknowledged false [ WriteSignoff.greenlit WriteSignoff.WriteMode.Drops ]
+    Assert.Equal(0, Transfer.exitCodeForReport acked dropped)   // durable Drops signoff → exit 0
+
 // -- parseConnectionSpec ---------------------------------------------------
 
 [<Fact>]

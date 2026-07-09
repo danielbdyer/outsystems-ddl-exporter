@@ -1141,6 +1141,17 @@ module Transfer =
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
+    /// T1.6 (2026-07-09) — drops / cdc acknowledgement is EITHER the ephemeral
+    /// `--allow-drops` / `--allow-cdc` flag OR the flow's DURABLE `signoff` (the
+    /// `Drops` / `Cdc` WriteMode), so a flow pre-authorizes the loss / CDC-flood in
+    /// config (auditable: `approvedBy` / `date`) instead of only on the command
+    /// line. The pre-write gates (cdcGate, validateUserMap) and the post-write exit
+    /// code read the SAME acknowledgement — one fact, no drift.
+    let dropsAcknowledged (allowDrops: bool) (signoffs: WriteSignoff.WriteApproval list) : bool =
+        allowDrops || Set.contains WriteSignoff.WriteMode.Drops (WriteSignoff.approvedModes signoffs)
+    let cdcAcknowledged (allowCdc: bool) (signoffs: WriteSignoff.WriteApproval list) : bool =
+        allowCdc || Set.contains WriteSignoff.WriteMode.Cdc (WriteSignoff.approvedModes signoffs)
+
     let private runCore
         (mode: Mode)
         (allowCdc: bool)
@@ -1153,6 +1164,12 @@ module Transfer =
         (writeOpts: WriteOptions)
         : Task<Result<TransferReport>> =
         task {
+            // T1.6 — fold the flow's durable `Drops` / `Cdc` signoff into the
+            // effective flags, so every gate below (cdcGate, validateUserMap) treats
+            // a config-declared acknowledgement exactly as the ephemeral flag. The
+            // caller computes the same fold for the exit code (`dropsAcknowledged`).
+            let allowCdc = cdcAcknowledged allowCdc writeOpts.Signoffs
+            let allowDrops = dropsAcknowledged allowDrops writeOpts.Signoffs
             // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
             // writes to the sink is at risk; DryRun and `allowCdc = true` skip
             // the check. The refusal is fail-loud (a structured error), never a

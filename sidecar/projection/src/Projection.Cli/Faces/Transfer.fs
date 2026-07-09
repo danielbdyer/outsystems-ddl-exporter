@@ -189,8 +189,11 @@ let private parseReconcileInputs
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
 /// a distinct non-zero exit unless the operator declared the drops
 /// acceptable via --allow-drops; the dropped/unmatched kinds are narrated.
-let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport) : int =
-    let dropCode = Transfer.exitCodeForReport allowDrops report
+let private narrateDropExit (allowDrops: bool) (signoffs: WriteSignoff.WriteApproval list) (report: Transfer.TransferReport) : int =
+    // T1.6 — the drop-set is accepted by --allow-drops OR the flow's durable
+    // `Drops` signoff; the exit code reads the SAME acknowledgement the engine's
+    // pre-write gate does, so a config-greenlit run does not then exit-9.
+    let dropCode = Transfer.exitCodeForReport (Transfer.dropsAcknowledged allowDrops signoffs) report
     if dropCode <> 0 then
         TtyRenderer.renderVoicedTo Console.Error "transfer.rowsDropped"
             (Map.ofList [ "droppedCount", box (Transfer.droppedRowCount report) ] : Voice.Payload)
@@ -299,7 +302,7 @@ let runTransfer
         | Ok report ->
             narrateTransferReport report
             narrateUndoPointer mode revertOut
-            narrateDropExit allowDrops report
+            narrateDropExit allowDrops [] report
         | Error errors ->
             printErrors Console.Error errors
             // A1 — single-source the refusal exit through `Preflight.refusalOf`
@@ -502,7 +505,7 @@ let runContractPairTransfer
                     SupportingScope.scopeGroups physicalSinkContract payloadSet baseReconciled supportingScope
             narrateTransferReportWithScope report scopeGroups
             narrateUndoPointer mode revertOut
-            narrateDropExit allowDrops report
+            narrateDropExit allowDrops signoff report
         | Error errors ->
             printErrors Console.Error errors
             (Preflight.refusalOf errors).ExitCode
