@@ -101,6 +101,40 @@ let ``executeGate: a clean single-PK AssignedBySink plan passes`` () =
     let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
     Assert.True((Transfer.executeGate catalog plan).IsNone)
 
+// --- T1.5: the identity-insert gate (PreservedFromSource onto an IDENTITY PK) --
+// A load that writes explicit source PKs into an IDENTITY column was gated
+// NOWHERE. The detection is plan-derivable (so board and engine gate one fact);
+// the gate refuses transfer.writeSignoff.ungreenlit unless the flow greenlights
+// `identity-insert`. Fires on ANY Execute (WipeAndLoad OR Incremental/merge).
+
+[<Fact>]
+let ``T1.5 identityInsertTables: a PreservedFromSource load onto an IDENTITY-PK kind is identity-insert`` () =
+    let plan = planOf [ load singleKey IdentityDisposition.PreservedFromSource [] ]
+    Assert.Equal<string list>([ "Single" ], Transfer.identityInsertTables catalog plan)
+
+[<Fact>]
+let ``T1.5 identityInsertTables: an AssignedBySink load (the sink mints) is NOT identity-insert`` () =
+    let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
+    Assert.Empty(Transfer.identityInsertTables catalog plan)
+
+[<Fact>]
+let ``T1.5 identityInsertTables: a PreservedFromSource load onto a NON-identity (business) PK is NOT identity-insert`` () =
+    let bizKey = mkKey ["Biz"]
+    let bizKind = kindOf ["Biz"] "OSUSR_BIZ" [ pk ["Biz"] "CODE" false ]
+    let bizCatalog = IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["M2"]) (mkName "M2") [ bizKind ] ]
+    let plan = planOf [ load bizKey IdentityDisposition.PreservedFromSource [] ]
+    Assert.Empty(Transfer.identityInsertTables bizCatalog plan)
+
+[<Fact>]
+let ``T1.5 gate: identity-insert with no signoff is Missing (ungreenlit); a greenlight Confirms it`` () =
+    let tables = Transfer.identityInsertTables catalog (planOf [ load singleKey IdentityDisposition.PreservedFromSource [] ])
+    match WriteSignoff.verify "the flow" [] WriteSignoff.WriteMode.IdentityInsert tables with
+    | WriteSignoff.Missing _ -> ()
+    | other -> Assert.Fail(sprintf "expected Missing (ungreenlit), got %A" other)
+    match WriteSignoff.verify "the flow" [ WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] WriteSignoff.WriteMode.IdentityInsert tables with
+    | WriteSignoff.Confirmed _ -> ()
+    | other -> Assert.Fail(sprintf "expected Confirmed, got %A" other)
+
 // --- AC-I5: validate-user-map pre-write halt ------------------------------
 //
 // The orphan drop-set is fully resolved post-reconcile but PRE-write
@@ -188,3 +222,121 @@ let ``PE-1: with no LoadSet the wipe targets every non-reconciled loaded kind, c
     // topo [Order; Other] reversed (child-first) = [Other; Order]
     let targets = TransferResume.wipeTargets plan (topoOf [ orderKey; otherKey ]) None
     Assert.Equal<SsKey list>([ otherKey; orderKey ], targets)
+
+// --- T1.7: the revert wrong-sink guard is fail-CLOSED --------------------
+// A `revert` deletes BY KEY in whatever --against resolves to. The guard now
+// refuses a header-less script (unverifiable) AND a server- or database-
+// mismatch — only --force proceeds. Pure `guardVerdict`; the CLI face is thin.
+
+[<Fact>]
+let ``revert guard: a header-less undo is REFUSED (revert.headerMissing) unless --force`` () =
+    let p = TransferRevert.parseProvenance [ "DELETE FROM [dbo].[X] WHERE [ID] IN (1);" ]
+    Assert.False p.HasHeader
+    match TransferRevert.guardVerdict false p "srvA" "dbA" with
+    | Some e -> Assert.Equal("revert.headerMissing", e.Code)
+    | None   -> Assert.Fail "a header-less undo must refuse fail-closed"
+    Assert.Equal(None, TransferRevert.guardVerdict true p "srvA" "dbA")   // --force overrides
+
+[<Fact>]
+let ``revert guard: a database mismatch refuses (revert.sinkMismatch)`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=srvA database=dbA generated=t"; "DELETE ...;" ]
+    Assert.True p.HasHeader
+    match TransferRevert.guardVerdict false p "srvA" "dbB" with
+    | Some e -> Assert.Equal("revert.sinkMismatch", e.Code)
+    | None   -> Assert.Fail "a different database must refuse"
+
+[<Fact>]
+let ``revert guard: a SERVER mismatch refuses even when the database name matches`` () =
+    // The prior guard compared database ONLY — a same-named DB on a different
+    // server passed. The server is now checked too.
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=srvA database=dbA generated=t" ]
+    match TransferRevert.guardVerdict false p "srvB" "dbA" with
+    | Some e -> Assert.Equal("revert.sinkMismatch", e.Code)
+    | None   -> Assert.Fail "a different server must refuse even on a matching database"
+
+[<Fact>]
+let ``revert guard: a matching server+database passes; comparison is case-insensitive`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=SrvA database=DbA generated=t" ]
+    Assert.Equal(None, TransferRevert.guardVerdict false p "srva" "dba")
+
+[<Fact>]
+let ``revert guard: a legacy header without server= still verifies on database=`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo database=dbA generated=t" ]
+    Assert.Equal(None, p.Server)
+    Assert.Equal(None, TransferRevert.guardVerdict false p "anySrv" "dbA")   // matching db passes
+    Assert.True((TransferRevert.guardVerdict false p "anySrv" "dbB").IsSome)   // mismatching db still refuses
+
+// --- Witnesses for shipped-but-unproven named refusals (audit follow-on) ---
+// staticLookup.diverged + loadOrderUnproven gated a live write yet had no
+// by-name witness. Pure decisions the go board, the engine, and the fast pool
+// now all share (the 6.A.1 pattern).
+
+[<Fact>]
+let ``witness staticLookup: a diverged static-lookup refuses transfer.staticLookup.diverged; a clean one passes`` () =
+    let dirty : StaticLookupDivergence =
+        { Kind = singleKey; ColumnDrifts = []; MissingOnTarget = [ "42" ]; ExtraOnTarget = [] }
+    Assert.False dirty.IsClean
+    match Transfer.staticLookupRefusalOf catalog [ dirty ] with
+    | Some e -> Assert.Equal("transfer.staticLookup.diverged", e.Code)
+    | None   -> Assert.Fail "a diverged static-lookup must refuse by name"
+    let clean : StaticLookupDivergence = { Kind = singleKey; ColumnDrifts = []; MissingOnTarget = []; ExtraOnTarget = [] }
+    Assert.True clean.IsClean
+    Assert.True((Transfer.staticLookupRefusalOf catalog [ clean ]).IsNone)
+
+[<Fact>]
+let ``witness loadOrder: an alphabetical-degraded order refuses transfer.loadOrderUnproven; a topological order passes`` () =
+    let degraded =
+        { TopologicalOrder.empty with
+            Mode   = Alphabetical
+            Cycles = [ { Members = [ singleKey; compositeKey ]; BreakableEdges = []; Reason = "every edge non-nullable (an all-strong cycle)" } ] }
+    match Transfer.orderedLoadGate degraded with
+    | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
+    | None   -> Assert.Fail "an unproven (degraded) load order must refuse by name"
+    Assert.True((Transfer.orderedLoadGate TopologicalOrder.empty).IsNone)
+
+// --- T0.3: the out-of-contract foreign-reference gate ---------------------
+// An in-subset FK to a NON-User kind ABSENT from the acquired contract loads the
+// raw source surrogate (a silent cross-wire). Refuse by name unless the flow
+// acknowledges it in `foreignRefs`; the platform-User path is excluded (the User
+// reflow re-points it), and an in-contract escape stays the existing gate's job.
+
+let private foreignTargetKey = mkKey ["ForeignSystemEntity"]   // never added to a catalog
+
+let private ownerRef (name: string) (isUserFk: bool) : Reference =
+    { Reference.create (mkKey ["Owner"; name]) (mkName name) (mkKey ["Owner"; "ID"]) foreignTargetKey with
+        IsUserFk = isUserFk }
+
+let private ownerCatalog (refs: Reference list) : Catalog =
+    let owner = { kindOf ["Owner"] "OSUSR_OWNER" [ pk ["Owner"] "ID" true ] with References = refs }
+    IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["M3"]) (mkName "M3") [ owner ] ]
+
+let private ownerLoadSet = Set.ofList [ mkKey ["Owner"] ]
+
+[<Fact>]
+let ``T0.3: an FK to a target OUTSIDE the contract is an out-of-contract escape and refuses by name`` () =
+    let cat = ownerCatalog [ ownerRef "FkToForeign" false ]
+    Assert.Equal(1, (TransferSubset.outOfContractEscapes cat ownerLoadSet Set.empty).Length)
+    match Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty Set.empty with
+    | Some e -> Assert.Equal("transfer.subsetFkEscapes.targetOutOfContract", e.Code)
+    | None   -> Assert.Fail "an unacknowledged out-of-contract FK must refuse by name"
+
+[<Fact>]
+let ``T0.3: a foreignRefs acknowledgement clears the out-of-contract refusal`` () =
+    let cat = ownerCatalog [ ownerRef "FkToForeign" false ]
+    Assert.True((Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty (Set.ofList [ "Owner.FkToForeign" ])).IsNone)
+
+[<Fact>]
+let ``T0.3: a platform-User FK (IsUserFk) is NOT an out-of-contract escape (the User reflow re-points it)`` () =
+    let cat = ownerCatalog [ ownerRef "CreatedByUser" true ]
+    Assert.Empty(TransferSubset.outOfContractEscapes cat ownerLoadSet Set.empty)
+    Assert.True((Transfer.subsetForeignRefsGate cat (Some ownerLoadSet) Set.empty Set.empty).IsNone)
+
+[<Fact>]
+let ``T0.3: an IN-contract escape (target present but out of subset) is NOT out-of-contract`` () =
+    // compositeKind references singleKey, which IS in the catalog but out of the
+    // loadSet — the existing subsetEscapeGate's business, not this gate's.
+    let compositeRefSingle =
+        { compositeKind with
+            References = [ { Reference.create (mkKey ["Composite"; "toSingle"]) (mkName "ToSingle") (mkKey ["Composite"; "ID"]) singleKey with IsUserFk = false } ] }
+    let cat = IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["Module"]) (mkName "M") [ compositeRefSingle; singleKind ] ]
+    Assert.Empty(TransferSubset.outOfContractEscapes cat (Set.ofList [ compositeKey ]) Set.empty)

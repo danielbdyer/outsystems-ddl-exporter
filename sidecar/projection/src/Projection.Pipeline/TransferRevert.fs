@@ -24,6 +24,58 @@ module TransferRevert =
         sprintf "-- projection:%s server=%s database=%s generated=%s"
             artifactKind sink.DataSource sink.Database (System.DateTime.UtcNow.ToString "o") // LINT-ALLOW: terminal artifact-header text; DataSource/Database are SqlClient-provided identifiers at this terminal file boundary
 
+    /// The provenance an undo artifact carries — the sink it was captured against.
+    /// `HasHeader` is whether the `-- projection:` line is present at all (a
+    /// header-less script cannot be verified); `Server` / `Database` are the
+    /// stamped coordinates, each `None` when the token is absent (a legacy header
+    /// that predates the `server=` token still verifies on `database=`).
+    type Provenance =
+        { HasHeader : bool
+          Server    : string option
+          Database  : string option }
+
+    /// Parse the wrong-sink provenance from an undo script's lines. Pure — the
+    /// face reads the file, this decides. Reads the FIRST `-- projection:` line.
+    let parseProvenance (lines: string seq) : Provenance =
+        let header =
+            lines
+            |> Seq.map (fun (l: string) -> l.Trim())
+            |> Seq.tryFind (fun l -> l.StartsWith "-- projection:")
+        match header with
+        | None -> { HasHeader = false; Server = None; Database = None }
+        | Some h ->
+            let tok (prefix: string) : string option =
+                h.Split(' ')
+                |> Array.tryPick (fun t -> if t.StartsWith prefix then Some (t.Substring prefix.Length) else None)
+            { HasHeader = true; Server = tok "server="; Database = tok "database=" }
+
+    /// THE WRONG-SINK GUARD verdict (2026-07-09, fail-CLOSED) — a `revert` deletes
+    /// BY KEY in whatever `--against` resolves to, the single most destructive
+    /// standalone act, so the guard defaults to REFUSE, not proceed:
+    ///  - a HEADER-LESS script cannot be verified — refuse `revert.headerMissing`
+    ///    (the prior behavior proceeded with only a printed note — fail-OPEN);
+    ///  - a stamped `database=` OR `server=` that disagrees with the live sink —
+    ///    refuse `revert.sinkMismatch` (server is now checked too, not just the
+    ///    database, so a same-named DB on a different server no longer passes).
+    /// `--force` is the deliberate override (a restored/renamed copy). Total.
+    let guardVerdict (force: bool) (prov: Provenance) (sinkServer: string) (sinkDatabase: string) : ValidationError option =
+        let eq (a: string) (b: string) = System.String.Equals(a, b, System.StringComparison.OrdinalIgnoreCase)
+        if force then None
+        elif not prov.HasHeader then
+            Some (ValidationError.create "revert.headerMissing"
+                    (sprintf "this undo script carries no provenance header, so the environment it was captured against cannot be verified — it would DELETE BY KEY in whatever --against resolves to (server '%s', database '%s'). Re-generate the undo from a current transfer, or pass --force to delete against this sink anyway." sinkServer sinkDatabase))
+        else
+            match prov.Database with
+            | Some d when not (eq d sinkDatabase) ->
+                Some (ValidationError.create "revert.sinkMismatch"
+                        (sprintf "this undo was captured against database '%s', but --against resolves to '%s'. Re-point --against at the environment the transfer wrote, or pass --force if the database was deliberately renamed/restored." d sinkDatabase))
+            | _ ->
+                match prov.Server with
+                | Some s when not (eq s sinkServer) ->
+                    Some (ValidationError.create "revert.sinkMismatch"
+                            (sprintf "this undo was captured against server '%s', but --against resolves to '%s'. Re-point --against at the environment the transfer wrote, or pass --force if the server was deliberately changed." s sinkServer))
+                | _ -> None
+
     /// Build A — the child-first `DELETE`-by-captured-key revert script for a
     /// failed load. For each `AssignedBySink` kind, in the REVERSE of the
     /// parent-first insert order (children first, so an FK never blocks a delete),

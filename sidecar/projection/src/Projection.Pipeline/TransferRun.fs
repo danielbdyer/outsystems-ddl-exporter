@@ -725,6 +725,50 @@ module Transfer =
                             "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
                             escapes.Length (String.concat "; " escapes)))
 
+    /// T0.3 (2026-07-09) — the OUT-OF-CONTRACT foreign-reference gate. An in-subset
+    /// FK to a NON-User kind ABSENT from the acquired contract loads the raw source
+    /// surrogate into the sink (a silent cross-environment mis-key — runbook live
+    /// hotspot #1). `escapingEdges` skips these, so refuse BY NAME unless the flow
+    /// declares the reference environment-stable in `foreignRefs` (the durable,
+    /// auditable ack). Fail-closed; the platform-User path is excluded upstream in
+    /// `outOfContractEscapes` (the User-reflow re-points it). No load-set (a full
+    /// transfer) has no out-of-contract escapes by definition.
+    let subsetForeignRefsGate (catalog: Catalog) (loadSet: Set<SsKey> option) (reconciled: Set<SsKey>) (acknowledged: Set<string>) : ValidationError option =
+        match loadSet with
+        | None -> None
+        | Some set ->
+            let unacked =
+                TransferSubset.outOfContractEscapes catalog set reconciled
+                |> List.filter (fun (owner, r) -> not (Set.contains (TransferSubset.foreignRefToken owner r) acknowledged))
+            if List.isEmpty unacked then None
+            else
+                let tokens = unacked |> List.map (fun (owner, r) -> TransferSubset.foreignRefToken owner r)
+                Some (ValidationError.create
+                        "transfer.subsetFkEscapes.targetOutOfContract"
+                        (sprintf "%d reference(s) target a kind OUTSIDE the acquired contract; their rows would keep SOURCE-environment surrogates (a silent cross-wire): %s. Declare each environment-stable in the flow's `foreignRefs`, or widen the acquisition to include the target's espace."
+                            unacked.Length (String.concat "; " tokens)))
+
+    /// T1.5 (2026-07-09) — the plan-derivable IDENTITY-INSERT detection. A load
+    /// whose disposition is `PreservedFromSource` onto a kind with an IDENTITY PK
+    /// writes explicit source keys straight into the identity column (SqlBulkCopy
+    /// `KeepIdentity`) — the `WriteSignoff.WriteMode.IdentityInsert` act, which can
+    /// collide with keys the target already minted. Under the default `Structural`
+    /// policy identity PKs classify `AssignedBySink` (the sink mints), so this is
+    /// empty; a `FullRights` / `PreferPreservedKeys` sink is where it arises.
+    /// Returns the logical table names touched (for the signoff scope check), so
+    /// board and engine gate the SAME plan-derived fact — the two-traversal.
+    let identityInsertTables (catalog: Catalog) (plan: DataLoadPlan) : string list =
+        plan.Loads
+        |> List.choose (fun load ->
+            if load.Disposition = IdentityDisposition.PreservedFromSource then
+                match Catalog.tryFindKind load.Kind catalog with
+                | Some kind when kind.Attributes |> List.exists (fun a -> a.IsPrimaryKey && a.IsIdentity) ->
+                    Some (Name.value kind.Name)
+                | _ -> None
+            else None)
+        |> List.distinct
+        |> List.sort
+
     /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
     /// whose load order fell back to the ALPHABETICAL degrade (an
     /// unresolvable dependency cycle anywhere in the estate) would load
@@ -934,7 +978,10 @@ module Transfer =
     /// declared `static-lookup` whose dataset is NOT identical across the
     /// environments (value drift, an extra sink row, or a missing row). `None`
     /// when every declared lookup is clean.
-    let private staticLookupRefusalOf (catalog: Catalog) (divs: StaticLookupDivergence list) : ValidationError option =
+    // Public (not private) so the pure pool witnesses `transfer.staticLookup.diverged`
+    // BY NAME — the 6.A.1 pattern: one pure decision the go board, the engine, and
+    // the fast pool all share.
+    let staticLookupRefusalOf (catalog: Catalog) (divs: StaticLookupDivergence list) : ValidationError option =
         match divs |> List.filter (fun d -> not d.IsClean) with
         | [] -> None
         | dirty ->
@@ -1109,13 +1156,30 @@ module Transfer =
           /// missing rows) reds the go board and refuses a live Execute
           /// (`transfer.staticLookup.diverged`). Empty (the `def` default) asserts
           /// nothing. Sourced from `SupportingScope.resolve`'s `StaticLookupKinds`.
-          StaticLookupKinds : Set<SsKey> }
+          StaticLookupKinds : Set<SsKey>
+          /// 2026-07-09 (T0.3) — the operator's `foreignRefs`: the acknowledged
+          /// OUT-OF-CONTRACT references (each `OwnerKind.ReferenceName`), declared
+          /// environment-stable so `subsetForeignRefsGate` does not refuse them.
+          /// Empty (the `def` default) means every out-of-contract escape is a
+          /// pre-write refusal (`transfer.subsetFkEscapes.targetOutOfContract`).
+          ForeignRefsAcknowledged : Set<string> }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
+
+    /// T1.6 (2026-07-09) — drops / cdc acknowledgement is EITHER the ephemeral
+    /// `--allow-drops` / `--allow-cdc` flag OR the flow's DURABLE `signoff` (the
+    /// `Drops` / `Cdc` WriteMode), so a flow pre-authorizes the loss / CDC-flood in
+    /// config (auditable: `approvedBy` / `date`) instead of only on the command
+    /// line. The pre-write gates (cdcGate, validateUserMap) and the post-write exit
+    /// code read the SAME acknowledgement — one fact, no drift.
+    let dropsAcknowledged (allowDrops: bool) (signoffs: WriteSignoff.WriteApproval list) : bool =
+        allowDrops || Set.contains WriteSignoff.WriteMode.Drops (WriteSignoff.approvedModes signoffs)
+    let cdcAcknowledged (allowCdc: bool) (signoffs: WriteSignoff.WriteApproval list) : bool =
+        allowCdc || Set.contains WriteSignoff.WriteMode.Cdc (WriteSignoff.approvedModes signoffs)
 
     let private runCore
         (mode: Mode)
@@ -1129,6 +1193,12 @@ module Transfer =
         (writeOpts: WriteOptions)
         : Task<Result<TransferReport>> =
         task {
+            // T1.6 — fold the flow's durable `Drops` / `Cdc` signoff into the
+            // effective flags, so every gate below (cdcGate, validateUserMap) treats
+            // a config-declared acknowledgement exactly as the ephemeral flag. The
+            // caller computes the same fold for the exit code (`dropsAcknowledged`).
+            let allowCdc = cdcAcknowledged allowCdc writeOpts.Signoffs
+            let allowDrops = dropsAcknowledged allowDrops writeOpts.Signoffs
             // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
             // writes to the sink is at risk; DryRun and `allowCdc = true` skip
             // the check. The refusal is fail-loud (a structured error), never a
@@ -1242,9 +1312,12 @@ module Transfer =
                             match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
                             | Some refusal -> Some refusal
                             | None ->
-                                match validatePinnedOwners reconciled with
+                                match subsetForeignRefsGate catalog writeOpts.LoadSet reconciledKinds writeOpts.ForeignRefsAcknowledged with
                                 | Some refusal -> Some refusal
-                                | None         -> validateUserMap allowDrops reconciled
+                                | None ->
+                                    match validatePinnedOwners reconciled with
+                                    | Some refusal -> Some refusal
+                                    | None         -> validateUserMap allowDrops reconciled
                 else None
             // The inbound-orphan gate (2026-07-08): a replace-wipe of a payload
             // parent fails (FK 547) if an out-of-payload dependent still holds
@@ -1263,6 +1336,42 @@ module Transfer =
                                     (ValidationError.create "transfer.supportingScope.inboundOrphan"
                                         (sprintf "%d table(s) outside the transfer reference a table inside it; the replace-wipe would orphan their rows (FK 547): %s. Add the referencing table(s) to `tables`, clear their rows, or declare them blocked-dependent." (List.length blockers) (String.concat "; " blockers)))
                         | None -> return None
+                    else return None
+                }
+            // T1.8 (2026-07-09) — the populated-sink gate. A merge/Incremental
+            // Execute into a sink that already holds rows in the transferred set
+            // RE-MINTS every AssignedBySink row (fresh identities each run), silently
+            // DUPLICATING them — the runbook's admitted re-run hazard, previously
+            // board-only. Refuse BY NAME at the live-write seam over the SAME
+            // `populated` fact the go board's `re-run` axis reads (the two-traversal),
+            // so a scripted `--go` that skips `check go` cannot duplicate. The escape
+            // is `strategy: replace` (wipe-then-load, idempotent) or clearing the
+            // subset — exactly the board's remedy. Probes the sink, so it lives
+            // outside the pure preWrite.
+            let! populatedSinkRefusal =
+                task {
+                    if mode = Execute && writeOpts.Emission = EmissionMode.Incremental then
+                        // The subset kinds the board's re-run axis probes: the
+                        // declared load-set, or (a full transfer) every kind minus
+                        // the reconciled ones (matched, never inserted).
+                        let subsetKinds =
+                            match writeOpts.LoadSet with
+                            | Some s -> Catalog.allKinds catalog |> List.filter (fun k -> Set.contains k.SsKey s)
+                            | None   -> Catalog.allKinds catalog |> List.filter (fun k -> not (Set.contains k.SsKey reconciledKinds))
+                        let mutable populated : string list = []
+                        for k in subsetKinds do
+                            use cmd = sink.CreateCommand()
+                            cmd.CommandText <-
+                                sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical)  // LINT-ALLOW: terminal SQL-text boundary; validated TableId coordinates (mirrors countKindRows)
+                            let! scalar = cmd.ExecuteScalarAsync()
+                            let n = int (unbox<int64> scalar)
+                            if n > 0 then populated <- sprintf "%s: %d row(s)" (Name.value k.Name) n :: populated
+                        match List.rev populated with
+                        | []   -> return None
+                        | rows ->
+                            return Some
+                                (ValidationError.create "transfer.incremental.populatedSink"
+                                    (sprintf "the sink already holds rows in the transferred set and the strategy is merge/incremental — a re-run would DUPLICATE sink-minted rows: %s. Set \"strategy\": \"replace\" on the flow (wipe-the-subset-then-load, idempotent), or clear the subset first." (String.concat "; " rows)))
                     else return None
                 }
             // The write-signoff gate (2026-07-08): a destructive WipeAndLoad is
@@ -1302,12 +1411,35 @@ module Transfer =
             // the SAME `report.StaticLookupDivergences` — the two-traversal.
             let staticLookupRefusal =
                 if mode = Execute then staticLookupRefusalOf catalog staticLookupDivs else None
-            match preWrite, inboundRefusal, signoffRefusal, staticLookupRefusal with
-            | Some refusal, _, _, _ -> return Result.failureOf refusal
-            | _, Some refusal, _, _ -> return Result.failureOf refusal
-            | _, _, Some refusal, _ -> return Result.failureOf refusal
-            | _, _, _, Some refusal -> return Result.failureOf refusal
-            | None, None, None, None ->
+            // The identity-insert gate (2026-07-09, T1.5): a load that writes
+            // explicit source PKs into an IDENTITY column (a PreservedFromSource
+            // identity-PK kind — the FullRights / PreferPreservedKeys path) is a
+            // destructive mode distinct from the wipe, and was gated NOWHERE. It
+            // fires on ANY Execute (WipeAndLoad OR Incremental/merge), so the merge
+            // path is covered too. Mirrors the go board's axis over the same
+            // plan-derived `identityInsertTables` — the two-traversal.
+            let identityInsertRefusal =
+                if mode = Execute then
+                    match identityInsertTables catalog plan with
+                    | [] -> None
+                    | idTables ->
+                        match WriteSignoff.verify "the flow" writeOpts.Signoffs WriteSignoff.WriteMode.IdentityInsert idTables with
+                        | WriteSignoff.Confirmed _ -> None
+                        | WriteSignoff.Missing (reason, _) ->
+                            Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                (sprintf "explicit identity keys are written but not greenlit — %s Declare it in the flow's `signoff` array (run `check go` for the exact edit) before authorizing the run." reason))
+                        | WriteSignoff.ScopeMismatch (reason, _) ->
+                            Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
+                else None
+            match preWrite, inboundRefusal, populatedSinkRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal with
+            | Some refusal, _, _, _, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _, _, _, _ -> return Result.failureOf refusal
+            | _, _, Some refusal, _, _, _ -> return Result.failureOf refusal
+            | _, _, _, Some refusal, _, _ -> return Result.failureOf refusal
+            | _, _, _, _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, _, _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None, None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -1707,7 +1839,17 @@ module Transfer =
         : Task<Result<TransferReport>> =
         let renamesByKind =
             RenameProjection.renames diff |> RenameProjection.renameMapByKind
-        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renamesByKind)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+        // NM-40 test-only seam: pre-greenlight identity-insert so the reverse-leg
+        // canaries exercise the LOAD mechanics without re-declaring the signoff at
+        // every call site. Inert under `Structural` (no PreservedFromSource identity
+        // kind → the gate never consults it); the gate's own refusal is witnessed by
+        // the pure + docker identity-insert tests, not here. Production routes
+        // through `runReverseLegThroughConnectionsWith`, which threads the flow's
+        // real `signoff` (T1.5).
+        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renamesByKind))
+            { WriteOptions.def with
+                IdentityPolicy = identityPolicy
+                Signoffs = [ WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] }
 
     let runWithRenamesWith
         (identityPolicy: IdentityPolicy)
@@ -1920,7 +2062,7 @@ module Transfer =
                     |> Option.bind (fun index ->
                         CaptureJournal.tryFindRecord index (SsKey.rootOriginal load.Kind) chunkIx)
                 match journaled with
-                | Some record ->
+                | Some record when CaptureJournal.isComplete record ->
                     // L2 — the journal grain's ResumeAdmit (R3 / RI-3): the
                     // live source slice recomputes the fingerprint; admission
                     // replays the journaled pairs into the shared remap
@@ -1933,43 +2075,79 @@ module Transfer =
                         return Result.success ((Verified.value admitted).WrittenCount, [], [], lane)
                     | Error drift ->
                         return Result.failureOf (sourceDriftRefusal load.Kind drift)
-                | None ->
-                    // PL-9 (S16): every chunk-invariant piece below arrives
-                    // staged on the KindWriteLane; the chunk only applies.
-                    let remapped = wl.RepointChunk chunkRaw
-                    let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
-                    let! laneOutcome =
+                | inDoubtOrFresh ->
+                    // T0.4 — a fresh chunk (`None`) OR an INTENT-only, IN-DOUBT
+                    // chunk (`Some` with `WrittenCount = IntentPending`): a prior
+                    // run fsync'd the write-ahead intent but crashed before the
+                    // COMPLETE record. Probe whether that attempt committed — a sink
+                    // count equal to the kind's completed-chunk total means it did
+                    // NOT (safe to re-write), more means it may have partially
+                    // committed and resume cannot rebuild the sink-minted identities
+                    // (refuse by name, never a silent re-mint / duplication).
+                    let! inDoubtRefusal =
                         task {
-                            match load.Disposition with
-                            | IdentityDisposition.AssignedBySink ->
-                                match wl.IdentityCapture with
-                                | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
-                                    do! Bulk.copyRowsSinkMinted sink kind.Physical (wl.CellRowsNoId remapped.Rows)
-                                    return [], lane, []
-                                | Some (_, capture) ->
-                                    let! outcome = capture lane remapped.Rows
-                                    let pairs, succeeded, descents = outcome
-                                    pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
-                                    return pairs, succeeded, descents
-                                | None ->
+                            match inDoubtOrFresh with
+                            | None -> return None
+                            | Some _ ->
+                                let expectedBefore =
+                                    journalIndex
+                                    |> Option.map (fun idx -> CaptureJournal.completedWrittenCountForKind idx (SsKey.rootOriginal load.Kind))
+                                    |> Option.defaultValue 0
+                                let! actualNow = countKindRows sink kind
+                                if actualNow = expectedBefore then return None
+                                else
+                                    return Some
+                                        (ValidationError.create "transfer.resume.chunkInDoubt"
+                                            (sprintf "chunk %d of %s was attempted but never confirmed, and the sink now holds %d row(s) vs the %d its completed chunks wrote — it may have partially committed, and resume cannot rebuild the sink-minted identities. Re-run with strategy: replace, or clear %s on the sink and resume." chunkIx (Name.value kind.Name) actualNow expectedBefore (Name.value kind.Name)))
+                        }
+                    match inDoubtRefusal with
+                    | Some refusal -> return Result.failureOf refusal
+                    | None ->
+                        // Write-ahead INTENT (fsync'd) BEFORE the sink write, so a
+                        // crash in the write→complete window leaves an in-doubt
+                        // record the probe above catches — not a silent re-mint.
+                        journal
+                        |> Option.iter (fun j ->
+                            CaptureJournal.append j
+                                (CaptureJournal.intentRecord (SsKey.rootOriginal load.Kind) chunkIx firstPk lastPk rawCount))
+                        // PL-9 (S16): every chunk-invariant piece below arrives
+                        // staged on the KindWriteLane; the chunk only applies.
+                        let remapped = wl.RepointChunk chunkRaw
+                        let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
+                        let! laneOutcome =
+                            task {
+                                match load.Disposition with
+                                | IdentityDisposition.AssignedBySink ->
+                                    match wl.IdentityCapture with
+                                    | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                        do! Bulk.copyRowsSinkMinted sink kind.Physical (wl.CellRowsNoId remapped.Rows)
+                                        return [], lane, []
+                                    | Some (_, capture) ->
+                                        let! outcome = capture lane remapped.Rows
+                                        let pairs, succeeded, descents = outcome
+                                        pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
+                                        return pairs, succeeded, descents
+                                    | None ->
+                                        do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
+                                        return [], lane, []
+                                | _ ->
                                     do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
                                     return [], lane, []
-                            | _ ->
-                                do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
-                                return [], lane, []
-                        }
-                    let pairs, succeededLane, descents = laneOutcome
-                    journal
-                    |> Option.iter (fun j ->
-                        CaptureJournal.append j
-                            { Kind = SsKey.rootOriginal load.Kind
-                              ChunkIx = chunkIx
-                              FirstPk = firstPk
-                              LastPk = lastPk
-                              RawCount = rawCount
-                              WrittenCount = List.length remapped.Rows
-                              Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray })
-                    return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
+                            }
+                        let pairs, succeededLane, descents = laneOutcome
+                        // COMPLETE record (fsync'd) — last-write-wins over the intent,
+                        // so a clean chunk resolves to this on the next resume.
+                        journal
+                        |> Option.iter (fun j ->
+                            CaptureJournal.append j
+                                { Kind = SsKey.rootOriginal load.Kind
+                                  ChunkIx = chunkIx
+                                  FirstPk = firstPk
+                                  LastPk = lastPk
+                                  RawCount = rawCount
+                                  WrittenCount = List.length remapped.Rows
+                                  Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray })
+                        return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
             }
 
         // One-chunk ingest PREFETCH: chunk N+1 starts pulling from the
@@ -2250,6 +2428,13 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T1.10) — the flow's write-signoff greenlights. Defense-in-
+        // depth mirroring `runCore`: the streaming plan is sink-mint (AssignedBySink)
+        // and the selector refuses WipeAndLoad, so no destructive mode is reachable
+        // TODAY — but the identity-insert arm is present so a future preserve-keys
+        // streaming path cannot write explicit keys ungated (the runCore/streaming
+        // gate blocks no longer drift).
+        (signoffs: WriteSignoff.WriteApproval list)
         (journalDirectory: string option)
         // D — the streaming arm of the data-leg compensating-undo (M23 on the
         // estate-scale path). On a mid-stream crash the partial sink-minted rows
@@ -2346,10 +2531,28 @@ module Transfer =
                     else None
                 let staticLookupRefusal =
                     if mode = Execute then staticLookupRefusalOf sinkContract staticLookupDivs else None
-                match preWrite, staticLookupRefusal with
-                | Some refusal, _ -> return Result.failureOf refusal
-                | _, Some refusal -> return Result.failureOf refusal
-                | None, None ->
+                // T1.10 — defense-in-depth: the same identity-insert gate runCore
+                // carries, so streaming and materialized cannot drift. Inert today
+                // (the streaming plan is sink-mint), a guard for a future path.
+                let identityInsertRefusal =
+                    if mode = Execute then
+                        match identityInsertTables sinkContract plan with
+                        | [] -> None
+                        | idTables ->
+                            match WriteSignoff.verify "the flow" signoffs WriteSignoff.WriteMode.IdentityInsert idTables with
+                            | WriteSignoff.Confirmed _ -> None
+                            | WriteSignoff.Missing (reason, _) ->
+                                Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                    (sprintf "explicit identity keys are written but not greenlit — %s Declare it in the flow's `signoff` array (run `check go` for the exact edit) before authorizing the run." reason))
+                            | WriteSignoff.ScopeMismatch (reason, _) ->
+                                Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                    (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
+                    else None
+                match preWrite, identityInsertRefusal, staticLookupRefusal with
+                | Some refusal, _, _ -> return Result.failureOf refusal
+                | _, Some refusal, _ -> return Result.failureOf refusal
+                | _, _, Some refusal -> return Result.failureOf refusal
+                | None, None, None ->
                     if mode <> Execute then
                         // Phase 4 — the movement DryRun preview. Estimate
                         // each kind's rows-would-move with a cheap exact
@@ -2499,7 +2702,7 @@ module Transfer =
         // The straight load supplies the inert revert levers (`false None`) the
         // caller did not name — D's compensating-undo is reachable only through the
         // reconciling / reverse-leg faces that carry the per-environment policy.
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty Set.empty journalDirectory false None
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty Set.empty [] journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2526,6 +2729,9 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T1.10) — the flow's write-signoff greenlights (defense-in-
+        // depth; the streaming identity-insert gate reads them).
+        (signoffs: WriteSignoff.WriteApproval list)
         // D — the per-environment revert policy, collapsed at the RunFaces face
         // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
         // materialized reverse-leg face consumed them.
@@ -2541,7 +2747,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore staticLookupKinds journalDirectory autoRevert revertDir
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore staticLookupKinds signoffs journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -2804,6 +3010,9 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T0.3) — the acknowledged out-of-contract references
+        // (`OwnerKind.ReferenceName`), so `subsetForeignRefsGate` does not refuse.
+        (foreignRefsAck: Set<string>)
         (autoRevert: bool)
         (revertDir: string option)
         : Task<Result<TransferReport>> =
@@ -2822,7 +3031,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2849,7 +3058,7 @@ module Transfer =
         // board reds on a diverged lookup; a straight load passes `Set.empty`).
         (staticLookupKinds: Set<SsKey>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds Set.empty false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //
@@ -2876,6 +3085,7 @@ module Transfer =
         report.SkippedReferences.Length
         + report.UnmatchedIdentities.Length
         + report.AmbiguousIdentities.Length   // NM-51
+        + report.AmbiguousTargetMatchKeys.Length   // NM-58 (2026-07-09 — symmetry with NM-51)
         + (report.ReplayedPriorDrops |> Option.defaultValue 0)   // NM-53
 
     /// Whether a completed run lost any rows (the drop-set is non-empty).
@@ -2888,6 +3098,14 @@ module Transfer =
         not (List.isEmpty report.SkippedReferences)
         || not (List.isEmpty report.UnmatchedIdentities)
         || not (List.isEmpty report.AmbiguousIdentities)   // NM-51
+        // NM-58 (2026-07-09) — a duplicate reconcile key on the SINK re-keys every
+        // matching source FK onto the oldest sink row, silently displacing the
+        // rest. Symmetric with NM-51 (the duplicate SOURCE key): both are
+        // reconcile-key ambiguity that mis-attributes identities, so both are
+        // fail-loud (exit 9) and cleared by the same `--allow-drops` acknowledgement
+        // (or a `ManualOverride` pinning the right winner). The go-board forecast
+        // reads the same report field, so board and engine red the same fact.
+        || not (List.isEmpty report.AmbiguousTargetMatchKeys)   // NM-58
         || (report.ReplayedPriorDrops |> Option.exists (fun n -> n > 0))   // NM-53
 
     /// The exit-code policy for a *completed* (Ok) Transfer. A clean run is

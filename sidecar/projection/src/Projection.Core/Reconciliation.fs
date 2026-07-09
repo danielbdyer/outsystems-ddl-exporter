@@ -132,6 +132,28 @@ type ReconciliationStrategy =
 [<RequireQualifiedAccess>]
 module Reconciliation =
 
+    /// COLLATION PARITY (2026-07-09, the transfer-hardening program) — the one
+    /// named policy under which a business-key value is compared for a MATCH.
+    ///
+    /// The sink matches reconcile keys under its column collation (the managed-
+    /// cloud default `SQL_Latin1_General_CP1_CI_AS`: case-insensitive, trailing-
+    /// whitespace-insensitive), and the go board's `sinkUniqueness` /
+    /// `sinkSampleHits` probes read the sink through that SAME collation. The Core
+    /// match indexed values with F# structural (ORDINAL) equality, so the two
+    /// traversals could disagree on the same fact: a source key the board previews
+    /// GREEN (collation-matched) the engine dropped (ordinal-missed → an exit-9
+    /// refusal on a green board), and a `FallbackToAssigned` pin silently re-keyed
+    /// every ordinal-missed FK to the pinned owner. Folding both the sink index and
+    /// the source lookup through `matchKey` makes engine and board agree BY
+    /// CONSTRUCTION over the default-collation axes: case-fold (invariant culture)
+    /// + trailing-whitespace trim. Accent- and leading-space-sensitivity are
+    /// PRESERVED (the `_AS` axis, and leading space is significant under `=`); a
+    /// per-column collation contract for non-default collations is the named
+    /// follow-on. Blankness (`isKey`) is decided on the RAW value — a
+    /// whitespace-only key is "no key" before normalization ever runs.
+    let matchKey (v: string) : string =
+        v.TrimEnd().ToLowerInvariant()
+
     /// Reconcile one kind's Source surrogates to pre-existing Sink
     /// surrogates by the operator ruleset. `pkColumn` is the surrogate
     /// (PK) column whose value is the Source / Assigned key. A Source row
@@ -184,8 +206,13 @@ module Reconciliation =
                     sinkRows
                     |> List.choose (fun r ->
                         match Map.tryFind col r.Values, Map.tryFind pkColumn r.Values with
+                        // Index under the collation-parity `matchKey` (case-fold +
+                        // trailing-trim) so two sink rows differing only by case /
+                        // trailing space collide here exactly as they do under the
+                        // sink's `CI_AS` collation — the loser becomes an
+                        // `ambiguousTarget` below, matching the board's DISTINCT probe.
                         | Some matchValue, Some sinkSurrogate when isKey matchValue ->
-                            Some (matchValue, AssignedKey.ofString sinkSurrogate)
+                            Some (matchKey matchValue, AssignedKey.ofString sinkSurrogate)
                         | _ -> None)
                 let sinkIndex =
                     sinkPairs
@@ -199,7 +226,7 @@ module Reconciliation =
                     |> Map.ofList
                 fun _ row ->
                     match Map.tryFind col row.Values with
-                    | Some mv when isKey mv -> Map.tryFind mv sinkIndex
+                    | Some mv when isKey mv -> Map.tryFind (matchKey mv) sinkIndex
                     | _                     -> None
             | ReconciliationStrategy.MatchByColumns cols ->
                 // The COMPOSITE-key sibling of `MatchByColumn`: match on the
@@ -212,7 +239,10 @@ module Reconciliation =
                     if not (List.isEmpty cols)
                        && List.length present = List.length cols
                        && List.forall isKey present
-                    then Some present
+                    // Each component folded through the collation-parity `matchKey`
+                    // (blankness decided on the raw value above) so a composite key
+                    // matches under the same `CI_AS` axes as its single-column sibling.
+                    then Some (present |> List.map matchKey)
                     else None
                 let sinkIndex =
                     sinkRows

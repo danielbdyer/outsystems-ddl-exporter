@@ -70,6 +70,7 @@
     <Compile Include="EjectRun.fs" />
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
+    <Compile Include="NameAlignment.fs" />
     <Compile Include="PeerTransfer.fs" />
     <Compile Include="GoBoard.fs" />
     <Compile Include="SupportingScope.fs" />

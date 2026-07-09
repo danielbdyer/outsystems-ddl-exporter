@@ -103,14 +103,39 @@ module CaptureJournal =
 
     /// Every journaled chunk, indexed by (kind root, chunk index). A
     /// missing or empty journal is an empty index (a fresh run).
+    ///
+    /// Torn-trailing-line tolerance (2026-07-09): a crash mid-append can leave a
+    /// half-written FINAL line with NO closing newline (the append fsyncs, but a
+    /// kill between the write and the fsync — or a torn multi-block record — is
+    /// still possible at EOF). Such a partial trailing line is SKIPPED, not thrown
+    /// on, so a hard crash never wedges resume/revert behind a hand-truncation.
+    /// A newline-TERMINATED line is complete: a corrupt one throws even when last
+    /// (real corruption, not an expected mid-crash partial) — the tolerance is
+    /// keyed on the missing trailing newline, matching `openResumeIndex`'s
+    /// byte-scan, never on mere position.
     let load (journal: CaptureJournal) : Dictionary<string * int, ChunkRecord> =
         let index = Dictionary<string * int, ChunkRecord>()
         if File.Exists journal.FilePath then
-            for line in File.ReadLines journal.FilePath do
-                if not (System.String.IsNullOrWhiteSpace line) then
-                    match JsonSerializer.Deserialize<ChunkRecord> line with
-                    | null -> ()
-                    | record -> index[(record.Kind, record.ChunkIx)] <- record
+            let text = File.ReadAllText journal.FilePath
+            if text.Length > 0 then
+                // A trailing newline means the final record is complete; its
+                // absence means the last non-empty line is a torn partial.
+                let endsClean = text.EndsWith "\n"
+                let lines = text.Split '\n'
+                let lastIx = lines.Length - 1
+                lines
+                |> Array.iteri (fun i line ->
+                    if not (System.String.IsNullOrWhiteSpace line) then
+                        let isTornTrailing = i = lastIx && not endsClean
+                        let recordOpt =
+                            try
+                                match JsonSerializer.Deserialize<ChunkRecord> line with
+                                | null   -> None
+                                | record -> Some record
+                            with _ when isTornTrailing -> None   // torn partial — skip, do not wedge
+                        match recordOpt with
+                        | Some record -> index[(record.Kind, record.ChunkIx)] <- record
+                        | None        -> ())
         index
 
     /// The NDJSON line separator (the `append` writes `Serialize record + "\n"`).
@@ -142,9 +167,11 @@ module CaptureJournal =
     /// each `(kind root, chunk index)` to its line's START offset WITHOUT
     /// retaining the parsed record (only enough is deserialized to read the key).
     /// A re-appended key takes the LATEST offset (last-write-wins — mirrors
-    /// `load`). Blank / literal-`null` lines are skipped; a corrupt line throws
-    /// (the same not-silently-lossy contract `load` carries). A missing journal
-    /// is an empty index (a fresh run).
+    /// `load`). Blank / literal-`null` lines are skipped. An INTERIOR corrupt line
+    /// (newline-terminated, so complete) throws — the not-silently-lossy contract.
+    /// A torn TRAILING line (a mid-crash partial at EOF, with no final newline) is
+    /// SKIPPED, not thrown on, so a hard crash never wedges resume behind a
+    /// hand-truncation (2026-07-09). A missing journal is an empty index (fresh run).
     let openResumeIndex (journal: CaptureJournal) : ResumeIndex =
         let offsets = System.Collections.Generic.Dictionary<string * int, int64>()
         if File.Exists journal.FilePath then
@@ -153,27 +180,36 @@ module CaptureJournal =
             let lineBytes = System.Collections.Generic.List<byte>()
             let mutable lineStart = 0L
             let mutable bufStart = 0L
-            let recordLine () =
+            // `tolerant` distinguishes an interior line (newline-terminated →
+            // complete → strict) from the trailing line (no final newline → a
+            // possible mid-crash partial → skip on parse failure).
+            let recordLine (tolerant: bool) =
                 if lineBytes.Count > 0 then
                     let line = System.Text.Encoding.UTF8.GetString(lineBytes.ToArray())
                     if not (System.String.IsNullOrWhiteSpace line) then
-                        match JsonSerializer.Deserialize<ChunkRecord> line with
-                        | null   -> ()
-                        | record -> offsets[(record.Kind, record.ChunkIx)] <- lineStart
+                        let recordOpt =
+                            try
+                                match JsonSerializer.Deserialize<ChunkRecord> line with
+                                | null   -> None
+                                | record -> Some record
+                            with _ when tolerant -> None
+                        match recordOpt with
+                        | Some record -> offsets[(record.Kind, record.ChunkIx)] <- lineStart
+                        | None        -> ()
                 lineBytes.Clear()
             let mutable read = fs.Read(buf, 0, buf.Length)
             while read > 0 do
                 for i in 0 .. read - 1 do
                     if buf.[i] = NewlineByte then
-                        recordLine ()
+                        recordLine false
                         lineStart <- bufStart + int64 i + 1L
                     else
                         lineBytes.Add buf.[i]
                 bufStart <- bufStart + int64 read
                 read <- fs.Read(buf, 0, buf.Length)
-            // A trailing line with no final newline (the append always writes one,
-            // so this is normally empty — but tolerate a hand-truncated file).
-            recordLine ()
+            // The trailing line has no final newline (the append always writes one,
+            // so this is normally empty) — tolerate a torn/hand-truncated partial.
+            recordLine true
         { IndexFilePath = journal.FilePath; Offsets = offsets }
 
     /// Resolve one journaled chunk by `(kind root, chunk index)`, re-reading and
@@ -188,16 +224,64 @@ module CaptureJournal =
             | null   -> None
             | record -> Some record
 
-    /// Append one completed chunk. The write is flushed on close, so a
-    /// crash AFTER the append never re-executes the chunk and a crash
-    /// DURING the chunk never journals it — the chunk's sink statement
-    /// (one MERGE / one bulk batch) is the atomic commit point. This
-    /// positioning IS the grain's WriteAdmit (R3 / RI-3): the completed
-    /// sink statement is the external witness, proven by control flow —
-    /// a ceremonial `Ledger.writeAdmit` here would assert nothing the
-    /// append's position does not already.
+    /// Append one completed chunk, FSYNC'd before returning (`Flush(true)`), so
+    /// the record is durable on disk — closing the "the OS write-back buffer
+    /// never flushed → silent last-record loss" window `File.AppendAllText` left
+    /// open (2026-07-09).
+    ///
+    /// The ordering is AT-LEAST-ONCE, and this names the window rather than
+    /// asserting atomicity: the chunk's sink statement (one MERGE / one bulk
+    /// batch) commits FIRST (`TransferRun`), THEN this append records it. A crash
+    /// in that window — sink committed, append not yet durable — leaves the chunk
+    /// journaled-as-absent, so resume RE-writes it; for an `AssignedBySink` kind
+    /// that re-mints, i.e. duplicates. The write-ahead intent protocol that closes
+    /// the window (journal the chunk fingerprint BEFORE the sink write; on resume
+    /// treat a journaled-unconfirmed chunk as maybe-committed and probe / MERGE
+    /// idempotently on a deterministic capture key) is the named follow-on. This
+    /// card makes the durability honest and the window documented, not silent.
+    /// The append's position remains the grain's WriteAdmit (R3 / RI-3) for a
+    /// clean run — the completed sink statement is the external witness.
     let append (journal: CaptureJournal) (record: ChunkRecord) : unit =
-        File.AppendAllText(journal.FilePath, JsonSerializer.Serialize record + "\n")
+        use fs = new FileStream(journal.FilePath, FileMode.Append, FileAccess.Write, FileShare.Read)
+        let bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize record + "\n")
+        fs.Write(bytes, 0, bytes.Length)
+        fs.Flush(true)   // fsync — the record is on disk before control returns
+
+    // -- T0.4 write-ahead intent (2026-07-09) — close the at-least-once window ---
+    // A chunk is journaled TWICE: an INTENT record (WrittenCount = `IntentPending`)
+    // fsync'd BEFORE the sink write, then the COMPLETE record (WrittenCount ≥ 0,
+    // pairs) fsync'd after. `load`/`openResumeIndex` are last-write-wins per
+    // (kind, chunkIx), so a clean chunk resolves to its COMPLETE record; a crash
+    // between the two leaves only the INTENT — an IN-DOUBT chunk the resume path
+    // probes rather than silently re-mints.
+
+    /// The `WrittenCount` sentinel marking an INTENT (attempted-but-unconfirmed)
+    /// record. Negative, so it never collides with a real written count (≥ 0).
+    let IntentPending : int = -1
+
+    /// A record is COMPLETE (its sink write is confirmed) iff its written count is
+    /// non-negative; an INTENT record carries `IntentPending`.
+    let isComplete (record: ChunkRecord) : bool = record.WrittenCount >= 0
+
+    /// The write-ahead INTENT record for a chunk about to be written — the
+    /// fingerprint fields only, no pairs (the assigned identities are not known
+    /// until the sink write returns).
+    let intentRecord (kind: string) (chunkIx: int) (firstPk: string) (lastPk: string) (rawCount: int) : ChunkRecord =
+        { Kind = kind; ChunkIx = chunkIx; FirstPk = firstPk; LastPk = lastPk
+          RawCount = rawCount; WrittenCount = IntentPending; Pairs = [||] }
+
+    /// The total rows a kind's COMPLETED chunks wrote, per the resume index — the
+    /// sink row count expected for the kind if an in-doubt chunk did NOT commit
+    /// (the streaming load starts empty; T1.8 forbids incremental into a populated
+    /// sink). Reads one record per journaled chunk of the kind; INTENT records
+    /// (unconfirmed) contribute nothing.
+    let completedWrittenCountForKind (index: ResumeIndex) (kindRoot: string) : int =
+        index.Offsets
+        |> Seq.filter (fun kv -> fst kv.Key = kindRoot)
+        |> Seq.sumBy (fun kv ->
+            match JsonSerializer.Deserialize<ChunkRecord> (readLineAt index.IndexFilePath kv.Value) with
+            | null   -> 0
+            | record -> if isComplete record then record.WrittenCount else 0)
 
     // -- L2: the journal grain on the ledger contract (R3 / RI-3) ------------
 

@@ -820,12 +820,75 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el with
-                | Error es, _, _, _, _, _, _ | _, Error es, _, _, _, _, _ | _, _, Error es, _, _, _, _ | _, _, _, Error es, _, _, _ | _, _, _, _, Error es, _, _ | _, _, _, _, _, Error es, _ | _, _, _, _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff ->
+                // T0.3 (2026-07-09) — the acknowledged OUT-OF-CONTRACT references
+                // (each `OwnerKind.ReferenceName`), declared environment-stable so
+                // `subsetForeignRefsGate` does not refuse them. Same shape as
+                // `reconcileIgnore`: a plain string array.
+                let foreignRefs =
+                    match el.TryGetProperty "foreignRefs" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        [ for v in r.EnumerateArray() do
+                            if v.ValueKind = JsonValueKind.String then
+                                match Option.ofObj (v.GetString()) with
+                                | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                | _ -> () ]
+                    | _ -> []
+                // 2026-07-09 — the peer contracts' identity basis + the
+                // cloned-module MODULE correspondence. `alignment` defaults to
+                // `by-sskey` (byte-identical); an unknown token refuses
+                // `alignment.mode.unknown`. `alignMap` is a source→sink module
+                // object, honored only under `by-name`.
+                let alignmentR : Result<AlignmentMode * Map<string, string>> =
+                    let modeR =
+                        match getString el "alignment" with
+                        | None -> Result.success AlignmentMode.BySsKey
+                        | Some tok -> AlignmentMode.parse tok
+                    let mapR =
+                        match el.TryGetProperty "alignMap" with
+                        | true, m when m.ValueKind = JsonValueKind.Object ->
+                            [ for p in m.EnumerateObject() do
+                                if p.Value.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (p.Value.GetString()) with
+                                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield p.Name.Trim(), s.Trim()
+                                    | _ -> () ]
+                            |> Map.ofList |> Result.success
+                        | true, m when m.ValueKind <> JsonValueKind.Null ->
+                            Result.failureOf (err "cli.config.alignMapShape" (sprintf "flow '%s' 'alignMap' must be an object of \"sourceModule\": \"sinkModule\" strings." name))
+                        | _ -> Result.success Map.empty
+                    match modeR, mapR with
+                    | Ok mode, Ok map ->
+                        // The mode and the map must AGREE — a set-but-inert config
+                        // is a silent footgun: `by-name` with no map would fall
+                        // through to a misleading downstream shape refusal, and a
+                        // map under `by-sskey` would be silently ignored. Refuse BY
+                        // NAME at parse so the operator's intent is unambiguous.
+                        match mode, Map.isEmpty map with
+                        | AlignmentMode.ByName, true ->
+                            Result.failureOf (err "cli.config.alignmentNoMap" (sprintf "flow '%s' sets alignment 'by-name' but declares no 'alignMap' — name-alignment needs the source->sink module correspondence." name))
+                        | AlignmentMode.BySsKey, false ->
+                            Result.failureOf (err "cli.config.alignMapWithoutByName" (sprintf "flow '%s' declares an 'alignMap' but alignment is not 'by-name' — set \"alignment\": \"by-name\" to use it, or remove the map." name))
+                        | AlignmentMode.ByName, false ->
+                            // The map must be ONE-TO-ONE on the sink side: two source
+                            // modules pointed at one sink would collapse two source
+                            // identities onto one sink identity and silently drop the
+                            // second module's rows. Refuse here (the pass's
+                            // `alignment.identityCollision` is the run-time net).
+                            let oversubscribed =
+                                map |> Map.toList |> List.map snd
+                                |> List.countBy (fun v -> v.ToLowerInvariant())
+                                |> List.choose (fun (v, n) -> if n > 1 then Some v else None)
+                            if List.isEmpty oversubscribed then Result.success (mode, map)
+                            else
+                                Result.failureOf (err "cli.config.alignMapNotInjective" (sprintf "flow '%s' 'alignMap' points more than one source module at the same sink module (%s) — the correspondence must be one-to-one." name (String.concat ", " oversubscribed)))
+                        | AlignmentMode.BySsKey, true -> Result.success (mode, map)
+                    | Error e1, Error e2 -> Result.failure (e1 @ e2)
+                    | Error es, _ | _, Error es -> Result.failure es
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el, alignmentR with
+                | Error es, _, _, _, _, _, _, _ | _, Error es, _, _, _, _, _, _ | _, _, Error es, _, _, _, _, _ | _, _, _, Error es, _, _, _, _ | _, _, _, _, Error es, _, _, _ | _, _, _, _, _, Error es, _, _ | _, _, _, _, _, _, Error es, _ | _, _, _, _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff, Ok (alignment, alignMap) ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; Alignment = alignment; AlignMap = alignMap; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -1126,6 +1189,21 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.ReconcileIgnore do a.Add(JsonValue.Create r)
             o.["reconcileIgnore"] <- a)
+        // T0.3 — the acknowledged out-of-contract references (empty default
+        // round-trips through the absent arm, mirroring `reconcileIgnore`).
+        (if not (List.isEmpty flow.ForeignRefs) then
+            let a = JsonArray()
+            for r in flow.ForeignRefs do a.Add(JsonValue.Create r)
+            o.["foreignRefs"] <- a)
+        // 2026-07-09 — the identity basis + module map. The `by-sskey` /
+        // empty-map defaults round-trip through the absent arms (mirroring
+        // `foreignRefs`), so only a `by-name` flow renders these.
+        (if flow.Alignment <> AlignmentMode.BySsKey then
+            o.["alignment"] <- JsonValue.Create (AlignmentMode.serialize flow.Alignment))
+        (if not (Map.isEmpty flow.AlignMap) then
+            let mo = JsonObject()
+            for KeyValue (src, snk) in flow.AlignMap do mo.[src] <- JsonValue.Create snk
+            o.["alignMap"] <- mo)
         // 2026-07-08 — the supporting-scope entries render in a fixed field
         // order (relationship, table, per-relationship payload, reason) so the
         // round-trip `parse ∘ render = id` holds on the canonical DOM.
@@ -1343,6 +1421,9 @@ module Command =
           Emission    = emissionOf spec.Strategy
           Reconcile   = spec.Reconcile
           ReconcileIgnore = spec.ReconcileIgnore
+          ForeignRefs = spec.ForeignRefs
+          Alignment   = spec.Alignment
+          AlignMap    = spec.AlignMap
           SupportingScope = spec.SupportingScope
           Signoff     = spec.Signoff
           Rekey       = spec.Rekey
@@ -1722,6 +1803,15 @@ module Command =
     /// environments; the per-run intent finishes it. Pure; env-resolution
     /// failures are `Error` (the grant gate is a `planFlow` refusal).
     let resolveFlowSpec (cfg: ProjectionConfig) (flow: Flow) (opts: FlowRunOpts) : Result<MovementSpec> =
+        // by-name alignment is consumed ONLY on the peer leg (`UpPeer` — both
+        // endpoints `rendition: physical`). Any other route drops `alignMap`
+        // silently and a live run would cross-wire the clone the pass exists to
+        // align. Refuse here, where the direction is known (the parser cannot see
+        // renditions). Total-decision discipline: a declared safety feature is
+        // never silently downgraded.
+        if flow.Alignment = AlignmentMode.ByName && directionOf cfg flow <> MovementDirection.UpPeer then
+            Result.failureOf (err "cli.flow.alignmentNotPeer" (sprintf "flow '%s' sets alignment 'by-name' but is not a peer (env->env) move with both endpoints 'rendition: physical' — set both renditions to physical, or remove the by-name alignment." flow.Name))
+        else
         match Map.tryFind flow.To cfg.Environments with
         | None ->
             Result.failureOf (err "cli.flow.toUnknown" (sprintf "flow '%s' target environment '%s' is not defined." flow.Name flow.To))
@@ -1826,6 +1916,9 @@ module Command =
                         // the spec into the transfer leg's `LoadOpts.Reconcile`.
                         Reconcile = flow.Reconcile
                         ReconcileIgnore = flow.ReconcileIgnore
+                        ForeignRefs = flow.ForeignRefs
+                        Alignment = flow.Alignment
+                        AlignMap = flow.AlignMap
                         SupportingScope = flow.SupportingScope
                         Signoff  = flow.Signoff
                         Tables   = flow.Tables

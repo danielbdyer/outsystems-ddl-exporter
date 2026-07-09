@@ -132,6 +132,26 @@ let ``load: a corrupt (non-JSON) line throws — the resume surface is not silen
         File.AppendAllText(CaptureJournal.filePath j, "this-is-not-json\n")
         Assert.ThrowsAny<exn>(fun () -> CaptureJournal.load j |> ignore) |> ignore)
 
+// -- torn trailing line (2026-07-09): a mid-crash partial with NO closing --
+// newline is SKIPPED, not thrown on, so a hard crash never wedges resume /
+// revert behind a hand-truncation. The tolerance is keyed on the missing
+// trailing newline (a newline-terminated corrupt line is complete → still
+// throws, per the test above), never on mere position.
+
+[<Fact>]
+let ``load: a TORN trailing line (no closing newline) is skipped; prior chunks still load`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        // Simulate a crash mid-append: a half-written final record, no newline.
+        File.AppendAllText(CaptureJournal.filePath j, "{\"Kind\":\"OS_USER\",\"ChunkIx\":2,\"First")
+        let loaded = CaptureJournal.load j
+        Assert.Equal(2, loaded.Count)
+        Assert.True(loaded.ContainsKey(("OS_USER", 0)))
+        Assert.True(loaded.ContainsKey(("OS_USER", 1)))
+        Assert.False(loaded.ContainsKey(("OS_USER", 2))))
+
 // -- L2: the journal grain on the ledger contract (R3 / RI-3) --------------
 // The contract instance over REAL journal records: the chain form, the
 // resume point, drift detection, and the effectful remap fold adapted at
@@ -223,6 +243,19 @@ let ``ResumeIndex: blank and literal-null lines are skipped; valid records still
         Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 1).IsSome))
 
 [<Fact>]
+let ``ResumeIndex: a TORN trailing line (no closing newline) is skipped; prior chunks still resolve`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        // A crash mid-append: a half-written final record with no closing newline.
+        File.AppendAllText(CaptureJournal.filePath j, "{\"Kind\":\"OS_USER\",\"ChunkIx\":2,\"First")
+        let index = CaptureJournal.openResumeIndex j
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 0).IsSome)
+        Assert.True((CaptureJournal.tryFindRecord index "OS_USER" 1).IsSome)
+        Assert.Equal(None, CaptureJournal.tryFindRecord index "OS_USER" 2))
+
+[<Fact>]
 let ``ResumeIndex: byte offsets stay correct across multi-byte UTF-8 lines`` () =
     withTempDir (fun dir ->
         let j = CaptureJournal.create dir "plan-A"
@@ -278,3 +311,45 @@ let ``R3: journaled pairs rebuild the remap through replay — the effectful fol
     Assert.Equal(Some "9002", PackedSurrogateRemap.tryFind remap testKind "2")
     Assert.Equal(Some "9003", PackedSurrogateRemap.tryFind remap testKind "3")
     Assert.Equal(None, PackedSurrogateRemap.tryFind remap testKind "4")
+
+// -- T0.4 write-ahead intent (2026-07-09): the two-record protocol that closes --
+// the at-least-once window. A chunk is journaled INTENT (before the sink write)
+// then COMPLETE (after); a crash between leaves an in-doubt intent the resume
+// path probes rather than silently re-minting.
+
+[<Fact>]
+let ``T0.4 intent: an intent record is not complete; a written record is`` () =
+    Assert.False(CaptureJournal.isComplete (CaptureJournal.intentRecord "OS_USER" 0 "1" "5" 5))
+    Assert.True(CaptureJournal.isComplete (chunk "OS_USER" 0 "1" "5" 5 [||]))
+
+[<Fact>]
+let ``T0.4 intent: a COMPLETE record appended after its intent wins (last-write); load sees it complete`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (CaptureJournal.intentRecord "OS_USER" 0 "1" "50" 50)
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "50" 50 [| [| "1"; "9001" |] |])
+        let loaded = CaptureJournal.load j
+        Assert.True(CaptureJournal.isComplete loaded[("OS_USER", 0)])
+        Assert.Equal(50, loaded[("OS_USER", 0)].WrittenCount))
+
+[<Fact>]
+let ``T0.4 intent: an intent with NO following complete stays IN-DOUBT (a crash in the write→complete window)`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "50" 50 [| [| "1"; "9001" |] |])   // chunk 0 complete
+        CaptureJournal.append j (CaptureJournal.intentRecord "OS_USER" 1 "51" "100" 50)   // chunk 1 attempted, crashed
+        let loaded = CaptureJournal.load j
+        Assert.True(CaptureJournal.isComplete loaded[("OS_USER", 0)])
+        Assert.False(CaptureJournal.isComplete loaded[("OS_USER", 1)]))
+
+[<Fact>]
+let ``T0.4 intent: completedWrittenCountForKind sums complete chunks and excludes the in-doubt intent`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "50" 50 [||])                      // 50 written
+        CaptureJournal.append j (chunk "OS_USER" 1 "51" "80" 30 [||])                     // 30 written
+        CaptureJournal.append j (CaptureJournal.intentRecord "OS_USER" 2 "81" "100" 20)   // in-doubt, excluded
+        CaptureJournal.append j (chunk "OS_ORDER" 0 "1" "5" 5 [||])                       // different kind, excluded
+        let index = CaptureJournal.openResumeIndex j
+        Assert.Equal(80, CaptureJournal.completedWrittenCountForKind index "OS_USER")
+        Assert.Equal(5, CaptureJournal.completedWrittenCountForKind index "OS_ORDER"))

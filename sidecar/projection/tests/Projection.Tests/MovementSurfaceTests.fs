@@ -458,7 +458,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Signoff = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
+      Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -684,7 +684,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; SupportingScope = []; Signoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -1303,6 +1303,77 @@ let ``config parses a flow's reconcile rules (J2 — the golden re-key lives in 
 let ``config refuses a malformed flow reconcile entry, named (J2)`` () =
     let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "reconcile": ["OSUSR_RC_USER"] } } }"""
     Assert.Contains("cli.config.flowReconcileShape", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses an unknown alignment token, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-guid" } } }"""
+    Assert.Contains("alignment.mode.unknown", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses by-name alignment with no module map, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name" } } }"""
+    Assert.Contains("cli.config.alignmentNoMap", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses an alignMap without by-name alignment, named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignMap": { "AppCore": "AppCoreClone" } } } }"""
+    Assert.Contains("cli.config.alignMapWithoutByName", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config parses a by-name flow with a module map`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } } }"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    let flow = Map.find "g" cfg.Flows
+    Assert.Equal(AlignmentMode.ByName, flow.Alignment)
+    Assert.Equal<Map<string,string>>(Map.ofList [ "AppCore", "AppCoreClone" ], flow.AlignMap)
+
+[<Fact>]
+let ``config refuses a non-injective alignMap (two source modules -> one sink), named`` () =
+    // Two clones merged into one sink would collapse two identities onto one and
+    // silently drop the second module's rows — refuse at parse.
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": { "Sales_A": "Shared", "Sales_B": "Shared" } } } }"""
+    Assert.Contains("cli.config.alignMapNotInjective", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``config refuses a malformed alignMap (not an object of strings), named`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "alignment": "by-name", "alignMap": [ "AppCore" ] } } }"""
+    Assert.Contains("cli.config.alignMapShape", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``resolveFlowSpec refuses a by-name flow that is not a physical->physical peer move, named`` () =
+    // logical -> physical routes to the reverse leg (UpLegacy), which ignores
+    // alignMap — the guard refuses instead of silently dropping it.
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "onprem-legacy": { "access": "direct", "conn": "env:L", "rendition": "logical" },
+            "cloud-uat":     { "access": "direct", "conn": "env:U", "grant": "data", "rendition": "physical" }
+          },
+          "flows": { "misrouted": { "from": "onprem-legacy", "to": "cloud-uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Contains("cli.flow.alignmentNotPeer", errCodes (Command.resolveFlowSpec cfg (Map.find "misrouted" cfg.Flows) previewOpts))
+
+[<Fact>]
+let ``resolveFlowSpec accepts a by-name flow on a physical->physical peer move`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "cloud-peer": { "access": "direct", "conn": "env:P", "rendition": "physical" },
+            "cloud-uat":  { "access": "direct", "conn": "env:U", "grant": "data", "rendition": "physical" }
+          },
+          "flows": { "clonepeer": { "from": "cloud-peer", "to": "cloud-uat", "alignment": "by-name", "alignMap": { "AppCore": "AppCoreClone" } } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    match Command.resolveFlowSpec cfg (Map.find "clonepeer" cfg.Flows) previewOpts with
+    | Ok s ->
+        Assert.Equal(MovementDirection.UpPeer, s.Direction)
+        Assert.Equal(AlignmentMode.ByName, s.Alignment)
+    | Error es -> Assert.Fail(sprintf "the peer by-name flow must resolve: %A" es)
 
 [<Fact>]
 let ``flow reconcile threads onto the spec and into the transfer's LoadOpts (J2)`` () =

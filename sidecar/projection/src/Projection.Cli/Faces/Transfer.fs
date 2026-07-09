@@ -189,8 +189,11 @@ let private parseReconcileInputs
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
 /// a distinct non-zero exit unless the operator declared the drops
 /// acceptable via --allow-drops; the dropped/unmatched kinds are narrated.
-let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport) : int =
-    let dropCode = Transfer.exitCodeForReport allowDrops report
+let private narrateDropExit (allowDrops: bool) (signoffs: WriteSignoff.WriteApproval list) (report: Transfer.TransferReport) : int =
+    // T1.6 — the drop-set is accepted by --allow-drops OR the flow's durable
+    // `Drops` signoff; the exit code reads the SAME acknowledgement the engine's
+    // pre-write gate does, so a config-greenlit run does not then exit-9.
+    let dropCode = Transfer.exitCodeForReport (Transfer.dropsAcknowledged allowDrops signoffs) report
     if dropCode <> 0 then
         TtyRenderer.renderVoicedTo Console.Error "transfer.rowsDropped"
             (Map.ofList [ "droppedCount", box (Transfer.droppedRowCount report) ] : Voice.Payload)
@@ -299,7 +302,7 @@ let runTransfer
         | Ok report ->
             narrateTransferReport report
             narrateUndoPointer mode revertOut
-            narrateDropExit allowDrops report
+            narrateDropExit allowDrops [] report
         | Error errors ->
             printErrors Console.Error errors
             // A1 — single-source the refusal exit through `Preflight.refusalOf`
@@ -361,6 +364,9 @@ let runContractPairTransfer
     // engine's `WriteOptions.Signoffs` so a destructive Execute refuses BY
     // NAME (`transfer.writeSignoff.ungreenlit`) until the mode is greenlit.
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -480,10 +486,10 @@ let runContractPairTransfer
                 // policy the materialized branch consumes (`revertAuto`/`revertOut`
                 // derived above via `RevertPolicy.toEngine`): a mid-stream crash
                 // reverts (auto) or scripts (script) the partial sink-minted rows.
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds revertAuto revertOut)
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds signoff revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -502,7 +508,7 @@ let runContractPairTransfer
                     SupportingScope.scopeGroups physicalSinkContract payloadSet baseReconciled supportingScope
             narrateTransferReportWithScope report scopeGroups
             narrateUndoPointer mode revertOut
-            narrateDropExit allowDrops report
+            narrateDropExit allowDrops signoff report
         | Error errors ->
             printErrors Console.Error errors
             (Preflight.refusalOf errors).ExitCode
@@ -521,6 +527,9 @@ let runReverseLegTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -538,7 +547,7 @@ let runReverseLegTransfer
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -572,6 +581,14 @@ let runPeerTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
+    // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
+    (foreignRefs: string list)
+    // 2026-07-09 — the peer contracts' IDENTITY BASIS + the cloned-module
+    // source→sink module map. `ByName` runs `NameAlignment.align` over the
+    // acquired source contract before the SsKey-keyed gates (see below).
+    (alignment: AlignmentMode)
+    (alignMap: Map<string, string>)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -603,7 +620,20 @@ let runPeerTransfer
         TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
         (Preflight.refusalOf errors).ExitCode
-    | Ok (sourceContract, sinkContract) ->
+    | Ok (acquiredSource, sinkContract) ->
+
+    // Cloned-module alignment (2026-07-09). `by-sskey` (default) is identity —
+    // the two contracts already align on native GUIDs. `by-name` rewrites the
+    // SOURCE contract's SsKeys to the sink's by name (within `alignMap`) so the
+    // downstream SsKey-keyed gates + engine run UNCHANGED; a mismatch refuses
+    // BY NAME (`alignment.*`) here, before any gate or connection work. Rebind
+    // `sourceContract` to the aligned catalog — every consumer below sees it.
+    match NameAlignment.alignForMode alignment alignMap tables acquiredSource sinkContract with
+    | Error errors ->
+        TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok sourceContract ->
 
     // Resolve the gate inputs: the declared subset (against the SOURCE
     // contract — the same resolver the engine uses) and the reconciled kind
@@ -688,7 +718,7 @@ let runPeerTransfer
     // with the peer pair as the contracts and the peer label on the prose.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 
@@ -713,16 +743,11 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
     let allLines =
         System.IO.File.ReadAllLines scriptPath
         |> Array.map (fun l -> l.Trim())
-    // The provenance header the artifact writer stamps (the wrong-sink
-    // guard): `-- projection:<kind> server=<s> database=<db> generated=<t>`.
-    let stampedDatabase =
-        allLines
-        |> Array.tryPick (fun l ->
-            if l.StartsWith "-- projection:" then
-                l.Split(' ')
-                |> Array.tryPick (fun tok ->
-                    if tok.StartsWith "database=" then Some (tok.Substring 9) else None)
-            else None)
+    // The provenance the artifact writer stamps (the wrong-sink guard):
+    // `-- projection:<kind> server=<s> database=<db> generated=<t>`. Parsed
+    // purely by `TransferRevert.parseProvenance`; the fail-closed verdict is
+    // `TransferRevert.guardVerdict` (checked below, once the sink resolves).
+    let provenance = TransferRevert.parseProvenance allLines
     let statements =
         allLines
         |> Array.filter (fun l ->
@@ -779,23 +804,18 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
             6
         | Ok sink ->
             use sink = sink
-            // THE WRONG-SINK GUARD (2026-07-06, the final-pass critique's
-            // top finding): the artifact deletes BY KEY in whatever database
-            // --against resolves to. The header stamped at capture time
-            // names the database the keys belong to; a mismatch refuses by
-            // name (--force is the deliberate override — e.g. a restored
-            // copy under a new name). A header-less artifact (pre-stamp)
-            // proceeds with a printed note, never a refusal.
-            match stampedDatabase with
-            | Some stamped when not (System.String.Equals(stamped, sink.Database, System.StringComparison.OrdinalIgnoreCase)) && not force ->
-                TtyRenderer.renderVoicedError
-                    (ValidationError.create "revert.sinkMismatch"
-                        (sprintf "this undo was captured against database '%s', but --against resolves to '%s'. Re-point --against at the environment the transfer wrote, or pass --force if the database was deliberately renamed/restored." stamped sink.Database))
+            // THE WRONG-SINK GUARD (2026-07-06; fail-CLOSED 2026-07-09): the
+            // artifact deletes BY KEY in whatever server/database --against
+            // resolves to. `guardVerdict` refuses a server- OR database-mismatch
+            // AND a header-less script (which can no longer be verified) — only
+            // --force proceeds past it. The single most destructive standalone
+            // verb defaults to refuse, not proceed.
+            match TransferRevert.guardVerdict force provenance sink.DataSource sink.Database with
+            | Some refusal ->
+                TtyRenderer.renderVoicedError refusal
                 dumpBench "revert"
                 7
-            | _ ->
-            if Option.isNone stampedDatabase then
-                printfn "  (note: the script carries no provenance header — cannot verify it matches this sink.)"
+            | None ->
             // ONE transaction: the undo lands whole or not at all (the
             // child-first order means FKs never block; a mid-script failure
             // rolls the earlier deletes back rather than leaving a
@@ -883,17 +903,36 @@ let runCheckGo
                      "check the connection reference and the principal's SELECT on the ossys_* tables; then re-run."))
                 (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
             finish (List.ofSeq items)
-        | Ok (sourceContract, sinkContract) ->
-        items.Add (GoBoard.item "contracts" (GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."))
+        | Ok (acquiredSource, sinkContract) ->
         // Supporting scope (2026-07-08, the business-intent program): the
         // typed vocabulary desugars onto the EFFECTIVE subset the downstream
         // axes judge — the payload is `opts.Tables` alone; owned-child /
         // reference-seed expand the written set, the reference family expands
         // the reconcile set. The dedicated axis below verifies each declared
-        // intent against the graph.
+        // intent against the graph. Computed HERE (before alignment) because the
+        // effective subset is also name-alignment's strict scope.
         let scopeDesugar = SupportingScope.desugarToStrings opts.SupportingScope
         let effectiveTables = opts.Tables @ scopeDesugar.ExtraTables
         let effectiveReconcile = opts.Reconcile @ scopeDesugar.ExtraReconcile
+        // Cloned-module alignment (2026-07-09) — the board aligns at the SAME
+        // point the engine does (two-traversal parity): `by-name` rewrites the
+        // source contract's SsKeys to the sink's by name (strict over the
+        // transferred `effectiveTables`) before the SsKey-keyed axes below; a
+        // mismatch reds the board `alignment.*` with its detail.
+        match NameAlignment.alignForMode opts.Alignment opts.AlignMap effectiveTables acquiredSource sinkContract with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "contracts"
+                (GoBoard.Status.Red
+                    ("the two estates do not align by name for the declared cloned-module map.",
+                     "fix the flow's `alignMap` (source module -> sink module) or the entities' names/shape; then re-run."))
+                (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
+            finish (List.ofSeq items)
+        | Ok sourceContract ->
+        items.Add
+            (GoBoard.item "contracts"
+                (match opts.Alignment with
+                 | AlignmentMode.BySsKey -> GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."
+                 | AlignmentMode.ByName  -> GoBoard.Status.Green "both metamodels read; identities aligned BY NAME (cloned modules) — name-derived, so A1-bounded."))
         // -- the declared subset -------------------------------------------
         match Transfer.resolveLoadSet sourceContract effectiveTables with
         | Error errors ->
@@ -1059,18 +1098,18 @@ let runCheckGo
          | None ->
              items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))
         // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
-        // The static-lookup kinds (2026-07-09): the dry run threads them so the
-        // engine computes the AIRTIGHT identity into `report.StaticLookupDivergences`
-        // — the same set the live Execute reads (the two-traversal). Bound before
-        // the dry run so the forecast branch below reuses it for the axis.
-        let staticLookupKeys : Set<SsKey> =
-            opts.SupportingScope
-            |> List.choose (fun e ->
-                match e.Relationship with
-                | SupportingScope.SupportingRelationship.StaticLookup _ ->
-                    SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
-                | _ -> None)
-            |> Set.ofList
+        // The dry run forecasts EXACTLY what Execute writes (two-traversal parity):
+        // it goes through the SAME `runReverseLegThroughConnectionsWith` entry with
+        // the SAME resolved supporting-scope the live run threads — seed kinds,
+        // acknowledged exclusions, static lookups (`SupportingScope.resolve`, the
+        // canonical resolver the live face at `runContractPairTransfer` uses) plus
+        // the flow's `foreignRefs` ack and the sink's identity policy. Bound before
+        // the dry run; the forecast axis below reuses `staticLookupKeys`.
+        let boardScope =
+            match SupportingScope.resolve sinkContract opts.SupportingScope with
+            | Ok r -> r
+            | Error _ -> SupportingScope.empty
+        let staticLookupKeys : Set<SsKey> = boardScope.StaticLookupKinds
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
@@ -1091,9 +1130,11 @@ let runCheckGo
                         opts.ReconcileIgnore
                         |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None)
                         |> Set.ofList
-                    (Transfer.runReverseLegThroughConnections
-                        Transfer.DryRun opts.Emission false true false
-                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [] staticLookupKeys)
+                    (Transfer.runReverseLegThroughConnectionsWith
+                        opts.SinkCapability.IdentityPolicy Transfer.DryRun opts.Emission false true false
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet
+                        boardScope.SeedKinds boardScope.AcknowledgedExclusions [] boardScope.StaticLookupKinds
+                        (Set.ofList opts.ForeignRefs) false None)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
@@ -1683,9 +1724,12 @@ let runCheckGo
                  | WriteSignoff.ScopeMismatch (reason, remedy) -> GoBoard.Status.Red (reason, remedy)
              items.Add (GoBoard.itemWith "signoff" status (wipedTables |> List.map (sprintf "wipes %s")))
          | EmissionMode.Incremental ->
-             // Upsert-only — no destructive wipe, so no signoff is required for the
-             // write strategy (drops / cdc / identity-insert / delete-scope carry
-             // their own acknowledgements).
+             // Upsert-only — no destructive wipe, so no wipe greenlight is required.
+             // Identity-insert (the FullRights reverse-leg path, not this env→env
+             // board) is gated at the ENGINE over the plan-derived
+             // `identityInsertTables` (T1.5, `transfer.writeSignoff.ungreenlit`);
+             // the go board is env→env-scoped (AssignedBySink), so it never drives
+             // an identity-insert flow — the reverse-leg probe sheet is its surface.
              items.Add (GoBoard.item "signoff" (GoBoard.Status.Green "no destructive wipe — merge/incremental is upsert-only; no write-mode greenlight required.")))
         // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
         // `check plan` walks the strategy options + the WHY of each. Advisory, so it

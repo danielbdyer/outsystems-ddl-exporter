@@ -88,7 +88,7 @@ module WriteSignoff =
         | WriteMode.Replace ->
             "Every row in the transferred subset is deleted child-first, then reloaded — a target row absent from the source is removed, not preserved."
         | WriteMode.Fresh ->
-            "The target is assumed empty: every source row inserts, nothing is matched, and no losses are computed — a non-empty target's divergent rows are overwritten without a diff."
+            "Fresh assumes an empty target, but the run performs the SAME destructive act as replace: every row in the transferred subset is deleted child-first, then reloaded — a populated target is fully wiped, not diffed. Greenlighting `fresh` authorizes that wipe."
         | WriteMode.Drops ->
             "Rows whose foreign key points at an unmatched record are dropped — they do not load, and the count is reported, never recovered."
         | WriteMode.Cdc ->

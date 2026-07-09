@@ -52,7 +52,7 @@ let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, e
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [ "Customer" ] [] [] [] None   // no ':' — transfer.reconcile.specShape
+            [ "Customer" ] [] [] [] [] None   // no ':' — transfer.reconcile.specShape
             false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural
     Assert.Equal(2, exit)
 
@@ -64,7 +64,7 @@ let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [ "OSUSR_NOPE:ID" ] [] [] [] None   // table not in the contract — transfer.reconcile.tableNotFound
+            [ "OSUSR_NOPE:ID" ] [] [] [] [] None   // table not in the contract — transfer.reconcile.tableNotFound
             false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural
     Assert.Equal(2, exit)
 
@@ -76,7 +76,7 @@ let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no 
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [ "OSUSR_B_CUSTOMER:ID" ] [] [] [] None   // resolves to MatchByColumn (Id)
+            [ "OSUSR_B_CUSTOMER:ID" ] [] [] [] [] None   // resolves to MatchByColumn (Id)
             false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural
     // Past the parse/resolve gate the run reaches connection-opening, which
     // fails on the unset env vars — a connection-class exit, NEVER the arg/
@@ -202,7 +202,7 @@ let ``streaming face: an explicit --streaming with --tables refuses at the face 
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [] [] [] [] None
+            [] [] [] [] [] None
             false true false EmissionMode.Incremental false true None [ "Customer" ] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural
     Assert.Equal(2, exit)
 

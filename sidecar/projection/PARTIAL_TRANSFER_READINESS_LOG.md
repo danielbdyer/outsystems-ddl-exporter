@@ -1502,3 +1502,232 @@ guarantee is held to its literal promise (full detail in `DECISIONS 2026-07-09`)
 
 Pure suites green (Reconciliation +8, TransferImpact +10, delete-scope gate +3); Release clean.
 Docker witnesses for `--impact` and the static-lookup board case are the named follow-on.
+
+---
+
+## 2026-07-09 — Audit follow-on: cross-environment mis-key landmines, identity-insert gate, fail-closed revert, journal durability, unproven-refusal witnesses
+
+A multi-agent audit of the transfer engine / gates / resume-revert / test estate
+surfaced a cluster of Tier-0 correctness landmines (silent mis-key on exit 0) and
+Tier-1 destructive-write authorization holes. This entry records the slices landed
+(each committed with tests; Release FS3511-clean; pure pool + transfer docker
+classes green on the warm container). The remaining audit items are the named
+follow-on at the bottom.
+
+- **T0.1 — collation-parity reconcile match.** The Core reconcile match indexed
+  business keys ORDINALLY while the sink and the go-board evidence probe match
+  under the sink's `CI_AS` collation. Same fact, two rulers: a source key the
+  board previewed GREEN the engine could drop (exit-9 on a green board), or a
+  `FallbackToAssigned` pin silently re-keyed every ordinal-missed FK to the owner.
+  A new named `Reconciliation.matchKey` (case-fold + trailing-trim; blankness still
+  decided on the raw value) folds both the sink index and the source lookup for
+  `MatchByColumn`/`MatchByColumns`, so engine and board agree by construction.
+  Accent- and leading-space-sensitivity preserved; a per-column collation contract
+  for non-default collations is the named follow-on.
+- **T0.2 — fail-loud duplicate sink key (NM-58).** A duplicate reconcile key on
+  the SINK re-keyed every matching source FK onto the oldest row, silently
+  displacing the rest, on exit 0. `AmbiguousTargetMatchKeys` now counts in
+  `droppedRowCount`/`hasDrops` (exit 9, cleared by `--allow-drops` or a
+  `ManualOverride`), symmetric with NM-51's duplicate SOURCE key; the go-board
+  forecast reads the same field (two-traversal).
+- **T0.4 — capture-journal durability.** `append` now fsyncs (`Flush(true)`); the
+  docstring NAMES the at-least-once window honestly (sink commits first, then the
+  append — a crash between re-writes/re-mints the chunk on resume) instead of
+  asserting atomicity; the write-ahead intent protocol that closes the window is
+  the named follow-on. `load` and `openResumeIndex` now tolerate a torn TRAILING
+  line (mid-crash partial, keyed on the missing closing newline) instead of
+  throwing and wedging resume/revert; a newline-terminated corrupt line still
+  throws (the not-silently-lossy contract holds).
+- **T1.5 — identity-insert gated by signoff.** Identity-insert (explicit source
+  PKs into an IDENTITY column under `KeepIdentity`) was a first-class `WriteMode`
+  gated NOWHERE — the engine's signoff refusal fired only for `WipeAndLoad`. The
+  engine now refuses `transfer.writeSignoff.ungreenlit` when the plan performs
+  identity-insert without the flow greenlighting it, on ANY Execute (the merge
+  path too). Detection is plan-derivable (`Transfer.identityInsertTables`:
+  a `PreservedFromSource` load onto an IDENTITY-PK kind), so board and engine gate
+  one fact. Breaking by design (like the 2026-07-08 signoff program); the NM-40
+  test-only rename seams pre-greenlight it (inert under `Structural`), production
+  routes through `runReverseLegThroughConnectionsWith`'s real signoff. The go board
+  is env→env-scoped (AssignedBySink) and never drives an identity-insert flow, so
+  no board twin here (the reverse-leg probe sheet is that surface).
+- **T1.7 — fail-closed revert wrong-sink guard.** `projection revert` deletes BY
+  KEY in whatever `--against` resolves to. The guard was fail-OPEN: a header-less
+  script proceeded with a note, and only `database=` was compared. A pure
+  `TransferRevert.guardVerdict` now refuses a header-less script
+  (`revert.headerMissing`) and a `server=` OR `database=` mismatch
+  (`revert.sinkMismatch`, server via `sink.DataSource`); `--force` overrides. The
+  face is thin (parse + decide + render).
+- **T1.9 — honest `fresh` impact text.** The `fresh` signoff prose claimed the
+  target is "assumed empty ... overwritten without a diff", milder than the act
+  (fresh performs the SAME full child-first wipe as replace). Corrected so
+  greenlighting `fresh` is not misled about the blast radius.
+- **Witnesses — two shipped guarantees pinned by name.** `staticLookupRefusalOf`
+  made public: the pure pool now witnesses `transfer.staticLookup.diverged` (a
+  divergent static-lookup refuses; a clean one passes). `orderedLoadGate` gains a
+  witness: an alphabetical-degraded order refuses `transfer.loadOrderUnproven`.
+
+**Proven:** Release FS3511-clean; pure pool 4073+; docker `PeerAlignedTransfer`,
+`PeerManagedGrant`, `GoBoardDocker`, `TransferCanary`, `ReverseLegCanary` all green.
+PR #663.
+
+**Named follow-on (the remaining audit items):** T1.6 (route `--allow-drops`/
+`--allow-cdc` through the durable signoff layer); T1.8 (mirror the WipeAndLoad
+populated-sink refusal at the incremental seam — the merge-into-populated
+duplication hole); T1.10 (signoff arm on the streaming reverse-leg path —
+defense-in-depth, needs threading signoffs into the streaming signature); T0.3
+(surface out-of-contract FK escapes as a named condition — needs an acknowledgement
+path, since platform-`User` FK ubiquity makes a hard refusal too broad); the shared
+two-environment peer fixture; and docker witnesses for `--impact`, the
+static-lookup board case, and `supportingScope.inboundOrphan`.
+
+### Addendum — T1.6 + T0.3 landed (same session)
+
+- **T1.6 — drops/cdc via the durable signoff.** Row loss / CDC-flood is now
+  acknowledged by the `--allow-drops`/`--allow-cdc` flag OR the flow's durable
+  `Drops`/`Cdc` signoff (`Transfer.dropsAcknowledged`/`cdcAcknowledged`). `runCore`
+  folds the signoff into the effective flags so the pre-write gates and the face's
+  exit code read one acknowledgement — closing the "scripted `--go --allow-drops`
+  drops rows with nothing durable to audit" gap. Streaming keeps flag-only (noted).
+- **T0.3 — out-of-contract FK escapes refused; durable `foreignRefs` ack.** An
+  in-subset FK to a NON-User kind absent from the acquired contract loaded the raw
+  source surrogate (a silent cross-wire). The engine now refuses
+  `transfer.subsetFkEscapes.targetOutOfContract` unless the flow declares the
+  reference stable in `foreignRefs` (a first-class, A44-round-tripping config field
+  threaded onto `WriteOptions.ForeignRefsAcknowledged`); the platform-User path is
+  excluded (`Reference.IsUserFk`). Widening the acquisition is the other remedy.
+
+Remaining named follow-on: T1.8 (incremental populated-sink refusal), T1.10
+(streaming signoff arm), the shared two-environment fixture, and docker witnesses
+for `--impact` / the static-lookup board / `supportingScope.inboundOrphan`.
+
+### Addendum — T1.10 + T1.8 + the shared harness landed (same session)
+
+- **T1.10 — streaming signoff arm.** `runStreamingReconcilingWithRenames` now
+  threads the flow's `signoffs` and carries the same identity-insert gate runCore
+  does, so the materialized and streaming gate blocks cannot drift. Inert on
+  today's sink-mint streaming plan; a guard for a future preserve-keys path.
+- **T1.8 — populated-sink refusal.** A merge/Incremental Execute into a sink that
+  already holds rows in the transferred set now refuses
+  `transfer.incremental.populatedSink` at the live-write seam — mirroring the go
+  board's `re-run` axis over the same `populated` fact — instead of silently
+  re-minting (duplicating) AssignedBySink rows. The escape is `strategy: replace`.
+  The `re-run honesty` canary that pinned the old duplication is updated to the
+  refusal. WipeAndLoad and first-loads are unaffected.
+- **T3 — shared two-cell harness + witnesses.** `PeerEstateHarness.run2Cell`
+  bootstraps two SsKey-aligned cells (source `OSUSR_*` / sink `OSUSR_X*`), reads
+  both OSSYS contracts, and hands them to a body — a new two-cell witness is one
+  call. Landed two docker witnesses over it for the shipped-but-unproven engine
+  refusals: `transfer.supportingScope.inboundOrphan` and (peer-path)
+  `transfer.incremental.populatedSink`.
+
+Remaining named follow-on: docker witnesses for `check go --impact` and the
+static-lookup board case (the `PeerEstateHarness` makes these cheap now); the
+streaming write-ahead intent protocol (T0.4's core duplication window).
+
+### Addendum — the remaining follow-ons closed (same session)
+
+- **Docker witnesses over the shared harness** — the shipped-but-unproven engine
+  guarantees now fire against a live pair (`PeerWitnessDockerTests`):
+  `transfer.supportingScope.inboundOrphan`, `transfer.incremental.populatedSink`,
+  `transfer.staticLookup.diverged`, and `TransferImpact`'s add/delete/change/
+  unchanged classification against a real two-DB delta (`readKindRows` added to
+  `PeerEstateHarness`).
+- **B — the streaming write-ahead intent protocol** (T0.4's core) — a chunk is
+  journaled INTENT (fsync'd) BEFORE the sink write and COMPLETE after; a crash
+  between leaves an IN-DOUBT chunk the resume path probes (sink row count vs the
+  kind's completed-chunk total) — non-committed → safe re-write; maybe-committed →
+  refuse `transfer.resume.chunkInDoubt`. The silent re-mint / duplication window
+  is closed; normal resume is preserved (ReverseLegStreaming green).
+
+The partial-transfer hardening program (Tier-0/1 + the shared harness + the four
+docker witnesses + the streaming intent protocol) is complete on this branch.
+
+### Addendum — cloned-module (name-aligned) peer leg (2026-07-09)
+
+A NEW secondary case: two CLONED modules — an espace cloned into a
+differently-named module whose entities are same-named with identical
+attributes, but which are DISTINCT OSSYS entities (different native-GUID
+`SsKey`s). The existing peer leg pairs by SsKey equality end to end (shape gate,
+rename map, `DataLoadPlan.buildWith`), so a clone reads as all-removed/all-added
+— the shape gate refuses, and a bypass would load `[]` for every kind. Support
+is opt-in and DEFENSIVE:
+
+- **`NameAlignment.align` (new pure pass, `Projection.Pipeline`).** Rewrites the
+  SOURCE contract's SsKey-bearing fields (module / kind / attribute / reference /
+  index) to the SINK's corresponding SsKeys, matched BY NAME within an
+  operator-declared source→sink MODULE map, keeping physical coordinates / types
+  / structure. After the pass the pair is SsKey-aligned, so the entire existing
+  engine runs UNCHANGED (the aligned clone diffs to zero — the core pure witness).
+  Shape is judged on the espace-safe logical shape (`Readiness.toLogicalShape`),
+  so a physical default-constraint-name difference is not a false divergence.
+- **Named refusals.** `alignment.module.unmatched` (short-circuit),
+  `alignment.entity.unmatched` / `.ambiguous`, `alignment.attribute.unmatched` /
+  `.shapeDivergence` (STRICT — any `AttributeFacet` difference), and the
+  config-parse `alignment.mode.unknown`. FK targets with no sink counterpart keep
+  their source SsKey and fall to the existing T0.3 out-of-contract gate — no new
+  code. Entity/attribute mismatches are collected into one report.
+- **Identity basis is A1-BOUNDED.** Name-derived identity is materially weaker
+  than the native GUID; the mode is entered only by explicit opt-in
+  (`alignment: "by-name"` + `alignMap` on the flow, threaded like `foreignRefs`),
+  never auto-detected (a mis-wired pair must not silently "align by name"). Peer
+  leg only; the rendition reverse leg keeps `by-sskey`.
+- **Placement.** The pass runs at the PEER FACE (`Faces/Transfer.fs`), rebinding
+  the acquired source before the SsKey-keyed gates, and identically in the go
+  board's `TransferPeer` branch (board/engine two-traversal parity) — no change
+  to `WriteOptions` / `runCore` / the runner.
+- **Proof.** `NameAlignmentTests` (10 pure: the diff-to-zero + shape-gate-Ok
+  witness, FK re-point by identity, every refusal, determinism) + the A44
+  round-trip for `alignment`/`alignMap` + a live docker witness
+  (`ClonedModuleTransferDockerTests` over `OssysSeedBuilder.asClonedModule`, which
+  re-mints every `SS_Key` GUID): the un-aligned pair refuses `shapeDivergence`,
+  the name-aligned pair reads as one shape and lands the subset with the FK
+  re-pointed by identity.
+
+**Refinement (same day) — strictness is subset-scoped.** `align` now takes the
+resolved load scope: an entity actually being transferred must be a clean clone
+(name + strict shape) or the pass refuses; a neighbor in a mapped module is
+re-keyed by name where it uniquely matches (so FK targets stay consistent) but a
+name/shape mismatch there is NOT a refusal (its data is not moving). A full
+transfer (no subset) stays strict estate-wide. `alignForMode` resolves the
+declared `tables` against the source (names are rewrite-invariant) and the face
+/ board pass it in — so an unrelated drifted table can no longer block a scoped
+transfer, while the transferred set is still held to the strict-clone bar.
+
+**Hardening (multi-agent review) — the identity re-keying can no longer silently
+corrupt or be silently dropped.** Three adversarial reviews confirmed the pass's
+core safe (bypass surface, reconcile/align SsKey-space consistency, board/engine
+parity, `toLogicalShape` completeness, determinism, feature-interaction matrix)
+and surfaced two defects, both now closed:
+
+- **Identity injectivity.** `align` guarded sink-side ambiguity but trusted
+  source-side and map-value uniqueness; `Map.ofList` on source-keyed pairs would
+  launder a many-to-one VALUE collision (two source identities → one sink) into
+  duplicate SsKeys that `CatalogDiff` silently collapses (rows vanish). Reachable
+  from config (`alignMap: {A: Shared, B: Shared}`). Now refused two ways: a
+  value-injectivity guard in `align` (`alignment.identityCollision` — the run-time
+  net over module/entity/attribute/reference/index/sequence collisions) and a
+  parse-time `cli.config.alignMapNotInjective`. A clean clone is 1:1, so neither
+  fires on a genuine clone.
+- **Silent drop on mis-route.** `alignment: by-name` is consumed only on the
+  `UpPeer` route; a by-name flow that forgot `rendition: physical` routed to the
+  name-blind leg and dropped `alignMap` silently. `resolveFlowSpec` now refuses
+  `cli.flow.alignmentNotPeer` when a by-name flow is not a physical→physical peer.
+
+Plus: the shape-divergence refusal renders facet names cleanly (no `%A`); the
+three best-effort by-name loops collapsed to one helper. New tests pin the
+strict-scope-*bites* path, the collision + mis-route + FK-escape + sequence
+refusals/behaviors, the `AlignmentMode` round-trip, and — at the live seam — the
+FK re-point at ROW level (reseed the sink identities, then assert no verbatim and
+no dangling FK), the one hazard the pass exists to prevent.
+
+**Board forecast ⇔ execute on one seam.** The go board's dry run went through
+`runReverseLegThroughConnections` (the zero-default sibling) while the live run
+used `...With`, so the forecast omitted the flow's SEED kinds, acknowledged
+EXCLUSIONS, `foreignRefs` ack, and the sink's IDENTITY POLICY — a board could red
+(or mis-forecast rows) where execute would proceed, and vice versa. The dry run
+now calls the SAME `runReverseLegThroughConnectionsWith` entry with the SAME
+resolved supporting-scope (`SupportingScope.resolve`, the canonical resolver the
+live face uses) + `opts.ForeignRefs` + `opts.SinkCapability.IdentityPolicy` —
+board and engine read the same fact (two-traversal parity). Behavior-identical for
+flows that use none of these (empty scope / structural sink → the two calls are
+the same), so the whole existing board suite is unchanged.
