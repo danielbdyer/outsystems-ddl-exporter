@@ -103,13 +103,17 @@ module PeerEstateHarness =
             return! body connections
         }
 
-    /// THE shared combinator: bootstrap the two ephemeral cells, seed both OSSYS
-    /// metamodels, read both SsKey-aligned contracts, and hand
+    /// The sink-seed-parameterized combinator: bootstrap the two ephemeral cells,
+    /// seed the source OSSYS metamodel and the sink via `sinkSeed` (applied to the
+    /// source seed), read both contracts, and hand
     /// `(src, sink, srcConnStr, sinkConnStr, srcContract, sinkContract)` to the
-    /// body. Source/sink DATA is the body's job (each witness declares its own).
-    let run2Cell
+    /// body. `run2Cell` fixes `sinkSeed` to the espace-key shift (SsKey-aligned
+    /// renditions); the cloned-module witness passes `asClonedModule` (re-minted
+    /// GUIDs — the pair aligns by NAME, not SsKey).
+    let run2CellWith
         (fixture: EphemeralContainerFixture)
         (label: string)
+        (sinkSeed: string -> string)
         (body: SqlConnection -> SqlConnection -> string -> string -> Catalog -> Catalog -> Task<'a>)
         : 'a =
         TaskSync.run (fun () ->
@@ -119,9 +123,20 @@ module PeerEstateHarness =
                     return!
                         fixture.WithEphemeralDatabase (label + "Sink") (fun sink sinkConnStr ->
                             task {
-                                do! Deploy.executeBatch sink (seedSink ())
+                                do! Deploy.executeBatch sink (sinkSeed (seedSource ()))
                                 let! srcContractR = contractOf src
                                 let! sinkContractR = contractOf sink
                                 return! body src sink srcConnStr sinkConnStr (value srcContractR) (value sinkContractR)
                             })
                 }))
+
+    /// THE shared combinator: bootstrap the two ephemeral cells, seed both OSSYS
+    /// metamodels (the sink via the espace-key shift — SsKey-aligned renditions),
+    /// read both contracts, and hand them to the body. Source/sink DATA is the
+    /// body's job (each witness declares its own).
+    let run2Cell
+        (fixture: EphemeralContainerFixture)
+        (label: string)
+        (body: SqlConnection -> SqlConnection -> string -> string -> Catalog -> Catalog -> Task<'a>)
+        : 'a =
+        run2CellWith fixture label (OssysSeedBuilder.withEspaceKey "X") body

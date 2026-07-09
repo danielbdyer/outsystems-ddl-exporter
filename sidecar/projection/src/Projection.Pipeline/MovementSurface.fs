@@ -833,12 +833,38 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el with
-                | Error es, _, _, _, _, _, _ | _, Error es, _, _, _, _, _ | _, _, Error es, _, _, _, _ | _, _, _, Error es, _, _, _ | _, _, _, _, Error es, _, _ | _, _, _, _, _, Error es, _ | _, _, _, _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff ->
+                // 2026-07-09 — the peer contracts' identity basis + the
+                // cloned-module MODULE correspondence. `alignment` defaults to
+                // `by-sskey` (byte-identical); an unknown token refuses
+                // `alignment.mode.unknown`. `alignMap` is a source→sink module
+                // object, honored only under `by-name`.
+                let alignmentR : Result<AlignmentMode * Map<string, string>> =
+                    let modeR =
+                        match getString el "alignment" with
+                        | None -> Result.success AlignmentMode.BySsKey
+                        | Some tok -> AlignmentMode.parse tok
+                    let mapR =
+                        match el.TryGetProperty "alignMap" with
+                        | true, m when m.ValueKind = JsonValueKind.Object ->
+                            [ for p in m.EnumerateObject() do
+                                if p.Value.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (p.Value.GetString()) with
+                                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield p.Name.Trim(), s.Trim()
+                                    | _ -> () ]
+                            |> Map.ofList |> Result.success
+                        | true, m when m.ValueKind <> JsonValueKind.Null ->
+                            Result.failureOf (err "cli.config.alignMapShape" (sprintf "flow '%s' 'alignMap' must be an object of \"sourceModule\": \"sinkModule\" strings." name))
+                        | _ -> Result.success Map.empty
+                    match modeR, mapR with
+                    | Ok mode, Ok map -> Result.success (mode, map)
+                    | Error e1, Error e2 -> Result.failure (e1 @ e2)
+                    | Error es, _ | _, Error es -> Result.failure es
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el, alignmentR with
+                | Error es, _, _, _, _, _, _, _ | _, Error es, _, _, _, _, _, _ | _, _, Error es, _, _, _, _, _ | _, _, _, Error es, _, _, _, _ | _, _, _, _, Error es, _, _, _ | _, _, _, _, _, Error es, _, _ | _, _, _, _, _, _, Error es, _ | _, _, _, _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff, Ok (alignment, alignMap) ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; Alignment = alignment; AlignMap = alignMap; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -1145,6 +1171,15 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.ForeignRefs do a.Add(JsonValue.Create r)
             o.["foreignRefs"] <- a)
+        // 2026-07-09 — the identity basis + module map. The `by-sskey` /
+        // empty-map defaults round-trip through the absent arms (mirroring
+        // `foreignRefs`), so only a `by-name` flow renders these.
+        (if flow.Alignment <> AlignmentMode.BySsKey then
+            o.["alignment"] <- JsonValue.Create (AlignmentMode.serialize flow.Alignment))
+        (if not (Map.isEmpty flow.AlignMap) then
+            let mo = JsonObject()
+            for KeyValue (src, snk) in flow.AlignMap do mo.[src] <- JsonValue.Create snk
+            o.["alignMap"] <- mo)
         // 2026-07-08 — the supporting-scope entries render in a fixed field
         // order (relationship, table, per-relationship payload, reason) so the
         // round-trip `parse ∘ render = id` holds on the canonical DOM.
@@ -1363,6 +1398,8 @@ module Command =
           Reconcile   = spec.Reconcile
           ReconcileIgnore = spec.ReconcileIgnore
           ForeignRefs = spec.ForeignRefs
+          Alignment   = spec.Alignment
+          AlignMap    = spec.AlignMap
           SupportingScope = spec.SupportingScope
           Signoff     = spec.Signoff
           Rekey       = spec.Rekey
@@ -1847,6 +1884,8 @@ module Command =
                         Reconcile = flow.Reconcile
                         ReconcileIgnore = flow.ReconcileIgnore
                         ForeignRefs = flow.ForeignRefs
+                        Alignment = flow.Alignment
+                        AlignMap = flow.AlignMap
                         SupportingScope = flow.SupportingScope
                         Signoff  = flow.Signoff
                         Tables   = flow.Tables

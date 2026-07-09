@@ -370,6 +370,14 @@ module CatalogDiff =
           Facet.ofLens AttributeFacet.DefaultValue (Facet.lens (fun (a: Attribute) -> (a.DefaultValue, a.DefaultName)) (fun (dv, dn) a -> { a with DefaultValue = dv; DefaultName = dn }))
           Facet.ofLens AttributeFacet.Computed    (Facet.lens (fun (a: Attribute) -> a.Computed) (fun v a -> { a with Computed = v })) ]
 
+    /// The changed column-shape facets between two attributes — the SAME
+    /// comparator `between` uses (the private `attributeFacets` lens table), lifted
+    /// public so a name-aligning pass (`NameAlignment.align`) judges "identical
+    /// attribute shape" by the exact facets the diff detects, not a hand-rolled
+    /// re-derivation. Empty ⇒ the two attributes' emitted columns are identical.
+    let attributeShapeFacets (a: Attribute) (b: Attribute) : Set<AttributeFacet> =
+        Facet.changed attributeFacets a b
+
     /// The empty channel diff — all four fields empty — over any change type.
     let private emptyChannelDiff<'change> : ChannelDiff<'change> =
         { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Reshaped = [] }

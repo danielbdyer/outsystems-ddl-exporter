@@ -1641,3 +1641,44 @@ streaming write-ahead intent protocol (T0.4's core duplication window).
 
 The partial-transfer hardening program (Tier-0/1 + the shared harness + the four
 docker witnesses + the streaming intent protocol) is complete on this branch.
+
+### Addendum — cloned-module (name-aligned) peer leg (2026-07-09)
+
+A NEW secondary case: two CLONED modules — an espace cloned into a
+differently-named module whose entities are same-named with identical
+attributes, but which are DISTINCT OSSYS entities (different native-GUID
+`SsKey`s). The existing peer leg pairs by SsKey equality end to end (shape gate,
+rename map, `DataLoadPlan.buildWith`), so a clone reads as all-removed/all-added
+— the shape gate refuses, and a bypass would load `[]` for every kind. Support
+is opt-in and DEFENSIVE:
+
+- **`NameAlignment.align` (new pure pass, `Projection.Pipeline`).** Rewrites the
+  SOURCE contract's SsKey-bearing fields (module / kind / attribute / reference /
+  index) to the SINK's corresponding SsKeys, matched BY NAME within an
+  operator-declared source→sink MODULE map, keeping physical coordinates / types
+  / structure. After the pass the pair is SsKey-aligned, so the entire existing
+  engine runs UNCHANGED (the aligned clone diffs to zero — the core pure witness).
+  Shape is judged on the espace-safe logical shape (`Readiness.toLogicalShape`),
+  so a physical default-constraint-name difference is not a false divergence.
+- **Named refusals.** `alignment.module.unmatched` (short-circuit),
+  `alignment.entity.unmatched` / `.ambiguous`, `alignment.attribute.unmatched` /
+  `.shapeDivergence` (STRICT — any `AttributeFacet` difference), and the
+  config-parse `alignment.mode.unknown`. FK targets with no sink counterpart keep
+  their source SsKey and fall to the existing T0.3 out-of-contract gate — no new
+  code. Entity/attribute mismatches are collected into one report.
+- **Identity basis is A1-BOUNDED.** Name-derived identity is materially weaker
+  than the native GUID; the mode is entered only by explicit opt-in
+  (`alignment: "by-name"` + `alignMap` on the flow, threaded like `foreignRefs`),
+  never auto-detected (a mis-wired pair must not silently "align by name"). Peer
+  leg only; the rendition reverse leg keeps `by-sskey`.
+- **Placement.** The pass runs at the PEER FACE (`Faces/Transfer.fs`), rebinding
+  the acquired source before the SsKey-keyed gates, and identically in the go
+  board's `TransferPeer` branch (board/engine two-traversal parity) — no change
+  to `WriteOptions` / `runCore` / the runner.
+- **Proof.** `NameAlignmentTests` (10 pure: the diff-to-zero + shape-gate-Ok
+  witness, FK re-point by identity, every refusal, determinism) + the A44
+  round-trip for `alignment`/`alignMap` + a live docker witness
+  (`ClonedModuleTransferDockerTests` over `OssysSeedBuilder.asClonedModule`, which
+  re-mints every `SS_Key` GUID): the un-aligned pair refuses `shapeDivergence`,
+  the name-aligned pair reads as one shape and lands the subset with the FK
+  re-pointed by identity.

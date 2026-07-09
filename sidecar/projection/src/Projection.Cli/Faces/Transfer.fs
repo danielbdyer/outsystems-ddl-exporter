@@ -584,6 +584,11 @@ let runPeerTransfer
     // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
     // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
     (foreignRefs: string list)
+    // 2026-07-09 — the peer contracts' IDENTITY BASIS + the cloned-module
+    // source→sink module map. `ByName` runs `NameAlignment.align` over the
+    // acquired source contract before the SsKey-keyed gates (see below).
+    (alignment: AlignmentMode)
+    (alignMap: Map<string, string>)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -615,7 +620,20 @@ let runPeerTransfer
         TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
         (Preflight.refusalOf errors).ExitCode
-    | Ok (sourceContract, sinkContract) ->
+    | Ok (acquiredSource, sinkContract) ->
+
+    // Cloned-module alignment (2026-07-09). `by-sskey` (default) is identity —
+    // the two contracts already align on native GUIDs. `by-name` rewrites the
+    // SOURCE contract's SsKeys to the sink's by name (within `alignMap`) so the
+    // downstream SsKey-keyed gates + engine run UNCHANGED; a mismatch refuses
+    // BY NAME (`alignment.*`) here, before any gate or connection work. Rebind
+    // `sourceContract` to the aligned catalog — every consumer below sees it.
+    match NameAlignment.alignForMode alignment alignMap acquiredSource sinkContract with
+    | Error errors ->
+        TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
+        dumpBench "transfer"
+        (Preflight.refusalOf errors).ExitCode
+    | Ok sourceContract ->
 
     // Resolve the gate inputs: the declared subset (against the SOURCE
     // contract — the same resolver the engine uses) and the reconciled kind
@@ -885,8 +903,25 @@ let runCheckGo
                      "check the connection reference and the principal's SELECT on the ossys_* tables; then re-run."))
                 (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
             finish (List.ofSeq items)
-        | Ok (sourceContract, sinkContract) ->
-        items.Add (GoBoard.item "contracts" (GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."))
+        | Ok (acquiredSource, sinkContract) ->
+        // Cloned-module alignment (2026-07-09) — the board aligns at the SAME
+        // point the engine does (two-traversal parity): `by-name` rewrites the
+        // source contract's SsKeys to the sink's by name before the SsKey-keyed
+        // axes below; a mismatch reds the board `alignment.*` with its detail.
+        match NameAlignment.alignForMode opts.Alignment opts.AlignMap acquiredSource sinkContract with
+        | Error errors ->
+            items.Add (GoBoard.itemWith "contracts"
+                (GoBoard.Status.Red
+                    ("the two estates do not align by name for the declared cloned-module map.",
+                     "fix the flow's `alignMap` (source module -> sink module) or the entities' names/shape; then re-run."))
+                (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
+            finish (List.ofSeq items)
+        | Ok sourceContract ->
+        items.Add
+            (GoBoard.item "contracts"
+                (match opts.Alignment with
+                 | AlignmentMode.BySsKey -> GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."
+                 | AlignmentMode.ByName  -> GoBoard.Status.Green "both metamodels read; identities aligned BY NAME (cloned modules) — name-derived, so A1-bounded."))
         // Supporting scope (2026-07-08, the business-intent program): the
         // typed vocabulary desugars onto the EFFECTIVE subset the downstream
         // axes judge — the payload is `opts.Tables` alone; owned-child /

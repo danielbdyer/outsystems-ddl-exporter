@@ -166,6 +166,12 @@ type MovementSpec =
         /// 2026-07-09 (T0.3) — acknowledged out-of-contract references
         /// (`OwnerKind.ReferenceName`), declared environment-stable.
         ForeignRefs : string list
+        /// 2026-07-09 — the peer contracts' IDENTITY BASIS (`by-sskey` default /
+        /// `by-name` for cloned modules). `ByName` runs the name-alignment pass.
+        Alignment : AlignmentMode
+        /// 2026-07-09 — the cloned-module source→sink MODULE correspondence
+        /// (`by-name` only): source-module-name → sink-module-name.
+        AlignMap : Map<string, string>
         /// 2026-07-08 — the typed supporting-scope vocabulary (owned children,
         /// references, anchors, lookups, blocked dependents). Empty = none.
         SupportingScope : SupportingScope.SupportingScopeEntry list
@@ -236,6 +242,8 @@ module MovementSpec =
             Reconcile   = []
             ReconcileIgnore = []
             ForeignRefs = []
+            Alignment   = AlignmentMode.BySsKey
+            AlignMap    = Map.empty
             SupportingScope = []
             Signoff     = []
             Tables      = []
@@ -305,6 +313,14 @@ type Flow =
         /// (`OwnerKind.ReferenceName` each), declared environment-stable so the
         /// engine's `subsetForeignRefsGate` does not refuse them.
         ForeignRefs : string list
+        /// 2026-07-09 — the peer contracts' IDENTITY BASIS. `by-sskey` (default)
+        /// = renditions of one model / GUID-stable read. `by-name` = CLONED
+        /// modules (same-named entities, distinct native GUIDs) — the peer face
+        /// runs `NameAlignment.align` over `AlignMap` before the SsKey gates.
+        Alignment : AlignmentMode
+        /// 2026-07-09 — the cloned-module source→sink MODULE correspondence,
+        /// honored only under `by-name`: source-module-name → sink-module-name.
+        AlignMap : Map<string, string>
         /// 2026-07-08 (the business-intent program) — the typed vocabulary
         /// for the SUPPORTING (non-payload) rows a partial transfer touches:
         /// owned children, seeded/matched references, shared anchors, static
@@ -454,6 +470,11 @@ type LoadOpts =
         /// 2026-07-09 (T0.3) — acknowledged out-of-contract references
         /// (`OwnerKind.ReferenceName`), declared environment-stable.
         ForeignRefs : string list
+        /// 2026-07-09 — the peer contracts' identity basis (`by-name` runs the
+        /// cloned-module name-alignment pass at the face).
+        Alignment : AlignmentMode
+        /// 2026-07-09 — the cloned-module source→sink module correspondence.
+        AlignMap : Map<string, string>
         /// 2026-07-08 — the typed supporting-scope vocabulary; the face
         /// desugars it onto `Tables`/`Reconcile` + the seed/exclusion sets.
         SupportingScope : SupportingScope.SupportingScopeEntry list

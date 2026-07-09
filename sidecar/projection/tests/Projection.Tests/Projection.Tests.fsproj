@@ -172,6 +172,7 @@
     <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
     <Compile Include="MovementIsomorphismTests.fs" />
+    <Compile Include="NameAlignmentTests.fs" />
     <Compile Include="ArchetypeTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="ReverseLegPropertyTests.fs" />
