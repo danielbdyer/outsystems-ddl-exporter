@@ -34,9 +34,10 @@ type ClonedModuleTransferDockerTests(fixture: EphemeralContainerFixture) =
                 match PeerTransfer.shapeGate subset srcContract sinkContract with
                 | Ok _ -> failwith "un-aligned cloned contracts must not read as one shape"
                 | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.peer.shapeDivergence")
-                // Align AppCore's identities across by name, then run the peer engine.
+                // Align AppCore's identities across by name (strict over the
+                // transferred City/Customer subset), then run the peer engine.
                 let alignMap = Map.ofList [ "AppCore", "AppCore" ]
-                let aligned = NameAlignment.align alignMap srcContract sinkContract |> value
+                let aligned = NameAlignment.alignForMode AlignmentMode.ByName alignMap [ "City"; "Customer" ] srcContract sinkContract |> value
                 // The aligned pair now reads as one shape over the subset.
                 match PeerTransfer.shapeGate subset aligned sinkContract with
                 | Error es -> failwithf "the aligned pair must read as one shape: %A" (es |> List.map (fun e -> e.Code))

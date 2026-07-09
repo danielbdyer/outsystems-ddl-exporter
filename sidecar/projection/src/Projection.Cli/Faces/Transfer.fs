@@ -628,7 +628,7 @@ let runPeerTransfer
     // downstream SsKey-keyed gates + engine run UNCHANGED; a mismatch refuses
     // BY NAME (`alignment.*`) here, before any gate or connection work. Rebind
     // `sourceContract` to the aligned catalog — every consumer below sees it.
-    match NameAlignment.alignForMode alignment alignMap acquiredSource sinkContract with
+    match NameAlignment.alignForMode alignment alignMap tables acquiredSource sinkContract with
     | Error errors ->
         TtyRenderer.renderGate "projection transfer (peer)" (Preflight.refusalOf errors)
         dumpBench "transfer"
@@ -904,11 +904,22 @@ let runCheckGo
                 (errors |> List.map (fun e -> sprintf "%s: %s" e.Code e.Message)))
             finish (List.ofSeq items)
         | Ok (acquiredSource, sinkContract) ->
+        // Supporting scope (2026-07-08, the business-intent program): the
+        // typed vocabulary desugars onto the EFFECTIVE subset the downstream
+        // axes judge — the payload is `opts.Tables` alone; owned-child /
+        // reference-seed expand the written set, the reference family expands
+        // the reconcile set. The dedicated axis below verifies each declared
+        // intent against the graph. Computed HERE (before alignment) because the
+        // effective subset is also name-alignment's strict scope.
+        let scopeDesugar = SupportingScope.desugarToStrings opts.SupportingScope
+        let effectiveTables = opts.Tables @ scopeDesugar.ExtraTables
+        let effectiveReconcile = opts.Reconcile @ scopeDesugar.ExtraReconcile
         // Cloned-module alignment (2026-07-09) — the board aligns at the SAME
         // point the engine does (two-traversal parity): `by-name` rewrites the
-        // source contract's SsKeys to the sink's by name before the SsKey-keyed
-        // axes below; a mismatch reds the board `alignment.*` with its detail.
-        match NameAlignment.alignForMode opts.Alignment opts.AlignMap acquiredSource sinkContract with
+        // source contract's SsKeys to the sink's by name (strict over the
+        // transferred `effectiveTables`) before the SsKey-keyed axes below; a
+        // mismatch reds the board `alignment.*` with its detail.
+        match NameAlignment.alignForMode opts.Alignment opts.AlignMap effectiveTables acquiredSource sinkContract with
         | Error errors ->
             items.Add (GoBoard.itemWith "contracts"
                 (GoBoard.Status.Red
@@ -922,15 +933,6 @@ let runCheckGo
                 (match opts.Alignment with
                  | AlignmentMode.BySsKey -> GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."
                  | AlignmentMode.ByName  -> GoBoard.Status.Green "both metamodels read; identities aligned BY NAME (cloned modules) — name-derived, so A1-bounded."))
-        // Supporting scope (2026-07-08, the business-intent program): the
-        // typed vocabulary desugars onto the EFFECTIVE subset the downstream
-        // axes judge — the payload is `opts.Tables` alone; owned-child /
-        // reference-seed expand the written set, the reference family expands
-        // the reconcile set. The dedicated axis below verifies each declared
-        // intent against the graph.
-        let scopeDesugar = SupportingScope.desugarToStrings opts.SupportingScope
-        let effectiveTables = opts.Tables @ scopeDesugar.ExtraTables
-        let effectiveReconcile = opts.Reconcile @ scopeDesugar.ExtraReconcile
         // -- the declared subset -------------------------------------------
         match Transfer.resolveLoadSet sourceContract effectiveTables with
         | Error errors ->

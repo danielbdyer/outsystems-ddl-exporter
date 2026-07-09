@@ -118,8 +118,20 @@ module NameAlignment =
             Sequences = c.Sequences |> List.map (fun s -> { s with SsKey = remap m s.SsKey }) }
 
     /// Rewrite `source` so its SsKeys equal `sink`'s by name, within `alignMap`
-    /// (source-module-name → sink-module-name). See the module docstring.
-    let align (alignMap: Map<string, string>) (source: Catalog) (sink: Catalog) : Result<Catalog> =
+    /// (source-module-name → sink-module-name). `strictScope` is the set of
+    /// SOURCE entity SsKeys actually being transferred (the resolved load set):
+    /// an entity in it must be a CLEAN clone (name + strict shape) or the pass
+    /// refuses; an entity OUTSIDE it (an unrelated table in a mapped module) is
+    /// still re-keyed by name where it uniquely matches — so FK targets stay
+    /// consistent — but a name/shape mismatch there is NOT a refusal (its data
+    /// is not moving). `None` = a full transfer: strict over the whole estate.
+    /// See the module docstring.
+    let align
+        (alignMap: Map<string, string>)
+        (strictScope: Set<SsKey> option)
+        (source: Catalog)
+        (sink: Catalog)
+        : Result<Catalog> =
         // An empty map is not identity — under `ByName` it would silently no-op
         // and hand a misleading shape refusal downstream. Refuse BY NAME so a
         // programmatic caller (and the config path's mirror guard) fail loud.
@@ -137,6 +149,12 @@ module NameAlignment =
         // applies verbatim to the RAW `source` rewritten at the end.
         let srcL = Readiness.toLogicalShape source
         let snkL = Readiness.toLogicalShape sink
+        // Is this source entity being transferred (⇒ strict), or merely a
+        // neighbor in a mapped module (⇒ best-effort re-key, never a refusal)?
+        let isStrict (k: Kind) : bool =
+            match strictScope with
+            | None -> true
+            | Some keys -> Set.contains k.SsKey keys
         // -- 1. Module correspondence. Validate each declared pair has BOTH
         //    sides; a missing side short-circuits (nothing else is meaningful).
         let moduleErrors = ResizeArray<ValidationError>()
@@ -167,35 +185,46 @@ module NameAlignment =
         for (srcMod, sinkMod) in modulePairs do
             pairs.Add (srcMod.SsKey, sinkMod.SsKey)
             for srcKind in srcMod.Kinds do
+                let strict = isStrict srcKind
                 let candidates = sinkMod.Kinds |> List.filter (fun k -> nameEq k.Name srcKind.Name)
                 match candidates with
                 | [] ->
-                    entityErrors.Add
-                        (ValidationError.create "alignment.entity.unmatched"
-                            (System.String.Concat
-                                [ "entity '"; Name.value srcKind.Name; "' (source module '"
-                                  Name.value srcMod.Name; "') has no same-named entity in the mapped sink module '"
-                                  Name.value sinkMod.Name; "'." ]))
+                    // No correspondent. Strict (transferred) ⇒ refuse; a neighbor
+                    // ⇒ leave it unmapped (an in-scope FK to it becomes an
+                    // out-of-contract escape the T0.3 gate owns).
+                    if strict then
+                        entityErrors.Add
+                            (ValidationError.create "alignment.entity.unmatched"
+                                (System.String.Concat
+                                    [ "entity '"; Name.value srcKind.Name; "' (source module '"
+                                      Name.value srcMod.Name; "') has no same-named entity in the mapped sink module '"
+                                      Name.value sinkMod.Name; "'." ]))
                 | _ :: _ :: _ ->
-                    entityErrors.Add
-                        (ValidationError.create "alignment.entity.ambiguous"
-                            (System.String.Concat
-                                [ "entity '"; Name.value srcKind.Name; "' matches "
-                                  string (List.length candidates); " entities in the mapped sink module '"
-                                  Name.value sinkMod.Name; "' — the correspondence is ambiguous." ]))
+                    // Ambiguous. Strict ⇒ refuse (cannot re-key the transferred
+                    // entity); a neighbor ⇒ skip (leave unmapped rather than guess).
+                    if strict then
+                        entityErrors.Add
+                            (ValidationError.create "alignment.entity.ambiguous"
+                                (System.String.Concat
+                                    [ "entity '"; Name.value srcKind.Name; "' matches "
+                                      string (List.length candidates); " entities in the mapped sink module '"
+                                      Name.value sinkMod.Name; "' — the correspondence is ambiguous." ]))
                 | [ sinkKind ] ->
                     pairs.Add (srcKind.SsKey, sinkKind.SsKey)
-                    // attributes — strict shape via the shared diff comparator.
+                    // attributes — strict shape (transferred entity) via the shared
+                    // diff comparator; a neighbor re-keys by name without a shape
+                    // check (the shape gate judges only the transferred set).
                     for srcAttr in srcKind.Attributes do
                         match sinkKind.Attributes |> List.tryFind (fun a -> nameEq a.Name srcAttr.Name) with
                         | None ->
-                            entityErrors.Add
-                                (ValidationError.create "alignment.attribute.unmatched"
-                                    (System.String.Concat
-                                        [ Name.value srcKind.Name; "."; Name.value srcAttr.Name
-                                          " has no same-named attribute on the matched sink entity." ]))
+                            if strict then
+                                entityErrors.Add
+                                    (ValidationError.create "alignment.attribute.unmatched"
+                                        (System.String.Concat
+                                            [ Name.value srcKind.Name; "."; Name.value srcAttr.Name
+                                              " has no same-named attribute on the matched sink entity." ]))
                         | Some sinkAttr ->
-                            let facets = CatalogDiff.attributeShapeFacets srcAttr sinkAttr
+                            let facets = if strict then CatalogDiff.attributeShapeFacets srcAttr sinkAttr else Set.empty
                             if Set.isEmpty facets then
                                 pairs.Add (srcAttr.SsKey, sinkAttr.SsKey)
                             else
@@ -234,13 +263,19 @@ module NameAlignment =
 
     /// The mode router — the ONE call the peer face and the go board both make so
     /// they align on the SAME fact (board/engine two-traversal parity). `BySsKey`
-    /// is identity (`Ok source`, byte-identical to today); `ByName` runs the pass.
+    /// is identity (`Ok source`, byte-identical to today); `ByName` resolves the
+    /// declared `tables` subset against the source (the strict scope — an empty
+    /// subset is a full transfer, strict estate-wide) and runs the pass. Names
+    /// are rewrite-invariant, so resolving against the raw source is sound.
     let alignForMode
         (mode: AlignmentMode)
         (alignMap: Map<string, string>)
+        (tables: string list)
         (source: Catalog)
         (sink: Catalog)
         : Result<Catalog> =
         match mode with
         | AlignmentMode.BySsKey -> Result.success source
-        | AlignmentMode.ByName  -> align alignMap source sink
+        | AlignmentMode.ByName  ->
+            Transfer.resolveLoadSet source tables
+            |> Result.bind (fun strictScope -> align alignMap strictScope source sink)

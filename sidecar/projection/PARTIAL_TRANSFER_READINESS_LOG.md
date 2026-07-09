@@ -1682,3 +1682,13 @@ is opt-in and DEFENSIVE:
   re-mints every `SS_Key` GUID): the un-aligned pair refuses `shapeDivergence`,
   the name-aligned pair reads as one shape and lands the subset with the FK
   re-pointed by identity.
+
+**Refinement (same day) — strictness is subset-scoped.** `align` now takes the
+resolved load scope: an entity actually being transferred must be a clean clone
+(name + strict shape) or the pass refuses; a neighbor in a mapped module is
+re-keyed by name where it uniquely matches (so FK targets stay consistent) but a
+name/shape mismatch there is NOT a refusal (its data is not moving). A full
+transfer (no subset) stays strict estate-wide. `alignForMode` resolves the
+declared `tables` against the source (names are rewrite-invariant) and the face
+/ board pass it in — so an unrelated drifted table can no longer block a scoped
+transfer, while the transferred set is still held to the strict-clone bar.

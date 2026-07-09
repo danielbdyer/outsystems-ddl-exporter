@@ -63,7 +63,7 @@ let private findKind (c: Catalog) (name: string) : Kind =
 
 [<Fact>]
 let ``align rewrites the clone pair to ONE shape — the aligned source diffs to zero against the sink`` () =
-    match NameAlignment.align map source clone with
+    match NameAlignment.align map None source clone with
     | FsResult.Error es -> Assert.Fail(sprintf "align must succeed for a true clone: %A" (es |> List.map (fun e -> e.Code)))
     | FsResult.Ok aligned ->
         // The core witness: the clone pair, once name-aligned, is structurally
@@ -75,7 +75,7 @@ let ``align rewrites the clone pair to ONE shape — the aligned source diffs to
 
 [<Fact>]
 let ``align re-points a foreign key by identity — the aligned FK targets the SINK's entity SsKey`` () =
-    match NameAlignment.align map source clone with
+    match NameAlignment.align map None source clone with
     | FsResult.Error es -> Assert.Fail(sprintf "%A" es)
     | FsResult.Ok aligned ->
         let alignedCust = findKind aligned "Customer"
@@ -102,7 +102,7 @@ let ``align refuses alignment.attribute.shapeDivergence when a name-matched attr
                                     { k with Attributes = k.Attributes |> List.map (fun a ->
                                                 if Name.value a.Name = "Name" then { a with Type = Integer } else a) }
                                 else k) }) }
-    let r = NameAlignment.align map source mutated
+    let r = NameAlignment.align map None source mutated
     Assert.Contains("alignment.attribute.shapeDivergence", codesOf r)
 
 [<Fact>]
@@ -112,7 +112,7 @@ let ``align refuses alignment.entity.unmatched when a source entity has no sink 
         { clone with
             Modules = clone.Modules |> List.map (fun m ->
                 { m with Kinds = m.Kinds |> List.filter (fun k -> Name.value k.Name <> "City") }) }
-    let r = NameAlignment.align map source cityless
+    let r = NameAlignment.align map None source cityless
     Assert.Contains("alignment.entity.unmatched", codesOf r)
 
 [<Fact>]
@@ -123,7 +123,7 @@ let ``align refuses alignment.entity.ambiguous when the mapped sink module holds
             Modules = clone.Modules |> List.map (fun m ->
                 let city = m.Kinds |> List.find (fun k -> Name.value k.Name = "City")
                 { m with Kinds = m.Kinds @ [ { city with SsKey = OssysOriginal (System.Guid "c0000001-0000-0000-0000-000000000000") } ] }) }
-    let r = NameAlignment.align map source dup
+    let r = NameAlignment.align map None source dup
     Assert.Contains("alignment.entity.ambiguous", codesOf r)
 
 [<Fact>]
@@ -136,33 +136,53 @@ let ``align refuses alignment.attribute.unmatched when a source attribute is abs
                             if Name.value k.Name = "Customer" then
                                 { k with Attributes = k.Attributes |> List.filter (fun a -> Name.value a.Name <> "Name") }
                             else k) }) }
-    let r = NameAlignment.align map source dropped
+    let r = NameAlignment.align map None source dropped
     Assert.Contains("alignment.attribute.unmatched", codesOf r)
 
 [<Fact>]
 let ``align refuses alignment.module.unmatched when a mapped module is absent`` () =
-    let r = NameAlignment.align (Map.ofList [ "Sales", "NotThere" ]) source clone
+    let r = NameAlignment.align (Map.ofList [ "Sales", "NotThere" ]) None source clone
     Assert.Contains("alignment.module.unmatched", codesOf r)
 
 [<Fact>]
 let ``align refuses alignment.mapEmpty — ByName with no map is not a silent no-op`` () =
-    let r = NameAlignment.align Map.empty source clone
+    let r = NameAlignment.align Map.empty None source clone
     Assert.Contains("alignment.mapEmpty", codesOf r)
 
 [<Fact>]
+let ``align does NOT refuse drift OUTSIDE the strict scope — only the transferred set must be a clean clone`` () =
+    // The clone's Customer has a drifted attribute (Name retyped Integer), but
+    // the transfer moves only City. Scoped to City, align succeeds (Customer is
+    // re-keyed best-effort, its drift ignored); strict-over-all (None) refuses.
+    let driftedClone =
+        { clone with
+            Modules = clone.Modules |> List.map (fun m ->
+                { m with Kinds = m.Kinds |> List.map (fun k ->
+                            if Name.value k.Name = "Customer" then
+                                { k with Attributes = k.Attributes |> List.map (fun a ->
+                                            if Name.value a.Name = "Name" then { a with Type = Integer } else a) }
+                            else k) }) }
+    let cityKey = (findKind source "City").SsKey
+    match NameAlignment.align map (Some (Set.singleton cityKey)) source driftedClone with
+    | FsResult.Ok _ -> ()
+    | FsResult.Error es -> Assert.Fail(sprintf "scoped align must ignore out-of-scope drift: %A" (es |> List.map (fun e -> e.Code)))
+    // The same drift IS a blocker when the whole estate is in scope.
+    Assert.Contains("alignment.attribute.shapeDivergence", codesOf (NameAlignment.align map None source driftedClone))
+
+[<Fact>]
 let ``align is deterministic — identical inputs yield identical output`` () =
-    let a = NameAlignment.align map source clone
-    let b = NameAlignment.align map source clone
+    let a = NameAlignment.align map None source clone
+    let b = NameAlignment.align map None source clone
     Assert.Equal<Result<Catalog>>(a, b)
 
 [<Fact>]
 let ``alignForMode BySsKey is identity — the source rides through unchanged`` () =
-    match NameAlignment.alignForMode AlignmentMode.BySsKey Map.empty source clone with
+    match NameAlignment.alignForMode AlignmentMode.BySsKey Map.empty [] source clone with
     | FsResult.Ok c -> Assert.Equal<Catalog>(source, c)
     | FsResult.Error es -> Assert.Fail(sprintf "%A" es)
 
 [<Fact>]
 let ``alignForMode ByName runs the pass — the aligned pair diffs to zero`` () =
-    match NameAlignment.alignForMode AlignmentMode.ByName map source clone with
+    match NameAlignment.alignForMode AlignmentMode.ByName map [] source clone with
     | FsResult.Ok aligned -> Assert.True(CatalogDiff.between aligned clone |> CatalogDiff.isEmpty)
     | FsResult.Error es -> Assert.Fail(sprintf "%A" (es |> List.map (fun e -> e.Code)))
