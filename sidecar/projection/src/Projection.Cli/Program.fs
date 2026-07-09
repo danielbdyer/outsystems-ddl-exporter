@@ -43,12 +43,16 @@ let private usageLines : string list =
         "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable] [--atomic] [--auto-revert]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
-        "                      | data --before <t> --after <t> | ready | shape | go <flow> )"
+        "                      | data --before <t> --after <t> | ready | shape | go <flow>"
+        "                      | plan <flow> )"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
         "                      go    = THE GO BOARD for a data flow: every open decision +"
         "                      the dry-run row forecast, red (exit 5) until each decision is"
         "                      resolved, green (exit 0) when --go would execute cleanly"
+        "                      plan  = THE TRANSFER PLAN: each decision (write strategy /"
+        "                      identity / scope / realization / staging) with its alternatives,"
+        "                      the WHY of each, and the config edit; picks persist to config"
         "    projection diff <a> <b> [--format json] [--depth N] [--only <channel>] [--module <name>]"
         "                      change between two refs (--only columns|relationships|indexes|"
         "                      sequences|tables scopes the display; --module scopes the diff)"
@@ -238,7 +242,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // (2026-07-07) — the same modeled estate every other verb reads;
         // an unscoped config binds to the show-me-everything default.
         withRun "projection transfer" (fun () ->
-            runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
+            runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Signoff opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -249,7 +253,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Signoff opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
@@ -304,7 +308,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
-    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, emitSql, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) flowName fromLabel toLabel asJson emitSql planned)
+    | PlanAction.CheckGo (flowName, fromLabel, toLabel, asJson, emitSql, emitImpact, planned) -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) flowName fromLabel toLabel asJson emitSql emitImpact planned)
+    | PlanAction.CheckPlan (flow, plan, asJson) -> shellRun "projection check plan" Shell.ReadOnly (fun () -> runTransferPlan flow plan asJson)
     | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) ->
@@ -548,6 +553,11 @@ let main argv =
     // `--stat` (2026-07-02) — after the run closes, the §11 aggregates table
     // on stdout (the headless rollup lens).
     Shell.statMode := has "--stat"
+    // `--progress` (2026-07-08, the row-118 cash-out) — the animated Spectre
+    // `Progress` bars for the long legs, INSTEAD of the Watch board (both are
+    // channel-2 Live regions). Gated on a real terminal by `shouldProgress`, so a
+    // piped run is untouched clean NDJSON.
+    Shell.progressMode := has "--progress"
     let forceJson = has "--json" || has "--no-pretty"
     let forcePretty = has "--pretty"
     // "operator wants pretty" — explicit, or auto when stderr is a real TTY
@@ -558,7 +568,7 @@ let main argv =
     // `--watch` is DEPRECATED (2026-06-17 — folded into `--pretty`/auto-TTY; the
     // live board is what pretty shows). Still stripped so an old habit doesn't
     // error, but it no longer carries its own behavior.
-    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch"; "--stat" ]
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch"; "--stat"; "--progress" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [| "--help" |] | [| "-h" |] ->

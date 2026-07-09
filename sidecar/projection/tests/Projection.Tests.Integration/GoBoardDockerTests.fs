@@ -47,7 +47,7 @@ module private GoBoardFixtures =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
-          ReconcileIgnore = []; SupportingScope = []
+          ReconcileIgnore = []; SupportingScope = []; Signoff = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false
@@ -129,7 +129,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    The escape's proposals now carry LIVE evidence
                         //    (2026-07-07): each candidate reconcile column
                         //    probed against the actual pair.
-                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
                         Assert.Equal(5, red1)
                         Assert.Contains("evidence: reconcile 'AppCore.City:Name'", redOut)
                         Assert.Contains("sink-unique", redOut)          // Lisbon/Porto are distinct on the sink
@@ -141,7 +141,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    and the forecast carries the before→after table.
                         let sqlPath = System.IO.Path.Combine("go-board", "golden.planned.sql")
                         if System.IO.File.Exists sqlPath then System.IO.File.Delete sqlPath
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(0, green)
                         // The forecast table (2026-07-08): source AND target
                         // physical names side by side; the declared customer
@@ -183,8 +183,54 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
+                        return ()
+                    }))
+
+    /// The write-signoff greenlight (2026-07-08): a destructive WipeAndLoad is
+    /// an OPEN DECISION until the flow greenlights the `replace` mode. The SAME
+    /// subset+reconcile that goes green under Incremental (test above) now reds
+    /// on the `signoff` axis under WipeAndLoad; greens when the mode is greenlit;
+    /// and reds again when the declared `tables` scope does not cover the wipe
+    /// (a stale approval cannot rubber-stamp a wider blast radius). The board's
+    /// wiped set is `scope.WriteKinds` — the same the engine's live gate reads.
+    [<Fact>]
+    member _.``go board: a WipeAndLoad reds without a signoff, greens when replace is greenlit, reds again on a too-narrow scope`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardSignoff") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardSignoff"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        let wipeOpts signoff =
+                            { GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ] with
+                                Emission = EmissionMode.WipeAndLoad
+                                Signoff  = signoff }
+
+                        // 1. RED — WipeAndLoad, no signoff: the wipe is ungreenlit.
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [])))
+                        Assert.Equal(5, red1)
+                        Assert.Contains("signoff", redOut)
+                        Assert.Contains("deleted child-first", redOut)   // the impact the operator is approving
+                        Assert.Contains("declare it greenlit", redOut)   // the remedy names the exact edit
+
+                        // 2. GREEN — the `replace` mode greenlit (scopeless).
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
+                        Assert.Equal(0, green)
+                        Assert.Contains("wipe is greenlit", greenOut)
+
+                        // 3. RED — a declared scope that MISSES the wiped Customer.
+                        let mismatch = [ { WriteSignoff.greenlit WriteSignoff.WriteMode.Replace with Tables = [ "SomeOtherTable" ] } ]
+                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts mismatch)))
+                        Assert.Equal(5, red2)
+                        Assert.Contains("does not cover", red2Out)
+
+                        // The board's dry run never wrote: sink Customer still empty.
+                        let! customers = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                        Assert.Equal(0, customers)
                         return ()
                     }))
 
@@ -214,7 +260,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
                         // ...and the board still goes GREEN for the subset.
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
-                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
                         return ()
                     }))
@@ -239,7 +285,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let refScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" } ]
                         let refOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = refScope }
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned refOpts))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned refOpts))
                         Assert.Equal(0, green)
                         Assert.Contains("supporting scope", greenOut)
                         Assert.Contains("existing-reference AppCore.City", greenOut)
@@ -249,7 +295,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let badScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "AppCore.Customer"; Reason = "wrong classification" } ]
                         let badOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = badScope }
-                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false (planned badOpts))
+                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned badOpts))
                         Assert.Equal(5, red)
                         Assert.Contains("supporting scope", badOut)
                         Assert.Contains("owned-child AppCore.City", badOut)
@@ -290,7 +336,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                                 Transfer.runReverseLegThroughConnectionsWith
                                     IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
                                     [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
-                                    false (Some undoDir)
+                                    [] Set.empty false (Some undoDir)
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
                             let! customersAfter = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"

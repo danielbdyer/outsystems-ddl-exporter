@@ -19,7 +19,10 @@
     <Compile Include="Voice.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="GoBoardView.fs" />
+    <Compile Include="TransferPlanView.fs" />
+    <Compile Include="TransferImpactView.fs" />
     <Compile Include="Watch.fs" />
+    <Compile Include="ProgressRenderer.fs" />
     <Compile Include="Shell.fs" />
     <Compile Include="Intervene.fs" />
     <Compile Include="Navigator.fs" />

@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="WriteSignoff.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="CatalogResolution.fs" />
     <Compile Include="Binding.fs" />
@@ -72,6 +73,8 @@
     <Compile Include="PeerTransfer.fs" />
     <Compile Include="GoBoard.fs" />
     <Compile Include="SupportingScope.fs" />
+    <Compile Include="TransferPlan.fs" />
+    <Compile Include="TransferImpact.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

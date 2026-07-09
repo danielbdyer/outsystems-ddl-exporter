@@ -286,6 +286,13 @@ module Config =
         /// emitters' MERGE (`emission.deleteScope.terms`). `None` (the
         /// default) emits no delete arm — byte-identical output.
         DeleteScope           : DeleteScopePolicy option
+        /// 2026-07-09 (the write-signoff greenlight, emission plane) — the
+        /// destructive-write approvals on the EMISSION config. Reuses the
+        /// `WriteSignoff.WriteApproval` vocabulary the flow plane uses; today its
+        /// one enforced member is `delete-scope`: an `emission.deleteScope` arm is
+        /// REFUSED (`emission.deleteScope.ungreenlit`) until greenlit here. Empty
+        /// (the default) — a config with no delete arm is unaffected.
+        Signoff               : WriteSignoff.WriteApproval list
         /// NM-38 — `emission.renderConstraintsElegant`. `true` (the
         /// default — current behavior) reformats ScriptDom's compact
         /// column-inline constraints into V1's elegant multi-line shape;
@@ -508,6 +515,7 @@ module Config =
         Validations           = true
         IncludePlatformAutoIndexes = true
         DeleteScope           = None
+        Signoff               = []
         // NM-38 — V1-parity default-on (elegant multi-line constraints).
         RenderConstraintsElegant = true
         // NM-70 — default-on (identity annotations emit; byte-identical).
@@ -1178,6 +1186,48 @@ module Config =
         | Some _ ->
             Result.failureOf (ValidationError.create "config.emission.deleteScope.shape" "emission.deleteScope must be an object with a 'terms' array.")
 
+    /// 2026-07-09 — parse `emission.signoff`: the destructive-write greenlights on
+    /// the emission plane, reusing the `WriteSignoff.WriteApproval` vocabulary the
+    /// flow plane uses. Absent ⇒ `[]` (no greenlight — a `deleteScope` arm then
+    /// refuses). Each entry needs a recognized `mode`; optional `tables` /
+    /// `acknowledgedImpact` / `approvedBy` / `date`. A malformed entry is a named
+    /// config error, one-pass aggregated.
+    let private parseEmissionSignoff (emission: JsonElement) : Result<WriteSignoff.WriteApproval list> =
+        match tryGetProperty emission "signoff" with
+        | None -> Result.success []
+        | Some arr when arr.ValueKind = JsonValueKind.Array ->
+            let parseOne (t: JsonElement) : Result<WriteSignoff.WriteApproval> =
+                if t.ValueKind <> JsonValueKind.Object then
+                    Result.failureOf (configError "emission.signoff.shape" "emission.signoff entries must be objects with a 'mode'.")
+                else
+                    let strOpt (name: string) =
+                        match t.TryGetProperty name with
+                        | true, v when v.ValueKind = JsonValueKind.String -> Option.ofObj (v.GetString())
+                        | _ -> None
+                    let strList (name: string) =
+                        match t.TryGetProperty name with
+                        | true, a when a.ValueKind = JsonValueKind.Array ->
+                            [ for e in a.EnumerateArray() do if e.ValueKind = JsonValueKind.String then match Option.ofObj (e.GetString()) with Some s -> yield s | None -> () ]
+                        | _ -> []
+                    match strOpt "mode" with
+                    | None -> Result.failureOf (configError "emission.signoff.noMode" "each emission.signoff entry needs a 'mode'.")
+                    | Some m ->
+                        match WriteSignoff.parseMode m with
+                        | None -> Result.failureOf (configError "emission.signoff.modeUnknown" (sprintf "emission.signoff mode '%s' is not one of replace/fresh/drops/cdc/identity-insert/delete-scope." m))
+                        | Some mode ->
+                            Result.success
+                                { WriteSignoff.Mode = mode
+                                  WriteSignoff.Tables = strList "tables"
+                                  WriteSignoff.AcknowledgedImpact = strOpt "acknowledgedImpact"
+                                  WriteSignoff.ApprovedBy = strOpt "approvedBy"
+                                  WriteSignoff.Date = strOpt "date" }
+            let parsed = [ for e in arr.EnumerateArray() -> parseOne e ]
+            let errors = parsed |> List.collect (function Error es -> es | Ok _ -> [])
+            if not (List.isEmpty errors) then Result.failure errors
+            else Result.success (parsed |> List.choose (function Ok a -> Some a | _ -> None))
+        | Some _ ->
+            Result.failureOf (configError "emission.signoff.shape" "emission.signoff must be an array of { mode, ... } objects.")
+
     /// Wave-3 slice 3.4 (now WIRED) — parse `emission.tolerance`: an array of
     /// `ToleratedDivergence` name tokens → `Tolerance option`. Absent ⇒ `None`
     /// (the permissive dual-track default applies downstream). Present ⇒
@@ -1280,6 +1330,7 @@ module Config =
                 let! identityAnnotations = read "identityAnnotations" defaultEmission.EmitIdentityAnnotations
                 let! dataVerification = parseDataVerification element
                 let! deleteScope = parseDeleteScope element
+                let! emissionSignoff = parseEmissionSignoff element
                 let! tolerance = parseTolerance element
                 let! dataStaging = parseDataStaging element
                 let! dataReadConcurrency =
@@ -1306,6 +1357,7 @@ module Config =
                     Validations = vals
                     IncludePlatformAutoIndexes = includeAuto
                     DeleteScope = deleteScope
+                    Signoff = emissionSignoff
                     RenderConstraintsElegant = renderElegant
                     EmitIdentityAnnotations = identityAnnotations
                     DataVerification = dataVerification

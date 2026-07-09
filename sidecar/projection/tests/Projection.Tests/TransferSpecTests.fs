@@ -29,6 +29,7 @@ let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
       DroppedRows         = []
       UnmatchedRows       = []
       ReconcileDivergences = []
+      StaticLookupDivergences = []
       CaptureLaneDescents = []
       ReplayedPriorDrops  = replayed
       Plan                = None

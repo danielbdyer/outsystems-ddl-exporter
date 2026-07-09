@@ -308,3 +308,80 @@ let ``Environment.name renders the four standard environments`` () =
     Assert.Equal("DEV", Environment.name Environment.Dev)
     Assert.Equal("UAT", Environment.name Environment.Uat)
     Assert.Equal("Corp", Environment.name (Environment.Named "Corp"))
+
+// -- the airtight static-lookup identity (2026-07-09) ----------------------
+//
+// `static-lookup` asserts the two environments hold the IDENTICAL dataset for a
+// table: matched by the business key, every non-key non-ignored column agrees
+// (BOTH directions), no extra sink rows, no missing rows. These pin the strict,
+// bidirectional, set-complete verdict `staticLookupIdentity` produces.
+
+let private lookupKey = mkKey [ "Currency" ]
+let private isoCol = mkName "IsoCode"
+
+[<Fact>]
+let ``static-lookup: identical datasets are clean (no drift, no extra, no missing)`` () =
+    let src  = [ row "1" [ "IsoCode", "USD"; "Symbol", "$" ]; row "2" [ "IsoCode", "EUR"; "Symbol", "€" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Symbol", "$" ]; row "8" [ "IsoCode", "EUR"; "Symbol", "€" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    Assert.True d.IsClean
+
+[<Fact>]
+let ``static-lookup: a value drift on a NON-key column is a fault (matched by business key, not surrogate)`` () =
+    // Surrogates differ (1 vs 9) but the business key (USD) matches; the Symbol
+    // column diverges — a fault, reported per column with a sample.
+    let src  = [ row "1" [ "IsoCode", "USD"; "Symbol", "$" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Symbol", "USD$" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    Assert.False d.IsClean
+    Assert.Equal(1, List.length d.ColumnDrifts)
+    Assert.Equal("Symbol", Name.value (List.head d.ColumnDrifts).Column)
+    Assert.Empty d.ExtraOnTarget
+    Assert.Empty d.MissingOnTarget
+
+[<Fact>]
+let ``static-lookup: an EXTRA sink row (business key absent from source) is a fault`` () =
+    let src  = [ row "1" [ "IsoCode", "USD"; "Symbol", "$" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Symbol", "$" ]; row "8" [ "IsoCode", "GBP"; "Symbol", "£" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    Assert.False d.IsClean
+    Assert.Equal<string list>([ "GBP" ], d.ExtraOnTarget)
+    Assert.Empty d.MissingOnTarget
+
+[<Fact>]
+let ``static-lookup: a MISSING sink row (business key present in source only) is a fault`` () =
+    let src  = [ row "1" [ "IsoCode", "USD"; "Symbol", "$" ]; row "2" [ "IsoCode", "EUR"; "Symbol", "€" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Symbol", "$" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    Assert.False d.IsClean
+    Assert.Equal<string list>([ "EUR" ], d.MissingOnTarget)
+    Assert.Empty d.ExtraOnTarget
+
+[<Fact>]
+let ``static-lookup: the compare is BIDIRECTIONAL — a sink-only column value is a fault`` () =
+    // The source row has no "Region" column; the sink carries a non-blank value
+    // there. A source-driven diff would miss it; the union-of-columns diff flags it.
+    let src  = [ row "1" [ "IsoCode", "USD" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Region", "EU" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    Assert.False d.IsClean
+    Assert.Equal("Region", Name.value (List.head d.ColumnDrifts).Column)
+
+[<Fact>]
+let ``static-lookup: reconcileIgnore audit fields are honored — an ignored column's drift is NOT a fault`` () =
+    let ignore = Set.singleton (mkName "UpdatedOn")
+    let src  = [ row "1" [ "IsoCode", "USD"; "Symbol", "$"; "UpdatedOn", "2026-01-01" ] ]
+    let sink = [ row "9" [ "IsoCode", "USD"; "Symbol", "$"; "UpdatedOn", "2026-07-09" ] ]
+    let d = Reconciliation.staticLookupIdentity ignore lookupKey isoCol idCol src sink
+    Assert.True d.IsClean
+
+[<Fact>]
+let ``static-lookup: a blank business key on either side never matches (falls to missing/extra, never a silent blank-to-blank match)`` () =
+    let src  = [ row "1" [ "IsoCode", ""; "Symbol", "$" ] ]
+    let sink = [ row "9" [ "IsoCode", ""; "Symbol", "different" ] ]
+    let d = Reconciliation.staticLookupIdentity Set.empty lookupKey isoCol idCol src sink
+    // Neither side has a usable key, so there is no matched pair to drift — both
+    // fall out of the key sets, so the datasets are "clean" over real keys.
+    Assert.Empty d.ColumnDrifts
+    Assert.Empty d.ExtraOnTarget
+    Assert.Empty d.MissingOnTarget

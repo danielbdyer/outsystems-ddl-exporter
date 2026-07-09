@@ -1272,6 +1272,25 @@ module Compose =
                 cfg.Emission.DecisionLog
                 || cfg.Emission.Opportunities
                 || cfg.Emission.Validations
+            // THE DELETE-SCOPE EMISSION GATE (2026-07-09): the convergent-delete arm
+            // (`emission.deleteScope` — `WHEN NOT MATCHED BY SOURCE … DELETE`, the
+            // most destructive shape in the emission subsystem) is REFUSED until the
+            // emission plane greenlights `delete-scope` in `emission.signoff`. The
+            // emission-plane counterpart of the transfer signoff (a different config
+            // plane; same `WriteSignoff` vocabulary). Presence-gated — the arm's
+            // blast radius is a WHERE predicate, not a table set, so the `tables`
+            // field is accepted but not verified against a scope here.
+            let! () =
+                match cfg.Emission.DeleteScope with
+                | Some _ ->
+                    match WriteSignoff.verify "emission" cfg.Emission.Signoff WriteSignoff.WriteMode.DeleteScope [] with
+                    | WriteSignoff.Confirmed _ -> Result.success ()
+                    | WriteSignoff.Missing (reason, _)
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Result.failureOf
+                            (ValidationError.create "emission.deleteScope.ungreenlit"
+                                (sprintf "the emission's convergent-delete arm (`emission.deleteScope`) is not greenlit — %s Declare { \"mode\": \"delete-scope\" } in `emission.signoff` (with the impact acknowledged) before emitting." reason))
+                | None -> Result.success ()
             return {
                 Policy.empty with
                     Tightening = tightening

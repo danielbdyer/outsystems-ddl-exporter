@@ -74,6 +74,7 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           DroppedRows              = []
           UnmatchedRows            = []
           ReconcileDivergences     = []
+          StaticLookupDivergences  = []
           CaptureLaneDescents      = []
           ReplayedPriorDrops       = None
           Plan                     = None

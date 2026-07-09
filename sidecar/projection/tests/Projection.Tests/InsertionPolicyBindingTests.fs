@@ -33,7 +33,7 @@ let private mkConfig (insertion: string) : Config.Config =
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true; BootstrapAllData = false
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto; DataReadConcurrency = 4; PipelinedBootstrap = true
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; Signoff = []; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None; DataStaging = Projection.Core.DataStagingPolicy.auto; DataReadConcurrency = 4; PipelinedBootstrap = true
         }
         Policy      = {
             Insertion       = insertion
@@ -173,4 +173,34 @@ let ``Wave-3 3.4: buildPolicyFromConfig defaults ConfiguredTolerance to permissi
     | Ok policy ->
         Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull policy.Emission.ConfiguredTolerance)
         Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.HeaderCommentsOmitted policy.Emission.ConfiguredTolerance)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
+
+// ----------------------------------------------------------------------
+// The delete-scope emission gate (2026-07-09, the write-signoff greenlight
+// on the emission plane): a convergent-delete arm (emission.deleteScope) is
+// REFUSED until emission.signoff greenlights `delete-scope`.
+// ----------------------------------------------------------------------
+
+let private parseCfg (json: string) : Config.Config =
+    match Config.parse json with Ok c -> c | Error es -> failwithf "parse: %A" es
+
+[<Fact>]
+let ``delete-scope emission gate: a deleteScope arm without a greenlight refuses by name`` () =
+    let cfg = parseCfg """{ "model": { "path": "m.json" }, "emission": { "deleteScope": { "terms": [ { "column": "Region", "value": "EU" } ] } } }"""
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok _ -> Assert.Fail "expected the emission.deleteScope.ungreenlit refusal"
+    | Error errs -> Assert.Contains(errs, fun (e: ValidationError) -> e.Code = "emission.deleteScope.ungreenlit")
+
+[<Fact>]
+let ``delete-scope emission gate: greenlit in emission.signoff, the arm is admitted`` () =
+    let cfg = parseCfg """{ "model": { "path": "m.json" }, "emission": { "deleteScope": { "terms": [ { "column": "Region", "value": "EU" } ] }, "signoff": [ { "mode": "delete-scope", "acknowledgedImpact": "converge-delete outside EU" } ] } }"""
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy -> Assert.True(Option.isSome policy.Emission.DeleteScope)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
+
+[<Fact>]
+let ``delete-scope emission gate: no delete arm needs no greenlight (byte-identical default)`` () =
+    let cfg = parseCfg """{ "model": { "path": "m.json" }, "emission": { } }"""
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy -> Assert.Equal(None, policy.Emission.DeleteScope)
     | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)

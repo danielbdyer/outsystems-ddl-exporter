@@ -357,6 +357,10 @@ let runContractPairTransfer
     // consumes. The reference/anchor entries already rode in via the desugared
     // `reconcileSpecs`/`tables`; this carries only the WRITE-plane markings.
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    // 2026-07-08 — the flow's write-signoff greenlights; threaded onto the
+    // engine's `WriteOptions.Signoffs` so a destructive Execute refuses BY
+    // NAME (`transfer.writeSignoff.ungreenlit`) until the mode is greenlit.
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -476,10 +480,10 @@ let runContractPairTransfer
                 // policy the materialized branch consumes (`revertAuto`/`revertOut`
                 // derived above via `RevertPolicy.toEngine`): a mid-stream crash
                 // reverts (auto) or scripts (script) the partial sink-minted rows.
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet revertAuto revertOut)
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -516,6 +520,7 @@ let runReverseLegTransfer
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -533,7 +538,7 @@ let runReverseLegTransfer
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -566,6 +571,7 @@ let runPeerTransfer
     (reconcileSpecs: string list)
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
+    (signoff: WriteSignoff.WriteApproval list)
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
@@ -675,14 +681,14 @@ let runPeerTransfer
     // forecast, with the red/green verdict).
     if not executeRequested then
         printfn ""
-        printfn "The go board (open decisions + before→after forecast + red/green verdict): projection check go <flow>  [--sql writes the planned T-SQL]"
+        printfn "The go board (open decisions + before→after forecast + red/green verdict): projection check go <flow>  [--sql writes the planned T-SQL] [--impact writes the denormalized before/after data artifact]"
 
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
     // with the peer pair as the contracts and the peer label on the prose.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore supportingScope userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope signoff userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 
@@ -845,7 +851,7 @@ let runCheckGo
     // Same contract-read scope as `runPeerTransfer` — the go board must
     // forecast with the contracts the live run will actually read.
     (contractScope: MetadataSnapshotRunner.SnapshotParameters)
-    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (planned: PlanAction) : int =
+    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (emitImpact: bool) (planned: PlanAction) : int =
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         // The machine lens is the stable `toJsonString` CI contract (untouched);
@@ -1053,6 +1059,18 @@ let runCheckGo
          | None ->
              items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))
         // -- THE DRY RUN (real reads, zero writes): the row/identity forecast -
+        // The static-lookup kinds (2026-07-09): the dry run threads them so the
+        // engine computes the AIRTIGHT identity into `report.StaticLookupDivergences`
+        // — the same set the live Execute reads (the two-traversal). Bound before
+        // the dry run so the forecast branch below reuses it for the axis.
+        let staticLookupKeys : Set<SsKey> =
+            opts.SupportingScope
+            |> List.choose (fun e ->
+                match e.Relationship with
+                | SupportingScope.SupportingRelationship.StaticLookup _ ->
+                    SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
+                | _ -> None)
+            |> Set.ofList
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
@@ -1075,7 +1093,7 @@ let runCheckGo
                         |> Set.ofList
                     (Transfer.runReverseLegThroughConnections
                         Transfer.DryRun opts.Emission false true false
-                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet)
+                        effectiveTables connections sourceContract sinkContract reconciliation ignoreSet [] staticLookupKeys)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->
@@ -1173,14 +1191,6 @@ let runCheckGo
                     |> Map.ofList
                 // static-lookup kinds are held to ZERO divergence: a drifted
                 // lookup is a real integrity fault, not an advisory.
-                let staticLookupKeys : Set<SsKey> =
-                    opts.SupportingScope
-                    |> List.choose (fun e ->
-                        match e.Relationship with
-                        | SupportingScope.SupportingRelationship.StaticLookup _ ->
-                            SupportingScope.tryResolveTable sinkContract e.Table |> Option.map (fun k -> k.SsKey)
-                        | _ -> None)
-                    |> Set.ofList
                 // A kind OUTSIDE the declared subset rides along because a
                 // declared table's relationship needs it — name the pulling
                 // edge(s) in Table.Column -> Target form.
@@ -1269,12 +1279,136 @@ let runCheckGo
                     forecastLines
                     (wipePreviews |> List.filter (fun s -> s <> ""))
                     forecastDetail)
+                // THE IMPACT ARTIFACT (2026-07-09, `--impact`): the operator's
+                // "show me EXACTLY what happens to the data". The dry run already
+                // holds the AFTER rows (the plan) and the sink holds the BEFORE
+                // rows; `TransferImpact` segments the transfer graph, denormalizes
+                // each component into nested documents, and classifies every row
+                // (add / delete / change / unchanged). Written as a self-contained
+                // HTML artifact + a JSON twin — never inline on the board.
+                if emitImpact then
+                    match report.Plan with
+                    | None ->
+                        items.Add (GoBoard.item "impact"
+                            (GoBoard.Status.Advisory "--impact: this dry run carried no materialized plan — no artifact written."))
+                    | Some plan ->
+                        // BEFORE — the sink's current rows for the transferred scope,
+                        // capped (an --impact review is over the golden subset, not the
+                        // estate); a table over the cap is noted, never silently cut.
+                        let impactCap = 10000
+                        let mutable truncated : string list = []
+                        let readBefore (k: Kind) : StaticRow list =
+                            match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-impact" sinkSpec).GetAwaiter().GetResult() with
+                            | Error _ -> []
+                            | Ok cnn ->
+                                use cnn = cnn
+                                try
+                                    use cmd = cnn.CreateCommand()
+                                    cmd.CommandText <- sprintf "SELECT TOP (%d) * FROM [%s].[%s];" (impactCap + 1) (TableId.schemaText k.Physical) (TableId.tableText k.Physical)
+                                    use r = cmd.ExecuteReader()
+                                    let ord = [ for i in 0 .. r.FieldCount - 1 -> r.GetName i, i ] |> Map.ofList
+                                    let acc = System.Collections.Generic.List<StaticRow>()
+                                    while r.Read () do
+                                        let values =
+                                            k.Attributes
+                                            |> List.choose (fun a ->
+                                                match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
+                                                | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                                                | None -> None)
+                                            |> Map.ofList
+                                        acc.Add { Identifier = k.SsKey; Values = values }
+                                    if acc.Count > impactCap then truncated <- Name.value k.Name :: truncated
+                                    acc |> Seq.truncate impactCap |> List.ofSeq
+                                with _ -> []
+                        let scopeKinds = Catalog.allKinds sinkContract |> List.filter (fun k -> Set.contains k.SsKey scope.Nodes)
+                        let before = scopeKinds |> List.map (fun k -> k.SsKey, readBefore k) |> Map.ofList
+                        let after = plan.Loads |> List.map (fun l -> l.Kind, l.Rows) |> Map.ofList
+                        // Business keys: the reconciled/static-lookup kinds matched by
+                        // a column (MatchByColumn) — the key that lets before↔after
+                        // resolve to change/unchanged rather than delete-all + add-all.
+                        let rec bkOf (s: ReconciliationStrategy) : Name option =
+                            match s with
+                            | ReconciliationStrategy.MatchByColumn c -> Some c
+                            | ReconciliationStrategy.MatchByColumns (c :: _) -> Some c
+                            | ReconciliationStrategy.FallbackToAssigned (_, primary) -> bkOf primary
+                            | _ -> None
+                        let businessKeys = reconciliation |> Map.toList |> List.choose (fun (k, s) -> bkOf s |> Option.map (fun c -> k, c)) |> Map.ofList
+                        // The relational role per kind — the summary matrix + the
+                        // relational-intent / 1:1-confirmation surfaces. The variety,
+                        // the operator's reason, and the guarantee come from
+                        // supportingScope; the static-lookup 1:1 verdict from the SAME
+                        // `report.StaticLookupDivergences` the board reds on (a
+                        // static-lookup kind ABSENT from that list is verified identical).
+                        let staticLookupVerdict (k: SsKey) : string option =
+                            match report.StaticLookupDivergences |> List.tryFind (fun d -> d.Kind = k) with
+                            | Some d ->
+                                let parts =
+                                    [ if not (List.isEmpty d.ColumnDrifts)    then yield sprintf "%d col drift" (List.length d.ColumnDrifts)
+                                      if not (List.isEmpty d.ExtraOnTarget)   then yield sprintf "+%d extra" d.ExtraOnTarget.Length
+                                      if not (List.isEmpty d.MissingOnTarget) then yield sprintf "%d missing" d.MissingOnTarget.Length ]
+                                Some (sprintf "drift: %s" (String.concat " · " parts))
+                            | None ->
+                                let n = before |> Map.tryFind k |> Option.map List.length |> Option.defaultValue 0
+                                Some (sprintf "1:1 identical (%d/%d)" n n)
+                        let keyLabel (rel: SupportingScope.SupportingRelationship) : string option =
+                            match rel with
+                            | SupportingScope.SupportingRelationship.StaticLookup key
+                            | SupportingScope.SupportingRelationship.ExistingReference key -> Some key
+                            | SupportingScope.SupportingRelationship.SharedAnchor (_, Some key) -> Some key
+                            | SupportingScope.SupportingRelationship.OwnedChild p
+                            | SupportingScope.SupportingRelationship.BlockedDependent p -> Some (sprintf "of %s" p)
+                            | _ -> None
+                        let roles =
+                            opts.SupportingScope
+                            |> List.choose (fun e ->
+                                SupportingScope.tryResolveTable sinkContract e.Table
+                                |> Option.map (fun k ->
+                                    let verdict =
+                                        match e.Relationship with
+                                        | SupportingScope.SupportingRelationship.StaticLookup _ -> staticLookupVerdict k.SsKey
+                                        | SupportingScope.SupportingRelationship.ExistingReference _ ->
+                                            let n = before |> Map.tryFind k.SsKey |> Option.map List.length |> Option.defaultValue 0
+                                            Some (sprintf "%d matched" n)
+                                        | _ -> None
+                                    k.SsKey,
+                                    ({ Variety = SupportingScope.relationshipLabel e.Relationship
+                                       Reason = e.Reason
+                                       Guarantee = SupportingScope.guaranteeOf e.Relationship (SupportingScope.ScopeClaimVerdict.Confirmed "")
+                                       Key = keyLabel e.Relationship
+                                       Verdict = verdict } : TransferImpact.RelationalRole)))
+                            |> Map.ofList
+                        let inputs : TransferImpact.Inputs =
+                            { Catalog = sinkContract
+                              Scope = scope.Nodes
+                              Reconciled = scope.Reconciled
+                              Wiped = wipeSet
+                              BusinessKeys = businessKeys
+                              Before = before
+                              After = after
+                              Ignore = opts.ReconcileIgnore |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None) |> Set.ofList
+                              Roles = roles }
+                        let strategyLabel = match opts.Emission with EmissionMode.WipeAndLoad -> "replace (wipe & load)" | _ -> "merge (upsert)"
+                        let impact = TransferImpact.build flowName strategyLabel inputs
+                        System.IO.Directory.CreateDirectory "go-board" |> ignore
+                        let htmlPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.html" flowName)
+                        let jsonPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.json" flowName)
+                        System.IO.File.WriteAllText (htmlPath, TransferImpactView.toHtml sinkContract impact)
+                        System.IO.File.WriteAllText (jsonPath, TransferImpactView.toJson sinkContract impact)
+                        let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %d row(s): %s)" impactCap (String.concat ", " truncated)
+                        items.Add (GoBoard.item "impact"
+                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — +%d added, -%d deleted, ~%d changed, %d unchanged across %d segment(s)%s." htmlPath impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged (List.length impact.Segments) truncNote)))
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the
                 // reconcileIgnore move named for expected audit drift.
+                // The match-drift axis speaks ONLY to NON-static-lookup reconcile
+                // drift (advisory — the sink value is KEPT). Static-lookup kinds are
+                // owned by the dedicated airtight axis below (the strict, bidirectional,
+                // set-complete identity), so they are excluded here to avoid a
+                // double report on the same table.
                 if not (Map.isEmpty reconciliation) then
-                    match report.ReconcileDivergences with
+                    let nonLookupDivs = report.ReconcileDivergences |> List.filter (fun d -> not (Set.contains d.Kind staticLookupKeys))
+                    match nonLookupDivs with
                     | [] ->
                         items.Add (GoBoard.item "match drift"
                             (GoBoard.Status.Green
@@ -1289,24 +1423,40 @@ let runCheckGo
                                     |> List.tryFind (fun k -> k.Kind = d.Kind)
                                     |> Option.map (fun k -> k.RowsMatched)
                                     |> Option.defaultValue 0
-                                let lookup = Set.contains d.Kind staticLookupKeys
-                                yield sprintf "%s.%s differs on %d of %d matched row(s)%s:" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched (if lookup then " — declared a STATIC LOOKUP (must be identical)" else "")
+                                yield sprintf "%s.%s differs on %d of %d matched row(s):" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched
                                 for (ak, srcV, sinkV) in d.Samples do
                                     yield sprintf "  target key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
-                                yield
-                                    (if lookup then sprintf "  -> the environments' %s reference data has diverged; reconcile the lookup, or reclassify it as existing-reference." (nm d.Kind)
-                                     else sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column)) ]
-                        // A static-lookup divergence is a hard fault; ordinary
-                        // reconcile drift stays advisory (the sink value wins).
-                        let lookupDrift = ds |> List.filter (fun d -> Set.contains d.Kind staticLookupKeys)
-                        if not (List.isEmpty lookupDrift) then
-                            items.Add (GoBoard.itemWith "match drift"
-                                (GoBoard.Status.Red (sprintf "%d static-lookup column(s) differ between the environments — a lookup declared identical has drifted." lookupDrift.Length, "reconcile the lookup rows, or reclassify the table as existing-reference; then re-run."))
-                                detailLines)
-                        else
-                            items.Add (GoBoard.itemWith "match drift"
-                                (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
-                                detailLines)
+                                yield sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column) ]
+                        items.Add (GoBoard.itemWith "match drift"
+                            (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
+                            detailLines)
+                // THE STATIC-LOOKUP IDENTITY (2026-07-09, the guarantee-hardening
+                // program): a `static-lookup` entry asserts the two environments hold
+                // the IDENTICAL dataset for the table. The airtight verdict reads the
+                // engine's `report.StaticLookupDivergences` (the SAME computation the
+                // live Execute refuses on — the two-traversal): any value drift, an
+                // extra sink row, or a missing row is a hard RED. Honors the flow's
+                // reconcileIgnore (env-specific audit fields are not part of "identical").
+                if not (Set.isEmpty staticLookupKeys) then
+                    match report.StaticLookupDivergences with
+                    | [] ->
+                        items.Add (GoBoard.item "static lookup"
+                            (GoBoard.Status.Green (sprintf "%d static-lookup table(s) hold the identical dataset across the environments — matched by business key, every non-key column agrees, no extra or missing rows." (Set.count staticLookupKeys))))
+                    | divs ->
+                        let detailLines =
+                            [ for d in divs do
+                                yield sprintf "%s:" (nm d.Kind)
+                                for cd in d.ColumnDrifts do
+                                    yield sprintf "  column %s differs on %d matched row(s):" (Name.value cd.Column) cd.DifferingPairs
+                                    for (ak, srcV, sinkV) in cd.Samples do
+                                        yield sprintf "    key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
+                                if not (List.isEmpty d.ExtraOnTarget) then
+                                    yield sprintf "  %d row(s) on the target the source does not hold (extra): %s" d.ExtraOnTarget.Length (d.ExtraOnTarget |> List.truncate 5 |> String.concat ", ")
+                                if not (List.isEmpty d.MissingOnTarget) then
+                                    yield sprintf "  %d row(s) the source holds but the target lacks (missing): %s" d.MissingOnTarget.Length (d.MissingOnTarget |> List.truncate 5 |> String.concat ", ") ]
+                        items.Add (GoBoard.itemWith "static lookup"
+                            (GoBoard.Status.Red (sprintf "%d static-lookup table(s) are NOT identical across the environments — a lookup declared identical has diverged (value drift / extra / missing rows)." divs.Length, "reconcile the reference data so the environments match, or reclassify the table as existing-reference (matched, not asserted-identical); then re-run."))
+                            detailLines)
                 // THE PLANNED SQL (`--sql`, 2026-07-07): the dry run's plan
                 // rendered as the text realization's T-SQL and written
                 // beside the board — the exact DML shape, readable before
@@ -1502,6 +1652,47 @@ let runCheckGo
                          blockers)
              | _ ->
                  items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "the transferred set is empty on the sink — first load; both strategies behave identically.")))
+        // THE WRITE-SIGNOFF GREENLIGHT (2026-07-08): a destructive WIPE (strategy
+        // replace/fresh → WipeAndLoad) is an OPEN DECISION until the flow declares
+        // the mode greenlit in `signoff`; a declared table scope must COVER the
+        // tables the wipe deletes (verified against the SAME forecast the board
+        // shows, so board and engine cannot drift). The engine mirrors this refusal
+        // (`transfer.writeSignoff.ungreenlit`) at the live-write seam.
+        (match opts.Emission with
+         | EmissionMode.WipeAndLoad ->
+             // The wiped set is the WRITE kinds (the DELETE targets), the same
+             // `scope.WriteKinds` the engine's live gate reads — NOT `Nodes`
+             // (which folds in reconciled kinds that are matched, never wiped).
+             // A pure authorization check over the plan, independent of sink
+             // state; board and engine share `TransferScope.create` so the
+             // "covered" verdict cannot drift.
+             let wipedTables =
+                 Catalog.allKinds sinkContract
+                 |> List.filter (fun k -> Set.contains k.SsKey scope.WriteKinds)
+                 |> List.map (fun k -> Name.value k.Name)
+             let approved = WriteSignoff.approvedModes opts.Signoff
+             // A WipeAndLoad is either `replace` or `fresh`; accept whichever the
+             // flow declared (prefer `replace`, the config-`strategy` common case).
+             let mode =
+                 if Set.contains WriteSignoff.WriteMode.Fresh approved && not (Set.contains WriteSignoff.WriteMode.Replace approved)
+                 then WriteSignoff.WriteMode.Fresh else WriteSignoff.WriteMode.Replace
+             let status =
+                 match WriteSignoff.verify flowName opts.Signoff mode wipedTables with
+                 | WriteSignoff.Confirmed note -> GoBoard.Status.Green (sprintf "the %s wipe is greenlit — %s" (WriteSignoff.modeLabel mode) note)
+                 | WriteSignoff.Missing (reason, remedy)       -> GoBoard.Status.Red (reason, remedy)
+                 | WriteSignoff.ScopeMismatch (reason, remedy) -> GoBoard.Status.Red (reason, remedy)
+             items.Add (GoBoard.itemWith "signoff" status (wipedTables |> List.map (sprintf "wipes %s")))
+         | EmissionMode.Incremental ->
+             // Upsert-only — no destructive wipe, so no signoff is required for the
+             // write strategy (drops / cdc / identity-insert / delete-scope carry
+             // their own acknowledgements).
+             items.Add (GoBoard.item "signoff" (GoBoard.Status.Green "no destructive wipe — merge/incremental is upsert-only; no write-mode greenlight required.")))
+        // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
+        // `check plan` walks the strategy options + the WHY of each. Advisory, so it
+        // never affects the verdict — just names the companion surface.
+        items.Add (GoBoard.item "strategy options"
+            (GoBoard.Status.Advisory
+                (sprintf "weigh the write strategy (merge = upsert-only / replace = wipe-and-load / fresh) and every other transfer decision with `projection check plan %s`." flowName)))
         // -- the run-time gates (never red here: they are per-run intent) ----
         let envGate = System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
         items.Add (GoBoard.item "execute gates"
@@ -1512,5 +1703,75 @@ let runCheckGo
     | _ ->
         Console.Error.WriteLine (sprintf "projection check go: flow '%s' is not a live data-transfer flow (the go board covers env->env data flows)." flowName)
         2
+
+// ---------------------------------------------------------------------------
+// THE TRANSFER PLAN (2026-07-08, the guided-wizard program) — the DECLARATIVE
+// counterpart to the go board. `check go` answers "is this flow executable NOW?";
+// `check plan` answers "what path do I want, and WHY?" — it walks each transfer
+// decision axis with its alternatives, the tradeoff each carries, and the exact
+// config edit. On a real terminal it additionally offers to pick the write
+// strategy and PERSISTS the choice to projection.json (the A44 move — an
+// interactive choice becomes a hand-reachable config edit); piped / CI is a
+// one-shot declarative report on stdout, never a prompt (headless-total).
+// ---------------------------------------------------------------------------
+
+let runTransferPlan (flow: string) (plan: TransferPlan.Plan) (asJson: bool) : int =
+    if asJson then
+        printfn "%s" (TransferPlan.toJsonString plan)
+        0
+    elif not (Intervene.isInteractive ()) then
+        // Piped / CI — the declarative answer on stdout (pipeable / --query-able),
+        // no prompt. The config edits are named for hand-editing (the menu).
+        TransferPlanView.write Console.Out plan
+        0
+    else
+        // A real terminal — render on channel 2 (stderr, where the prompt lives) so
+        // the plan precedes the prompt in reading order, then offer the write-strategy
+        // pick (the most consequential axis, the go board's `re-run` decision) and
+        // persist it. The label is caller-resolved copy (the Intervene no-copy rule).
+        TransferPlanView.write Console.Error plan
+        let wordOf (code: string) = code.Substring(code.LastIndexOf('.') + 1)
+        match plan.Decisions |> List.tryFind (fun d -> d.Axis = "write strategy") with
+        | Some d ->
+            let choices : Intervene.Choice<string> list =
+                d.Options |> List.map (fun o -> { Code = o.Code; Label = o.Label; Value = wordOf o.Code })
+            let currentWord =
+                d.Options |> List.tryFind (fun o -> o.Chosen) |> Option.map (fun o -> wordOf o.Code) |> Option.defaultValue "merge"
+            let fallback =
+                choices |> List.tryFind (fun c -> c.Value = currentWord) |> Option.defaultValue (List.head choices)
+            match Intervene.chooseOrDefault "Pick the write strategy — the choice is written to projection.json:" choices fallback with
+            | Intervene.Chosen w when w <> currentWord ->
+                let path = RelaxationStore.configPath ()
+                match RelaxationStore.setFlowString path flow "strategy" w with
+                | Ok () ->
+                    eprintfn ""
+                    eprintfn "Wrote \"strategy\": \"%s\" to %s for flow '%s'." w path flow
+                    TransferPlanView.write Console.Error (TransferPlan.reselectStrategy w plan)
+                    // The greenlight companion (2026-07-09): a destructive wipe
+                    // (`replace`/`fresh` → WipeAndLoad) is REFUSED by the go board
+                    // and the engine until the flow declares the mode in `signoff`.
+                    // Having just flipped the flow destructive, offer to write the
+                    // matching greenlight in the same breath (the A44 move) so the
+                    // operator is not left staring at a fresh RED. `merge` needs none.
+                    match (match w with
+                           | "replace" -> Some WriteSignoff.WriteMode.Replace
+                           | "fresh"   -> Some WriteSignoff.WriteMode.Fresh
+                           | _         -> None) with
+                    | Some mode ->
+                        let yes : Intervene.Choice<bool> = { Code = "signoff.write"; Label = "Yes — write the greenlight to projection.json now."; Value = true }
+                        let no  : Intervene.Choice<bool> = { Code = "signoff.skip";  Label = "No — the signoff will be declared by hand."; Value = false }
+                        let title = sprintf "\"%s\" is a destructive wipe. %s Write the greenlight now?" w (WriteSignoff.impactOf mode)
+                        match Intervene.chooseOrDefault title [ yes; no ] no with
+                        | Intervene.Chosen true ->
+                            let approval = { WriteSignoff.greenlit mode with AcknowledgedImpact = Some (WriteSignoff.impactOf mode) }
+                            match RelaxationStore.setFlowSignoff path flow [ approval ] with
+                            | Ok () -> eprintfn "Wrote the %s greenlight to %s for flow '%s' — the go board's `signoff` axis now greens." w path flow
+                            | Error e -> eprintfn "Could not write the signoff to %s: %s" path e
+                        | _ -> ()
+                    | None -> ()
+                | Error e -> eprintfn "Could not update %s: %s" path e
+            | _ -> ()
+        | None -> ()
+        0
 
 // ---------------------------------------------------------------------------

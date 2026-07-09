@@ -166,6 +166,9 @@ type MovementSpec =
         /// 2026-07-08 — the typed supporting-scope vocabulary (owned children,
         /// references, anchors, lookups, blocked dependents). Empty = none.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 — the per-flow write-signoff greenlight (the destructive
+        /// modes the operator approved). Empty = nothing greenlit.
+        Signoff     : WriteSignoff.WriteApproval list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -230,6 +233,7 @@ module MovementSpec =
             Reconcile   = []
             ReconcileIgnore = []
             SupportingScope = []
+            Signoff     = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -301,6 +305,15 @@ type Flow =
         /// the relationship graph. Empty = no supporting scope (byte-identical);
         /// the terse `reconcile` strings resolve into the same model.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 (the greenlight program) — the per-flow WRITE SIGNOFF: the
+        /// destructive write modes (replace / fresh / drops / cdc / identity-insert /
+        /// delete-scope) the operator has EXPLICITLY approved for this flow, each
+        /// with its acknowledged impact + optional table scope. A destructive live
+        /// run is REFUSED (and the go board reds) until the mode it performs is
+        /// greenlit here — an authorization predicate beside `PROJECTION_ALLOW_EXECUTE`
+        /// / `--go`, but durable and auditable. Empty = nothing greenlit (a
+        /// destructive flow will not run until it declares one).
+        Signoff : WriteSignoff.WriteApproval list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -433,6 +446,9 @@ type LoadOpts =
         /// 2026-07-08 — the typed supporting-scope vocabulary; the face
         /// desugars it onto `Tables`/`Reconcile` + the seed/exclusion sets.
         SupportingScope : SupportingScope.SupportingScopeEntry list
+        /// 2026-07-08 — the per-flow write-signoff greenlight; the go board reds
+        /// and the engine refuses a destructive live run until its mode is here.
+        Signoff     : WriteSignoff.WriteApproval list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.
@@ -561,7 +577,15 @@ type PlanAction =
     /// run takes, under preview opts), so the board judges exactly what
     /// `--go` would execute. `emitSql` (the `--sql` opt-in, 2026-07-07)
     /// additionally writes the dry run's plan as a T-SQL preview artifact.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * planned: PlanAction
+    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * emitImpact: bool * planned: PlanAction
+    /// `check plan <flow>` — THE TRANSFER PLAN (2026-07-08, the guided-wizard
+    /// program): the declarative counterpart to the go board. Where `check go`
+    /// verdicts readiness, `check plan` walks each transfer decision axis with its
+    /// alternatives, the tradeoff each carries, and the exact config edit — the
+    /// strategy space made legible. The `Plan` is built pure from the flow's
+    /// current choices at parse time; the face renders it (and, on a terminal,
+    /// offers to pick a branch and persist it).
+    | CheckPlan of flow: string * plan: TransferPlan.Plan * asJson: bool
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool

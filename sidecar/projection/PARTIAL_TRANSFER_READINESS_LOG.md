@@ -1382,3 +1382,123 @@ determinate stage draws a bar; an unknown total draws none; the bar is fixed-wid
 docker — `GoBoardDockerTests` (the scope tree's substrings survive the `Tree`
 connectors; the masthead/verdict rules do not break the board). Release build clean
 (FS3511 verified).
+
+## Entry 32 — 2026-07-08, THE PROGRESS WIDGET + THE PLAN WIZARD: the animated bars for the long legs, and a guided decision-walkthrough that names the WHY of every transfer choice
+
+**Operator request:** take the Progress widget further (the full animated display, not
+just the Watch bar); and drive up the transfer's strategy space + operator experience —
+"almost like a wizard where you can decide what path you want and be perfectly clear on
+WHY."
+
+**The standalone Progress widget (`--progress`).** The row-118 cash-out, fired by operator
+pull. `ProgressRenderer.fs` opens Spectre's animated `Progress` display as a
+**mutually-exclusive alternative** to the Watch board (both own the channel-2 `Live`
+region), a second rendering of the SAME `summary.stageProgress` feed via a pure fold
+mirrored onto `ProgressTask`s. It copies the Watch's off-thread teardown discipline exactly
+(enqueue-only subscriber, background body under `withWriter Null`, `clearSubscribers` on
+every exit). Honest determinacy (§13): a real bar only where a genuine denominator arrives
+(`extract` / `deploy` / `load`-by-kind); a spinner otherwise. Gated on a real terminal, so a
+pipe is untouched clean NDJSON, and it suppresses the auto-Watch when set.
+
+**The guided transfer "plan" wizard (`check plan <flow>`).** The DECLARATIVE counterpart to
+the go board — the hybrid the operator chose. `check go` verdicts readiness; `check plan`
+walks each transfer decision axis (write strategy / identity / scope / realization /
+staging) and, for each, names the CURRENT choice, the ALTERNATIVES, the tradeoff each
+carries, and the exact config edit. This is the "more strategies" surface: the transfer's
+strategy space, already expressible in config but scattered, made one legible menu (the A44
+`expressible ⇔ reachable` half) — no new engine mode.
+
+- Pure `TransferPlan.fs` (the decision model + `ofCurrent` + `toJsonString`), rich
+  `TransferPlanView.fs` (a `Rule` section per decision, the alternatives as a fully-expanded
+  `Tree` — dogfooding the widget arc). Piped / CI: a one-shot declarative report on stdout,
+  never a prompt. A real terminal: the plan on channel 2 + an optional `Intervene` prompt to
+  pick the write strategy, which **persists to `projection.json`** (`RelaxationStore.setFlowString`
+  — the A44 move the Migrate relaxation gate pioneered). Every branch is a hand-reachable
+  config edit; the wizard invents no stored knob the engine doesn't already derive.
+- Dispatched as `check plan` (a `Shell.ReadOnly` verb beside `check go`); the go board gains
+  an advisory `strategy options` pointer to it.
+
+**A note on the verb name.** The plan proposed `transfer plan`; it shipped as `check plan`
+— it is a read-only flow analysis exactly like `check go`, so it slots into the check family
+with minimal plumbing and pairs in discoverability ("go" = ready?, "plan" = what are my
+options?).
+
+**Proven:** pure — `ProgressRendererTests` (the fold + the off-thread teardown / channel-1
+suppression / exception propagation), `TransferPlanTests` (one decision per axis, the marked
+current + config edit, every option a non-empty why, the THE_VOICE scan, `reselectStrategy`,
+`toJsonString`), `TransferPlanViewTests` (the `Rule`/`Tree` render). Manual — `check plan
+golden` renders the full decision tree (plain + `--format json`) reflecting the flow's real
+settings. Release build clean (FS3511 verified).
+
+---
+
+## 2026-07-08 — The write-signoff greenlight: a verified, first-class approval for destructive write modes
+
+The partial transfer could WIPE (`strategy: replace`), assume-empty (`fresh`), drop rows
+(`--allow-drops`), flood CDC, or write explicit keys — all on the two run-time gates
+(`PROJECTION_ALLOW_EXECUTE` + `--go`) with **no durable, per-flow record that the operator
+understood and approved the specific destruction**. This closes that: `flows.<flow>.signoff`
+is a first-class, declarative array enumerating each destructive mode a flow may perform, the
+run REFUSED until the declaration exists (default-on, breaking by design).
+
+- **A new kind of predicate.** `supportingScope` is STRUCTURAL (the graph confirms or
+  contradicts it); a signoff is AUTHORIZATION — there is no graph fact, the board reds and the
+  engine refuses BY NAME until the mode is greenlit. It joins the
+  `PROJECTION_ALLOW_EXECUTE`/`--go`/`--allow-drops`/`--allow-cdc` family, but durable and
+  auditable. `WriteSignoff.fs` (pure): the closed `WriteMode` DU (a new destructive mode is a
+  compiler event forcing its impact arm), `parseMode`/`modeLabel`, the `guaranteeOf`-style
+  `impactOf` (stative, THE_VOICE), and the total `verify` (`Confirmed | Missing | ScopeMismatch`).
+- **The two-traversal.** Board and engine read the SAME `TransferScope.WriteKinds` (the DELETE
+  targets — NOT `Nodes`, which folds in reconciled kinds that are matched, never wiped), so the
+  "covered" verdict cannot drift. The go-board `signoff` axis reds-until-greenlit (and reds on a
+  scope-mismatched approval whose declared `tables` do not cover the wipe); the engine mirrors
+  it at the live-write seam (`transfer.writeSignoff.ungreenlit`), belt-and-suspenders for a
+  scripted `--go` that never ran `check go`.
+- **Rich + verified.** Each entry carries the required `mode` + optional `tables` scope
+  (empty = the whole flow's set; a declared scope is verified to cover the wipe, so a stale
+  approval cannot rubber-stamp a wider blast radius) + `acknowledgedImpact` (echoed on the
+  board) + `approvedBy`/`date`.
+- **Boundary.** The transfer five (`replace/fresh/drops/cdc/identity-insert`) enforce here;
+  `delete-scope` is emission-lane (`emission.deleteScope`, a different config plane) — enumerated
+  in the vocabulary, its gate a named follow-on (Active deferral). Streaming already refuses
+  WipeAndLoad, so the materialized path is the only wipe path and the gate covers it.
+- **The `_comment` skip (Part 0).** A `_`-prefixed key in `flows`/`environments`/`defaults`/
+  `slices`/`sliceFlows` no longer crashes the parser — one `isCommentKey` predicate guards all
+  five map-style loops (the house `_`-skip the codebase lacked); A44 unaffected (render never
+  emits `_`-keys).
+
+**Proven:** pure — `WriteSignoffTests` (the six-mode label bridge, the THE_VOICE impact scan,
+`verify`'s missing/covering/scope-mismatch/wrong-mode/empty-plan verdicts, the A44 config
+round-trip incl. omit-when-empty). Docker — `GoBoardDockerTests` (a WipeAndLoad reds without a
+signoff, greens when `replace` is greenlit, reds on a too-narrow scope); `PeerAligned…` (the
+engine refuses an ungreenlit WipeAndLoad BY NAME, sink untouched). The four wiping fixtures now
+declare their greenlight; the sample's `golden-with-scope` carries a worked example. Release
+clean (FS3511).
+
+---
+
+## 2026-07-09 — The transfer-guarantees program: wizard greenlight-write, airtight static-lookup, delete-scope emission gate, precise-impact artifact
+
+Four hardenings so the operator blesses a destructive run on EVIDENCE and every declared
+guarantee is held to its literal promise (full detail in `DECISIONS 2026-07-09`).
+
+- **`check plan` greenlight-write** — after the wizard flips a flow to `replace`/`fresh`, a
+  second prompt writes the matching `signoff` (`RelaxationStore.setFlowSignoff`), so the flow
+  is not left immediately RED. The A44 move applied to the greenlight.
+- **Airtight `static-lookup`** — `Reconciliation.staticLookupIdentity` asserts the two
+  environments hold the IDENTICAL dataset (bidirectional column diff + extra/missing rows,
+  surrogate-PK and `reconcileIgnore` excluded), enforced on the go board (`static lookup` axis)
+  AND the engine (`transfer.staticLookup.diverged`, both realization paths) over the same
+  `report.StaticLookupDivergences` — the two-traversal.
+- **`delete-scope` emission gate** — `emission.signoff` (reusing the `WriteSignoff` vocabulary)
+  greenlights the convergent-delete arm; `buildPolicyFromConfig` refuses
+  `emission.deleteScope.ungreenlit` otherwise. Resolves the Active-deferral logged when the
+  transfer signoff shipped.
+- **Precise-impact artifact (`check go --impact`)** — `TransferImpact` segments the transfer
+  graph, denormalizes each component into nested documents (owned children conjoined, refs
+  inlined), and classifies every row (add/delete/change/unchanged); `TransferImpactView` writes
+  a self-contained HTML artifact + JSON twin to `go-board/<flow>.impact.*`. Delta rows in full;
+  the unchanged remainder counted. Design pinned by an approved mockup.
+
+Pure suites green (Reconciliation +8, TransferImpact +10, delete-scope gate +3); Release clean.
+Docker witnesses for `--impact` and the static-lookup board case are the named follow-on.

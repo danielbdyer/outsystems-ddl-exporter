@@ -200,6 +200,7 @@ table before continuing.
 
 | Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
 |---|---|---|---|
+| **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer, a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). | **Cashed out 2026-07-09** — a new top-level **`emission.signoff` array** (reusing `WriteSignoff.WriteApproval` + `verify`) greenlights the emission plane's destructive modes; `buildPolicyFromConfig` refuses `emission.deleteScope.ungreenlit` when a `deleteScope` arm is present without the `delete-scope` greenlight. `WriteSignoff.fs` moved ahead of `Config.fs` in the compile order (dependency-free) so the shaping config shares the vocabulary. Presence-gated (the arm is a WHERE predicate, not a table set). See `DECISIONS 2026-07-09 — The transfer-guarantees program`. |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
@@ -27116,3 +27117,215 @@ widened sink; the `Tree` connectors + fully-expanded leaves + nested json);
 fixed-width). Docker — `GoBoardDockerTests` (the scope tree's substrings survive the
 `Tree` connectors; the masthead/verdict rules do not break the board). Full sweep +
 Release clean (FS3511).
+
+## 2026-07-08 — The standalone Progress widget + the guided transfer "plan" wizard (`check plan`)
+
+Two operator-experience programs on the partial transfer, both riding the `View` /
+`LogSink` substrates already in place.
+
+**The standalone Progress widget (`--progress`) — the row-118 cash-out fired.** The
+prior arc put a determinate bar on the live Watch line; this is the separate animated
+Spectre `Progress` display for the long legs. New `ProgressRenderer.fs`: a
+**mutually-exclusive ALTERNATIVE to the Watch board** (both own the channel-2 `Live`
+region — two live contexts corrupt each other), attaching to the SAME
+`summary.stageProgress` feed via a pure fold (`apply` — envelope → model) mirrored onto
+Spectre `ProgressTask`s. It mirrors the Watch's off-thread discipline exactly: the
+subscriber only enqueues (never sleeps `emit`); `body` runs on a background task under
+`withWriter Null`; `finally` reaps the body on every exit path and `clearSubscribers`.
+Determinacy is honest (§13): a real bar only when a genuine denominator arrives
+(`extract`'s fixed result-sets, `deploy`'s write count, `load`'s KIND count); an unknown
+total is an indeterminate spinner. Wired at the `Shell.executeOn` fork behind
+`shouldProgress = requested && not IsErrorRedirected` (a pipe stays clean NDJSON), and
+`execute` suppresses the auto-Watch when `--progress` is set. **The row-118 trigger fires
+by operator pull** (the prior arc noted it unfired) — recorded here per the trigger
+discipline.
+
+**The guided transfer "plan" wizard (`check plan <flow>`) — hybrid, config-is-the-menu.**
+The declarative counterpart to the go board: where `check go` verdicts readiness,
+`check plan` walks each transfer decision axis (write strategy / identity / scope /
+realization / staging) with the CURRENT choice, the ALTERNATIVES, the tradeoff each
+carries, and the exact `projection.json` edit — the transfer's strategy space (already
+expressible in config, A44) made one legible menu. It surfaces the strategies rather than
+adding a new engine mode (the operator's "surface + explain" choice; no new
+`EmissionMode`/`WipeKind`).
+- **`TransferPlan.fs` (pure Pipeline)** — the closed decision model (`PlanOption` /
+  `PlanDecision` / `Plan`) + `ofCurrent` (built from the flow's current choices, no DB, so
+  the reasons are testable) + `toJsonString` (the `--format json` twin) + `reselectStrategy`.
+  The WHY prose is authored at the reporting boundary (LINT-ALLOW, like `GoBoard`), stative
+  and evidence-grounded, pinned by a THE_VOICE banned-word test.
+- **`TransferPlanView.fs` (CLI)** — `ofPlan` dogfoods the widget-elevation cases: one `Rule`
+  section per decision, the alternatives as a fully-expanded `Tree` (each branch → its why +
+  its config edit). Shares `GoBoardView.writeView`'s redirected-report width policy.
+- **`runTransferPlan` (the face)** — piped / CI is a one-shot declarative report on stdout,
+  **never a prompt** (headless-total). On a real terminal (`Intervene.isInteractive ()`) it
+  renders on channel 2 and offers the write-strategy pick (the most consequential axis, the
+  go board's `re-run` decision), **persisting the choice to `projection.json`** via
+  `RelaxationStore.setFlowString` — the A44 move the Migrate relaxation gate pioneered: an
+  interactive choice becomes a durable, hand-reachable config edit. Every branch is equally
+  reachable by hand; the wizard invents no stored knob.
+- **Dispatch** — `check plan` is a new `PlanAction.CheckPlan` (built pure at parse time from
+  the flow's settings), a `Shell.ReadOnly` verb beside `check go`; the go board gains an
+  advisory `strategy options` pointer to it.
+
+**Witnesses.** Pure — `ProgressRendererTests` (the fold: determinate/spinner/completed/
+first-seen order; the off-thread teardown, channel-1 suppression, exception propagation);
+`TransferPlanTests` (one decision per axis, the current branch marked + carrying its config
+edit, every option a non-empty why, the THE_VOICE scan, `reselectStrategy`, `toJsonString`);
+`TransferPlanViewTests` (the `Rule`/`Tree` render, the marked branch, the config edits).
+Full sweep + Release clean (FS3511).
+
+## 2026-07-08 — The write-signoff greenlight: a first-class, verified approval for destructive write modes (+ the `_comment` config skip)
+
+A destructive transfer — `strategy: replace` (child-first wipe-and-load), `fresh`
+(genesis), `--allow-drops` (row loss), a CDC-flooding run, an `IDENTITY_INSERT` write —
+ran on the two run-time gates alone (`PROJECTION_ALLOW_EXECUTE=1` + `--go`) with **no
+per-flow record that the operator understood and approved the specific destruction**.
+The operator asked for a first-class, declarative **greenlight**: an explicit config
+array enumerating each destructive mode a flow may perform, its impact acknowledged, and
+the run REFUSED until that declaration exists. Locked operator decisions (all
+maximal-safety): **per-flow array** (`flows.<flow>.signoff`, co-located, mirroring
+`supportingScope`); **hard gate, default-on** (a destructive Execute REFUSES and the go
+board goes RED until greenlit — breaking by design); **all six cases**
+(`replace/fresh/drops/cdc/identity-insert` transfer-side + `delete-scope` emission-lane);
+**rich + verified** (mode + optional `tables` scope + `acknowledgedImpact` +
+`approvedBy`/`date`; the board VERIFIES a declared scope covers the actual wipe).
+
+**A new KIND of predicate — authorization, not structure.** Unlike `supportingScope` (a
+STRUCTURAL claim the relationship graph confirms or contradicts), a signoff is an
+AUTHORIZATION predicate: there is no graph fact to verify — the go board reds and the
+engine refuses BY NAME until the mode a run actually performs is greenlit. It joins the
+`PROJECTION_ALLOW_EXECUTE` / `--go` / `--allow-drops` / `--allow-cdc` family — but
+DURABLE, per-flow, and auditable in config. `WriteSignoff.fs` (pure Pipeline, mirrors
+`SupportingScope.fs`): the closed `WriteMode` DU (a new destructive mode is a compiler
+event that forces its impact arm), the `WriteApproval` record, `parseMode`/`modeLabel`
+(the six canonical labels), a `guaranteeOf`-style **`impactOf`** (the stative,
+evidence-grounded default impact per mode, THE_VOICE, LINT-ALLOW like `GoBoard`), and the
+total `verify` (`Confirmed | Missing | ScopeMismatch`). It compiles ahead of
+`TransferRun.fs` so the engine reads `WriteOptions.Signoffs`.
+
+**The two-traversal, honored.** The signoff rides BOTH surfaces reading the SAME
+`TransferScope.WriteKinds` (the shared Core derivation), so board and engine cannot drift:
+- **The go-board `signoff` axis** (`runCheckGo`) — RED-until-greenlit; RED on a
+  scope-mismatched approval whose declared `tables` do not cover the wiped set; GREEN
+  echoing the acknowledged impact. A WipeAndLoad collapses `replace`/`fresh`, so the axis
+  accepts EITHER greenlit (prefers `replace`, the `strategy` common case). Pure over
+  `scope.WriteKinds` — the DELETE targets, NOT `Nodes` (reconciled kinds are matched,
+  never wiped) — independent of the live sink probe.
+- **The engine pre-write refusal** (`TransferRun.runCore`, adjacent to the inbound-orphan
+  gate) — `transfer.writeSignoff.ungreenlit` before any wipe; belt-and-suspenders for a
+  scripted `--go` that never ran `check go`. `preWrite` still precedes it, so a
+  pinned-owner / user-map halt keeps its own refusal.
+
+**Architectural boundary.** `replace/fresh/drops/cdc/identity-insert` are transfer-side;
+`delete-scope` is `emission.deleteScope` (the publish-bundle MERGE lane, a DIFFERENT
+config plane — the shaping/emission config, not `flows`). The vocabulary enumerates all
+six so the mode is nameable, but the **delete-scope emission gate is a named follow-on**:
+wiring a cross-plane acknowledgement (flow `signoff` vs. emission-level) is its own
+operator decision, not a cross-plane hack forced here. **Trigger to re-open:** the first
+flow that ships an `emission.deleteScope` arm intended for a live publish. (Active
+deferral — indexed at the top.)
+
+**The `_comment` config skip (Part 0, independent).** `flows` / `environments` /
+`defaults` / `slices` / `sliceFlows` all `EnumerateObject()` and treated EVERY key as an
+entry, so a `_supportingScope_comment` string crashed `parseFlow`. One predicate
+(`isCommentKey n = n.StartsWith "_"`) now guards all five map-style loops — the house
+`_`-skip convention the codebase lacked. `renderConfig` never emits `_`-keys, so A44 is
+unaffected (comments are author-only, dropped on render like `SourcePath`).
+
+**The breaking sweep.** Every destructive WipeAndLoad Execute now declares its greenlight:
+the four wiping fixtures (`PeerAligned` ×2, `ReverseLegCanary`, `MigrationCanary`) pass an
+explicit `replace` via `WriteSignoff.greenlit`; the ungated Incremental callers thread
+`[]`. `runReverseLegThroughConnections` gained a trailing `signoffs` param;
+`runWithEmissionMode`'s one wipe caller moved to `runWithOptions`. The streaming reverse
+leg already refuses WipeAndLoad, so the materialized path is the only wipe path and the
+gate covers it.
+
+**Witnesses.** Pure — `WriteSignoffTests` (the six-mode label bridge, the THE_VOICE impact
+scan, `verify`'s missing/covering/scope-mismatch/wrong-mode/empty-plan verdicts, the A44
+config round-trip incl. omit-when-empty). Docker — `GoBoardDockerTests` (a WipeAndLoad
+reds without a signoff, greens when `replace` is greenlit, reds again on a too-narrow
+scope); `PeerAlignedTransferDockerTests` (the engine refuses an ungreenlit WipeAndLoad BY
+NAME, sink untouched). The sample config's `golden-with-scope` carries a worked `signoff`
++ a `_signoff_comment`. Full sweep + Release clean (FS3511).
+
+## 2026-07-09 — The transfer-guarantees program: the greenlight wizard-write, the airtight static-lookup, the delete-scope emission gate, and the precise-impact artifact
+
+Four operator-directed hardenings on the partial transfer, all stacking on the write-signoff
+greenlight (PR #662). One thread: **let the operator bless a destructive run on EVIDENCE of
+exactly what it does, and hold every declared guarantee to its literal promise.**
+
+**1 — The `check plan` greenlight-write (A44 applied to signoff).** The wizard already
+persisted a write-strategy pick to `projection.json`; flipping a flow to `replace`/`fresh`
+left it immediately RED (`ungreenlit`). Now, right after the strategy write, a second
+`Intervene` prompt offers to write the matching `signoff` (impact echoed from
+`WriteSignoff.impactOf`), via a new `RelaxationStore.setFlowSignoff` (a surgical JSON-array
+merge, field order matching `renderFlow`). Headless/piped is untouched. The interactive
+choice becomes the durable, hand-reachable config edit — the Migrate-relaxation move, now on
+the greenlight.
+
+**2 — The airtight `static-lookup` identity (verification depth, not a new predicate).** A
+`static-lookup` supportingScope entry was already a STRUCTURAL claim; the go board surfaced
+only matched-pair source-column drift. The operator asked for the literal promise: the two
+environments hold the IDENTICAL dataset. `Reconciliation.staticLookupIdentity` (Core, pure)
+now asserts it — match by business key, diff the UNION of both sides' columns (minus the
+business key, the env-specific surrogate PK, and `reconcileIgnore`), PLUS the row-set
+membership (extra-on-target / missing-on-target). Enforced on BOTH surfaces of the transfer
+two-traversal reading the same `report.StaticLookupDivergences`: a dedicated go-board `static
+lookup` axis (RED on any divergence) + the engine's `transfer.staticLookup.diverged` Execute
+refusal (materialized AND streaming paths). `WriteOptions.StaticLookupKinds` threads the
+resolved set; the go board's dry run threads it too, so board and Execute cannot drift. The
+prior `match drift` axis now owns only NON-static-lookup reconcile drift (advisory). Witnessed
+by 8 `ReconciliationTests`.
+
+**3 — The `delete-scope` emission gate (the Active-deferral cash-out).** `emission.deleteScope`
+(a convergent `WHEN NOT MATCHED BY SOURCE … DELETE`) shipped with ZERO acknowledgement — the
+biggest hole the signoff arc named. Closed by a new top-level **`emission.signoff` array** that
+REUSES the `WriteSignoff.WriteApproval` vocabulary (`WriteSignoff.fs` moved ahead of `Config.fs`
+in the compile order — dependency-free — so the shaping plane shares it). `buildPolicyFromConfig`
+refuses `emission.deleteScope.ungreenlit` when a delete arm is present without the greenlight.
+Presence-gated: the arm's blast radius is a WHERE predicate, not a table set, so `tables` is
+accepted but not verified. The emission-plane counterpart of the flow-plane signoff — a
+different config plane, one vocabulary. The sample's `deleteScope` carries its greenlight.
+
+**4 — The precise-impact artifact (`check go <flow> --impact`).** The operator's "show me
+EXACTLY what happens to the data", not "trust that `tables` + `supportingScope` are blessed".
+`TransferImpact` (Pipeline, pure): **segment** the transfer graph into weakly-connected
+components; **denormalize** each into nested DOCUMENTS (owned children conjoined recursively
+beneath a root, referenced parents inlined); **classify** every row against the sink's current
+state — a business-keyed kind matches into Added / Deleted / Changed (per-column diffs) /
+Unchanged (surrogate PK + `reconcileIgnore` excluded), a no-key wiped kind is delete-all +
+add-all. `TransferImpactView` (Cli) renders a self-contained, theme-aware HTML artifact
+(collapsible per-segment sections, delta rows in full, the unchanged remainder COUNTED — never
+inline) + a JSON twin (a `System.Text.Json` node tree — the typed side of the LINT-ALLOW HTML
+boundary). Wired at the go board's dry run: the AFTER rows come from the materialized plan, the
+BEFORE rows from a capped (10k/table, over-cap noted) sink read; written to
+`go-board/<flow>.impact.{html,json}`. The design was pinned by an approved mockup before the
+generator was built. Witnessed by 10 `TransferImpactTests` (segmentation, the four verdicts,
+recursive nesting, the HTML/JSON render).
+
+**5 — The impact artifact at scale (making the variety legible).** The precise-impact HTML
+was designed on a 4-table mockup; the operator's real estate is ~1.5k rows across 15–20 tracked
+tables and ~20 supporting varieties, and a wall of denormalized documents does not answer "make
+sense of the variety — confirm the static data is byte-identical AND understand why each 1:1
+check was necessary". So the artifact is now **summary-first**. `TransferImpact.build` populates
+a `Summary : SummaryRow list` — every scope kind carried with its `RelationalRole` (the
+`supportingScope` variety, the operator's `reason`, the `guaranteeOf` guarantee, the matched-by
+key, and — for reference/lookup kinds — the 1:1 identity `Verdict`), sorted payload-first then
+by the reference/dependent family. `TransferImpactView` renders three new surfaces ABOVE the
+(now collapsed) detail: a **summary matrix** grouped by relational role (every table, its role,
+sink row count, and per-table verdict, so 38 tables scan at a glance); **relational-intent
+cards**, one per non-payload variety, each stating what the role guarantees and — authored
+`whyCheck` prose — the risk the 1:1 check defends against (a re-keyed FK silently re-pointing, a
+dangling 547, a seed overwriting governed data); and a **1:1 confirmation panel** that pulls the
+verified reference tables out as `N of M verified`, with any drifted static-lookup surfaced in
+red. The JSON twin gains the parallel `summary` array. The denormalized documents stay — moved
+below, collapsed — so the precise before/after is one click away without dominating the page.
+Witnessed by 5 more `TransferImpactTests` (15 total: the summary-matrix ordering, the matrix +
+intent HTML, the clean and the drifted confirmation panel, the JSON summary array) and eyeballed
+at 38 tables / ~4k rows / 5 varieties with a drifted `Country` lookup.
+
+**Witnesses & discipline.** All pure suites green (4051+); Release clean (FS3511 — the new
+`let! ()` gate in the `validation` CE, the `while r.Read()` sink read, no `let rec` in a
+`task`). The two-traversal discipline holds on both new gates (static-lookup, delete-scope):
+one computation, two surfaces, no drift. Docker witnesses for `--impact` and the static-lookup
+board case are the named follow-on to this entry.
