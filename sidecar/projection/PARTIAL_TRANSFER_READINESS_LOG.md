@@ -1623,3 +1623,21 @@ for `--impact` / the static-lookup board / `supportingScope.inboundOrphan`.
 Remaining named follow-on: docker witnesses for `check go --impact` and the
 static-lookup board case (the `PeerEstateHarness` makes these cheap now); the
 streaming write-ahead intent protocol (T0.4's core duplication window).
+
+### Addendum — the remaining follow-ons closed (same session)
+
+- **Docker witnesses over the shared harness** — the shipped-but-unproven engine
+  guarantees now fire against a live pair (`PeerWitnessDockerTests`):
+  `transfer.supportingScope.inboundOrphan`, `transfer.incremental.populatedSink`,
+  `transfer.staticLookup.diverged`, and `TransferImpact`'s add/delete/change/
+  unchanged classification against a real two-DB delta (`readKindRows` added to
+  `PeerEstateHarness`).
+- **B — the streaming write-ahead intent protocol** (T0.4's core) — a chunk is
+  journaled INTENT (fsync'd) BEFORE the sink write and COMPLETE after; a crash
+  between leaves an IN-DOUBT chunk the resume path probes (sink row count vs the
+  kind's completed-chunk total) — non-committed → safe re-write; maybe-committed →
+  refuse `transfer.resume.chunkInDoubt`. The silent re-mint / duplication window
+  is closed; normal resume is preserved (ReverseLegStreaming green).
+
+The partial-transfer hardening program (Tier-0/1 + the shared harness + the four
+docker witnesses + the streaming intent protocol) is complete on this branch.
