@@ -1333,6 +1333,50 @@ let runCheckGo
                             | ReconciliationStrategy.FallbackToAssigned (_, primary) -> bkOf primary
                             | _ -> None
                         let businessKeys = reconciliation |> Map.toList |> List.choose (fun (k, s) -> bkOf s |> Option.map (fun c -> k, c)) |> Map.ofList
+                        // The relational role per kind — the summary matrix + the
+                        // relational-intent / 1:1-confirmation surfaces. The variety,
+                        // the operator's reason, and the guarantee come from
+                        // supportingScope; the static-lookup 1:1 verdict from the SAME
+                        // `report.StaticLookupDivergences` the board reds on (a
+                        // static-lookup kind ABSENT from that list is verified identical).
+                        let staticLookupVerdict (k: SsKey) : string option =
+                            match report.StaticLookupDivergences |> List.tryFind (fun d -> d.Kind = k) with
+                            | Some d ->
+                                let parts =
+                                    [ if not (List.isEmpty d.ColumnDrifts)    then yield sprintf "%d col drift" (List.length d.ColumnDrifts)
+                                      if not (List.isEmpty d.ExtraOnTarget)   then yield sprintf "+%d extra" d.ExtraOnTarget.Length
+                                      if not (List.isEmpty d.MissingOnTarget) then yield sprintf "%d missing" d.MissingOnTarget.Length ]
+                                Some (sprintf "drift: %s" (String.concat " · " parts))
+                            | None ->
+                                let n = before |> Map.tryFind k |> Option.map List.length |> Option.defaultValue 0
+                                Some (sprintf "1:1 identical (%d/%d)" n n)
+                        let keyLabel (rel: SupportingScope.SupportingRelationship) : string option =
+                            match rel with
+                            | SupportingScope.SupportingRelationship.StaticLookup key
+                            | SupportingScope.SupportingRelationship.ExistingReference key -> Some key
+                            | SupportingScope.SupportingRelationship.SharedAnchor (_, Some key) -> Some key
+                            | SupportingScope.SupportingRelationship.OwnedChild p
+                            | SupportingScope.SupportingRelationship.BlockedDependent p -> Some (sprintf "of %s" p)
+                            | _ -> None
+                        let roles =
+                            opts.SupportingScope
+                            |> List.choose (fun e ->
+                                SupportingScope.tryResolveTable sinkContract e.Table
+                                |> Option.map (fun k ->
+                                    let verdict =
+                                        match e.Relationship with
+                                        | SupportingScope.SupportingRelationship.StaticLookup _ -> staticLookupVerdict k.SsKey
+                                        | SupportingScope.SupportingRelationship.ExistingReference _ ->
+                                            let n = before |> Map.tryFind k.SsKey |> Option.map List.length |> Option.defaultValue 0
+                                            Some (sprintf "%d matched" n)
+                                        | _ -> None
+                                    k.SsKey,
+                                    ({ Variety = SupportingScope.relationshipLabel e.Relationship
+                                       Reason = e.Reason
+                                       Guarantee = SupportingScope.guaranteeOf e.Relationship (SupportingScope.ScopeClaimVerdict.Confirmed "")
+                                       Key = keyLabel e.Relationship
+                                       Verdict = verdict } : TransferImpact.RelationalRole)))
+                            |> Map.ofList
                         let inputs : TransferImpact.Inputs =
                             { Catalog = sinkContract
                               Scope = scope.Nodes
@@ -1341,7 +1385,8 @@ let runCheckGo
                               BusinessKeys = businessKeys
                               Before = before
                               After = after
-                              Ignore = opts.ReconcileIgnore |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None) |> Set.ofList }
+                              Ignore = opts.ReconcileIgnore |> List.choose (fun n -> match Name.create n with Ok v -> Some v | Error _ -> None) |> Set.ofList
+                              Roles = roles }
                         let strategyLabel = match opts.Emission with EmissionMode.WipeAndLoad -> "replace (wipe & load)" | _ -> "merge (upsert)"
                         let impact = TransferImpact.build flowName strategyLabel inputs
                         System.IO.Directory.CreateDirectory "go-board" |> ignore

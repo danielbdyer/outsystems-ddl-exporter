@@ -65,6 +65,28 @@ module TransferImpact =
           Changed    : int
           Unchanged  : int }
 
+    /// The relational ROLE a table plays in the transfer — the `supportingScope`
+    /// variety (`static-lookup` / `existing-reference` / … / `payload` for a
+    /// declared table), the operator's `reason`, the `guarantee` that role earns
+    /// (`SupportingScope.guaranteeOf`), the business key it is matched by, and —
+    /// for reference/lookup kinds — the 1:1 IDENTITY verdict (`Some "identical
+    /// (168/168 by IsoCode)"` or a drift summary). This is what lets the artifact
+    /// answer "make sense of the variety" and "why the 1:1 check was necessary".
+    type RelationalRole =
+        { Variety   : string
+          Reason    : string
+          Guarantee : string
+          Key       : string option
+          Verdict   : string option }
+
+    /// The default role for a declared payload table (no supportingScope entry).
+    let payloadRole : RelationalRole =
+        { Variety = "payload"; Reason = "declared in `tables`"; Guarantee = ""; Key = None; Verdict = None }
+
+    /// One row of the summary matrix — a table, its relational role, and its delta.
+    type SummaryRow =
+        { Kind : SsKey; Role : RelationalRole; Context : TableContext }
+
     /// One connected component of the transfer graph, denormalized.
     type Segment =
         { /// The kinds in this component, parents-before-children where derivable.
@@ -83,6 +105,9 @@ module TransferImpact =
     type Impact =
         { Flow     : string
           Strategy : string
+          /// The summary matrix — every tracked + supporting table with its
+          /// relational role and delta, for the scannable variety-grouped index.
+          Summary  : SummaryRow list
           Segments : Segment list
           Totals   : Totals }
 
@@ -104,7 +129,10 @@ module TransferImpact =
           Before       : Map<SsKey, StaticRow list>
           After        : Map<SsKey, StaticRow list>
           /// Audit columns excluded from the change compare (the flow's reconcileIgnore).
-          Ignore       : Set<Name> }
+          Ignore       : Set<Name>
+          /// The relational role per kind (from `supportingScope` + the static-lookup
+          /// verdict); a kind absent from the map is a plain payload table.
+          Roles        : Map<SsKey, RelationalRole> }
 
     // -- small catalog helpers ------------------------------------------------
 
@@ -340,8 +368,23 @@ module TransferImpact =
                   Documents = documents
                   Context = members |> List.map contextOf })
         let sumBy f = segments |> List.collect (fun s -> s.Context) |> List.sumBy f
+        // The summary matrix — every scope kind with its role + delta, sorted by
+        // variety (payload first, then the reference/dependent families) then name.
+        let varietyRank (v: string) =
+            match v with
+            | "payload" -> 0 | "static-lookup" -> 1 | "existing-reference" -> 2
+            | "reference-seed" -> 3 | "shared-anchor" -> 4 | "owned-child" -> 5
+            | "blocked-dependent" -> 6 | _ -> 7
+        let summary =
+            inputs.Scope
+            |> Set.toList
+            |> List.map (fun k ->
+                let role = Map.tryFind k inputs.Roles |> Option.defaultValue payloadRole
+                { Kind = k; Role = role; Context = contextOf k })
+            |> List.sortBy (fun r -> varietyRank r.Role.Variety, nameOf inputs.Catalog r.Kind)
         { Flow = flow
           Strategy = strategy
+          Summary = summary
           Segments = segments
           Totals =
             { Added = sumBy (fun c -> c.Added)

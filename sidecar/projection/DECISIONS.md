@@ -27303,6 +27303,27 @@ BEFORE rows from a capped (10k/table, over-cap noted) sink read; written to
 generator was built. Witnessed by 10 `TransferImpactTests` (segmentation, the four verdicts,
 recursive nesting, the HTML/JSON render).
 
+**5 — The impact artifact at scale (making the variety legible).** The precise-impact HTML
+was designed on a 4-table mockup; the operator's real estate is ~1.5k rows across 15–20 tracked
+tables and ~20 supporting varieties, and a wall of denormalized documents does not answer "make
+sense of the variety — confirm the static data is byte-identical AND understand why each 1:1
+check was necessary". So the artifact is now **summary-first**. `TransferImpact.build` populates
+a `Summary : SummaryRow list` — every scope kind carried with its `RelationalRole` (the
+`supportingScope` variety, the operator's `reason`, the `guaranteeOf` guarantee, the matched-by
+key, and — for reference/lookup kinds — the 1:1 identity `Verdict`), sorted payload-first then
+by the reference/dependent family. `TransferImpactView` renders three new surfaces ABOVE the
+(now collapsed) detail: a **summary matrix** grouped by relational role (every table, its role,
+sink row count, and per-table verdict, so 38 tables scan at a glance); **relational-intent
+cards**, one per non-payload variety, each stating what the role guarantees and — authored
+`whyCheck` prose — the risk the 1:1 check defends against (a re-keyed FK silently re-pointing, a
+dangling 547, a seed overwriting governed data); and a **1:1 confirmation panel** that pulls the
+verified reference tables out as `N of M verified`, with any drifted static-lookup surfaced in
+red. The JSON twin gains the parallel `summary` array. The denormalized documents stay — moved
+below, collapsed — so the precise before/after is one click away without dominating the page.
+Witnessed by 5 more `TransferImpactTests` (15 total: the summary-matrix ordering, the matrix +
+intent HTML, the clean and the drifted confirmation panel, the JSON summary array) and eyeballed
+at 38 tables / ~4k rows / 5 varieties with a drifted `Country` lookup.
+
 **Witnesses & discipline.** All pure suites green (4051+); Release clean (FS3511 — the new
 `let! ()` gate in the `validation` CE, the `while r.Read()` sink read, no `let rec` in a
 `task`). The two-traversal discipline holds on both new gates (static-lookup, delete-scope):

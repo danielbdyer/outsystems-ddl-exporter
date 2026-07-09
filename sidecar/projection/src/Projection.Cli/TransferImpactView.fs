@@ -84,6 +84,22 @@ let toJson (catalog: Catalog) (impact: TransferImpact.Impact) : string =
     t.["changed"] <- JsonValue.Create impact.Totals.Changed
     t.["unchanged"] <- JsonValue.Create impact.Totals.Unchanged
     root.["totals"] <- t
+    let sum = JsonArray()
+    for r in impact.Summary do
+        let rj = JsonObject()
+        rj.["table"] <- JsonValue.Create (nameOf catalog r.Kind)
+        rj.["role"] <- JsonValue.Create r.Role.Variety
+        rj.["reason"] <- JsonValue.Create r.Role.Reason
+        if r.Role.Guarantee <> "" then rj.["guarantee"] <- JsonValue.Create r.Role.Guarantee
+        r.Role.Key |> Option.iter (fun k -> rj.["matchedBy"] <- JsonValue.Create k)
+        r.Role.Verdict |> Option.iter (fun v -> rj.["verdict"] <- JsonValue.Create v)
+        rj.["sinkBefore"] <- JsonValue.Create r.Context.SinkBefore
+        rj.["added"] <- JsonValue.Create r.Context.Added
+        rj.["deleted"] <- JsonValue.Create r.Context.Deleted
+        rj.["changed"] <- JsonValue.Create r.Context.Changed
+        rj.["unchanged"] <- JsonValue.Create r.Context.Unchanged
+        sum.Add rj
+    root.["summary"] <- sum
     let segs = JsonArray()
     for s in impact.Segments do
         let sj = JsonObject()
@@ -166,7 +182,7 @@ let private segmentHtml (catalog: Catalog) (sb: StringBuilder) (openFirst: bool)
     sb.Append("</div></details>") |> ignore
 
 let private css = """
-:root{--bg:#f4f6f8;--surface:#fff;--surface-2:#eef1f5;--inset:#f8fafc;--ink:#161b24;--ink-soft:#586173;--ink-faint:#8a93a3;--line:#dce1ea;--accent:#1f8f80;--add:#14804a;--add-bg:#e7f4ec;--add-line:#57c78a;--del:#b3243b;--del-bg:#fbe9ec;--del-line:#e78798;--chg:#8a5d0e;--chg-bg:#f8efd8;--chg-line:#d9b25e;--keep:#8a93a3;--keep-bg:#f1f3f6;--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;--r:10px;--r-sm:7px}
+:root{--bg:#f4f6f8;--surface:#fff;--surface-2:#eef1f5;--inset:#f8fafc;--ink:#161b24;--ink-soft:#586173;--ink-faint:#8a93a3;--line:#dce1ea;--accent:#1f8f80;--accent-soft:#e6f3f1;--add:#14804a;--add-bg:#e7f4ec;--add-line:#57c78a;--del:#b3243b;--del-bg:#fbe9ec;--del-line:#e78798;--chg:#8a5d0e;--chg-bg:#f8efd8;--chg-line:#d9b25e;--keep:#8a93a3;--keep-bg:#f1f3f6;--sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;--r:10px;--r-sm:7px}
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--surface:#161c25;--surface-2:#1d2530;--inset:#12171f;--ink:#e7ebf2;--ink-soft:#9aa4b3;--ink-faint:#697485;--line:#27303d;--accent:#36b3a3;--add:#54d089;--add-bg:#11301e;--add-line:#2f7a51;--del:#f5788a;--del-bg:#341219;--del-line:#8a3242;--chg:#e2b45f;--chg-bg:#33280f;--chg-line:#7a5f28;--keep:#6b7686;--keep-bg:#1a212b}}
 :root[data-theme=dark]{--bg:#0d1117;--surface:#161c25;--surface-2:#1d2530;--inset:#12171f;--ink:#e7ebf2;--ink-soft:#9aa4b3;--ink-faint:#697485;--line:#27303d;--accent:#36b3a3;--add:#54d089;--add-bg:#11301e;--add-line:#2f7a51;--del:#f5788a;--del-bg:#341219;--del-line:#8a3242;--chg:#e2b45f;--chg-bg:#33280f;--chg-line:#7a5f28;--keep:#6b7686;--keep-bg:#1a212b}
 :root[data-theme=light]{--bg:#f4f6f8;--surface:#fff;--surface-2:#eef1f5;--inset:#f8fafc;--ink:#161b24;--ink-soft:#586173;--ink-faint:#8a93a3;--line:#dce1ea;--accent:#1f8f80;--add:#14804a;--add-bg:#e7f4ec;--add-line:#57c78a;--del:#b3243b;--del-bg:#fbe9ec;--del-line:#e78798;--chg:#8a5d0e;--chg-bg:#f8efd8;--chg-line:#d9b25e;--keep:#8a93a3;--keep-bg:#f1f3f6}
@@ -211,7 +227,118 @@ h1{font-size:26px;font-weight:680;letter-spacing:-.01em;margin:0}
 .diff .was{color:var(--del);text-decoration:line-through}.diff .now{color:var(--add)}
 .more{font-size:12.5px;color:var(--ink-faint);padding:6px 2px 2px;font-style:italic}
 footer{margin-top:26px;font-size:12px;color:var(--ink-faint);font-family:var(--mono);display:flex;flex-wrap:wrap;gap:6px 14px}
+h2{font-size:15px;font-weight:660;letter-spacing:-.01em;margin:30px 0 4px;display:flex;align-items:baseline;gap:10px}
+h2 .sub{font-weight:400;font-size:12.5px;color:var(--ink-faint);font-family:var(--mono)}
+.hrule{height:1px;background:var(--line);margin:10px 0 16px}
+.headline{display:flex;gap:12px;align-items:flex-start;margin-top:16px;padding:13px 15px;border-radius:var(--r-sm);background:var(--accent-soft);border:1px solid var(--accent)}
+.headline .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:5px;flex:none}.headline p{margin:0;font-size:13.5px}.headline b{font-weight:650}
+.matrix{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+thead th{text-align:left;font-weight:600;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);padding:9px 14px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+th.num,td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+tbody td{padding:8px 14px;border-bottom:1px solid var(--line);vertical-align:baseline}tbody tr:last-child td{border-bottom:none}
+.grp td{background:var(--inset);font-weight:640;font-size:12px;padding:7px 14px;color:var(--ink)}.grp .cnt{color:var(--ink-faint);font-weight:400;font-family:var(--mono)}
+.tname{font-family:var(--mono);font-size:12.5px;color:var(--ink)}.rsn{color:var(--ink-soft);font-size:12.5px}.key{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+.verdict{font-family:var(--mono);font-size:12px;font-weight:600;white-space:nowrap}
+.v-ok{color:var(--accent)}.v-add{color:var(--add)}.v-del{color:var(--del)}.v-chg{color:var(--chg)}.v-drift{color:var(--del)}
+.rchip{font-size:11px;padding:1.5px 8px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);font-family:var(--mono)}
+.intent-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:720px){.intent-grid{grid-template-columns:1fr}}
+.intent{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);padding:13px 15px;border-left-width:3px;border-left-color:var(--accent)}
+.intent .v{font-family:var(--mono);font-size:12px;font-weight:650;color:var(--accent);text-transform:uppercase;letter-spacing:.04em}
+.intent .tbls{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);margin:2px 0 8px}
+.intent .g{font-size:12.5px;color:var(--ink);margin:0 0 7px}
+.intent .why{font-size:12px;color:var(--ink-soft);border-top:1px dashed var(--line);padding-top:7px}.intent .why b{color:var(--ink);font-weight:600}
+.confirm{border:1px solid var(--accent);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.confirm-head{display:flex;align-items:center;gap:11px;padding:13px 16px;background:var(--accent-soft)}.confirm-head .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}.confirm-head b{font-weight:650}.confirm-head span{color:var(--ink-soft);font-size:12.5px}
+.confirm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1px;background:var(--line)}
+.cf{background:var(--surface);padding:9px 13px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}.cf .t{font-family:var(--mono);font-size:12.5px}.cf .r{font-family:var(--mono);font-size:11.5px;color:var(--accent);white-space:nowrap}.cf.drift .r{color:var(--del)}
 """
+
+// -- the scale surfaces: summary matrix, relational intent, 1:1 confirmation --
+
+/// The risk each relational check defends against — the "why the 1:1 mattered"
+/// prose (reporting copy; the file's LINT-ALLOW covers it).
+let private whyCheck (variety: string) : string =
+    match variety with
+    | "static-lookup" -> "The payload's foreign keys resolve against this table BY THE NATURAL KEY. A code present on one side only — or the same code carrying a different value — silently re-points a moved row to the wrong reference. The 1:1 proof is what makes the re-key safe."
+    | "existing-reference" -> "These rows belong to the TARGET, not the source. Every payload foreign key must find its match here or it would dangle (a 547). The match count is the proof that every reference lands."
+    | "reference-seed" -> "Only the rows the target LACKS insert. The check confirms the overlap is matched and only the gap is written — so the seed can neither duplicate nor overwrite governed data."
+    | "shared-anchor" -> "Every payload reference collapses onto one designated target row. The check proves the anchor exists and no divergent reference survives the load."
+    | "owned-child" -> "The child rides the parent's wipe. The cascade edge is verified so a replace deletes child-first and re-inserts the parent and its children as one unit."
+    | "blocked-dependent" -> "A real dependent, deliberately NOT harvested — the exclusion is acknowledged so a replace-wipe does not refuse on its account, and no environment-specific row is copied."
+    | _ -> ""
+
+let private groupLabel (variety: string) : string =
+    match variety with
+    | "payload" -> "Payload — the tracked tables you're moving"
+    | "static-lookup" -> "Static lookup — reference data the environments must hold IDENTICALLY"
+    | "existing-reference" -> "Existing reference — matched to the target's OWN rows; never copied"
+    | "reference-seed" -> "Reference seed — copy only the rows the target lacks"
+    | "shared-anchor" -> "Shared anchor — every reference re-pointed to one target row"
+    | "owned-child" -> "Owned child — copied with the parent, wiped with it under replace"
+    | "blocked-dependent" -> "Blocked dependent — a real dependent, deliberately not harvested"
+    | other -> other
+
+let private verdictCell (r: TransferImpact.SummaryRow) : string =
+    match r.Role.Verdict with
+    | Some v ->
+        let drift = [ "drift"; "diverge"; "extra"; "missing"; "⚠" ] |> List.exists v.Contains
+        sprintf "<span class=\"verdict %s\">%s</span>" (if drift then "v-drift" else "v-ok") (esc v)
+    | None ->
+        let c = r.Context
+        if c.Added = 0 && c.Deleted = 0 && c.Changed = 0 then "<span class=\"verdict\" style=\"color:var(--ink-faint)\">unchanged</span>"
+        else
+            let parts =
+                [ if c.Added > 0 then yield sprintf "+%d" c.Added
+                  if c.Deleted > 0 then yield sprintf "&minus;%d" c.Deleted
+                  if c.Changed > 0 then yield sprintf "~%d" c.Changed ]
+            sprintf "<span class=\"verdict v-add\">%s</span>" (String.concat " " parts)
+
+/// The summary matrix: every table grouped by relational role.
+let private summaryHtml (catalog: Catalog) (sb: StringBuilder) (summary: TransferImpact.SummaryRow list) : unit =
+    sb.Append("<h2>Every table, by relational role <span class=\"sub\">tracked + supporting · grouped by why it's in scope</span></h2><div class=\"hrule\"></div>") |> ignore
+    sb.Append("<div class=\"matrix\"><div style=\"overflow-x:auto\"><table><thead><tr><th>Table</th><th>Role</th><th class=\"num\">Rows (sink)</th><th>Verdict</th><th>Matched by</th><th>Why it's in scope</th></tr></thead><tbody>") |> ignore
+    summary
+    |> List.groupBy (fun r -> r.Role.Variety)
+    |> List.iter (fun (variety, rows) ->
+        sb.Append(sprintf "<tr class=\"grp\"><td colspan=\"6\">%s <span class=\"cnt\">· %d table(s)</span></td></tr>" (esc (groupLabel variety)) (List.length rows)) |> ignore
+        for r in rows do
+            let key = r.Role.Key |> Option.map esc |> Option.defaultValue "—"
+            sb.Append(sprintf "<tr><td class=\"tname\">%s</td><td><span class=\"rchip\">%s</span></td><td class=\"num\">%d</td><td>%s</td><td class=\"key\">%s</td><td class=\"rsn\">%s</td></tr>"
+                        (esc (nameOf catalog r.Kind)) (esc variety) r.Context.SinkBefore (verdictCell r) key (esc r.Role.Reason)) |> ignore)
+    sb.Append("</tbody></table></div></div>") |> ignore
+
+/// The relational-intent cards: one per non-payload variety present.
+let private intentHtml (catalog: Catalog) (sb: StringBuilder) (summary: TransferImpact.SummaryRow list) : unit =
+    let byVariety =
+        summary
+        |> List.filter (fun r -> r.Role.Variety <> "payload")
+        |> List.groupBy (fun r -> r.Role.Variety)
+    if not (List.isEmpty byVariety) then
+        sb.Append("<h2>Relational intent <span class=\"sub\">what each role guarantees — and why the check was necessary</span></h2><div class=\"hrule\"></div><div class=\"intent-grid\">") |> ignore
+        for (variety, rows) in byVariety do
+            let guarantee = rows |> List.tryPick (fun r -> if r.Role.Guarantee <> "" then Some r.Role.Guarantee else None) |> Option.defaultValue ""
+            let tables = rows |> List.map (fun r -> nameOf catalog r.Kind) |> List.truncate 6 |> String.concat " · "
+            sb.Append("<div class=\"intent\">") |> ignore
+            sb.Append(sprintf "<div class=\"v\">%s</div><div class=\"tbls\">%s%s</div>" (esc variety) (esc tables) (if List.length rows > 6 then sprintf " +%d" (List.length rows - 6) else "")) |> ignore
+            if guarantee <> "" then sb.Append(sprintf "<p class=\"g\">%s</p>" (esc guarantee)) |> ignore
+            sb.Append(sprintf "<div class=\"why\"><b>Why check?</b> %s</div>" (esc (whyCheck variety))) |> ignore
+            sb.Append("</div>") |> ignore
+        sb.Append("</div>") |> ignore
+
+/// The 1:1 confirmation panel: the reference/lookup kinds with an identity verdict.
+let private confirmHtml (catalog: Catalog) (sb: StringBuilder) (summary: TransferImpact.SummaryRow list) : unit =
+    let verified = summary |> List.filter (fun r -> Option.isSome r.Role.Verdict)
+    if not (List.isEmpty verified) then
+        let drifted = verified |> List.filter (fun r -> [ "drift"; "diverge"; "extra"; "missing"; "⚠" ] |> List.exists (r.Role.Verdict |> Option.defaultValue "").Contains)
+        let clean = List.length verified - List.length drifted
+        sb.Append("<h2>Reference data — the 1:1 confirmation <span class=\"sub\">the matched/identical verdict, per table</span></h2><div class=\"hrule\"></div><div class=\"confirm\">") |> ignore
+        sb.Append(sprintf "<div class=\"confirm-head\"><span class=\"dot\"></span><b>%d of %d reference table(s) verified</b><span>— matched by natural key; a static-lookup additionally holds every column identical, with no extra or missing rows.</span></div>" clean (List.length verified)) |> ignore
+        sb.Append("<div class=\"confirm-grid\">") |> ignore
+        for r in verified do
+            let isDrift = [ "drift"; "diverge"; "extra"; "missing"; "⚠" ] |> List.exists (r.Role.Verdict |> Option.defaultValue "").Contains
+            sb.Append(sprintf "<div class=\"cf%s\"><span class=\"t\">%s</span><span class=\"r\">%s</span></div>" (if isDrift then " drift" else "") (esc (nameOf catalog r.Kind)) (esc (Option.defaultValue "" r.Role.Verdict))) |> ignore
+        sb.Append("</div></div>") |> ignore
 
 /// Render the impact model to the self-contained HTML artifact.
 let toHtml (catalog: Catalog) (impact: TransferImpact.Impact) : string =
@@ -233,8 +360,17 @@ let toHtml (catalog: Catalog) (impact: TransferImpact.Impact) : string =
     sb.Append(sprintf "<div class=\"tile keep\"><div class=\"n\">%d</div><div class=\"l\">unchanged</div></div></section>" t.Unchanged) |> ignore
     // legend
     sb.Append("<div class=\"legend\"><span><span class=\"swatch\" style=\"background:var(--add-line)\"></span> added</span><span><span class=\"swatch\" style=\"background:var(--del-line)\"></span> deleted by wipe</span><span><span class=\"swatch\" style=\"background:var(--chg-line)\"></span> changed</span><span><span class=\"swatch\" style=\"background:var(--line)\"></span> unchanged (counted, not listed)</span></div>") |> ignore
-    // segments
-    impact.Segments |> List.iteri (fun i s -> segmentHtml catalog sb (i = 0) s)
+    // SCALE SURFACES (2026-07-09): summary-first so the variety is legible before
+    // the detail — the matrix, the relational intent, the 1:1 confirmation.
+    summaryHtml catalog sb impact.Summary
+    intentHtml catalog sb impact.Summary
+    confirmHtml catalog sb impact.Summary
+    // The denormalized detail — the changed segments, COLLAPSED (open the ones you
+    // want; unchanged tables are counted in the matrix, never listed here).
+    let changedSegments = impact.Segments |> List.filter (fun s -> not (List.isEmpty s.Documents))
+    if not (List.isEmpty changedSegments) then
+        sb.Append("<h2>Changed data, denormalized <span class=\"sub\">owned children conjoined under each root; unchanged rows counted, not listed</span></h2><div class=\"hrule\"></div>") |> ignore
+        changedSegments |> List.iter (segmentHtml catalog sb false)
     sb.Append(sprintf "<footer><span>projection check go %s --impact</span><span>·</span><span>go-board/%s.impact.html</span></footer>" (esc impact.Flow) (esc impact.Flow)) |> ignore
     sb.Append("</div></body></html>") |> ignore
     sb.ToString()

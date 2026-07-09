@@ -76,7 +76,8 @@ let private baseInputs : TransferImpact.Inputs =
       BusinessKeys = Map.ofList [ kKey "City", nm "Name" ]
       Before = Map.empty
       After = Map.empty
-      Ignore = Set.empty }
+      Ignore = Set.empty
+      Roles = Map.empty }
 
 [<Fact>]
 let ``classifyKind: a business-keyed kind matches identical rows as Unchanged (surrogate PK excluded)`` () =
@@ -199,3 +200,77 @@ let ``toJson emits a parseable machine twin with totals and nested children`` ()
     let cust = seg0.GetProperty("documents").[0]
     Assert.Equal("Customer", cust.GetProperty("kind").GetString())
     Assert.True(cust.GetProperty("children").GetArrayLength() > 0)
+
+// -- 5. the scale surfaces: summary matrix, relational intent, 1:1 confirmation --
+
+/// City carries a static-lookup role with an identity verdict; the payload kinds
+/// take the default role. This is what the scaled artifact renders above the detail.
+let private scaledImpact (cityVerdict: string) : TransferImpact.Impact =
+    let roles =
+        Map.ofList
+            [ kKey "City",
+              ({ Variety   = "static-lookup"
+                 Reason    = "country reference — must be identical in both environments"
+                 Guarantee = "matched by natural key; every column identical, no extra or missing rows"
+                 Key       = Some "Name"
+                 Verdict   = Some cityVerdict } : TransferImpact.RelationalRole) ]
+    let inputs =
+        { baseInputs with
+            Reconciled = Set.singleton (kKey "City")
+            Roles = roles
+            Before = Map.ofList [ kKey "City", [ row "City" "1" [ "Name", "Lisbon" ] ] ]
+            After  =
+                Map.ofList
+                    [ kKey "City",      [ row "City" "1" [ "Name", "Lisbon" ] ]
+                      kKey "Customer",  [ row "Customer" "10" [ "Email", "bob@x"; "CityId", "1" ] ]
+                      kKey "Order",     [ row "Order" "90" [ "CustomerId", "10"; "Amount", "120" ] ]
+                      kKey "OrderLine", [ row "OrderLine" "900" [ "OrderId", "90"; "Item", "Widget" ] ] ] }
+    TransferImpact.build "golden" "replace" inputs
+
+[<Fact>]
+let ``build: the summary matrix carries every scope kind, payload sorted before supporting`` () =
+    let impact = scaledImpact "identical (1/1 by Name)"
+    Assert.Equal(4, List.length impact.Summary)
+    // payloadRank 0 sorts ahead of static-lookup's rank 1: the last row is City.
+    let last = List.last impact.Summary
+    Assert.Equal(kKey "City", last.Kind)
+    Assert.Equal("static-lookup", last.Role.Variety)
+
+[<Fact>]
+let ``toHtml renders the summary matrix grouped by role and the relational-intent card`` () =
+    let html = TransferImpactView.toHtml catalog (scaledImpact "identical (1/1 by Name)")
+    Assert.Contains("Every table, by relational role", html)
+    Assert.Contains("class=\"matrix\"", html)
+    Assert.Contains("class=\"grp\"", html)                          // a role group header
+    Assert.Contains("Static lookup", html)                         // the group label
+    Assert.Contains("Relational intent", html)                     // the intent section
+    Assert.Contains("class=\"intent\"", html)
+    Assert.Contains("Why check?", html)                            // the why-1:1 prose
+
+[<Fact>]
+let ``toHtml renders the 1:1 confirmation panel, clean when identical`` () =
+    let html = TransferImpactView.toHtml catalog (scaledImpact "identical (1/1 by Name)")
+    Assert.Contains("the 1:1 confirmation", html)
+    Assert.Contains("1 of 1 reference table(s) verified", html)
+    Assert.Contains("class=\"verdict v-ok\"", html)                // clean verdict, teal
+    Assert.DoesNotContain("class=\"cf drift\"", html)              // no drift row
+
+[<Fact>]
+let ``toHtml pulls a drifted static-lookup into the confirmation panel as drift`` () =
+    let html = TransferImpactView.toHtml catalog (scaledImpact "drift: 1 col drift on Lisbon")
+    Assert.Contains("class=\"verdict v-drift\"", html)             // drift verdict, red
+    Assert.Contains("class=\"cf drift\"", html)                    // the drift confirmation cell
+    Assert.Contains("0 of 1 reference table(s) verified", html)
+
+[<Fact>]
+let ``toJson summary array carries the role, guarantee, and verdict per table`` () =
+    let json = TransferImpactView.toJson catalog (scaledImpact "identical (1/1 by Name)")
+    let root = (System.Text.Json.JsonDocument.Parse json).RootElement
+    let summary = root.GetProperty("summary")
+    Assert.Equal(4, summary.GetArrayLength())
+    let city = seq { for i in 0 .. summary.GetArrayLength() - 1 -> summary.[i] }
+               |> Seq.find (fun e -> e.GetProperty("table").GetString() = "City")
+    Assert.Equal("static-lookup", city.GetProperty("role").GetString())
+    Assert.Equal("Name", city.GetProperty("matchedBy").GetString())
+    Assert.Equal("identical (1/1 by Name)", city.GetProperty("verdict").GetString())
+    Assert.False(System.String.IsNullOrEmpty(city.GetProperty("guarantee").GetString()))
