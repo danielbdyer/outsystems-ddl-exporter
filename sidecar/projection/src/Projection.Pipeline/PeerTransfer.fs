@@ -47,30 +47,49 @@ module PeerTransfer =
     /// read is the named `source.ossys.readFailed` refusal from the `Source`
     /// port, classified onto the schema-read axis (exit 6) by `Preflight`.
     ///
-    /// Scope-bearing entry point (2026-07-07) — BOTH sides read under the
-    /// same snapshot scope (the projection.json `model` binding via
-    /// `SnapshotScopeBinding.fromModel`), so the transfer's contracts see
-    /// the same modeled estate as full-export/publish. `acquireContracts`
-    /// is the zero-default sibling.
+    /// Scope-bearing entry point (2026-07-07) — each side reads under ITS OWN
+    /// snapshot scope. For a rendition/peer pair the two scopes are identical
+    /// (the `model` binding via `SnapshotScopeBinding.fromModel`), so both
+    /// contracts see the same modeled estate as full-export/publish. For a
+    /// CLONED-module (`by-name`) pair the sink's modules carry the mapped names,
+    /// so the sink scope is the source scope run through `SnapshotScopeBinding.
+    /// remapModules` (see `sinkScopeFor`) — otherwise the sink read narrows to
+    /// the wrong module set and A4-duplicates a referenced entity across modules
+    /// (`catalog.kinds.duplicateKey`). `acquireContracts` is the zero-default
+    /// sibling.
     let acquireContractsWith
-        (parameters: MetadataSnapshotRunner.SnapshotParameters)
+        (sourceParameters: MetadataSnapshotRunner.SnapshotParameters)
+        (sinkParameters: MetadataSnapshotRunner.SnapshotParameters)
         (sourceConn: string)
         (sinkConn: string)
         : Task<Result<Catalog * Catalog>> =
         task {
-            match! Source.read (Source.ofOssysWith parameters sourceConn) with
+            match! Source.read (Source.ofOssysWith sourceParameters sourceConn) with
             | Error es -> return Result.failure es
             | Ok sourceContract ->
-                match! Source.read (Source.ofOssysWith parameters sinkConn) with
+                match! Source.read (Source.ofOssysWith sinkParameters sinkConn) with
                 | Error es -> return Result.failure es
                 | Ok sinkContract -> return Result.success (sourceContract, sinkContract)
         }
+
+    /// The SINK snapshot scope for a peer read, given the SOURCE scope. `BySsKey`
+    /// reads the sink under the same scope (both sides' modules share names);
+    /// `ByName` remaps the module names through `alignMap` so the sink reads its
+    /// CLONE modules, not the source's.
+    let sinkScopeFor
+        (mode: AlignmentMode)
+        (alignMap: Map<string, string>)
+        (sourceParameters: MetadataSnapshotRunner.SnapshotParameters)
+        : MetadataSnapshotRunner.SnapshotParameters =
+        match mode with
+        | AlignmentMode.BySsKey -> sourceParameters
+        | AlignmentMode.ByName  -> SnapshotScopeBinding.remapModules alignMap sourceParameters
 
     /// Zero-default sibling — the show-me-everything `defaultParameters`
     /// stance (the canary/mock-environment face; config-bound callers pass
     /// their model scope through `acquireContractsWith`).
     let acquireContracts (sourceConn: string) (sinkConn: string) : Task<Result<Catalog * Catalog>> =
-        acquireContractsWith MetadataSnapshotRunner.defaultParameters sourceConn sinkConn
+        acquireContractsWith MetadataSnapshotRunner.defaultParameters MetadataSnapshotRunner.defaultParameters sourceConn sinkConn
 
     // ------------------------------------------------------------------
     // The shape gate — SS_KEY-keyed schema compatibility, scoped to the

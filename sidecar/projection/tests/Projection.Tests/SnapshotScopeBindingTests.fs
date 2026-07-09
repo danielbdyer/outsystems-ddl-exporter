@@ -97,3 +97,42 @@ let ``T1: the binding is deterministic`` () =
               Config.ModuleSelector.Whole "A" ]
             false true
     Assert.Equal(SnapshotScopeBinding.fromModel m, SnapshotScopeBinding.fromModel m)
+
+// ---------------------------------------------------------------------
+// remapModules — the cloned-module (by-name) SINK scope: the sink's clone
+// modules carry the mapped names, so its snapshot scope must name THEM (else
+// the sink read mis-scopes and A4-duplicates a referenced entity across
+// modules — `catalog.kinds.duplicateKey`).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``remapModules rewrites module names through the map; unmapped names ride through`` () =
+    let src = SnapshotScopeBinding.fromModel (model [ Config.ModuleSelector.Whole "AppCore"; Config.ModuleSelector.Whole "Ops" ] true true)
+    let snk = SnapshotScopeBinding.remapModules (Map.ofList [ "AppCore", "AppCoreClone" ]) src
+    Assert.Equal<string list>([ "AppCoreClone"; "Ops" ], snk.ModuleNames)
+
+[<Fact>]
+let ``remapModules matches the source module name case-insensitively`` () =
+    let src = SnapshotScopeBinding.fromModel (model [ Config.ModuleSelector.Whole "AppCore" ] true true)
+    let snk = SnapshotScopeBinding.remapModules (Map.ofList [ "appcore", "AppCoreClone" ]) src
+    Assert.Equal<string list>([ "AppCoreClone" ], snk.ModuleNames)
+
+[<Fact>]
+let ``remapModules rewrites the entity-filter module keys, preserving entity lists`` () =
+    let src = SnapshotScopeBinding.fromModel (model [ Config.ModuleSelector.WithEntities ("AppCore", [ "City" ]) ] true true)
+    let snk = SnapshotScopeBinding.remapModules (Map.ofList [ "AppCore", "AppCoreClone" ]) src
+    Assert.Equal<string list>([ "AppCoreClone" ], snk.ModuleNames)
+    // The module KEY is remapped; the entity list rides through unchanged.
+    Assert.Equal(Some """{"AppCoreClone":["City"]}""", snk.EntityFilterJson)
+
+[<Fact>]
+let ``remapModules with an empty map is identity`` () =
+    let src = SnapshotScopeBinding.fromModel (model [ Config.ModuleSelector.Whole "AppCore" ] true true)
+    Assert.Equal(src, SnapshotScopeBinding.remapModules Map.empty src)
+
+[<Fact>]
+let ``sinkScopeFor: by-sskey reads the sink under the SAME scope; by-name remaps the modules`` () =
+    let src = SnapshotScopeBinding.fromModel (model [ Config.ModuleSelector.Whole "AppCore" ] true true)
+    Assert.Equal(src, PeerTransfer.sinkScopeFor AlignmentMode.BySsKey (Map.ofList [ "AppCore", "AppCoreClone" ]) src)
+    let byName = PeerTransfer.sinkScopeFor AlignmentMode.ByName (Map.ofList [ "AppCore", "AppCoreClone" ]) src
+    Assert.Equal<string list>([ "AppCoreClone" ], byName.ModuleNames)

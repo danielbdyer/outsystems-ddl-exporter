@@ -95,3 +95,34 @@ module SnapshotScopeBinding =
                 OnlyActiveAttributes = model.OnlyActiveAttributes
                 EntityFilterJson     = entityFilterJson selectors
             }
+
+    /// Rewrite a snapshot scope's MODULE names through a source→sink module map
+    /// (`moduleMap`, case-insensitive), for the cloned-module (`by-name`) SINK
+    /// read. The `model` section names the SOURCE modules; the sink's clone
+    /// modules carry the mapped names, so applying the source scope to the sink
+    /// read would narrow to the wrong (or a broader, referenced-entity-
+    /// duplicating) module set — the `catalog.kinds.duplicateKey` failure. The
+    /// entity allow-lists ride through unchanged (cloned entities share names);
+    /// a module name absent from the map passes through; an empty map is
+    /// identity (so a `by-sskey` flow, or an unscoped model, is untouched).
+    let remapModules
+        (moduleMap: Map<string, string>)
+        (parameters: MetadataSnapshotRunner.SnapshotParameters)
+        : MetadataSnapshotRunner.SnapshotParameters =
+        if Map.isEmpty moduleMap then parameters
+        else
+            let lower =
+                moduleMap |> Map.toList
+                |> List.map (fun (k, v) -> k.ToLowerInvariant(), v) |> Map.ofList
+            let rename (n: string) = Map.tryFind (n.ToLowerInvariant()) lower |> Option.defaultValue n
+            let remappedFilter =
+                parameters.EntityFilterJson
+                |> Option.map (fun json ->
+                    let payload =
+                        System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, string[]>> json
+                    let renamed = System.Collections.Generic.Dictionary<string, string[]>()
+                    for kv in payload do renamed.[rename kv.Key] <- kv.Value
+                    System.Text.Json.JsonSerializer.Serialize renamed)
+            { parameters with
+                ModuleNames      = parameters.ModuleNames |> List.map rename
+                EntityFilterJson = remappedFilter }

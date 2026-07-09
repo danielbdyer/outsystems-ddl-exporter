@@ -1731,3 +1731,15 @@ live face uses) + `opts.ForeignRefs` + `opts.SinkCapability.IdentityPolicy` —
 board and engine read the same fact (two-traversal parity). Behavior-identical for
 flows that use none of these (empty scope / structural sink → the two calls are
 the same), so the whole existing board suite is unchanged.
+
+**Per-side snapshot scope (by-name).** `PeerTransfer.acquireContractsWith` applied
+ONE `SnapshotParameters` (the `model` binding, which names the SOURCE modules) to
+BOTH reads. For a cloned-module (`by-name`) pair the sink's modules carry the
+MAPPED names, so scoping the sink read by the source module names mis-scoped it —
+narrowing to the wrong module set and surfacing a referenced entity across two
+modules → `catalog.kinds.duplicateKey` (A4: kind identity is globally unique).
+`acquireContractsWith` now takes SOURCE and SINK `SnapshotParameters` separately;
+`PeerTransfer.sinkScopeFor` derives the sink scope (`by-sskey` = same;
+`by-name` = the source scope with its module names + entity-filter keys remapped
+through `alignMap` via `SnapshotScopeBinding.remapModules`). The peer face and the
+go board both derive it, so board and engine read the sink under the same scope.

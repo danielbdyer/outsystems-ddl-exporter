@@ -612,7 +612,12 @@ let runPeerTransfer
     // Acquire the two SsKey-aligned contracts (the one I/O seam this face
     // adds). An unreadable OSSYS metamodel refuses on the schema-read axis
     // (exit 6) before any gate or connection-opening work.
-    match (PeerTransfer.acquireContractsWith contractScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
+    // Each side reads under its own snapshot scope: for `by-name` the sink's
+    // clone modules carry the mapped names, so the sink scope remaps the model's
+    // module names through `alignMap` (else the sink read mis-scopes and
+    // A4-duplicates a referenced entity — `catalog.kinds.duplicateKey`).
+    let sinkScope = PeerTransfer.sinkScopeFor alignment alignMap contractScope
+    match (PeerTransfer.acquireContractsWith contractScope sinkScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
     | Error errors ->
         // The gate surface owns the copy (§5): `source.ossys.*` classifies
         // onto the schema-read axis, so the operator gets the statement +
@@ -895,7 +900,11 @@ let runCheckGo
         let items = ResizeArray<GoBoard.Item>()
         items.Add (GoBoard.item "routing" (GoBoard.Status.Green "the SsKey-aligned peer leg (both renditions physical)."))
         // -- contracts (the two OSSYS metamodel reads) ---------------------
-        match (PeerTransfer.acquireContractsWith contractScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
+        // For `by-name` the sink reads its CLONE modules — the sink scope remaps
+        // the model's module names through `alignMap` (board/engine parity with
+        // `runPeerTransfer`); `by-sskey` reads both sides under the same scope.
+        let sinkScope = PeerTransfer.sinkScopeFor opts.Alignment opts.AlignMap contractScope
+        match (PeerTransfer.acquireContractsWith contractScope sinkScope sourceSpec sinkSpec).GetAwaiter().GetResult() with
         | Error errors ->
             items.Add (GoBoard.itemWith "contracts"
                 (GoBoard.Status.Red
