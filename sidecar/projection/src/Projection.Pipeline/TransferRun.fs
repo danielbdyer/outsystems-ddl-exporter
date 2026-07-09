@@ -2355,6 +2355,13 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T1.10) — the flow's write-signoff greenlights. Defense-in-
+        // depth mirroring `runCore`: the streaming plan is sink-mint (AssignedBySink)
+        // and the selector refuses WipeAndLoad, so no destructive mode is reachable
+        // TODAY — but the identity-insert arm is present so a future preserve-keys
+        // streaming path cannot write explicit keys ungated (the runCore/streaming
+        // gate blocks no longer drift).
+        (signoffs: WriteSignoff.WriteApproval list)
         (journalDirectory: string option)
         // D — the streaming arm of the data-leg compensating-undo (M23 on the
         // estate-scale path). On a mid-stream crash the partial sink-minted rows
@@ -2451,10 +2458,28 @@ module Transfer =
                     else None
                 let staticLookupRefusal =
                     if mode = Execute then staticLookupRefusalOf sinkContract staticLookupDivs else None
-                match preWrite, staticLookupRefusal with
-                | Some refusal, _ -> return Result.failureOf refusal
-                | _, Some refusal -> return Result.failureOf refusal
-                | None, None ->
+                // T1.10 — defense-in-depth: the same identity-insert gate runCore
+                // carries, so streaming and materialized cannot drift. Inert today
+                // (the streaming plan is sink-mint), a guard for a future path.
+                let identityInsertRefusal =
+                    if mode = Execute then
+                        match identityInsertTables sinkContract plan with
+                        | [] -> None
+                        | idTables ->
+                            match WriteSignoff.verify "the flow" signoffs WriteSignoff.WriteMode.IdentityInsert idTables with
+                            | WriteSignoff.Confirmed _ -> None
+                            | WriteSignoff.Missing (reason, _) ->
+                                Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                    (sprintf "explicit identity keys are written but not greenlit — %s Declare it in the flow's `signoff` array (run `check go` for the exact edit) before authorizing the run." reason))
+                            | WriteSignoff.ScopeMismatch (reason, _) ->
+                                Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                    (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
+                    else None
+                match preWrite, identityInsertRefusal, staticLookupRefusal with
+                | Some refusal, _, _ -> return Result.failureOf refusal
+                | _, Some refusal, _ -> return Result.failureOf refusal
+                | _, _, Some refusal -> return Result.failureOf refusal
+                | None, None, None ->
                     if mode <> Execute then
                         // Phase 4 — the movement DryRun preview. Estimate
                         // each kind's rows-would-move with a cheap exact
@@ -2604,7 +2629,7 @@ module Transfer =
         // The straight load supplies the inert revert levers (`false None`) the
         // caller did not name — D's compensating-undo is reachable only through the
         // reconciling / reverse-leg faces that carry the per-environment policy.
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty Set.empty journalDirectory false None
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty Set.empty Set.empty [] journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2631,6 +2656,9 @@ module Transfer =
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
+        // 2026-07-09 (T1.10) — the flow's write-signoff greenlights (defense-in-
+        // depth; the streaming identity-insert gate reads them).
+        (signoffs: WriteSignoff.WriteApproval list)
         // D — the per-environment revert policy, collapsed at the RunFaces face
         // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
         // materialized reverse-leg face consumed them.
@@ -2646,7 +2674,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore staticLookupKinds journalDirectory autoRevert revertDir
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation reconcileIgnore staticLookupKinds signoffs journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case

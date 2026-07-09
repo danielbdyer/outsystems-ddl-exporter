@@ -486,7 +486,7 @@ let runContractPairTransfer
                 // policy the materialized branch consumes (`revertAuto`/`revertOut`
                 // derived above via `RevertPolicy.toEngine`): a mid-stream crash
                 // reverts (auto) or scripts (script) the partial sink-minted rows.
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds revertAuto revertOut)
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds signoff revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
                 (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
