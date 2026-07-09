@@ -1673,9 +1673,12 @@ let runCheckGo
                  | WriteSignoff.ScopeMismatch (reason, remedy) -> GoBoard.Status.Red (reason, remedy)
              items.Add (GoBoard.itemWith "signoff" status (wipedTables |> List.map (sprintf "wipes %s")))
          | EmissionMode.Incremental ->
-             // Upsert-only — no destructive wipe, so no signoff is required for the
-             // write strategy (drops / cdc / identity-insert / delete-scope carry
-             // their own acknowledgements).
+             // Upsert-only — no destructive wipe, so no wipe greenlight is required.
+             // Identity-insert (the FullRights reverse-leg path, not this env→env
+             // board) is gated at the ENGINE over the plan-derived
+             // `identityInsertTables` (T1.5, `transfer.writeSignoff.ungreenlit`);
+             // the go board is env→env-scoped (AssignedBySink), so it never drives
+             // an identity-insert flow — the reverse-leg probe sheet is its surface.
              items.Add (GoBoard.item "signoff" (GoBoard.Status.Green "no destructive wipe — merge/incremental is upsert-only; no write-mode greenlight required.")))
         // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
         // `check plan` walks the strategy options + the WHY of each. Advisory, so it

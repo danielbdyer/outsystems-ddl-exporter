@@ -101,6 +101,40 @@ let ``executeGate: a clean single-PK AssignedBySink plan passes`` () =
     let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
     Assert.True((Transfer.executeGate catalog plan).IsNone)
 
+// --- T1.5: the identity-insert gate (PreservedFromSource onto an IDENTITY PK) --
+// A load that writes explicit source PKs into an IDENTITY column was gated
+// NOWHERE. The detection is plan-derivable (so board and engine gate one fact);
+// the gate refuses transfer.writeSignoff.ungreenlit unless the flow greenlights
+// `identity-insert`. Fires on ANY Execute (WipeAndLoad OR Incremental/merge).
+
+[<Fact>]
+let ``T1.5 identityInsertTables: a PreservedFromSource load onto an IDENTITY-PK kind is identity-insert`` () =
+    let plan = planOf [ load singleKey IdentityDisposition.PreservedFromSource [] ]
+    Assert.Equal<string list>([ "Single" ], Transfer.identityInsertTables catalog plan)
+
+[<Fact>]
+let ``T1.5 identityInsertTables: an AssignedBySink load (the sink mints) is NOT identity-insert`` () =
+    let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
+    Assert.Empty(Transfer.identityInsertTables catalog plan)
+
+[<Fact>]
+let ``T1.5 identityInsertTables: a PreservedFromSource load onto a NON-identity (business) PK is NOT identity-insert`` () =
+    let bizKey = mkKey ["Biz"]
+    let bizKind = kindOf ["Biz"] "OSUSR_BIZ" [ pk ["Biz"] "CODE" false ]
+    let bizCatalog = IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["M2"]) (mkName "M2") [ bizKind ] ]
+    let plan = planOf [ load bizKey IdentityDisposition.PreservedFromSource [] ]
+    Assert.Empty(Transfer.identityInsertTables bizCatalog plan)
+
+[<Fact>]
+let ``T1.5 gate: identity-insert with no signoff is Missing (ungreenlit); a greenlight Confirms it`` () =
+    let tables = Transfer.identityInsertTables catalog (planOf [ load singleKey IdentityDisposition.PreservedFromSource [] ])
+    match WriteSignoff.verify "the flow" [] WriteSignoff.WriteMode.IdentityInsert tables with
+    | WriteSignoff.Missing _ -> ()
+    | other -> Assert.Fail(sprintf "expected Missing (ungreenlit), got %A" other)
+    match WriteSignoff.verify "the flow" [ WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] WriteSignoff.WriteMode.IdentityInsert tables with
+    | WriteSignoff.Confirmed _ -> ()
+    | other -> Assert.Fail(sprintf "expected Confirmed, got %A" other)
+
 // --- AC-I5: validate-user-map pre-write halt ------------------------------
 //
 // The orphan drop-set is fully resolved post-reconcile but PRE-write

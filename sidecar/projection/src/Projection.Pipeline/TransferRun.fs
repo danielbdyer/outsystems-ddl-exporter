@@ -725,6 +725,27 @@ module Transfer =
                             "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
                             escapes.Length (String.concat "; " escapes)))
 
+    /// T1.5 (2026-07-09) — the plan-derivable IDENTITY-INSERT detection. A load
+    /// whose disposition is `PreservedFromSource` onto a kind with an IDENTITY PK
+    /// writes explicit source keys straight into the identity column (SqlBulkCopy
+    /// `KeepIdentity`) — the `WriteSignoff.WriteMode.IdentityInsert` act, which can
+    /// collide with keys the target already minted. Under the default `Structural`
+    /// policy identity PKs classify `AssignedBySink` (the sink mints), so this is
+    /// empty; a `FullRights` / `PreferPreservedKeys` sink is where it arises.
+    /// Returns the logical table names touched (for the signoff scope check), so
+    /// board and engine gate the SAME plan-derived fact — the two-traversal.
+    let identityInsertTables (catalog: Catalog) (plan: DataLoadPlan) : string list =
+        plan.Loads
+        |> List.choose (fun load ->
+            if load.Disposition = IdentityDisposition.PreservedFromSource then
+                match Catalog.tryFindKind load.Kind catalog with
+                | Some kind when kind.Attributes |> List.exists (fun a -> a.IsPrimaryKey && a.IsIdentity) ->
+                    Some (Name.value kind.Name)
+                | _ -> None
+            else None)
+        |> List.distinct
+        |> List.sort
+
     /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
     /// whose load order fell back to the ALPHABETICAL degrade (an
     /// unresolvable dependency cycle anywhere in the estate) would load
@@ -1302,12 +1323,34 @@ module Transfer =
             // the SAME `report.StaticLookupDivergences` — the two-traversal.
             let staticLookupRefusal =
                 if mode = Execute then staticLookupRefusalOf catalog staticLookupDivs else None
-            match preWrite, inboundRefusal, signoffRefusal, staticLookupRefusal with
-            | Some refusal, _, _, _ -> return Result.failureOf refusal
-            | _, Some refusal, _, _ -> return Result.failureOf refusal
-            | _, _, Some refusal, _ -> return Result.failureOf refusal
-            | _, _, _, Some refusal -> return Result.failureOf refusal
-            | None, None, None, None ->
+            // The identity-insert gate (2026-07-09, T1.5): a load that writes
+            // explicit source PKs into an IDENTITY column (a PreservedFromSource
+            // identity-PK kind — the FullRights / PreferPreservedKeys path) is a
+            // destructive mode distinct from the wipe, and was gated NOWHERE. It
+            // fires on ANY Execute (WipeAndLoad OR Incremental/merge), so the merge
+            // path is covered too. Mirrors the go board's axis over the same
+            // plan-derived `identityInsertTables` — the two-traversal.
+            let identityInsertRefusal =
+                if mode = Execute then
+                    match identityInsertTables catalog plan with
+                    | [] -> None
+                    | idTables ->
+                        match WriteSignoff.verify "the flow" writeOpts.Signoffs WriteSignoff.WriteMode.IdentityInsert idTables with
+                        | WriteSignoff.Confirmed _ -> None
+                        | WriteSignoff.Missing (reason, _) ->
+                            Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                (sprintf "explicit identity keys are written but not greenlit — %s Declare it in the flow's `signoff` array (run `check go` for the exact edit) before authorizing the run." reason))
+                        | WriteSignoff.ScopeMismatch (reason, _) ->
+                            Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
+                                (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
+                else None
+            match preWrite, inboundRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal with
+            | Some refusal, _, _, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _, _, _ -> return Result.failureOf refusal
+            | _, _, Some refusal, _, _ -> return Result.failureOf refusal
+            | _, _, _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -1707,7 +1750,17 @@ module Transfer =
         : Task<Result<TransferReport>> =
         let renamesByKind =
             RenameProjection.renames diff |> RenameProjection.renameMapByKind
-        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renamesByKind)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+        // NM-40 test-only seam: pre-greenlight identity-insert so the reverse-leg
+        // canaries exercise the LOAD mechanics without re-declaring the signoff at
+        // every call site. Inert under `Structural` (no PreservedFromSource identity
+        // kind → the gate never consults it); the gate's own refusal is witnessed by
+        // the pure + docker identity-insert tests, not here. Production routes
+        // through `runReverseLegThroughConnectionsWith`, which threads the flow's
+        // real `signoff` (T1.5).
+        runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renamesByKind))
+            { WriteOptions.def with
+                IdentityPolicy = identityPolicy
+                Signoffs = [ WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] }
 
     let runWithRenamesWith
         (identityPolicy: IdentityPolicy)
