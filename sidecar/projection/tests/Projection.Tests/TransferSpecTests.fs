@@ -59,6 +59,25 @@ let ``NM-53: a no-op re-run of a clean prior run (no drops) stays exit-0`` () =
         Assert.Equal(0, Transfer.droppedRowCount clean)
         Assert.Equal(0, Transfer.exitCodeForReport false clean)
 
+// -- NM-58: a displaced duplicate-sink-key is fail-loud, symmetric with NM-51 --
+
+[<Fact>]
+let ``NM-58: a non-empty AmbiguousTargetMatchKeys is fail-loud (exit-9) and downgradable by --allow-drops`` () =
+    // A duplicate reconcile key on the SINK re-keyed every matching source FK onto
+    // the oldest sink row, silently displacing the rest — the same mis-attribution
+    // hazard as NM-51's duplicate SOURCE key, which is already fail-loud. This
+    // asserts the symmetry: the displaced set counts as drops (exit 9), cleared by
+    // the operator's `--allow-drops` (or a `ManualOverride` pinning the right
+    // winner). The go-board forecast reads the SAME report field — board and engine
+    // red one fact.
+    let displaced =
+        { reportWithReplay None with
+            AmbiguousTargetMatchKeys = [ mkKey [ "User" ], AssignedKey.ofString "30" ] }
+    Assert.True(Transfer.hasDrops displaced, "a displaced duplicate-sink-key must count as drops")
+    Assert.Equal(1, Transfer.droppedRowCount displaced)
+    Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false displaced)
+    Assert.Equal(0, Transfer.exitCodeForReport true displaced)
+
 // -- parseConnectionSpec ---------------------------------------------------
 
 [<Fact>]

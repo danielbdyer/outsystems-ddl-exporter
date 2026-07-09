@@ -2876,6 +2876,7 @@ module Transfer =
         report.SkippedReferences.Length
         + report.UnmatchedIdentities.Length
         + report.AmbiguousIdentities.Length   // NM-51
+        + report.AmbiguousTargetMatchKeys.Length   // NM-58 (2026-07-09 — symmetry with NM-51)
         + (report.ReplayedPriorDrops |> Option.defaultValue 0)   // NM-53
 
     /// Whether a completed run lost any rows (the drop-set is non-empty).
@@ -2888,6 +2889,14 @@ module Transfer =
         not (List.isEmpty report.SkippedReferences)
         || not (List.isEmpty report.UnmatchedIdentities)
         || not (List.isEmpty report.AmbiguousIdentities)   // NM-51
+        // NM-58 (2026-07-09) — a duplicate reconcile key on the SINK re-keys every
+        // matching source FK onto the oldest sink row, silently displacing the
+        // rest. Symmetric with NM-51 (the duplicate SOURCE key): both are
+        // reconcile-key ambiguity that mis-attributes identities, so both are
+        // fail-loud (exit 9) and cleared by the same `--allow-drops` acknowledgement
+        // (or a `ManualOverride` pinning the right winner). The go-board forecast
+        // reads the same report field, so board and engine red the same fact.
+        || not (List.isEmpty report.AmbiguousTargetMatchKeys)   // NM-58
         || (report.ReplayedPriorDrops |> Option.exists (fun n -> n > 0))   // NM-53
 
     /// The exit-code policy for a *completed* (Ok) Transfer. A clean run is

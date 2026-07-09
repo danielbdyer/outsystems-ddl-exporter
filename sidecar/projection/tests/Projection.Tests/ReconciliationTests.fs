@@ -168,6 +168,35 @@ let ``NM-58 reconcileKind: a duplicate Sink match key keeps the OLDEST (lowest-P
     // the displaced duplicate (30) is surfaced, not silent.
     Assert.Equal<(SsKey * AssignedKey) list>([ userKey, AssignedKey.ofString "30" ], result.AmbiguousTargetKeys)
 
+// -- collation parity (2026-07-09): the Core match folds through `matchKey` so ---
+// -- it agrees with the sink's default CI_AS collation and the board's probe ----
+
+[<Fact>]
+let ``collation parity: a source key differing only by case and trailing space matches the sink row (CI_AS), never a silent miss`` () =
+    // The same business string entered as "Alice@X" in the source and "alice@x"
+    // in the sink (plus a trailing space) is ONE key under the managed-cloud
+    // default collation. The ordinal Core match would have missed it — dropping
+    // the row (exit 9) or, under a pin, re-keying it to the owner — while the
+    // board previewed the collation-match GREEN. `matchKey` closes that drift.
+    let source = [ row "280" [ "Email", "Alice@X " ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "19" [ "Email", "bob@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    Assert.Empty result.Unmatched
+
+[<Fact>]
+let ``collation parity: two sink rows differing only by case COLLIDE (CI_AS), the oldest wins, the other is displaced`` () =
+    // Under the sink's CI_AS collation "Alice@X" and "alice@x" are the SAME key,
+    // so a DISTINCT count on the sink (the board's `sinkUniqueness` probe) counts
+    // one — and the engine must agree: they collide, the oldest (PK 18) wins, and
+    // PK 30 is displaced (an NM-58 ambiguous target). Ordinal equality would have
+    // treated them as two distinct keys and matched neither to the source.
+    let source = [ row "280" [ "Email", "ALICE@X" ] ]
+    let sink   = [ row "18" [ "Email", "Alice@X" ]; row "19" [ "Email", "bob@x" ]; row "30" [ "Email", "alice@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    Assert.Equal<(SsKey * AssignedKey) list>([ userKey, AssignedKey.ofString "30" ], result.AmbiguousTargetKeys)
+
 // -- AC-I2 bridge: every UserMatchingStrategy reaches the Transfer re-key ---
 //
 // `Reconciliation.ofUserMatching` translates the User kind's
