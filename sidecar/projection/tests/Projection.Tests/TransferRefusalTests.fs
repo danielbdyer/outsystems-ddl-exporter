@@ -188,3 +188,46 @@ let ``PE-1: with no LoadSet the wipe targets every non-reconciled loaded kind, c
     // topo [Order; Other] reversed (child-first) = [Other; Order]
     let targets = TransferResume.wipeTargets plan (topoOf [ orderKey; otherKey ]) None
     Assert.Equal<SsKey list>([ otherKey; orderKey ], targets)
+
+// --- T1.7: the revert wrong-sink guard is fail-CLOSED --------------------
+// A `revert` deletes BY KEY in whatever --against resolves to. The guard now
+// refuses a header-less script (unverifiable) AND a server- or database-
+// mismatch — only --force proceeds. Pure `guardVerdict`; the CLI face is thin.
+
+[<Fact>]
+let ``revert guard: a header-less undo is REFUSED (revert.headerMissing) unless --force`` () =
+    let p = TransferRevert.parseProvenance [ "DELETE FROM [dbo].[X] WHERE [ID] IN (1);" ]
+    Assert.False p.HasHeader
+    match TransferRevert.guardVerdict false p "srvA" "dbA" with
+    | Some e -> Assert.Equal("revert.headerMissing", e.Code)
+    | None   -> Assert.Fail "a header-less undo must refuse fail-closed"
+    Assert.Equal(None, TransferRevert.guardVerdict true p "srvA" "dbA")   // --force overrides
+
+[<Fact>]
+let ``revert guard: a database mismatch refuses (revert.sinkMismatch)`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=srvA database=dbA generated=t"; "DELETE ...;" ]
+    Assert.True p.HasHeader
+    match TransferRevert.guardVerdict false p "srvA" "dbB" with
+    | Some e -> Assert.Equal("revert.sinkMismatch", e.Code)
+    | None   -> Assert.Fail "a different database must refuse"
+
+[<Fact>]
+let ``revert guard: a SERVER mismatch refuses even when the database name matches`` () =
+    // The prior guard compared database ONLY — a same-named DB on a different
+    // server passed. The server is now checked too.
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=srvA database=dbA generated=t" ]
+    match TransferRevert.guardVerdict false p "srvB" "dbA" with
+    | Some e -> Assert.Equal("revert.sinkMismatch", e.Code)
+    | None   -> Assert.Fail "a different server must refuse even on a matching database"
+
+[<Fact>]
+let ``revert guard: a matching server+database passes; comparison is case-insensitive`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo server=SrvA database=DbA generated=t" ]
+    Assert.Equal(None, TransferRevert.guardVerdict false p "srva" "dba")
+
+[<Fact>]
+let ``revert guard: a legacy header without server= still verifies on database=`` () =
+    let p = TransferRevert.parseProvenance [ "-- projection:undo database=dbA generated=t" ]
+    Assert.Equal(None, p.Server)
+    Assert.Equal(None, TransferRevert.guardVerdict false p "anySrv" "dbA")   // matching db passes
+    Assert.True((TransferRevert.guardVerdict false p "anySrv" "dbB").IsSome)   // mismatching db still refuses

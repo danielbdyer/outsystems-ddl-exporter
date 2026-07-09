@@ -713,16 +713,11 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
     let allLines =
         System.IO.File.ReadAllLines scriptPath
         |> Array.map (fun l -> l.Trim())
-    // The provenance header the artifact writer stamps (the wrong-sink
-    // guard): `-- projection:<kind> server=<s> database=<db> generated=<t>`.
-    let stampedDatabase =
-        allLines
-        |> Array.tryPick (fun l ->
-            if l.StartsWith "-- projection:" then
-                l.Split(' ')
-                |> Array.tryPick (fun tok ->
-                    if tok.StartsWith "database=" then Some (tok.Substring 9) else None)
-            else None)
+    // The provenance the artifact writer stamps (the wrong-sink guard):
+    // `-- projection:<kind> server=<s> database=<db> generated=<t>`. Parsed
+    // purely by `TransferRevert.parseProvenance`; the fail-closed verdict is
+    // `TransferRevert.guardVerdict` (checked below, once the sink resolves).
+    let provenance = TransferRevert.parseProvenance allLines
     let statements =
         allLines
         |> Array.filter (fun l ->
@@ -779,23 +774,18 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
             6
         | Ok sink ->
             use sink = sink
-            // THE WRONG-SINK GUARD (2026-07-06, the final-pass critique's
-            // top finding): the artifact deletes BY KEY in whatever database
-            // --against resolves to. The header stamped at capture time
-            // names the database the keys belong to; a mismatch refuses by
-            // name (--force is the deliberate override — e.g. a restored
-            // copy under a new name). A header-less artifact (pre-stamp)
-            // proceeds with a printed note, never a refusal.
-            match stampedDatabase with
-            | Some stamped when not (System.String.Equals(stamped, sink.Database, System.StringComparison.OrdinalIgnoreCase)) && not force ->
-                TtyRenderer.renderVoicedError
-                    (ValidationError.create "revert.sinkMismatch"
-                        (sprintf "this undo was captured against database '%s', but --against resolves to '%s'. Re-point --against at the environment the transfer wrote, or pass --force if the database was deliberately renamed/restored." stamped sink.Database))
+            // THE WRONG-SINK GUARD (2026-07-06; fail-CLOSED 2026-07-09): the
+            // artifact deletes BY KEY in whatever server/database --against
+            // resolves to. `guardVerdict` refuses a server- OR database-mismatch
+            // AND a header-less script (which can no longer be verified) — only
+            // --force proceeds past it. The single most destructive standalone
+            // verb defaults to refuse, not proceed.
+            match TransferRevert.guardVerdict force provenance sink.DataSource sink.Database with
+            | Some refusal ->
+                TtyRenderer.renderVoicedError refusal
                 dumpBench "revert"
                 7
-            | _ ->
-            if Option.isNone stampedDatabase then
-                printfn "  (note: the script carries no provenance header — cannot verify it matches this sink.)"
+            | None ->
             // ONE transaction: the undo lands whole or not at all (the
             // child-first order means FKs never block; a mid-script failure
             // rolls the earlier deletes back rather than leaving a
