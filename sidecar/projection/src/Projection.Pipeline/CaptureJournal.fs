@@ -247,6 +247,42 @@ module CaptureJournal =
         fs.Write(bytes, 0, bytes.Length)
         fs.Flush(true)   // fsync — the record is on disk before control returns
 
+    // -- T0.4 write-ahead intent (2026-07-09) — close the at-least-once window ---
+    // A chunk is journaled TWICE: an INTENT record (WrittenCount = `IntentPending`)
+    // fsync'd BEFORE the sink write, then the COMPLETE record (WrittenCount ≥ 0,
+    // pairs) fsync'd after. `load`/`openResumeIndex` are last-write-wins per
+    // (kind, chunkIx), so a clean chunk resolves to its COMPLETE record; a crash
+    // between the two leaves only the INTENT — an IN-DOUBT chunk the resume path
+    // probes rather than silently re-mints.
+
+    /// The `WrittenCount` sentinel marking an INTENT (attempted-but-unconfirmed)
+    /// record. Negative, so it never collides with a real written count (≥ 0).
+    let IntentPending : int = -1
+
+    /// A record is COMPLETE (its sink write is confirmed) iff its written count is
+    /// non-negative; an INTENT record carries `IntentPending`.
+    let isComplete (record: ChunkRecord) : bool = record.WrittenCount >= 0
+
+    /// The write-ahead INTENT record for a chunk about to be written — the
+    /// fingerprint fields only, no pairs (the assigned identities are not known
+    /// until the sink write returns).
+    let intentRecord (kind: string) (chunkIx: int) (firstPk: string) (lastPk: string) (rawCount: int) : ChunkRecord =
+        { Kind = kind; ChunkIx = chunkIx; FirstPk = firstPk; LastPk = lastPk
+          RawCount = rawCount; WrittenCount = IntentPending; Pairs = [||] }
+
+    /// The total rows a kind's COMPLETED chunks wrote, per the resume index — the
+    /// sink row count expected for the kind if an in-doubt chunk did NOT commit
+    /// (the streaming load starts empty; T1.8 forbids incremental into a populated
+    /// sink). Reads one record per journaled chunk of the kind; INTENT records
+    /// (unconfirmed) contribute nothing.
+    let completedWrittenCountForKind (index: ResumeIndex) (kindRoot: string) : int =
+        index.Offsets
+        |> Seq.filter (fun kv -> fst kv.Key = kindRoot)
+        |> Seq.sumBy (fun kv ->
+            match JsonSerializer.Deserialize<ChunkRecord> (readLineAt index.IndexFilePath kv.Value) with
+            | null   -> 0
+            | record -> if isComplete record then record.WrittenCount else 0)
+
     // -- L2: the journal grain on the ledger contract (R3 / RI-3) ------------
 
     /// The chunk's SOURCE fingerprint — what `Ledger.resumeAdmit` compares

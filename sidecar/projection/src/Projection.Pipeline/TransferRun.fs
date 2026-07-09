@@ -2062,7 +2062,7 @@ module Transfer =
                     |> Option.bind (fun index ->
                         CaptureJournal.tryFindRecord index (SsKey.rootOriginal load.Kind) chunkIx)
                 match journaled with
-                | Some record ->
+                | Some record when CaptureJournal.isComplete record ->
                     // L2 — the journal grain's ResumeAdmit (R3 / RI-3): the
                     // live source slice recomputes the fingerprint; admission
                     // replays the journaled pairs into the shared remap
@@ -2075,43 +2075,79 @@ module Transfer =
                         return Result.success ((Verified.value admitted).WrittenCount, [], [], lane)
                     | Error drift ->
                         return Result.failureOf (sourceDriftRefusal load.Kind drift)
-                | None ->
-                    // PL-9 (S16): every chunk-invariant piece below arrives
-                    // staged on the KindWriteLane; the chunk only applies.
-                    let remapped = wl.RepointChunk chunkRaw
-                    let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
-                    let! laneOutcome =
+                | inDoubtOrFresh ->
+                    // T0.4 — a fresh chunk (`None`) OR an INTENT-only, IN-DOUBT
+                    // chunk (`Some` with `WrittenCount = IntentPending`): a prior
+                    // run fsync'd the write-ahead intent but crashed before the
+                    // COMPLETE record. Probe whether that attempt committed — a sink
+                    // count equal to the kind's completed-chunk total means it did
+                    // NOT (safe to re-write), more means it may have partially
+                    // committed and resume cannot rebuild the sink-minted identities
+                    // (refuse by name, never a silent re-mint / duplication).
+                    let! inDoubtRefusal =
                         task {
-                            match load.Disposition with
-                            | IdentityDisposition.AssignedBySink ->
-                                match wl.IdentityCapture with
-                                | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
-                                    do! Bulk.copyRowsSinkMinted sink kind.Physical (wl.CellRowsNoId remapped.Rows)
-                                    return [], lane, []
-                                | Some (_, capture) ->
-                                    let! outcome = capture lane remapped.Rows
-                                    let pairs, succeeded, descents = outcome
-                                    pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
-                                    return pairs, succeeded, descents
-                                | None ->
+                            match inDoubtOrFresh with
+                            | None -> return None
+                            | Some _ ->
+                                let expectedBefore =
+                                    journalIndex
+                                    |> Option.map (fun idx -> CaptureJournal.completedWrittenCountForKind idx (SsKey.rootOriginal load.Kind))
+                                    |> Option.defaultValue 0
+                                let! actualNow = countKindRows sink kind
+                                if actualNow = expectedBefore then return None
+                                else
+                                    return Some
+                                        (ValidationError.create "transfer.resume.chunkInDoubt"
+                                            (sprintf "chunk %d of %s was attempted but never confirmed, and the sink now holds %d row(s) vs the %d its completed chunks wrote — it may have partially committed, and resume cannot rebuild the sink-minted identities. Re-run with strategy: replace, or clear %s on the sink and resume." chunkIx (Name.value kind.Name) actualNow expectedBefore (Name.value kind.Name)))
+                        }
+                    match inDoubtRefusal with
+                    | Some refusal -> return Result.failureOf refusal
+                    | None ->
+                        // Write-ahead INTENT (fsync'd) BEFORE the sink write, so a
+                        // crash in the write→complete window leaves an in-doubt
+                        // record the probe above catches — not a silent re-mint.
+                        journal
+                        |> Option.iter (fun j ->
+                            CaptureJournal.append j
+                                (CaptureJournal.intentRecord (SsKey.rootOriginal load.Kind) chunkIx firstPk lastPk rawCount))
+                        // PL-9 (S16): every chunk-invariant piece below arrives
+                        // staged on the KindWriteLane; the chunk only applies.
+                        let remapped = wl.RepointChunk chunkRaw
+                        let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
+                        let! laneOutcome =
+                            task {
+                                match load.Disposition with
+                                | IdentityDisposition.AssignedBySink ->
+                                    match wl.IdentityCapture with
+                                    | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                        do! Bulk.copyRowsSinkMinted sink kind.Physical (wl.CellRowsNoId remapped.Rows)
+                                        return [], lane, []
+                                    | Some (_, capture) ->
+                                        let! outcome = capture lane remapped.Rows
+                                        let pairs, succeeded, descents = outcome
+                                        pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
+                                        return pairs, succeeded, descents
+                                    | None ->
+                                        do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
+                                        return [], lane, []
+                                | _ ->
                                     do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
                                     return [], lane, []
-                            | _ ->
-                                do! Bulk.copyRows sink kind.Physical (wl.CellRows remapped.Rows)
-                                return [], lane, []
-                        }
-                    let pairs, succeededLane, descents = laneOutcome
-                    journal
-                    |> Option.iter (fun j ->
-                        CaptureJournal.append j
-                            { Kind = SsKey.rootOriginal load.Kind
-                              ChunkIx = chunkIx
-                              FirstPk = firstPk
-                              LastPk = lastPk
-                              RawCount = rawCount
-                              WrittenCount = List.length remapped.Rows
-                              Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray })
-                    return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
+                            }
+                        let pairs, succeededLane, descents = laneOutcome
+                        // COMPLETE record (fsync'd) — last-write-wins over the intent,
+                        // so a clean chunk resolves to this on the next resume.
+                        journal
+                        |> Option.iter (fun j ->
+                            CaptureJournal.append j
+                                { Kind = SsKey.rootOriginal load.Kind
+                                  ChunkIx = chunkIx
+                                  FirstPk = firstPk
+                                  LastPk = lastPk
+                                  RawCount = rawCount
+                                  WrittenCount = List.length remapped.Rows
+                                  Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray })
+                        return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
             }
 
         // One-chunk ingest PREFETCH: chunk N+1 starts pulling from the
