@@ -1442,9 +1442,16 @@ module Transfer =
             // is `strategy: replace` (wipe-then-load, idempotent) or clearing the
             // subset — exactly the board's remedy. Probes the sink, so it lives
             // outside the pure preWrite.
+            // The RESUMABLE envelope is exempt (2026-07-10, surfaced by the
+            // AC-G10 canary): its whole contract is re-running the same
+            // command into a partially-written sink — it clears the partial
+            // state FK-first under the completion marker and reloads, so the
+            // re-mint duplication this gate guards against cannot occur there.
+            // (T1.8 as merged gated EVERY Incremental Execute, which made the
+            // crash-recovery re-run unreachable.)
             let! populatedSinkRefusal =
                 task {
-                    if mode = Execute && writeOpts.Emission = EmissionMode.Incremental then
+                    if mode = Execute && writeOpts.Emission = EmissionMode.Incremental && not writeOpts.Resumable then
                         // The subset kinds the board's re-run axis probes: the
                         // declared load-set, or (a full transfer) every kind minus
                         // the reconciled ones (matched, never inserted).

@@ -2117,3 +2117,15 @@ The manifest program's four slices are BUILT. The confidence equation the
 design named — comprehension (triage) × control (the workbench) × consent
 (the act ledger + gate) × fidelity (one derivation for board and engine) —
 now has an executable witness on every factor.
+
+### Amendment (2026-07-10, the slice-4b closing sweep) — the resumable envelope exempted from the populated-sink gate
+
+The full docker pool at slice-4b close surfaced ONE failure, pre-existing on
+main: T1.8's populated-sink gate (merged in the Tier-0/1 hardening) gated
+EVERY Incremental Execute, which made the resumable envelope's crash-recovery
+re-run (the AC-G10 canary: re-run the same command into a partially-written
+sink) unreachable — the exact contract the envelope exists for. The gate now
+exempts `Resumable` runs: the envelope clears the partial state FK-first
+under the completion marker and reloads, so the re-mint duplication the gate
+guards against cannot occur there. AC-G10 recovers; the T1.8 witness
+(non-resumable populated sink still refuses) stays green; pure pool 4174/0.
