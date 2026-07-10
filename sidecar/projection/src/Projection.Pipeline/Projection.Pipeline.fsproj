@@ -64,6 +64,7 @@
     <Compile Include="TransferRevert.fs" />
     <Compile Include="TransferResume.fs" />
     <Compile Include="TransferSubset.fs" />
+    <Compile Include="CsvReferencedPull.fs" />
     <!-- Moved before TransferRun.fs (2026-07-10, slice 4b): the per-act
          consent gate inside runCore reads ActEvidence, which reads
          EvidenceCache, which reads PeerTransfer + TransferImpact - none of
@@ -98,6 +99,11 @@
     <Compile Include="SliceExtractRun.fs" />
     <Compile Include="SliceApplyRun.fs" />
     <Compile Include="SliceFlowRun.fs" />
+    <!-- CsvExportRun.fs: the csv-destination data export (2026-07-10) -
+         reads the OSSYS contract, ingests the subset, optionally closes over
+         referenced non-static rows (CsvReferencedPull + ClosureOracle), and
+         renders through Targets.Data/CsvExport. -->
+    <Compile Include="CsvExportRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />

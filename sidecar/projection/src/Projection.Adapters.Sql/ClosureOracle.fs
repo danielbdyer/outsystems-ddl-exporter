@@ -125,7 +125,16 @@ module ClosureOracle =
     /// frontiers are not expanded), reading parents live via `fetch`. Bounded
     /// by a hard hop cap (the runaway backstop). Returns the closed state; the
     /// caller derives `Closure.materialize` / `Closure.reportWith` from it.
-    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Result<Closure.ClosureState>> =
+    ///
+    /// The `walkWhere` form adds a caller-supplied fetch FILTER (2026-07-10, the
+    /// csv-destination program): every planner-emitted fetch passes through
+    /// `keep` before it is executed, so a caller can hold the walk back from
+    /// whole KINDS by SsKey — the csv export skips static reference tables
+    /// this way. Termination holds because the pure planner already recorded
+    /// the filtered keys as Requested (they are never re-demanded), and a
+    /// filtered kind never enters the closed row set. `walk` below is the
+    /// keep-everything specialization — byte-identical to its pre-filter self.
+    let walkWhere (keep: Closure.RowKeyFetch -> bool) (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Result<Closure.ClosureState>> =
         task {
             let mutable state = Closure.empty
             let mutable pending = roots
@@ -136,7 +145,8 @@ module ClosureOracle =
                 // Pure planner: fold the fetched rows in, plan the next hop's
                 // parent fetches (honouring `Stop` frontiers). Empty IS the
                 // fixed point.
-                let state', fetches = Closure.stepWith directives sourceCatalog state pending
+                let state', planned = Closure.stepWith directives sourceCatalog state pending
+                let fetches = List.filter keep planned
                 state <- state'
                 if List.isEmpty fetches then
                     running <- false
@@ -162,3 +172,6 @@ module ClosureOracle =
             | Some es -> return Result.failureOf es
             | None    -> return Result.success state
         }
+
+    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Result<Closure.ClosureState>> =
+        walkWhere (fun _ -> true) cnn sourceCatalog directives roots

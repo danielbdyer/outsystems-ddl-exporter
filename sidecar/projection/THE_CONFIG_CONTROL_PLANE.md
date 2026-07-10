@@ -109,7 +109,8 @@ collisions are the two `model` ones — folded into one `model` namespace.
   "environments": {
     "cloud-dev": { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },
     "cloud-qa":  { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml" },
-    "cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "archetype": "managed-dml" }
+    "cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "archetype": "managed-dml" },
+    "exports":   { "access": "csv", "out": "./exports/uat" }
   },
   "model":     { "env": "cloud-dev", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
   "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
@@ -117,11 +118,22 @@ collisions are the two `model` ones — folded into one `model` namespace.
   "emission":  { "ssdt": true, "dacpac": true },
   "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },
   "flows": {
-    "golden": { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer"], "rekey": "file:./secrets/users.csv" },
-    "audit":  { "from": "cloud-dev", "to": "docker", "scope": "schema", "shaping": { "model": { "modules": ["Ops"] } } }
+    "golden":   { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer"], "rekey": "file:./secrets/users.csv" },
+    "audit":    { "from": "cloud-dev", "to": "docker", "scope": "schema", "shaping": { "model": { "modules": ["Ops"] } } },
+    "snapshot": { "from": "cloud-qa", "to": "exports", "scope": "data", "tables": ["Customer"], "withReferenced": true }
   }
 }
 ```
+
+**The `csv` access kind (2026-07-10)** names a file destination for DATA: a flow whose `to`
+is a csv place exports one CSV per table (physical name, physical headers, RFC 4180) plus an
+`export-manifest.json` into the place's `out` directory — a read-only produce with no live
+write, so no signoff/consent gate applies and `--go` is inert (the PublishBundle precedent).
+The flow key `withReferenced: true` (or the per-run `--with-referenced` flag) additionally
+pulls the rows that the exported set's foreign keys reference — followed transitively, keyed
+(only the referenced rows), with static reference tables excluded. With the pull off, escaping
+references are narrated with the remedy named, never refused. See
+`PARTIAL_TRANSFER_RUNBOOK.md` Step 8 for the operator recipe.
 
 **Shaping is global** (applies to every flow's emission — the singular control plane); a flow
 MAY carry an opt-in `shaping: {…}` that deep-overrides the global blocks for that flow only

@@ -31,6 +31,12 @@ type Access =
     | Bundle of out: string * readConn: ConnectionRef option
     | Direct of ConnectionRef
     | Docker
+    /// A file-production DATA EXPORT target (2026-07-10, the csv-destination
+    /// program): the flow's transferred rows are WRITTEN as one CSV file per
+    /// table (plus export-manifest.json) into `out`. Read-only against every
+    /// database — a csv place is never a live connection, never probed, and
+    /// never the source of anything.
+    | Csv of out: string
 
 /// Permission facet — what may *change* at a target (THE_CLI.md §6). A refusal
 /// gate, not a setting: a schema-changing flow against `DataOnly` is a type
@@ -465,7 +471,7 @@ module ProjectionConfig =
     let private parseAccess (envName: string) (el: JsonElement) : Result<Access> =
         match getString el "access" with
         | None ->
-            Result.failureOf (err "cli.config.envAccessMissing" (sprintf "environment '%s' sets no 'access' (bundle | direct | docker)." envName))
+            Result.failureOf (err "cli.config.envAccessMissing" (sprintf "environment '%s' sets no 'access' (bundle | direct | docker | csv)." envName))
         | Some a ->
             match a.ToLowerInvariant() with
             | "bundle" ->
@@ -496,7 +502,11 @@ module ProjectionConfig =
                         | Ok r    -> Result.success (Access.Direct r)
                         | Error e -> Result.failure e
             | "docker" -> Result.success Access.Docker
-            | other -> Result.failureOf (err "cli.config.envAccessUnknown" (sprintf "environment '%s' access '%s' is not bundle | direct | docker." envName other))
+            | "csv" ->
+                match getString el "out" with
+                | None -> Result.failureOf (err "cli.config.envCsvNoOut" (sprintf "environment '%s' is access:csv but sets no 'out' folder — the directory the CSV files and export-manifest.json are written to." envName))
+                | Some out -> Result.success (Access.Csv out)
+            | other -> Result.failureOf (err "cli.config.envAccessUnknown" (sprintf "environment '%s' access '%s' is not bundle | direct | docker | csv." envName other))
 
     /// The permission facet (a refusal gate): schema+data | data.
     let private parseGrant (envName: string) (raw: string) : Result<Grant> =
@@ -922,6 +932,7 @@ module ProjectionConfig =
                           Strategy = strategy
                           Resumable = getBool el "resumable"
                           Streaming = getBool el "streaming"
+                          WithReferenced = getBool el "withReferenced"
                           Journal = getString el "journal" }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
@@ -1171,7 +1182,8 @@ module ProjectionConfig =
              setStr o "out" out
              (match conn with Some r -> setStr o "conn" (renderConnRef r) | None -> ())
          | Access.Direct r   -> setStr o "access" "direct"; setStr o "conn" (renderConnRef r)
-         | Access.Docker     -> setStr o "access" "docker")
+         | Access.Docker     -> setStr o "access" "docker"
+         | Access.Csv out    -> setStr o "access" "csv"; setStr o "out" out)
         setOptStr o "grant" (env.Grant |> Option.map renderGrant)
         setOptStr o "store" env.Store
         setOptStr o "rendition" (env.Rendition |> Option.map renderRendition)
@@ -1288,6 +1300,9 @@ module ProjectionConfig =
         setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
         (if flow.Resumable then o.["resumable"] <- JsonValue.Create true)
         (if flow.Streaming then o.["streaming"] <- JsonValue.Create true)
+        // 2026-07-10 — the csv export's referenced pull; the false default
+        // round-trips through the absent arm.
+        (if flow.WithReferenced then o.["withReferenced"] <- JsonValue.Create true)
         setOptStr o "journal" flow.Journal
         o
 
@@ -1437,6 +1452,8 @@ module Command =
           match spec.Scope, spec.Destination with
           | (Scope.Schema | Scope.Data), (Destination.Folder _ | Destination.Docker) ->
               "scope accepted; the file/docker bundle carries all legs (all applied)."
+          | Scope.Schema, Destination.Csv _ ->
+              "scope accepted; a csv destination exports rows only — there is no schema leg to carry."
           | _ -> ()
           match spec.Baseline with
           | Baseline.Auto -> ()
@@ -1512,6 +1529,21 @@ module Command =
             | Destination.Docker ->
                 if hasModel then PlanAction.DeployDocker (spec.Model, modelOssys)
                 else modelMissing "projection (docker): "
+            | Destination.Csv dir ->
+                // The csv data export (2026-07-10): rows read live from the
+                // `from` environment, written as one CSV per table + the
+                // export manifest. Routed on the DESTINATION alone — direction
+                // (`dataMove`/UpPeer) belongs to the live arm below and is
+                // never consulted here. Files are the safe produce, so the
+                // action is identical with and without `--go`.
+                (match spec.Data with
+                 | DataOrigin.FromTarget alias ->
+                     (match dataConn alias with
+                      | Ok src   -> PlanAction.TransferCsvExport (src, dir, opts, spec.WithReferenced)
+                      | Error es -> PlanAction.Refused (6, List.head es))
+                 | DataOrigin.Model | DataOrigin.Synthetic _ | DataOrigin.NoData ->
+                     PlanAction.Refused (2, err "cli.move.csvNeedsEnvSource"
+                        "a csv destination exports rows read live from a source environment; set the flow's `from` to a live (direct) environment."))
             | Destination.Live connRef ->
                 let conn = connSpecOf connRef
                 let schemaOnly = (spec.Scope = Scope.Schema)
@@ -1748,6 +1780,7 @@ module Command =
         | Access.Bundle (out, _) -> Destination.Folder out
         | Access.Direct r        -> Destination.Live r
         | Access.Docker          -> Destination.Docker
+        | Access.Csv out         -> Destination.Csv out
 
     /// M3.b (pure) — recognize a flow as a B→A reverse leg from the M1 `rendition`
     /// flag: `Some` exactly when the flow reads from a live `logical` source (B)
@@ -1971,6 +2004,7 @@ module Command =
                         // (`--resumable`/`--streaming` force ON; `--journal` overrides
                         // the dir). Absent config + absent flag = byte-identical.
                         Resumable = (flow.Resumable || opts.Resumable)
+                        WithReferenced = (flow.WithReferenced || opts.WithReferenced)
                         Streaming = (flow.Streaming || opts.Streaming)
                         Journal = (opts.Journal |> Option.orElse flow.Journal)
                         Atomic = atomicResolved
@@ -2026,7 +2060,12 @@ module Command =
                     let tableNote =
                         match List.isEmpty flow.Tables, plan.Action with
                         | true, _ -> []
-                        | false, (PlanAction.Transfer _ | PlanAction.RunReverseLeg _) -> []
+                        // TransferPeer and TransferCsvExport honor `tables` too
+                        // (the subset drives their load set) — the note would be
+                        // a false "does not apply" on exactly the flows that use
+                        // it most. (TransferPeer added 2026-07-10 with the csv
+                        // arm; a drift fix, found during the csv routing work.)
+                        | false, (PlanAction.Transfer _ | PlanAction.RunReverseLeg _ | PlanAction.TransferPeer _ | PlanAction.TransferCsvExport _) -> []
                         | false, _ -> [ sprintf "flow tables (%s) apply to the data-transfer leg only; this action moves the full model." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 
@@ -2074,7 +2113,7 @@ module Command =
                     | Some flow ->
                         let previewOpts : FlowRunOpts =
                             { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false
-                              Resumable = false; Streaming = false; Journal = None; NoAtomic = false
+                              Resumable = false; Streaming = false; Journal = None; NoAtomic = false; WithReferenced = false
                               AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
                         let fromLabel = match flow.From with FlowSource.Env e -> e | FlowSource.Model -> "model" | FlowSource.Synthetic _ -> "synthetic" | FlowSource.NoData -> "none"
                         let asJson =
@@ -2318,6 +2357,7 @@ module Command =
                       NoAtomic   = List.contains "--no-atomic" rest
                       AutoRevert = List.contains "--auto-revert" rest
                       RevertDir  = flagValue rest "--revert-dir"
+                      WithReferenced = List.contains "--with-referenced" rest
                       Seed       = seed
                       Scale      = scale
                       Correction = flagValue rest "--correction" }

@@ -243,6 +243,17 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // an unscoped config binds to the show-me-everything default.
         withRun "projection transfer" (fun () ->
             runPeerTransfer (SnapshotScopeBinding.fromModel shaping.Model) src sink opts.Reconcile opts.ReconcileIgnore opts.SupportingScope opts.Signoff opts.ActSignoff opts.ForeignRefs opts.Alignment opts.AlignMap opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.RevertPolicy opts.RevertDir opts.SinkCapability)
+    | PlanAction.TransferCsvExport (src, dir, opts, withReferenced) ->
+        // The csv data export (2026-07-10): rows read live from the source
+        // environment, written as FILES — a safe produce, so the register
+        // pins Go even under a preview flow (the PublishBundle precedent: a
+        // frame that says "nothing will be written" over a file-writing arm
+        // would misstate). No run envelopes — the face narrates directly,
+        // like the emit family. The contract read runs under the
+        // projection.json `model` scope, the same modeled estate every other
+        // verb reads.
+        shellRun "projection (csv export)" Shell.Go (fun () ->
+            Faces.CsvExport.runCsvExport (SnapshotScopeBinding.fromModel shaping.Model) src dir opts withReferenced)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
