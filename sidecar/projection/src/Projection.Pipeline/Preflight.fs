@@ -679,6 +679,15 @@ module Preflight =
         /// widen / --allow-drops). The drop-set class — a live run would lose
         /// or dangle rows — so it rides the destructive-failure exit (9).
         | SubsetFkEscape
+        /// The write-consent axis (2026-07-10, slice 4b): a destructive or
+        /// creative write the flow has not consented to — a mode not greenlit
+        /// in `signoff` (`transfer.writeSignoff.ungreenlit`) or an act not
+        /// blessed at its current fingerprint
+        /// (`transfer.writeSignoff.actUnblessed`). The destructive-failure
+        /// class (exit 9): the write WOULD alter rows the operator has not
+        /// approved. (`ungreenlit` previously fell to the unclassified 3 —
+        /// registering the axis is the drift fix, not a behavior redesign.)
+        | ConsentWithheld
         /// The named default for a code outside the known gate vocabulary — a
         /// generic refusal. NOT a silent pass: it still carries the generic
         /// non-zero refusal exit (3), so an unmapped gate fails loud.
@@ -698,6 +707,7 @@ module Preflight =
         | MidWriteNotProtected        -> "mid-write not protected"
         | ShapeDivergence             -> "schema shapes diverge"
         | SubsetFkEscape              -> "relationships escape the subset"
+        | ConsentWithheld             -> "write consent withheld"
         | UnclassifiedRefusal         -> "unclassified refusal"
 
     /// The distinct CLI exit code for each gate axis — TOTAL over the closed
@@ -719,6 +729,7 @@ module Preflight =
         | MidWriteNotProtected        -> 9
         | ShapeDivergence             -> 5
         | SubsetFkEscape              -> 9
+        | ConsentWithheld             -> 9
         | UnclassifiedRefusal         -> 3
 
     /// Route a refusal code onto its gate axis (`GateLabel`). The explicit
@@ -763,6 +774,9 @@ module Preflight =
             // backstop (the parity sweep — legacy/forward legs) ride ONE
             // axis: exit 9, the drop-set class.
             SubsetFkEscape
+        elif code.StartsWith "transfer.writeSignoff." then
+            // The write-consent axis: an ungreenlit mode or an unblessed act.
+            ConsentWithheld
         elif code.StartsWith "source.ossys." then
             // The peer leg's contract acquisition — an unreadable OSSYS
             // metamodel is the schema-read failure class (exit 6), same axis

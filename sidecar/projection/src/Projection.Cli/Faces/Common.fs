@@ -15,7 +15,10 @@ open Projection.Cli.OperatorConsole
 /// key is absent. The reconciliation / integrity / load-plan narration surfaces
 /// share this so a real OSSYS estate doesn't render as a wall of hex.
 let nameOf (names: Map<SsKey, string>) (key: SsKey) : string =
-    Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)
+    // Delegates to the Core renderer (2026-07-10, slice 4b) — the act-consent
+    // execute gate renders its tokens through the SAME function, so a board
+    // token and an engine token cannot drift by a naming policy.
+    Catalog.displayNameIn names key
 
 /// The shared verb spine (recon #3 — the `Face` combinator). Every face's tail is
 /// `let exit = <body, or the live Watch board on --pretty>; dumpBench "<verb>"; exit`

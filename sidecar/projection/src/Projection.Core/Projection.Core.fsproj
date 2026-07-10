@@ -175,6 +175,12 @@
     <Compile Include="Passes/LogicalColumnEmission.fs" />
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <Compile Include="TransferScope.fs" />
+    <!-- ActConsent.fs: the per-act consent alphabet (slice 4a, the transfer-
+         manifest program). Pure: the closed Act DU, the deterministic
+         fingerprints (SHA-256 effect stream / population boundary), and THE
+         act derivation over DataLoadPlan + TopologicalOrder + EmissionMode —
+         so it compiles after all three. -->
+    <Compile Include="ActConsent.fs" />
     <!-- H-071 through H-076 pass implementations — compiled after
          ComposeState.fs; return types from the files above. -->
     <Compile Include="Passes/AdvisoryTuning.fs" />

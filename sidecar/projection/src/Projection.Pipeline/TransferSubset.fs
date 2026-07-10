@@ -89,3 +89,59 @@ module TransferSubset =
                     |> Option.map (fun target -> (source, r, target))
                 else None))
         |> List.sortBy (fun (k, r, _) -> Name.value k.Name, Name.value r.Name)
+
+    /// Resolve the declared table subset (logical entity names, or the
+    /// module-qualified `Module.Entity` form) to a load-set of `SsKey`s
+    /// against the source contract — refusing any name the schema does not
+    /// carry, AND any bare name that resolves to more than one kind (total
+    /// decisions, named skips; 2026-07-06, adversarial MEDIUM #6 — the prior
+    /// `Map.ofList` silently last-won a duplicate logical name across
+    /// modules, transferring whichever kind sorted last). Empty list →
+    /// `None` (all). Public since the peer leg: the peer face resolves the
+    /// SAME subset ahead of its shape / subset-FK gates, one vocabulary,
+    /// one resolver.
+    let resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
+        if List.isEmpty tables then Result.success None
+        else
+            let all = Catalog.allModulesKinds contract
+            let resolveOne (t: string) : Choice<SsKey, string, string> =
+                let byBareName () =
+                    all
+                    |> List.filter (fun (_, k) -> System.String.Equals(Name.value k.Name, t, System.StringComparison.OrdinalIgnoreCase))
+                match t.IndexOf '.' with
+                | dot when dot > 0 ->
+                    let moduleName = t.Substring(0, dot)
+                    let entityName = t.Substring(dot + 1)
+                    match CatalogResolution.tryKindByLogical contract moduleName entityName with
+                    | Some key -> Choice1Of3 key
+                    | None ->
+                        // A dotted string may be a bare entity name that
+                        // happens to carry a '.'; fall through to the bare
+                        // lookup before refusing.
+                        match byBareName () with
+                        | [ (_, k) ] -> Choice1Of3 k.SsKey
+                        | [] -> Choice2Of3 t
+                        | _ -> Choice3Of3 t
+                | _ ->
+                    match byBareName () with
+                    | [ (_, k) ] -> Choice1Of3 k.SsKey
+                    | [] -> Choice2Of3 t
+                    | many ->
+                        let qualified =
+                            many
+                            |> List.map (fun (m, k) -> sprintf "%s.%s" (Name.value m.Name) (Name.value k.Name))
+                            |> String.concat ", "
+                        Choice3Of3 (sprintf "%s (matches %s)" t qualified)
+            let resolved  = tables |> List.map resolveOne
+            let missing   = resolved |> List.choose (function Choice2Of3 t -> Some t | _ -> None)
+            let ambiguous = resolved |> List.choose (function Choice3Of3 t -> Some t | _ -> None)
+            if not (List.isEmpty missing) then
+                Result.failureOf
+                    (ValidationError.create "transfer.tablesUnknown"
+                        (sprintf "table subset names not found in the source schema: %s" (String.concat ", " missing)))
+            elif not (List.isEmpty ambiguous) then
+                Result.failureOf
+                    (ValidationError.create "transfer.tablesAmbiguous"
+                        (sprintf "table subset names match more than one entity — qualify them as Module.Entity: %s" (String.concat "; " ambiguous)))
+            else
+                Result.success (Some (resolved |> List.choose (function Choice1Of3 k -> Some k | _ -> None) |> Set.ofList))

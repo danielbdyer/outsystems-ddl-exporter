@@ -1743,3 +1743,389 @@ modules → `catalog.kinds.duplicateKey` (A4: kind identity is globally unique).
 `by-name` = the source scope with its module names + entity-filter keys remapped
 through `alignMap` via `SnapshotScopeBinding.remapModules`). The peer face and the
 go board both derive it, so board and engine read the sink under the same scope.
+
+### Addendum — operator-fidelity sweep: six board/failure/copy fixes (2026-07-10)
+
+A forward-looking fidelity review (four parallel studies: engine ceiling, operator
+surface, named backlog, proof gaps) fed a critique whose highest-leverage cheap
+findings were closed here. Six fixes, all on the foreknowledge / observability
+surface — the exact confidence a large-subset transfer rests on:
+
+- **Board/engine drop-set parity (the exit-9 hole).** The go board rendered only
+  `cycles` / `identities` / `drops`, so a dry run carrying an ambiguous reconcile
+  key (source OR sink) or a replayed prior-run drop went GREEN while the same
+  report drove `--go` to exit 9. New axes — `ambiguous source keys`,
+  `ambiguous target keys`, `replayed drops` — read the SAME `report` fields the
+  engine's `hasDrops` counts, so board and engine can no longer disagree on the
+  exit-9 verdict.
+- **The unverified verdict (green over an unread sink).** A forecast whose sink
+  `before` count would not probe rendered `?` but stayed a clean GREEN; likewise
+  a `foreignRefs` target outside the contract. Both are now ADVISORY items marked
+  `Unverified` (`GoBoard.asUnverified`), and a green board with any of them reads
+  **"GREEN. Every gate passes; N finding(s) below remain unverified."** — exit
+  still 0 (not a fault), but the gap is named, never silent. JSON gains
+  `verdict: "green-unverified"`, `unverifiedCount`, and per-item `unverified`.
+- **Failure-path compensation pointer.** A crashed Execute printed the classified
+  error but no pointer to the undo; `narrateCompensationPointer` now names
+  `transfer-revert.sql` on the `Error` path of both `runTransfer` and
+  `runContractPairTransfer`, mirroring the success tail's `narrateUndoPointer`.
+- **Runbook ⇔ board DENY copy reconciled.** The runbook called table-level DENY
+  "the one standing preflight blind spot"; the board's grant probe closed the
+  object-scope-DENY-on-a-planned-table case on 2026-07-07. The runbook now scopes
+  the residual honestly (a DENY on a table outside the probed planned/read set, or
+  a schema/column-scope DENY).
+- **Identity re-mint + by-name basis, acknowledged not parenthetical.** A new
+  `identity basis` advisory axis states plainly that the target mints fresh
+  surrogate keys (source key values are not preserved) and, under `by-name`, that
+  the correspondence is name-derived — no longer a parenthetical on a green pass.
+- **`foreignRefs` unverified acknowledgement surfaced.** A declared-stable ref
+  the engine takes on the flow's word now shows as an `Unverified` `foreign refs`
+  advisory naming each ref and the confirm-before-authorizing move.
+
+**Voice audit (operator request).** The first cut used a `[blind]` mark +
+"BLIND SPOT" verdict; both violate THE_VOICE (figurative-term ban §2.2, shout-caps,
+no next move, and a mis-aligned mark). Reworked to the register's own "Could not
+verify" pattern (§"Could not verify"): the concept is **unverified**, unverified
+items are advisories (mark `[note]`), each lead states the fact + names the move,
+and exit codes are off the statement line. `BlindSpot`→`Unverified` throughout.
+
+**Proven:** Release FS3511-clean; pure pool 4118 pass / 0 fail; docker
+`GoBoardDocker` 5/5 green (identity-basis line + reworded copy witnessed end to
+end). New pure witnesses in `PeerTransferTests`: the unverified downgrade
+(verdict + JSON + `[note]` mark) and red-still-blocks-under-`asUnverified`.
+
+**Named follow-on (witness gaps, honestly):** docker witnesses for the three new
+drop axes (needs a duplicate-reconcile-key seed) and for the unverified forecast
+(needs an induced sink-probe failure) — pure-covered here, live-unwitnessed. The
+larger frontier the review named stays open: crossing the real managed-cloud
+threshold (`PHASE_1_REAL_WIRE_HARNESS.md`), and expressiveness (row filter /
+masking / key-preservation) as the next program.
+
+### Addendum — the witness follow-ons closed, and one axis retired (2026-07-10)
+
+Taking on the named witness gaps surfaced that two of the three drop axes added
+above were not reachable the way the parity argument assumed — so the follow-on
+both added witnesses AND corrected the fix:
+
+- **`ambiguous target keys` — WITNESSED.** A duplicate reconcile key on the SINK
+  (two cities named 'Lisbon', the duplicate-email user-directory shape) makes the
+  engine keep the oldest and displace the rest (`Reconciliation.reconcileKindWith`
+  records the displaced rows during the sink-index build), so a live `--go` exits
+  9. The board used to show GREEN here — `identities` passes, because every source
+  city DOES match a target row — diverging from the engine. New docker witness
+  `GoBoardDockerTests.« a duplicate reconcile key on the sink reds ambiguous target
+  keys »` pins the RED (and asserts `identities` was green, the contrast that
+  makes the divergence concrete).
+- **`replayed drops` — RETIRED (unreachable on the board).** `ReplayedPriorDrops`
+  is populated only by a RESUMABLE run replaying a completed marker, but the go
+  board's dry run is non-resumable by construction (`runReverseLegThroughConnections
+  With … resumable=false`), so the field is always `None` on the board. The axis
+  could never render — a zero-consumer build (the house "delete dead symmetry"
+  rule) — so it was removed, and the code now states plainly that replayed drops
+  are a resumable-run-only exit-9 cause the board does not forecast.
+- **`ambiguous source keys` — KEPT, defensive/pure-only.** `AmbiguousIdentities`
+  fires only on a duplicate source SURROGATE (`SurrogateRemap.capture` →
+  `surrogateRemap.duplicateSource`), which unique-PK table data cannot produce; it
+  is the mirror of the same field the live run report already narrates. Kept for
+  board/engine symmetry, honestly not docker-witnessable from a seed.
+- **The unverified verdict — WITNESSED via `foreignRefs`.** The clean, reachable
+  path to `green-unverified` is a `foreignRefs` declaration (an out-of-contract
+  reference the board cannot check). New docker witness `« a foreignRefs
+  declaration yields the green-unverified verdict — surfaced, exit still 0 »`
+  proves the axis renders unverified and the verdict names it while the exit stays
+  0. The forecast-`?` unverified path (a sink count that would not probe) stays
+  pure-witnessed only: on an otherwise-green board it is reachable solely under a
+  transient per-table probe failure (a missing/denied table reds the grant/re-run
+  axes instead), so it is defensive, not deterministically seedable.
+
+**Proven:** docker `GoBoardDocker` 7/7 green (5 prior + the 2 new witnesses);
+pure `GoBoard`/`PeerTransfer` green; Release FS3511-clean. Net: the reachable
+exit-9 parity gap (`ambiguous target keys`) is now witnessed against a live pair,
+and the board no longer carries an axis it can never render.
+
+### Addendum — the manifest program, slice 1: triage by coupling (2026-07-10)
+
+The first built slice of THE_TRANSFER_MANIFEST.md (the operator
+comprehension-and-consent instrument; design committed same day). Scope:
+presentation only — no decision surface, no consent change, no execution-path
+touch.
+
+- **`TransferTriage` (new, pure).** Each relational unit of the transfer (a
+  `TransferImpact.Segment`, the weakly-connected FK component) classifies into
+  one of five classes — settled-static / settled-closed / settled-noop /
+  open-escaping / open-destructive — from signals the board already holds
+  (escaping FKs, drift verdicts, static-lookup divergences, the wiped and
+  inserted/deleted kinds, the declared static-lookup set). The single safety
+  invariant: classification FAILS TOWARD FOREGROUNDING — any signal forces an
+  Open class; a wipe can never fold. Ranking is total (band, then affected-row
+  weight with a foregrounding penalty, then the full member-key list), so the
+  pretty and machine lenses agree under any input permutation.
+- **The `--impact` artifact, triaged.** Open units render first, the top-ranked
+  expanded; each settled unit is ONE line whose badge states the precise
+  mechanism ("source and target hold the same rows, verified column by column —
+  nothing is written"); the settled tail past 8 folds to one counted line. The
+  fold hides scroll, never rows: the summed tallies are preserved and the
+  `.json` twin carries EVERY unit with its `triage` and `couplingWeight`,
+  uncapped.
+- **`CheckGoArgs` reified.** `PlanAction.CheckGo`'s payload (three adjacent
+  bools — the positional-misordering trap) became a record, constructed
+  literally at the parse site; the face and dispatch consume it. `Review`
+  rides the record (false; parsed when slice 3 lands).
+- **Voice audit (operator feedback, mid-slice).** The first badge cut carried
+  abstractions ("matched to the target's own rows", "the heaviest coupled
+  unit"); reworked to plain-exacting mechanism statements before landing.
+
+**Proven:** pure pool 4127 pass / 0 fail (9 new `TransferTriageTests`:
+totality, fail-toward-foregrounding, wipe-never-folds, rank
+permutation-invariance, tally preservation, static-requires-clean, the uncapped
+twin); docker 8/8 (`GoBoardDocker` 7 + the new `TriageWitnessDockerTests` —
+a live two-cell pair where the identical `RefData.Country` static unit folds to
+one line under differing sink surrogates and the escaping Customer unit ranks
+first and opens); Release FS3511-clean.
+
+Next: slice 2, the `EvidenceCache` + exact per-answer deltas (the fidelity
+substrate for the decision workbench).
+
+### Addendum — the manifest program, slice 2: the EvidenceCache (2026-07-10)
+
+The fidelity substrate beneath the decision workbench. The row substrate is
+read ONCE per board build — from the same connections the authoritative dry
+run uses — and every answer archetype's exact consequence is derived purely
+over it, through the same Core `reconcileKindWith` the live run matches with.
+One derivation; a later toggle is a lookup, never a second forecast.
+
+- **`EvidenceCache` (new).** The cache holds full rows only for the
+  escape-target kinds (the reconcile candidates) plus two columns (pk, fk)
+  per referencing in-scope kind — the documented memory bound. Four answer
+  archetypes per escaping reference — reconcile-by-column / pin-to-one-row /
+  widen / declare-identical — each with an exact `ForecastDelta` (re-keyed,
+  dropped, rows entering scope, and the widen fixpoint's spawned/resolved
+  decision keys), the exact sink-uniqueness fact, and the fingerprint INPUTS
+  slice 4 will hash (matched business-key values with their resolved sink
+  identities; unmatched values) — named typed products of the one pass.
+- **The component is the recompute unit.** A row that one edge's unresolved
+  reference drops never lands, so its other references are moot: per-target
+  counts are derived over rows that survive EVERY edge of the component, and
+  toggling one target's answer recomputes its siblings. Pure witness + the
+  live witness both pin the coupling (Category's count grows 2 → 3 when
+  Customer's answer changes from reconcile to pin).
+- **Board wiring.** The relationships axis now carries one `consequence:`
+  sentence per answer per escaping target — complete sentences, exact counts,
+  the qualifying fact named (Voice-audited twice on operator feedback; the
+  widen line names the specific tables a widening would open decisions for).
+- **FS3511 scar re-confirmed twice.** `fill`'s catalog resolution hoisted
+  before the task opens (typed read-plans; no tuple-pattern match heads a
+  `let!`); and two subtler family members found in Release: a bare
+  conditional expression in a resumable body, and a wildcard `let! _` — both
+  fail reduction; a hoisted helper call and a named bind reduce.
+
+**Proven:** pure pool 4135 pass / 0 fail (8 new `EvidenceCacheTests`: exact
+reconcile delta with matched/unmatched products, the §4.3 coupling, pin
+exactness without an anchor, the widen fixpoint's spawned keys, blank
+references neutral, every candidate answer real, permutation determinism);
+docker 9/9 including the fidelity keystone `EvidenceCacheDockerTests` — over a
+live two-cell pair, the cache-computed delta EQUALS the authoritative dry run
+(surviving plan rows = re-keyed count; skipped references = drop count) and
+the coupled toggle recomputes the sibling; Release FS3511-clean.
+
+Next: slice 3, the decision workbench (`ItemBody.Decisions` + the `--review`
+navigator).
+
+### Addendum — the manifest program, slice 3: the decision workbench (2026-07-10)
+
+The control pillar: each escaping reference becomes one question with its
+answers side by side, decided by comparison rather than guess-and-rerun.
+
+- **The typed decision surface.** `GoBoard.ItemBody.Decisions` (the fourth
+  body arm, primitive-typed like its siblings): one table per escaping
+  reference — answer, re-keys, drops, enters, opens — with ALL prose (escape
+  lines, probe evidence, consequence sentences) riding the item's Detail, so
+  the pretty and machine lenses read the same words and a piped board loses
+  nothing.
+- **One candidate derivation.** The evidence probe proposed name-shaped
+  candidates the decision tables could not see (`CandidateReconcileColumns`
+  was unique-index-only) — the two surfaces disagreed on the answer set. The
+  probe's derivation is now the published `PeerTransfer.candidateColumnsFor`
+  (index-backed first, then name-shaped, at most three), and the probe, the
+  tables, and the workbench all read it.
+- **`check go <flow> --review`.** On a real terminal (the shared
+  `Navigator.isInteractiveSurface` predicate, extracted at its second
+  consumer): the workbench — arrows walk the decisions, Space selects the
+  next answer and the coupled unit recomputes (a pure lookup over the slice-2
+  cache), `w` writes the selections to `projection.json` as the existing
+  `reconcile` / `tables` / `supportingScope` vocabulary (append, never
+  clobber; a pinned row's key is named as the one by-hand edit), and q with
+  unsaved selections asks once. On a pipe: the same decision tables render
+  one-shot; the exit code is the board's in every branch.
+- **Composition, not generalization.** `ReviewNavigator` wraps
+  `Navigator.Model`; navigation keys delegate to `Navigator.step` unchanged
+  (its totality witnesses untouched). The ONE paired traversal builds both
+  the View and the path→decision index, so the cursor's meaning cannot drift
+  from what is drawn; a rebuild clamps the cursor to the longest still-valid
+  path prefix. The terminal bracket and `safeMarkupLine` extracted at their
+  second consumers.
+
+**Proven:** pure pool 4142 pass / 0 fail (7 new `ReviewNavigatorTests`: the
+paired-index validity, step totality over every ConsoleKey × reachable state,
+Space-selects-and-dirties, the coupled recompute in the rendered rows, the
+q-asks-once guard, the write gesture's vocabulary mapping with the pin named
+by hand, full-cycle wrap); docker `GoBoardDocker` 8/8 including the
+headless-twin witness (a piped `--review` renders the exact consequence
+sentences; `--format json` carries them); `TriageWitness` + `EvidenceCache`
+witnesses re-green; Release FS3511-clean.
+
+Next: slice 4a — `ActConsent` (the eight-arm act taxonomy + fingerprints),
+narrate-only.
+
+---
+
+## Addendum (2026-07-10, the transfer-manifest program, slice 4a) — per-act consent, narrate-only
+
+The mode-level `signoff` greenlights a CLASS of act ("replace is approved");
+this slice names each INSTANCE — the wipe of one table at one exact
+population, the match of one table's rows at one exact set of pairs — and
+makes each individually blessable. Narrate-only: the board and the workbench
+carry the full ledger; no execution path changed (the 4b enforcement follows).
+
+- **`ActConsent` (Core, pure).** The closed eight-arm act alphabet (Wipe /
+  IdentityInsert / DeleteScope / Mint / Rekey / Match / Resolve / Drop), the
+  canonical token per act, the operator statement per act (complete
+  sentences, the mechanism named), and THE act derivation `actsOf` over the
+  same plan the run executes — the board's consent axis and the 4b execute
+  gate read one list, so blessed-set and performed-set cannot drift. The
+  bodies of `TransferResume.wipeTargets` and `Transfer.identityInsertTables`
+  relocated here; the old names are one-line delegations (byte-identity
+  witnessed).
+- **Fingerprints.** A blessing binds to what was READ, never to a category:
+  `population:<first>:<last>:<count>` pins a population (the wipe's blast
+  radius, the mint's planned rows); `effect:<sha256>` pins a computed outcome
+  — the canonical stream is header (token, resolution), one record per
+  matched pair and per unmatched value (ordinally sorted, US/RS separators,
+  the NUL absent-marker out of band), trailer (exact sink total/distinct +
+  planned count). Any drift — a pair edit, a re-pointed identity, a target
+  duplicate, a re-toggled resolution, a new unmatched value — re-opens the
+  act. `parseFingerprint` is total; lowercase hex only (a blessing is copied,
+  never re-cased).
+- **`ActEvidence` (Pipeline, pure).** The bridge from substrate already in
+  hand to fingerprints: the wipe from the face's MIN/MAX+COUNT sink probe,
+  the mint/identity-insert from the plan's own rows, the re-key from the
+  plan's (row, reference) correspondence, the match from
+  `EvidenceCache.matchProducts` — the SAME resolver the workbench forecast
+  reads (published at its second consumer). An act whose substrate would not
+  read is ABSENT and narrated as unread, never invented.
+- **The config surface.** The flow's one `signoff` array admits a second
+  closed entry shape: `{ "act": token, "fingerprint": text, … }` beside
+  `{ "mode": … }`. Both-or-neither refuses by name; a missing or unparseable
+  fingerprint refuses by name; duplicate tokens refuse. Render emits modes
+  first, then acts sorted (A44 round-trip witnessed on the mixed array);
+  threaded expressible⇔reachable through Flow → MovementSpec → LoadOpts →
+  `WriteOptions.ActSignoffs`.
+- **The board's `consent` axis.** Advisory beside `signoff`: the headline
+  counts blessed vs awaiting; the ledger prints one act per entry — BLESSED /
+  OPEN (with the paste-able `{ "act": …, "fingerprint": … }` line) /
+  REOPENED (the blessing on file was captured at a different fingerprint) /
+  UNREAD (the substrate would not read) — plus STALE for a blessing naming an
+  act the run does not perform.
+- **The workbench's bless arms.** The consent ledger renders below the
+  decisions (same paired traversal, same path index); `d` blesses the act
+  under the cursor, `a` blesses every act except an identity-insert (explicit
+  keys are blessed one at a time). Both capture the exact fingerprint SET at
+  gesture time — never a predicate — and write through in the same keystroke
+  (`RelaxationStore.setFlowSignoffEntries`, mode approvals preserved
+  verbatim): a blessing is commitment, where the decision cycle is
+  deliberation.
+
+**Proven:** pure pool 4170 pass / 0 fail (17 new: the canonical renderer
+alone, hash determinism + order-freedom + the five drift re-opens + the
+absent-marker non-aliasing, total fingerprint-text round-trips, the actsOf
+arms + relocation byte-identity + token/statement closure, the three
+fingerprint-source derivations, the six config-parse refusals + the mixed
+A44 round-trip, the workbench act-index validity + step totality with acts +
+the blessed-only-at-matching-fingerprint render); docker
+`ActConsentDockerTests` live against two mock environments (open → blessed
+verbatim from the board's own printed fingerprints → re-opened by one
+inserted sink row; JSON twin carries the ledger; the dry runs wrote
+nothing); Release FS3511-clean.
+
+Next: slice 4b — the always-on execute gate on the peer path
+(`transfer.writeSignoff.actUnblessed`, appended LAST in the refusal chain),
+`blessAll` for the peer-execute witnesses, runbook step 6.
+
+---
+
+## Addendum (2026-07-10, the transfer-manifest program, slice 4b) — the consent gate, always-on for the peer path
+
+The manifest program's closing slice: the 4a ledger becomes the live run's
+gate. Every destructive or creative act a peer Execute performs must be
+blessed at its CURRENT fingerprint, unconditionally — the operator's
+activation decision, not a config option.
+
+- **The gate.** `transfer.writeSignoff.actUnblessed` — the SEVENTH slot in
+  `runCore`'s refusal chain, appended LAST so an integrity fault can never
+  hide behind a consent fault; the six existing slots byte-identical.
+  Evaluated on every Execute where `ActConsentEnforced` is set (path routing
+  the faces own: TRUE on the peer face and the peer engine entry, FALSE on
+  the reverse/legacy leg and the streaming realization — each carrying its
+  named-scope note). The refusal's message counts the open acts and states
+  the most consequential one (`ActConsent.severity`: the wipe leads, the
+  match trails); its metadata carries the FULL sorted set, token →
+  fingerprint + statement — the same entries the board prints.
+- **One derivation, two surfaces.** The gate reads `ActConsent.actsOf` over
+  the same plan, `ActEvidence.populationProbe` / `fillMatchCache` over the
+  same connections (the two IO seams published in ActEvidence and now shared
+  by the board's consent axis — the face's inline reads deleted), and renders
+  tokens through `Catalog.displayNameIn` (published at its second consumer;
+  `Faces.Common.nameOf` delegates). What the board shows blessed is exactly
+  what the run accepts — byte-identical by construction.
+- **Every strategy arm fingerprints.** A pinned `ManualOverride` match hashes
+  the authored key map itself (pure config — re-pointing the pin re-opens the
+  act); a fallback folds its primary and names the fallback key in the
+  resolution. Caught by the pinned-owner witness on the first full-pool run —
+  a Match act with no derivable fingerprint cannot be blessed, and the gate
+  refuses honestly rather than guessing.
+- **The exit class.** `transfer.writeSignoff.*` registers on the new
+  `ConsentWithheld` axis (exit 9, the destructive-failure class) with its §5
+  gate copy — and `ungreenlit`, which previously fell to the unclassified
+  exit 3, rides the same axis (the drift fix, recorded).
+- **Compile-order move, with two relocations.** The evidence chain
+  (`NameAlignment` → `PeerTransfer` → `TransferImpact` → `EvidenceCache` →
+  `ActEvidence`) now compiles before `TransferRun` so `runCore` can read it;
+  `TransferSubset.resolveLoadSet` (relocated; `Transfer.resolveLoadSet`
+  delegates) breaks the one back-edge. The wizard's greenlight write
+  (`RelaxationStore.setFlowSignoff`) now PRESERVES act blessings and
+  unnamed modes instead of clobbering the array, and prints the consent
+  companion line after writing a mode.
+- **The witnesses bless.** Every peer-execute witness rides
+  `TransferActs.blessAllAndRun` (test support): run once, take the blessings
+  VERBATIM from the refusal's own metadata, run again — the refusal's payload
+  is itself load-bearing and tested. The reverse-leg canary routes through
+  the `With` entry with the gate off (its named scope); refusal-path
+  witnesses stay one-pass (their refusals sit in earlier slots).
+
+**Proven:** pure pool 4174 pass / 0 fail (the severity total order, the
+ConsentWithheld classification for both codes, the bless-all metadata bridge
+with unread acts held out, the pinned-pin substrate + its re-point re-open);
+docker: the enforcement witness live (unblessed peer Execute refuses with the
+full act set and writes NOTHING; blessed verbatim from the refusal it writes;
+a source edit re-opens exactly the touched act and no other), the 4a ledger
+witness re-green, and the touched suites (PeerAligned, PeerWitness,
+PeerManagedGrant, ClonedModule, GoBoard incl. the proving loop,
+ReverseLegCanary, EvidenceCache, TriageWitness) green; Release FS3511-clean;
+full docker pool run at close.
+
+The manifest program's four slices are BUILT. The confidence equation the
+design named — comprehension (triage) × control (the workbench) × consent
+(the act ledger + gate) × fidelity (one derivation for board and engine) —
+now has an executable witness on every factor.
+
+### Amendment (2026-07-10, the slice-4b closing sweep) — the resumable envelope exempted from the populated-sink gate
+
+The full docker pool at slice-4b close surfaced ONE failure, pre-existing on
+main: T1.8's populated-sink gate (merged in the Tier-0/1 hardening) gated
+EVERY Incremental Execute, which made the resumable envelope's crash-recovery
+re-run (the AC-G10 canary: re-run the same command into a partially-written
+sink) unreachable — the exact contract the envelope exists for. The gate now
+exempts `Resumable` runs: the envelope clears the partial state FK-first
+under the completion marker and reloads, so the re-mint duplication the gate
+guards against cannot occur there. AC-G10 recovers; the T1.8 witness
+(non-resumable populated sink still refuses) stays green; pure pool 4174/0.

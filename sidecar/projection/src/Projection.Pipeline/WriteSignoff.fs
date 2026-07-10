@@ -1,5 +1,7 @@
 namespace Projection.Pipeline
 
+open Projection.Core
+
 // LINT-ALLOW-FILE: the write-signoff vocabulary composes operator-facing IMPACT
 //   prose (the greenlight's default acknowledged-impact per destructive mode, and
 //   the go-board remedy) at a config/reporting boundary, exactly as `GoBoard` /
@@ -57,6 +59,29 @@ module WriteSignoff =
     /// annotates it).
     let greenlit (m: WriteMode) : WriteApproval =
         { Mode = m; Tables = []; AcknowledgedImpact = None; ApprovedBy = None; Date = None }
+
+    /// One authored per-ACT blessing (2026-07-10, the transfer-manifest
+    /// program, slice 4a) — the SECOND entry shape the flow's one `signoff`
+    /// array admits: `{ "act": "<canonical token>", "fingerprint":
+    /// "effect:<hex64>" | "population:<first>:<last>:<count>", … }`. Where a
+    /// `WriteApproval` greenlights a CLASS of act ("replace is approved"), a
+    /// blessing approves one INSTANCE at one exact substrate: the fingerprint
+    /// is captured at blessing time, so any change to what the act would do
+    /// re-opens it — the blessing can never rubber-stamp a different reality
+    /// than the one the operator read.
+    type ActBlessing =
+        { /// The canonical act token (`ActConsent.tokenOf`) this blessing names.
+          Act                : string
+          /// The exact fingerprint captured at blessing time.
+          Fingerprint        : ActConsent.ActFingerprint
+          AcknowledgedImpact : string option
+          ApprovedBy         : string option
+          Date               : string option }
+
+    /// The minimal blessing for one act at one exact fingerprint — the shape
+    /// the workbench's bless gesture writes before the operator annotates it.
+    let blessed (token: string) (fp: ActConsent.ActFingerprint) : ActBlessing =
+        { Act = token; Fingerprint = fp; AcknowledgedImpact = None; ApprovedBy = None; Date = None }
 
     /// The canonical config label for a mode.
     let modeLabel (m: WriteMode) : string =

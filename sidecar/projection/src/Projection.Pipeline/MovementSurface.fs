@@ -712,15 +712,19 @@ module ProjectionConfig =
                     Result.failure (dupes |> List.map (fun t -> err "cli.config.supportingScopeDuplicate" (sprintf "flow '%s' supportingScope names table '%s' more than once." name t)))
                 else Result.success entries
 
-    /// The per-flow write-signoff greenlight (2026-07-08, the greenlight program):
-    /// an array of `{ mode, tables?, acknowledgedImpact?, approvedBy?, date? }`.
-    /// `mode` is required + closed (`WriteSignoff.parseMode`); a duplicate mode is
-    /// refused. Every error aggregates in one pass — the `parseSupportingScope`
-    /// shape.
-    let private parseSignoff (name: string) (el: JsonElement) : Result<WriteSignoff.WriteApproval list> =
+    /// The per-flow write-signoff greenlight (2026-07-08, the greenlight program;
+    /// act blessings added 2026-07-10, slice 4a): ONE array, TWO closed entry
+    /// shapes — a mode approval `{ mode, tables?, acknowledgedImpact?,
+    /// approvedBy?, date? }` and an act blessing `{ act, fingerprint,
+    /// acknowledgedImpact?, approvedBy?, date? }`. An entry branches on which
+    /// of `act` / `mode` it sets (both / neither is a named refusal); a
+    /// duplicate mode or act token is refused; an unparseable fingerprint is a
+    /// named parse refusal. Every error aggregates in one pass — the
+    /// `parseSupportingScope` shape.
+    let private parseSignoff (name: string) (el: JsonElement) : Result<WriteSignoff.WriteApproval list * WriteSignoff.ActBlessing list> =
         match el.TryGetProperty "signoff" with
-        | false, _ -> Result.success []
-        | true, arr when arr.ValueKind = JsonValueKind.Null -> Result.success []
+        | false, _ -> Result.success ([], [])
+        | true, arr when arr.ValueKind = JsonValueKind.Null -> Result.success ([], [])
         | true, arr when arr.ValueKind <> JsonValueKind.Array ->
             Result.failureOf (err "cli.config.signoffShape" (sprintf "flow '%s' 'signoff' must be an array of objects." name))
         | true, arr ->
@@ -740,33 +744,58 @@ module ProjectionConfig =
                             | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                             | _ -> () ]
                 | _ -> []
-            let entryOf (o: JsonElement) : Result<WriteSignoff.WriteApproval> =
+            let entryOf (o: JsonElement) : Result<Choice<WriteSignoff.WriteApproval, WriteSignoff.ActBlessing>> =
                 if o.ValueKind <> JsonValueKind.Object then
                     Result.failureOf (err "cli.config.signoffShape" (sprintf "flow '%s' signoff entries must be objects." name))
                 else
-                    match field o "mode" with
-                    | None -> Result.failureOf (err "cli.config.signoffNoMode" (sprintf "flow '%s' signoff entry sets no 'mode'." name))
-                    | Some modeStr ->
+                    match field o "act", field o "mode" with
+                    | Some _, Some _ ->
+                        Result.failureOf (err "cli.config.signoffShape" (sprintf "flow '%s' has a signoff entry setting BOTH 'act' and 'mode' — an entry is one mode approval or one act blessing, never both." name))
+                    | None, None ->
+                        Result.failureOf (err "cli.config.signoffNoMode" (sprintf "flow '%s' signoff entry sets neither 'mode' nor 'act'." name))
+                    | Some actToken, None ->
+                        match field o "fingerprint" with
+                        | None ->
+                            Result.failureOf (err "cli.config.signoffNoFingerprint" (sprintf "flow '%s' signoff blesses act '%s' without a 'fingerprint' — a blessing binds to the exact substrate it approved; re-run `check go --review` and bless there, or copy the fingerprint the board prints." name actToken))
+                        | Some fpText ->
+                            match ActConsent.parseFingerprint fpText with
+                            | None ->
+                                Result.failureOf (err "cli.config.signoffFingerprintUnparseable" (sprintf "flow '%s' signoff act '%s' carries fingerprint '%s', which is neither effect:<64 lowercase hex> nor population:<first>:<last>:<count>." name actToken fpText))
+                            | Some fp ->
+                                Result.success (Choice2Of2
+                                    ({ Act = actToken
+                                       Fingerprint = fp
+                                       AcknowledgedImpact = field o "acknowledgedImpact"
+                                       ApprovedBy = field o "approvedBy"
+                                       Date = field o "date" } : WriteSignoff.ActBlessing))
+                    | None, Some modeStr ->
                         match WriteSignoff.parseMode modeStr with
                         | None -> Result.failureOf (err "cli.config.signoffModeUnknown" (sprintf "flow '%s' signoff mode '%s' is not replace | fresh | drops | cdc | identity-insert | delete-scope." name modeStr))
                         | Some mode ->
-                            Result.success
+                            Result.success (Choice1Of2
                                 { WriteSignoff.Mode = mode
                                   WriteSignoff.Tables = strings o "tables"
                                   WriteSignoff.AcknowledgedImpact = field o "acknowledgedImpact"
                                   WriteSignoff.ApprovedBy = field o "approvedBy"
-                                  WriteSignoff.Date = field o "date" }
+                                  WriteSignoff.Date = field o "date" })
             let parsed = [ for o in arr.EnumerateArray() -> entryOf o ]
             let errors = parsed |> List.collect (function Ok _ -> [] | Error es -> es)
             if not (List.isEmpty errors) then Result.failure errors
             else
                 let entries = parsed |> List.choose (function Ok e -> Some e | _ -> None)
-                let dupes =
-                    entries |> List.countBy (fun e -> WriteSignoff.modeLabel e.Mode)
+                let modes = entries |> List.choose (function Choice1Of2 m -> Some m | _ -> None)
+                let acts = entries |> List.choose (function Choice2Of2 a -> Some a | _ -> None)
+                let dupeModes =
+                    modes |> List.countBy (fun e -> WriteSignoff.modeLabel e.Mode)
                     |> List.choose (fun (m, n) -> if n > 1 then Some m else None)
-                if not (List.isEmpty dupes) then
-                    Result.failure (dupes |> List.map (fun m -> err "cli.config.signoffDuplicate" (sprintf "flow '%s' signoff names mode '%s' more than once." name m)))
-                else Result.success entries
+                let dupeActs =
+                    acts |> List.countBy (fun a -> a.Act)
+                    |> List.choose (fun (a, n) -> if n > 1 then Some a else None)
+                if not (List.isEmpty dupeModes) || not (List.isEmpty dupeActs) then
+                    Result.failure
+                        ((dupeModes |> List.map (fun m -> err "cli.config.signoffDuplicate" (sprintf "flow '%s' signoff names mode '%s' more than once." name m)))
+                         @ (dupeActs |> List.map (fun a -> err "cli.config.signoffDuplicate" (sprintf "flow '%s' signoff blesses act '%s' more than once." name a))))
+                else Result.success (modes, acts)
 
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
@@ -885,10 +914,10 @@ module ProjectionConfig =
                     | Error es, _ | _, Error es -> Result.failure es
                 match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el, parseSupportingScope name tables el, parseSignoff name el, alignmentR with
                 | Error es, _, _, _, _, _, _, _ | _, Error es, _, _, _, _, _, _ | _, _, Error es, _, _, _, _, _ | _, _, _, Error es, _, _, _, _ | _, _, _, _, Error es, _, _, _ | _, _, _, _, _, Error es, _, _ | _, _, _, _, _, _, Error es, _ | _, _, _, _, _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok signoff, Ok (alignment, alignMap) ->
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy, Ok supportingScope, Ok (signoff, actSignoff), Ok (alignment, alignMap) ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; Alignment = alignment; AlignMap = alignMap; SupportingScope = supportingScope; Signoff = signoff; Scope = scope; Shape = shape; Shaping = shaping
+                          Tables = tables; Reconcile = reconcile; ReconcileIgnore = reconcileIgnore; ForeignRefs = foreignRefs; Alignment = alignment; AlignMap = alignMap; SupportingScope = supportingScope; Signoff = signoff; ActSignoff = actSignoff; Scope = scope; Shape = shape; Shaping = shaping
                           // AUDIT (config-primary) — the flow's declared execution profile.
                           Strategy = strategy
                           Resumable = getBool el "resumable"
@@ -1229,7 +1258,10 @@ module ProjectionConfig =
         // 2026-07-08 — the write-signoff greenlight, in a fixed field order
         // (mode, tables?, acknowledgedImpact?, approvedBy?, date?) so `parse ∘
         // render = id` holds; the empty default round-trips through the absent arm.
-        (if not (List.isEmpty flow.Signoff) then
+        // 2026-07-10 (slice 4a) — the same array carries the act blessings,
+        // AFTER the mode approvals, sorted by act token, each in the fixed
+        // order (act, fingerprint, acknowledgedImpact?, approvedBy?, date?).
+        (if not (List.isEmpty flow.Signoff) || not (List.isEmpty flow.ActSignoff) then
             let a = JsonArray()
             for s in flow.Signoff do
                 let so = JsonObject()
@@ -1242,6 +1274,14 @@ module ProjectionConfig =
                 setOptStr so "approvedBy" s.ApprovedBy
                 setOptStr so "date" s.Date
                 a.Add so
+            for b in flow.ActSignoff |> List.sortBy (fun b -> b.Act) do
+                let bo = JsonObject()
+                bo.["act"] <- JsonValue.Create b.Act
+                bo.["fingerprint"] <- JsonValue.Create (ActConsent.fingerprintText b.Fingerprint)
+                setOptStr bo "acknowledgedImpact" b.AcknowledgedImpact
+                setOptStr bo "approvedBy" b.ApprovedBy
+                setOptStr bo "date" b.Date
+                a.Add bo
             o.["signoff"] <- a)
         // AUDIT (config-primary) — the execution profile. Each omits its default
         // (Merge / false / None) so an existing flow round-trips byte-identically.
@@ -1426,6 +1466,7 @@ module Command =
           AlignMap    = spec.AlignMap
           SupportingScope = spec.SupportingScope
           Signoff     = spec.Signoff
+          ActSignoff  = spec.ActSignoff
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Resumable   = spec.Resumable
@@ -1921,6 +1962,7 @@ module Command =
                         AlignMap = flow.AlignMap
                         SupportingScope = flow.SupportingScope
                         Signoff  = flow.Signoff
+                        ActSignoff = flow.ActSignoff
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
@@ -2041,9 +2083,20 @@ module Command =
                             | None -> false
                         let emitSql = List.contains "--sql" rest
                         let emitImpact = List.contains "--impact" rest
-                        PlanAction.CheckGo (flowName, fromLabel, flow.To, asJson, emitSql, emitImpact, (planFlow cfg flow previewOpts).Action)
+                        let review = List.contains "--review" rest
+                        // The record is constructed LITERALLY here (never `with`
+                        // off a default — the reconstruction trap).
+                        PlanAction.CheckGo
+                            { Flow       = flowName
+                              FromLabel  = fromLabel
+                              ToLabel    = flow.To
+                              AsJson     = asJson
+                              EmitSql    = emitSql
+                              EmitImpact = emitImpact
+                              Review     = review
+                              Planned    = (planFlow cfg flow previewOpts).Action }
                 | _ ->
-                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--impact] [--format json]).")
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--impact] [--review] [--format json]).")
             | "plan" :: rest ->
                 // THE TRANSFER PLAN — the declarative guided counterpart to the go
                 // board. Built pure from the flow's CURRENT choices (no DB): each

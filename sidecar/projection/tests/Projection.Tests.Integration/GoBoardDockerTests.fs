@@ -23,7 +23,9 @@ open Projection.Pipeline
 open Projection.Adapters.OssysSql
 open Projection.Cli.Faces.Transfer
 
-module private GoBoardFixtures =
+// Shared with `TriageWitnessDockerTests` (the second consumer, 2026-07-10) —
+// publication earned per the house rule; the fixtures stay test-support only.
+module GoBoardFixtures =
 
     let skipIfNoDocker (label: string) : bool =
         if Deploy.Docker.ensureRunning () then true
@@ -43,11 +45,20 @@ module private GoBoardFixtures =
            INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Porto', 1); \
            SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;" ]
 
+    /// A SINK whose reconcile column (`City.Name`) carries a DUPLICATE — two
+    /// cities both named 'Lisbon' (the duplicate-email user-directory shape).
+    /// Reconciling `City:Name` keeps the oldest (501) and displaces 502, so the
+    /// engine's `AmbiguousTargetMatchKeys` is non-empty and a live `--go` exits 9.
+    let sinkDupCityRows =
+        [ "SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] ON; \
+           INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Lisbon', 1), (503, N'Porto', 1); \
+           SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;" ]
+
     let optsWith (tables: string list) (reconcile: string list) : LoadOpts =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
-          ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []
+          ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false
@@ -65,6 +76,15 @@ module private GoBoardFixtures =
           SinkCapability = SinkLoadCapability.structural }
 
     let value (r: Result<'a>) : 'a = Result.value r
+
+    /// Positional wrapper over the reified `CheckGoArgs` (2026-07-10) so the
+    /// suite's call sites stay stable; the record is constructed literally here
+    /// (every field named — the reconstruction trap has no room).
+    let checkGo (asJson: bool) (emitSql: bool) (emitImpact: bool) (planned: PlanAction) : int =
+        runCheckGo MetadataSnapshotRunner.defaultParameters
+            { Flow = "golden"; FromLabel = "cloud-qa"; ToLabel = "cloud-uat"
+              AsJson = asJson; EmitSql = emitSql; EmitImpact = emitImpact
+              Review = false; Planned = planned }
 
     /// Run a board and capture what the operator would read (the render
     /// goes to stdout) — the forecast-table / evidence assertions read it.
@@ -129,7 +149,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    The escape's proposals now carry LIVE evidence
                         //    (2026-07-07): each candidate reconcile column
                         //    probed against the actual pair.
-                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
                         Assert.Equal(5, red1)
                         Assert.Contains("evidence: reconcile 'AppCore.City:Name'", redOut)
                         Assert.Contains("sink-unique", redOut)          // Lisbon/Porto are distinct on the sink
@@ -141,7 +161,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    and the forecast carries the before→after table.
                         let sqlPath = System.IO.Path.Combine("go-board", "golden.planned.sql")
                         if System.IO.File.Exists sqlPath then System.IO.File.Delete sqlPath
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false true false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(0, green)
                         // The forecast table (2026-07-08): source AND target
                         // physical names side by side; the declared customer
@@ -183,7 +203,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
                         return ()
                     }))
@@ -211,20 +231,20 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                                 Signoff  = signoff }
 
                         // 1. RED — WipeAndLoad, no signoff: the wipe is ungreenlit.
-                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [])))
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts [])))
                         Assert.Equal(5, red1)
                         Assert.Contains("signoff", redOut)
                         Assert.Contains("deleted child-first", redOut)   // the impact the operator is approving
                         Assert.Contains("declare it greenlit", redOut)   // the remedy names the exact edit
 
                         // 2. GREEN — the `replace` mode greenlit (scopeless).
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
                         Assert.Equal(0, green)
                         Assert.Contains("wipe is greenlit", greenOut)
 
                         // 3. RED — a declared scope that MISSES the wiped Customer.
                         let mismatch = [ { WriteSignoff.greenlit WriteSignoff.WriteMode.Replace with Tables = [ "SomeOtherTable" ] } ]
-                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts mismatch)))
+                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts mismatch)))
                         Assert.Equal(5, red2)
                         Assert.Contains("does not cover", red2Out)
 
@@ -260,7 +280,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
                         // ...and the board still goes GREEN for the subset.
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
-                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
                         return ()
                     }))
@@ -285,7 +305,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let refScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" } ]
                         let refOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = refScope }
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned refOpts))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned refOpts))
                         Assert.Equal(0, green)
                         Assert.Contains("supporting scope", greenOut)
                         Assert.Contains("existing-reference AppCore.City", greenOut)
@@ -295,10 +315,108 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let badScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "AppCore.Customer"; Reason = "wrong classification" } ]
                         let badOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = badScope }
-                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned badOpts))
+                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned badOpts))
                         Assert.Equal(5, red)
                         Assert.Contains("supporting scope", badOut)
                         Assert.Contains("owned-child AppCore.City", badOut)
+                        return ()
+                    }))
+
+    /// AMBIGUOUS TARGET KEYS (2026-07-10, the board/engine exit-9 parity): a
+    /// duplicate reconcile key on the SINK (two cities named 'Lisbon') makes the
+    /// engine keep the oldest and displace the rest — a live `--go` exits 9. The
+    /// board previously showed GREEN here (`identities` passes: every source city
+    /// DOES match a target row), diverging from the engine. The `ambiguous target
+    /// keys` axis now reads the SAME `report.AmbiguousTargetMatchKeys` the engine's
+    /// exit-9 policy counts, so the board reds where the run would exit 9.
+    [<Fact>]
+    member _.``go board: a duplicate reconcile key on the sink reds `ambiguous target keys` — the board no longer greens over an exit-9`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardAmbiguousTarget") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardAmbig"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkDupCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // Customer transferred, City reconciled by Name — every
+                        // source city matches (so `identities` is GREEN), but the
+                        // sink's duplicate 'Lisbon' displaces a row.
+                        let red, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        Assert.Equal(5, red)
+                        Assert.Contains("ambiguous target keys", redOut)
+                        Assert.Contains("share a reconcile key with an older row", redOut)
+                        // The contrast that pins the fix: identities DID all match.
+                        Assert.Contains("every reconciled source identity matches a target row", redOut)
+                        return ()
+                    }))
+
+    /// THE UNVERIFIED VERDICT (2026-07-10): a `foreignRefs` entry declares an
+    /// out-of-contract reference environment-stable — a claim the board cannot
+    /// verify (its target is absent from the acquired contract). The board stays
+    /// GREEN (no gate is red) but the verdict downgrades to name the unverified
+    /// finding, so a green is never read as "every fact proven". Exit stays 0.
+    [<Fact>]
+    member _.``go board: a foreignRefs declaration yields the green-unverified verdict — surfaced, exit still 0`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardUnverified") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardUnver"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // The same flow that goes green, plus a foreignRefs entry.
+                        let opts = { GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ] with ForeignRefs = [ "AppCore.ExternalLedger" ] }
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned opts))
+                        // Still exit 0 — the unverified finding is information, not a fault.
+                        Assert.Equal(0, green)
+                        // The rich lens renders the axis label + headline (no plain
+                        // [note] marks — the existing board tests assert content too).
+                        Assert.Contains("foreign refs", greenOut)
+                        Assert.Contains("declared environment-stable", greenOut)
+                        // The verdict names the unverified finding rather than "every gate passes" alone.
+                        Assert.Contains("remain unverified", greenOut)
+                        return ()
+                    }))
+
+    /// THE DECISION WORKBENCH'S HEADLESS TWIN (2026-07-10, the manifest
+    /// program, slice 3): `--review` on a redirected stdout degrades to the
+    /// one-shot render, which carries the typed decision tables — the exact
+    /// consequence sentences, computed over the full cached rowsets — and the
+    /// `--format json` machine lens carries the same sentences in the
+    /// relationships detail (headless-total: no surface loses the decision).
+    [<Fact>]
+    member _.``review workbench: a piped --review renders the decision tables one-shot, and the JSON lens carries the same consequences — live two-cell pair`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardReview") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardReview"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, GoBoardFixtures.optsWith [ "Customer" ] [], false)
+                        let argsWith (asJson: bool) : CheckGoArgs =
+                            { Flow = "golden"; FromLabel = "cloud-qa"; ToLabel = "cloud-uat"
+                              AsJson = asJson; EmitSql = false; EmitImpact = false
+                              Review = true; Planned = planned }
+                        // piped --review: the one-shot render, decision tables aboard
+                        let exit, out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters (argsWith false))
+                        Assert.Equal(5, exit)   // the escape still reds the board
+                        // the exact consequence sentences, over the full rowsets:
+                        // both source cities match the sink's own two, so 2 re-key
+                        // and none drop; the widen line names the honest outcome.
+                        let consequenceLinesOut =
+                            out.Split('\n') |> Array.filter (fun l -> l.Contains "consequence:" || l.Contains "evidence:") |> String.concat "\n"
+                        Assert.True(
+                            out.Contains "consequence: if AppCore.City is reconciled by Name, 2 row(s) that point at it re-key onto the AppCore.City rows the target already holds, and none drop.",
+                            "the exact reconcile consequence is absent; the consequence lines rendered were:\n" + consequenceLinesOut)
+                        Assert.Contains("Each Name value names exactly one target row.", out)
+                        Assert.Contains("consequence: if AppCore.City is added to the transfer, its 2 row(s) transfer too", out)
+                        // the JSON machine lens carries the same sentences
+                        let exitJ, outJ = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters (argsWith true))
+                        Assert.Equal(5, exitJ)
+                        Assert.Contains("consequence: if AppCore.City is reconciled by Name", outJ)
                         return ()
                     }))
 
@@ -333,10 +451,11 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.Raw snk.EngineConnStr }
                             let connections = TransferConnections.create srcSub sinkSub true |> Result.value
                             let! runR =
-                                Transfer.runReverseLegThroughConnectionsWith
-                                    IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
-                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
-                                    [] Set.empty Set.empty false (Some undoDir)
+                                TransferActs.blessAllAndRun (fun blessings ->
+                                    Transfer.runReverseLegThroughConnectionsWith
+                                        IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
+                                        [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
+                                        [] blessings true Set.empty Set.empty false (Some undoDir))
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
                             let! customersAfter = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"

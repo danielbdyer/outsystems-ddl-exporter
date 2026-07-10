@@ -178,6 +178,9 @@ type MovementSpec =
         /// 2026-07-08 — the per-flow write-signoff greenlight (the destructive
         /// modes the operator approved). Empty = nothing greenlit.
         Signoff     : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (slice 4a) — the per-ACT blessings: each names one act
+        /// token at one exact fingerprint. Empty = no act blessed.
+        ActSignoff  : WriteSignoff.ActBlessing list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -246,6 +249,7 @@ module MovementSpec =
             AlignMap    = Map.empty
             SupportingScope = []
             Signoff     = []
+            ActSignoff  = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -338,6 +342,14 @@ type Flow =
         /// / `--go`, but durable and auditable. Empty = nothing greenlit (a
         /// destructive flow will not run until it declares one).
         Signoff : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (the transfer-manifest program, slice 4a) — the per-ACT
+        /// blessings the same `signoff` array carries: each entry names one
+        /// canonical act token (`ActConsent.tokenOf`) at one exact captured
+        /// fingerprint, so consent attaches to the individual destructive /
+        /// creative act at the substrate the operator actually read. Empty =
+        /// no act blessed. Parsed from `{ "act": …, "fingerprint": … }`
+        /// entries beside the `{ "mode": … }` mode approvals.
+        ActSignoff : WriteSignoff.ActBlessing list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -481,6 +493,9 @@ type LoadOpts =
         /// 2026-07-08 — the per-flow write-signoff greenlight; the go board reds
         /// and the engine refuses a destructive live run until its mode is here.
         Signoff     : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (slice 4a) — the per-act blessings the board's consent
+        /// axis verifies each derived act against (enforcement lands in 4b).
+        ActSignoff  : WriteSignoff.ActBlessing list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.
@@ -607,9 +622,11 @@ type PlanAction =
     /// data flow. The action carries the flow's coordinates + the PLANNED
     /// action the flow would run (the same `planFlow` derivation a real
     /// run takes, under preview opts), so the board judges exactly what
-    /// `--go` would execute. `emitSql` (the `--sql` opt-in, 2026-07-07)
-    /// additionally writes the dry run's plan as a T-SQL preview artifact.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * emitImpact: bool * planned: PlanAction
+    /// `--go` would execute. Payload reified to `CheckGoArgs` (2026-07-10,
+    /// the manifest program): the tuple had reached three adjacent bools —
+    /// the positional-misordering trap — and the review surface adds a
+    /// fourth.
+    | CheckGo of args: CheckGoArgs
     /// `check plan <flow>` — THE TRANSFER PLAN (2026-07-08, the guided-wizard
     /// program): the declarative counterpart to the go board. Where `check go`
     /// verdicts readiness, `check plan` walks each transfer decision axis with its
@@ -669,6 +686,21 @@ type PlanAction =
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError
+
+/// The go board's coordinates (the `CheckGo` payload, reified 2026-07-10).
+/// `Planned` is the SAME `planFlow` derivation a real run takes, so the board
+/// judges exactly what `--go` would execute. `Review` opens the interactive
+/// review workbench on a real terminal (the manifest program; a piped
+/// `--review` degrades to the one-shot declarative render).
+and CheckGoArgs =
+    { Flow       : string
+      FromLabel  : string
+      ToLabel    : string
+      AsJson     : bool
+      EmitSql    : bool
+      EmitImpact : bool
+      Review     : bool
+      Planned    : PlanAction }
 
 /// A planned execution: the unhonored-axis notes (surfaced, never dropped —
 /// fidelity #2) plus the routed action.

@@ -104,10 +104,41 @@ let scopeTree (headline: string) (status: Status) (groups: GoBoard.ScopeGroup li
               Children = g.Claims |> List.map claimNode })
     Tree (headline, status, families @ (unaccounted |> List.map (leaf Bad)))
 
+// -- the decision workbench table (2026-07-10, the manifest program) ----------
+
+/// One escaping reference's answer grid: each row an answer with its exact
+/// counts. The grid alone — the consequence prose rides separately (the
+/// board's item Detail carries it once; the workbench appends it as notes).
+let decisionGrid (t: GoBoard.DecisionTable) : View =
+    let headers = [ ""; "answer"; "re-keys"; "drops"; "enters"; "opens" ]
+    let row (r: GoBoard.DecisionRow) : (string * Status) list =
+        [ (if r.Selected then "●" else ""), (if r.Selected then Ok else Neutral)
+          r.Label, Neutral
+          string r.Rekeyed, (if r.Rekeyed > 0 then Ok else Neutral)
+          string r.Dropped, (if r.Dropped > 0 then Bad else Neutral)
+          (if r.Entering > 0 then string r.Entering else ""), Neutral
+          (match r.Opens with [] -> "" | names -> String.concat ", " names),
+          (if List.isEmpty r.Opens then Neutral else Warn) ]
+    Table (headers, t.Rows |> List.map row)
+
+/// The grid plus its consequence sentences — the workbench's per-decision
+/// block (statement in the table, substantiation in the notes).
+let decisionTable (t: GoBoard.DecisionTable) : View list =
+    [ yield decisionGrid t
+      for r in t.Rows do
+          if r.Consequence <> "" then yield Note r.Consequence ]
+
 // -- item → block ------------------------------------------------------------
 
 let private blockOfItem (i: GoBoard.Item) : View =
-    let vstatus, headline, remedy = describe i.Status
+    let vstatus0, headline0, remedy = describe i.Status
+    // An unverified finding (never a Red line) reads as a Warn block whose
+    // headline names it unverified, so the rich lens carries the same honest
+    // edge the plain lens states in words.
+    let vstatus, headline =
+        if i.Unverified && (match i.Status with GoBoard.Status.Red _ -> false | _ -> true)
+        then Warn, sprintf "%s — unverified against the live environments" headline0
+        else vstatus0, headline0
     match i.Body with
     | GoBoard.ItemBody.Forecast (lines, previews) ->
         let noteLines =
@@ -118,6 +149,19 @@ let private blockOfItem (i: GoBoard.Item) : View =
                     (forecastTable lines :: noteLines) @ (previews |> List.map Note))
     | GoBoard.ItemBody.Scope (groups, unaccounted) ->
         scopeTree (sprintf "%s — %s" i.Axis headline) vstatus groups unaccounted
+    | GoBoard.ItemBody.Decisions tables ->
+        // The grids carry the counts; the item's Detail carries ALL the prose
+        // (the escape lines, the probe evidence, the consequence sentences) —
+        // one prose source, so the pretty and machine lenses read the same
+        // words and nothing the plain twin holds vanishes from the terminal.
+        let blocks =
+            [ for t in tables do
+                if t.Question <> "" then yield Field ("decision", t.Question, Warn)
+                if not (List.isEmpty t.Rows) then yield decisionGrid t ]
+        Disclosure (sprintf "%s — %s" i.Axis headline, vstatus,
+                    blocks
+                    @ (i.Detail |> List.map Note)
+                    @ (match remedy with Some r -> [ Action r ] | None -> []))
     | GoBoard.ItemBody.Plain ->
         // The remedy is load-bearing (a Red line names the exact next move), so
         // it must survive even when the item carries no detail — the plain lens
@@ -137,9 +181,14 @@ let ofBoard (board: GoBoard.Board) : View =
     let hero = Hero (Neutral, sprintf "THE GO BOARD — flow '%s'   %s → %s" board.Flow board.From board.To)
     let verdict =
         if GoBoard.isGreen board then
-            Panel ("verdict",
-                [ PanelRow.Labeled ("verdict", "GREEN — every gate passes.", Ok)
-                  PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
+            if GoBoard.hasUnverified board then
+                Panel ("verdict",
+                    [ PanelRow.Labeled ("verdict", sprintf "GREEN — every gate passes; %d finding(s) remain unverified against the live environments (the lines marked above). Read them before authorizing the run." (GoBoard.unverifiedCount board), Warn)
+                      PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
+            else
+                Panel ("verdict",
+                    [ PanelRow.Labeled ("verdict", "GREEN — every gate passes.", Ok)
+                      PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
         else
             Panel ("verdict",
                 [ PanelRow.Labeled ("verdict", sprintf "RED — %d open decision(s) / blocking fault(s)." (GoBoard.redCount board), Bad)
@@ -147,7 +196,8 @@ let ofBoard (board: GoBoard.Board) : View =
     // A titleless Rule underlines the masthead; a `verdict`-titled Rule (tinted by
     // the outcome) opens the closing panel — the section breaks the raw board never
     // had (2026-07-08, the widget-elevation program).
-    let verdictStatus = if GoBoard.isGreen board then Ok else Bad
+    let verdictStatus =
+        if GoBoard.isGreen board then (if GoBoard.hasUnverified board then Warn else Ok) else Bad
     Doc ([ hero; Rule (None, Neutral) ] @ (board.Items |> List.map blockOfItem) @ [ Rule (Some "verdict", verdictStatus); verdict ])
 
 /// Whether a writer is a non-terminal sink (an in-memory / file writer, or a

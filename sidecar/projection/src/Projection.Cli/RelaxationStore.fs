@@ -141,8 +141,156 @@ let setFlowSignoff (path: string) (flow: string) (approvals: Projection.Pipeline
             | None   -> JsonObject()
         let flowObj = childObject (childObject root "flows") flow
         let arr = JsonArray()
+        // 2026-07-10 (slice 4b) — the signoff array now carries TWO entry
+        // shapes (mode approvals and act blessings). This writer sets the
+        // named MODES; every act blessing on file, and every mode this call
+        // does not name, is PRESERVED — the wizard's greenlight can no longer
+        // silently erase a blessing the operator wrote in the workbench.
+        let writtenModes =
+            approvals |> List.map (fun a -> Projection.Pipeline.WriteSignoff.modeLabel a.Mode) |> Set.ofList
+        (match flowObj.TryGetPropertyValue "signoff" with
+         | true, (:? JsonArray as existing) ->
+             for node in existing do
+                 match node with
+                 | :? JsonObject as o ->
+                     let keep =
+                         match o.TryGetPropertyValue "mode" with
+                         | true, (:? JsonValue as v) ->
+                             (match v.TryGetValue<string>() with
+                              | true, m -> not (Set.contains m writtenModes)
+                              | _ -> true)
+                         | _ -> true   // an act blessing (or anything else) is preserved
+                     if keep then arr.Add(o.DeepClone())
+                 | _ -> ()
+         | _ -> ())
         for a in approvals do arr.Add(objOf a)
         flowObj.["signoff"] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
+
+/// Surgically set a flow's WHOLE `signoff` array — mode approvals first, then
+/// act blessings sorted by token (2026-07-10, slice 4a: the workbench's bless
+/// gesture writes through immediately — a blessing is commitment). Field names
+/// and order mirror `renderFlow`'s signoff block (`mode`/`act`, `tables`/
+/// `fingerprint`, then the audit fields), so a subsequent `parse ∘ render` is
+/// stable. Every other key is preserved byte-for-byte. `Ok ()` on a successful
+/// write; `Error cause` names the failure (downgrades never silent).
+let setFlowSignoffEntries
+    (path: string)
+    (flow: string)
+    (approvals: Projection.Pipeline.WriteSignoff.WriteApproval list)
+    (blessings: Projection.Pipeline.WriteSignoff.ActBlessing list)
+    : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    let modeObj (a: Projection.Pipeline.WriteSignoff.WriteApproval) : JsonObject =
+        let o = JsonObject()
+        o.["mode"] <- JsonValue.Create (Projection.Pipeline.WriteSignoff.modeLabel a.Mode)
+        if not (List.isEmpty a.Tables) then
+            let arr = JsonArray()
+            for t in a.Tables do arr.Add(JsonValue.Create t)
+            o.["tables"] <- arr
+        a.AcknowledgedImpact |> Option.iter (fun v -> o.["acknowledgedImpact"] <- JsonValue.Create v)
+        a.ApprovedBy         |> Option.iter (fun v -> o.["approvedBy"]         <- JsonValue.Create v)
+        a.Date               |> Option.iter (fun v -> o.["date"]               <- JsonValue.Create v)
+        o
+    let actObj (b: Projection.Pipeline.WriteSignoff.ActBlessing) : JsonObject =
+        let o = JsonObject()
+        o.["act"] <- JsonValue.Create b.Act
+        o.["fingerprint"] <- JsonValue.Create (Projection.Core.ActConsent.fingerprintText b.Fingerprint)
+        b.AcknowledgedImpact |> Option.iter (fun v -> o.["acknowledgedImpact"] <- JsonValue.Create v)
+        b.ApprovedBy         |> Option.iter (fun v -> o.["approvedBy"]         <- JsonValue.Create v)
+        b.Date               |> Option.iter (fun v -> o.["date"]               <- JsonValue.Create v)
+        o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for a in approvals do arr.Add(modeObj a)
+        for b in blessings |> List.sortBy (fun b -> b.Act) do arr.Add(actObj b)
+        flowObj.["signoff"] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
+
+/// Surgically set a flow's STRING-ARRAY field (`reconcile`, `tables`) under
+/// `flows.<flow>.<field>` (2026-07-10, the review workbench's write-decisions
+/// gesture). Same A44 move as `setFlowString`: the interactive choice becomes
+/// a durable, hand-reachable config edit a later headless run honors. Every
+/// other key is preserved byte-for-byte. `Ok ()` on a successful write;
+/// `Error cause` names the failure (downgrades never silent).
+let setFlowStrings (path: string) (flow: string) (field: string) (values: string list) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for v in values do arr.Add(JsonValue.Create v)
+        flowObj.[field] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
+
+/// Surgically set a flow's `supportingScope` array (2026-07-10, the review
+/// workbench's write-decisions gesture). Field names and order mirror
+/// `parseSupportingScope` / `renderFlow` (`relationship`, `table`,
+/// `key`/`anchor`/`of` per relationship, `reason`), so a subsequent
+/// `parse ∘ render` is stable.
+let setFlowSupportingScope (path: string) (flow: string) (entries: Projection.Pipeline.SupportingScope.SupportingScopeEntry list) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    let objOf (e: Projection.Pipeline.SupportingScope.SupportingScopeEntry) : JsonObject =
+        let o = JsonObject()
+        let rel (label: string) = o.["relationship"] <- JsonValue.Create label
+        o.["table"] <- JsonValue.Create e.Table
+        (match e.Relationship with
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.ExistingReference keyName ->
+             rel "existing-reference"; o.["key"] <- JsonValue.Create keyName
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.StaticLookup keyName ->
+             rel "static-lookup"; o.["key"] <- JsonValue.Create keyName
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.ReferenceSeed ->
+             rel "reference-seed"
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.SharedAnchor (anchor, keyName) ->
+             rel "shared-anchor"; o.["anchor"] <- JsonValue.Create anchor
+             keyName |> Option.iter (fun k -> o.["key"] <- JsonValue.Create k)
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.OwnedChild parent ->
+             rel "owned-child"; o.["of"] <- JsonValue.Create parent
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.BlockedDependent parent ->
+             rel "blocked-dependent"; o.["of"] <- JsonValue.Create parent)
+        o.["reason"] <- JsonValue.Create e.Reason
+        o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for e in entries do arr.Add(objOf e)
+        flowObj.["supportingScope"] <- arr
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
         Ok ()
     with ex -> Error ex.Message

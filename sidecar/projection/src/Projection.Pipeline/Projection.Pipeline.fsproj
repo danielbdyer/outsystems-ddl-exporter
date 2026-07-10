@@ -64,18 +64,32 @@
     <Compile Include="TransferRevert.fs" />
     <Compile Include="TransferResume.fs" />
     <Compile Include="TransferSubset.fs" />
+    <!-- Moved before TransferRun.fs (2026-07-10, slice 4b): the per-act
+         consent gate inside runCore reads ActEvidence, which reads
+         EvidenceCache, which reads PeerTransfer + TransferImpact - none of
+         which depend on TransferRun (verified: comment mentions only). -->
+    <!-- NameAlignment.fs moved before PeerTransfer.fs (2026-07-10, slice 4b):
+         PeerTransfer reads AlignmentMode; NameAlignment itself now reads the
+         hoisted TransferSubset.resolveLoadSet, not module Transfer. -->
+    <Compile Include="NameAlignment.fs" />
+    <Compile Include="PeerTransfer.fs" />
+    <Compile Include="TransferImpact.fs" />
+    <Compile Include="EvidenceCache.fs" />
+    <!-- ActEvidence.fs: the act-fingerprint derivation (slices 4a/4b) -
+         projects the dry-run plan + EvidenceCache match products + the
+         population probes onto ActConsent fingerprints; its two IO seams
+         are shared by the board and the execute gate. -->
+    <Compile Include="ActEvidence.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
     <Compile Include="EjectRun.fs" />
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
-    <Compile Include="NameAlignment.fs" />
-    <Compile Include="PeerTransfer.fs" />
     <Compile Include="GoBoard.fs" />
     <Compile Include="SupportingScope.fs" />
     <Compile Include="TransferPlan.fs" />
-    <Compile Include="TransferImpact.fs" />
+    <Compile Include="TransferTriage.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

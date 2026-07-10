@@ -74,23 +74,94 @@ code. One note for CI authors: the board's not-ready verdict is always
 exit 5 (the `check shape` class); the live `--go` run refines that into 5
 (shape) vs 9 (relationships / identities / drops).
 
+`--review` opens the decision workbench on a real terminal: each reference
+that escapes the transfer is one question with its answers side by side —
+reconcile by a named column, re-key onto one chosen row, add the table to the
+transfer, or declare the datasets identical — each carrying its exact counted
+consequence, computed over the full rowsets through the same match the live
+run uses. The arrow keys walk the decisions; Space selects the next answer and
+the whole coupled unit's counts recompute; `w` writes the selections into
+`projection.json` as the same `reconcile` / `tables` / `supportingScope`
+entries this runbook teaches by hand. On a pipe, `--review` renders the same
+decision tables one-shot (nothing is lost headless), and `--format json`
+carries every consequence sentence.
+
+Below the decisions, the workbench lists **the consent ledger** (2026-07-10):
+every destructive or creative act the forecast plan performs — each wipe of a
+table, each table whose rows arrive under freshly minted keys, each explicit
+primary-key write, each match onto rows the target already holds, each set of
+rows left out of the load — one line per act, with a complete statement of
+what it does and a **fingerprint** pinning exactly what was read: a wipe
+carries the target population's first key, last key, and row count; a match
+carries a hash over every matched pair, every unmatched value, and the
+target's exact duplicate counts. `d` blesses the act under the cursor at that
+fingerprint; `a` blesses every act except an identity-insert (explicit-key
+writes are blessed one at a time, deliberately). A blessing writes to
+`projection.json` in the same keystroke, as a `signoff` entry:
+
+```jsonc
+"signoff": [
+  { "mode": "replace" },
+  { "act": "wipe:AppCore.Customer", "fingerprint": "population:1:2048:2048" }
+]
+```
+
+The entry can equally be authored by hand — the board prints it verbatim on
+each unblessed act's line. If anything the act would do changes after the
+blessing — a row appears in the population, a matched pair re-points, a
+duplicate lands on the target's match column — the fingerprint no longer
+matches and the board says the blessing was captured at a different
+fingerprint: read the act again and re-bless.
+
+The ledger is also the live run's gate on the peer path: an Execute refuses
+by name (`transfer.writeSignoff.actUnblessed`, exit 9) until every act it
+performs is blessed at its current fingerprint, and the refusal carries the
+full act list with each fingerprint — the same entries the board prints. The
+board and the engine derive the acts and the fingerprints through the same
+functions over the same reads, so what the board shows blessed is exactly
+what the run will accept.
+
+`--impact` writes the row-grain before/after artifact
+(`go-board/<flow>.impact.html` + a `.json` twin), **triaged by coupling**
+(2026-07-10): each relational unit of the transfer — a group of tables joined
+by foreign keys — is classified and ranked. A unit whose source and target
+hold the same rows (verified column by column) folds to one line; a unit
+where every source row pairs with a row the target already holds folds to one
+line; a unit with nothing to do folds to one line. The units that stay
+expanded are exactly the ones needing attention: a column pointing at a table
+outside the transfer (a decision to make), or rows that will be inserted or
+deleted. The unit with the most affected rows opens first. The fold hides
+scroll, never rows — every row is counted in the summary, and the `.json`
+twin carries every unit in full.
+
 The axes it judges, in order — the full forecast vocabulary:
 
 | Axis | What it proves | Red means |
 |---|---|---|
 | routing | the flow rides the SsKey-aligned peer leg | renditions unset → fix step 1 |
 | contracts | both OSSYS metamodels read; identities align | connection/grant problem — remedy printed |
+| identity basis | (note) the target mints fresh surrogate keys; by-name alignment is name-derived | never red — the consequence for the key plane, stated so it is not a surprise |
 | tables | your subset resolves (unambiguously) | typo or ambiguous name — use `Module.Entity` |
 | reconcile | every reconcile entry resolves against the sink | bad entry — use `Module.Entity:Column` |
 | shape | the two models are ONE shape over the transferred set | real divergence — align model versions |
 | relationships | no FK escapes the subset un-strategized | **the main open decision — see step 3** |
+| foreign refs | (note, only if `foreignRefs` is declared) references outside the contract, unverified | never red — confirm each target aligns across environments; a wrong declaration cross-wires the FK |
 | load order | parents-before-children is proven | an unresolvable cycle — remedy printed |
 | forecast | the DRY RUN: exact row counts per table | the dry run refused — reason printed |
 | cycles / identities / drops | forecast of unbreakable cycles, unmatched identities, dropped rows | fix data / user-map, or accept with `--allow-drops` at run time |
+| ambiguous source / target keys | duplicate reconcile keys — a record loses its identity or an older row displaces it | de-dup the key / pin a `ManualOverride` winner, or accept with `--allow-drops` |
+| replayed drops | a resumable no-op re-run replays the prior run's drop verdict | clear the resume marker and re-run, or accept with `--allow-drops` |
 | cdc | the sink is not CDC-tracked | decide `--allow-cdc` or de-track |
 | grant | the sink principal carries db-scope DML | grant the missing permission |
 | re-run | your strategy is safe against the sink's ACTUAL state | duplicates (merge into populated) or wipe blockers — remedy printed |
+| signoff | a destructive wipe is greenlit in the flow's `signoff` | the mode is not declared — add `{ "mode": "replace" }` after reading the printed impact |
+| consent | (note) the per-act ledger: every act the run performs, its fingerprint, and where each blessing stands | never red on the board — but a live Execute REFUSES (exit 9) until each act is blessed; bless in `--review` (`d`/`a`) or paste the printed entry |
 | execute gates | (note) the two run-time gates | never red — informational |
+
+The `ambiguous source / target keys` and `replayed drops` axes read the same
+report fields the live run's exit-9 policy counts, so the board can no longer show
+GREEN over a run that would then drop rows at `--go` (board/engine parity over the
+whole drop-set).
 
 ## Step 3 — Resolve the open decisions (the usual one: escaping relationships)
 
@@ -135,6 +206,15 @@ Exit code 0. The setup is validated: every gate the live run will hit has
 passed against the real environments, and the forecast tells you exactly how
 many rows will move per table.
 
+A green verdict has one honest variant. When a probe could not read the live
+environments — a sink count that would not return (the forecast shows `?` for
+that table), or a `foreignRefs` target outside the acquired contract — the axis
+is a `[note]` marked *unverified* and the verdict reads **"GREEN. Every gate
+passes; N finding(s) below remain unverified."** The exit is still 0 (nothing is
+red), but the board is telling you it could not check those N facts — read the
+named note line(s) before authorizing the run, and re-run the board once the
+sink is reachable to measure them.
+
 ## Step 5 — Preview (the dry run, narrated)
 
 ```
@@ -155,10 +235,18 @@ PROJECTION_ALLOW_EXECUTE=1 projection golden --go
 ```
 
 Two deliberate gates: the environment variable authorizes the environment; the
-flag states per-run intent. Exit codes: `0` clean · `5` shape divergence · `9`
-un-strategized relationships / unmatched identities / dropped rows (the report
-names them; `--allow-drops` downgrades identity/drop refusals you have
-deliberately accepted) · `6`/`7` connection/grant · `2` argument/spec errors.
+flag states per-run intent. And one consent gate: every destructive or
+creative act the run performs must be blessed at its current fingerprint in
+the flow's `signoff` — an unblessed act refuses
+`transfer.writeSignoff.actUnblessed` before any write, listing every open act
+with the exact entry that blesses it. Bless in the review workbench
+(`projection check go golden --review`: `d` per act, `a` for everything but an
+identity-insert), or paste the printed `{ "act": …, "fingerprint": … }`
+entries by hand. Exit codes: `0` clean · `5` shape divergence · `9`
+un-strategized relationships / unmatched identities / dropped rows / a write
+the flow has not consented to (the report names them; `--allow-drops`
+downgrades identity/drop refusals you have deliberately accepted) · `6`/`7`
+connection/grant · `2` argument/spec errors.
 
 What happens inside, in order: contracts re-acquired → gates re-checked (the
 same ones the board ran) → subset wiped child-first (`strategy: replace`) →
@@ -217,7 +305,7 @@ board re-validates the matches — run `check go` again first when in doubt.
 | board: `[STOP] contracts` | OSSYS metamodel unreadable | grant SELECT on `ossys_*` to the principal |
 | board: `[STOP] shape` | the two environments genuinely run different model versions | deploy the same version to both, or narrow the subset |
 | exit 9 at `--go` with drop lines | rows referenced identities that don't match | fix the reconcile data or accept with `--allow-drops` |
-| raw SQL permission error mid-load | a TABLE-level DENY (invisible to preflight — the pinned G1 gap) | remove the DENY; the revert script (`transfer-revert.sql`) undoes sink-minted rows |
+| raw SQL permission error mid-load | an object-scope DENY on a table OUTSIDE the board's probe set (a write-time-only table, or a schema/column-scope DENY) — the narrow G1 residual | remove the DENY; the revert script (`transfer-revert.sql`) undoes sink-minted rows |
 | board green but `--go` exits 7 | `PROJECTION_ALLOW_EXECUTE` not set | set it (the board's `[note]` line reminds you) |
 
 ## Rehearsed end-to-end (2026-07-06)
@@ -260,10 +348,15 @@ FKs, source untouched).
    even on large estates), but a multi-million-row ingest SELECT can exceed
    default command timeouts on slow links — if you hit timeouts, narrow the
    subset first.
-6. **The one standing preflight blind spot** — a TABLE-level DENY passes the
-   board's grant probe and surfaces mid-load (raw permission error). The
-   revert script (`transfer-revert.sql`) removes the partial rows; auto
-   revert is `--auto-revert`.
+6. **The narrow preflight blind spot** — the board's `grant` axis now evaluates
+   OBJECT-scope effective permissions (database OR per-table grants, with DENYs
+   subtracted) over the tables the run plans to write and read, so an object-scope
+   `DENY` on one of those tables IS caught before any write. The residual it
+   still cannot see: a `DENY` on a table pulled in only at write time (outside the
+   probed planned/read set), or a `DENY` applied at SCHEMA or COLUMN scope rather
+   than object scope — either surfaces mid-load as a raw permission error. The
+   revert script (`transfer-revert.sql`) removes the partial rows; auto revert is
+   `--auto-revert`.
 7. **Cosmetic**: one narrow-terminal note line can render truncated with `…`
    (a known display residual); the board and load plan are unaffected.
 

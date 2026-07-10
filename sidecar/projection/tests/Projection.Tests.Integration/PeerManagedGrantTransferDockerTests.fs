@@ -225,9 +225,10 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                             ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr false (fun connections ->
                                 task {
                                     let! r =
-                                        Transfer.runReverseLegThroughConnections
-                                            Transfer.Execute EmissionMode.Incremental false true false
-                                            [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] Set.empty
+                                        TransferActs.blessAllAndRun (fun blessings ->
+                                            Transfer.runReverseLegThroughConnections
+                                                Transfer.Execute EmissionMode.Incremental false true false
+                                                [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] blessings Set.empty)
                                     return ManagedGrantFixtures.value r
                                 })
 
@@ -277,9 +278,10 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                             ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr true (fun connections ->
                                 task {
                                     let! r =
-                                        Transfer.runReverseLegThroughConnections
-                                            Transfer.Execute EmissionMode.Incremental false true false
-                                            [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] Set.empty
+                                        TransferActs.blessAllAndRun (fun blessings ->
+                                            Transfer.runReverseLegThroughConnections
+                                                Transfer.Execute EmissionMode.Incremental false true false
+                                                [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] blessings Set.empty)
                                     return ManagedGrantFixtures.value r
                                 })
 
@@ -345,7 +347,7 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                             ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr false (fun connections ->
                                 Transfer.runReverseLegThroughConnections
                                     Transfer.Execute EmissionMode.Incremental false true false
-                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] Set.empty)
+                                    [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] [] Set.empty)
                         match outcome with
                         | Ok _ -> Assert.Fail "expected the object-scope DENY to refuse pre-write (transfer.insufficientGrant)"
                         | Error es ->
@@ -399,9 +401,10 @@ type PeerManagedGrantTransferDockerTests(fixture: EphemeralContainerFixture) =
                             ManagedGrantFixtures.throughConnections src.EngineConnStr snk.EngineConnStr false (fun connections ->
                                 task {
                                     let! r =
-                                        Transfer.runReverseLegThroughConnections
-                                            Transfer.Execute EmissionMode.Incremental false true false
-                                            [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] Set.empty
+                                        TransferActs.blessAllAndRun (fun blessings ->
+                                            Transfer.runReverseLegThroughConnections
+                                                Transfer.Execute EmissionMode.Incremental false true false
+                                                [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] blessings Set.empty)
                                     return ManagedGrantFixtures.value r
                                 })
                         Assert.Empty(report.SkippedReferences)

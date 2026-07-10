@@ -177,3 +177,57 @@ let ``config A44: an ABSENT signoff renders nothing and round-trips to empty`` (
     Assert.Equal<WriteSignoff.WriteApproval list>([], (Map.find "golden" cfg.Flows).Signoff)
     let rendered = ProjectionConfig.render cfg
     Assert.DoesNotContain("signoff", rendered)
+
+// -- the act blessings (2026-07-10, slice 4a): the signoff array's second
+// closed entry shape — `{ "act": token, "fingerprint": text, … }` beside the
+// mode approvals. Parse refusals are NAMED (no fingerprint, an unparseable
+// fingerprint, both act and mode, a duplicate token) and the A44 round-trip
+// covers the mixed array.
+
+open Projection.Core
+
+let private hex64 = String.replicate 64 "a"
+
+[<Fact>]
+let ``config: an act blessing parses into the flow's act signoffs with its exact fingerprint`` () =
+    let cfg = mustOk (ProjectionConfig.parse (cfgJson (sprintf """[ { "mode": "replace" }, { "act": "wipe:Sales.Customer", "fingerprint": "effect:%s", "approvedBy": "dan", "date": "2026-07-10" } ]""" hex64)))
+    let flow = Map.find "golden" cfg.Flows
+    Assert.Equal(1, List.length flow.Signoff)
+    Assert.Equal(1, List.length flow.ActSignoff)
+    let b = List.head flow.ActSignoff
+    Assert.Equal<string>("wipe:Sales.Customer", b.Act)
+    Assert.Equal(ActConsent.ActFingerprint.Effect hex64, b.Fingerprint)
+    Assert.Equal(Some "dan", b.ApprovedBy)
+    Assert.Equal(Some "2026-07-10", b.Date)
+
+[<Fact>]
+let ``config: an act blessing without a fingerprint refuses by name — a blessing binds to the exact substrate`` () =
+    match ProjectionConfig.parse (cfgJson """[ { "act": "wipe:Sales.Customer" } ]""") with
+    | Ok _ -> Assert.Fail "expected a refusal on the missing fingerprint"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.signoffNoFingerprint")
+
+[<Fact>]
+let ``config: an unparseable fingerprint refuses by name, never a silent skip`` () =
+    match ProjectionConfig.parse (cfgJson """[ { "act": "wipe:Sales.Customer", "fingerprint": "effect:nothex" } ]""") with
+    | Ok _ -> Assert.Fail "expected a refusal on the unparseable fingerprint"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.signoffFingerprintUnparseable")
+
+[<Fact>]
+let ``config: an entry setting BOTH act and mode refuses — one entry is one approval or one blessing`` () =
+    match ProjectionConfig.parse (cfgJson (sprintf """[ { "act": "wipe:X", "mode": "replace", "fingerprint": "effect:%s" } ]""" hex64)) with
+    | Ok _ -> Assert.Fail "expected a refusal on the dual-shape entry"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.signoffShape")
+
+[<Fact>]
+let ``config: a duplicate act token refuses — one blessing per act`` () =
+    match ProjectionConfig.parse (cfgJson (sprintf """[ { "act": "wipe:X", "fingerprint": "effect:%s" }, { "act": "wipe:X", "fingerprint": "effect:%s" } ]""" hex64 hex64)) with
+    | Ok _ -> Assert.Fail "expected a refusal on the duplicate act token"
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.signoffDuplicate")
+
+[<Fact>]
+let ``config A44: a mixed signoff (mode approvals + act blessings) round-trips through render (parse ∘ render = id)`` () =
+    let population = ActConsent.fingerprintText (ActConsent.populationFingerprint "1" "2048" 2048)
+    let cfg = mustOk (ProjectionConfig.parse (cfgJson (sprintf """[ { "mode": "replace", "tables": ["Customer"] }, { "act": "mint:Sales.Order", "fingerprint": "effect:%s", "acknowledgedImpact": "fresh keys minted" }, { "act": "wipe:Sales.Customer", "fingerprint": "%s" } ]""" hex64 population)))
+    let cfg2 = mustOk (ProjectionConfig.parse (ProjectionConfig.render cfg))
+    Assert.Equal<WriteSignoff.WriteApproval list>((Map.find "golden" cfg.Flows).Signoff, (Map.find "golden" cfg2.Flows).Signoff)
+    Assert.Equal<WriteSignoff.ActBlessing list>((Map.find "golden" cfg.Flows).ActSignoff, (Map.find "golden" cfg2.Flows).ActSignoff)

@@ -293,9 +293,37 @@ let private navLegend = "↑↓ move   →/Enter dig   ← back   / filter   q q
 /// copies of this idiom (recon #25) — the footer copy had two latent bugs the
 /// extraction fixes at the call site: it dropped the breadcrumb on the fallback
 /// path (writing only the legend) and left the no-crumb branch unescaped.
-let private safeMarkupLine (console: IAnsiConsole) (styled: string) (plain: string) : unit =
+/// Published 2026-07-10: the review workbench is the fifth consumer.
+let safeMarkupLine (console: IAnsiConsole) (styled: string) (plain: string) : unit =
     try console.MarkupLine styled
     with :? System.InvalidOperationException -> console.WriteLine plain
+
+/// The terminal bracket every redraw loop needs, extracted (2026-07-10, the
+/// second consumer — the review workbench): cursor visibility hidden for the
+/// loop and restored in `finally`; `TreatControlCAsInput` set so Ctrl-C is
+/// delivered as a KEYPRESS the loop can catch and quit CLEANLY through
+/// `finally`. Both modes saved and restored, each guarded (a non-interactive
+/// sink throws on get/set).
+let withTerminalBracket (body: unit -> 'a) : 'a =
+    let priorCursor = try Console.CursorVisible with _ -> true
+    let priorCtrlC = try Console.TreatControlCAsInput with _ -> false
+    try
+        (try Console.CursorVisible <- false with _ -> ())
+        (try Console.TreatControlCAsInput <- true with _ -> ())
+        body ()
+    finally
+        (try Console.TreatControlCAsInput <- priorCtrlC with _ -> ())
+        (try Console.CursorVisible <- priorCursor with _ -> ())
+
+/// The ONE interactive-surface predicate every navigable face shares: a real
+/// stdin+stderr (`Intervene.isInteractive`), stdout not redirected, no machine
+/// format, no `--query` path. Extracted 2026-07-10 (the second consumer — the
+/// `--review` routing) so `present` and every other routing site cannot drift.
+let isInteractiveSurface (asJson: bool) : bool =
+    Intervene.isInteractive ()
+    && not Console.IsOutputRedirected
+    && not asJson
+    && Option.isNone TtyRenderer.queryPath.Value
 
 /// The position header — only in history mode (#10): where this run sits in the
 /// ledger (newest-first) and the time-axis keys. A single run shows nothing here
@@ -348,44 +376,39 @@ let private driveLoop (count: int) (start: int) (loadAt: int -> View.View) : int
     let clamp i = max 0 (min i (count - 1))
     let mutable idx = clamp start
     let mutable model = init 0 (loadAt idx)
-    let priorCursor = try Console.CursorVisible with _ -> true
-    let priorCtrlC = try Console.TreatControlCAsInput with _ -> false
-    try
-        (try Console.CursorVisible <- false with _ -> ())
-        (try Console.TreatControlCAsInput <- true with _ -> ())
-        let mutable go = true
-        while go do
-            (try Console.Clear() with _ -> console.WriteLine())
-            header console idx count
-            View.writeWith { project model with Width = console.Profile.Width } console (effectiveTree model)
-            footer console model
-            let key = Console.ReadKey(true)
-            if key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
-                go <- false   // Ctrl-C quits cleanly — `finally` restores the terminal
-            elif model.Editing then
-                // Filter-typing mode: printable chars append, the rest are control.
-                match key.Key with
-                | ConsoleKey.Enter     -> model <- commitFilter model
-                | ConsoleKey.Escape    -> model <- cancelFilter model
-                | ConsoleKey.Backspace -> model <- backspaceFilter model
-                | _ when not (Char.IsControl key.KeyChar) -> model <- typeFilter key.KeyChar model
-                | _ -> ()    // ignore arrows / other control keys while typing
-            elif key.KeyChar = '/' then
-                model <- beginFilter model                                  // `/` opens the filter
-            elif key.Key = ConsoleKey.PageDown && idx < count - 1 then
-                idx <- idx + 1                       // down the newest-first list → an OLDER run
-                model <- init 0 (loadAt idx)         // fresh cursor at the new run's root
-            elif key.Key = ConsoleKey.PageUp && idx > 0 then
-                idx <- idx - 1                       // up the list → a NEWER run
-                model <- init 0 (loadAt idx)
-            else
-                model <- step key.Key model
-                if model.Done then go <- false
-        0
-    finally
-        (try Console.TreatControlCAsInput <- priorCtrlC with _ -> ())
-        (try Console.CursorVisible <- priorCursor with _ -> ())
-        console.WriteLine()
+    withTerminalBracket (fun () ->
+        try
+            let mutable go = true
+            while go do
+                (try Console.Clear() with _ -> console.WriteLine())
+                header console idx count
+                View.writeWith { project model with Width = console.Profile.Width } console (effectiveTree model)
+                footer console model
+                let key = Console.ReadKey(true)
+                if key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
+                    go <- false   // Ctrl-C quits cleanly — the bracket restores the terminal
+                elif model.Editing then
+                    // Filter-typing mode: printable chars append, the rest are control.
+                    match key.Key with
+                    | ConsoleKey.Enter     -> model <- commitFilter model
+                    | ConsoleKey.Escape    -> model <- cancelFilter model
+                    | ConsoleKey.Backspace -> model <- backspaceFilter model
+                    | _ when not (Char.IsControl key.KeyChar) -> model <- typeFilter key.KeyChar model
+                    | _ -> ()    // ignore arrows / other control keys while typing
+                elif key.KeyChar = '/' then
+                    model <- beginFilter model                                  // `/` opens the filter
+                elif key.Key = ConsoleKey.PageDown && idx < count - 1 then
+                    idx <- idx + 1                       // down the newest-first list → an OLDER run
+                    model <- init 0 (loadAt idx)         // fresh cursor at the new run's root
+                elif key.Key = ConsoleKey.PageUp && idx > 0 then
+                    idx <- idx - 1                       // up the list → a NEWER run
+                    model <- init 0 (loadAt idx)
+                else
+                    model <- step key.Key model
+                    if model.Done then go <- false
+            0
+        finally
+            console.WriteLine())
 
 /// Drive the inspector over ONE `tree` (the single-run `inspect <id>`).
 let run (tree: View.View) : int = driveLoop 1 0 (fun _ -> tree)
@@ -405,12 +428,7 @@ let runHistory (count: int) (start: int) (loadAt: int -> View.View) : int =
 /// real stdin+stderr, so `ReadKey` can never hit a non-TTY. Verbs call THIS instead of
 /// `renderAnswer` to gain interactivity uniformly (inspect / diff today).
 let present (asJson: bool) (depth: int) (view: View.View) : int =
-    let interactive =
-        Intervene.isInteractive ()
-        && not Console.IsOutputRedirected
-        && not asJson
-        && Option.isNone TtyRenderer.queryPath.Value
-    if interactive then run view
+    if isInteractiveSurface asJson then run view
     else
         TtyRenderer.renderAnswer asJson depth view
         0

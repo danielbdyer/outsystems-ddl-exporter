@@ -28,6 +28,7 @@
     <Compile Include="Navigator.fs" />
     <Compile Include="OperatorConsole.fs" />
     <Compile Include="RelaxationStore.fs" />
+    <Compile Include="ReviewNavigator.fs" />
     <Compile Include="CliExit.fs" />
     <Compile Include="Faces/Common.fs" />
     <Compile Include="Faces/Migrate.fs" />

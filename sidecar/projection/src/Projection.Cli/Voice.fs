@@ -1291,6 +1291,9 @@ module Voice =
         | Preflight.SubsetFkEscape ->
             View.Warn, "Some relationships point outside the chosen tables — their rows would keep the source environment's references. Reconcile each against the target's rows, or widen the subset.",
             Some(View.Action "Reconcile each named table against the target's rows (Module.Entity:Column), or widen the subset.")
+        | Preflight.ConsentWithheld ->
+            View.Warn, "The run would perform a destructive or creative write the flow has not consented to. Read the named acts and bless each one, or halt.",
+            Some(View.Action "Read each named act on the go board's consent line, bless it (check go <flow> --review, or the signoff entry the board prints), then authorize the run again.")
         | Preflight.UnclassifiedRefusal ->
             View.Bad, "Stopped before any change was applied. The cause is shown below.", None
 

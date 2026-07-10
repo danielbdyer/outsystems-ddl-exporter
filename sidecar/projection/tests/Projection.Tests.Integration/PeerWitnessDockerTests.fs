@@ -33,7 +33,7 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                     throughConnections srcConnStr sinkConnStr false (fun connections ->
                         Transfer.runReverseLegThroughConnections
                             Transfer.Execute EmissionMode.WipeAndLoad false true false
-                            [ "City" ] connections srcContract sinkContract Map.empty Set.empty [] Set.empty)
+                            [ "City" ] connections srcContract sinkContract Map.empty Set.empty [] [] Set.empty)
                 match r with
                 | Ok _ -> failwith "the replace-wipe must refuse — a sink dependent references the wiped parent"
                 | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.supportingScope.inboundOrphan")
@@ -53,9 +53,10 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch src sourceRows
                 let runOnce () =
                     throughConnections srcConnStr sinkConnStr false (fun connections ->
-                        Transfer.runReverseLegThroughConnections
-                            Transfer.Execute EmissionMode.Incremental false true false
-                            [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] Set.empty)
+                        TransferActs.blessAllAndRun (fun blessings ->
+                            Transfer.runReverseLegThroughConnections
+                                Transfer.Execute EmissionMode.Incremental false true false
+                                [ "City"; "Customer" ] connections srcContract sinkContract Map.empty Set.empty [] blessings Set.empty))
                 let! first = runOnce ()
                 let _ = value first     // the first load into the empty sink succeeds
                 let! second = runOnce ()
@@ -93,7 +94,7 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                     throughConnections srcConnStr sinkConnStr true (fun connections ->
                         Transfer.runReverseLegThroughConnections
                             Transfer.Execute EmissionMode.Incremental false true false
-                            [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] staticLookup)
+                            [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] [] staticLookup)
                 match r with
                 | Ok _ -> failwith "a diverged static-lookup dataset must refuse at the live seam"
                 | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.staticLookup.diverged")

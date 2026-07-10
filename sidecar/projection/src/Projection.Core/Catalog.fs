@@ -1873,6 +1873,15 @@ module Catalog =
     let displayName (c: Catalog) (key: SsKey) : string =
         Map.tryFind key (nameIndex c) |> Option.defaultValue (SsKey.rootOriginal key)
 
+    /// The display name over a PREBUILT `nameIndex` — the many-lookup form of
+    /// `displayName` (build the index once, look up many keys). Shared by the
+    /// CLI narration (`Faces.Common.nameOf` delegates here) and the engine's
+    /// act-consent tokens (2026-07-10, slice 4b), so the token the go board
+    /// prints and the token the execute gate verifies are rendered by ONE
+    /// function — they cannot drift by a naming policy.
+    let displayNameIn (names: Map<SsKey, string>) (key: SsKey) : string =
+        Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)
+
     /// Smart constructor enforcing the catalog-wide aggregate
     /// invariants. Per session-36 audit (Agent 3 #10/#12, Agent 1 #19):
     ///   1. Module SsKeys are disjoint (A11).
