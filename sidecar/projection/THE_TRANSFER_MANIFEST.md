@@ -340,7 +340,7 @@ Each slice lands whole on the existing seams, degrades headless-total from day o
 | **1 — Triage / comprehension** | comprehension | none (presentation-only) | a calmer board; zero consent or decision change — **BUILT 2026-07-10** (`TransferTriage.fs`; 9 pure witnesses + `TriageWitnessDockerTests` live) |
 | **2 — EvidenceCache + authoritative deltas** | fidelity substrate | read-once/derive-pure | exact per-answer deltas; foundation for 3 and 4 — **BUILT 2026-07-10** (`EvidenceCache.fs`; 8 pure witnesses + the cache≡dry-run `EvidenceCacheDockerTests` live) |
 | **3 — Decision workbench** | control | typed `ItemBody.Decisions` + toggle | options + side-by-side, no execution change — **BUILT 2026-07-10** (`ReviewNavigator.fs` + `--review`; 7 pure witnesses + the headless-twin docker witness) |
-| **4 — Per-act consent** | consent + fidelity | act-set-equality gate rewrite | the every-act-blessed execution gate |
+| **4 — Per-act consent** | consent + fidelity | act-set-equality gate rewrite | the every-act-blessed execution gate — **4a BUILT 2026-07-10** (narrate-only: `ActConsent.fs` in Core + `ActEvidence.fs`; the board’s `consent` axis, the workbench’s `d`/`a` bless arms, the dual-shape `signoff` array; 17 pure witnesses + `ActConsentDockerTests` live; 4b enforcement next) |
 
 Slice 1 is the cheapest and safest (pure reads, no execution path touched) and delivers the largest immediate comprehension gain — the highest confidence-leverage. Slice 2 is the substrate that makes both the decision deltas (Slice 3) and the consent fingerprints (Slice 4) honest; it is witnessed on its own so the read-once/derive-pure claim is proven before anything depends on it. Slices 3 and 4 layer control and consent onto that proven substrate.
 

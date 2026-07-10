@@ -147,6 +147,59 @@ let setFlowSignoff (path: string) (flow: string) (approvals: Projection.Pipeline
         Ok ()
     with ex -> Error ex.Message
 
+/// Surgically set a flow's WHOLE `signoff` array — mode approvals first, then
+/// act blessings sorted by token (2026-07-10, slice 4a: the workbench's bless
+/// gesture writes through immediately — a blessing is commitment). Field names
+/// and order mirror `renderFlow`'s signoff block (`mode`/`act`, `tables`/
+/// `fingerprint`, then the audit fields), so a subsequent `parse ∘ render` is
+/// stable. Every other key is preserved byte-for-byte. `Ok ()` on a successful
+/// write; `Error cause` names the failure (downgrades never silent).
+let setFlowSignoffEntries
+    (path: string)
+    (flow: string)
+    (approvals: Projection.Pipeline.WriteSignoff.WriteApproval list)
+    (blessings: Projection.Pipeline.WriteSignoff.ActBlessing list)
+    : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    let modeObj (a: Projection.Pipeline.WriteSignoff.WriteApproval) : JsonObject =
+        let o = JsonObject()
+        o.["mode"] <- JsonValue.Create (Projection.Pipeline.WriteSignoff.modeLabel a.Mode)
+        if not (List.isEmpty a.Tables) then
+            let arr = JsonArray()
+            for t in a.Tables do arr.Add(JsonValue.Create t)
+            o.["tables"] <- arr
+        a.AcknowledgedImpact |> Option.iter (fun v -> o.["acknowledgedImpact"] <- JsonValue.Create v)
+        a.ApprovedBy         |> Option.iter (fun v -> o.["approvedBy"]         <- JsonValue.Create v)
+        a.Date               |> Option.iter (fun v -> o.["date"]               <- JsonValue.Create v)
+        o
+    let actObj (b: Projection.Pipeline.WriteSignoff.ActBlessing) : JsonObject =
+        let o = JsonObject()
+        o.["act"] <- JsonValue.Create b.Act
+        o.["fingerprint"] <- JsonValue.Create (Projection.Core.ActConsent.fingerprintText b.Fingerprint)
+        b.AcknowledgedImpact |> Option.iter (fun v -> o.["acknowledgedImpact"] <- JsonValue.Create v)
+        b.ApprovedBy         |> Option.iter (fun v -> o.["approvedBy"]         <- JsonValue.Create v)
+        b.Date               |> Option.iter (fun v -> o.["date"]               <- JsonValue.Create v)
+        o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for a in approvals do arr.Add(modeObj a)
+        for b in blessings |> List.sortBy (fun b -> b.Act) do arr.Add(actObj b)
+        flowObj.["signoff"] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
+
 /// Surgically set a flow's STRING-ARRAY field (`reconcile`, `tables`) under
 /// `flows.<flow>.<field>` (2026-07-10, the review workbench's write-decisions
 /// gesture). Same A44 move as `setFlowString`: the interactive choice becomes

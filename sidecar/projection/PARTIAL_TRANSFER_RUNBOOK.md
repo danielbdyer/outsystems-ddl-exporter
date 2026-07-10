@@ -86,6 +86,35 @@ entries this runbook teaches by hand. On a pipe, `--review` renders the same
 decision tables one-shot (nothing is lost headless), and `--format json`
 carries every consequence sentence.
 
+Below the decisions, the workbench lists **the consent ledger** (2026-07-10):
+every destructive or creative act the forecast plan performs — each wipe of a
+table, each table whose rows arrive under freshly minted keys, each explicit
+primary-key write, each match onto rows the target already holds, each set of
+rows left out of the load — one line per act, with a complete statement of
+what it does and a **fingerprint** pinning exactly what was read: a wipe
+carries the target population's first key, last key, and row count; a match
+carries a hash over every matched pair, every unmatched value, and the
+target's exact duplicate counts. `d` blesses the act under the cursor at that
+fingerprint; `a` blesses every act except an identity-insert (explicit-key
+writes are blessed one at a time, deliberately). A blessing writes to
+`projection.json` in the same keystroke, as a `signoff` entry:
+
+```jsonc
+"signoff": [
+  { "mode": "replace" },
+  { "act": "wipe:AppCore.Customer", "fingerprint": "population:1:2048:2048" }
+]
+```
+
+The entry can equally be authored by hand — the board prints it verbatim on
+each unblessed act's line. If anything the act would do changes after the
+blessing — a row appears in the population, a matched pair re-points, a
+duplicate lands on the target's match column — the fingerprint no longer
+matches and the board says the blessing was captured at a different
+fingerprint: read the act again and re-bless. Today the ledger narrates and
+never blocks; the mode-level `signoff` (the `replace` greenlight) remains the
+gate a live run refuses on.
+
 `--impact` writes the row-grain before/after artifact
 (`go-board/<flow>.impact.html` + a `.json` twin), **triaged by coupling**
 (2026-07-10): each relational unit of the transfer — a group of tables joined
@@ -119,6 +148,8 @@ The axes it judges, in order — the full forecast vocabulary:
 | cdc | the sink is not CDC-tracked | decide `--allow-cdc` or de-track |
 | grant | the sink principal carries db-scope DML | grant the missing permission |
 | re-run | your strategy is safe against the sink's ACTUAL state | duplicates (merge into populated) or wipe blockers — remedy printed |
+| signoff | a destructive wipe is greenlit in the flow's `signoff` | the mode is not declared — add `{ "mode": "replace" }` after reading the printed impact |
+| consent | (note) the per-act ledger: every act the run performs, its fingerprint, and where each blessing stands | never red today — bless in `--review` (`d`/`a`) or paste the printed entry |
 | execute gates | (note) the two run-time gates | never red — informational |
 
 The `ambiguous source / target keys` and `replayed drops` axes read the same

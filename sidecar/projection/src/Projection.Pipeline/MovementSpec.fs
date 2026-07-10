@@ -178,6 +178,9 @@ type MovementSpec =
         /// 2026-07-08 — the per-flow write-signoff greenlight (the destructive
         /// modes the operator approved). Empty = nothing greenlit.
         Signoff     : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (slice 4a) — the per-ACT blessings: each names one act
+        /// token at one exact fingerprint. Empty = no act blessed.
+        ActSignoff  : WriteSignoff.ActBlessing list
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -246,6 +249,7 @@ module MovementSpec =
             AlignMap    = Map.empty
             SupportingScope = []
             Signoff     = []
+            ActSignoff  = []
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -338,6 +342,14 @@ type Flow =
         /// / `--go`, but durable and auditable. Empty = nothing greenlit (a
         /// destructive flow will not run until it declares one).
         Signoff : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (the transfer-manifest program, slice 4a) — the per-ACT
+        /// blessings the same `signoff` array carries: each entry names one
+        /// canonical act token (`ActConsent.tokenOf`) at one exact captured
+        /// fingerprint, so consent attaches to the individual destructive /
+        /// creative act at the substrate the operator actually read. Empty =
+        /// no act blessed. Parsed from `{ "act": …, "fingerprint": … }`
+        /// entries beside the `{ "mode": … }` mode approvals.
+        ActSignoff : WriteSignoff.ActBlessing list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -481,6 +493,9 @@ type LoadOpts =
         /// 2026-07-08 — the per-flow write-signoff greenlight; the go board reds
         /// and the engine refuses a destructive live run until its mode is here.
         Signoff     : WriteSignoff.WriteApproval list
+        /// 2026-07-10 (slice 4a) — the per-act blessings the board's consent
+        /// axis verifies each derived act against (enforcement lands in 4b).
+        ActSignoff  : WriteSignoff.ActBlessing list
         Rekey       : string option
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.

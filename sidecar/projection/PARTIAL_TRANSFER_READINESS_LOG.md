@@ -1976,3 +1976,77 @@ witnesses re-green; Release FS3511-clean.
 
 Next: slice 4a — `ActConsent` (the eight-arm act taxonomy + fingerprints),
 narrate-only.
+
+---
+
+## Addendum (2026-07-10, the transfer-manifest program, slice 4a) — per-act consent, narrate-only
+
+The mode-level `signoff` greenlights a CLASS of act ("replace is approved");
+this slice names each INSTANCE — the wipe of one table at one exact
+population, the match of one table's rows at one exact set of pairs — and
+makes each individually blessable. Narrate-only: the board and the workbench
+carry the full ledger; no execution path changed (the 4b enforcement follows).
+
+- **`ActConsent` (Core, pure).** The closed eight-arm act alphabet (Wipe /
+  IdentityInsert / DeleteScope / Mint / Rekey / Match / Resolve / Drop), the
+  canonical token per act, the operator statement per act (complete
+  sentences, the mechanism named), and THE act derivation `actsOf` over the
+  same plan the run executes — the board's consent axis and the 4b execute
+  gate read one list, so blessed-set and performed-set cannot drift. The
+  bodies of `TransferResume.wipeTargets` and `Transfer.identityInsertTables`
+  relocated here; the old names are one-line delegations (byte-identity
+  witnessed).
+- **Fingerprints.** A blessing binds to what was READ, never to a category:
+  `population:<first>:<last>:<count>` pins a population (the wipe's blast
+  radius, the mint's planned rows); `effect:<sha256>` pins a computed outcome
+  — the canonical stream is header (token, resolution), one record per
+  matched pair and per unmatched value (ordinally sorted, US/RS separators,
+  the NUL absent-marker out of band), trailer (exact sink total/distinct +
+  planned count). Any drift — a pair edit, a re-pointed identity, a target
+  duplicate, a re-toggled resolution, a new unmatched value — re-opens the
+  act. `parseFingerprint` is total; lowercase hex only (a blessing is copied,
+  never re-cased).
+- **`ActEvidence` (Pipeline, pure).** The bridge from substrate already in
+  hand to fingerprints: the wipe from the face's MIN/MAX+COUNT sink probe,
+  the mint/identity-insert from the plan's own rows, the re-key from the
+  plan's (row, reference) correspondence, the match from
+  `EvidenceCache.matchProducts` — the SAME resolver the workbench forecast
+  reads (published at its second consumer). An act whose substrate would not
+  read is ABSENT and narrated as unread, never invented.
+- **The config surface.** The flow's one `signoff` array admits a second
+  closed entry shape: `{ "act": token, "fingerprint": text, … }` beside
+  `{ "mode": … }`. Both-or-neither refuses by name; a missing or unparseable
+  fingerprint refuses by name; duplicate tokens refuse. Render emits modes
+  first, then acts sorted (A44 round-trip witnessed on the mixed array);
+  threaded expressible⇔reachable through Flow → MovementSpec → LoadOpts →
+  `WriteOptions.ActSignoffs`.
+- **The board's `consent` axis.** Advisory beside `signoff`: the headline
+  counts blessed vs awaiting; the ledger prints one act per entry — BLESSED /
+  OPEN (with the paste-able `{ "act": …, "fingerprint": … }` line) /
+  REOPENED (the blessing on file was captured at a different fingerprint) /
+  UNREAD (the substrate would not read) — plus STALE for a blessing naming an
+  act the run does not perform.
+- **The workbench's bless arms.** The consent ledger renders below the
+  decisions (same paired traversal, same path index); `d` blesses the act
+  under the cursor, `a` blesses every act except an identity-insert (explicit
+  keys are blessed one at a time). Both capture the exact fingerprint SET at
+  gesture time — never a predicate — and write through in the same keystroke
+  (`RelaxationStore.setFlowSignoffEntries`, mode approvals preserved
+  verbatim): a blessing is commitment, where the decision cycle is
+  deliberation.
+
+**Proven:** pure pool 4170 pass / 0 fail (17 new: the canonical renderer
+alone, hash determinism + order-freedom + the five drift re-opens + the
+absent-marker non-aliasing, total fingerprint-text round-trips, the actsOf
+arms + relocation byte-identity + token/statement closure, the three
+fingerprint-source derivations, the six config-parse refusals + the mixed
+A44 round-trip, the workbench act-index validity + step totality with acts +
+the blessed-only-at-matching-fingerprint render); docker
+`ActConsentDockerTests` live against two mock environments (open → blessed
+verbatim from the board's own printed fingerprints → re-opened by one
+inserted sink row; JSON twin carries the ledger; the dry runs wrote
+nothing); Release FS3511-clean.
+
+Next: slice 4b — the always-on execute gate on the peer path
+(`transfer.writeSignoff.actUnblessed`, appended LAST in the refusal chain),
+`blessAll` for the peer-execute witnesses, runbook step 6.

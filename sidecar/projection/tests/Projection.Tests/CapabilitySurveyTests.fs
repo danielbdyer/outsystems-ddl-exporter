@@ -61,7 +61,7 @@ let private env (name: string) (grant: Grant option) : Projection.Pipeline.Envir
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
-    { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+    { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
 
 let private cfgWith (envs: Projection.Pipeline.Environment list) (flows: Flow list) : ProjectionConfig =
     { ProjectionConfig.empty with

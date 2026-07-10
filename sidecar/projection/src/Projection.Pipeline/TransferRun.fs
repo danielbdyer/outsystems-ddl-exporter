@@ -757,17 +757,11 @@ module Transfer =
     /// empty; a `FullRights` / `PreferPreservedKeys` sink is where it arises.
     /// Returns the logical table names touched (for the signoff scope check), so
     /// board and engine gate the SAME plan-derived fact — the two-traversal.
+    /// Relocated to `ActConsent.identityInsertTables` (2026-07-10, slice 4a)
+    /// so the consent alphabet's IdentityInsert acts and this gate share ONE
+    /// body — the name stays for its existing call sites.
     let identityInsertTables (catalog: Catalog) (plan: DataLoadPlan) : string list =
-        plan.Loads
-        |> List.choose (fun load ->
-            if load.Disposition = IdentityDisposition.PreservedFromSource then
-                match Catalog.tryFindKind load.Kind catalog with
-                | Some kind when kind.Attributes |> List.exists (fun a -> a.IsPrimaryKey && a.IsIdentity) ->
-                    Some (Name.value kind.Name)
-                | _ -> None
-            else None)
-        |> List.distinct
-        |> List.sort
+        ActConsent.identityInsertTables catalog plan
 
     /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
     /// whose load order fell back to the ALPHABETICAL degrade (an
@@ -1149,6 +1143,13 @@ module Transfer =
           /// Empty (the `def` default) means no greenlight — a destructive
           /// Execute refuses; a non-destructive Incremental is unaffected.
           Signoffs : WriteSignoff.WriteApproval list
+          /// 2026-07-10 (the transfer-manifest program, slice 4a) — the flow's
+          /// per-ACT blessings: each names one canonical act token at one exact
+          /// captured fingerprint. In 4a the go board's consent axis narrates
+          /// the blessed-vs-derived comparison; slice 4b turns it into the
+          /// execute gate (every act on the peer path must be blessed at its
+          /// current fingerprint). Empty (the `def` default) blesses nothing.
+          ActSignoffs : WriteSignoff.ActBlessing list
           /// 2026-07-09 (the guarantee-hardening program) — the kinds a
           /// `static-lookup` supportingScope entry declared IDENTICAL across the
           /// environments. Each is matched by its business key and asserted to
@@ -1166,7 +1167,7 @@ module Transfer =
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; ActSignoffs = []; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 

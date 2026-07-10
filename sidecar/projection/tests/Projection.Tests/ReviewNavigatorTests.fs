@@ -99,13 +99,17 @@ let private bench : ReviewNavigator.Workbench =
       Cache = cache
       Tables = [ "Trade.Deal" ]
       Reconcile = []
-      SupportingScope = [] }
+      SupportingScope = []
+      Acts = []
+      ModeSignoff = []
+      ActSignoff = [] }
 
 let private freshModel () : ReviewNavigator.Model =
-    let tree, targets = ReviewNavigator.render bench Map.empty
+    let tree, targets = ReviewNavigator.render bench Map.empty Map.empty
     { Nav = Navigator.init 0 tree
       Bench = bench
       Decisions = Map.empty
+      Blessings = Map.empty
       Targets = targets
       Dirty = false
       PendingQuit = false }
@@ -154,10 +158,10 @@ let ``review: Space on a decision selects the first answer and marks the model d
 let ``review: selecting an answer on one edge recomputes its coupled sibling — the workbench never shows a stale count (§4.3)`` () =
     // Undecided: siblings evaluate under the optimistic default, so Tag's
     // reconcile row re-keys all 3 references.
-    let tree0, _ = ReviewNavigator.render bench Map.empty
+    let tree0, _ = ReviewNavigator.render bench Map.empty Map.empty
     // Buyer reconciled by Email (bob unmatched): deal 11 drops, and Tag's
     // reconcile row must now read 2, not 3.
-    let treeSelected, _ = ReviewNavigator.render bench (Map.ofList [ kKey "Buyer", EvidenceCache.Answer.Reconcile (nm "Email") ])
+    let treeSelected, _ = ReviewNavigator.render bench (Map.ofList [ kKey "Buyer", EvidenceCache.Answer.Reconcile (nm "Email") ]) Map.empty
     let textOf (v: View.View) = (View.toJson v).ToJsonString()
     Assert.NotEqual<string>(textOf tree0, textOf treeSelected)
     Assert.Contains("\"2\"", textOf treeSelected)
@@ -211,3 +215,51 @@ let ``review: cycling wraps through every candidate answer and returns to the fi
         let wrapped = ReviewNavigator.step ConsoleKey.Spacebar afterLast
         Assert.Equal<EvidenceCache.Answer option>(Some (List.head candidates), wrapped.Decisions |> Map.tryFind target)
     | _ -> failwith "the cursor never reached a decision block"
+// -- the consent ledger in the workbench (2026-07-10, slice 4a) --------------
+
+let private actFp : ActConsent.ActFingerprint =
+    ActConsent.effectFingerprint
+        { Token = "match:Trade.Buyer"; Resolution = "reconcile:Email"
+          MatchedPairs = [ "alice@x", "71" ]; UnmatchedValues = []
+          SinkTotal = 1L; SinkDistinct = 1L; PlannedCount = 1 }
+
+let private benchWithActs : ReviewNavigator.Workbench =
+    { bench with
+        Acts =
+            [ { Token = "wipe:Trade.Deal"
+                Statement = "Every row of Trade.Deal on the target is deleted child-first before the reload — a target row absent from the source is removed, not preserved."
+                Fingerprint = Some (ActConsent.populationFingerprint "1" "42" 42)
+                Sweepable = true }
+              { Token = "identity-insert:Trade.Buyer"
+                Statement = "Source primary-key values are written directly into Trade.Buyer's identity column under SET IDENTITY_INSERT — a key the target already minted for its own row can collide."
+                Fingerprint = Some actFp
+                Sweepable = false } ] }
+
+[<Fact>]
+let ``review: the paired traversal indexes every act block, and step stays TOTAL with acts present`` () =
+    let tree, targets = ReviewNavigator.render benchWithActs Map.empty Map.empty
+    let actTargets = targets |> Map.toList |> List.choose (fun (p, t) -> match t with ReviewTarget.Act tok -> Some (p, tok) | _ -> None)
+    Assert.Equal(2, actTargets.Length)
+    for (path, _) in actTargets do
+        Assert.True(Navigator.nodeAt tree path |> Option.isSome, sprintf "act index path %A addresses no node" path)
+    let m0 : ReviewNavigator.Model =
+        { Nav = Navigator.init 0 tree; Bench = benchWithActs; Decisions = Map.empty
+          Blessings = Map.empty; Targets = targets; Dirty = false; PendingQuit = false }
+    for k in allKeys do
+        let m = ReviewNavigator.step k m0
+        Assert.True(Navigator.nodeAt m.Nav.Tree m.Nav.Path |> Option.isSome,
+                    sprintf "key %A left the cursor at %A, which addresses no node" k m.Nav.Path)
+
+[<Fact>]
+let ``review: an act renders blessed ONLY when the fingerprint on file equals the one derived this pass`` () =
+    let textOf (bl: Map<string, ActConsent.ActFingerprint>) =
+        let tree, _ = ReviewNavigator.render benchWithActs Map.empty bl
+        (View.toJson tree).ToJsonString()
+    // nothing on file: open — the standing line says how to bless.
+    Assert.Contains("not blessed. Press d to bless it at population:1:42:42", textOf Map.empty)
+    // the exact fingerprint on file: blessed.
+    let matching = Map.ofList [ "wipe:Trade.Deal", ActConsent.populationFingerprint "1" "42" 42 ]
+    Assert.Contains("blessed at population:1:42:42", textOf matching)
+    // a DIFFERENT fingerprint on file: re-opened, never silently accepted.
+    let drifted = Map.ofList [ "wipe:Trade.Deal", ActConsent.populationFingerprint "1" "43" 43 ]
+    Assert.Contains("re-opened: what this act would do has changed since it was blessed", textOf drifted)

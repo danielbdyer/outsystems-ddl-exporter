@@ -29,17 +29,11 @@ module TransferResume =
     /// inventory (e.g. its users) and the zeroed plan would not re-insert them;
     /// (2) a kind outside `loadSet` (the declared golden subset) — untouched,
     /// not refreshed. `loadSet = None` wipes every non-reconciled loaded kind.
+    /// Relocated to `ActConsent.wipeTargets` (2026-07-10, slice 4a) so the
+    /// consent alphabet's Wipe acts and this realization share ONE body —
+    /// the name stays for its existing call sites.
     let wipeTargets (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : SsKey list =
-        let loaded =
-            plan.Loads
-            |> List.filter (fun l -> l.Disposition <> IdentityDisposition.ReconciledByRule)
-            |> List.map (fun l -> l.Kind)
-            |> Set.ofList
-        let inScope =
-            match loadSet with
-            | Some ls -> Set.intersect loaded ls
-            | None    -> loaded
-        List.rev topo.Order |> List.filter (fun k -> Set.contains k inScope)
+        ActConsent.wipeTargets plan topo loadSet
 
     let wipeFkOrdered (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<unit> =
         task {

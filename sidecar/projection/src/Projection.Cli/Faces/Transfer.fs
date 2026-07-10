@@ -1177,7 +1177,12 @@ let runCheckGo
                                                Cache = cache
                                                Tables = opts.Tables
                                                Reconcile = opts.Reconcile
-                                               SupportingScope = opts.SupportingScope }
+                                               SupportingScope = opts.SupportingScope
+                                               // the consent ledger attaches after the dry
+                                               // run below — the acts derive from the plan.
+                                               Acts = []
+                                               ModeSignoff = opts.Signoff
+                                               ActSignoff = opts.ActSignoff }
                                 components
                                 |> List.collect (fun componentEdges ->
                                     let per = EvidenceCache.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
@@ -1249,6 +1254,11 @@ let runCheckGo
             | Ok r -> r
             | Error _ -> SupportingScope.empty
         let staticLookupKeys : Set<SsKey> = boardScope.StaticLookupKinds
+        // THE PER-ACT CONSENT LEDGER (2026-07-10, the manifest program, slice
+        // 4a — narrate-only): filled inside the dry-run branch (the acts
+        // derive from the plan), rendered beside the `signoff` axis below.
+        // `None` = the forecast did not run, so there is no plan to enumerate.
+        let mutable consentNarration : (string * string list) option = None
         let shapeClean = List.isEmpty shape.Blocking
         if not shapeClean then
             items.Add (GoBoard.item "forecast" (GoBoard.Status.Red ("not run — the shape divergence above would make the read/write plan unreliable.", "resolve the shape line, then re-run for the row forecast.")))
@@ -1755,6 +1765,164 @@ let runCheckGo
                             (sprintf "%d target record(s) share a reconcile key with an older row — the oldest is kept and every reference re-keys onto it, displacing the rest." report.AmbiguousTargetMatchKeys.Length,
                              "pin the intended winner with a ManualOverride (`Module.Entity:Column:=<key>`), or approve the loss with --allow-drops at run time."))
                         (report.AmbiguousTargetMatchKeys |> List.truncate 5 |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))))
+                // -- THE PER-ACT CONSENT LEDGER (slice 4a, narrate-only) ------
+                // Every destructive / creative act this run performs, derived
+                // from the SAME plan the dry run built (`ActConsent.actsOf` —
+                // the one derivation the 4b execute gate will also read), each
+                // with the exact fingerprint a blessing binds to, verdicted
+                // against the flow's `signoff` act entries.
+                (match report.Plan with
+                 | None -> ()
+                 | Some plan ->
+                     let acts = ActConsent.actsOf nm sinkContract plan topo loadSet reconciledKeys opts.Emission
+                     if List.isEmpty acts then
+                         consentNarration <- Some ("this run performs no destructive or creative act — there is nothing to bless.", [])
+                     else
+                         // The reconciled kinds' declared match columns — the
+                         // Match acts' effect substrate.
+                         let rec matchColumnOf (strategy: ReconciliationStrategy) : Name option =
+                             match strategy with
+                             | ReconciliationStrategy.MatchByColumn c -> Some c
+                             | ReconciliationStrategy.FallbackToAssigned (_, primary) -> matchColumnOf primary
+                             | _ -> None
+                         let reconcileColumns : Map<SsKey, Name> =
+                             reconciliation
+                             |> Map.toList
+                             |> List.choose (fun (k, s) -> matchColumnOf s |> Option.map (fun c -> k, c))
+                             |> Map.ofList
+                         // One short substrate pass for what the plan alone
+                         // cannot pin: the sink populations a wipe consumes
+                         // (MIN/MAX primary key + count) and the reconciled
+                         // kinds' row substrate for the Match effect hashes
+                         // (`EvidenceCache.fill` over synthetic self-edges —
+                         // the same reader the workbench evidence uses).
+                         let wipeKinds =
+                             acts |> List.choose (function ActConsent.Act.Wipe t -> Some t | _ -> None)
+                         let probes : Map<SsKey, ActEvidence.PopulationProbe> =
+                             if List.isEmpty wipeKinds then Map.empty
+                             else
+                                 match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-consent" sinkSpec).GetAwaiter().GetResult() with
+                                 | Error _ -> Map.empty
+                                 | Ok cnn ->
+                                     use cnn = cnn
+                                     wipeKinds
+                                     |> List.choose (fun t ->
+                                         match Catalog.tryFindKind t sinkContract with
+                                         | None -> None
+                                         | Some k ->
+                                             k.Attributes
+                                             |> List.tryFind (fun a -> a.IsPrimaryKey)
+                                             |> Option.bind (fun pk ->
+                                                 try
+                                                     use cmd = cnn.CreateCommand()
+                                                     cmd.CommandText <-
+                                                         sprintf "SELECT COUNT_BIG(*), CONVERT(nvarchar(128), MIN([%s])), CONVERT(nvarchar(128), MAX([%s])) FROM [%s].[%s];"
+                                                             (ColumnRealization.columnNameText pk.Column) (ColumnRealization.columnNameText pk.Column)
+                                                             (TableId.schemaText k.Physical) (TableId.tableText k.Physical)
+                                                     use r = cmd.ExecuteReader()
+                                                     if r.Read () then
+                                                         Some (t, ({ FirstKey = (if r.IsDBNull 1 then "" else r.GetString 1)
+                                                                     LastKey  = (if r.IsDBNull 2 then "" else r.GetString 2)
+                                                                     RowCount = int (r.GetInt64 0) } : ActEvidence.PopulationProbe))
+                                                     else None
+                                                 with _ -> None))
+                                     |> Map.ofList
+                         let matchCache : EvidenceCache.Cache option =
+                             if Map.isEmpty reconcileColumns then None
+                             else
+                                 let selfEdges =
+                                     reconcileColumns
+                                     |> Map.toList
+                                     |> List.choose (fun (t, c) ->
+                                         Catalog.tryFindKind t sinkContract
+                                         |> Option.map (fun k ->
+                                             { PeerTransfer.Kind = t; PeerTransfer.KindName = k.Name
+                                               PeerTransfer.Column = c; PeerTransfer.Nullable = true
+                                               PeerTransfer.Target = t; PeerTransfer.TargetName = k.Name
+                                               PeerTransfer.TargetModule = k.Name
+                                               PeerTransfer.CandidateReconcileColumns = [ c ] }))
+                                 match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-consent-source" sourceSpec).GetAwaiter().GetResult() with
+                                 | Error _ -> None
+                                 | Ok source ->
+                                     use source = source
+                                     match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-consent-sink" sinkSpec).GetAwaiter().GetResult() with
+                                     | Error _ -> None
+                                     | Ok sink ->
+                                         use sink = sink
+                                         try Some ((EvidenceCache.fill source sink sourceContract sinkContract selfEdges).GetAwaiter().GetResult())
+                                         with _ -> None
+                         let fingerprints =
+                             ActEvidence.fingerprintsOf nm sinkContract plan matchCache reconcileColumns probes acts
+                         let blessedAt : Map<string, ActConsent.ActFingerprint> =
+                             opts.ActSignoff |> List.map (fun b -> b.Act, b.Fingerprint) |> Map.ofList
+                         // Per-act verdict lines: the token, what the act does,
+                         // the exact fingerprint a blessing binds to, and where
+                         // the blessing stands.
+                         let verdictOf (act: ActConsent.Act) : bool * string list =
+                             let token = ActConsent.tokenOf nm act
+                             let statement = ActConsent.describe nm act
+                             match fingerprints |> Map.tryFind token, blessedAt |> Map.tryFind token with
+                             | Some fp, Some onFile when onFile = fp ->
+                                 true, [ sprintf "BLESSED  %s — %s" token statement
+                                         sprintf "         blessed at %s — the blessing on file matches what this run would do." (ActConsent.fingerprintText fp) ]
+                             | Some fp, Some _ ->
+                                 false, [ sprintf "REOPENED %s — %s" token statement
+                                          sprintf "         what this act would do has changed since it was blessed: the blessing on file was captured at a different fingerprint. Re-read the act and bless it again at %s." (ActConsent.fingerprintText fp) ]
+                             | Some fp, None ->
+                                 false, [ sprintf "OPEN     %s — %s" token statement
+                                          sprintf "         bless it in the review workbench (projection check go %s --review), or add { \"act\": \"%s\", \"fingerprint\": \"%s\" } to the flow's signoff." flowName token (ActConsent.fingerprintText fp) ]
+                             | None, _ ->
+                                 false, [ sprintf "UNREAD   %s — %s" token statement
+                                          "         the rows this act would touch could not be read this pass, so there is no fingerprint to bind a blessing to — resolve the connection and re-run." ]
+                         let verdicts = acts |> List.map verdictOf
+                         let blessedCount = verdicts |> List.filter fst |> List.length
+                         let openCount = acts.Length - blessedCount
+                         // A blessing naming an act this run does not perform
+                         // approves nothing — say so rather than let it linger.
+                         let currentTokens = acts |> List.map (ActConsent.tokenOf nm) |> Set.ofList
+                         let staleLines =
+                             opts.ActSignoff
+                             |> List.filter (fun b -> not (Set.contains b.Act currentTokens))
+                             |> List.map (fun b -> sprintf "STALE    %s — the flow blesses this act, but this run does not perform it; the entry approves nothing and can be removed." b.Act)
+                         let headline =
+                             if openCount = 0 && List.isEmpty staleLines then
+                                 sprintf "every act this run performs is blessed at its current fingerprint (%d act(s))." acts.Length
+                             elif openCount = 0 then
+                                 sprintf "every act this run performs is blessed at its current fingerprint (%d act(s)); %d recorded blessing(s) name acts this run does not perform." acts.Length staleLines.Length
+                             else
+                                 sprintf "this run performs %d distinct act(s); %d blessed at the current fingerprint, %d awaiting a blessing. The ledger below names each act, what it does, and the exact fingerprint a blessing binds to." acts.Length blessedCount openCount
+                         consentNarration <- Some (headline, (verdicts |> List.collect snd) @ staleLines)
+                         // `--review`: the consent ledger rides the workbench —
+                         // the acts attach to the bench the relationships branch
+                         // built (or a decisions-empty bench when nothing
+                         // escapes), so d/a bless against the SAME fingerprints
+                         // this board pass derived.
+                         if args.Review then
+                             let actRows : ReviewNavigator.ActRow list =
+                                 acts
+                                 |> List.map (fun act ->
+                                     let token = ActConsent.tokenOf nm act
+                                     { Token = token
+                                       Statement = ActConsent.describe nm act
+                                       Fingerprint = fingerprints |> Map.tryFind token
+                                       Sweepable = (match act with ActConsent.Act.IdentityInsert _ -> false | _ -> true) })
+                             reviewBench <-
+                                 (match reviewBench with
+                                  | Some bench -> Some { bench with Acts = actRows }
+                                  | None ->
+                                      Some { Flow = flowName
+                                             ConfigPath = RelaxationStore.configPath ()
+                                             Catalog = sourceContract
+                                             LoadSet = (match loadSet with Some s -> s | None -> Set.empty)
+                                             Reconciled = reconciledKeys
+                                             Components = []
+                                             Cache = { SourceRows = Map.empty; SinkRows = Map.empty; References = Map.empty; Uniqueness = Map.empty }
+                                             Tables = opts.Tables
+                                             Reconcile = opts.Reconcile
+                                             SupportingScope = opts.SupportingScope
+                                             Acts = actRows
+                                             ModeSignoff = opts.Signoff
+                                             ActSignoff = opts.ActSignoff }))
         // -- sink probes: CDC posture, grant evidence, re-run semantics ------
         match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-sink" sinkSpec).GetAwaiter().GetResult() with
         | Error errors ->
@@ -1931,6 +2099,19 @@ let runCheckGo
              // the go board is env→env-scoped (AssignedBySink), so it never drives
              // an identity-insert flow — the reverse-leg probe sheet is its surface.
              items.Add (GoBoard.item "signoff" (GoBoard.Status.Green "no destructive wipe — merge/incremental is upsert-only; no write-mode greenlight required.")))
+        // -- THE PER-ACT CONSENT LEDGER (2026-07-10, slice 4a): the signoff
+        // axis above greenlights a write MODE; this axis names each individual
+        // destructive / creative ACT the run performs, with the exact
+        // fingerprint a blessing binds to and where each blessing stands.
+        // Advisory in this slice — it narrates, it does not verdict; the
+        // execute-path gate is the enforcement half (slice 4b).
+        (match consentNarration with
+         | Some (headline, []) ->
+             items.Add (GoBoard.item "consent" (GoBoard.Status.Advisory headline))
+         | Some (headline, detail) ->
+             items.Add (GoBoard.itemWith "consent" (GoBoard.Status.Advisory headline) detail)
+         | None ->
+             items.Add (GoBoard.item "consent" (GoBoard.Status.Advisory "the per-act ledger was not derived — the forecast above did not run, so there is no plan to enumerate acts from. Resolve the forecast line and re-run.")))
         // The guided-plan pointer (2026-07-08): the go board VERDICTS readiness;
         // `check plan` walks the strategy options + the WHY of each. Advisory, so it
         // never affects the verdict — just names the companion surface.

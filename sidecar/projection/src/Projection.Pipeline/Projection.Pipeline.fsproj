@@ -78,6 +78,11 @@
     <Compile Include="TransferImpact.fs" />
     <Compile Include="TransferTriage.fs" />
     <Compile Include="EvidenceCache.fs" />
+    <!-- ActEvidence.fs: the pure act-fingerprint derivation (slice 4a) -
+         projects the dry-run plan + EvidenceCache match products + the face
+         population probes onto ActConsent fingerprints; compiles after
+         EvidenceCache.fs (its match products are the effect substrate). -->
+    <Compile Include="ActEvidence.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

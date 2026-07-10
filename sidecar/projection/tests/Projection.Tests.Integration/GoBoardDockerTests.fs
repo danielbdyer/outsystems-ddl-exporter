@@ -58,7 +58,7 @@ module GoBoardFixtures =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
           Reconcile   = reconcile
-          ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []
+          ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []
           Rekey       = None
           AllowCdc    = false
           Resumable   = false

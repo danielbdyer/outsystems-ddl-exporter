@@ -120,10 +120,24 @@ module DecisionRows =
 [<RequireQualifiedAccess>]
 type ReviewTarget =
     | Edge of target: SsKey
+    /// One act in the consent ledger, addressed by its canonical token.
+    | Act of token: string
     | Inert
 
 [<RequireQualifiedAccess>]
 module ReviewNavigator =
+
+    /// One act in the consent ledger (slice 4a): the canonical token, the
+    /// operator-facing statement of what the act does, the fingerprint the
+    /// board derived this pass (None when its substrate would not read), and
+    /// whether the bless-everything gesture may sweep it.
+    type ActRow =
+        { Token       : string
+          Statement   : string
+          Fingerprint : ActConsent.ActFingerprint option
+          /// `a` (bless every act) never sweeps an identity-insert — explicit
+          /// primary-key writes are blessed one at a time, deliberately.
+          Sweepable   : bool }
 
     /// Everything the workbench holds — pure data only; the connections that
     /// filled the cache are long closed by the time the loop opens.
@@ -138,12 +152,25 @@ module ReviewNavigator =
           /// the flow's CURRENT config lists — `w` appends, never clobbers.
           Tables          : string list
           Reconcile       : string list
-          SupportingScope : SupportingScope.SupportingScopeEntry list }
+          SupportingScope : SupportingScope.SupportingScopeEntry list
+          /// The consent ledger (slice 4a): every act the forecast plan
+          /// performs, in board order. Empty when the forecast did not run.
+          Acts            : ActRow list
+          /// The flow's CURRENT mode approvals — a bless write-through
+          /// re-writes the whole `signoff` array, so these are preserved.
+          ModeSignoff     : WriteSignoff.WriteApproval list
+          /// The flow's act blessings on file at bench build.
+          ActSignoff      : WriteSignoff.ActBlessing list }
 
     type Model =
         { Nav         : Navigator.Model
           Bench       : Workbench
           Decisions   : Map<SsKey, EvidenceCache.Answer>
+          /// The blessed set as WRITTEN: token → the fingerprint on file.
+          /// Initialized from the flow's act signoffs; a bless gesture adds
+          /// the exact fingerprint captured at gesture time and writes
+          /// through in the same keystroke.
+          Blessings   : Map<string, ActConsent.ActFingerprint>
           Targets     : Map<int list, ReviewTarget>
           Dirty       : bool
           PendingQuit : bool }
@@ -162,9 +189,16 @@ module ReviewNavigator =
     /// THE PAIRED SINGLE TRAVERSAL: one pass builds BOTH the `View` and the
     /// path→target index, so the cursor's domain meaning cannot drift from
     /// what is drawn. Pure.
-    let render (bench: Workbench) (decisions: Map<SsKey, EvidenceCache.Answer>) : View.View * Map<int list, ReviewTarget> =
+    let render (bench: Workbench) (decisions: Map<SsKey, EvidenceCache.Answer>) (blessings: Map<string, ActConsent.ActFingerprint>) : View.View * Map<int list, ReviewTarget> =
         let targets = orderedTargets bench
         let decided = targets |> List.filter (fun (_, t) -> decisions.ContainsKey t) |> List.length
+        // an act is blessed when the fingerprint ON FILE equals the one this
+        // pass derived — a changed substrate re-opens it, never silently.
+        let isBlessed (a: ActRow) =
+            match a.Fingerprint, blessings |> Map.tryFind a.Token with
+            | Some fp, Some onFile -> onFile = fp
+            | _ -> false
+        let blessedCount = bench.Acts |> List.filter isBlessed |> List.length
         let blocks = System.Collections.Generic.List<View.View>()
         let index = System.Collections.Generic.Dictionary<int list, ReviewTarget>()
         blocks.Add (View.Hero (View.Warn, sprintf "THE DECISION WORKBENCH — flow '%s'   %d open decision(s), %d decided" bench.Flow (List.length targets) decided))
@@ -192,10 +226,36 @@ module ReviewNavigator =
             blocks.Add (View.Disclosure (headline, status,
                             View.Field ("decision", table.Question, status)
                             :: GoBoardView.decisionTable table))
-        blocks.Add (View.Rule (Some "standing", (if decided = List.length targets then View.Ok else View.Warn)))
+        // -- the consent ledger (slice 4a): one block per act, in the same
+        // paired traversal — the bless gesture addresses the block under the
+        // cursor through the same index the decisions use.
+        (if not (List.isEmpty bench.Acts) then
+            blocks.Add (View.Rule (Some "acts", (if blessedCount = bench.Acts.Length then View.Ok else View.Warn)))
+            for a in bench.Acts do
+                let status = if isBlessed a then View.Ok else View.Warn
+                let standing =
+                    match a.Fingerprint, blessings |> Map.tryFind a.Token with
+                    | Some fp, Some onFile when onFile = fp ->
+                        sprintf "blessed at %s — the blessing on file matches what this run would do." (ActConsent.fingerprintText fp)
+                    | Some fp, Some _ ->
+                        sprintf "re-opened: what this act would do has changed since it was blessed. Read the statement above and press d to bless it again at %s." (ActConsent.fingerprintText fp)
+                    | Some fp, None ->
+                        sprintf "not blessed. Press d to bless it at %s." (ActConsent.fingerprintText fp)
+                    | None, _ ->
+                        "the substrate this act consumes could not be read this pass, so there is no fingerprint to bind a blessing to — resolve the connection and re-run."
+                index.[[ blocks.Count ]] <- ReviewTarget.Act a.Token
+                blocks.Add (View.Disclosure ((sprintf "%s — %s" a.Token (if isBlessed a then "blessed" else "open")), status,
+                                [ View.Field ("act", a.Statement, status)
+                                  View.Field ("standing", standing, status) ])))
+        blocks.Add (View.Rule (Some "standing", (if decided = List.length targets && blessedCount = bench.Acts.Length then View.Ok else View.Warn)))
         blocks.Add (View.Panel ("standing",
-                        [ View.PanelRow.Labeled ("decided", sprintf "%d of %d" decided (List.length targets), (if decided = List.length targets then View.Ok else View.Warn))
-                          View.PanelRow.Next (sprintf "Space selects the next answer for the decision under the cursor; w writes the selections to %s; re-run `projection check go %s` to re-verdict." bench.ConfigPath bench.Flow) ]))
+                        [ yield View.PanelRow.Labeled ("decided", sprintf "%d of %d" decided (List.length targets), (if decided = List.length targets then View.Ok else View.Warn))
+                          if not (List.isEmpty bench.Acts) then
+                              yield View.PanelRow.Labeled ("blessed", sprintf "%d of %d act(s)" blessedCount bench.Acts.Length, (if blessedCount = bench.Acts.Length then View.Ok else View.Warn))
+                          yield View.PanelRow.Next
+                                  (if List.isEmpty bench.Acts
+                                   then sprintf "Space selects the next answer for the decision under the cursor; w writes the selections to %s; re-run `projection check go %s` to re-verdict." bench.ConfigPath bench.Flow
+                                   else sprintf "Space selects the next answer; d blesses the act under the cursor; a blesses every act except identity-insert; w writes the selections to %s; re-run `projection check go %s` to re-verdict." bench.ConfigPath bench.Flow) ]))
         View.Doc (List.ofSeq blocks), (index |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
 
     /// The longest valid prefix of a path in a tree — the cursor's safety
@@ -210,7 +270,7 @@ module ReviewNavigator =
     /// Rebuild the tree + index from the current selections, keeping the
     /// cursor on the longest still-valid prefix of its path.
     let private rebuild (m: Model) : Model =
-        let tree, targets = render m.Bench m.Decisions
+        let tree, targets = render m.Bench m.Decisions m.Blessings
         let clamped = clampPath tree m.Nav.Path
         { m with Nav = { m.Nav with Tree = tree; Path = clamped }; Targets = targets }
 
@@ -259,6 +319,38 @@ module ReviewNavigator =
             { m with PendingQuit = true }
         | _ ->
             { m with Nav = Navigator.step key m.Nav; PendingQuit = false }
+
+    /// BLESS the named acts at the fingerprints derived THIS pass — the exact
+    /// set captured at gesture time, never a predicate over future substrate.
+    /// Writes the flow's whole `signoff` array through immediately (mode
+    /// approvals preserved verbatim; blessings the gesture did not touch
+    /// preserved with their audit fields): a blessing is commitment, where a
+    /// decision cycle is deliberation. Returns the updated model and the
+    /// shell notes. Impure (the one write seam beside `persist`).
+    let bless (m: Model) (tokens: string list) : Model * string list =
+        let capturable =
+            m.Bench.Acts
+            |> List.filter (fun a -> List.contains a.Token tokens)
+            |> List.choose (fun a -> a.Fingerprint |> Option.map (fun fp -> a.Token, fp))
+        if List.isEmpty capturable then
+            m, [ "nothing blessed — the act under the cursor has no derived fingerprint to bind a blessing to." ]
+        else
+            let updated = capturable |> List.fold (fun acc (t, fp) -> Map.add t fp acc) m.Blessings
+            let entries =
+                updated
+                |> Map.toList
+                |> List.map (fun (t, fp) ->
+                    // an unchanged blessing keeps its audit fields; a re-bless
+                    // at a new fingerprint starts a fresh minimal entry.
+                    match m.Bench.ActSignoff |> List.tryFind (fun b -> b.Act = t && b.Fingerprint = fp) with
+                    | Some existing -> existing
+                    | None -> WriteSignoff.blessed t fp)
+            match RelaxationStore.setFlowSignoffEntries m.Bench.ConfigPath m.Bench.Flow m.Bench.ModeSignoff entries with
+            | Ok () ->
+                rebuild { m with Blessings = updated; PendingQuit = false },
+                [ sprintf "blessed %s — written to %s." (capturable |> List.map fst |> String.concat ", ") m.Bench.ConfigPath ]
+            | Error e ->
+                m, [ sprintf "the blessing did not persist — %s. Nothing was recorded; the file is unchanged." e ]
 
     /// The config edits the current selections materialize into — the SAME
     /// vocabulary the engine already honors (a selection is never a new
@@ -333,15 +425,20 @@ module ReviewNavigator =
 
     let private legend = "↑↓ move   →/Enter open   ← back   Space select the next answer   w write the selections   q quit"
 
+    let private legendWithActs = "↑↓ move   →/Enter open   ← back   Space select   d bless the act   a bless all but identity-insert   w write   q quit"
+
     /// The redraw loop (the one I/O boundary; the terminal bracket restores
     /// cursor + Ctrl-C modes on every exit path).
     let run (bench: Workbench) : int =
         let console = View.consoleTo Console.Out
-        let tree, targets = render bench Map.empty
+        let blessingsOnFile =
+            bench.ActSignoff |> List.map (fun b -> b.Act, b.Fingerprint) |> Map.ofList
+        let tree, targets = render bench Map.empty blessingsOnFile
         let mutable model =
             { Nav = Navigator.init 0 tree
               Bench = bench
               Decisions = Map.empty
+              Blessings = blessingsOnFile
               Targets = targets
               Dirty = false
               PendingQuit = false }
@@ -357,13 +454,34 @@ module ReviewNavigator =
                         Navigator.safeMarkupLine console (Markup.Escape n) n
                     let warning =
                         if model.PendingQuit then "unsaved selections — w writes them to projection.json; q again discards them.   " else ""
-                    Navigator.safeMarkupLine console (Markup.Escape (warning + legend)) (warning + legend)
+                    let legendLine = warning + (if List.isEmpty bench.Acts then legend else legendWithActs)
+                    Navigator.safeMarkupLine console (Markup.Escape legendLine) legendLine
                     let key = Console.ReadKey(true)
                     if key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
                         go <- false
                     elif key.Key = ConsoleKey.W then
                         notes <- persist model.Bench model.Decisions
                         model <- { model with Dirty = false; PendingQuit = false }
+                    elif key.Key = ConsoleKey.D && not (List.isEmpty bench.Acts) then
+                        // bless the act under the cursor — write-through now.
+                        match targetAt model with
+                        | Some (ReviewTarget.Act token) ->
+                            let m2, n2 = bless model [ token ]
+                            model <- m2
+                            notes <- n2
+                        | _ ->
+                            notes <- [ "the cursor is not on an act — move to the acts section (below the decisions) and press d there." ]
+                    elif key.Key = ConsoleKey.A && not (List.isEmpty bench.Acts) then
+                        // bless every act EXCEPT identity-insert — each at the
+                        // exact fingerprint derived this pass, in one write.
+                        let sweep = bench.Acts |> List.filter (fun a -> a.Sweepable) |> List.map (fun a -> a.Token)
+                        let held = bench.Acts |> List.filter (fun a -> not a.Sweepable) |> List.map (fun a -> a.Token)
+                        let m2, n2 = bless model sweep
+                        model <- m2
+                        notes <-
+                            n2 @ (match held with
+                                  | [] -> []
+                                  | hs -> [ sprintf "not swept: %s — an identity-insert writes explicit primary keys and is blessed one at a time (press d on it)." (String.concat ", " hs) ])
                     else
                         notes <- []
                         model <- step key.Key model

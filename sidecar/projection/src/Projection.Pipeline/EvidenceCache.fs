@@ -158,6 +158,18 @@ module EvidenceCache =
         | Answer.Pin _ -> (fun _ -> true), [], [], None
         | Answer.Widen -> (fun _ -> true), [], [], None
 
+    /// The match products one column answer yields for a target — the
+    /// (business-key value, resolved sink identity) pairs, the unmatched
+    /// values, and the target's exact (total, distinct) sink counts on the
+    /// column. Published for the act-consent fingerprints (the second
+    /// consumer, slice 4a — `ActEvidence.fingerprintsOf` hashes exactly
+    /// these); `componentDeltas` consumes the same resolver internally, so
+    /// the workbench's forecast and the blessing's fingerprint read ONE match.
+    let matchProducts (cache: Cache) (catalog: Catalog) (target: SsKey) (column: Name)
+        : (string * string) list * string list * (int64 * int64) option =
+        let _, matched, unmatched, _ = resolverFor cache catalog target (Answer.Reconcile column)
+        matched, unmatched, (cache.Uniqueness |> Map.tryFind (target, column))
+
     /// Widen's fixpoint keyset diff (§4.5): the escaping targets that APPEAR
     /// when `target` joins the load set, minus those already open.
     let private widenSpawns
