@@ -44,6 +44,7 @@
     <Compile Include="PeerWitnessDockerTests.fs" />
     <Compile Include="ClonedModuleTransferDockerTests.fs" />
     <Compile Include="GoBoardDockerTests.fs" />
+    <Compile Include="TriageWitnessDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />

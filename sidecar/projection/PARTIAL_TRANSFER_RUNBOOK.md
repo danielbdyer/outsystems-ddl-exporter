@@ -74,6 +74,19 @@ code. One note for CI authors: the board's not-ready verdict is always
 exit 5 (the `check shape` class); the live `--go` run refines that into 5
 (shape) vs 9 (relationships / identities / drops).
 
+`--impact` writes the row-grain before/after artifact
+(`go-board/<flow>.impact.html` + a `.json` twin), **triaged by coupling**
+(2026-07-10): each relational unit of the transfer — a group of tables joined
+by foreign keys — is classified and ranked. A unit whose source and target
+hold the same rows (verified column by column) folds to one line; a unit
+where every source row pairs with a row the target already holds folds to one
+line; a unit with nothing to do folds to one line. The units that stay
+expanded are exactly the ones needing attention: a column pointing at a table
+outside the transfer (a decision to make), or rows that will be inserted or
+deleted. The unit with the most affected rows opens first. The fold hides
+scroll, never rows — every row is counted in the summary, and the `.json`
+twin carries every unit in full.
+
 The axes it judges, in order — the full forecast vocabulary:
 
 | Axis | What it proves | Red means |

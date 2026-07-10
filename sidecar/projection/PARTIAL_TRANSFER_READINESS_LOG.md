@@ -1842,3 +1842,46 @@ both added witnesses AND corrected the fix:
 pure `GoBoard`/`PeerTransfer` green; Release FS3511-clean. Net: the reachable
 exit-9 parity gap (`ambiguous target keys`) is now witnessed against a live pair,
 and the board no longer carries an axis it can never render.
+
+### Addendum — the manifest program, slice 1: triage by coupling (2026-07-10)
+
+The first built slice of THE_TRANSFER_MANIFEST.md (the operator
+comprehension-and-consent instrument; design committed same day). Scope:
+presentation only — no decision surface, no consent change, no execution-path
+touch.
+
+- **`TransferTriage` (new, pure).** Each relational unit of the transfer (a
+  `TransferImpact.Segment`, the weakly-connected FK component) classifies into
+  one of five classes — settled-static / settled-closed / settled-noop /
+  open-escaping / open-destructive — from signals the board already holds
+  (escaping FKs, drift verdicts, static-lookup divergences, the wiped and
+  inserted/deleted kinds, the declared static-lookup set). The single safety
+  invariant: classification FAILS TOWARD FOREGROUNDING — any signal forces an
+  Open class; a wipe can never fold. Ranking is total (band, then affected-row
+  weight with a foregrounding penalty, then the full member-key list), so the
+  pretty and machine lenses agree under any input permutation.
+- **The `--impact` artifact, triaged.** Open units render first, the top-ranked
+  expanded; each settled unit is ONE line whose badge states the precise
+  mechanism ("source and target hold the same rows, verified column by column —
+  nothing is written"); the settled tail past 8 folds to one counted line. The
+  fold hides scroll, never rows: the summed tallies are preserved and the
+  `.json` twin carries EVERY unit with its `triage` and `couplingWeight`,
+  uncapped.
+- **`CheckGoArgs` reified.** `PlanAction.CheckGo`'s payload (three adjacent
+  bools — the positional-misordering trap) became a record, constructed
+  literally at the parse site; the face and dispatch consume it. `Review`
+  rides the record (false; parsed when slice 3 lands).
+- **Voice audit (operator feedback, mid-slice).** The first badge cut carried
+  abstractions ("matched to the target's own rows", "the heaviest coupled
+  unit"); reworked to plain-exacting mechanism statements before landing.
+
+**Proven:** pure pool 4127 pass / 0 fail (9 new `TransferTriageTests`:
+totality, fail-toward-foregrounding, wipe-never-folds, rank
+permutation-invariance, tally preservation, static-requires-clean, the uncapped
+twin); docker 8/8 (`GoBoardDocker` 7 + the new `TriageWitnessDockerTests` —
+a live two-cell pair where the identical `RefData.Country` static unit folds to
+one line under differing sink surrogates and the escaping Customer unit ranks
+first and opens); Release FS3511-clean.
+
+Next: slice 2, the `EvidenceCache` + exact per-answer deltas (the fidelity
+substrate for the decision workbench).

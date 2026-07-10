@@ -896,7 +896,12 @@ let runCheckGo
     // Same contract-read scope as `runPeerTransfer` — the go board must
     // forecast with the contracts the live run will actually read.
     (contractScope: MetadataSnapshotRunner.SnapshotParameters)
-    (flowName: string) (fromLabel: string) (toLabel: string) (asJson: bool) (emitSql: bool) (emitImpact: bool) (planned: PlanAction) : int =
+    // The board coordinates ride the reified `CheckGoArgs` record (2026-07-10,
+    // the manifest program) — the tuple had reached three adjacent bools.
+    (args: CheckGoArgs) : int =
+    let flowName, fromLabel, toLabel = args.Flow, args.FromLabel, args.ToLabel
+    let asJson, emitSql, emitImpact = args.AsJson, args.EmitSql, args.EmitImpact
+    let planned = args.Planned
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         // The machine lens is the stable `toJsonString` CI contract (untouched);
@@ -1502,14 +1507,37 @@ let runCheckGo
                               Roles = roles }
                         let strategyLabel = match opts.Emission with EmissionMode.WipeAndLoad -> "replace (wipe & load)" | _ -> "merge (upsert)"
                         let impact = TransferImpact.build flowName strategyLabel inputs
+                        // THE TRIAGE (2026-07-10, the manifest program, slice 1):
+                        // classify each relational unit from the signals already
+                        // in hand — no new probe, no re-segmentation — so the
+                        // artifact folds the proven-settled to one line each and
+                        // foregrounds the open/coupled units. Fails toward
+                        // foregrounding (any signal ⇒ Open*).
+                        let escapeKinds = escapes |> List.map (fun e -> e.Kind) |> Set.ofList
+                        let redVerdictKinds =
+                            roles
+                            |> Map.toList
+                            |> List.choose (fun (k, r) ->
+                                match r.Verdict with
+                                | Some v when TransferTriage.isDriftVerdict v -> Some k
+                                | _ -> None)
+                            |> Set.ofList
+                        let divergenceKinds = report.StaticLookupDivergences |> List.map (fun d -> d.Kind) |> Set.ofList
+                        let destructiveKinds =
+                            impact.Summary
+                            |> List.choose (fun r -> if r.Context.Added > 0 || r.Context.Deleted > 0 then Some r.Kind else None)
+                            |> Set.ofList
+                            |> Set.union wipeSet
+                        let units = TransferTriage.unitsOf escapeKinds redVerdictKinds divergenceKinds destructiveKinds staticLookupKeys impact.Segments
                         System.IO.Directory.CreateDirectory "go-board" |> ignore
                         let htmlPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.html" flowName)
                         let jsonPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.json" flowName)
-                        System.IO.File.WriteAllText (htmlPath, TransferImpactView.toHtml sinkContract impact)
-                        System.IO.File.WriteAllText (jsonPath, TransferImpactView.toJson sinkContract impact)
+                        System.IO.File.WriteAllText (htmlPath, TransferImpactView.toHtmlTriaged sinkContract units impact)
+                        System.IO.File.WriteAllText (jsonPath, TransferImpactView.toJsonTriaged sinkContract units impact)
                         let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %d row(s): %s)" impactCap (String.concat ", " truncated)
+                        let openCount = units |> List.filter (fun u -> not (TransferTriage.isSettled u.Triage)) |> List.length
                         items.Add (GoBoard.item "impact"
-                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — +%d added, -%d deleted, ~%d changed, %d unchanged across %d segment(s)%s." htmlPath impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged (List.length impact.Segments) truncNote)))
+                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — %d unit(s), %d open / %d settled; +%d added, -%d deleted, ~%d changed, %d unchanged%s." htmlPath (List.length units) openCount (List.length units - openCount) impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged truncNote)))
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the

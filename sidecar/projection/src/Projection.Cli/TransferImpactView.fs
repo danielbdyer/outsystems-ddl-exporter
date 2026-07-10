@@ -74,6 +74,43 @@ let rec private nodeJson (catalog: Catalog) (n: TransferImpact.EntityNode) : Jso
         o.["children"] <- ca
     o :> JsonNode
 
+/// One summary row's machine form — shared by the plain and triaged twins.
+let private summaryRowJson (catalog: Catalog) (r: TransferImpact.SummaryRow) : JsonObject =
+    let rj = JsonObject()
+    rj.["table"] <- JsonValue.Create (nameOf catalog r.Kind)
+    rj.["role"] <- JsonValue.Create r.Role.Variety
+    rj.["reason"] <- JsonValue.Create r.Role.Reason
+    if r.Role.Guarantee <> "" then rj.["guarantee"] <- JsonValue.Create r.Role.Guarantee
+    r.Role.Key |> Option.iter (fun k -> rj.["matchedBy"] <- JsonValue.Create k)
+    r.Role.Verdict |> Option.iter (fun v -> rj.["verdict"] <- JsonValue.Create v)
+    rj.["sinkBefore"] <- JsonValue.Create r.Context.SinkBefore
+    rj.["added"] <- JsonValue.Create r.Context.Added
+    rj.["deleted"] <- JsonValue.Create r.Context.Deleted
+    rj.["changed"] <- JsonValue.Create r.Context.Changed
+    rj.["unchanged"] <- JsonValue.Create r.Context.Unchanged
+    rj
+
+/// One segment's machine form — shared by the plain and triaged twins.
+let private segmentJson (catalog: Catalog) (s: TransferImpact.Segment) : JsonObject =
+    let sj = JsonObject()
+    sj.["members"] <- (let a = JsonArray() in (for m in s.Members do a.Add (JsonValue.Create (nameOf catalog m))); a)
+    sj.["roots"] <- (let a = JsonArray() in (for r in s.Roots do a.Add (JsonValue.Create (nameOf catalog r))); a)
+    let ctx = JsonArray()
+    for c in s.Context do
+        let cj = JsonObject()
+        cj.["table"] <- JsonValue.Create (nameOf catalog c.Kind)
+        cj.["sinkBefore"] <- JsonValue.Create c.SinkBefore
+        cj.["added"] <- JsonValue.Create c.Added
+        cj.["deleted"] <- JsonValue.Create c.Deleted
+        cj.["changed"] <- JsonValue.Create c.Changed
+        cj.["unchanged"] <- JsonValue.Create c.Unchanged
+        ctx.Add cj
+    sj.["context"] <- ctx
+    let docs = JsonArray()
+    for d in s.Documents do docs.Add (nodeJson catalog d)
+    sj.["documents"] <- docs
+    sj
+
 let toJson (catalog: Catalog) (impact: TransferImpact.Impact) : string =
     let root = JsonObject()
     root.["flow"] <- JsonValue.Create impact.Flow
@@ -86,39 +123,38 @@ let toJson (catalog: Catalog) (impact: TransferImpact.Impact) : string =
     root.["totals"] <- t
     let sum = JsonArray()
     for r in impact.Summary do
-        let rj = JsonObject()
-        rj.["table"] <- JsonValue.Create (nameOf catalog r.Kind)
-        rj.["role"] <- JsonValue.Create r.Role.Variety
-        rj.["reason"] <- JsonValue.Create r.Role.Reason
-        if r.Role.Guarantee <> "" then rj.["guarantee"] <- JsonValue.Create r.Role.Guarantee
-        r.Role.Key |> Option.iter (fun k -> rj.["matchedBy"] <- JsonValue.Create k)
-        r.Role.Verdict |> Option.iter (fun v -> rj.["verdict"] <- JsonValue.Create v)
-        rj.["sinkBefore"] <- JsonValue.Create r.Context.SinkBefore
-        rj.["added"] <- JsonValue.Create r.Context.Added
-        rj.["deleted"] <- JsonValue.Create r.Context.Deleted
-        rj.["changed"] <- JsonValue.Create r.Context.Changed
-        rj.["unchanged"] <- JsonValue.Create r.Context.Unchanged
-        sum.Add rj
+        sum.Add (summaryRowJson catalog r)
     root.["summary"] <- sum
     let segs = JsonArray()
     for s in impact.Segments do
-        let sj = JsonObject()
-        sj.["members"] <- (let a = JsonArray() in (for m in s.Members do a.Add (JsonValue.Create (nameOf catalog m))); a)
-        sj.["roots"] <- (let a = JsonArray() in (for r in s.Roots do a.Add (JsonValue.Create (nameOf catalog r))); a)
-        let ctx = JsonArray()
-        for c in s.Context do
-            let cj = JsonObject()
-            cj.["table"] <- JsonValue.Create (nameOf catalog c.Kind)
-            cj.["sinkBefore"] <- JsonValue.Create c.SinkBefore
-            cj.["added"] <- JsonValue.Create c.Added
-            cj.["deleted"] <- JsonValue.Create c.Deleted
-            cj.["changed"] <- JsonValue.Create c.Changed
-            cj.["unchanged"] <- JsonValue.Create c.Unchanged
-            ctx.Add cj
-        sj.["context"] <- ctx
-        let docs = JsonArray()
-        for d in s.Documents do docs.Add (nodeJson catalog d)
-        sj.["documents"] <- docs
+        segs.Add (segmentJson catalog s)
+    root.["segments"] <- segs
+    root.ToJsonString(System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+
+/// The TRIAGED machine twin (2026-07-10, the manifest program, slice 1):
+/// the same document as `toJson`, with the segments in RANK order and each
+/// carrying its `triage` class token and `couplingWeight`. Uncapped — every
+/// unit is present regardless of how the pretty artifact folds (the
+/// one-substrate law: the machine lens never loses what the human collapsed).
+let toJsonTriaged (catalog: Catalog) (units: TransferTriage.TransferUnit list) (impact: TransferImpact.Impact) : string =
+    let root = JsonObject()
+    root.["flow"] <- JsonValue.Create impact.Flow
+    root.["strategy"] <- JsonValue.Create impact.Strategy
+    let t = JsonObject()
+    t.["added"] <- JsonValue.Create impact.Totals.Added
+    t.["deleted"] <- JsonValue.Create impact.Totals.Deleted
+    t.["changed"] <- JsonValue.Create impact.Totals.Changed
+    t.["unchanged"] <- JsonValue.Create impact.Totals.Unchanged
+    root.["totals"] <- t
+    let sum = JsonArray()
+    for r in impact.Summary do
+        sum.Add (summaryRowJson catalog r)
+    root.["summary"] <- sum
+    let segs = JsonArray()
+    for u in units do
+        let sj = segmentJson catalog u.Segment
+        sj.["triage"] <- JsonValue.Create (TransferTriage.token u.Triage)
+        sj.["couplingWeight"] <- JsonValue.Create u.CouplingWeight
         segs.Add sj
     root.["segments"] <- segs
     root.ToJsonString(System.Text.Json.JsonSerializerOptions(WriteIndented = true))
@@ -151,7 +187,7 @@ let rec private nodeHtml (catalog: Catalog) (sb: StringBuilder) (n: TransferImpa
         sb.Append("</div>") |> ignore
     sb.Append("</div>") |> ignore
 
-let private segmentHtml (catalog: Catalog) (sb: StringBuilder) (openFirst: bool) (s: TransferImpact.Segment) : unit =
+let private segmentHtml (catalog: Catalog) (sb: StringBuilder) (openFirst: bool) (badge: string option) (s: TransferImpact.Segment) : unit =
     let rootName = s.Roots |> List.map (nameOf catalog) |> String.concat ", "
     let path = s.Members |> List.map (nameOf catalog) |> String.concat " ▸ "
     let tallies =
@@ -162,6 +198,11 @@ let private segmentHtml (catalog: Catalog) (sb: StringBuilder) (openFirst: bool)
     sb.Append("<summary>") |> ignore
     sb.Append("<svg class=\"caret\" width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" aria-hidden=\"true\"><path d=\"M4 2l5 4-5 4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>") |> ignore
     sb.Append(sprintf "<span><span class=\"seg-title\">%s</span> <span class=\"seg-path\">%s</span></span>" (esc rootName) (esc path)) |> ignore
+    // The triage badge (2026-07-10, the manifest program): the unit's class,
+    // stated on the summary line so a folded unit reads its verdict at a glance.
+    (match badge with
+     | Some b -> sb.Append(sprintf "<span class=\"chip\">%s</span>" (esc b)) |> ignore
+     | None -> ())
     sb.Append("<span class=\"seg-tally\">") |> ignore
     if ta > 0 then sb.Append(sprintf "<b class=\"t-add\">+%d</b>" ta) |> ignore
     if td > 0 then sb.Append(sprintf "<b class=\"t-del\">&minus;%d</b>" td) |> ignore
@@ -370,7 +411,74 @@ let toHtml (catalog: Catalog) (impact: TransferImpact.Impact) : string =
     let changedSegments = impact.Segments |> List.filter (fun s -> not (List.isEmpty s.Documents))
     if not (List.isEmpty changedSegments) then
         sb.Append("<h2>Changed data, denormalized <span class=\"sub\">owned children conjoined under each root; unchanged rows counted, not listed</span></h2><div class=\"hrule\"></div>") |> ignore
-        changedSegments |> List.iter (segmentHtml catalog sb false)
+        changedSegments |> List.iter (segmentHtml catalog sb false None)
+    sb.Append(sprintf "<footer><span>projection check go %s --impact</span><span>·</span><span>go-board/%s.impact.html</span></footer>" (esc impact.Flow) (esc impact.Flow)) |> ignore
+    sb.Append("</div></body></html>") |> ignore
+    sb.ToString()
+
+// -- the TRIAGED artifact (2026-07-10, the manifest program, slice 1) --------
+// The same masthead/tiles/summary surfaces, but the detail section is triaged
+// by coupling: open units first (the top-ranked one revealed), each settled
+// unit ONE folded line with its proof beneath the fold, and a cap-and-named
+// settled tail so a large estate never scrolls — every row still counted (the
+// fold hides scroll, never tally; the machine twin carries every unit).
+
+/// The one-line verdict a triage class states on its unit's summary line.
+/// THE_VOICE: plain and exacting — the precise mechanism, never an
+/// abstraction; the true verb (inserted / deleted / written), never a
+/// softener or a figure.
+let private triageBadge (t: TransferTriage.TriageClass) : string =
+    match t with
+    | TransferTriage.TriageClass.SettledStatic   -> "source and target hold the same rows, verified column by column — nothing is written"
+    | TransferTriage.TriageClass.SettledClosed   -> "each source row pairs with a row the target already holds, matched by its business column — nothing is inserted or deleted"
+    | TransferTriage.TriageClass.SettledNoop     -> "no rows are added, deleted, or changed"
+    | TransferTriage.TriageClass.OpenEscaping    -> "a column points at a table outside the transfer — a decision is required"
+    | TransferTriage.TriageClass.OpenDestructive -> "rows are inserted or deleted in the target"
+
+/// How many settled units render as individual folded lines before the tail
+/// folds to one counted line (the constant-size discipline: a 3-unit run and
+/// a 3,000-unit run open on the same calm screen).
+let private settledTailCap = 8
+
+let toHtmlTriaged (catalog: Catalog) (units: TransferTriage.TransferUnit list) (impact: TransferImpact.Impact) : string =
+    let t = impact.Totals
+    let sb = StringBuilder()
+    sb.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">") |> ignore
+    sb.Append(sprintf "<title>Transfer impact — %s</title>" (esc impact.Flow)) |> ignore
+    sb.Append("<style>").Append(css).Append("</style></head><body><div class=\"wrap\">") |> ignore
+    // masthead
+    let openCount = units |> List.filter (fun u -> not (TransferTriage.isSettled u.Triage)) |> List.length
+    sb.Append("<header class=\"masthead\"><div class=\"eyebrow\">Transfer impact · dry run · zero writes</div>") |> ignore
+    sb.Append(sprintf "<div class=\"title-row\"><h1>%s</h1></div>" (esc impact.Flow)) |> ignore
+    sb.Append(sprintf "<div class=\"meta\"><span class=\"chip\">strategy <b>%s</b></span><span class=\"chip\">units <b>%d</b></span><span class=\"chip\">open <b>%d</b></span><span class=\"chip\">settled <b>%d</b></span></div></header>"
+                (esc impact.Strategy) (List.length units) openCount (List.length units - openCount)) |> ignore
+    // tiles
+    sb.Append("<section class=\"tiles\">") |> ignore
+    sb.Append(sprintf "<div class=\"tile add\"><div class=\"n\">+%d</div><div class=\"l\">rows added</div></div>" t.Added) |> ignore
+    sb.Append(sprintf "<div class=\"tile del\"><div class=\"n\">&minus;%d</div><div class=\"l\">rows deleted</div></div>" t.Deleted) |> ignore
+    sb.Append(sprintf "<div class=\"tile chg\"><div class=\"n\">~%d</div><div class=\"l\">rows changed</div></div>" t.Changed) |> ignore
+    sb.Append(sprintf "<div class=\"tile keep\"><div class=\"n\">%d</div><div class=\"l\">unchanged</div></div></section>" t.Unchanged) |> ignore
+    // legend
+    sb.Append("<div class=\"legend\"><span><span class=\"swatch\" style=\"background:var(--add-line)\"></span> added</span><span><span class=\"swatch\" style=\"background:var(--del-line)\"></span> deleted by wipe</span><span><span class=\"swatch\" style=\"background:var(--chg-line)\"></span> changed</span><span><span class=\"swatch\" style=\"background:var(--line)\"></span> unchanged (counted, not listed)</span></div>") |> ignore
+    // the summary surfaces (variety legible before detail), unchanged
+    summaryHtml catalog sb impact.Summary
+    intentHtml catalog sb impact.Summary
+    confirmHtml catalog sb impact.Summary
+    // THE TRIAGE: open units first, the top-ranked revealed; settled units one
+    // folded line each up to the cap; the tail one counted line.
+    let openUnits, settledUnits = units |> List.partition (fun u -> not (TransferTriage.isSettled u.Triage))
+    if not (List.isEmpty openUnits) then
+        sb.Append("<h2>Open units <span class=\"sub\">each carries a decision to make, or rows that will be inserted or deleted; the unit with the most affected rows is expanded first</span></h2><div class=\"hrule\"></div>") |> ignore
+        openUnits |> List.iteri (fun i u ->
+            segmentHtml catalog sb (i = 0) (Some (triageBadge u.Triage)) u.Segment)
+    if not (List.isEmpty settledUnits) then
+        sb.Append("<h2>Settled units <span class=\"sub\">verified — one line each; expand a line to read the substantiation</span></h2><div class=\"hrule\"></div>") |> ignore
+        let shown, tail = settledUnits |> List.splitAt (min settledTailCap (List.length settledUnits))
+        shown |> List.iter (fun u -> segmentHtml catalog sb false (Some (triageBadge u.Triage)) u.Segment)
+        if not (List.isEmpty tail) then
+            let tailRows =
+                tail |> List.sumBy (fun u -> u.Segment.Context |> List.sumBy (fun c -> c.Added + c.Deleted + c.Changed + c.Unchanged))
+            sb.Append(sprintf "<div class=\"more\">and %d more settled unit(s) — %d row(s), each counted in the summary above and present in full in %s.impact.json.</div>" (List.length tail) tailRows (esc impact.Flow)) |> ignore
     sb.Append(sprintf "<footer><span>projection check go %s --impact</span><span>·</span><span>go-board/%s.impact.html</span></footer>" (esc impact.Flow) (esc impact.Flow)) |> ignore
     sb.Append("</div></body></html>") |> ignore
     sb.ToString()

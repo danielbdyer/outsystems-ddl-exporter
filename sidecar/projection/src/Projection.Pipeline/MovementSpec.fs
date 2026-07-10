@@ -607,9 +607,11 @@ type PlanAction =
     /// data flow. The action carries the flow's coordinates + the PLANNED
     /// action the flow would run (the same `planFlow` derivation a real
     /// run takes, under preview opts), so the board judges exactly what
-    /// `--go` would execute. `emitSql` (the `--sql` opt-in, 2026-07-07)
-    /// additionally writes the dry run's plan as a T-SQL preview artifact.
-    | CheckGo of flow: string * fromLabel: string * toLabel: string * asJson: bool * emitSql: bool * emitImpact: bool * planned: PlanAction
+    /// `--go` would execute. Payload reified to `CheckGoArgs` (2026-07-10,
+    /// the manifest program): the tuple had reached three adjacent bools —
+    /// the positional-misordering trap — and the review surface adds a
+    /// fourth.
+    | CheckGo of args: CheckGoArgs
     /// `check plan <flow>` — THE TRANSFER PLAN (2026-07-08, the guided-wizard
     /// program): the declarative counterpart to the go board. Where `check go`
     /// verdicts readiness, `check plan` walks each transfer decision axis with its
@@ -669,6 +671,21 @@ type PlanAction =
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError
+
+/// The go board's coordinates (the `CheckGo` payload, reified 2026-07-10).
+/// `Planned` is the SAME `planFlow` derivation a real run takes, so the board
+/// judges exactly what `--go` would execute. `Review` opens the interactive
+/// review workbench on a real terminal (the manifest program; a piped
+/// `--review` degrades to the one-shot declarative render).
+and CheckGoArgs =
+    { Flow       : string
+      FromLabel  : string
+      ToLabel    : string
+      AsJson     : bool
+      EmitSql    : bool
+      EmitImpact : bool
+      Review     : bool
+      Planned    : PlanAction }
 
 /// A planned execution: the unhonored-axis notes (surfaced, never dropped —
 /// fidelity #2) plus the routed action.

@@ -337,7 +337,7 @@ Each slice lands whole on the existing seams, degrades headless-total from day o
 
 | Slice | Confidence factor | Net-new risk | Independently shippable value |
 |---|---|---|---|
-| **1 — Triage / comprehension** | comprehension | none (presentation-only) | a calmer board; zero consent or decision change |
+| **1 — Triage / comprehension** | comprehension | none (presentation-only) | a calmer board; zero consent or decision change — **BUILT 2026-07-10** (`TransferTriage.fs`; 9 pure witnesses + `TriageWitnessDockerTests` live) |
 | **2 — EvidenceCache + authoritative deltas** | fidelity substrate | read-once/derive-pure | exact per-answer deltas; foundation for 3 and 4 |
 | **3 — Decision workbench** | control | typed `ItemBody.Decisions` + toggle | options + side-by-side, no execution change |
 | **4 — Per-act consent** | consent + fidelity | act-set-equality gate rewrite | the every-act-blessed execution gate |

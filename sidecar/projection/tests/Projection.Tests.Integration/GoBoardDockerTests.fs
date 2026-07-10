@@ -23,7 +23,9 @@ open Projection.Pipeline
 open Projection.Adapters.OssysSql
 open Projection.Cli.Faces.Transfer
 
-module private GoBoardFixtures =
+// Shared with `TriageWitnessDockerTests` (the second consumer, 2026-07-10) —
+// publication earned per the house rule; the fixtures stay test-support only.
+module GoBoardFixtures =
 
     let skipIfNoDocker (label: string) : bool =
         if Deploy.Docker.ensureRunning () then true
@@ -74,6 +76,15 @@ module private GoBoardFixtures =
           SinkCapability = SinkLoadCapability.structural }
 
     let value (r: Result<'a>) : 'a = Result.value r
+
+    /// Positional wrapper over the reified `CheckGoArgs` (2026-07-10) so the
+    /// suite's call sites stay stable; the record is constructed literally here
+    /// (every field named — the reconstruction trap has no room).
+    let checkGo (asJson: bool) (emitSql: bool) (emitImpact: bool) (planned: PlanAction) : int =
+        runCheckGo MetadataSnapshotRunner.defaultParameters
+            { Flow = "golden"; FromLabel = "cloud-qa"; ToLabel = "cloud-uat"
+              AsJson = asJson; EmitSql = emitSql; EmitImpact = emitImpact
+              Review = false; Planned = planned }
 
     /// Run a board and capture what the operator would read (the render
     /// goes to stdout) — the forecast-table / evidence assertions read it.
@@ -138,7 +149,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    The escape's proposals now carry LIVE evidence
                         //    (2026-07-07): each candidate reconcile column
                         //    probed against the actual pair.
-                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [])))
                         Assert.Equal(5, red1)
                         Assert.Contains("evidence: reconcile 'AppCore.City:Name'", redOut)
                         Assert.Contains("sink-unique", redOut)          // Lisbon/Porto are distinct on the sink
@@ -150,7 +161,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         //    and the forecast carries the before→after table.
                         let sqlPath = System.IO.Path.Combine("go-board", "golden.planned.sql")
                         if System.IO.File.Exists sqlPath then System.IO.File.Delete sqlPath
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false true false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false true false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(0, green)
                         // The forecast table (2026-07-08): source AND target
                         // physical names side by side; the declared customer
@@ -192,7 +203,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // attribute = blocking).
                         do! GoBoardFixtures.exec snk.Admin
                                 "DELETE FROM [dbo].[ossys_Entity_Attr] WHERE [Name] = N'LastName' AND [Entity_Id] = 1000;"
-                        let red2 = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let red2 = GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(5, red2)
                         return ()
                     }))
@@ -220,20 +231,20 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                                 Signoff  = signoff }
 
                         // 1. RED — WipeAndLoad, no signoff: the wipe is ungreenlit.
-                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [])))
+                        let red1, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts [])))
                         Assert.Equal(5, red1)
                         Assert.Contains("signoff", redOut)
                         Assert.Contains("deleted child-first", redOut)   // the impact the operator is approving
                         Assert.Contains("declare it greenlit", redOut)   // the remedy names the exact edit
 
                         // 2. GREEN — the `replace` mode greenlit (scopeless).
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ])))
                         Assert.Equal(0, green)
                         Assert.Contains("wipe is greenlit", greenOut)
 
                         // 3. RED — a declared scope that MISSES the wiped Customer.
                         let mismatch = [ { WriteSignoff.greenlit WriteSignoff.WriteMode.Replace with Tables = [ "SomeOtherTable" ] } ]
-                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (wipeOpts mismatch)))
+                        let red2, red2Out = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (wipeOpts mismatch)))
                         Assert.Equal(5, red2)
                         Assert.Contains("does not cover", red2Out)
 
@@ -269,7 +280,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
                         // ...and the board still goes GREEN for the subset.
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
-                        let green = runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
+                        let green = GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))
                         Assert.Equal(0, green)
                         return ()
                     }))
@@ -294,7 +305,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let refScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.ExistingReference "Name"; Reason = "match the sink's own cities" } ]
                         let refOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = refScope }
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned refOpts))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned refOpts))
                         Assert.Equal(0, green)
                         Assert.Contains("supporting scope", greenOut)
                         Assert.Contains("existing-reference AppCore.City", greenOut)
@@ -304,7 +315,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let badScope : SupportingScope.SupportingScopeEntry list =
                             [ { Table = "AppCore.City"; Relationship = SupportingScope.SupportingRelationship.OwnedChild "AppCore.Customer"; Reason = "wrong classification" } ]
                         let badOpts = { GoBoardFixtures.optsWith [ "Customer" ] [] with SupportingScope = badScope }
-                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned badOpts))
+                        let red, badOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned badOpts))
                         Assert.Equal(5, red)
                         Assert.Contains("supporting scope", badOut)
                         Assert.Contains("owned-child AppCore.City", badOut)
@@ -331,7 +342,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         // Customer transferred, City reconciled by Name — every
                         // source city matches (so `identities` is GREEN), but the
                         // sink's duplicate 'Lisbon' displaces a row.
-                        let red, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        let red, redOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
                         Assert.Equal(5, red)
                         Assert.Contains("ambiguous target keys", redOut)
                         Assert.Contains("share a reconcile key with an older row", redOut)
@@ -357,7 +368,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
                         // The same flow that goes green, plus a foreignRefs entry.
                         let opts = { GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ] with ForeignRefs = [ "AppCore.ExternalLedger" ] }
-                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned opts))
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> GoBoardFixtures.checkGo false false false (planned opts))
                         // Still exit 0 — the unverified finding is information, not a fault.
                         Assert.Equal(0, green)
                         // The rich lens renders the axis label + headline (no plain
