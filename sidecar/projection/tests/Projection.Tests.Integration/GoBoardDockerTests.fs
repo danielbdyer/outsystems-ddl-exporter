@@ -43,6 +43,15 @@ module private GoBoardFixtures =
            INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Porto', 1); \
            SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;" ]
 
+    /// A SINK whose reconcile column (`City.Name`) carries a DUPLICATE — two
+    /// cities both named 'Lisbon' (the duplicate-email user-directory shape).
+    /// Reconciling `City:Name` keeps the oldest (501) and displaces 502, so the
+    /// engine's `AmbiguousTargetMatchKeys` is non-empty and a live `--go` exits 9.
+    let sinkDupCityRows =
+        [ "SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] ON; \
+           INSERT INTO [dbo].[OSUSR_XDEF_CITY] ([ID],[NAME],[ISACTIVE]) VALUES (501, N'Lisbon', 1), (502, N'Lisbon', 1), (503, N'Porto', 1); \
+           SET IDENTITY_INSERT [dbo].[OSUSR_XDEF_CITY] OFF;" ]
+
     let optsWith (tables: string list) (reconcile: string list) : LoadOpts =
         { Declaration = DeclareNone
           Emission    = EmissionMode.Incremental
@@ -299,6 +308,64 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(5, red)
                         Assert.Contains("supporting scope", badOut)
                         Assert.Contains("owned-child AppCore.City", badOut)
+                        return ()
+                    }))
+
+    /// AMBIGUOUS TARGET KEYS (2026-07-10, the board/engine exit-9 parity): a
+    /// duplicate reconcile key on the SINK (two cities named 'Lisbon') makes the
+    /// engine keep the oldest and displace the rest — a live `--go` exits 9. The
+    /// board previously showed GREEN here (`identities` passes: every source city
+    /// DOES match a target row), diverging from the engine. The `ambiguous target
+    /// keys` axis now reads the SAME `report.AmbiguousTargetMatchKeys` the engine's
+    /// exit-9 policy counts, so the board reds where the run would exit 9.
+    [<Fact>]
+    member _.``go board: a duplicate reconcile key on the sink reds `ambiguous target keys` — the board no longer greens over an exit-9`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardAmbiguousTarget") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardAmbig"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkDupCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // Customer transferred, City reconciled by Name — every
+                        // source city matches (so `identities` is GREEN), but the
+                        // sink's duplicate 'Lisbon' displaces a row.
+                        let red, redOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ])))
+                        Assert.Equal(5, red)
+                        Assert.Contains("ambiguous target keys", redOut)
+                        Assert.Contains("share a reconcile key with an older row", redOut)
+                        // The contrast that pins the fix: identities DID all match.
+                        Assert.Contains("every reconciled source identity matches a target row", redOut)
+                        return ()
+                    }))
+
+    /// THE UNVERIFIED VERDICT (2026-07-10): a `foreignRefs` entry declares an
+    /// out-of-contract reference environment-stable — a claim the board cannot
+    /// verify (its target is absent from the acquired contract). The board stays
+    /// GREEN (no gate is red) but the verdict downgrades to name the unverified
+    /// finding, so a green is never read as "every fact proven". Exit stays 0.
+    [<Fact>]
+    member _.``go board: a foreignRefs declaration yields the green-unverified verdict — surfaced, exit still 0`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardUnverified") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardUnver"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
+                        // The same flow that goes green, plus a foreignRefs entry.
+                        let opts = { GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ] with ForeignRefs = [ "AppCore.ExternalLedger" ] }
+                        let green, greenOut = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters "golden" "cloud-qa" "cloud-uat" false false false (planned opts))
+                        // Still exit 0 — the unverified finding is information, not a fault.
+                        Assert.Equal(0, green)
+                        // The rich lens renders the axis label + headline (no plain
+                        // [note] marks — the existing board tests assert content too).
+                        Assert.Contains("foreign refs", greenOut)
+                        Assert.Contains("declared environment-stable", greenOut)
+                        // The verdict names the unverified finding rather than "every gate passes" alone.
+                        Assert.Contains("remain unverified", greenOut)
                         return ()
                     }))
 

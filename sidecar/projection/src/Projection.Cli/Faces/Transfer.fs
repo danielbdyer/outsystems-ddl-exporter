@@ -1627,14 +1627,18 @@ let runCheckGo
                     items.Add (GoBoard.itemWith "drops"
                         (GoBoard.Status.Red (sprintf "%d row(s) would drop — a relationship points at an unmatched record (shown first %d in full)." report.SkippedReferences.Length (min 5 report.SkippedReferences.Length), "fix the referenced data, or accept with --allow-drops at run time."))
                         detail)
-                // The rest of the fail-loud drop-set the engine exits 9 on
-                // (2026-07-10): the go board previously rendered only cycles /
-                // identities / drops, so a dry run carrying an AMBIGUOUS reconcile
-                // key (source OR sink) or a REPLAYED prior-run drop went GREEN
-                // while the same report drove the live `--go` to exit 9. These
-                // axes read the SAME `report` fields the engine's `hasDrops`
-                // counts, so board and engine can no longer disagree on the
-                // exit-9 verdict (two-traversal parity over the whole drop-set).
+                // The reconcile-key ambiguity that also exits 9 (2026-07-10): the
+                // board previously rendered only cycles / identities / drops, so a
+                // dry run carrying an ambiguous reconcile key went GREEN while the
+                // same report drove the live `--go` to exit 9. These read the SAME
+                // report fields the engine's `hasDrops` counts, so board and engine
+                // agree on the exit-9 verdict. `AmbiguousTargetMatchKeys` (a
+                // duplicate key on the SINK — a duplicate-email user directory is
+                // the real case) is reachable from data; `AmbiguousIdentities` (a
+                // duplicate source SURROGATE) is the defensive mirror the run report
+                // also carries. `ReplayedPriorDrops` is intentionally NOT an axis
+                // here: it is a resumable-run-only cause, and the board's dry run is
+                // non-resumable by construction, so the board does not forecast it.
                 if not (List.isEmpty report.AmbiguousIdentities) then
                     items.Add (GoBoard.itemWith "ambiguous source keys"
                         (GoBoard.Status.Red
@@ -1647,14 +1651,6 @@ let runCheckGo
                             (sprintf "%d target record(s) share a reconcile key with an older row — the oldest is kept and every reference re-keys onto it, displacing the rest." report.AmbiguousTargetMatchKeys.Length,
                              "pin the intended winner with a ManualOverride (`Module.Entity:Column:=<key>`), or approve the loss with --allow-drops at run time."))
                         (report.AmbiguousTargetMatchKeys |> List.truncate 5 |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))))
-                (match report.ReplayedPriorDrops with
-                 | Some n when n > 0 ->
-                     items.Add (GoBoard.itemWith "replayed drops"
-                         (GoBoard.Status.Red
-                             (sprintf "this resumable flow already completed and its prior run dropped %d row(s) — a no-op re-run replays that verdict rather than reporting a clean run." n,
-                              "clear the resume marker and re-run to see the live drop-set in full, or approve the prior loss with --allow-drops at run time."))
-                         [ sprintf "prior run dropped %d row(s); the marker persists the count, so the exact references are not replayed." n ])
-                 | _ -> ())
         // -- sink probes: CDC posture, grant evidence, re-run semantics ------
         match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-sink" sinkSpec).GetAwaiter().GetResult() with
         | Error errors ->

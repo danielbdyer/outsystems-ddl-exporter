@@ -1800,3 +1800,45 @@ drop axes (needs a duplicate-reconcile-key seed) and for the unverified forecast
 larger frontier the review named stays open: crossing the real managed-cloud
 threshold (`PHASE_1_REAL_WIRE_HARNESS.md`), and expressiveness (row filter /
 masking / key-preservation) as the next program.
+
+### Addendum — the witness follow-ons closed, and one axis retired (2026-07-10)
+
+Taking on the named witness gaps surfaced that two of the three drop axes added
+above were not reachable the way the parity argument assumed — so the follow-on
+both added witnesses AND corrected the fix:
+
+- **`ambiguous target keys` — WITNESSED.** A duplicate reconcile key on the SINK
+  (two cities named 'Lisbon', the duplicate-email user-directory shape) makes the
+  engine keep the oldest and displace the rest (`Reconciliation.reconcileKindWith`
+  records the displaced rows during the sink-index build), so a live `--go` exits
+  9. The board used to show GREEN here — `identities` passes, because every source
+  city DOES match a target row — diverging from the engine. New docker witness
+  `GoBoardDockerTests.« a duplicate reconcile key on the sink reds ambiguous target
+  keys »` pins the RED (and asserts `identities` was green, the contrast that
+  makes the divergence concrete).
+- **`replayed drops` — RETIRED (unreachable on the board).** `ReplayedPriorDrops`
+  is populated only by a RESUMABLE run replaying a completed marker, but the go
+  board's dry run is non-resumable by construction (`runReverseLegThroughConnections
+  With … resumable=false`), so the field is always `None` on the board. The axis
+  could never render — a zero-consumer build (the house "delete dead symmetry"
+  rule) — so it was removed, and the code now states plainly that replayed drops
+  are a resumable-run-only exit-9 cause the board does not forecast.
+- **`ambiguous source keys` — KEPT, defensive/pure-only.** `AmbiguousIdentities`
+  fires only on a duplicate source SURROGATE (`SurrogateRemap.capture` →
+  `surrogateRemap.duplicateSource`), which unique-PK table data cannot produce; it
+  is the mirror of the same field the live run report already narrates. Kept for
+  board/engine symmetry, honestly not docker-witnessable from a seed.
+- **The unverified verdict — WITNESSED via `foreignRefs`.** The clean, reachable
+  path to `green-unverified` is a `foreignRefs` declaration (an out-of-contract
+  reference the board cannot check). New docker witness `« a foreignRefs
+  declaration yields the green-unverified verdict — surfaced, exit still 0 »`
+  proves the axis renders unverified and the verdict names it while the exit stays
+  0. The forecast-`?` unverified path (a sink count that would not probe) stays
+  pure-witnessed only: on an otherwise-green board it is reachable solely under a
+  transient per-table probe failure (a missing/denied table reds the grant/re-run
+  axes instead), so it is defensive, not deterministically seedable.
+
+**Proven:** docker `GoBoardDocker` 7/7 green (5 prior + the 2 new witnesses);
+pure `GoBoard`/`PeerTransfer` green; Release FS3511-clean. Net: the reachable
+exit-9 parity gap (`ambiguous target keys`) is now witnessed against a live pair,
+and the board no longer carries an axis it can never render.
