@@ -2050,3 +2050,70 @@ nothing); Release FS3511-clean.
 Next: slice 4b — the always-on execute gate on the peer path
 (`transfer.writeSignoff.actUnblessed`, appended LAST in the refusal chain),
 `blessAll` for the peer-execute witnesses, runbook step 6.
+
+---
+
+## Addendum (2026-07-10, the transfer-manifest program, slice 4b) — the consent gate, always-on for the peer path
+
+The manifest program's closing slice: the 4a ledger becomes the live run's
+gate. Every destructive or creative act a peer Execute performs must be
+blessed at its CURRENT fingerprint, unconditionally — the operator's
+activation decision, not a config option.
+
+- **The gate.** `transfer.writeSignoff.actUnblessed` — the SEVENTH slot in
+  `runCore`'s refusal chain, appended LAST so an integrity fault can never
+  hide behind a consent fault; the six existing slots byte-identical.
+  Evaluated on every Execute where `ActConsentEnforced` is set (path routing
+  the faces own: TRUE on the peer face and the peer engine entry, FALSE on
+  the reverse/legacy leg and the streaming realization — each carrying its
+  named-scope note). The refusal's message counts the open acts and states
+  the most consequential one (`ActConsent.severity`: the wipe leads, the
+  match trails); its metadata carries the FULL sorted set, token →
+  fingerprint + statement — the same entries the board prints.
+- **One derivation, two surfaces.** The gate reads `ActConsent.actsOf` over
+  the same plan, `ActEvidence.populationProbe` / `fillMatchCache` over the
+  same connections (the two IO seams published in ActEvidence and now shared
+  by the board's consent axis — the face's inline reads deleted), and renders
+  tokens through `Catalog.displayNameIn` (published at its second consumer;
+  `Faces.Common.nameOf` delegates). What the board shows blessed is exactly
+  what the run accepts — byte-identical by construction.
+- **Every strategy arm fingerprints.** A pinned `ManualOverride` match hashes
+  the authored key map itself (pure config — re-pointing the pin re-opens the
+  act); a fallback folds its primary and names the fallback key in the
+  resolution. Caught by the pinned-owner witness on the first full-pool run —
+  a Match act with no derivable fingerprint cannot be blessed, and the gate
+  refuses honestly rather than guessing.
+- **The exit class.** `transfer.writeSignoff.*` registers on the new
+  `ConsentWithheld` axis (exit 9, the destructive-failure class) with its §5
+  gate copy — and `ungreenlit`, which previously fell to the unclassified
+  exit 3, rides the same axis (the drift fix, recorded).
+- **Compile-order move, with two relocations.** The evidence chain
+  (`NameAlignment` → `PeerTransfer` → `TransferImpact` → `EvidenceCache` →
+  `ActEvidence`) now compiles before `TransferRun` so `runCore` can read it;
+  `TransferSubset.resolveLoadSet` (relocated; `Transfer.resolveLoadSet`
+  delegates) breaks the one back-edge. The wizard's greenlight write
+  (`RelaxationStore.setFlowSignoff`) now PRESERVES act blessings and
+  unnamed modes instead of clobbering the array, and prints the consent
+  companion line after writing a mode.
+- **The witnesses bless.** Every peer-execute witness rides
+  `TransferActs.blessAllAndRun` (test support): run once, take the blessings
+  VERBATIM from the refusal's own metadata, run again — the refusal's payload
+  is itself load-bearing and tested. The reverse-leg canary routes through
+  the `With` entry with the gate off (its named scope); refusal-path
+  witnesses stay one-pass (their refusals sit in earlier slots).
+
+**Proven:** pure pool 4174 pass / 0 fail (the severity total order, the
+ConsentWithheld classification for both codes, the bless-all metadata bridge
+with unread acts held out, the pinned-pin substrate + its re-point re-open);
+docker: the enforcement witness live (unblessed peer Execute refuses with the
+full act set and writes NOTHING; blessed verbatim from the refusal it writes;
+a source edit re-opens exactly the touched act and no other), the 4a ledger
+witness re-green, and the touched suites (PeerAligned, PeerWitness,
+PeerManagedGrant, ClonedModule, GoBoard incl. the proving loop,
+ReverseLegCanary, EvidenceCache, TriageWitness) green; Release FS3511-clean;
+full docker pool run at close.
+
+The manifest program's four slices are BUILT. The confidence equation the
+design named — comprehension (triage) × control (the workbench) × consent
+(the act ledger + gate) × fidelity (one derivation for board and engine) —
+now has an executable witness on every factor.

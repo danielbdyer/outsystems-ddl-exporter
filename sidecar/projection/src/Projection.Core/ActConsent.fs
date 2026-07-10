@@ -68,6 +68,22 @@ module ActConsent =
         | Act.Resolve (t, res)  -> "resolve:" + nameOf t + "=" + res
         | Act.Drop (o, c)       -> "drop:" + nameOf o + "." + Name.value c
 
+    /// The severity ORDER of the act alphabet — the refusal's "most
+    /// consequential" lever and the ledger's sort tiebreak. Lower is more
+    /// severe: irreversible row loss first (the wipe), then explicit-key
+    /// collision, convergent deletion, dropped rows, and only then the
+    /// creative / re-pointing acts. Total over the closed DU.
+    let severity (act: Act) : int =
+        match act with
+        | Act.Wipe _           -> 0
+        | Act.IdentityInsert _ -> 1
+        | Act.DeleteScope _    -> 2
+        | Act.Drop _           -> 3
+        | Act.Mint _           -> 4
+        | Act.Rekey _          -> 5
+        | Act.Resolve _        -> 6
+        | Act.Match _          -> 7
+
     /// The operator-facing statement of what one act DOES — a complete
     /// sentence naming the precise mechanism (THE_VOICE). The board's consent
     /// axis and the workbench's bless surface echo this beside the token, so

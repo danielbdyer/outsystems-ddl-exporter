@@ -18,6 +18,7 @@
     <Compile Include="Fixtures.fs" />
     <Compile Include="StaticCatalogFixtures.fs" />
     <Compile Include="ProfileFixtures.fs" />
+    <Compile Include="TransferActs.fs" />
     <Compile Include="GoldenCatalog.fs" />
     <Compile Include="Fixtures/SourceSchema.fs" />
     <Compile Include="Fixtures/FixtureGenerator.fs" />

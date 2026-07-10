@@ -279,8 +279,8 @@ let ``the match fingerprint reads the SAME evidence-cache products the workbench
           Uniqueness = Map.ofList [ (kKey "Parent", nm "Email"), (1L, 1L) ] }
     let plan = planOf [] []
     let acts = [ ActConsent.Act.Match (kKey "Parent") ]
-    let columns = Map.ofList [ kKey "Parent", nm "Email" ]
-    let fps = ActEvidence.fingerprintsOf label catalog plan (Some cache) columns Map.empty acts
+    let strategies = Map.ofList [ kKey "Parent", ReconciliationStrategy.MatchByColumn (nm "Email") ]
+    let fps = ActEvidence.fingerprintsOf label catalog plan (Some cache) strategies Map.empty acts
     let pairs, unmatched, counts = EvidenceCache.matchProducts cache catalog (kKey "Parent") (nm "Email")
     let token = ActConsent.tokenOf label (ActConsent.Act.Match (kKey "Parent"))
     let expected =
@@ -292,3 +292,62 @@ let ``the match fingerprint reads the SAME evidence-cache products the workbench
     Assert.Equal<string list>([], unmatched)
     Assert.Equal(1, List.length pairs)
     ignore counts
+
+// -- slice 4b: severity, the gate's exit class, and the bless-all bridge -------
+
+[<Fact>]
+let ``severity orders the alphabet by consequence — the wipe leads, the match trails, total over the closed DU`` () =
+    let acts =
+        [ ActConsent.Act.Wipe (kKey "Parent")
+          ActConsent.Act.IdentityInsert (kKey "Parent")
+          ActConsent.Act.DeleteScope (kKey "Parent")
+          ActConsent.Act.Drop (kKey "Child", nm "ParentId")
+          ActConsent.Act.Mint (kKey "Parent")
+          ActConsent.Act.Rekey (kKey "Child", nm "ParentId")
+          ActConsent.Act.Resolve (kKey "Parent", "reconcile:Email")
+          ActConsent.Act.Match (kKey "Parent") ]
+    let ranks = acts |> List.map ActConsent.severity
+    Assert.Equal<int list>(List.sort ranks, ranks)                       // listed most- to least-severe
+    Assert.Equal(ranks.Length, (List.distinct ranks).Length)             // a total order, no ties
+    Assert.Equal(0, ActConsent.severity (ActConsent.Act.Wipe (kKey "X")))
+
+[<Fact>]
+let ``the write-consent codes classify onto the destructive exit (9), never the unclassified 3`` () =
+    Assert.Equal((9, Preflight.ConsentWithheld), Preflight.classify "transfer.writeSignoff.actUnblessed")
+    Assert.Equal((9, Preflight.ConsentWithheld), Preflight.classify "transfer.writeSignoff.ungreenlit")
+
+[<Fact>]
+let ``the bless-all bridge re-blesses exactly the fingerprints an actUnblessed refusal names — unread acts stay unblessed`` () =
+    let fp = ActConsent.effectFingerprint substrate
+    let refusal =
+        ValidationError.createWithMetadata
+            "transfer.writeSignoff.actUnblessed"
+            "2 act(s) this run performs are not blessed at their current fingerprint."
+            (Map.ofList
+                [ "match:Parent", Some (sprintf "%s — No Parent rows are written." (ActConsent.fingerprintText fp))
+                  "wipe:Parent", Some (sprintf "%s — Every row of Parent is deleted." (ActConsent.fingerprintText (ActConsent.populationFingerprint "1" "9" 9)))
+                  "mint:Ghost", Some "unread — The target mints a new primary key." ])
+    let blessings = TransferActs.blessingsOf refusal
+    Assert.Equal(2, blessings.Length)
+    Assert.Contains(blessings, fun b -> b.Act = "match:Parent" && b.Fingerprint = fp)
+    Assert.Contains(blessings, fun b -> b.Act = "wipe:Parent" && b.Fingerprint = ActConsent.populationFingerprint "1" "9" 9)
+    Assert.DoesNotContain(blessings, fun b -> b.Act = "mint:Ghost")
+
+[<Fact>]
+let ``a pinned owner's match fingerprint derives from the authored key map alone — pure config, no read needed`` () =
+    let plan = planOf [] []
+    let acts = [ ActConsent.Act.Match (kKey "Parent") ]
+    let pin = Map.ofList [ SourceKey.ofString "1", AssignedKey.ofString "71"; SourceKey.ofString "2", AssignedKey.ofString "71" ]
+    let strategies = Map.ofList [ kKey "Parent", ReconciliationStrategy.ManualOverride pin ]
+    let fps = ActEvidence.fingerprintsOf label catalog plan None strategies Map.empty acts
+    let token = ActConsent.tokenOf label (ActConsent.Act.Match (kKey "Parent"))
+    let expected =
+        ActConsent.effectFingerprint
+            { Token = token; Resolution = "pinned"
+              MatchedPairs = [ "1", "71"; "2", "71" ]; UnmatchedValues = []
+              SinkTotal = 0L; SinkDistinct = 0L; PlannedCount = 2 }
+    Assert.Equal<ActConsent.ActFingerprint option>(Some expected, fps |> Map.tryFind token)
+    // re-pointing the pin re-opens the act: a different map, a different hash.
+    let repointed = Map.ofList [ kKey "Parent", ReconciliationStrategy.ManualOverride (Map.ofList [ SourceKey.ofString "1", AssignedKey.ofString "72"; SourceKey.ofString "2", AssignedKey.ofString "72" ]) ]
+    let fps2 = ActEvidence.fingerprintsOf label catalog plan None repointed Map.empty acts
+    Assert.NotEqual<ActConsent.ActFingerprint option>(fps |> Map.tryFind token, fps2 |> Map.tryFind token)

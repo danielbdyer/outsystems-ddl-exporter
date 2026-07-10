@@ -141,6 +141,28 @@ let setFlowSignoff (path: string) (flow: string) (approvals: Projection.Pipeline
             | None   -> JsonObject()
         let flowObj = childObject (childObject root "flows") flow
         let arr = JsonArray()
+        // 2026-07-10 (slice 4b) — the signoff array now carries TWO entry
+        // shapes (mode approvals and act blessings). This writer sets the
+        // named MODES; every act blessing on file, and every mode this call
+        // does not name, is PRESERVED — the wizard's greenlight can no longer
+        // silently erase a blessing the operator wrote in the workbench.
+        let writtenModes =
+            approvals |> List.map (fun a -> Projection.Pipeline.WriteSignoff.modeLabel a.Mode) |> Set.ofList
+        (match flowObj.TryGetPropertyValue "signoff" with
+         | true, (:? JsonArray as existing) ->
+             for node in existing do
+                 match node with
+                 | :? JsonObject as o ->
+                     let keep =
+                         match o.TryGetPropertyValue "mode" with
+                         | true, (:? JsonValue as v) ->
+                             (match v.TryGetValue<string>() with
+                              | true, m -> not (Set.contains m writtenModes)
+                              | _ -> true)
+                         | _ -> true   // an act blessing (or anything else) is preserved
+                     if keep then arr.Add(o.DeepClone())
+                 | _ -> ()
+         | _ -> ())
         for a in approvals do arr.Add(objOf a)
         flowObj.["signoff"] <- arr
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))

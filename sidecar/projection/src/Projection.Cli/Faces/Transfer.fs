@@ -383,6 +383,12 @@ let runContractPairTransfer
     // engine's `WriteOptions.Signoffs` so a destructive Execute refuses BY
     // NAME (`transfer.writeSignoff.ungreenlit`) until the mode is greenlit.
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-10 (slice 4b) — the flow's per-act blessings, and whether the
+    // per-act consent gate is live: TRUE on the peer face (always-on — the
+    // operator's decision), FALSE on the reverse/legacy leg (mode-level gate,
+    // its own named scope).
+    (actSignoff: WriteSignoff.ActBlessing list)
+    (enforceActConsent: bool)
     // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
     // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
     (foreignRefs: string list)
@@ -508,7 +514,7 @@ let runContractPairTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds signoff revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff actSignoff enforceActConsent resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -547,6 +553,9 @@ let runReverseLegTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-10 (slice 4b) — the flow's per-act blessings; threaded through,
+    // gate OFF on this leg (mode-level is its named scope).
+    (actSignoff: WriteSignoff.ActBlessing list)
     // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
     // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
     (foreignRefs: string list)
@@ -565,9 +574,13 @@ let runReverseLegTransfer
     : int =
     // Desugar supporting scope onto the terse string inputs (see runPeerTransfer).
     let scopeDesugar = SupportingScope.desugarToStrings supportingScope
+    // NAMED SCOPE NOTE (2026-07-10, slice 4b): the reverse/legacy leg keeps
+    // the MODE-LEVEL signoff gate — per-act consent is the peer path's
+    // always-on rule (the design's own scope), so the blessings thread
+    // through but the gate stays off here.
     runContractPairTransfer "projection move (reverse leg)"
         sourceSpec sinkSpec logicalSourceContract physicalSinkContract
-        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
+        (reconcileSpecs @ scopeDesugar.ExtraReconcile) reconcileIgnore supportingScope signoff actSignoff false foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory (tables @ scopeDesugar.ExtraTables)
         revertPolicy revertDir sinkCapability
 
@@ -601,6 +614,10 @@ let runPeerTransfer
     (reconcileIgnore: string list)
     (supportingScope: SupportingScope.SupportingScopeEntry list)
     (signoff: WriteSignoff.WriteApproval list)
+    // 2026-07-10 (slice 4b) — the flow's per-act blessings; the peer path's
+    // consent gate is ALWAYS ON, so an Execute refuses until each act this
+    // run performs is blessed at its current fingerprint.
+    (actSignoff: WriteSignoff.ActBlessing list)
     // 2026-07-09 (T0.3) — the flow's `foreignRefs`: acknowledged out-of-contract
     // references, threaded to `WriteOptions.ForeignRefsAcknowledged`.
     (foreignRefs: string list)
@@ -741,9 +758,12 @@ let runPeerTransfer
     // The shared contract-pair body: realization selector, execute/journal
     // gates, apparatus, engine run, narration — identical to the reverse leg,
     // with the peer pair as the contracts and the peer label on the prose.
+    // ALWAYS-ON (2026-07-10, slice 4b, the operator's decision): the peer
+    // path's Execute refuses `transfer.writeSignoff.actUnblessed` until every
+    // act it performs is blessed at its current fingerprint.
     runContractPairTransfer "projection transfer (peer)"
         sourceSpec sinkSpec sourceContract sinkContract
-        reconcileSpecs reconcileIgnore supportingScope signoff foreignRefs userMapPath executeRequested allowCdc allowDrops
+        reconcileSpecs reconcileIgnore supportingScope signoff actSignoff true foreignRefs userMapPath executeRequested allowCdc allowDrops
         emission resumable streaming journalDirectory tables
         revertPolicy revertDir sinkCapability
 
@@ -1282,7 +1302,7 @@ let runCheckGo
                     (Transfer.runReverseLegThroughConnectionsWith
                         opts.SinkCapability.IdentityPolicy Transfer.DryRun opts.Emission false true false
                         effectiveTables connections sourceContract sinkContract reconciliation ignoreSet
-                        boardScope.SeedKinds boardScope.AcknowledgedExclusions [] boardScope.StaticLookupKinds
+                        boardScope.SeedKinds boardScope.AcknowledgedExclusions [] opts.ActSignoff true boardScope.StaticLookupKinds
                         (Set.ofList opts.ForeignRefs) false None)
                         .GetAwaiter().GetResult()
             match dryRun () with
@@ -1779,16 +1799,13 @@ let runCheckGo
                          consentNarration <- Some ("this run performs no destructive or creative act — there is nothing to bless.", [])
                      else
                          // The reconciled kinds' declared match columns — the
-                         // Match acts' effect substrate.
-                         let rec matchColumnOf (strategy: ReconciliationStrategy) : Name option =
-                             match strategy with
-                             | ReconciliationStrategy.MatchByColumn c -> Some c
-                             | ReconciliationStrategy.FallbackToAssigned (_, primary) -> matchColumnOf primary
-                             | _ -> None
+                         // Match acts' effect substrate (the shared
+                         // `ActEvidence.matchColumnOf`, the engine's gate reads
+                         // the same projection).
                          let reconcileColumns : Map<SsKey, Name> =
                              reconciliation
                              |> Map.toList
-                             |> List.choose (fun (k, s) -> matchColumnOf s |> Option.map (fun c -> k, c))
+                             |> List.choose (fun (k, s) -> ActEvidence.matchColumnOf s |> Option.map (fun c -> k, c))
                              |> Map.ofList
                          // One short substrate pass for what the plan alone
                          // cannot pin: the sink populations a wipe consumes
@@ -1807,40 +1824,14 @@ let runCheckGo
                                      use cnn = cnn
                                      wipeKinds
                                      |> List.choose (fun t ->
-                                         match Catalog.tryFindKind t sinkContract with
-                                         | None -> None
-                                         | Some k ->
-                                             k.Attributes
-                                             |> List.tryFind (fun a -> a.IsPrimaryKey)
-                                             |> Option.bind (fun pk ->
-                                                 try
-                                                     use cmd = cnn.CreateCommand()
-                                                     cmd.CommandText <-
-                                                         sprintf "SELECT COUNT_BIG(*), CONVERT(nvarchar(128), MIN([%s])), CONVERT(nvarchar(128), MAX([%s])) FROM [%s].[%s];"
-                                                             (ColumnRealization.columnNameText pk.Column) (ColumnRealization.columnNameText pk.Column)
-                                                             (TableId.schemaText k.Physical) (TableId.tableText k.Physical)
-                                                     use r = cmd.ExecuteReader()
-                                                     if r.Read () then
-                                                         Some (t, ({ FirstKey = (if r.IsDBNull 1 then "" else r.GetString 1)
-                                                                     LastKey  = (if r.IsDBNull 2 then "" else r.GetString 2)
-                                                                     RowCount = int (r.GetInt64 0) } : ActEvidence.PopulationProbe))
-                                                     else None
-                                                 with _ -> None))
+                                         Catalog.tryFindKind t sinkContract
+                                         |> Option.bind (fun k ->
+                                             (ActEvidence.populationProbe cnn k).GetAwaiter().GetResult()
+                                             |> Option.map (fun p -> t, p)))
                                      |> Map.ofList
                          let matchCache : EvidenceCache.Cache option =
                              if Map.isEmpty reconcileColumns then None
                              else
-                                 let selfEdges =
-                                     reconcileColumns
-                                     |> Map.toList
-                                     |> List.choose (fun (t, c) ->
-                                         Catalog.tryFindKind t sinkContract
-                                         |> Option.map (fun k ->
-                                             { PeerTransfer.Kind = t; PeerTransfer.KindName = k.Name
-                                               PeerTransfer.Column = c; PeerTransfer.Nullable = true
-                                               PeerTransfer.Target = t; PeerTransfer.TargetName = k.Name
-                                               PeerTransfer.TargetModule = k.Name
-                                               PeerTransfer.CandidateReconcileColumns = [ c ] }))
                                  match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-consent-source" sourceSpec).GetAwaiter().GetResult() with
                                  | Error _ -> None
                                  | Ok source ->
@@ -1849,10 +1840,9 @@ let runCheckGo
                                      | Error _ -> None
                                      | Ok sink ->
                                          use sink = sink
-                                         try Some ((EvidenceCache.fill source sink sourceContract sinkContract selfEdges).GetAwaiter().GetResult())
-                                         with _ -> None
+                                         (ActEvidence.fillMatchCache source sink sourceContract sinkContract reconcileColumns).GetAwaiter().GetResult()
                          let fingerprints =
-                             ActEvidence.fingerprintsOf nm sinkContract plan matchCache reconcileColumns probes acts
+                             ActEvidence.fingerprintsOf nm sinkContract plan matchCache reconciliation probes acts
                          let blessedAt : Map<string, ActConsent.ActFingerprint> =
                              opts.ActSignoff |> List.map (fun b -> b.Act, b.Fingerprint) |> Map.ofList
                          // Per-act verdict lines: the token, what the act does,
@@ -2190,7 +2180,13 @@ let runTransferPlan (flow: string) (plan: TransferPlan.Plan) (asJson: bool) : in
                         | Intervene.Chosen true ->
                             let approval = { WriteSignoff.greenlit mode with AcknowledgedImpact = Some (WriteSignoff.impactOf mode) }
                             match RelaxationStore.setFlowSignoff path flow [ approval ] with
-                            | Ok () -> eprintfn "Wrote the %s greenlight to %s for flow '%s' — the go board's `signoff` axis now greens." w path flow
+                            | Ok () ->
+                                eprintfn "Wrote the %s greenlight to %s for flow '%s' — the go board's `signoff` axis now greens." w path flow
+                                // The consent companion (2026-07-10, slice 4b): the mode
+                                // greenlight approves the CLASS of write; a live run
+                                // additionally requires each individual act blessed at
+                                // its fingerprint. Point at the surface that does it.
+                                eprintfn "A live run also requires each act blessed at its fingerprint — run `projection check go %s --review` and press d on each act (a blesses everything except an identity-insert)." flow
                             | Error e -> eprintfn "Could not write the signoff to %s: %s" path e
                         | _ -> ()
                     | None -> ()

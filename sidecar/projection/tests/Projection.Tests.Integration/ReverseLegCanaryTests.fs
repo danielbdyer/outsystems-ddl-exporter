@@ -425,11 +425,15 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                             TransferConnections.create srcSub sinkSub false
                             |> ReverseLegFixtures.value
 
+                        // The REVERSE leg keeps the MODE-LEVEL gate (slice 4b's
+                        // named scope) — this canary routes through the `With`
+                        // entry with the consent gate off, exactly as the
+                        // reverse-leg face does.
                         let runLeg () =
-                            Transfer.runReverseLegThroughConnections
-                                Transfer.Execute EmissionMode.WipeAndLoad false true false []
-                                connections logicalContract physicalContract Map.empty Set.empty
-                                [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] Set.empty
+                            Transfer.runReverseLegThroughConnectionsWith
+                                IdentityPolicy.Structural Transfer.Execute EmissionMode.WipeAndLoad false true false []
+                                connections logicalContract physicalContract Map.empty Set.empty Set.empty Set.empty
+                                [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None
 
                         let! firstR = runLeg ()
                         let first = ReverseLegFixtures.value firstR

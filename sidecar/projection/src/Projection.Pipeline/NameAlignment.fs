@@ -318,5 +318,5 @@ module NameAlignment =
         match mode with
         | AlignmentMode.BySsKey -> Result.success source
         | AlignmentMode.ByName  ->
-            Transfer.resolveLoadSet source tables
+            TransferSubset.resolveLoadSet source tables
             |> Result.bind (fun strictScope -> align alignMap strictScope source sink)

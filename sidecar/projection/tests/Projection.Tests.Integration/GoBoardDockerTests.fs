@@ -451,10 +451,11 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                             let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.Raw snk.EngineConnStr }
                             let connections = TransferConnections.create srcSub sinkSub true |> Result.value
                             let! runR =
-                                Transfer.runReverseLegThroughConnectionsWith
-                                    IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
-                                    [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
-                                    [] Set.empty Set.empty false (Some undoDir)
+                                TransferActs.blessAllAndRun (fun blessings ->
+                                    Transfer.runReverseLegThroughConnectionsWith
+                                        IdentityPolicy.Structural Transfer.Execute EmissionMode.Incremental false true false
+                                        [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
+                                        [] blessings true Set.empty Set.empty false (Some undoDir))
                             let report = Result.value runR
                             Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
                             let! customersAfter = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"

@@ -102,3 +102,81 @@ type ActConsentDockerTests (fixture: EphemeralContainerFixture) =
                         Assert.Equal(1, customers)
                         return ()
                     }))
+
+    /// THE ENFORCEMENT WITNESS (slice 4b — always-on for the peer path): a
+    /// live Incremental peer Execute whose acts are mints and a match REFUSES
+    /// `transfer.writeSignoff.actUnblessed` with the FULL sorted unblessed set
+    /// in metadata; blessed VERBATIM from that metadata it proceeds and
+    /// writes; and a source edit after the blessing re-opens EXACTLY the
+    /// affected act — the untouched acts stay blessed.
+    [<Fact>]
+    member _.``consent gate: an unblessed peer Execute refuses with the full act set; blessed verbatim it writes; a source edit re-opens exactly the touched act`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "ActConsentGate") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "ActGate"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
+                        let (srcContract, sinkContract) = Result.value contractsR
+                        let cityKind =
+                            Catalog.allKinds sinkContract
+                            |> List.find (fun k -> Name.value k.Name = "City")
+                        let cityName = cityKind.Attributes |> List.find (fun a -> Name.value a.Name = "Name")
+                        let reconciliation = Map.ofList [ cityKind.SsKey, ReconciliationStrategy.MatchByColumn cityName.Name ]
+                        let srcSub : Substrate = { Environment = Projection.Core.Environment.Qa; Role = SubstrateRole.Source; ConnectionRef = ConnectionRef.Raw src.EngineConnStr }
+                        let sinkSub : Substrate = { Environment = Projection.Core.Environment.Uat; Role = SubstrateRole.Sink; ConnectionRef = ConnectionRef.Raw snk.EngineConnStr }
+                        let connections = TransferConnections.create srcSub sinkSub true |> Result.value
+                        let runWith (blessings: WriteSignoff.ActBlessing list) =
+                            Transfer.runReverseLegThroughConnections
+                                Transfer.Execute EmissionMode.Incremental false true false
+                                [ "Customer" ] connections srcContract sinkContract reconciliation Set.empty [] blessings Set.empty
+
+                        // 1. UNBLESSED — the gate refuses by name, LAST in the
+                        // chain, with the full sorted act set in metadata.
+                        let! unblessed = runWith []
+                        let refusal =
+                            match unblessed with
+                            | Ok _ -> failwith "an unblessed peer Execute must refuse transfer.writeSignoff.actUnblessed"
+                            | Error es -> es |> List.find (fun e -> e.Code = "transfer.writeSignoff.actUnblessed")
+                        Assert.Contains("not blessed at their current fingerprint", refusal.Message)
+                        let tokens = refusal.Metadata |> Map.toList |> List.map fst
+                        Assert.Contains(tokens, fun (t: string) -> t.StartsWith "mint:")
+                        Assert.Contains(tokens, fun (t: string) -> t.StartsWith "match:")
+                        // no write happened: the sink's Customer table is untouched.
+                        let! before = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                        Assert.Equal(0, before)
+
+                        // 2. BLESSED VERBATIM from the refusal's own metadata —
+                        // the run proceeds and writes the two customers.
+                        let blessings = TransferActs.blessingsOf refusal
+                        Assert.Equal(tokens.Length, blessings.Length)
+                        let! blessedRun = runWith blessings
+                        let report = Result.value blessedRun
+                        Assert.Equal(2, report.Kinds |> List.sumBy (fun k -> k.RowsWritten))
+                        let! after = GoBoardFixtures.countRows snk.Admin "[dbo].[OSUSR_XABC_CUSTOMER]"
+                        Assert.Equal(2, after)
+
+                        // 3. A SOURCE EDIT under the blessing — a third customer
+                        // appears, so the mint act's population fingerprint
+                        // drifts. The same blessings now refuse, and the refusal
+                        // names the mint act; the match act (untouched) is NOT
+                        // in the re-opened set.
+                        do! GoBoardFixtures.exec src.Admin
+                                "SET IDENTITY_INSERT [dbo].[OSUSR_ABC_CUSTOMER] ON; \
+                                 INSERT INTO [dbo].[OSUSR_ABC_CUSTOMER] ([ID],[EMAIL],[FIRSTNAME],[LASTNAME],[CITYID]) VALUES (12, N'carla@x', N'Carla', N'Cruz', 1); \
+                                 SET IDENTITY_INSERT [dbo].[OSUSR_ABC_CUSTOMER] OFF;"
+                        // clear the sink so the populated-sink gate (an earlier,
+                        // louder slot) does not mask the consent verdict.
+                        do! GoBoardFixtures.exec snk.Admin "DELETE FROM [dbo].[OSUSR_XABC_CUSTOMER];"
+                        let! reopened = runWith blessings
+                        match reopened with
+                        | Ok _ -> failwith "a source edit under the blessing must re-open the affected act"
+                        | Error es ->
+                            let r = es |> List.find (fun e -> e.Code = "transfer.writeSignoff.actUnblessed")
+                            let reopenedTokens = r.Metadata |> Map.toList |> List.map fst
+                            Assert.Contains(reopenedTokens, fun (t: string) -> t.StartsWith "mint:")
+                            Assert.DoesNotContain(reopenedTokens, fun (t: string) -> t.StartsWith "match:")
+                        return ()
+                    }))

@@ -48,9 +48,10 @@ type ClonedModuleTransferDockerTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch sink reseedSinkIdentities
                 let! r =
                     throughConnections srcConnStr sinkConnStr false (fun connections ->
-                        Transfer.runReverseLegThroughConnections
-                            Transfer.Execute EmissionMode.Incremental false true false
-                            [ "City"; "Customer" ] connections aligned sinkContract Map.empty Set.empty [] Set.empty)
+                        TransferActs.blessAllAndRun (fun blessings ->
+                            Transfer.runReverseLegThroughConnections
+                                Transfer.Execute EmissionMode.Incremental false true false
+                                [ "City"; "Customer" ] connections aligned sinkContract Map.empty Set.empty [] blessings Set.empty))
                 let _ = value r     // the name-aligned load succeeds
                 // The subset rows land in the CLONE sink (its own physical layout).
                 let! cities = countRows sink "[dbo].[OSUSR_XDEF_CITY]"

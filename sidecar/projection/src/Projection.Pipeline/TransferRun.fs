@@ -1150,6 +1150,14 @@ module Transfer =
           /// execute gate (every act on the peer path must be blessed at its
           /// current fingerprint). Empty (the `def` default) blesses nothing.
           ActSignoffs : WriteSignoff.ActBlessing list
+          /// 2026-07-10 (slice 4b) — whether the per-act consent gate is LIVE
+          /// on this run. ALWAYS ON for the peer transfer path (the operator's
+          /// decision: every destructive / creative act of an env→env subset
+          /// move is individually blessed); `false` (the `def` default) keeps
+          /// the reverse/legacy leg and the streaming realization on the
+          /// mode-level gate — their own named scope, not an operator choice.
+          /// This is path routing set by the faces, never a config field.
+          ActConsentEnforced : bool
           /// 2026-07-09 (the guarantee-hardening program) — the kinds a
           /// `static-lookup` supportingScope entry declared IDENTICAL across the
           /// environments. Each is matched by its business key and asserted to
@@ -1167,7 +1175,7 @@ module Transfer =
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; ActSignoffs = []; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; ActSignoffs = []; ActConsentEnforced = false; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1181,6 +1189,91 @@ module Transfer =
         allowDrops || Set.contains WriteSignoff.WriteMode.Drops (WriteSignoff.approvedModes signoffs)
     let cdcAcknowledged (allowCdc: bool) (signoffs: WriteSignoff.WriteApproval list) : bool =
         allowCdc || Set.contains WriteSignoff.WriteMode.Cdc (WriteSignoff.approvedModes signoffs)
+
+    /// One wiped kind's probe coordinates, resolved pure before the gate's
+    /// task opens (survival rule 5: no tuple pattern heads a `let!`).
+    type private WipeRead =
+        { Key : SsKey; Kind : Kind }
+
+    /// THE PER-ACT CONSENT GATE (2026-07-10, the transfer-manifest program,
+    /// slice 4b — always-on for the peer transfer path): every destructive /
+    /// creative act an Execute performs must be blessed at its CURRENT
+    /// fingerprint in the flow's `signoff`. The act list and every fingerprint
+    /// come from the SAME derivations the go board's consent axis narrates —
+    /// `ActConsent.actsOf` over the same plan, `ActEvidence.populationProbe` /
+    /// `fillMatchCache` over the same connections, tokens through the same
+    /// `Catalog.displayNameIn` — so the set the board shows and the set this
+    /// gate enforces cannot drift. An act whose substrate would not read has
+    /// no fingerprint and therefore cannot be blessed: it refuses too (a
+    /// consent gate that guesses is no gate). Returns `None` when every act
+    /// is blessed or the run performs none.
+    let private actConsentRefusalOf
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (catalog: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (writeOpts: WriteOptions)
+        (reconciledKinds: Set<SsKey>)
+        (topo: TopologicalOrder)
+        (plan: DataLoadPlan)
+        : Task<ValidationError option> =
+        let names = Catalog.nameIndex catalog
+        let nmOf (k: SsKey) = Catalog.displayNameIn names k
+        let acts = ActConsent.actsOf nmOf catalog plan topo writeOpts.LoadSet reconciledKinds writeOpts.Emission
+        if List.isEmpty acts then Task.FromResult None
+        else
+            let reconcileColumns : Map<SsKey, Name> =
+                reconciliation
+                |> Map.toList
+                |> List.choose (fun (k, s) -> ActEvidence.matchColumnOf s |> Option.map (fun c -> k, c))
+                |> Map.ofList
+            let wipeReads : WipeRead list =
+                acts
+                |> List.choose (fun act ->
+                    match act with
+                    | ActConsent.Act.Wipe t ->
+                        Catalog.tryFindKind t catalog |> Option.map (fun k -> { Key = t; Kind = k })
+                    | _ -> None)
+            let verdictOf (fingerprints: Map<string, ActConsent.ActFingerprint>) (blessedAt: Map<string, ActConsent.ActFingerprint>) (act: ActConsent.Act) : (ActConsent.Act * string * ActConsent.ActFingerprint option) option =
+                let token = ActConsent.tokenOf nmOf act
+                match Map.tryFind token fingerprints with
+                | Some fp when Map.tryFind token blessedAt = Some fp -> None
+                | fp -> Some (act, token, fp)
+            let refusalOf (unblessed: (ActConsent.Act * string * ActConsent.ActFingerprint option) list) : ValidationError =
+                let sorted = unblessed |> List.sortBy (fun (act, token, _) -> ActConsent.severity act, token)
+                let leadStatement =
+                    match List.head sorted with
+                    | (act, _, _) -> ActConsent.describe nmOf act
+                let metadata =
+                    sorted
+                    |> List.map (fun (act, token, fp) ->
+                        token,
+                        Some (match fp with
+                              | Some f -> sprintf "%s — %s" (ActConsent.fingerprintText f) (ActConsent.describe nmOf act)
+                              | None -> sprintf "unread — %s" (ActConsent.describe nmOf act)))
+                    |> Map.ofList
+                ValidationError.createWithMetadata
+                    "transfer.writeSignoff.actUnblessed"
+                    (sprintf
+                        "%d act(s) this run performs are not blessed at their current fingerprint — the most consequential: %s Bless each act in the review workbench (`check go <flow> --review`; d blesses the act under the cursor) or add the `{ \"act\": …, \"fingerprint\": … }` entries the board's consent line prints to the flow's `signoff`; then authorize the run again."
+                        (List.length sorted) leadStatement)
+                    metadata
+            task {
+                let mutable probes : Map<SsKey, ActEvidence.PopulationProbe> = Map.empty
+                for wr in wipeReads do
+                    let! probe = ActEvidence.populationProbe sink wr.Kind
+                    match probe with
+                    | Some p -> probes <- Map.add wr.Key p probes
+                    | None -> ()
+                let! matchCache = ActEvidence.fillMatchCache source sink sourceContract catalog reconcileColumns
+                let fingerprints = ActEvidence.fingerprintsOf nmOf catalog plan matchCache reconciliation probes acts
+                let blessedAt = writeOpts.ActSignoffs |> List.map (fun b -> b.Act, b.Fingerprint) |> Map.ofList
+                let unblessed = acts |> List.choose (verdictOf fingerprints blessedAt)
+                match unblessed with
+                | [] -> return None
+                | us -> return Some (refusalOf us)
+            }
 
     let private runCore
         (mode: Mode)
@@ -1433,14 +1526,27 @@ module Transfer =
                             Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
                                 (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
                 else None
-            match preWrite, inboundRefusal, populatedSinkRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal with
-            | Some refusal, _, _, _, _, _ -> return Result.failureOf refusal
-            | _, Some refusal, _, _, _, _ -> return Result.failureOf refusal
-            | _, _, Some refusal, _, _, _ -> return Result.failureOf refusal
-            | _, _, _, Some refusal, _, _ -> return Result.failureOf refusal
-            | _, _, _, _, Some refusal, _ -> return Result.failureOf refusal
-            | _, _, _, _, _, Some refusal -> return Result.failureOf refusal
-            | None, None, None, None, None, None ->
+            // THE PER-ACT CONSENT GATE (2026-07-10, slice 4b) — always-on for
+            // the peer transfer path (`ActConsentEnforced`, set by the face's
+            // routing, never config). Evaluated on EVERY Execute regardless of
+            // emission (Wipe acts are naturally absent on Incremental), and
+            // appended LAST in the refusal chain below: an integrity fault can
+            // never hide behind a consent fault.
+            let! actConsentRefusal =
+                task {
+                    if mode = Execute && writeOpts.ActConsentEnforced then
+                        return! actConsentRefusalOf source sink ingestCatalog catalog reconciliation writeOpts reconciledKinds topo plan
+                    else return None
+                }
+            match preWrite, inboundRefusal, populatedSinkRefusal, signoffRefusal, identityInsertRefusal, staticLookupRefusal, actConsentRefusal with
+            | Some refusal, _, _, _, _, _, _ -> return Result.failureOf refusal
+            | _, Some refusal, _, _, _, _, _ -> return Result.failureOf refusal
+            | _, _, Some refusal, _, _, _, _ -> return Result.failureOf refusal
+            | _, _, _, Some refusal, _, _, _ -> return Result.failureOf refusal
+            | _, _, _, _, Some refusal, _, _ -> return Result.failureOf refusal
+            | _, _, _, _, _, Some refusal, _ -> return Result.failureOf refusal
+            | _, _, _, _, _, _, Some refusal -> return Result.failureOf refusal
+            | None, None, None, None, None, None, None ->
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -2549,6 +2655,13 @@ module Transfer =
                                 Some (ValidationError.create "transfer.writeSignoff.ungreenlit"
                                     (sprintf "the identity-insert signoff does not cover the write — %s Widen the signoff's `tables` (or run `check go`) before authorizing the run." reason))
                     else None
+                // NAMED SCOPE NOTE (2026-07-10, slice 4b): the STREAMING
+                // realization keeps the MODE-LEVEL gate — per-act consent is
+                // the materialized peer path's (`runCore`); the streaming
+                // reverse leg's substrate arrives chunk-by-chunk, so a
+                // whole-run act fingerprint has nothing stable to pin. The
+                // design's own scope (THE_TRANSFER_MANIFEST.md §6), not an
+                // omission.
                 match preWrite, identityInsertRefusal, staticLookupRefusal with
                 | Some refusal, _, _ -> return Result.failureOf refusal
                 | _, Some refusal, _ -> return Result.failureOf refusal
@@ -2844,61 +2957,12 @@ module Transfer =
     /// `resolveReconciliation` is a function of the reconstructed contract
     /// so the contract is read exactly once (the Source open is not
     /// duplicated to resolve reconciliation specs).
-    /// Resolve the declared table subset (logical entity names, or the
-    /// module-qualified `Module.Entity` form) to a load-set of `SsKey`s
-    /// against the source contract — refusing any name the schema does not
-    /// carry, AND any bare name that resolves to more than one kind (total
-    /// decisions, named skips; 2026-07-06, adversarial MEDIUM #6 — the prior
-    /// `Map.ofList` silently last-won a duplicate logical name across
-    /// modules, transferring whichever kind sorted last). Empty list →
-    /// `None` (all). Public since the peer leg: the peer face resolves the
-    /// SAME subset ahead of its shape / subset-FK gates, one vocabulary,
-    /// one resolver.
+    /// Relocated to `TransferSubset.resolveLoadSet` (2026-07-10, slice 4b) so
+    /// `NameAlignment` (which compiles before this file since the compile-order
+    /// move that put the act-consent evidence chain ahead of `runCore`) reads
+    /// the same resolver — the name stays for its existing call sites.
     let resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
-        if List.isEmpty tables then Result.success None
-        else
-            let all = Catalog.allModulesKinds contract
-            let resolveOne (t: string) : Choice<SsKey, string, string> =
-                let byBareName () =
-                    all
-                    |> List.filter (fun (_, k) -> System.String.Equals(Name.value k.Name, t, System.StringComparison.OrdinalIgnoreCase))
-                match t.IndexOf '.' with
-                | dot when dot > 0 ->
-                    let moduleName = t.Substring(0, dot)
-                    let entityName = t.Substring(dot + 1)
-                    match CatalogResolution.tryKindByLogical contract moduleName entityName with
-                    | Some key -> Choice1Of3 key
-                    | None ->
-                        // A dotted string may be a bare entity name that
-                        // happens to carry a '.'; fall through to the bare
-                        // lookup before refusing.
-                        match byBareName () with
-                        | [ (_, k) ] -> Choice1Of3 k.SsKey
-                        | [] -> Choice2Of3 t
-                        | _ -> Choice3Of3 t
-                | _ ->
-                    match byBareName () with
-                    | [ (_, k) ] -> Choice1Of3 k.SsKey
-                    | [] -> Choice2Of3 t
-                    | many ->
-                        let qualified =
-                            many
-                            |> List.map (fun (m, k) -> sprintf "%s.%s" (Name.value m.Name) (Name.value k.Name))
-                            |> String.concat ", "
-                        Choice3Of3 (sprintf "%s (matches %s)" t qualified)
-            let resolved  = tables |> List.map resolveOne
-            let missing   = resolved |> List.choose (function Choice2Of3 t -> Some t | _ -> None)
-            let ambiguous = resolved |> List.choose (function Choice3Of3 t -> Some t | _ -> None)
-            if not (List.isEmpty missing) then
-                Result.failureOf
-                    (ValidationError.create "transfer.tablesUnknown"
-                        (sprintf "table subset names not found in the source schema: %s" (String.concat ", " missing)))
-            elif not (List.isEmpty ambiguous) then
-                Result.failureOf
-                    (ValidationError.create "transfer.tablesAmbiguous"
-                        (sprintf "table subset names match more than one entity — qualify them as Module.Entity: %s" (String.concat "; " ambiguous)))
-            else
-                Result.success (Some (resolved |> List.choose (function Choice1Of3 k -> Some k | _ -> None) |> Set.ofList))
+        TransferSubset.resolveLoadSet contract tables
 
     /// The full apparatus-driven entry: the emission mode, the G10 resumable
     /// flag, and the declared table subset, threaded onto the `WriteOptions` the
@@ -3008,6 +3072,13 @@ module Transfer =
         // 2026-07-08 — the flow's write-signoff greenlights; a destructive
         // WipeAndLoad Execute refuses BY NAME until the mode is greenlit.
         (signoffs: WriteSignoff.WriteApproval list)
+        // 2026-07-10 (slice 4b) — the flow's per-act blessings, and whether
+        // the per-act consent gate is live on this run. ALWAYS ON for the
+        // peer transfer path (the faces route it); the reverse/legacy leg
+        // and the streaming realization keep the mode-level gate (their own
+        // named scope).
+        (actSignoffs: WriteSignoff.ActBlessing list)
+        (enforceActConsent: bool)
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments; a divergence refuses `transfer.staticLookup.diverged`.
         (staticLookupKinds: Set<SsKey>)
@@ -3032,7 +3103,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; ActSignoffs = actSignoffs; ActConsentEnforced = enforceActConsent; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -3054,12 +3125,17 @@ module Transfer =
         // Incremental Execute is ungated, so `[]` is correct there; a
         // destructive WipeAndLoad Execute must declare the greenlit mode.
         (signoffs: WriteSignoff.WriteApproval list)
+        // 2026-07-10 (slice 4b) — the flow's per-act blessings. This entry IS
+        // the peer env→env leg, so the per-act consent gate is ALWAYS ON here:
+        // an Execute refuses `transfer.writeSignoff.actUnblessed` until every
+        // act it performs is blessed at its current fingerprint.
+        (actSignoffs: WriteSignoff.ActBlessing list)
         // 2026-07-09 — the static-lookup kinds asserted identical across the
         // environments (the go board's dry run threads its resolved set so the
         // board reds on a diverged lookup; a straight load passes `Set.empty`).
         (staticLookupKinds: Set<SsKey>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs staticLookupKinds Set.empty false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs actSignoffs true staticLookupKinds Set.empty false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

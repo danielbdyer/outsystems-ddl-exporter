@@ -111,9 +111,15 @@ each unblessed act's line. If anything the act would do changes after the
 blessing — a row appears in the population, a matched pair re-points, a
 duplicate lands on the target's match column — the fingerprint no longer
 matches and the board says the blessing was captured at a different
-fingerprint: read the act again and re-bless. Today the ledger narrates and
-never blocks; the mode-level `signoff` (the `replace` greenlight) remains the
-gate a live run refuses on.
+fingerprint: read the act again and re-bless.
+
+The ledger is also the live run's gate on the peer path: an Execute refuses
+by name (`transfer.writeSignoff.actUnblessed`, exit 9) until every act it
+performs is blessed at its current fingerprint, and the refusal carries the
+full act list with each fingerprint — the same entries the board prints. The
+board and the engine derive the acts and the fingerprints through the same
+functions over the same reads, so what the board shows blessed is exactly
+what the run will accept.
 
 `--impact` writes the row-grain before/after artifact
 (`go-board/<flow>.impact.html` + a `.json` twin), **triaged by coupling**
@@ -149,7 +155,7 @@ The axes it judges, in order — the full forecast vocabulary:
 | grant | the sink principal carries db-scope DML | grant the missing permission |
 | re-run | your strategy is safe against the sink's ACTUAL state | duplicates (merge into populated) or wipe blockers — remedy printed |
 | signoff | a destructive wipe is greenlit in the flow's `signoff` | the mode is not declared — add `{ "mode": "replace" }` after reading the printed impact |
-| consent | (note) the per-act ledger: every act the run performs, its fingerprint, and where each blessing stands | never red today — bless in `--review` (`d`/`a`) or paste the printed entry |
+| consent | (note) the per-act ledger: every act the run performs, its fingerprint, and where each blessing stands | never red on the board — but a live Execute REFUSES (exit 9) until each act is blessed; bless in `--review` (`d`/`a`) or paste the printed entry |
 | execute gates | (note) the two run-time gates | never red — informational |
 
 The `ambiguous source / target keys` and `replayed drops` axes read the same
@@ -229,10 +235,18 @@ PROJECTION_ALLOW_EXECUTE=1 projection golden --go
 ```
 
 Two deliberate gates: the environment variable authorizes the environment; the
-flag states per-run intent. Exit codes: `0` clean · `5` shape divergence · `9`
-un-strategized relationships / unmatched identities / dropped rows (the report
-names them; `--allow-drops` downgrades identity/drop refusals you have
-deliberately accepted) · `6`/`7` connection/grant · `2` argument/spec errors.
+flag states per-run intent. And one consent gate: every destructive or
+creative act the run performs must be blessed at its current fingerprint in
+the flow's `signoff` — an unblessed act refuses
+`transfer.writeSignoff.actUnblessed` before any write, listing every open act
+with the exact entry that blesses it. Bless in the review workbench
+(`projection check go golden --review`: `d` per act, `a` for everything but an
+identity-insert), or paste the printed `{ "act": …, "fingerprint": … }`
+entries by hand. Exit codes: `0` clean · `5` shape divergence · `9`
+un-strategized relationships / unmatched identities / dropped rows / a write
+the flow has not consented to (the report names them; `--allow-drops`
+downgrades identity/drop refusals you have deliberately accepted) · `6`/`7`
+connection/grant · `2` argument/spec errors.
 
 What happens inside, in order: contracts re-acquired → gates re-checked (the
 same ones the board ran) → subset wiped child-first (`strategy: replace`) →

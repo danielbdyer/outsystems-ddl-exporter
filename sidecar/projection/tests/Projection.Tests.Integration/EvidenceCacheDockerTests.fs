@@ -115,7 +115,7 @@ type EvidenceCacheDockerTests(fixture: EphemeralContainerFixture) =
                             Transfer.runReverseLegThroughConnectionsWith
                                 IdentityPolicy.Structural Transfer.DryRun EmissionMode.Incremental false true false
                                 [ "SalesOrder" ] connections srcContract sinkContract reconciliation Set.empty Set.empty Set.empty
-                                [] Set.empty Set.empty false None
+                                [] [] true Set.empty Set.empty false None
                         let report = Result.value runR
                         // cache ≡ authoritative: the engine's surviving plan rows
                         // equal the cache's re-keyed count; the engine's dropped
