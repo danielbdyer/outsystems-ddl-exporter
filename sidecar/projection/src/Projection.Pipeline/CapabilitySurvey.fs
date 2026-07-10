@@ -340,7 +340,9 @@ module CapabilitySurvey =
                   UserDirectory = ReadSide.UserDirectoryProbe.absent
                   ArchetypeFindings = [] }
             match env.Access with
-            | Access.Bundle _ | Access.Docker -> return baseReport
+            // A csv place is a file target — nothing to connect to, nothing
+            // to probe (2026-07-10, the csv-destination program).
+            | Access.Bundle _ | Access.Docker | Access.Csv _ -> return baseReport
             | Access.Direct connRef ->
                 match ConnectionResolver.resolve env.Name connRef with
                 | Error _ -> return { baseReport with Connected = true }

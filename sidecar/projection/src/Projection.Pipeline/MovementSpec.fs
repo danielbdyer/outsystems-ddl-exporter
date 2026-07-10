@@ -62,6 +62,10 @@ type Destination =
     | Docker
     /// A live database, addressed out-of-band (D9) → read A, apply B ⊖ A.
     | Live of ConnectionRef
+    /// A folder on disk → the transferred subset's DATA as CSV files
+    /// (2026-07-10, the csv-destination program): one file per table plus
+    /// export-manifest.json. Read-only against every database; A = ∅.
+    | Csv of dir: string
 
 /// Which legs of the T16 square the movement emits — the operator's
 /// permission scope (DDL+DML vs DML-only). Schema and data are the two
@@ -181,6 +185,9 @@ type MovementSpec =
         /// 2026-07-10 (slice 4a) — the per-ACT blessings: each names one act
         /// token at one exact fingerprint. Empty = no act blessed.
         ActSignoff  : WriteSignoff.ActBlessing list
+        /// 2026-07-10 (the csv-destination program) — the csv export also
+        /// pulls the referenced non-static tables, transitively closed.
+        WithReferenced : bool
         /// Declared table subset for the data leg (golden data); empty = all.
         Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
@@ -250,6 +257,7 @@ module MovementSpec =
             SupportingScope = []
             Signoff     = []
             ActSignoff  = []
+            WithReferenced = false
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
@@ -275,7 +283,7 @@ module MovementSpec =
     let isLiveWrite (spec: MovementSpec) : bool =
         match spec.Destination with
         | Destination.Live _ -> spec.Commit
-        | Destination.Folder _ | Destination.Docker -> false
+        | Destination.Folder _ | Destination.Docker | Destination.Csv _ -> false
 
 /// Where a flow's content originates (THE_CLI.md §4.2): another environment
 /// (the cross-substrate Move), the authored model's own data, profiled
@@ -350,6 +358,12 @@ type Flow =
         /// no act blessed. Parsed from `{ "act": …, "fingerprint": … }`
         /// entries beside the `{ "mode": … }` mode approvals.
         ActSignoff : WriteSignoff.ActBlessing list
+        /// 2026-07-10 (the csv-destination program) — pull the rows of
+        /// referenced NON-STATIC tables into a csv export, transitively
+        /// closed (static reference tables are skipped — their content is
+        /// environment-identical by declaration). Honored on the csv-export
+        /// leg only; default false.
+        WithReferenced : bool
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -428,6 +442,10 @@ type FlowRunOpts =
         /// M23 — `--revert-dir <dir>`: override where the revert script is written
         /// on a failed load. `None` = derive from the run artifact dir.
         RevertDir  : string option
+        /// `--with-referenced` — force the csv export's referenced pull on for
+        /// this run (the flow's `withReferenced` is the durable form). Honored
+        /// on the csv-export leg only. Default false.
+        WithReferenced : bool
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -571,6 +589,14 @@ type PlanAction =
     /// source's physical names, writes with the sink's. 2026-07-06, the
     /// partial-transfer readiness program.
     | TransferPeer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// csv destination + env data source → the read-only CSV data export
+    /// (2026-07-10, the csv-destination program). No execute flag: files are
+    /// the safe produce (the PublishBundle precedent) — `--go` is inert.
+    /// Reads its SOURCE contract from the OSSYS metamodel (the peer face's
+    /// identity basis), never from a ReadSide readback (survival rule 8:
+    /// ReadSide marks everything Static, which would poison the export's
+    /// static-skip).
+    | TransferCsvExport of source: string * dir: string * opts: LoadOpts * withReferenced: bool
     /// live + data source whose DERIVED direction is `UpLegacy` (B→A) → the
     /// reverse-leg runner (`Transfer.runReverseLeg` / the M3.b face). The engine
     /// distinguishes this from an A→A peer `Transfer` — which it cannot do by

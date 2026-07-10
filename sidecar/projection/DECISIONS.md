@@ -201,6 +201,7 @@ table before continuing.
 | Deferral | First logged | Trigger condition | Status (current; session-N tag indicates last update) |
 |---|---|---|---|
 | **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer, a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). | **Cashed out 2026-07-09** — a new top-level **`emission.signoff` array** (reusing `WriteSignoff.WriteApproval` + `verify`) greenlights the emission plane's destructive modes; `buildPolicyFromConfig` refuses `emission.deleteScope.ungreenlit` when a `deleteScope` arm is present without the `delete-scope` greenlight. `WriteSignoff.fs` moved ahead of `Config.fs` in the compile order (dependency-free) so the shaping config shares the vocabulary. Presence-gated (the arm is a WHERE predicate, not a table set). See `DECISIONS 2026-07-09 — The transfer-guarantees program`. |
+| **Per-run `--csv <dir>` override on a live flow** | 2026-07-10 (the csv-destination program) | An operator asks to snapshot an EXISTING live flow's data to files for one run without authoring a csv environment — i.e. the flag form of what `"access": "csv"` expresses durably. Cash-out shape: parse `--csv <dir>` in the flow arm of `Command.parse`, rewrite the resolved spec's `Destination` to `Csv dir` before `planMovement` (routing and the runner need nothing new — the destination arm already dispatches before direction). | deferred (2026-07-10) |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
@@ -27329,3 +27330,52 @@ at 38 tables / ~4k rows / 5 varieties with a drifted `Country` lookup.
 `task`). The two-traversal discipline holds on both new gates (static-lookup, delete-scope):
 one computation, two surfaces, no drift. Docker witnesses for `--impact` and the static-lookup
 board case are the named follow-on to this entry.
+
+## 2026-07-10 — CSV files as a first-class transfer destination (the third destination class)
+
+The partial transfer's destination vocabulary gains a third class beside the
+live peer and the schema bundle: **`Destination.Csv`**, expressed as an
+environment with `"access": "csv"` and `"out": "<dir>"`. A data flow whose
+`to` names a csv place exports the declared table subset as one CSV per table
+(physical name, physical headers, RFC 4180, UTF-8 without BOM, CRLF) plus an
+`export-manifest.json` carrying the logical identity, the physical→logical
+column mapping, row counts, and per-table provenance. Decisions and their
+reasoning:
+
+1. **A first-class destination, not a flag on the peer path.** `planMovement`
+   dispatches on `spec.Destination` BEFORE direction is consulted, so the csv
+   arm routes entirely around `directionOf`/`UpPeer` — the read-only export
+   can never inherit a write gate by accident. The flag form (`--csv <dir>`
+   on a live flow) is recorded in the Active-deferrals index, not built.
+2. **The CSV emission rides a library** (CsvHelper 33.0.1), per the supreme
+   discipline's built-in obligation — no hand-rolled escaping anywhere; the
+   renderer's tests round-trip hostile cells through the library's own
+   parser. One empirically-probed library gap is sealed in the configuration:
+   with a CRLF newline CsvHelper does not quote a bare-LF field even though
+   its own parser splits on it, so the `ShouldQuote` policy quotes on any of
+   comma/quote/CR/LF.
+3. **The referenced pull reuses the `Closure` planner** rather than growing a
+   sibling: the subset's own ingested tables seed the walk (in-subset
+   references self-resolve; only escaping edges fetch), and static kinds are
+   held out by a fetch filter on the target SsKey
+   (`ClosureOracle.walkWhere` — the `walk` generalization). Stop directives
+   were rejected for this: they match bare entity names, module-blind.
+   Static detection is Modality MEMBERSHIP (`ModalityMark.Static _`), never
+   `staticPopulations <> []` (the OSSYS path marks `Static []`) and never on
+   a ReadSide catalog (survival rule 8).
+4. **Read-only semantics are structural.** The source contract comes from the
+   OSSYS metamodel one-sided; no sink connection is ever opened; files are
+   the safe produce (the PublishBundle precedent), so no reconcile, no
+   signoff, no per-act consent, `--go` inert, and escapes with the pull off
+   are narrated with the remedy — never refused. The export also does NOT
+   gate on `Closure.completenessRefusal`: a skipped static parent would read
+   as a dangling mandatory FK there by design.
+5. **A44 held end-to-end**: `access: "csv"`+`out`, flow `withReferenced`, and
+   `--with-referenced` each reach the runner; parse/render round-trips and
+   the destination-totality sweep enumerate them.
+
+Proven: pure pool 4189/0; the CsvExportDockerTests witness (declared file +
+keyed referenced pull + static hold-out + manifest provenance + bare-run
+escape narration) live against a mock estate with an injected FK onto a
+genuine static entity; Release FS3511-clean. Operator surfaces:
+`PARTIAL_TRANSFER_RUNBOOK.md` Step 8, `THE_CONFIG_CONTROL_PLANE.md` §4.

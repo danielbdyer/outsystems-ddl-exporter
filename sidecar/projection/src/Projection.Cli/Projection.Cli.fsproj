@@ -35,6 +35,7 @@
     <Compile Include="Faces/Export.fs" />
     <Compile Include="Faces/Deploy.fs" />
     <Compile Include="Faces/Transfer.fs" />
+    <Compile Include="Faces/CsvExport.fs" />
     <Compile Include="Faces/Synthetic.fs" />
     <Compile Include="Faces/Emit.fs" />
     <Compile Include="Faces/Canary.fs" />

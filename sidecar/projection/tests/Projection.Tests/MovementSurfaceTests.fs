@@ -269,7 +269,7 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
 // can never drift.
 
 let private previewOpts : FlowRunOpts =
-    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
 
 let private dirOf (cfg: ProjectionConfig) name =
     match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
@@ -360,7 +360,7 @@ let ``provenance arm: an ossys-only config WITHOUT a store stays non-provenance 
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
     // direction routes the committed data move to the reverse-leg runner.
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
     | PlanAction.RunReverseLeg (_, _, "env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
@@ -381,7 +381,7 @@ let ``J3: a legacy flow with NO model refuses at PLAN time (the contracts render
           "flows": { "legacy": { "from": "onprem-legacy", "to": "cloud-uat" } }
         }
         """ |> mustOk
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
     let flow = { Map.find "legacy" modelless.Flows with Scope = Some Scope.Data }
     match (Command.planFlow modelless flow commitData).Action with
     | PlanAction.Refused (1, e) -> Assert.Equal("cli.move.modelMissing", e.Code)
@@ -577,7 +577,7 @@ let ``planMovement: a data source that is not a live environment is Refused`` ()
 let ``planMovement is TOTAL across the destination × scope × data × model × commit × direction product`` () =
     // No combination throws; every Refused is a named exit code + coded error.
     // S4b — the new `Direction` field + `RunReverseLeg` arm are in the sweep.
-    let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
+    let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev; Destination.Csv "./csv" ]
     let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
     let datas        = [ DataOrigin.Model; DataOrigin.Synthetic "file:p.json"; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "pub" ]
     let models       = [ ModelSource.ModelFile "m.json"; ModelSource.ConfigFile "c.json"; ModelSource.Unspecified ]
@@ -598,7 +598,7 @@ let ``planMovement is TOTAL across the destination × scope × data × model × 
                     Assert.False(System.String.IsNullOrWhiteSpace error.Message)
                     Assert.False(System.String.IsNullOrWhiteSpace error.Code)
                 | _ -> ()
-    Assert.Equal(3 * 3 * 5 * 3 * 2 * 4, n)
+    Assert.Equal(4 * 3 * 5 * 3 * 2 * 4, n)
 
 [<Fact>]
 let ``planMovement: a data move with Direction=UpLegacy routes to RunReverseLeg, not Transfer`` () =
@@ -645,7 +645,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -684,7 +684,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -1628,3 +1628,82 @@ let ``plan is TOTAL across check / explain / seal / report verb tails`` () =
             Assert.Contains(code, [ 1; 2; 6 ])
             Assert.False(System.String.IsNullOrWhiteSpace error.Message)
         | _ -> ()
+
+// -- the csv destination (2026-07-10, the csv-destination program) -----------
+
+let private csvCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "qa":     { "access": "direct", "conn": "env:QA_CONN" },
+        "csvout": { "access": "csv", "out": "exports/golden" }
+      },
+      "flows": {
+        "golden-csv": { "from": "qa", "to": "csvout", "scope": "data",
+                        "tables": ["Customer"], "withReferenced": true }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+[<Fact>]
+let ``csv routing: an env data source onto a csv destination plans TransferCsvExport, and --go changes nothing (files are the safe produce)`` () =
+    let spec commit =
+        { MovementSpec.forDestination (Destination.Csv "exports/golden") with
+            Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Commit = commit }
+    let expect action =
+        match action with
+        | PlanAction.TransferCsvExport ("env:QA_CONN", "exports/golden", _, false) -> ()
+        | other -> Assert.Fail(sprintf "expected TransferCsvExport, got %A" other)
+    expect ((Command.planMovement csvCfg (spec false)).Action)
+    expect ((Command.planMovement csvCfg (spec true)).Action)
+
+[<Fact>]
+let ``csv routing: withReferenced threads from the flow config AND from --with-referenced`` () =
+    // from config: the flow declares withReferenced true.
+    let flow = Map.find "golden-csv" csvCfg.Flows
+    let preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
+    (match (Command.planFlow csvCfg flow preview).Action with
+     | PlanAction.TransferCsvExport (_, _, _, true) -> ()
+     | other -> Assert.Fail(sprintf "expected the flow's withReferenced to thread, got %A" other))
+    // from the per-run flag: a flow WITHOUT the config key, forced on.
+    let bare = { flow with WithReferenced = false }
+    (match (Command.planFlow csvCfg bare { preview with WithReferenced = true }).Action with
+     | PlanAction.TransferCsvExport (_, _, _, true) -> ()
+     | other -> Assert.Fail(sprintf "expected --with-referenced to force the pull on, got %A" other))
+    (match (Command.planFlow csvCfg bare preview).Action with
+     | PlanAction.TransferCsvExport (_, _, _, false) -> ()
+     | other -> Assert.Fail(sprintf "expected the pull off by default, got %A" other))
+
+[<Fact>]
+let ``csv routing: a non-env data source refuses by name — the export reads rows live`` () =
+    for data in [ DataOrigin.Model; DataOrigin.Synthetic "file:p.json"; DataOrigin.NoData ] do
+        let spec =
+            { MovementSpec.forDestination (Destination.Csv "exports/golden") with
+                Scope = Scope.Data; Data = data }
+        match (Command.planMovement csvCfg spec).Action with
+        | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.csvNeedsEnvSource", e.Code)
+        | other -> Assert.Fail(sprintf "expected the named refusal for %A, got %A" data other)
+
+[<Fact>]
+let ``csv routing: --with-referenced parses from the flow verb's tail`` () =
+    match Command.parse csvCfg [ "golden-csv"; "--with-referenced" ] with
+    | Ok (Intent.Flow (_, opts)) -> Assert.True(opts.WithReferenced)
+    | other -> Assert.Fail(sprintf "expected the flow intent, got %A" other)
+    match Command.parse csvCfg [ "golden-csv" ] with
+    | Ok (Intent.Flow (_, opts)) -> Assert.False(opts.WithReferenced)
+    | other -> Assert.Fail(sprintf "expected the flow intent, got %A" other)
+
+[<Fact>]
+let ``csv config: an access csv environment parses; a missing out refuses by name; the unknown-token message names csv`` () =
+    (match (Map.find "csvout" csvCfg.Environments).Access with
+     | Access.Csv "exports/golden" -> ()
+     | other -> Assert.Fail(sprintf "expected Access.Csv, got %A" other))
+    let noOut = """{ "environments": { "e": { "access": "csv" } }, "model": "m.json" }"""
+    (match ProjectionConfig.parse noOut with
+     | Ok _ -> Assert.Fail "expected the named refusal on the missing out folder"
+     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.envCsvNoOut"))
+    let unknown = """{ "environments": { "e": { "access": "tape" } }, "model": "m.json" }"""
+    (match ProjectionConfig.parse unknown with
+     | Ok _ -> Assert.Fail "expected the unknown-access refusal"
+     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.envAccessUnknown" && e.Message.Contains "csv"))

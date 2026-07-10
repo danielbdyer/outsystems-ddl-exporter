@@ -2129,3 +2129,51 @@ exempts `Resumable` runs: the envelope clears the partial state FK-first
 under the completion marker and reloads, so the re-mint duplication the gate
 guards against cannot occur there. AC-G10 recovers; the T1.8 witness
 (non-resumable populated sink still refuses) stays green; pure pool 4174/0.
+
+## Addendum (2026-07-10, the csv-destination program) — the partial transfer exports straight to CSV files
+
+The subset machinery gained a third destination class beside the live peer and
+the schema bundle: **CSV files on disk**. An environment declares
+`"access": "csv"` with `"out": "<dir>"`; a data flow whose `to` names it
+exports one CSV per table — physical table name, physical column headers,
+RFC 4180 (rendered through the CsvHelper library, never hand-rolled string
+escaping), UTF-8 without a BOM, CRLF records — plus one `export-manifest.json`
+recording, per table, the Service Studio Module.Entity, the physical name, the
+physical→logical column mapping in column order, the row count, and the
+provenance (`declared` in the flow's tables, or `referenced` — pulled in by a
+foreign key from the exported set).
+
+- **The referenced pull is opt-in and keyed.** `"withReferenced": true` on the
+  flow (or `--with-referenced` on the run) follows the exported set's foreign
+  keys transitively and carries ONLY the referenced rows — the existing
+  `Closure` planner, seeded with the subset's own ingested tables so in-subset
+  references self-resolve and only escaping edges fetch. Static reference
+  tables are held out at the fetch filter (`CsvReferencedPull.staticKinds`,
+  Modality membership — never the populations list, never a ReadSide catalog;
+  survival rule 8): their content is identical in every environment. With the
+  pull OFF, every escaping reference is narrated with the remedy named —
+  never a refusal.
+- **Read-only semantics, structurally.** The export reads the source contract
+  from the OSSYS metamodel and never opens a sink connection. `planMovement`
+  dispatches on the destination BEFORE direction, so the csv arm routes around
+  the peer path entirely; `Destination.Csv` is not a live write, so no
+  reconcile, no signoff, no per-act consent applies and `--go` is inert (the
+  PublishBundle file-produce precedent). `check go` on a csv flow says exactly
+  that and points at the direct run.
+- **A44 held.** The new expressibles (`access: "csv"` + `out`, flow
+  `withReferenced`, `--with-referenced`) each reach the runner and round-trip
+  through parse/render; the totality sweep enumerates the new destination.
+
+**Proven:** pure pool 4189 pass / 0 fail (renderer round-trips through
+CsvHelper's own parser on hostile cells; manifest determinism and ordering;
+static-kind membership; a fake-oracle closure drive pinning the transitive
+keyed pull, the per-key dedup, and the static hold-out); docker: the
+CsvExport witness live against a mock estate with an injected FK onto a
+genuine static entity — declared file + keyed referenced pull (the
+unreferenced row stays home) + no static file + manifest provenance, and the
+bare run writing only the declared file while naming both escapes; Release
+FS3511-clean; full docker pool run at close.
+
+One named follow-on, recorded in the Active-deferrals index: a per-run
+`--csv <dir>` override that points an existing live flow's data at a
+directory for one run without authoring a csv environment.

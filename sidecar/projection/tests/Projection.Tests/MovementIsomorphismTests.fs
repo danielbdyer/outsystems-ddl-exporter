@@ -28,7 +28,7 @@ open Projection.Pipeline
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
-let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
+let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; WithReferenced = false; Seed = None; Scale = None; Correction = None }
 let private commit  : FlowRunOpts = { preview with Go = true }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ let private genVariant : Gen<ProjectionConfig * Flow> =
             | OriginDraw.NoData    -> FlowSource.NoData, [ sink ]
             | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json", None), [ sink ]
             | OriginDraw.FromEnv   -> FlowSource.Env "src", [ src; sink ]
-        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = scope; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = scope; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
         let cfg =
             { ProjectionConfig.empty with
                 Environments = envs |> List.map (fun e -> e.Name, e) |> Map.ofList
@@ -163,7 +163,7 @@ let ``A44 clause 1 — the flow execution profile round-trips (strategy/resumabl
         let flow =
             { Name = "f"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []
               Scope = Some Scope.Data; Shape = None; Shaping = None
-              Strategy = strat; Resumable = resumable; Streaming = streaming; Journal = journal }
+              Strategy = strat; Resumable = resumable; Streaming = streaming; WithReferenced = false; Journal = journal }
         let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
         match ProjectionConfig.parse (ProjectionConfig.render cfg) with
         | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -180,7 +180,7 @@ let ``A44 clause 1 — the flow's foreignRefs (T0.3) round-trips (parse ∘ rend
     let flow =
         { Name = "f"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []
           ForeignRefs = [ "AuditKind.CreatedBySystem"; "Ledger.PostedByService" ]; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []
-          Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+          Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
     let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
     match ProjectionConfig.parse (ProjectionConfig.render cfg) with
     | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -201,7 +201,7 @@ let ``A44 clause 1 — the flow's alignment mode + module map (by-name) round-tr
           Alignment = AlignmentMode.ByName
           AlignMap = Map.ofList [ "CustomerClone", "Customer"; "OrdersClone", "Orders" ]
           SupportingScope = []; Signoff = []; ActSignoff = []
-          Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+          Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
     let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
     match ProjectionConfig.parse (ProjectionConfig.render cfg) with
     | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -296,7 +296,7 @@ let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × s
         for shape in shapeOpts do
           for tables in tableSets do
             for rekey in [ None; Some "file:users.csv" ] do
-              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = scope; Shape = shape; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = scope; Shape = shape; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
               let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
               match ProjectionConfig.parse (ProjectionConfig.render cfg) with
               | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -356,7 +356,7 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
                 // J3 — the reverse leg renders its contracts from the authored
                 // model, so the legacy variant carries one (plan-time gate).
                 Shaping = { ProjectionConfig.empty.Shaping with Model = { ProjectionConfig.empty.Shaping.Model with Path = Some "model.json" } } }
-        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
+        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
         cfg, flow
     let legacyCfg, legacyFlow = mk Rendition.Logical Rendition.Physical
     Assert.Equal(MovementDirection.UpLegacy, (Command.resolveFlowSpec legacyCfg legacyFlow commit |> mustOk).Direction)
@@ -562,3 +562,34 @@ let ``A44 clause 2 — expressible ⇒ reachable: every parse-accepted flow reso
                 && not (System.String.IsNullOrWhiteSpace error.Message)
             | _ -> true))
     |> Check.QuickThrowOnFailure
+
+[<Fact>]
+let ``A44 clause 1 — a csv environment (access + out) round-trips (parse ∘ render = id)`` () =
+    // The csv destination is a movement-vocabulary citizen: an `access: csv`
+    // environment renders and re-parses to the same environment (expressible
+    // ⇔ reachable), so the export target is fully config-addressable.
+    let csvEnv : Environment =
+        { Name = "csvout"; Access = Access.Csv "exports/golden"
+          Grant = None; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
+    let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "csvout", csvEnv ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<Environment>(csvEnv, Map.find "csvout" back.Environments)
+    | Error es -> Assert.Fail(sprintf "csv environment round-trip failed: %A" es)
+
+[<Fact>]
+let ``A44 clause 1 — the flow's withReferenced round-trips; the false default renders absent`` () =
+    let baseEnvs =
+        [ directEnv "sink" None None; directEnv "src" None None ]
+        |> List.map (fun e -> e.Name, e) |> Map.ofList
+    let flowWith b =
+        { Name = "f"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; ReconcileIgnore = []
+          ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []
+          Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = b; Journal = None }
+    for b in [ true; false ] do
+        let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flowWith b ] }
+        match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+        | Ok back -> Assert.Equal<Flow>(flowWith b, Map.find "f" back.Flows)
+        | Error es -> Assert.Fail(sprintf "withReferenced round-trip failed: %A" es)
+    // the false default renders ABSENT (byte-stable configs never gain noise).
+    let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flowWith false ] }
+    Assert.DoesNotContain("withReferenced", ProjectionConfig.render cfg)

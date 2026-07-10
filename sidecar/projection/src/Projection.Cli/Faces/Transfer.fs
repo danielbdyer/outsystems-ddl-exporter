@@ -2115,6 +2115,12 @@ let runCheckGo
                 (if envGate then "PROJECTION_ALLOW_EXECUTE is set; the live run still needs the per-run intent flag --go."
                  else "two gates at run time: PROJECTION_ALLOW_EXECUTE=1 (environment authorization) + --go (per-run intent).")))
         finish (List.ofSeq items)
+    | PlanAction.TransferCsvExport _ ->
+        // A csv export is a read-only file produce — there is no live write
+        // for the board to gate. Say so, and point at the run itself (which
+        // narrates any references that escape the declared tables).
+        Console.Error.WriteLine (sprintf "projection check go: flow '%s' exports CSV files — a read-only file produce with no live write to gate. Run `projection %s` directly; the run itself narrates any references that escape the declared tables." flowName flowName)
+        2
     | _ ->
         Console.Error.WriteLine (sprintf "projection check go: flow '%s' is not a live data-transfer flow (the go board covers env->env data flows)." flowName)
         2

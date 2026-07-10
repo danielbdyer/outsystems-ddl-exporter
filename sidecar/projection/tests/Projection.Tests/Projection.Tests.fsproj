@@ -171,6 +171,7 @@
     <Compile Include="EvidenceCacheTests.fs" />
     <Compile Include="ReviewNavigatorTests.fs" />
     <Compile Include="ActConsentTests.fs" />
+    <Compile Include="CsvExportTests.fs" />
     <Compile Include="CaptureJournalTests.fs" />
     <Compile Include="RowQuantumTests.fs" />
     <Compile Include="ModelResolutionTests.fs" />
@@ -336,6 +337,7 @@
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
     <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+    <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="Spectre.Console.Testing" Version="0.54.0" />
   </ItemGroup>
 

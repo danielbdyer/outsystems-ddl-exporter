@@ -296,6 +296,52 @@ same result every time (proven by the idempotency e2e). Refresh QA-side data,
 re-run, done. If the sink's reference data changed (reconciled tables), the
 board re-validates the matches — run `check go` again first when in doubt.
 
+## Step 8 — Export the subset to CSV files instead of a live sink
+
+The same subset machinery can land as FILES: declare a csv environment and
+point a flow's `to` at it.
+
+```jsonc
+{
+  "environments": {
+    "cloud-qa": { "access": "direct", "conn": "env:CLOUD_QA_CONN",
+                  "rendition": "physical", "archetype": "managed-dml" },
+    "exports":  { "access": "csv", "out": "exports/golden" }
+  },
+  "flows": {
+    "golden-csv": { "from": "cloud-qa", "to": "exports", "scope": "data",
+                    "tables": ["Customer", "Order"],
+                    "withReferenced": true }
+  }
+}
+```
+
+`projection golden-csv` reads the declared tables live from the source and
+writes one CSV per table into `out` — named by physical table
+(`OSUSR_ABC_CUSTOMER.csv`), header row = physical column names, RFC 4180
+quoting, UTF-8 — plus one `export-manifest.json` recording, per table, the
+Service Studio names (module, entity, and each column's logical name), the
+row count, and how the table entered the export. Nothing is written to any
+database, so there is no execute gate: `--go` changes nothing, and
+`check go` on a csv flow says exactly that and points you at the run.
+
+**`withReferenced`** controls what happens when a declared table's foreign
+keys point at tables you did NOT declare. Off (the default), the export
+writes only the declared tables and the run names every escaping reference —
+those foreign-key values will not resolve inside the files. On (or `--with-
+referenced` for one run), the export follows the references and carries the
+rows they point at — only the rows actually referenced, followed
+transitively until the set closes. STATIC reference tables are excluded
+either way: their content is identical in every environment by declaration,
+so the file would add bytes, not information. The manifest marks each pulled
+table `referenced` so the two populations are never confused.
+
+Two caveats to read the files with:
+- A database NULL and an empty text value are both written as an empty
+  field — the source read collapses them before any file is composed.
+- Rows arrive in primary-key order (the source read's own order), so the
+  same source produces the same files.
+
 ---
 
 ## Troubleshooting quick table

@@ -47,6 +47,7 @@
     <Compile Include="TriageWitnessDockerTests.fs" />
     <Compile Include="EvidenceCacheDockerTests.fs" />
     <Compile Include="ActConsentDockerTests.fs" />
+    <Compile Include="CsvExportDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />
