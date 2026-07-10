@@ -99,6 +99,7 @@
     <Compile Include="ComparisonTests.fs" />
     <Compile Include="NarrationDisplayTests.fs" />
     <Compile Include="LifecycleTests.fs" />
+    <Compile Include="LifecycleAppendExhaustiveTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />
     <Compile Include="MigrationTests.fs" />
@@ -266,10 +267,12 @@
     <Compile Include="RegistryDigestRoundTripTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />
+    <Compile Include="NullabilityRulesDecisionTableTests.fs" />
     <Compile Include="NullabilityPassTests.fs" />
     <Compile Include="UniqueIndexRulesTests.fs" />
     <Compile Include="UniqueIndexPassTests.fs" />
     <Compile Include="ForeignKeyRulesTests.fs" />
+    <Compile Include="ForeignKeyRulesDecisionTableTests.fs" />
     <Compile Include="ForeignKeyPassTests.fs" />
     <Compile Include="CategoricalUniquenessRulesTests.fs" />
     <Compile Include="CategoricalUniquenessPassTests.fs" />

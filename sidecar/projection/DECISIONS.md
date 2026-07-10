@@ -26994,3 +26994,44 @@ engine field (it rides the existing `tables`/`reconcile` string lists).
 **Witnesses.** `SupportingScopeTests` (bridge / desugar / resolve / the six
 verify claims / dependentEdges / completeness), `MovementSurfaceTests`
 (round-trip + named refusals), `GoBoardDockerTests` (the axis on the live pair).
+
+## 2026-07-10 — The verification ladder adopted: rung-3 exhaustive covers land; rungs 4–5 committed
+
+**Context.** The operator asked whether the sidecar's invariant discipline can be
+tightened past sampled witnesses — "some kind of finite-state-machine solver that says
+*provably so* with these explicit overrides and transforms and guarantees." The audit
+trail already classifies every law by *whether* it is discharged (the verifiability
+triangle's Buckets A–D); what it did not track is *by what means and how strongly*.
+
+**Decision.** Adopt the five-rung verification ladder (types → sampled → exhaustive →
+model-checked → proven) as a standing program, scoped strictly to Bucket B/C/D — never
+re-proving what the type system already makes unforgeable. `FORMAL_METHODS.md` is the
+owning surface: the ladder, the per-law rung ledger, the §3 operating pattern for
+rung-3 suites (enumerate → assert cardinality → independent oracle → quantified laws),
+and the forward commitments (Phase 2: TLA⁺/Alloy under `formal/`, `model-check.sh`
+CI-gated, the M16 citation gate extended to external artifacts; Phase 3: an F★
+beachhead on the change-algebra crown jewels only).
+
+**What shipped (rung 3, Phase 1).** Four exhaustive surfaces, each a proof by
+exhaustion over its finite space where the predecessor tests sampled:
+`NullabilityRulesDecisionTableTests` (R3-NULL, the full 128-point signal-hierarchy
+space + budget-boundary edge points), `ForeignKeyRulesDecisionTableTests` (R3-FK, the
+full 1024-point gate-ladder space; the reserved keep-reasons proven unreachable; the
+two V1-parity toggles proven outcome-inert; the DECISIONS 2026-06-12 carve-out proven
+past every gate), the R3-POL bounded-exhaustive extension of H-098 (all 55,987 op
+traces to depth 6 — A12 orthogonality proven within the swept space, not sampled), and
+`LifecycleAppendExhaustiveTests` (R3-LC, all 341 append traces over a 4-ordinal
+universe: acceptance ⇔ strictly-increasing; every refusal the named
+`lifecycle.append.nonMonotonic`).
+
+**Why the oracle pattern is sound.** Each suite's oracle is an independent
+transcription of the rule module's *documented* decision table, so conformance proves
+code ⇔ documented spec; the precedence/unreachability/inertness laws are quantified
+over the same enumeration *without* consulting the oracle, so a defect shared by
+oracle and implementation cannot hide. Mutation-checked at adoption: an inverted
+physical-NOT-NULL signal and a re-introduced EnableCreation-over-carve-out precedence
+swap each tripped both the conformance law and the independent laws.
+
+**Witnesses.** The four suites above; the rung ledger in `FORMAL_METHODS.md` §2 (a
+rung claim without a live witness is a first-class defect, same rule as the M16
+citations).

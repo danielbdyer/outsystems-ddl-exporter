@@ -321,3 +321,58 @@ type private PolicyMachine() =
 [<Property>]
 let ``H-098 FsCheck.Experimental.Machine: model-impl agreement under generated traces (shrinks on failure)`` () =
     StateMachine.toProperty (PolicyMachine())
+
+// ---------------------------------------------------------------------------
+// R3-POL (FORMAL_METHODS.md §2/§3): rung-3 bounded-exhaustive extension
+// of H-098.
+//
+// The two surfaces above SAMPLE the trace space (FsCheck generates
+// ~100 random traces per run). This section sweeps it COMPLETELY:
+// every operation sequence over the six-op alphabet up to depth 6 —
+// Σ 6^d for d = 0..6 = 55,987 traces — with the model-impl agreement
+// invariant checked at every step of every trace (via the same
+// `runTrace` the sampled property uses).
+//
+// Scope stated honestly (the rung-3 boundary): exhaustive over the op
+// ALPHABET at the representative payloads `opOfIndex` fixes — the same
+// abstraction the Machine variant samples — to depth 6. A12
+// orthogonality is proven, not sampled, within that space.
+// ---------------------------------------------------------------------------
+
+/// Every op-index sequence of exactly length `n` over the alphabet
+/// 0..5, lazily.
+let rec private sequencesOfLength (n: int) : seq<int list> =
+    if n = 0 then Seq.singleton []
+    else
+        seq {
+            for tail in sequencesOfLength (n - 1) do
+                for op in 0 .. 5 do
+                    yield op :: tail
+        }
+
+let private exhaustiveDepth = 6
+
+let private allTracesUpToDepth : seq<int list> =
+    seq { for d in 0 .. exhaustiveDepth do yield! sequencesOfLength d }
+
+[<Fact>]
+let ``R3-POL cardinality: the trace enumeration covers exactly sum(6^d, d=0..6) = 55987 sequences`` () =
+    let expected = List.sum [ for d in 0 .. exhaustiveDepth -> pown 6 d ]
+    Assert.Equal(55987, expected)
+    Assert.Equal(expected, Seq.length allTracesUpToDepth)
+
+[<Fact>]
+let ``R3-POL exhaustive: model-impl touched-axis agreement holds at every step of every trace to depth 6`` () =
+    let firstFailure = allTracesUpToDepth |> Seq.tryFind (runTrace >> not)
+    Assert.True(firstFailure.IsNone, sprintf "Agreement failed on trace %A" firstFailure)
+
+[<Fact>]
+let ``R3-POL reset: every trace ending in Reset lands on Policy.empty (index 5 is Reset)`` () =
+    // Depth-5 prefixes + a terminal Reset: 6^5 = 7776 traces, each
+    // must fold to the identity policy.
+    sequencesOfLength (exhaustiveDepth - 1)
+    |> Seq.iter (fun prefix ->
+        let final =
+            prefix @ [ 5 ]
+            |> List.fold (fun p i -> apply (opOfIndex i) p) Policy.empty
+        Assert.Equal(Policy.empty, final))
