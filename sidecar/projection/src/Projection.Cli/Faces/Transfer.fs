@@ -902,14 +902,30 @@ let runCheckGo
     let flowName, fromLabel, toLabel = args.Flow, args.FromLabel, args.ToLabel
     let asJson, emitSql, emitImpact = args.AsJson, args.EmitSql, args.EmitImpact
     let planned = args.Planned
+    // The review workbench's substrate (2026-07-10, the manifest program,
+    // slice 3): captured while the evidence connections are open — pure data
+    // only, so it outlives them. `Some` only under `--review` with open
+    // decisions to work.
+    let mutable reviewBench : ReviewNavigator.Workbench option = None
     let finish (items: GoBoard.Item list) : int =
         let board : GoBoard.Board = { Flow = flowName; From = fromLabel; To = toLabel; Items = items }
         // The machine lens is the stable `toJsonString` CI contract (untouched);
         // the human lens routes through `GoBoardView` — the Spectre-backed `View`
-        // engine (2026-07-08, the rendering-elevation program): the forecast reflows
-        // to the terminal width, the supporting-scope axis reveals as a fully-expanded
-        // References / Dependents tree with the per-claim guarantee named.
+        // engine (2026-07-08, the rendering-elevation program). `--review` on a
+        // real terminal opens the decision workbench over the same substrate
+        // this pass read; a piped `--review` degrades to the one-shot render,
+        // which carries the decision tables (headless-total). The exit code is
+        // the board's in every branch — a review session edits config;
+        // re-verdicting is the next `check go`.
         if asJson then printfn "%s" (GoBoard.toJsonString board)
+        elif args.Review && Navigator.isInteractiveSurface false then
+            match reviewBench with
+            | Some bench ->
+                ReviewNavigator.run bench |> ignore
+                printfn "The selections live in %s. Re-run `projection check go %s` to re-verdict the board." (RelaxationStore.configPath ()) flowName
+            | None ->
+                GoBoardView.write Console.Out board
+                printfn "review: no reference escapes the transfer, so there is nothing to decide — the board stands as rendered."
         else GoBoardView.write Console.Out board
         GoBoard.exitCode board
     match planned with
@@ -1113,93 +1129,80 @@ let runCheckGo
             // sampled source→sink value match — so the operator pastes a
             // PROVEN rule, not a guess. A pair that will not open degrades
             // to the static (shape-derived) proposals, named.
-            let evidenceLines =
+            let evidenceLines, decisionTables =
                 match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-evidence-source" sourceSpec).GetAwaiter().GetResult() with
-                | Error _ -> [ "evidence: the source connection would not open — the proposals above are shape-derived only." ]
+                | Error _ -> [ "evidence: the source connection would not open — the proposals above are shape-derived only." ], []
                 | Ok source ->
                     use source = source
                     match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-evidence-sink" sinkSpec).GetAwaiter().GetResult() with
-                    | Error _ -> [ "evidence: the sink connection would not open — the proposals above are shape-derived only." ]
+                    | Error _ -> [ "evidence: the sink connection would not open — the proposals above are shape-derived only." ], []
                     | Ok sink ->
                         use sink = sink
                         let probeLines =
                             PeerTransfer.probeReconcileEvidence source sink sourceContract sinkContract escapes
                             |> PeerTransfer.narrateEvidence
                             |> List.map (sprintf "evidence: %s")
-                        // THE EXACT CONSEQUENCES (2026-07-10, the manifest
-                        // program, slice 2): the row substrate read ONCE into
-                        // the EvidenceCache from these same connections, and
-                        // every answer's delta computed over the FULL rowsets
-                        // through the same Core match the run uses — exact
-                        // counts, never the TOP-200 sample (which remains the
-                        // separate `evidence:` strength heuristic above).
-                        // THE_VOICE: each consequence is ONE complete sentence,
-                        // readable aloud — the condition, the counted outcome,
-                        // and the fact that qualifies it. No shorthand, no
-                        // mixed tense, no internal vocabulary.
-                        let consequenceLines =
+                        // THE DECISION TABLES (2026-07-10, the manifest program,
+                        // slices 2-3): the row substrate read ONCE into the
+                        // EvidenceCache from these same connections; every
+                        // answer's consequence computed over the FULL rowsets
+                        // through the same Core match the run uses. ONE
+                        // traversal builds the typed tables; the plain twin is
+                        // derived from the same rows, so the two lenses cannot
+                        // disagree. THE_VOICE: each consequence is one complete
+                        // sentence — the condition, the counted outcome, the
+                        // qualifying fact.
+                        let decisionTables =
                             try
-                                let cache = (EvidenceCache.fill source sink sourceContract sinkContract escapes).GetAwaiter().GetResult()
+                                // Every surface reads the SAME candidate set the
+                                // probe reads (index-backed + name-shaped, at most
+                                // three) — the shared `candidateColumnsFor`.
+                                let enriched =
+                                    escapes
+                                    |> List.map (fun e -> { e with CandidateReconcileColumns = PeerTransfer.candidateColumnsFor sinkContract e })
+                                let cache = (EvidenceCache.fill source sink sourceContract sinkContract enriched).GetAwaiter().GetResult()
                                 let loadSetSet = match loadSet with Some s -> s | None -> Set.empty
-                                EvidenceCache.componentsOf sourceContract loadSetSet escapes
+                                let components = EvidenceCache.componentsOf sourceContract loadSetSet enriched
+                                // `--review`: the workbench rides the SAME
+                                // substrate this board pass read — one
+                                // derivation, two surfaces (§4.4).
+                                if args.Review then
+                                    reviewBench <-
+                                        Some { Flow = flowName
+                                               ConfigPath = RelaxationStore.configPath ()
+                                               Catalog = sourceContract
+                                               LoadSet = loadSetSet
+                                               Reconciled = reconciledKeys
+                                               Components = components
+                                               Cache = cache
+                                               Tables = opts.Tables
+                                               Reconcile = opts.Reconcile
+                                               SupportingScope = opts.SupportingScope }
+                                components
                                 |> List.collect (fun componentEdges ->
                                     let per = EvidenceCache.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
                                     componentEdges
                                     |> List.map (fun e -> e.Target)
                                     |> List.distinct
-                                    |> List.collect (fun target ->
-                                        let label =
-                                            componentEdges
-                                            |> List.tryFind (fun e -> e.Target = target)
-                                            |> Option.map (fun e -> sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName))
-                                            |> Option.defaultValue (SsKey.rootOriginal target)
-                                        match per |> Map.tryFind target with
-                                        | None -> []
-                                        | Some answers ->
-                                            EvidenceCache.candidateAnswers componentEdges target
-                                            |> List.choose (fun a -> answers |> Map.tryFind a |> Option.map (fun ev -> a, ev))
-                                            |> List.map (fun (a, ev) ->
-                                                let d = ev.Delta
-                                                let uniqueness (col: Name) =
-                                                    match ev.SinkUnique with
-                                                    | Some true -> sprintf " Each %s value names exactly one target row." (Name.value col)
-                                                    | Some false -> sprintf " The %s value repeats on the target, so the oldest row is kept and later duplicates are displaced." (Name.value col)
-                                                    | None -> ""
-                                                let dropped (col: Name) =
-                                                    match d.RowsDropped with
-                                                    | 0 -> "none drop"
-                                                    | n -> sprintf "%d drop because the %s row each points at has no %s match in the target" n label (Name.value col)
-                                                match a with
-                                                | EvidenceCache.Answer.Reconcile col ->
-                                                    sprintf "consequence: if %s is reconciled by %s, %d row(s) that point at it re-key onto the %s rows the target already holds, and %s.%s"
-                                                        label (Name.value col) d.RowsRekeyed label (dropped col) (uniqueness col)
-                                                | EvidenceCache.Answer.StaticLookup col ->
-                                                    sprintf "consequence: if %s is declared identical in both environments and matched by %s, the same %d row(s) re-key and %s; a live run refuses if any %s row differs between the environments, is missing, or is extra.%s"
-                                                        label (Name.value col) d.RowsRekeyed (dropped col) label (uniqueness col)
-                                                | EvidenceCache.Answer.Pin _ ->
-                                                    sprintf "consequence: if every reference to %s is re-keyed onto one chosen %s row in the target, all %d row(s) that point at it re-key and none drop; the row must be chosen, and must exist in the target."
-                                                        label label d.RowsRekeyed
-                                                | EvidenceCache.Answer.Widen ->
-                                                    let spawned =
-                                                        match d.SpawnedKeys with
-                                                        | [] ->
-                                                            sprintf "%s points at no table outside the transfer, so nothing further needs deciding" label
-                                                        | ks ->
-                                                            let names =
-                                                                ks
-                                                                |> List.map (fun k ->
-                                                                    Catalog.tryFindKind k sourceContract
-                                                                    |> Option.map (fun kd -> Name.value kd.Name)
-                                                                    |> Option.defaultValue (SsKey.rootOriginal k))
-                                                                |> String.concat ", "
-                                                            sprintf "%s itself points at %d table(s) outside the transfer (%s), and each of those will then need this same decision" label ks.Length names
-                                                    sprintf "consequence: if %s is added to the transfer, its %d row(s) transfer too — and %s."
-                                                        label d.RowsEnteringScope spawned)))
+                                    |> List.choose (fun target ->
+                                        per
+                                        |> Map.tryFind target
+                                        |> Option.map (fun answers ->
+                                            DecisionRows.tableFor sourceContract componentEdges answers None target)))
                             with ex ->
-                                [ sprintf "consequence: the rows could not be read, so exact per-answer counts are unavailable; the evidence above stands. Cause: %s" ex.Message ]
-                        probeLines @ consequenceLines
-            items.Add (GoBoard.itemWith "relationships"
+                                [ { Target = ""
+                                    Question = sprintf "consequence: the rows could not be read, so exact per-answer counts are unavailable; the evidence above stands. Cause: %s" ex.Message
+                                    Rows = [] } ]
+                        let consequenceLines =
+                            decisionTables
+                            |> List.collect (fun t ->
+                                match t.Rows with
+                                | [] -> [ t.Question ]
+                                | rows -> rows |> List.map (fun r -> r.Consequence))
+                        probeLines @ consequenceLines, decisionTables
+            items.Add (GoBoard.decisionsItem "relationships"
                 (GoBoard.Status.Red (sprintf "%d OUTBOUND reference(s) escape the transferred set — each row would carry a foreign key to a table not being transferred; each needs a decision." escapes.Length, "add the proposed reconcile entr(ies) to the flow, or widen `tables`; then re-run."))
+                decisionTables
                 (PeerTransfer.narrateEscapes escapes @ evidenceLines))
         else
             items.Add (GoBoard.item "relationships" (GoBoard.Status.Green "every OUTBOUND reference from the transferred set lands inside it or on a reconciled table — no row will carry a dangling foreign key. (A replace-wipe's INBOUND-reference safety is the separate `re-run` axis.)"))

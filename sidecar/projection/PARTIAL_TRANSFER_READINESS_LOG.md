@@ -1930,3 +1930,49 @@ the coupled toggle recomputes the sibling; Release FS3511-clean.
 
 Next: slice 3, the decision workbench (`ItemBody.Decisions` + the `--review`
 navigator).
+
+### Addendum — the manifest program, slice 3: the decision workbench (2026-07-10)
+
+The control pillar: each escaping reference becomes one question with its
+answers side by side, decided by comparison rather than guess-and-rerun.
+
+- **The typed decision surface.** `GoBoard.ItemBody.Decisions` (the fourth
+  body arm, primitive-typed like its siblings): one table per escaping
+  reference — answer, re-keys, drops, enters, opens — with ALL prose (escape
+  lines, probe evidence, consequence sentences) riding the item's Detail, so
+  the pretty and machine lenses read the same words and a piped board loses
+  nothing.
+- **One candidate derivation.** The evidence probe proposed name-shaped
+  candidates the decision tables could not see (`CandidateReconcileColumns`
+  was unique-index-only) — the two surfaces disagreed on the answer set. The
+  probe's derivation is now the published `PeerTransfer.candidateColumnsFor`
+  (index-backed first, then name-shaped, at most three), and the probe, the
+  tables, and the workbench all read it.
+- **`check go <flow> --review`.** On a real terminal (the shared
+  `Navigator.isInteractiveSurface` predicate, extracted at its second
+  consumer): the workbench — arrows walk the decisions, Space selects the
+  next answer and the coupled unit recomputes (a pure lookup over the slice-2
+  cache), `w` writes the selections to `projection.json` as the existing
+  `reconcile` / `tables` / `supportingScope` vocabulary (append, never
+  clobber; a pinned row's key is named as the one by-hand edit), and q with
+  unsaved selections asks once. On a pipe: the same decision tables render
+  one-shot; the exit code is the board's in every branch.
+- **Composition, not generalization.** `ReviewNavigator` wraps
+  `Navigator.Model`; navigation keys delegate to `Navigator.step` unchanged
+  (its totality witnesses untouched). The ONE paired traversal builds both
+  the View and the path→decision index, so the cursor's meaning cannot drift
+  from what is drawn; a rebuild clamps the cursor to the longest still-valid
+  path prefix. The terminal bracket and `safeMarkupLine` extracted at their
+  second consumers.
+
+**Proven:** pure pool 4142 pass / 0 fail (7 new `ReviewNavigatorTests`: the
+paired-index validity, step totality over every ConsoleKey × reachable state,
+Space-selects-and-dirties, the coupled recompute in the rendered rows, the
+q-asks-once guard, the write gesture's vocabulary mapping with the pin named
+by hand, full-cycle wrap); docker `GoBoardDocker` 8/8 including the
+headless-twin witness (a piped `--review` renders the exact consequence
+sentences; `--format json` carries them); `TriageWitness` + `EvidenceCache`
+witnesses re-green; Release FS3511-clean.
+
+Next: slice 4a — `ActConsent` (the eight-arm act taxonomy + fingerprints),
+narrate-only.

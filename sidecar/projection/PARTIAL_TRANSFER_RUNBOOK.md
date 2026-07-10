@@ -74,6 +74,18 @@ code. One note for CI authors: the board's not-ready verdict is always
 exit 5 (the `check shape` class); the live `--go` run refines that into 5
 (shape) vs 9 (relationships / identities / drops).
 
+`--review` opens the decision workbench on a real terminal: each reference
+that escapes the transfer is one question with its answers side by side —
+reconcile by a named column, re-key onto one chosen row, add the table to the
+transfer, or declare the datasets identical — each carrying its exact counted
+consequence, computed over the full rowsets through the same match the live
+run uses. The arrow keys walk the decisions; Space selects the next answer and
+the whole coupled unit's counts recompute; `w` writes the selections into
+`projection.json` as the same `reconcile` / `tables` / `supportingScope`
+entries this runbook teaches by hand. On a pipe, `--review` renders the same
+decision tables one-shot (nothing is lost headless), and `--format json`
+carries every consequence sentence.
+
 `--impact` writes the row-grain before/after artifact
 (`go-board/<flow>.impact.html` + a `.json` twin), **triaged by coupling**
 (2026-07-10): each relational unit of the transfer — a group of tables joined

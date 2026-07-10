@@ -465,10 +465,29 @@ module PeerTransfer =
             [ "name"; "code"; "email"; "username"; "login"; "key"; "label"; "abbreviation"; "identifier"; "number" ]
             |> List.exists (fun shape -> n = shape || n.EndsWith shape))
 
+    /// The FULL candidate reconcile-column set for an escaping target:
+    /// index-backed candidates first, then the name-shaped heuristics, at
+    /// most three. This is the ONE derivation the evidence probe, the
+    /// decision tables, and the review workbench all read — the surfaces
+    /// cannot propose different candidate sets (2026-07-10, the manifest
+    /// program, slice 3).
+    let candidateColumnsFor (sinkContract: Catalog) (e: EscapingFk) : Name list =
+        let heuristic =
+            match Catalog.tryFindKind e.Target sinkContract with
+            | Some sinkKind ->
+                sinkKind.Attributes
+                |> List.filter nameShapedCandidate
+                |> List.map (fun a -> a.Name)
+                |> List.filter (fun n -> not (List.contains n e.CandidateReconcileColumns))
+                |> List.sortBy Name.value
+            | None -> []
+        (e.CandidateReconcileColumns @ heuristic) |> List.truncate 3
+
     /// Probe live evidence for each escaping target's candidate reconcile
     /// columns (index-backed first, then name-shaped; at most three per
-    /// target). Synchronous scalar reads on the two open connections —
-    /// the go board's short-lived probe pair.
+    /// target — `candidateColumnsFor`, the shared derivation). Synchronous
+    /// scalar reads on the two open connections — the go board's short-lived
+    /// probe pair.
     let probeReconcileEvidence
         (source: SqlConnection)
         (sink: SqlConnection)
@@ -481,16 +500,9 @@ module PeerTransfer =
         |> List.collect (fun e ->
             match Catalog.tryFindKind e.Target sourceContract, Catalog.tryFindKind e.Target sinkContract with
             | Some srcKind, Some sinkKind ->
-                let heuristic =
-                    sinkKind.Attributes
-                    |> List.filter nameShapedCandidate
-                    |> List.map (fun a -> a.Name)
-                    |> List.filter (fun n -> not (List.contains n e.CandidateReconcileColumns))
-                    |> List.sortBy Name.value
                 let targetRef = sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName)
-                ((e.CandidateReconcileColumns |> List.map (fun c -> c, true))
-                 @ (heuristic |> List.map (fun c -> c, false)))
-                |> List.truncate 3
+                candidateColumnsFor sinkContract e
+                |> List.map (fun c -> c, List.contains c e.CandidateReconcileColumns)
                 |> List.map (fun (col, indexBacked) ->
                     let verdict =
                         match srcKind.Attributes |> List.tryFind (fun a -> a.Name = col),

@@ -104,6 +104,30 @@ let scopeTree (headline: string) (status: Status) (groups: GoBoard.ScopeGroup li
               Children = g.Claims |> List.map claimNode })
     Tree (headline, status, families @ (unaccounted |> List.map (leaf Bad)))
 
+// -- the decision workbench table (2026-07-10, the manifest program) ----------
+
+/// One escaping reference's answer grid: each row an answer with its exact
+/// counts. The grid alone — the consequence prose rides separately (the
+/// board's item Detail carries it once; the workbench appends it as notes).
+let decisionGrid (t: GoBoard.DecisionTable) : View =
+    let headers = [ ""; "answer"; "re-keys"; "drops"; "enters"; "opens" ]
+    let row (r: GoBoard.DecisionRow) : (string * Status) list =
+        [ (if r.Selected then "●" else ""), (if r.Selected then Ok else Neutral)
+          r.Label, Neutral
+          string r.Rekeyed, (if r.Rekeyed > 0 then Ok else Neutral)
+          string r.Dropped, (if r.Dropped > 0 then Bad else Neutral)
+          (if r.Entering > 0 then string r.Entering else ""), Neutral
+          (match r.Opens with [] -> "" | names -> String.concat ", " names),
+          (if List.isEmpty r.Opens then Neutral else Warn) ]
+    Table (headers, t.Rows |> List.map row)
+
+/// The grid plus its consequence sentences — the workbench's per-decision
+/// block (statement in the table, substantiation in the notes).
+let decisionTable (t: GoBoard.DecisionTable) : View list =
+    [ yield decisionGrid t
+      for r in t.Rows do
+          if r.Consequence <> "" then yield Note r.Consequence ]
+
 // -- item → block ------------------------------------------------------------
 
 let private blockOfItem (i: GoBoard.Item) : View =
@@ -125,6 +149,19 @@ let private blockOfItem (i: GoBoard.Item) : View =
                     (forecastTable lines :: noteLines) @ (previews |> List.map Note))
     | GoBoard.ItemBody.Scope (groups, unaccounted) ->
         scopeTree (sprintf "%s — %s" i.Axis headline) vstatus groups unaccounted
+    | GoBoard.ItemBody.Decisions tables ->
+        // The grids carry the counts; the item's Detail carries ALL the prose
+        // (the escape lines, the probe evidence, the consequence sentences) —
+        // one prose source, so the pretty and machine lenses read the same
+        // words and nothing the plain twin holds vanishes from the terminal.
+        let blocks =
+            [ for t in tables do
+                if t.Question <> "" then yield Field ("decision", t.Question, Warn)
+                if not (List.isEmpty t.Rows) then yield decisionGrid t ]
+        Disclosure (sprintf "%s — %s" i.Axis headline, vstatus,
+                    blocks
+                    @ (i.Detail |> List.map Note)
+                    @ (match remedy with Some r -> [ Action r ] | None -> []))
     | GoBoard.ItemBody.Plain ->
         // The remedy is load-bearing (a Red line names the exact next move), so
         // it must survive even when the item carries no detail — the plain lens

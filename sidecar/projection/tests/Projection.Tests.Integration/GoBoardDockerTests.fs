@@ -380,6 +380,46 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         return ()
                     }))
 
+    /// THE DECISION WORKBENCH'S HEADLESS TWIN (2026-07-10, the manifest
+    /// program, slice 3): `--review` on a redirected stdout degrades to the
+    /// one-shot render, which carries the typed decision tables — the exact
+    /// consequence sentences, computed over the full cached rowsets — and the
+    /// `--format json` machine lens carries the same sentences in the
+    /// relationships detail (headless-total: no surface loses the decision).
+    [<Fact>]
+    member _.``review workbench: a piped --review renders the decision tables one-shot, and the JSON lens carries the same consequences — live two-cell pair`` () =
+        if not (GoBoardFixtures.skipIfNoDocker "GoBoardReview") then () else
+        TaskSync.run (fun () ->
+            MockOutSystemsEnv.withMockEnvPair fixture "GoBoardReview"
+                "" GoBoardFixtures.sourceRows MockOutSystemsEnv.ManagedDml
+                "X" GoBoardFixtures.sinkCityRows MockOutSystemsEnv.ManagedDml
+                (fun src snk ->
+                    task {
+                        let planned = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, GoBoardFixtures.optsWith [ "Customer" ] [], false)
+                        let argsWith (asJson: bool) : CheckGoArgs =
+                            { Flow = "golden"; FromLabel = "cloud-qa"; ToLabel = "cloud-uat"
+                              AsJson = asJson; EmitSql = false; EmitImpact = false
+                              Review = true; Planned = planned }
+                        // piped --review: the one-shot render, decision tables aboard
+                        let exit, out = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters (argsWith false))
+                        Assert.Equal(5, exit)   // the escape still reds the board
+                        // the exact consequence sentences, over the full rowsets:
+                        // both source cities match the sink's own two, so 2 re-key
+                        // and none drop; the widen line names the honest outcome.
+                        let consequenceLinesOut =
+                            out.Split('\n') |> Array.filter (fun l -> l.Contains "consequence:" || l.Contains "evidence:") |> String.concat "\n"
+                        Assert.True(
+                            out.Contains "consequence: if AppCore.City is reconciled by Name, 2 row(s) that point at it re-key onto the AppCore.City rows the target already holds, and none drop.",
+                            "the exact reconcile consequence is absent; the consequence lines rendered were:\n" + consequenceLinesOut)
+                        Assert.Contains("Each Name value names exactly one target row.", out)
+                        Assert.Contains("consequence: if AppCore.City is added to the transfer, its 2 row(s) transfer too", out)
+                        // the JSON machine lens carries the same sentences
+                        let exitJ, outJ = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters (argsWith true))
+                        Assert.Equal(5, exitJ)
+                        Assert.Contains("consequence: if AppCore.City is reconciled by Name", outJ)
+                        return ()
+                    }))
+
     /// THE PROVING LOOP (2026-07-06): transfer a small declared subset, prove
     /// it landed, then DELIBERATELY REVERT it — the success-undo artifact
     /// (`transfer-undo.sql`, written by the engine's success tail) executed

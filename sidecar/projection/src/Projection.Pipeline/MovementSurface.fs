@@ -2041,10 +2041,9 @@ module Command =
                             | None -> false
                         let emitSql = List.contains "--sql" rest
                         let emitImpact = List.contains "--impact" rest
+                        let review = List.contains "--review" rest
                         // The record is constructed LITERALLY here (never `with`
-                        // off a default — the reconstruction trap). `Review` is
-                        // parsed when the review surface lands (the manifest
-                        // program's slice 3); false until then.
+                        // off a default — the reconstruction trap).
                         PlanAction.CheckGo
                             { Flow       = flowName
                               FromLabel  = fromLabel
@@ -2052,10 +2051,10 @@ module Command =
                               AsJson     = asJson
                               EmitSql    = emitSql
                               EmitImpact = emitImpact
-                              Review     = false
+                              Review     = review
                               Planned    = (planFlow cfg flow previewOpts).Action }
                 | _ ->
-                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--impact] [--format json]).")
+                    PlanAction.Refused (2, err "cli.check.goArgs" "projection check go: requires exactly one flow name (projection check go <flow> [--sql] [--impact] [--review] [--format json]).")
             | "plan" :: rest ->
                 // THE TRANSFER PLAN — the declarative guided counterpart to the go
                 // board. Built pure from the flow's CURRENT choices (no DB): each

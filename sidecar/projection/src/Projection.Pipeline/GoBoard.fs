@@ -93,6 +93,39 @@ module GoBoard =
         { Family : string
           Claims : ScopeClaim list }
 
+    /// One answer's row in a decision table (2026-07-10, the manifest
+    /// program, slice 3). Primitive-typed — the counts and the qualifying
+    /// facts, never engine types — so the pure board model stays free of the
+    /// evidence machinery that computes them.
+    type DecisionRow =
+        { /// The answer, stated ("reconciled by Name", "added to the transfer").
+          Label       : string
+          /// Whether this answer is the current selection (the workbench's
+          /// cursor state; always false on a one-shot board — an escape, by
+          /// definition, has no selection yet).
+          Selected    : bool
+          /// Rows that re-key onto sink identities under this answer.
+          Rekeyed     : int
+          /// Rows that drop under this answer.
+          Dropped     : int
+          /// Rows of the target that enter the transfer (widen only).
+          Entering    : int
+          /// Tables a widening would open this same decision for, by name.
+          Opens       : string list
+          /// Some true — each match value names exactly one target row;
+          /// Some false — the value repeats; None — uniqueness does not apply.
+          SinkUnique  : bool option
+          /// The full consequence sentence (the plain/JSON twin carries it too).
+          Consequence : string }
+
+    /// One escaping reference's decision: the question and its answer rows.
+    type DecisionTable =
+        { /// The referenced table (`Module.Entity`).
+          Target   : string
+          /// The question, stated: which column of which table points at it.
+          Question : string
+          Rows     : DecisionRow list }
+
     /// The typed body an item carries for the RICH (Spectre `View`) lens
     /// (2026-07-08). Additive: `Plain` is the default, so every existing
     /// `item`/`itemWith` site and the JSON writer are untouched — `Detail`
@@ -100,8 +133,11 @@ module GoBoard =
     /// CLI `GoBoardView` builder.
     type ItemBody =
         | Plain
-        | Forecast of lines: ForecastLine list * previews: string list
-        | Scope    of groups: ScopeGroup list * unaccounted: string list
+        | Forecast  of lines: ForecastLine list * previews: string list
+        | Scope     of groups: ScopeGroup list * unaccounted: string list
+        /// The decision workbench (2026-07-10): one table per escaping
+        /// reference, each row an answer with its exact consequence.
+        | Decisions of tables: DecisionTable list
 
     type Item =
         { /// The axis label (short, stable — the operator scans these).
@@ -142,6 +178,13 @@ module GoBoard =
     /// in `Body` for the hierarchical lens; `detail` is the plain/JSON twin.
     let scopeItem (axis: string) (status: Status) (groups: ScopeGroup list) (unaccounted: string list) (detail: string list) : Item =
         { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Scope (groups, unaccounted); Unverified = false }
+
+    /// The decision-workbench axis (2026-07-10, the manifest program,
+    /// slice 3): the typed `DecisionTable list` rides in `Body` for the
+    /// table lens; `detail` is the plain/JSON twin, byte-identical to the
+    /// pre-typed rendering (the Forecast/Scope discipline).
+    let decisionsItem (axis: string) (status: Status) (tables: DecisionTable list) (detail: string list) : Item =
+        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Decisions tables; Unverified = false }
 
     /// Mark an item UNVERIFIED — a fact the board could not check (a probe that
     /// would not run, a reference declared stable but outside the contract). An

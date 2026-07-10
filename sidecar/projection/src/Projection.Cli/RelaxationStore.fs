@@ -146,3 +146,76 @@ let setFlowSignoff (path: string) (flow: string) (approvals: Projection.Pipeline
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
         Ok ()
     with ex -> Error ex.Message
+
+/// Surgically set a flow's STRING-ARRAY field (`reconcile`, `tables`) under
+/// `flows.<flow>.<field>` (2026-07-10, the review workbench's write-decisions
+/// gesture). Same A44 move as `setFlowString`: the interactive choice becomes
+/// a durable, hand-reachable config edit a later headless run honors. Every
+/// other key is preserved byte-for-byte. `Ok ()` on a successful write;
+/// `Error cause` names the failure (downgrades never silent).
+let setFlowStrings (path: string) (flow: string) (field: string) (values: string list) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for v in values do arr.Add(JsonValue.Create v)
+        flowObj.[field] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
+
+/// Surgically set a flow's `supportingScope` array (2026-07-10, the review
+/// workbench's write-decisions gesture). Field names and order mirror
+/// `parseSupportingScope` / `renderFlow` (`relationship`, `table`,
+/// `key`/`anchor`/`of` per relationship, `reason`), so a subsequent
+/// `parse ∘ render` is stable.
+let setFlowSupportingScope (path: string) (flow: string) (entries: Projection.Pipeline.SupportingScope.SupportingScopeEntry list) : Result<unit, string> =
+    let childObject (parent: JsonObject) (name: string) : JsonObject =
+        match parent.TryGetPropertyValue name with
+        | true, (:? JsonObject as o) -> o
+        | _ ->
+            let o = JsonObject()
+            parent.[name] <- o
+            o
+    let objOf (e: Projection.Pipeline.SupportingScope.SupportingScopeEntry) : JsonObject =
+        let o = JsonObject()
+        let rel (label: string) = o.["relationship"] <- JsonValue.Create label
+        o.["table"] <- JsonValue.Create e.Table
+        (match e.Relationship with
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.ExistingReference keyName ->
+             rel "existing-reference"; o.["key"] <- JsonValue.Create keyName
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.StaticLookup keyName ->
+             rel "static-lookup"; o.["key"] <- JsonValue.Create keyName
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.ReferenceSeed ->
+             rel "reference-seed"
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.SharedAnchor (anchor, keyName) ->
+             rel "shared-anchor"; o.["anchor"] <- JsonValue.Create anchor
+             keyName |> Option.iter (fun k -> o.["key"] <- JsonValue.Create k)
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.OwnedChild parent ->
+             rel "owned-child"; o.["of"] <- JsonValue.Create parent
+         | Projection.Pipeline.SupportingScope.SupportingRelationship.BlockedDependent parent ->
+             rel "blocked-dependent"; o.["of"] <- JsonValue.Create parent)
+        o.["reason"] <- JsonValue.Create e.Reason
+        o
+    try
+        let root =
+            match rootObjectOf path with
+            | Some o -> o
+            | None   -> JsonObject()
+        let flowObj = childObject (childObject root "flows") flow
+        let arr = JsonArray()
+        for e in entries do arr.Add(objOf e)
+        flowObj.["supportingScope"] <- arr
+        File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
+        Ok ()
+    with ex -> Error ex.Message
