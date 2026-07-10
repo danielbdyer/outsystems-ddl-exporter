@@ -152,6 +152,24 @@ let private narrateUndoPointer (mode: Transfer.Mode) (revertOut: string option) 
             printfn "  Revert this run with: PROJECTION_ALLOW_EXECUTE=1 projection revert --script %s --against <sink-environment> --go" path
     | _ -> ()
 
+/// After a FAILED execute (the `Error` path), point the operator at the
+/// compensation artifact the engine's failure tail writes (`transfer-revert.sql`
+/// — the DELETE-by-captured-key script for whatever partial rows landed before
+/// the fault). The success tail has `narrateUndoPointer`; a crash previously left
+/// the operator with a classified error and NO pointer to the undo, so they had
+/// to already know the runbook. Printed on stderr (the error channel the failure
+/// itself uses); silent when no artifact was written (a pre-write refusal that
+/// touched nothing) — a pointer to a file that does not exist would mislead.
+let private narrateCompensationPointer (mode: Transfer.Mode) (revertOut: string option) : unit =
+    match mode, revertOut with
+    | Transfer.Execute, Some dir ->
+        let path = System.IO.Path.Combine(dir, "transfer-revert.sql")
+        if System.IO.File.Exists path then
+            eprintfn ""
+            eprintfn "A partial write may have landed before the failure. Compensation script written: %s" path
+            eprintfn "  Undo the partial rows with: PROJECTION_ALLOW_EXECUTE=1 projection revert --script %s --against <sink-environment> --go" path
+    | _ -> ()
+
 /// The ONE reconcile/user-map input parse (final-pass consolidation,
 /// 2026-07-06: four near-identical copies collapsed). Parses the
 /// `--reconcile` specs and the optional `--user-map` CSV, aggregating every
@@ -305,6 +323,7 @@ let runTransfer
             narrateDropExit allowDrops [] report
         | Error errors ->
             printErrors Console.Error errors
+            narrateCompensationPointer mode revertOut
             // A1 — single-source the refusal exit through `Preflight.refusalOf`
             // (the canonical `classify` seam over the primary error code) rather
             // than a hand-derived if/elif. The prior chain lacked an arm for
@@ -511,6 +530,7 @@ let runContractPairTransfer
             narrateDropExit allowDrops signoff report
         | Error errors ->
             printErrors Console.Error errors
+            narrateCompensationPointer mode revertOut
             (Preflight.refusalOf errors).ExitCode
     // G0c — the advisory capability survey renders in the dispatch prologue
     // (voiced, pre-Live) since 2026-07-02; same posture as the peer transfer.
@@ -941,7 +961,21 @@ let runCheckGo
             (GoBoard.item "contracts"
                 (match opts.Alignment with
                  | AlignmentMode.BySsKey -> GoBoard.Status.Green "both metamodels read; identities align by SS_KEY."
-                 | AlignmentMode.ByName  -> GoBoard.Status.Green "both metamodels read; identities aligned BY NAME (cloned modules) — name-derived, so A1-bounded."))
+                 | AlignmentMode.ByName  -> GoBoard.Status.Green "both metamodels read; identities aligned BY NAME (cloned modules) — see the identity-basis line below."))
+        // -- identity basis (2026-07-10): the peer leg re-mints surrogate keys,
+        // and by-name alignment is name-derived. Both are consequences the
+        // operator lives with on EVERY row of a large subset, so they are
+        // ACKNOWLEDGED on their own advisory line — not left as a parenthetical
+        // on a green pass ("no silent erasure", applied to the key plane). An
+        // advisory: it never blocks (the re-mint IS the managed-cloud path), but
+        // it is un-missable.
+        let identityBasisNote =
+            let mint =
+                "the target mints a fresh surrogate key for every identity-column row, because the managed-cloud grant forbids identity insertion. Inbound foreign keys re-point to the new keys automatically; the source's own key values are not preserved, so a reference to a source key held outside the transferred set — an export, a report snapshot, another system — will not match the loaded rows."
+            match opts.Alignment with
+            | AlignmentMode.BySsKey -> mint
+            | AlignmentMode.ByName  -> mint + " Identity correspondence here is derived by name across the cloned modules, a basis weaker than the native OutSystems identifier, entered only by explicit opt-in."
+        items.Add (GoBoard.item "identity basis" (GoBoard.Status.Advisory identityBasisNote))
         // -- the declared subset -------------------------------------------
         match Transfer.resolveLoadSet sourceContract effectiveTables with
         | Error errors ->
@@ -1091,6 +1125,21 @@ let runCheckGo
                 (PeerTransfer.narrateEscapes escapes @ evidenceLines))
         else
             items.Add (GoBoard.item "relationships" (GoBoard.Status.Green "every OUTBOUND reference from the transferred set lands inside it or on a reconciled table — no row will carry a dangling foreign key. (A replace-wipe's INBOUND-reference safety is the separate `re-run` axis.)"))
+        // -- foreign refs (2026-07-10): the flow's `foreignRefs` suppresses the
+        // out-of-contract-escape refusal (T0.3) by declaring the target rows
+        // environment-stable — a claim the engine records but does not verify
+        // (the target kind is absent from the acquired contract, so the board has
+        // nothing to probe it against). Surface each suppressed ref as UNVERIFIED:
+        // the run loads the source key unchanged, and a wrong declaration
+        // silently cross-wires the FK across environments. Only present when the
+        // flow actually declares foreignRefs.
+        (if not (List.isEmpty opts.ForeignRefs) then
+            items.Add
+                (GoBoard.itemWith "foreign refs"
+                    (GoBoard.Status.Advisory
+                        (sprintf "%d out-of-contract reference(s) are declared environment-stable in `foreignRefs`; their targets lie outside the acquired contract, so the run loads the source key unchanged and their alignment across the two environments is unverified. Confirm each target holds the same identity in both environments before authorizing the run." (List.length opts.ForeignRefs)))
+                    (opts.ForeignRefs |> List.map (sprintf "declared stable, alignment unverified: %s"))
+                 |> GoBoard.asUnverified))
         // -- load order (the EFFECTIVE transfer graph, 2026-07-07) -----------
         // The same `TransferScope` the engine's Execute gates build:
         // declared tables plus reconciled kinds as isolated nodes, FK
@@ -1318,17 +1367,31 @@ let runCheckGo
                 // kept byte-identical; the typed `forecastLines`/`previews` ride in
                 // `Body` for the responsive-table lens (2026-07-08).
                 let forecastDetail = GoBoard.forecastTable forecastLines @ wipePreviews
-                items.Add (GoBoard.forecastItem "forecast"
-                    (GoBoard.Status.Green
-                        (sprintf "dry run complete — %d row(s) into %d declared table(s)%s; before → after below."
-                            (report.Kinds |> List.sumBy (fun k -> k.RowsIngested))
-                            (declaredKinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)
-                            (match broughtKinds |> List.choose lineFor |> List.length with
-                             | 0 -> ""
-                             | n -> sprintf ", %d table(s) brought along by relationships" n)))
-                    forecastLines
-                    (wipePreviews |> List.filter (fun s -> s <> ""))
-                    forecastDetail)
+                // When a sink `before` count would not probe it renders `?`, and
+                // that table's after-count is projected from the plan, not read
+                // from the sink (2026-07-10). The dry run is sound, but the sink
+                // state under it is unread, so the axis is an ADVISORY marked
+                // unverified — the verdict names the count, and a green is never
+                // read as "every fact proven" over a sink the board could not read.
+                let unprobed = forecastLines |> List.filter (fun l -> Option.isNone l.Before) |> List.length
+                let baseHeadline =
+                    sprintf "dry run complete — %d row(s) into %d declared table(s)%s; before → after below."
+                        (report.Kinds |> List.sumBy (fun k -> k.RowsIngested))
+                        (declaredKinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)
+                        (match broughtKinds |> List.choose lineFor |> List.length with
+                         | 0 -> ""
+                         | n -> sprintf ", %d table(s) brought along by relationships" n)
+                let forecastStatus =
+                    if unprobed > 0
+                    then GoBoard.Status.Advisory (baseHeadline + sprintf " The current row count could not be read for %d table(s), shown as `?`; their after-count is projected from the plan, not measured. Re-run the board when the sink is reachable to measure it." unprobed)
+                    else GoBoard.Status.Green baseHeadline
+                let forecastItm =
+                    GoBoard.forecastItem "forecast"
+                        forecastStatus
+                        forecastLines
+                        (wipePreviews |> List.filter (fun s -> s <> ""))
+                        forecastDetail
+                items.Add (if unprobed > 0 then GoBoard.asUnverified forecastItm else forecastItm)
                 // THE IMPACT ARTIFACT (2026-07-09, `--impact`): the operator's
                 // "show me EXACTLY what happens to the data". The dry run already
                 // holds the AFTER rows (the plan) and the sink holds the BEFORE
@@ -1564,6 +1627,34 @@ let runCheckGo
                     items.Add (GoBoard.itemWith "drops"
                         (GoBoard.Status.Red (sprintf "%d row(s) would drop — a relationship points at an unmatched record (shown first %d in full)." report.SkippedReferences.Length (min 5 report.SkippedReferences.Length), "fix the referenced data, or accept with --allow-drops at run time."))
                         detail)
+                // The rest of the fail-loud drop-set the engine exits 9 on
+                // (2026-07-10): the go board previously rendered only cycles /
+                // identities / drops, so a dry run carrying an AMBIGUOUS reconcile
+                // key (source OR sink) or a REPLAYED prior-run drop went GREEN
+                // while the same report drove the live `--go` to exit 9. These
+                // axes read the SAME `report` fields the engine's `hasDrops`
+                // counts, so board and engine can no longer disagree on the
+                // exit-9 verdict (two-traversal parity over the whole drop-set).
+                if not (List.isEmpty report.AmbiguousIdentities) then
+                    items.Add (GoBoard.itemWith "ambiguous source keys"
+                        (GoBoard.Status.Red
+                            (sprintf "%d source record(s) share a reconcile key — only the first binding is kept, and the rest lose their identity and drop from the load." report.AmbiguousIdentities.Length,
+                             "make the source reconcile column unique per row, or approve the loss with --allow-drops at run time."))
+                        (report.AmbiguousIdentities |> List.truncate 5 |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))))
+                if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
+                    items.Add (GoBoard.itemWith "ambiguous target keys"
+                        (GoBoard.Status.Red
+                            (sprintf "%d target record(s) share a reconcile key with an older row — the oldest is kept and every reference re-keys onto it, displacing the rest." report.AmbiguousTargetMatchKeys.Length,
+                             "pin the intended winner with a ManualOverride (`Module.Entity:Column:=<key>`), or approve the loss with --allow-drops at run time."))
+                        (report.AmbiguousTargetMatchKeys |> List.truncate 5 |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))))
+                (match report.ReplayedPriorDrops with
+                 | Some n when n > 0 ->
+                     items.Add (GoBoard.itemWith "replayed drops"
+                         (GoBoard.Status.Red
+                             (sprintf "this resumable flow already completed and its prior run dropped %d row(s) — a no-op re-run replays that verdict rather than reporting a clean run." n,
+                              "clear the resume marker and re-run to see the live drop-set in full, or approve the prior loss with --allow-drops at run time."))
+                         [ sprintf "prior run dropped %d row(s); the marker persists the count, so the exact references are not replayed." n ])
+                 | _ -> ())
         // -- sink probes: CDC posture, grant evidence, re-run semantics ------
         match (ConnectionSpec.openSpec SubstrateRole.Sink "check-go-sink" sinkSpec).GetAwaiter().GetResult() with
         | Error errors ->

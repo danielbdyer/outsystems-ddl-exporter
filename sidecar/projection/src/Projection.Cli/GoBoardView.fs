@@ -107,7 +107,14 @@ let scopeTree (headline: string) (status: Status) (groups: GoBoard.ScopeGroup li
 // -- item → block ------------------------------------------------------------
 
 let private blockOfItem (i: GoBoard.Item) : View =
-    let vstatus, headline, remedy = describe i.Status
+    let vstatus0, headline0, remedy = describe i.Status
+    // An unverified finding (never a Red line) reads as a Warn block whose
+    // headline names it unverified, so the rich lens carries the same honest
+    // edge the plain lens states in words.
+    let vstatus, headline =
+        if i.Unverified && (match i.Status with GoBoard.Status.Red _ -> false | _ -> true)
+        then Warn, sprintf "%s — unverified against the live environments" headline0
+        else vstatus0, headline0
     match i.Body with
     | GoBoard.ItemBody.Forecast (lines, previews) ->
         let noteLines =
@@ -137,9 +144,14 @@ let ofBoard (board: GoBoard.Board) : View =
     let hero = Hero (Neutral, sprintf "THE GO BOARD — flow '%s'   %s → %s" board.Flow board.From board.To)
     let verdict =
         if GoBoard.isGreen board then
-            Panel ("verdict",
-                [ PanelRow.Labeled ("verdict", "GREEN — every gate passes.", Ok)
-                  PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
+            if GoBoard.hasUnverified board then
+                Panel ("verdict",
+                    [ PanelRow.Labeled ("verdict", sprintf "GREEN — every gate passes; %d finding(s) remain unverified against the live environments (the lines marked above). Read them before authorizing the run." (GoBoard.unverifiedCount board), Warn)
+                      PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
+            else
+                Panel ("verdict",
+                    [ PanelRow.Labeled ("verdict", "GREEN — every gate passes.", Ok)
+                      PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
         else
             Panel ("verdict",
                 [ PanelRow.Labeled ("verdict", sprintf "RED — %d open decision(s) / blocking fault(s)." (GoBoard.redCount board), Bad)
@@ -147,7 +159,8 @@ let ofBoard (board: GoBoard.Board) : View =
     // A titleless Rule underlines the masthead; a `verdict`-titled Rule (tinted by
     // the outcome) opens the closing panel — the section breaks the raw board never
     // had (2026-07-08, the widget-elevation program).
-    let verdictStatus = if GoBoard.isGreen board then Ok else Bad
+    let verdictStatus =
+        if GoBoard.isGreen board then (if GoBoard.hasUnverified board then Warn else Ok) else Bad
     Doc ([ hero; Rule (None, Neutral) ] @ (board.Items |> List.map blockOfItem) @ [ Rule (Some "verdict", verdictStatus); verdict ])
 
 /// Whether a writer is a non-terminal sink (an in-memory / file writer, or a

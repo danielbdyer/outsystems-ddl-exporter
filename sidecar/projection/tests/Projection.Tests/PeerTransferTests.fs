@@ -388,6 +388,46 @@ let ``GoBoard: the JSON projection carries verdict, redCount, and per-item statu
     Assert.Equal("add the reconcile", rel.GetProperty("remedy").GetString())
     Assert.Equal("Customer.CityId -> City", rel.GetProperty("detail").[0].GetString())
 
+// --- the UNVERIFIED downgrade (2026-07-10): a fact the board could not check --
+// never reds the board (advisories never block), but the verdict names the count
+// so a green is never read as "every fact proven" (THE_VOICE §"Could not verify").
+
+[<Fact>]
+let ``GoBoard: an unverified finding never reds the board but the verdict names the count`` () =
+    let g = GoBoard.item "routing" (GoBoard.Status.Green "peer leg")
+    // Production marks unverified items as advisories, so the mark reads [note].
+    let unverified = GoBoard.item "forecast" (GoBoard.Status.Advisory "dry run complete; one table's count could not be read") |> GoBoard.asUnverified
+    let board : GoBoard.Board = { Flow = "golden"; From = "qa"; To = "uat"; Items = [ g; unverified ] }
+    // Still green (no red), still exit 0 — an unverified finding is information, not a fault.
+    Assert.True(GoBoard.isGreen board)
+    Assert.Equal(0, GoBoard.exitCode board)
+    Assert.True(GoBoard.hasUnverified board)
+    Assert.Equal(1, GoBoard.unverifiedCount board)
+    // The plain render carries the [note] mark and the verdict names what remains unverified.
+    let text = GoBoard.render board |> String.concat "\n"
+    Assert.Contains("[note] forecast", text)
+    Assert.Contains("1 finding(s) below remain unverified", text)
+    Assert.Contains("PROJECTION_ALLOW_EXECUTE=1 projection golden --go", text)
+    // The JSON twin carries the distinct verdict + the count + the per-item flag.
+    let json = GoBoard.toJsonString board
+    use doc = System.Text.Json.JsonDocument.Parse json
+    let root = doc.RootElement
+    Assert.Equal("green-unverified", root.GetProperty("verdict").GetString())
+    Assert.Equal(1, root.GetProperty("unverifiedCount").GetInt32())
+    Assert.True(root.GetProperty("items").[1].GetProperty("unverified").GetBoolean())
+
+[<Fact>]
+let ``GoBoard: a red item blocks regardless of an unverified mark; the green-unverified verdict never fires while red`` () =
+    // asUnverified never softens a Red verdict (red already blocks); the board stays red.
+    let red = GoBoard.item "grant" (GoBoard.Status.Red ("the sink principal does not cover the planned writes", "grant the missing permission")) |> GoBoard.asUnverified
+    let board : GoBoard.Board = { Flow = "golden"; From = "qa"; To = "uat"; Items = [ red ] }
+    Assert.False(GoBoard.isGreen board)
+    Assert.Equal(5, GoBoard.exitCode board)
+    let text = GoBoard.render board |> String.concat "\n"
+    Assert.Contains("[STOP] grant", text)
+    Assert.Contains("VERDICT — RED", text)
+    Assert.DoesNotContain("remain unverified", text)
+
 // --- the Preflight classification of the two new axes -------------------------
 
 [<Fact>]

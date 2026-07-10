@@ -80,17 +80,26 @@ The axes it judges, in order — the full forecast vocabulary:
 |---|---|---|
 | routing | the flow rides the SsKey-aligned peer leg | renditions unset → fix step 1 |
 | contracts | both OSSYS metamodels read; identities align | connection/grant problem — remedy printed |
+| identity basis | (note) the target mints fresh surrogate keys; by-name alignment is name-derived | never red — the consequence for the key plane, stated so it is not a surprise |
 | tables | your subset resolves (unambiguously) | typo or ambiguous name — use `Module.Entity` |
 | reconcile | every reconcile entry resolves against the sink | bad entry — use `Module.Entity:Column` |
 | shape | the two models are ONE shape over the transferred set | real divergence — align model versions |
 | relationships | no FK escapes the subset un-strategized | **the main open decision — see step 3** |
+| foreign refs | (note, only if `foreignRefs` is declared) references outside the contract, unverified | never red — confirm each target aligns across environments; a wrong declaration cross-wires the FK |
 | load order | parents-before-children is proven | an unresolvable cycle — remedy printed |
 | forecast | the DRY RUN: exact row counts per table | the dry run refused — reason printed |
 | cycles / identities / drops | forecast of unbreakable cycles, unmatched identities, dropped rows | fix data / user-map, or accept with `--allow-drops` at run time |
+| ambiguous source / target keys | duplicate reconcile keys — a record loses its identity or an older row displaces it | de-dup the key / pin a `ManualOverride` winner, or accept with `--allow-drops` |
+| replayed drops | a resumable no-op re-run replays the prior run's drop verdict | clear the resume marker and re-run, or accept with `--allow-drops` |
 | cdc | the sink is not CDC-tracked | decide `--allow-cdc` or de-track |
 | grant | the sink principal carries db-scope DML | grant the missing permission |
 | re-run | your strategy is safe against the sink's ACTUAL state | duplicates (merge into populated) or wipe blockers — remedy printed |
 | execute gates | (note) the two run-time gates | never red — informational |
+
+The `ambiguous source / target keys` and `replayed drops` axes read the same
+report fields the live run's exit-9 policy counts, so the board can no longer show
+GREEN over a run that would then drop rows at `--go` (board/engine parity over the
+whole drop-set).
 
 ## Step 3 — Resolve the open decisions (the usual one: escaping relationships)
 
@@ -134,6 +143,15 @@ CDC-tracked sink (`--allow-cdc`), merge-into-populated-sink (switch to
 Exit code 0. The setup is validated: every gate the live run will hit has
 passed against the real environments, and the forecast tells you exactly how
 many rows will move per table.
+
+A green verdict has one honest variant. When a probe could not read the live
+environments — a sink count that would not return (the forecast shows `?` for
+that table), or a `foreignRefs` target outside the acquired contract — the axis
+is a `[note]` marked *unverified* and the verdict reads **"GREEN. Every gate
+passes; N finding(s) below remain unverified."** The exit is still 0 (nothing is
+red), but the board is telling you it could not check those N facts — read the
+named note line(s) before authorizing the run, and re-run the board once the
+sink is reachable to measure them.
 
 ## Step 5 — Preview (the dry run, narrated)
 
@@ -217,7 +235,7 @@ board re-validates the matches — run `check go` again first when in doubt.
 | board: `[STOP] contracts` | OSSYS metamodel unreadable | grant SELECT on `ossys_*` to the principal |
 | board: `[STOP] shape` | the two environments genuinely run different model versions | deploy the same version to both, or narrow the subset |
 | exit 9 at `--go` with drop lines | rows referenced identities that don't match | fix the reconcile data or accept with `--allow-drops` |
-| raw SQL permission error mid-load | a TABLE-level DENY (invisible to preflight — the pinned G1 gap) | remove the DENY; the revert script (`transfer-revert.sql`) undoes sink-minted rows |
+| raw SQL permission error mid-load | an object-scope DENY on a table OUTSIDE the board's probe set (a write-time-only table, or a schema/column-scope DENY) — the narrow G1 residual | remove the DENY; the revert script (`transfer-revert.sql`) undoes sink-minted rows |
 | board green but `--go` exits 7 | `PROJECTION_ALLOW_EXECUTE` not set | set it (the board's `[note]` line reminds you) |
 
 ## Rehearsed end-to-end (2026-07-06)
@@ -260,10 +278,15 @@ FKs, source untouched).
    even on large estates), but a multi-million-row ingest SELECT can exceed
    default command timeouts on slow links — if you hit timeouts, narrow the
    subset first.
-6. **The one standing preflight blind spot** — a TABLE-level DENY passes the
-   board's grant probe and surfaces mid-load (raw permission error). The
-   revert script (`transfer-revert.sql`) removes the partial rows; auto
-   revert is `--auto-revert`.
+6. **The narrow preflight blind spot** — the board's `grant` axis now evaluates
+   OBJECT-scope effective permissions (database OR per-table grants, with DENYs
+   subtracted) over the tables the run plans to write and read, so an object-scope
+   `DENY` on one of those tables IS caught before any write. The residual it
+   still cannot see: a `DENY` on a table pulled in only at write time (outside the
+   probed planned/read set), or a `DENY` applied at SCHEMA or COLUMN scope rather
+   than object scope — either surfaces mid-load as a raw permission error. The
+   revert script (`transfer-revert.sql`) removes the partial rows; auto revert is
+   `--auto-revert`.
 7. **Cosmetic**: one narrow-terminal note line can render truncated with `…`
    (a known display residual); the board and load plan are unaffected.
 

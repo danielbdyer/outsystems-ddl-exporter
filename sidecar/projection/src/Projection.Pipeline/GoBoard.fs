@@ -112,7 +112,16 @@ module GoBoard =
           /// lens renders these; `Body` carries the typed twin for the rich lens.
           Detail : string list
           /// The typed body for the Spectre `View` lens (`Plain` by default).
-          Body   : ItemBody }
+          Body   : ItemBody
+          /// UNVERIFIED (2026-07-10): the axis is not red — no gate failed — but
+          /// the board could not verify the fact it reports (a sink probe that
+          /// would not run, a reference the engine takes on the flow's word).
+          /// Never a fault, so it never reds the board; it downgrades a clean
+          /// GREEN verdict to name the count of unverified findings, so a green
+          /// is never read as "every fact proven" when some were only reported.
+          /// THE_VOICE §"Could not verify": state the fact, name why, name the
+          /// next move — the honest edge, surfaced, never silent.
+          Unverified : bool }
 
     type Board =
         { Flow  : string
@@ -120,19 +129,26 @@ module GoBoard =
           To    : string
           Items : Item list }
 
-    let item (axis: string) (status: Status) : Item = { Axis = axis; Status = status; Detail = []; Body = ItemBody.Plain }
-    let itemWith (axis: string) (status: Status) (detail: string list) : Item = { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Plain }
+    let item (axis: string) (status: Status) : Item = { Axis = axis; Status = status; Detail = []; Body = ItemBody.Plain; Unverified = false }
+    let itemWith (axis: string) (status: Status) (detail: string list) : Item = { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Plain; Unverified = false }
 
     /// The forecast axis (2026-07-08): the typed `ForecastLine list` rides in
     /// `Body` for the responsive-table lens; `detail` is the plain/JSON twin
     /// (the aligned strings + wipe-preview lines) — kept byte-identical.
     let forecastItem (axis: string) (status: Status) (lines: ForecastLine list) (previews: string list) (detail: string list) : Item =
-        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Forecast (lines, previews) }
+        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Forecast (lines, previews); Unverified = false }
 
     /// The supporting-scope axis (2026-07-08): the typed `ScopeGroup list` rides
     /// in `Body` for the hierarchical lens; `detail` is the plain/JSON twin.
     let scopeItem (axis: string) (status: Status) (groups: ScopeGroup list) (unaccounted: string list) (detail: string list) : Item =
-        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Scope (groups, unaccounted) }
+        { Axis = axis; Status = status; Detail = detail; Body = ItemBody.Scope (groups, unaccounted); Unverified = false }
+
+    /// Mark an item UNVERIFIED — a fact the board could not check (a probe that
+    /// would not run, a reference declared stable but outside the contract). An
+    /// unverified item is NOT a fault (it never reds the board); it only names
+    /// itself in the verdict so a green is never read as "every fact proven".
+    /// Applied to an already-advisory item, so the mark column reads `[note]`.
+    let asUnverified (i: Item) : Item = { i with Unverified = true }
 
     let private isRed (i: Item) = match i.Status with Status.Red _ -> true | _ -> false
 
@@ -141,8 +157,17 @@ module GoBoard =
 
     let redCount (b: Board) : int = b.Items |> List.filter isRed |> List.length
 
+    /// Whether any axis is an unverified finding the board could not check —
+    /// surfaced in the verdict so a GREEN is never read as "every fact proven"
+    /// when some were only reported.
+    let hasUnverified (b: Board) : bool = b.Items |> List.exists (fun i -> i.Unverified)
+
+    let unverifiedCount (b: Board) : int = b.Items |> List.filter (fun i -> i.Unverified) |> List.length
+
     /// The CI-able exit: 0 green; 5 (the not-ready verdict class `check
-    /// shape` also uses) on red.
+    /// shape` also uses) on red. An unverified finding does NOT change the exit —
+    /// it is information, not a blocking fault (advisories never block); the
+    /// operator reads the named note line(s) and the verdict's unverified count.
     let exitCode (b: Board) : int = if isGreen b then 0 else 5
 
     /// The machine-readable projection (`--format json`) — the CI-consumable
@@ -156,12 +181,14 @@ module GoBoard =
         w.WriteString("flow", b.Flow)
         w.WriteString("from", b.From)
         w.WriteString("to", b.To)
-        w.WriteString("verdict", (if isGreen b then "green" else "red"))
+        w.WriteString("verdict", (if isGreen b then (if hasUnverified b then "green-unverified" else "green") else "red"))
         w.WriteNumber("redCount", redCount b)
+        w.WriteNumber("unverifiedCount", unverifiedCount b)
         w.WriteStartArray "items"
         for i in b.Items do
             w.WriteStartObject()
             w.WriteString("axis", i.Axis)
+            w.WriteBoolean("unverified", i.Unverified)
             (match i.Status with
              | Status.Green note ->
                  w.WriteString("status", "green")
@@ -244,6 +271,9 @@ module GoBoard =
                   yield sprintf "         %-18s    %s" "" d
           yield ""
           if isGreen b then
-              yield sprintf "  VERDICT — GREEN. Every gate passes. Execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go" b.Flow
+              if hasUnverified b then
+                  yield sprintf "  VERDICT — GREEN. Every gate passes; %d finding(s) below remain unverified — the board could not read them against the live environments. Read the note line(s) that name what is unverified, then execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go" (unverifiedCount b) b.Flow
+              else
+                  yield sprintf "  VERDICT — GREEN. Every gate passes. Execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go" b.Flow
           else
               yield sprintf "  VERDICT — RED. %d open decision(s) / blocking fault(s) — resolve every [STOP] line above, then re-run `projection check go %s` until green." (redCount b) b.Flow ]

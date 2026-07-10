@@ -1743,3 +1743,60 @@ modules → `catalog.kinds.duplicateKey` (A4: kind identity is globally unique).
 `by-name` = the source scope with its module names + entity-filter keys remapped
 through `alignMap` via `SnapshotScopeBinding.remapModules`). The peer face and the
 go board both derive it, so board and engine read the sink under the same scope.
+
+### Addendum — operator-fidelity sweep: six board/failure/copy fixes (2026-07-10)
+
+A forward-looking fidelity review (four parallel studies: engine ceiling, operator
+surface, named backlog, proof gaps) fed a critique whose highest-leverage cheap
+findings were closed here. Six fixes, all on the foreknowledge / observability
+surface — the exact confidence a large-subset transfer rests on:
+
+- **Board/engine drop-set parity (the exit-9 hole).** The go board rendered only
+  `cycles` / `identities` / `drops`, so a dry run carrying an ambiguous reconcile
+  key (source OR sink) or a replayed prior-run drop went GREEN while the same
+  report drove `--go` to exit 9. New axes — `ambiguous source keys`,
+  `ambiguous target keys`, `replayed drops` — read the SAME `report` fields the
+  engine's `hasDrops` counts, so board and engine can no longer disagree on the
+  exit-9 verdict.
+- **The unverified verdict (green over an unread sink).** A forecast whose sink
+  `before` count would not probe rendered `?` but stayed a clean GREEN; likewise
+  a `foreignRefs` target outside the contract. Both are now ADVISORY items marked
+  `Unverified` (`GoBoard.asUnverified`), and a green board with any of them reads
+  **"GREEN. Every gate passes; N finding(s) below remain unverified."** — exit
+  still 0 (not a fault), but the gap is named, never silent. JSON gains
+  `verdict: "green-unverified"`, `unverifiedCount`, and per-item `unverified`.
+- **Failure-path compensation pointer.** A crashed Execute printed the classified
+  error but no pointer to the undo; `narrateCompensationPointer` now names
+  `transfer-revert.sql` on the `Error` path of both `runTransfer` and
+  `runContractPairTransfer`, mirroring the success tail's `narrateUndoPointer`.
+- **Runbook ⇔ board DENY copy reconciled.** The runbook called table-level DENY
+  "the one standing preflight blind spot"; the board's grant probe closed the
+  object-scope-DENY-on-a-planned-table case on 2026-07-07. The runbook now scopes
+  the residual honestly (a DENY on a table outside the probed planned/read set, or
+  a schema/column-scope DENY).
+- **Identity re-mint + by-name basis, acknowledged not parenthetical.** A new
+  `identity basis` advisory axis states plainly that the target mints fresh
+  surrogate keys (source key values are not preserved) and, under `by-name`, that
+  the correspondence is name-derived — no longer a parenthetical on a green pass.
+- **`foreignRefs` unverified acknowledgement surfaced.** A declared-stable ref
+  the engine takes on the flow's word now shows as an `Unverified` `foreign refs`
+  advisory naming each ref and the confirm-before-authorizing move.
+
+**Voice audit (operator request).** The first cut used a `[blind]` mark +
+"BLIND SPOT" verdict; both violate THE_VOICE (figurative-term ban §2.2, shout-caps,
+no next move, and a mis-aligned mark). Reworked to the register's own "Could not
+verify" pattern (§"Could not verify"): the concept is **unverified**, unverified
+items are advisories (mark `[note]`), each lead states the fact + names the move,
+and exit codes are off the statement line. `BlindSpot`→`Unverified` throughout.
+
+**Proven:** Release FS3511-clean; pure pool 4118 pass / 0 fail; docker
+`GoBoardDocker` 5/5 green (identity-basis line + reworded copy witnessed end to
+end). New pure witnesses in `PeerTransferTests`: the unverified downgrade
+(verdict + JSON + `[note]` mark) and red-still-blocks-under-`asUnverified`.
+
+**Named follow-on (witness gaps, honestly):** docker witnesses for the three new
+drop axes (needs a duplicate-reconcile-key seed) and for the unverified forecast
+(needs an induced sink-probe failure) — pure-covered here, live-unwitnessed. The
+larger frontier the review named stays open: crossing the real managed-cloud
+threshold (`PHASE_1_REAL_WIRE_HARNESS.md`), and expressiveness (row filter /
+masking / key-preservation) as the next program.
