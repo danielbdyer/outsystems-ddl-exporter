@@ -1885,3 +1885,48 @@ first and opens); Release FS3511-clean.
 
 Next: slice 2, the `EvidenceCache` + exact per-answer deltas (the fidelity
 substrate for the decision workbench).
+
+### Addendum — the manifest program, slice 2: the EvidenceCache (2026-07-10)
+
+The fidelity substrate beneath the decision workbench. The row substrate is
+read ONCE per board build — from the same connections the authoritative dry
+run uses — and every answer archetype's exact consequence is derived purely
+over it, through the same Core `reconcileKindWith` the live run matches with.
+One derivation; a later toggle is a lookup, never a second forecast.
+
+- **`EvidenceCache` (new).** The cache holds full rows only for the
+  escape-target kinds (the reconcile candidates) plus two columns (pk, fk)
+  per referencing in-scope kind — the documented memory bound. Four answer
+  archetypes per escaping reference — reconcile-by-column / pin-to-one-row /
+  widen / declare-identical — each with an exact `ForecastDelta` (re-keyed,
+  dropped, rows entering scope, and the widen fixpoint's spawned/resolved
+  decision keys), the exact sink-uniqueness fact, and the fingerprint INPUTS
+  slice 4 will hash (matched business-key values with their resolved sink
+  identities; unmatched values) — named typed products of the one pass.
+- **The component is the recompute unit.** A row that one edge's unresolved
+  reference drops never lands, so its other references are moot: per-target
+  counts are derived over rows that survive EVERY edge of the component, and
+  toggling one target's answer recomputes its siblings. Pure witness + the
+  live witness both pin the coupling (Category's count grows 2 → 3 when
+  Customer's answer changes from reconcile to pin).
+- **Board wiring.** The relationships axis now carries one `consequence:`
+  sentence per answer per escaping target — complete sentences, exact counts,
+  the qualifying fact named (Voice-audited twice on operator feedback; the
+  widen line names the specific tables a widening would open decisions for).
+- **FS3511 scar re-confirmed twice.** `fill`'s catalog resolution hoisted
+  before the task opens (typed read-plans; no tuple-pattern match heads a
+  `let!`); and two subtler family members found in Release: a bare
+  conditional expression in a resumable body, and a wildcard `let! _` — both
+  fail reduction; a hoisted helper call and a named bind reduce.
+
+**Proven:** pure pool 4135 pass / 0 fail (8 new `EvidenceCacheTests`: exact
+reconcile delta with matched/unmatched products, the §4.3 coupling, pin
+exactness without an anchor, the widen fixpoint's spawned keys, blank
+references neutral, every candidate answer real, permutation determinism);
+docker 9/9 including the fidelity keystone `EvidenceCacheDockerTests` — over a
+live two-cell pair, the cache-computed delta EQUALS the authoritative dry run
+(surviving plan rows = re-keyed count; skipped references = drop count) and
+the coupled toggle recomputes the sibling; Release FS3511-clean.
+
+Next: slice 3, the decision workbench (`ItemBody.Decisions` + the `--review`
+navigator).

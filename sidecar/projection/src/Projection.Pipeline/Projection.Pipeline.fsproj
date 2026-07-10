@@ -77,6 +77,7 @@
     <Compile Include="TransferPlan.fs" />
     <Compile Include="TransferImpact.fs" />
     <Compile Include="TransferTriage.fs" />
+    <Compile Include="EvidenceCache.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />

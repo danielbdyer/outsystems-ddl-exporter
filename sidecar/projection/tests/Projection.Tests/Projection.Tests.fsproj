@@ -168,6 +168,7 @@
     <Compile Include="WriteSignoffTests.fs" />
     <Compile Include="TransferImpactTests.fs" />
     <Compile Include="TransferTriageTests.fs" />
+    <Compile Include="EvidenceCacheTests.fs" />
     <Compile Include="CaptureJournalTests.fs" />
     <Compile Include="RowQuantumTests.fs" />
     <Compile Include="ModelResolutionTests.fs" />

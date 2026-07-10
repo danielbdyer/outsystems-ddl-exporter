@@ -1122,9 +1122,82 @@ let runCheckGo
                     | Error _ -> [ "evidence: the sink connection would not open — the proposals above are shape-derived only." ]
                     | Ok sink ->
                         use sink = sink
-                        PeerTransfer.probeReconcileEvidence source sink sourceContract sinkContract escapes
-                        |> PeerTransfer.narrateEvidence
-                        |> List.map (sprintf "evidence: %s")
+                        let probeLines =
+                            PeerTransfer.probeReconcileEvidence source sink sourceContract sinkContract escapes
+                            |> PeerTransfer.narrateEvidence
+                            |> List.map (sprintf "evidence: %s")
+                        // THE EXACT CONSEQUENCES (2026-07-10, the manifest
+                        // program, slice 2): the row substrate read ONCE into
+                        // the EvidenceCache from these same connections, and
+                        // every answer's delta computed over the FULL rowsets
+                        // through the same Core match the run uses — exact
+                        // counts, never the TOP-200 sample (which remains the
+                        // separate `evidence:` strength heuristic above).
+                        // THE_VOICE: each consequence is ONE complete sentence,
+                        // readable aloud — the condition, the counted outcome,
+                        // and the fact that qualifies it. No shorthand, no
+                        // mixed tense, no internal vocabulary.
+                        let consequenceLines =
+                            try
+                                let cache = (EvidenceCache.fill source sink sourceContract sinkContract escapes).GetAwaiter().GetResult()
+                                let loadSetSet = match loadSet with Some s -> s | None -> Set.empty
+                                EvidenceCache.componentsOf sourceContract loadSetSet escapes
+                                |> List.collect (fun componentEdges ->
+                                    let per = EvidenceCache.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
+                                    componentEdges
+                                    |> List.map (fun e -> e.Target)
+                                    |> List.distinct
+                                    |> List.collect (fun target ->
+                                        let label =
+                                            componentEdges
+                                            |> List.tryFind (fun e -> e.Target = target)
+                                            |> Option.map (fun e -> sprintf "%s.%s" (Name.value e.TargetModule) (Name.value e.TargetName))
+                                            |> Option.defaultValue (SsKey.rootOriginal target)
+                                        match per |> Map.tryFind target with
+                                        | None -> []
+                                        | Some answers ->
+                                            EvidenceCache.candidateAnswers componentEdges target
+                                            |> List.choose (fun a -> answers |> Map.tryFind a |> Option.map (fun ev -> a, ev))
+                                            |> List.map (fun (a, ev) ->
+                                                let d = ev.Delta
+                                                let uniqueness (col: Name) =
+                                                    match ev.SinkUnique with
+                                                    | Some true -> sprintf " Each %s value names exactly one target row." (Name.value col)
+                                                    | Some false -> sprintf " The %s value repeats on the target, so the oldest row is kept and later duplicates are displaced." (Name.value col)
+                                                    | None -> ""
+                                                let dropped (col: Name) =
+                                                    match d.RowsDropped with
+                                                    | 0 -> "none drop"
+                                                    | n -> sprintf "%d drop because the %s row each points at has no %s match in the target" n label (Name.value col)
+                                                match a with
+                                                | EvidenceCache.Answer.Reconcile col ->
+                                                    sprintf "consequence: if %s is reconciled by %s, %d row(s) that point at it re-key onto the %s rows the target already holds, and %s.%s"
+                                                        label (Name.value col) d.RowsRekeyed label (dropped col) (uniqueness col)
+                                                | EvidenceCache.Answer.StaticLookup col ->
+                                                    sprintf "consequence: if %s is declared identical in both environments and matched by %s, the same %d row(s) re-key and %s; a live run refuses if any %s row differs between the environments, is missing, or is extra.%s"
+                                                        label (Name.value col) d.RowsRekeyed (dropped col) label (uniqueness col)
+                                                | EvidenceCache.Answer.Pin _ ->
+                                                    sprintf "consequence: if every reference to %s is re-keyed onto one chosen %s row in the target, all %d row(s) that point at it re-key and none drop; the row must be chosen, and must exist in the target."
+                                                        label label d.RowsRekeyed
+                                                | EvidenceCache.Answer.Widen ->
+                                                    let spawned =
+                                                        match d.SpawnedKeys with
+                                                        | [] ->
+                                                            sprintf "%s points at no table outside the transfer, so nothing further needs deciding" label
+                                                        | ks ->
+                                                            let names =
+                                                                ks
+                                                                |> List.map (fun k ->
+                                                                    Catalog.tryFindKind k sourceContract
+                                                                    |> Option.map (fun kd -> Name.value kd.Name)
+                                                                    |> Option.defaultValue (SsKey.rootOriginal k))
+                                                                |> String.concat ", "
+                                                            sprintf "%s itself points at %d table(s) outside the transfer (%s), and each of those will then need this same decision" label ks.Length names
+                                                    sprintf "consequence: if %s is added to the transfer, its %d row(s) transfer too — and %s."
+                                                        label d.RowsEnteringScope spawned)))
+                            with ex ->
+                                [ sprintf "consequence: the rows could not be read, so exact per-answer counts are unavailable; the evidence above stands. Cause: %s" ex.Message ]
+                        probeLines @ consequenceLines
             items.Add (GoBoard.itemWith "relationships"
                 (GoBoard.Status.Red (sprintf "%d OUTBOUND reference(s) escape the transferred set — each row would carry a foreign key to a table not being transferred; each needs a decision." escapes.Length, "add the proposed reconcile entr(ies) to the flow, or widen `tables`; then re-run."))
                 (PeerTransfer.narrateEscapes escapes @ evidenceLines))
@@ -1537,7 +1610,7 @@ let runCheckGo
                         let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %d row(s): %s)" impactCap (String.concat ", " truncated)
                         let openCount = units |> List.filter (fun u -> not (TransferTriage.isSettled u.Triage)) |> List.length
                         items.Add (GoBoard.item "impact"
-                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — %d unit(s), %d open / %d settled; +%d added, -%d deleted, ~%d changed, %d unchanged%s." htmlPath (List.length units) openCount (List.length units - openCount) impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged truncNote)))
+                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — %d unit(s), of which %d are open and %d settled; +%d added, -%d deleted, ~%d changed, %d unchanged%s." htmlPath (List.length units) openCount (List.length units - openCount) impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged truncNote)))
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the
