@@ -32,3 +32,7 @@ bench/
 sidecar/projection/bench/*
 !sidecar/projection/bench/baseline-*.json
 !sidecar/projection/bench/stryker-config.json
+
+# Sidecar formal-verification toolchain — fetched on demand by
+# scripts/model-check.sh (sha256/version-pinned there); never committed.
+sidecar/projection/formal/.tools/

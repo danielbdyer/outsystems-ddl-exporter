@@ -27035,3 +27035,61 @@ swap each tripped both the conformance law and the independent laws.
 **Witnesses.** The four suites above; the rung ledger in `FORMAL_METHODS.md` §2 (a
 rung claim without a live witness is a first-class defect, same rule as the M16
 citations).
+
+## 2026-07-11 — Rungs 4–5 land: the formal lane (`formal/`), Alloy 6 bounded model checks + Dafny proofs, CI-gated
+
+**Context.** The 2026-07-10 verification-ladder adoption committed Phases 2–3: model-check
+the temporal/protocol machines and the structural catalog (rung 4), and machine-prove the
+change algebra's crown jewels (rung 5). Both shipped this session.
+
+**Tooling decisions (environment-forced, recorded honestly).** TLA⁺/TLC was the plan's
+named temporal checker; the TLC jar is unreachable from the build environment (GitHub
+release assets are session-scoped, the non-GitHub mirrors reset, no Maven Central
+publication). **Alloy 6.2** (Maven Central, sha256-pinned, headless `exec`) carries full
+temporal LTL over bounded lasso traces, so the temporal machines shipped as Alloy specs —
+same guarantee class: exhaustive within the stated bound, liveness included; TLC stays the
+named upgrade path with its trigger in `FORMAL_METHODS.md` §4. For the prover, **Dafny
+4.11 + Z3** (F★'s named alternative) — it installs as a dotnet tool inside the repo's
+existing toolchain.
+
+**What shipped (rung 4, `formal/alloy/`).** Four specs, every command carrying an explicit
+`expect`, all green: `Lifecycle.als` (history append-only, genesis persists, frontier
+monotone, skipped-ordinal lockout — over every interleaving to the bound, not 341 concrete
+traces); `Approval.als` (verdict exclusivity, the pre-slice-2 illegal state
+Pending-with-reviewer unreachable in temporal form, no silent transitions, suppression ⇔
+rejection, re-approval escapable); `CutoverLadder.als` (**the "governance, not code" gap
+closed**: Driver mintable only with the full consecutive-green quota + operator sign-off,
+V1 warm in every pre-Sunset state, archive Sunset-only, the T-15 retreat holds through the
+window, the consecutive counter honest, fallback always enabled — and nothing in the
+machine can force a promotion); `Catalog.als` (the Part VI Tier-1 illegal states 1.A/1.B/
+1.C/1.H each machine-confirmed REPRESENTABLE today — the audit's claim upgraded from
+opinion to theorem — and Campaign B.4's `Fortified` invariants proven to close all four
+without vacuity; the spec doubles as the campaign's precise specification and live
+quadrant ledger).
+
+**What shipped (rung 5, `formal/dafny/`).** `CatalogDiffAlgebra.dfy` (25 obligations):
+the endpoint-typed delta groupoid — compose associativity/identities/inverses, the functor
+law, T13's fundamental theorem (`netDiff = between genesis latest` for every chain
+length), replay agreement (`reconstructLatest`), and NM-45's non-composable-unreachable —
+proven for all states and chains, unconditionally. `LineageWriter.dfy` (8 obligations):
+the A24 writer monad — the law triple, the chronological-trail laws, value-plane
+untouched, Kleisli category laws. Binding contract in each header: Dafny owns the algebra;
+the existing rung-2 property suites own the F#↔model correspondence pin.
+
+**The gate.** `scripts/model-check.sh` (sibling to `test.sh`/`perf-gate.sh`): fetches
+pinned tools on demand into gitignored `formal/.tools`, fails on ANY expectation mismatch
+(law broken, model vacuous, or an illegal-state witness silently closing), verifies every
+`FORMAL_METHODS.md`-cited artifact exists (the anti-drift citation gate), and propagates
+exit codes (mutation-checked: a promote guard stripped of its sign-off requirement tripped
+`DriverOnlyByEvidence` and exited 1; a false Dafny lemma is rejected). CI:
+`.github/workflows/formal-projection.yml`.
+
+**Deferred, with triggers (ledger rows in `FORMAL_METHODS.md` §2).** A44
+reachability-as-state-space (next config-control-plane slice); identity-conservation
+place-invariant (next pass-pipeline structural change); T1 determinism kernel at rung 5
+(emitter-core extraction); policy machine at rung 4 (open target); the deeper M16
+integration of formal citations into `AxiomTests.fs` (next AXIOMS amendment landing with a
+formal witness).
+
+**Witnesses.** `formal/alloy/*.als`, `formal/dafny/*.dfy`, `scripts/model-check.sh`,
+the updated rung ledger in `FORMAL_METHODS.md` §2, `formal/README.md`.

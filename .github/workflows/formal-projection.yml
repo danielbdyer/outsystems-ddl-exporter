@@ -1,0 +1,41 @@
+# Formal verification gate for the V2 sidecar (FORMAL_METHODS.md §4).
+# Runs the rung-4 Alloy bounded model checks, the rung-5 Dafny proofs,
+# and the anti-drift citation gate via scripts/model-check.sh.
+name: formal-projection
+
+on:
+  push:
+    paths:
+      - "sidecar/projection/formal/**"
+      - "sidecar/projection/scripts/model-check.sh"
+      - "sidecar/projection/FORMAL_METHODS.md"
+      - ".github/workflows/formal-projection.yml"
+  pull_request:
+    paths:
+      - "sidecar/projection/formal/**"
+      - "sidecar/projection/scripts/model-check.sh"
+      - "sidecar/projection/FORMAL_METHODS.md"
+      - ".github/workflows/formal-projection.yml"
+
+jobs:
+  model-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: sidecar/projection/global.json
+
+      - name: Install Z3
+        run: pip install z3-solver
+
+      - name: Model-check + prove
+        working-directory: sidecar/projection
+        run: ./scripts/model-check.sh
