@@ -14,6 +14,12 @@
 > `DECISIONS.md`, `CONFIG_REFERENCE.md`, `THE_GOLDEN_EMISSION.md`, the golden corpus — and,
 > for the revision, the V1 pipeline at repo root (`src/`, `config/`), the handbook, and the
 > platform-reality evidence in `TEMPLATED_LOGIC_AND_BUSINESS_RULES.md` and the fixtures.
+>
+> **Two companion artifacts** carry the depth this register only summarizes: (1)
+> `SCALAR_REPRESENTATION_AUDIT.md` — the per-scalar × per-hop V1/V2 carriage catalog behind rows
+> C4/C11; (2) §11 below — the end-to-end full-export → deploy → load → verify operational
+> runbook (how the schema + data actually reach the target database), because the emission is
+> only half the deliverable.
 
 ---
 
@@ -241,22 +247,37 @@ Two ANSI islands in an NVARCHAR schema = collation/codepage sensitivity, implici
 risk, and possible non-Latin truncation on round-trip.
 *Decided (2026-07-15): planned fix — NVARCHAR(250)/(20) + on-disk precedence (WP-4).*
 
-**C4. `datetime` → legacy `DATETIME` — recommendation: keep it at eject; modernize deliberately later**
-Premise correction: **V1 does not pivot to DATETIME2** — `config/type-mapping.default.json:12`
-maps `"datetime": "datetime"`; the `datetime2` rule fires only when the source column is already
-datetime2. So V1, V2, and the platform's own DDL all agree on legacy `DATETIME`.
-**Recommendation: stay on `DATETIME` for the eject emission.** Reasons: (a) it *is* database
-reality — the cutover should change one thing at a time, and type changes belong to a
-deliberate migration, not the eject diff; (b) `datetime → datetime2` is lossless and cheap to
-do later per-column, while the reverse is lossy — deferring keeps the option; (c) mixed
-`datetime` parameters against `datetime2` columns and older drivers/SSIS mappings are exactly
-the class of cutover surprise we want zero of. **Post-cutover**, a planned `DATETIME2(3)`
-modernization (exact round-trip of every legacy value at 1 less byte) is a sensible dev-lead-
-owned migration; both pipelines keep the seam (one mapping line in V1's config; the named
-`rtDateTime2` path in V2's `OssysTypeMapping`). Related facts to keep: `datetime2` sources emit
-`DATETIME2(7)`; `time → TIME(7)`; `currency → DECIMAL(37,8)`; bare decimal clamps `(18,0)`;
-`text ≥ 2000` promotes to `NVARCHAR(MAX)` (threshold inclusive, V1-identical).
-*Verdict:* ☐ Approve (recommended) ☐ Modify ☐ Discuss
+**C4. `datetime` handling — the type is lane-dependent and V1 *does* cast to datetime2 in data** — [HARD] ⚑ **WP-17**
+*(This row supersedes the earlier "V1, V2 and the platform all agree on legacy DATETIME" — that
+was true only of V1's DDL type-mapping config. The deep-dive found the story is richer on two
+axes; full trace in the companion `SCALAR_REPRESENTATION_AUDIT.md` §5.)*
+- **DDL type is lane-dependent.** On the storage-evidence lane (live OSSYS) `DateTime →
+  DATETIME` (legacy, `ScriptDomBuild.fs:218`). On the `PrimitiveType`-fallback lane (no storage
+  evidence — the catalog-direct **goldens**, ReadSide-derived catalogs, JSON without
+  `SqlStorage`) `DateTime → DATETIME2` (`ScriptDomBuild.fs:129`, `SqlStorageType.fs:128`). So the
+  same logical model emits `DATETIME` from a live export and `DATETIME2` from the golden/fallback
+  path — **the goldens show `DATETIME2`.** The reviewer's "does it coerce to DATETIME2?" instinct
+  was right: the coercion is real, in the fallback lane.
+- **V1 pivots to datetime2 in the *data*.** V1's seed literal is `CAST('…fffffff' AS
+  datetime2(7))` (`src/Osm.Emission/Formatting/SqlLiteralFormatter.cs:90`; `AS date` / `AS
+  time(7)` likewise). V2 emits a bare `'…fffffff'` string (`ScriptDomBuild.fs:306-310`) and
+  relies on implicit conversion. V1's explicit CAST is precision-explicit and language-
+  independent; V2's bare form is a `SET DATEFORMAT` boundary case against legacy `DATETIME`.
+- **Round-trip is nonetheless preserved** — the staged `#temp` is typed from `a.SqlStorage`
+  (`StagedMerge.fs:51`), so the 7-digit raw converts to the true column type on INSERT and the
+  MERGE compares like-typed; a legacy-datetime value only ever had 1/300s precision. No silent
+  *data* loss; the divergences are the DDL *type* and the literal *form*.
+**Recommendation (adopted into WP-17):** keep the target type at **database reality**
+(`DATETIME` on the storage lane) but (1) fix the fallback lane so a storage-evidence-less catalog
+does not silently upgrade to `DATETIME2` (align it to the legacy default, or refuse datetime
+without evidence — this also stops the goldens misrepresenting a live export); and (2) adopt
+V1's explicit `CAST(… AS datetime2(7))` seed-literal form for language-independence. The
+post-cutover `DATETIME2(3)` modernization stands as a later dev-lead-owned migration. Related
+facts unchanged: `datetime2` sources emit `DATETIME2(7)`; `time → TIME(7)`; `currency →
+DECIMAL(37,8)`; bare decimal clamps `(18,0)`; `text ≥ 2000` → `NVARCHAR(MAX)` (inclusive,
+V1-identical).
+*Decided (2026-07-15): planned fix — WP-17 (fallback-lane datetime default + explicit-CAST seed
+literals), with the broader scalar-fidelity gaps it belongs to.*
 
 **C5. Identity: `Is_AutoNumber` → `IDENTITY (1, 1)` fixed** — [HARD]
 No reader consults `sys.identity_columns`; no `DBCC CHECKIDENT` emitted. Matters for fresh
@@ -296,6 +317,26 @@ silently); sequences absent from model-sourced runs; `ROWGUIDCOL`/`SPARSE`/`ANSI
 `FILESTREAM` unmodeled. None carries a tolerance token — silent loss, against the repo's own
 named-erasure law.
 *Decided (2026-07-15): planned fix — WP-5 (capture-or-refuse, plus estate inventory first).*
+
+**C11. Data-plane scalar carriage: the 28 concrete types collapse to 9 for transport** — [HARD/GAP] ⚑ **WP-17**
+The DDL sees both the semantic `PrimitiveType` (9) and the concrete `SqlStorageType` (28); the
+**data plane sees only `PrimitiveType`** — a `CellValue` carries the 9-way category + a raw
+string, never the concrete type (`Bulk.fs:27,78`). So every rich type is collapsed by
+`SqlStorageType.toPrimitiveType` (`SqlStorageType.fs:79-108`) before it can be a value. Four
+collapses are not faithful: **`Float`/`Real`** → the `Decimal` carrier (≈15-digit truncation +
+overflow above ≈7.9E28; V1 carried native `double`/`float` at G17/G9); **`DateTimeOffset`** →
+`DateTime` (offset dropped, and readback `Convert.ToDateTime` on a `DateTimeOffset` throws);
+**`Xml`** → `Text` (re-serialization, empty-xml erased, and a CDC-enabled kind builds `T.[c] <>
+S.[c]` which `xml` cannot compile). All four share one trait — **OutSystems has no native type
+that produces them; they arrive only via DBA columns or External Entities**, i.e. exactly the
+cutover boundary the product serves. Plus two V1/V2 literal-form divergences: V1 wraps temporal
+literals in explicit `CAST` (C4) and escapes CR/LF/TAB into `CHAR()` concatenation, where V2
+embeds raw control characters in `N'…'`. **Full per-type × per-hop trace, V1 vs V2, is the
+companion `SCALAR_REPRESENTATION_AUDIT.md`** (the standalone research artifact); its §7 hazards
+map to WP-17 and its §8 names the unwitnessed types (`Float`/`Real`/`DateTimeOffset`/`Xml`/
+`Image`/`SmallDateTime` have no round-trip fixture today).
+*Decided (2026-07-15): planned fix — WP-17 (faithful-or-refuse carriage for the collapsing
+concrete types; explicit-CAST temporal literals; control-char escaping; the fixture backlog).*
 
 ### D. Indexes
 
@@ -729,6 +770,11 @@ and adopting golden-diff-as-change-review going forward.
     >128 names. ⚑ WP-11. · Composite-PK FK legs. ⚑ WP-12. · Cycle-fallback stream order. ⚑ WP-13.
     · UserReflow half-wiring. ⚑ WP-14. · Streaming re-trust. ⚑ WP-15. · Table-name collision
     tripwire. ⚑ WP-16. · Inactive-attribute disposition. ⚑ WP-7. · PK convention. ⚑ WP-8.
+12. **Data-plane scalar collapse** (C11, `SCALAR_REPRESENTATION_AUDIT.md`) — `Float`/`Real`
+    precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
+    re-serialize + CDC `<>` compile error, temporal bare-literal vs V1's CAST, and the
+    fallback-lane `DateTime → DATETIME2` upgrade. ⚑ WP-17 (bites on DBA/External columns —
+    size via the §9 estate inventory).
 
 **Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
 (index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
@@ -832,6 +878,31 @@ physical name survives; both artifact paths refuse identically.
 as named erasures; opt-in preserve list for exceptions. The global filter stays the default —
 it just stops being silent.
 
+**WP-17 · Data-plane scalar fidelity (C4, C11)** — scoped by `SCALAR_REPRESENTATION_AUDIT.md`.
+The data plane transports the 9-way `PrimitiveType`, so the 28 concrete `SqlStorageType`s
+collapse for carriage (`SqlStorageType.fs:79-108`); four collapses are not faithful and the
+temporal literal form diverges from V1. Scope:
+(a) **`Float`/`Real`** — give the data plane a faithful carrier (a `Float` primitive/raw form at
+G17/G9, or refuse `float`/`real` in a data lane with a named code) instead of silently routing
+through `Decimal` (truncation + overflow).
+(b) **`DateTimeOffset`** — carry the offset (a raw form with `K`, V1's `datetimeoffset(7)` shape)
+or refuse; fix the `ReadSide` arm that throws on a boxed `DateTimeOffset` (`ReadSide.fs:628-629`).
+(c) **`Xml`** — decide faithful text carriage vs refusal; guard the CDC change-detect predicate
+so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c]`.
+(d) **Temporal literals** — adopt V1's explicit `CAST(… AS datetime2(7))` / `AS date` / `AS
+time(7)` seed-literal form (language-independent, precision-explicit), replacing the bare quoted
+string; and fix the fallback DDL lane so `DateTime` without storage evidence defaults to legacy
+`DATETIME` rather than `DATETIME2` (aligns the goldens with a live export).
+(e) **Text control characters** — escape CR/LF/TAB (V1's `CHAR()` concatenation) rather than
+embedding raw control bytes in `N'…'`.
+(f) **Fixture backlog** — a round-trip witness for every concrete type that has none today
+(`Float`/`Real`/`DateTimeOffset`/`Xml`/`Image`/`SmallDateTime`/`Money`), so the audit's §4
+verdicts become test-proven, not code-derived.
+*Done means:* the four unfaithful collapses each round-trip or refuse with a named code; temporal
+goldens carry the CAST form and a legacy-`DATETIME` fallback; the scalar-audit witness table has
+no UNWITNESSED rows. Note the audience caveat: (a)–(c) bite only on DBA/External-Entity columns,
+so the §9 estate inventory scopes how much of WP-17 is load-bearing for *this* estate.
+
 ### Group II — naming & constraint-object fidelity
 
 **WP-8 · PK naming convention (A1).** Adopt V1's `PK_<LogicalTable>_<KeyCol…>` (e.g.
@@ -882,9 +953,64 @@ the same emitted `(schema, table)`; mirror of the existing FK-name tripwire. Loc
 
 ---
 
+## 11 — The operational runbook: source estate → target DB with schema + data
+
+The emission is half the deliverable; the leads also inherit the **procedure** to stand the
+logically-named schema up and load it. `projection <args>` = `dotnet run --project
+src/Projection.Cli --`. A = **automated** by the pipeline once invoked; M = **manual**
+operator / receiving-team action. (Traced from `MovementSurface.fs`, `Program.fs`,
+`Faces/Export.fs`, `Pipeline.fs`, `Deploy.fs`, `PostDeployEmitter.fs`, `GETTING_STARTED.md`,
+`THE_CLI.md`, `V2_PRODUCTION_CUTOVER.md`, `PARTIAL_TRANSFER_RUNBOOK.md`.)
+
+**The blessed shape (D7, `V2_PRODUCTION_CUTOVER.md:206`): the apply phase is external.** The
+pipeline *emits*; DacFx / sqlpackage *applies*. The internal executors (`Deploy.executeStream`,
+`executeLeveledSeed`) drive the canary, docker, and `--load` legs — not a production schema
+create against a customer DB.
+
+| # | Step | Command / tool (A/M) | Consumes → produces | Rights | Gate |
+|---|---|---|---|---|---|
+| 0 | Toolchain + config | M: `dotnet build`; author `projection.json` (§6) + `secrets/*.conn` | → config | — | `projection check canary fixtures/…` exit 0 |
+| 1 | Estate readiness | M runs / A judges: `projection check shape` | live OSSYS → verdict | SELECT on `ossys_*` | exit 0 (5 divergence, 6 unreadable) |
+| 2 | **Emission** | M runs / A produces: `projection publish --go` (flow→`PublishBundle`) or `full-export <cfg> --lifecycle-store <p>` | live model + hydrated rows → bundle (`Modules/**.sql`, `Data/{StaticSeeds,MigrationData,Bootstrap}.sql`, `.sqlproj`+`Script.PostDeployment.sql` if `sqlproj:true`, `manifest.json`, `fidelity.*`, `catalog.snapshot.json`) | source SELECT | artifact count; read `fidelity.txt`; `diff` vs prior |
+| 3 | Hand-off | M: deliver bundle to Octopus/CI | → CI workspace | — | — |
+| 4 | Target prep | M (receiving team): DB exists, collation = `1033 CI`, compat = SQL2022, logins, `CREATE SCHEMA` for non-dbo, `nuget.config` | → deployable target | dbcreator/DDL | — |
+| 5 | **Schema + seeds/migration** | M invokes / DacFx executes: `dotnet build ProjectionCatalog.sqlproj` → `sqlpackage /Action:Publish` (profile per §7). Post-deploy (**StaticSeeds + MigrationData only**, inlined at build) runs inside the publish | sqlproj + bundle → schema (logical names) + static/migration rows | DDL; post-deploy needs IDENTITY_INSERT (ownership/ALTER) + `#temp`+TRAN | publish OK; SSDT compare; `check drift` |
+| 6a | **Bulk data — script path** | **M: operator runs `Data/Bootstrap.sql` via `sqlcmd -b`** post-publish — *no verb executes this file* | Bootstrap.sql → remaining rows | as step 5 post-deploy | idempotent rerun; `check data` |
+| 6b | **Bulk data — pipeline path (alt.)** | M invokes / A executes: live `schema+data` sink + `PROJECTION_ALLOW_EXECUTE=1 projection <flow> --go` → `PublishAndLoad` → `executeLeveledSeed` (Phase-1 levels → Phase-2 levels; parallel within level; CDC-measured) | lanes loaded live; episode recorded | DML + IDENTITY_INSERT/`#temp`; two-key gate | `load.completed`; re-run → 0 (CDC-silent) |
+| 6c | Data-only / estate-scale streaming (variant) | M: `check go <flow>` → `… --go` (+ `streaming:true` + `--journal <dir>`) | live rows → sink; `transfer-undo.sql` | DML + `#temp` (no ALTER on the peer path) | board GREEN; report |
+| 7 | Post-load hardening | A on materialized transfer (auto re-trust); **M for streaming/synthetic legs + raw bulk**: `is_not_trusted` sweep + `WITH CHECK CHECK CONSTRAINT` (until WP-15); **M**: enable CDC for the SSIS consumer; keep `Projection.*` EPs + schema-compare exclusion | → trusted-FK, CDC-tracked DB | ALTER (trust); db_owner for `sp_cdc_enable_db` | `is_not_trusted = 0` except reproduced NOCHECK FKs (B6) |
+| 8 | Verification | M: `check drift`, `check data --before --after`, redeploy CDC-silence (0 changes), `diff` | → proofs | read-only | drift ∅; counts equal; CDC = 0 |
+| 9 | Record + steady state | M: `seal <flow>` → `report <flow>`; re-run per release (minimal `B⊖A`); cutover per pair after N=10 green canaries + sign-off (R6) | episodes → change bundle | — | ledger streak; ladder |
+
+**Say-it-loudly gaps in the procedure** (these are why the runbook is manual where it is):
+
+1. **Nothing executes `Data/Bootstrap.sql`** — deliberate (operator decision 2026-06-24, recorded
+   only in `PostDeployEmitter.fs:14-17`, no `DECISIONS.md` entry); the post-deploy carries only
+   Static + Migration, and the `.sqlproj` `Build Remove`s Bootstrap. The receiving pipeline must
+   add the step (or use the `--load` path, whose leveled plan carries the Bootstrap rows).
+2. **CDC enablement has no verb and no runbook section** — only the load-premise comment
+   (`Pipeline.fs:2920-2924`); who runs `sp_cdc_enable_db/table` on the target is undocumented
+   convention.
+3. **Streaming / synthetic legs never re-trust FKs** (E10 / WP-15) — the `WITH CHECK CHECK`
+   sweep is the operator's until WP-15.
+4. **No statistics or `DBCC CHECKIDENT` step anywhere** — receiving DBA hygiene (C5 confirms no
+   reseed is emitted; IDENTITY_INSERT preserves values).
+5. **Refactorlog not in the bundle** (G3) and **rollback never proven** (§4) — the two eject-time
+   must-close items the procedure otherwise assumes.
+6. Bundle prerequisites the emission does not supply: `nuget.config` (G2), `CREATE SCHEMA` (G6),
+   and the publish profile itself (§7).
+
+The full hop-by-hop trace (both `--load` and transfer variants, per-path rights, and the
+verification verb matrix) lives in the procedure research; this table is the operator-facing
+distillation.
+
+---
+
 *Register short-links: golden corpus `tests/Projection.Tests/Golden/`; config schema
 `CONFIG_REFERENCE.md`; decision ledger `DECISIONS.md` (latest-first; Active deferrals index at
 top); tolerance vocabulary `src/Projection.Core/Tolerance.fs`; blessing protocol
 `THE_GOLDEN_EMISSION.md` §2; platform-reality evidence `TEMPLATED_LOGIC_AND_BUSINESS_RULES.md`
 §delete-rules, `handbook/03-The-Translation-Layer.md`, `ossys-edge-case.seed.sql`; V1 ground
-truth `config/type-mapping.default.json`, `src/Osm.Smo/`.*
+truth `config/type-mapping.default.json`, `src/Osm.Smo/`; scalar carriage
+`SCALAR_REPRESENTATION_AUDIT.md` (companion) + `src/Projection.Core/{PrimitiveType,SqlLiteral,
+SqlStorageType,RawValueCodec}.fs`, `src/Projection.Pipeline/Bulk.fs`.*
