@@ -5,7 +5,10 @@
 > a value's *representation* is treated from source read to target write — the research project
 > the datetime question opened up. It exists because "does the data plane coerce datetime to
 > DATETIME2?" turned out to have a structural answer that applies to **every** scalar, not just
-> datetime. Line references as-of `ef706ac`; code and `DECISIONS.md` win on any disagreement.
+> datetime. §1–§8 compare V2's data plane against V1's static-seed literal path; **§9 adds V1's
+> dynamic / all-entities path** and confirms the findings extend to it (reframing the fix with the
+> CDC-silence tradeoff V2 bought). Register rows C4/C11 + WP-17 in the packet. Line references
+> as-of `ef706ac`; code and `DECISIONS.md` win on any disagreement.
 
 ---
 
@@ -248,7 +251,91 @@ loud. Until then, §4's verdicts are code-derived, not test-proven.
 
 ---
 
+## 9 — V1's dynamic / "bulk" data path (the other half of the V1 comparison)
+
+**Correction first: V1 has no bulk-copy path at all.** There is no `SqlBulkCopy` / `WriteToServer`
+/ `DataTable` / `bcp` anywhere in V1 `src/` (grep-confirmed; the only `IDataReader`/`DataTable`
+hits are metadata-extraction test doubles). V1's dynamic / all-entities data path is **rendered
+T-SQL literals through the same `SqlLiteralFormatter` as the static seeds**, carrying **native CLR
+objects** end-to-end. So the V1↔V2 fidelity gap in §4/§6 is not "V1 bulk-copy vs V2 codec" — it is
+**native-object carriage (V1) vs the raw-string 9-variant collapse (V2)**. V1 never widens or
+narrows a type because it formats each cell by its *runtime* CLR type at the last moment
+(`SqlLiteralFormatter.FormatValue` switch, `SqlLiteralFormatter.cs:16-40`), driven by whatever
+`reader.GetValue` returned — never by the model's declared category.
+
+**Read hop = the seed machinery.** `SqlDynamicEntityDataProvider.ExtractTableAsync` pages the
+source with `OFFSET/FETCH` (batch 1000, `SqlDynamicEntityDataProvider.cs:593-597,36`) and reads
+each cell `reader.IsDBNull(i) ? null : reader.GetValue(i)` → `NormalizeValue` (`:636-637`) into
+`StaticEntityRow` — byte-identical to the static provider (`StaticEntityDataProviders.cs:289-290`).
+Same `object?[]` carriage, same single-space `" "`→NULL sentinel on nullable columns only, `''`
+preserved.
+
+**Write hop = rendered literals, two generators:**
+- `DynamicEntityInsertGenerator` → `INSERT … WITH (TABLOCK) VALUES …` (batch 1000, `IDENTITY_INSERT`
+  bracket) — **INSERT-only, not idempotent** — and **deprecated at orchestration**:
+  `BuildSsdtDynamicInsertStep` is a logged no-op returning empty (`BuildSsdtDynamicInsertStep.cs:33-40`).
+  Still DI-registered and what the integration test drives directly.
+- `PhasedDynamicEntityInsertGenerator` → `MERGE … WHEN NOT MATCHED THEN INSERT` via a `VALUES` CTE,
+  with the two-phase NULL→UPDATE dance for nullable FK cycles (`:231-240,293-297`) — the **live**
+  path, reached because the extracted dynamic dataset flows into `BuildSsdtBootstrapSnapshotStep`
+  (below) rather than the deprecated INSERT step.
+
+**Per-scalar: V1-dynamic ≡ V1-seed for every type** (same formatter, same object carriage), so the
+"V1 seed literal" column of §3 and the V1 verdicts of §4 apply to V1's dynamic path unchanged. The
+confirmation the audit was after, on the four types V2 collapses:
+
+| V2-lossy type | V1 (both paths, native object → literal) | V2 data plane |
+|---|---|---|
+| **float** (8-byte) | `double` → `G17`, round-trip-exact (`SqlLiteralFormatter.cs:30`) | `Float → Decimal`: ~15-digit + overflow ★ |
+| **real** (4-byte) | `float` → `G9`, round-trip-exact (`:31`) | `Real → Decimal`: semantic shift ★ |
+| **datetimeoffset** | `DateTimeOffset` → `CAST('…K' AS datetimeoffset(7))`, **offset kept** (`:92-93`; test-witnessed `-03:00`) | `DateTimeOffset → DateTime`: offset dropped, readback throws ★ |
+| **money/smallmoney** | `decimal` → InvariantCulture (`:29`) | `Money → Decimal` (safe, but via the collapse) |
+| **xml** | `string` content kept, `N'…'` (implicit nvarchar→xml on insert; no `CAST(… AS xml)`) | `Xml → Text`: content kept, type collapsed, CDC `<>` hazard |
+
+So **V1's dynamic path is strictly higher-fidelity than V2's data plane on float / real /
+datetimeoffset (and typed-xml), and never worse on any scalar** — the headline is confirmed, and
+it holds for the *live* V1 path (phased MERGE), not just the deprecated INSERT one.
+
+**The balancing nuance — V2 bought something with the collapse.** V1 has **no CDC-awareness
+anywhere** (no rowversion / watermark / changed-since predicate); its live idempotency is MERGE-key
+`WHEN NOT MATCHED THEN INSERT` — **insert-if-absent, never change-detecting** (a matched row is
+never updated). V2's data plane is the change-detecting, CDC-silent idempotent MERGE (packet F2).
+The two pipelines optimized different properties: **V1 kept concrete-type fidelity (native objects)
+but not CDC-silence; V2 bought CDC-silence + a single provable round-trip codec and pays for it
+with the 9-variant collapse.** This reframes the fix (WP-17): *not* "revert to V1's rendered-literal
+object carriage" — that would forfeit CDC-silence — but **add faithful carriers (or named refusals)
+for the four collapsing types while keeping the raw-string / CDC-silent design.** Fidelity *and*
+silence, not one at the other's cost.
+
+**`AllEntitiesIncludingStatic` = V2's Bootstrap.** `BuildSsdtBootstrapSnapshotStep` concatenates
+static-seed + dynamic/regular + supplemental (`ossys_User`) rows, globally FK-sorts them, and
+writes `Bootstrap/AllEntitiesIncludingStatic.bootstrap.sql` via the phased MERGE
+(`BuildSsdtBootstrapSnapshotStep.cs:50-65,170-178`). Per-scalar it is identical to the seed path —
+every row goes through the same `SqlLiteralFormatter` — so the difference from a plain seed is
+orchestration (global topo order, cycle phasing, one-shot post-deploy guard), not scalar handling.
+
+**Test-witness (V1 dynamic path), and the shared blind spot.** The read hop is integration-tested
+against a real DB but asserts only non-empty (`SqlDynamicEntityDataProviderIntegrationTests`);
+write literals are witnessed for **`int`/`nvarchar`/`NULL` only**
+(`DynamicEntityInsertGeneratorTests`, `PhasedDynamicEntityInsertGeneratorTests`). The shared
+`SqlLiteralFormatterTests` witnesses `NULL`/`N''`/binary/`date`/`time(7)`/`datetime2(7)`/
+**`datetimeoffset(7)` with `-03:00`** — but **`float`/`real`/`money`/`xml`/`decimal`/`Guid` are
+untested on every V1 path** (the G17/G9/decimal branches exist in code, unexercised). So V1's
+fidelity edge on exactly the contested types rests on code inspection + documented SqlClient
+`GetValue` mappings, not passing tests — the **same unwitnessed set as V2** (§8). **Neither
+pipeline has a test proving `float`/`real`/`datetimeoffset`/`xml` round-trip** — that shared gap is
+the strongest argument for WP-17's fixture backlog. (Read-type nuance: SqlClient returns `DateTime`
+for a `date` column and `TimeSpan` for `time`, so V1's SQL-read path lands in the `datetime2(7)`/
+`TimeSpan` literal branches, not the `DateOnly`/`TimeOnly` `date`/`time(7)` branches — those fire
+only for the JSON fixture provider; value-preserving via implicit conversion, only the declared
+cast type differs.)
+
+---
+
 *Companion to `SSDT_HANDOFF_REVIEW_PACKET.md`. Source anchors: `src/Projection.Core/{PrimitiveType,
 SqlLiteral,SqlStorageType,RawValueCodec}.fs`; `src/Projection.Targets.SSDT/ScriptDomBuild.fs`;
 `src/Projection.Pipeline/Bulk.fs`; `src/Projection.Adapters.Sql/ReadSide.fs`;
-`src/Projection.Targets.Data/StagedMerge.fs`; V1 `src/Osm.Emission/Formatting/SqlLiteralFormatter.cs`.*
+`src/Projection.Targets.Data/StagedMerge.fs`; V1 seed + dynamic paths
+`src/Osm.Emission/Formatting/SqlLiteralFormatter.cs`, `src/Osm.Pipeline/StaticData/`
+(`SqlDynamicEntityDataProvider`, `StaticEntityDataProviders`), `src/Osm.Emission/`
+(`DynamicEntityInsertGenerator`, `PhasedDynamicEntityInsertGenerator`, `BuildSsdtBootstrapSnapshotStep`).*

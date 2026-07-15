@@ -881,7 +881,13 @@ it just stops being silent.
 **WP-17 · Data-plane scalar fidelity (C4, C11)** — scoped by `SCALAR_REPRESENTATION_AUDIT.md`.
 The data plane transports the 9-way `PrimitiveType`, so the 28 concrete `SqlStorageType`s
 collapse for carriage (`SqlStorageType.fs:79-108`); four collapses are not faithful and the
-temporal literal form diverges from V1. Scope:
+temporal literal form diverges from V1. **Design constraint (from the V1-dynamic-path trace,
+audit §9):** V1 preserved `float`/`real`/`datetimeoffset`/`money`/`xml` fidelity because it
+carried native CLR objects into rendered literals — but V1 had **no CDC-awareness at all**
+(insert-if-absent MERGE). V2's raw-string codec is what buys CDC-silence + the single provable
+round-trip. So the fix is **not** to revert to object-carriage — it must **add faithful carriers
+(or named refusals) for the collapsing types while keeping the raw-string / CDC-silent design.**
+Scope:
 (a) **`Float`/`Real`** — give the data plane a faithful carrier (a `Float` primitive/raw form at
 G17/G9, or refuse `float`/`real` in a data lane with a named code) instead of silently routing
 through `Decimal` (truncation + overflow).
