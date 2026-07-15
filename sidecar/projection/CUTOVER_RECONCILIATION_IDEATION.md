@@ -30,6 +30,14 @@ prescriptive output surfaces.** The mode is a new *protein* folded from existing
 genuinely new comparison regime (deployed↔deployed across the environment lattice) and one
 genuinely new output plane (recommendations *back into* the model/config, not just refusals).
 
+A second ask joined the first (2026-07-14, same conversation): **provable row fidelity** —
+"excepting and removing for where it's a known row intervention, every row in the target
+database after applying the FKs is byte-identical" — delivered as two operator-runnable
+commands: a self-contained proof that scaffolds a destination container, applies the emitted
+DDL + scripts, and compares precisely; and a manual proof over two operator-supplied connection
+strings, both resolving the physical→logical gap in emission. §8 treats it; a three-agent code
+survey (row digests · container apply path · intervention ledger) grounds every claim there.
+
 ---
 
 ## 1 — What the estate already knows how to do
@@ -434,7 +442,185 @@ T-15 reviews read the burndown chart, not a fresh investigation.
 
 ---
 
-## 8 — A conservative build order
+## 8 — Provable row fidelity: the byte-identity theorem and its two commands
+
+The estate mode of §§1–7 answers "are the environments one shape, and does the data fit it?"
+This section answers the stronger question the operator posed: **after the cutover pipeline has
+run — DDL applied, data moved, FKs re-keyed — prove that every row in the target is
+byte-identical to its source row, excepting and removing exactly the rows a known, named
+intervention touched.** This is the data-plane sibling of the soul equation: where the schema
+plane already proves `Ingest ∘ Project = id` modulo *named erasures*, the row plane should prove
+**`Ingest_rows ∘ Transfer = ι` modulo *named row interventions*, residual zero** — the
+NORTH_STAR's "fidelity as a theorem the engine proves about itself," landed at row grain.
+
+### 8.1 The claim, stated precisely (candidate T17, *proposed*)
+
+For a run with recorded intervention ledger ι = (κ, ν, π, σ) — κ the keyed remaps, ν the named
+value normalizations, π the column projection (schema-plane erasures), σ the row-set
+adjustments — and kinds paired across renditions by `SsKey`:
+
+- for every source row `r` not removed by σ:
+  `canonical_target (κ (key r)) = canonical (ν (π (remapFks_κ r)))` — byte-equal at the
+  canonical row form;
+- every target row outside `image(κ) ∪ σ.adds` is a violation; every source row outside
+  `dom(κ) ∪ σ.removes` is a violation;
+- the residual is **zero**, and **every exception cites its ledger record** (the journal entry,
+  the remap pair, the drop record, the tolerance name).
+
+"Excepting and removing" gets the strong reading: intervened rows are compared *modulo their
+recorded intervention* (predicted-target bytes), not merely excluded; removed rows are checked
+*absent* with their removal record cited. Exclusion-only is the weaker fallback where prediction
+is impossible.
+
+### 8.2 What "byte-identical" means — the canonical row form
+
+The per-row hash recipe **already exists and is property-pinned**: `RowDigester.hashRowBytes`
+(`PhysicalSchema.fs:319`) — name-sorted `<column>=<value>` pairs joined by the RS separator,
+UTF-8, SHA256 — with `hashQuantumBytes` (`:341`) its allocation-free positional twin,
+FsCheck-witnessed equal (`RowQuantumTests` Q1). Values are `RawValueCodec` canonical strings, so
+"byte-identical" here means *identical canonical projection*, not identical SQL storage bytes.
+Two amendments make it fit for this proof:
+
+1. **Re-basis through SsKey.** The hash input keys cells by *column name* and the Rows axis
+   keys rows by *physical table name* (`PhysicalSchema.fs:616`) — so a source `OSUSR_ABC_*` row
+   and its logical-named target row hash differently even when the data is identical. The
+   schema axes already solved this with `LogicalNameBindings` + the triangle property; the Rows
+   axis never got the same bridge. Fix: pair kinds by `SsKey`, and key each cell by the
+   attribute's **logical name** resolved through each side's contract before hashing. Then one
+   canonical form is well-defined *across* the rendition gap — which is precisely "resolving the
+   physical to logical gap in emission" for rows.
+2. **Canonical-string vs storage bytes, decided out loud.** V1's unshipped M1.8 designed the
+   other pole: server-side `HASHBYTES('SHA2_256', … FOR XML RAW, BINARY BASE64)` per table —
+   true storage-byte identity, its own physical→logical query builder, never built (status
+   DEFERRED; only count-grain M1.3 shipped). Recommendation: the **client-side canonical form is
+   authoritative** (it rides the one typed codec, where T1 byte-determinism already lives, and
+   works identically on both renditions), with server-side `HASHBYTES` available later as a
+   fast-path *projection of the same form* — and then the two digests' agreement is itself a
+   property test, the house coherence law applied to the comparator. (`CHECKSUM_AGG`/
+   `BINARY_CHECKSUM` stay rejected for fidelity, per M1.8's own analysis — 4-byte, collision-
+   prone, NULL-blind; the existing `ReverseLegScaleTests` edge checksum is a relational sanity
+   witness, not a fidelity primitive.)
+
+### 8.3 The exception ledger ι — closed, mostly replayable, one obstacle
+
+The three-agent survey confirms the intervention vocabulary is **genuinely closed**:
+
+- **Keyed remaps (9 kinds, one carrier).** Every PK/FK rewrite in the system flows through one
+  `SurrogateRemapContext` (`Map<SsKey, Map<SourceKey, AssignedKey>>`): AssignedBySink identity
+  minting; reconcile `MatchByColumn` / `MatchByColumns` / `ManualOverride` /
+  `FallbackToAssigned`; the user re-key strategies (surjective onto the reconcile forms); the
+  plan-build FK substitution (`DataLoadPlan.build`, the sole `OperatorIntent Insertion` site);
+  the phase-2 deferred-FK re-point; and rename repointing (`RenameProjection.repointRows`,
+  which moves values between column keys and never alters bytes). Double-binds are refused at
+  capture (`SurrogateRemap.fs:192-207`), so κ is a *function*, not a relation.
+- **Value normalizations.** Ten `ToleratedDivergence` variants, of which exactly three change
+  row bytes: `EmptyTextNormalizedToNull`, `CharAnsiPaddingTolerated`, `DecimalScaleTolerated`.
+  Three more byte-affecting normalizations are today *unnamed*, contained only by the rendition
+  invariant (both contracts render from one authored model, so column types agree): Boolean
+  canonicalization, DateTime tick precision, integer-width normalization. The proof should
+  either mint them as tolerance variants or record the type-equality precondition as an
+  explicit per-run witness — silence is not an option once byte-identity is the claim.
+- **Row-set adjustments.** Drops from reconcile misses and write-time FK misses
+  (`SkippedReferences` / `DroppedRows`), convergent-delete scopes (terms recorded, signoff-
+  gated), wipe-and-load, model-minted static rows, reconciled-kinds-never-written, LoadSet
+  scoping — each with a record, **except one**: the seed insert-only-missing pre-filter
+  (`filterSeedRows`, `TransferRun.fs:368`) drops silently at count grain. The proof forces its
+  de-silencing — a finding worth fixing regardless.
+
+**Eight of the nine keyed interventions are pure functions of recorded inputs** — the checker
+re-derives expected target bytes by re-running `remapRowFksWith` + `repointRows` + ν against the
+recorded remap and the source rows. **The one obstacle is `AssignedBySink`:** the sink mints the
+IDENTITY value at insert time, so it is *recordable, never predictable* — and today it is
+durably recorded **only on the streaming `--journal` path** (`CaptureJournal` pairs,
+fsync-appended, at-least-once); the materialized path leaves the correspondence in run memory
+and `transfer-undo.sql`. Two lawful resolutions, not mutually exclusive:
+
+- **Promote the journal**: a run that claims provable fidelity records the per-row
+  `(source → assigned)` correspondence on *every* realization path — "prove" implies "journal."
+- **Preserve keys for the proof run**: under `IdentityPolicy.PreferPreservedKeys` /
+  `IDENTITY_INSERT` (already signoff-gated as an act), the class becomes predictable and the
+  obstacle vanishes — at the cost of requiring that grant on the destination.
+
+### 8.4 The digest ladder — how the proof scales
+
+Level 0 — **counts + null profile** (exists: `check data`). Level 1 — **per-kind aggregate
+digest**: the order-independent commutative fold (sum-mod-2²⁵⁶ of per-row SHA256, plus count) —
+this exact fold existed as the `RowDigests` axis and was deleted 2026-06-12 as dead algebra
+*with its rebuild recipe named in the docstring* ("rebuild the fold over quanta via
+`hashQuantumBytes`"); this capability is its awaited second consumer. Order-independence means
+level 1 needs no cross-side ordering agreement at all. Level 2 — **on mismatch only**: both
+sides stream `ORDER BY` PK (`readRowsStreamCore` already orders, `SequentialAccess`, bounded
+memory, bench-labeled), lockstep merge-compare per-row hashes, emit differing keys with
+per-column samples in the `ReconcileDivergence` sample shape. Nothing materializes: the
+comparator deliberately does **not** ride `ReadSide.read`'s row readback (which caps at 100k
+rows/table and marks everything Static) — it rides the transfer's own streaming substrate.
+
+### 8.5 Command 1 — the self-contained container proof
+
+`projection check fidelity <flow>` — and here the naming resolves itself: **`check fidelity` is
+already a live alias of the canary verb** (`check <source.sql>`), which proves schema round-trip
+from a DDL file. The flow-form is the same concept grown to the data plane from the live estate:
+
+1. **Scaffold** — `Deploy.acquireContainer` (warm-honoring; ephemeral Testcontainers otherwise),
+   per-run database with the pool-evict+drop reap (`withBootstrappedDatabase`'s pattern — the
+   `runWideCanary*` family leaks per-run DBs under warm reuse; the command must not).
+2. **Apply the emitted bundle** — schema via `runEphemeral`/`aggregateSsdt` (exists); seeds via
+   `executeLeveledSeed` over the `DataBundle` (exists, wired today for live conns via
+   `full-export --load`; the container wiring is new-but-proven in the migration canaries).
+   Named honestly: **pre/post-deploy scripts and the refactorlog have no V2 executor** (they are
+   DacFx/`sqlpackage` artifacts; `DacServices.Deploy` is proven in tests only) — the command
+   either DacFx-publishes the `.dacpac` for full-bundle semantics or names the un-applied legs.
+   (Also worth fixing en route: `deploy docker` currently applies schema only while its
+   unhonored-notes copy promises the data legs — a latent over-promise.)
+3. **Load the data** — the genuinely new leg: a docker/container **transfer sink** (today
+   `runTransfer` has no docker destination), run with the journal ON so ι is complete.
+4. **Compare** — the §8.4 comparator, source ↔ container, through ι. Verdict rides the existing
+   canary surface: exit 0 proven / 5 residual / 4 docker unavailable, `canaryEnvelopes` for CI,
+   `renderDiff`-style drill-down for the operator.
+
+CDC-silence as an optional leg inherits the canary's constraint set: isolated ephemeral
+container only (never warm — `sp_cdc_enable_db` flips instance-wide state), which currently
+means Testcontainers+ryuk; where ryuk is unpullable the leg is a *named skip*, not a silent one.
+
+### 8.6 Command 2 — the manual two-connection proof
+
+`projection check data --before <connA> --after <connB> --rows [--model <ref>]
+[--interventions @runId]` — `check data` grown from counts to rows. It already takes two
+connection strings and already strips Static marks so lookup tables participate; the growth is
+the comparator and the alignment package. The load-bearing fact from the survey: **two
+independent live reads can never align themselves** — `ReadSide` synthesizes SsKeys from
+physical coordinates — so the authored model is a *required operand*, and the command packages
+what today lives only inside the transfer path: authored `Catalog` → `CatalogRendition.physical`
+/ `.logical` (SsKey-aligned by construction) → `renamesByKind` from `CatalogDiff` →
+`repointRows` → symmetric value normalization (both sides through the same codec) → the §8.4
+ladder. `--interventions @runId` loads the producing run's ledger (journal + remap + drop
+records) so intervened rows compare modulo their record; **without it the claim is strict
+byte-identity** — which is exactly right for the operator's hand-applied-DDL scenario, where no
+engine intervention should have touched a row at all.
+
+### 8.7 Exists vs build — the honest ledger
+
+| Piece | Status |
+|---|---|
+| Canonical per-row hash (`hashRowBytes`/`hashQuantumBytes`, property-equal) | **Exists** |
+| SsKey/logical re-basis of the hash input (the Rows-axis triangle bridge) | **Build** (small, Core) |
+| Order-independent per-kind aggregate digest | **Rebuild** (deleted with named recipe; this is its second consumer) |
+| Ordered bounded-memory streams, both sides + bench labels | **Exists** |
+| Two-sided lockstep merge comparator + drill-down | **Build** |
+| Closed intervention vocabulary through one remap carrier | **Exists** |
+| Durable per-row `(source→assigned)` capture on every path ("prove implies journal") | **Build** (promotion of existing journal) |
+| Unnamed value normalizations → tolerance variants or per-run type-equality witness | **Build** (naming work) |
+| Seed insert-only-missing pre-filter de-silenced | **Build** (small) |
+| Container scaffold, per-run DB hygiene, schema apply, verdict/envelope surface | **Exists** |
+| Seed apply into container (`executeLeveledSeed` wiring) | **Wire** |
+| Container transfer sink (live data into the proof container) | **Build** |
+| Two-connection orchestration shape (`DataIntegrityChecker.compare`) | **Exists** (grow) |
+
+The estate mode (§§1–7) and the fidelity proof (§8) meet in the report: a fidelity residual is
+an estate finding like any other — keyed, dispositioned, burned down — and "Unified" (§3.3)
+gains a fourth clause: *the last fidelity proof ran green*.
+
+## 9 — A conservative build order
 
 Each slice shippable alone, every one with a consumer on day one:
 
@@ -454,13 +640,28 @@ Each slice shippable alone, every one with a consumer on day one:
 7. **η+ — The long tail.** T1 direction classification (episode-dated), D6 collation probes, D13
    headroom, S8/O4 physical-residue sweep, D14 user-FK aggregation.
 
+And the fidelity track (§8), largely independent of α–η and buildable in parallel:
+
+8. **φ1 — The canonical form, re-based.** The SsKey/logical re-basis of the row-hash input +
+   the rebuilt aggregate-digest fold over quanta. Pure Core; property tests pin
+   `hashQuantumBytes` equality and cross-rendition hash agreement on a two-contract fixture.
+9. **φ2 — The merge comparator.** Two-sided ordered streaming compare + drill-down, wired first
+   as `check data --rows` (two connections, strict mode — no interventions). This alone is the
+   operator's manual proof for hand-applied DDL.
+10. **φ3 — The exception ledger.** "Prove implies journal" on every realization path; the
+    intervention-aware compare (`--interventions @runId`); the unnamed normalizations named;
+    the seed pre-filter de-silenced.
+11. **φ4 — The container proof.** Seed-apply wiring + the container transfer sink + the grown
+    `check fidelity <flow>` face over the canary spine.
+
 α+β alone already answer the operator's first paragraph (query all three, notate schema
 differences, profile all three, report divergences per DDL); γ–ε deliver the second (fix-SQL and
-interim recommendations).
+interim recommendations); φ1+φ2 deliver the manual byte-identity proof, φ3+φ4 the self-contained
+one.
 
 ---
 
-## 9 — The traps this mode inherits (paid-for lessons that bind the design)
+## 10 — The traps this mode inherits (paid-for lessons that bind the design)
 
 - **Never diff two `live:` reads** — OSSYS/GUID identity only; `toLogicalShape` before comparing
   (espace-invariance). The C# donor's physical-name keying is the anti-pattern here.
@@ -479,11 +680,32 @@ interim recommendations).
 - **Collation-aware matching** in every business-key join (the T0.1 scar).
 - **Advisory means advisory** — the mode reads and writes artifacts; it never executes repairs.
   Execution stays with the existing gated verbs (`revert`, transfer flows, migrate `--go` +
-  `PROJECTION_ALLOW_EXECUTE`), so the consent model is untouched.
+  `PROJECTION_ALLOW_EXECUTE`), so the consent model is untouched. (The container proof's
+  transfer-into-container is the one write it performs — into a database it created and will
+  reap, never into an operator environment.)
+
+Fidelity-specific (§8):
+
+- **Stream, never materialize** — `ReadSide.read`'s row readback caps at 100k rows/table and
+  marks everything Static; the comparator rides `readRowsStream`, or large tables silently
+  compare schema-only.
+- **The `''`↔NULL collision is invisible to the hash** — both canonicalize identically, so the
+  comparator cannot *detect* what `EmptyTextNormalizedToNull` erases; it can only carry the
+  tolerance as a named equivalence. Anyone wanting to *count* the erasure needs the D5 probe,
+  not the digest.
+- **The journal is at-least-once** — replayed capture pairs must dedupe on fold (the existing
+  `spec.Apply` semantics), or a crash-window duplicate reads as an ambiguity.
+- **Warm-container hygiene** — per-run databases must reap via pool-evict + drop
+  (`withBootstrappedDatabase`'s pattern); the `runWideCanary*` family leaks under warm reuse.
+- **CDC legs force ephemeral isolation** (instance-wide `sp_cdc_enable_db`), which forces
+  Testcontainers+ryuk — unpullable in some environments; skip by name, never silently.
+- **The hash is collation-blind and stricter than SQL `=`** — two values SQL considers equal
+  under a case-insensitive collation hash differently; that strictness is the point, but the
+  report must say so or a legitimate re-collation reads as corruption.
 
 ---
 
-## 10 — Open questions for the operator
+## 11 — Open questions for the operator
 
 1. **Verb + naming** — `check estate` vs a sibling; does it subsume `check shape` or wrap it?
    (Pillar-8 call.)
@@ -500,11 +722,36 @@ interim recommendations).
 7. **Where the burndown lives** — the run ledger (cheap, session-scoped) vs the episode store
    (durable, provenance-grade). The ladder gate suggests the latter.
 
+Fidelity-specific (§8):
+
+8. **Canonical form vs storage bytes** — is the client-side canonical SHA256 (the codec's
+   plane, recommended) sufficient as *the* fidelity claim, or does the cutover sign-off want
+   V1-M1.8-style server-side `HASHBYTES` storage-byte identity as well (with the two digests'
+   agreement property-tested)?
+9. **The AssignedBySink resolution** — promote the capture journal to every realization path
+   ("prove implies journal"), or run proofs under `PreferPreservedKeys`/`IDENTITY_INSERT`
+   (predictable, but needs the grant), or both with the choice named per run?
+10. **The unnamed normalizations** — mint Boolean canonicalization / DateTime tick precision /
+    integer widening as `ToleratedDivergence` variants, or record the rendition's
+    type-equality precondition as a per-run witness instead?
+11. **Verb growth** — does the flow-form `check fidelity <flow>` subsume the existing canary
+    alias (one fidelity concept, file-source and estate-source), and does `check data --rows`
+    carry the manual proof, or does the parity matrix's reserved `verify-data` cash-out want
+    its own token?
+
 ---
 
 *Companion provenance: `CROSS_ENVIRONMENT_READINESS.md` (the shipped star-shaped gate this
 generalizes), `THE_USE_CASE_ONTOLOGY.md` §5.9 (comparison regimes; this proposes the fourth),
 `MultiEnvironmentPromotionTests.fs` (the tolerance ladder), `Profile.fs:1391` (`merge`),
 `ModelFidelity.fs` / `RemediationEmitter.fs` (the engines π₁/π₂ extend), and V1's
-`MultiEnvironmentConstraintConsensus.cs` (editorial donor for the consensus vocabulary). No code
-was changed in the writing of this document.*
+`MultiEnvironmentConstraintConsensus.cs` (editorial donor for the consensus vocabulary). §8
+rests on a three-agent code survey (2026-07-14/15): the row-digest plane (`PhysicalSchema.fs`
+`RowDigester`, the deleted `RowDigests` fold and its named rebuild recipe, V1's unshipped
+M1.8 `HASHBYTES` design vs shipped count-grain M1.3), the container plane (`Deploy.fs`
+`runWideCanaryWithLoader` / `runEphemeral` / `executeLeveledSeed`, the schema-only `deploy
+docker` reality, warm-container reap hygiene, the CDC/ryuk constraint), and the intervention
+plane (`SurrogateRemap.fs` / `Reconciliation.fs` / `RenameProjection.fs` / `CaptureJournal.fs`
+/ `Tolerance.fs` — nine keyed remap kinds through one carrier, ten named tolerances, the
+at-least-once journal as the only durable per-row correspondence). No code was changed in the
+writing of this document.*
