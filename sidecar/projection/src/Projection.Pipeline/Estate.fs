@@ -141,6 +141,10 @@ module Estate =
             Findings : Finding list
             Verdict  : Verdict
             Evidence : EvidenceStoreBasis
+            /// The remediation artifacts this run wrote — (file, block
+            /// count) per environment (wave A5; the face stamps them after
+            /// writing, `compute` stays file-blind).
+            Remediation : (string * int) list
         }
 
     // ----------------------------------------------------------------------
@@ -832,13 +836,23 @@ module Estate =
                             " Most environments differ from the target shape here (%s) — the target may be the one behind."
                             (envListText envNames)
                     else ""
-                { Key = FindingKey.create kind subject
+                let key = FindingKey.create kind subject
+                // The one review lever (wave A5): a REPAIR-lane finding
+                // names its block in the primary (heaviest-evidence)
+                // environment's artifact — the file the face writes in the
+                // same run, so the promise and the artifact cannot drift.
+                let lever =
+                    if EstateFindingKind.laneOf kind = EstateLane.Repair then
+                        let primary = perEnvRows |> List.maxBy (fun c -> c.Weight)
+                        Some (sprintf "Review block %s of estate.remediation.%s.sql." (FindingKey.text key) primary.Env)
+                    else None
+                { Key = key
                   Kind = kind
                   Lane = EstateFindingKind.laneOf kind
                   Plane = plane
                   Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
                   Statement = (sprintf "%s%s.%s" body clean majorityNote).TrimEnd()
-                  Lever = None })
+                  Lever = lever })
             |> List.sortByDescending weightOf
         let verdict =
             if List.isEmpty findings then Verdict.Unified else Verdict.Converging
@@ -846,7 +860,14 @@ module Estate =
           Bases = bases
           Findings = findings
           Verdict = verdict
-          Evidence = EvidenceStoreBasis.Disabled }
+          Evidence = EvidenceStoreBasis.Disabled
+          Remediation = [] }
+
+    /// The face's remediation stamp: the artifacts it wrote this run —
+    /// (file, block count) per environment (`compute` stays file-blind;
+    /// the ARTIFACTS index and the JSON read the stamped list).
+    let withRemediation (artifacts: (string * int) list) (report: EstateReport) : EstateReport =
+        { report with Remediation = artifacts }
 
     /// The face's evidence stamp: the resolved store basis and each
     /// environment's actual acquisition path, applied onto a computed report
@@ -1004,6 +1025,8 @@ module Estate =
           // ARTIFACTS — the index: one line per artifact naming its role.
           yield "ARTIFACTS"
           yield "  estate.json — the full findings record: every board element, machine-readable."
+          for file, blocks in report.Remediation do
+              yield sprintf "  %s — %s prepared repair block(s); the locating SELECT is active, every repair is commented." file (humane blocks)
           yield ""
 
           // ACTION — the one next move.
@@ -1079,6 +1102,13 @@ module Estate =
         for lane, count in laneCounts report do
             lanes.[laneToken lane] <- JsonValue.Create count
         root.["lanes"] <- lanes
+        let remediation = JsonArray()
+        for file, blocks in report.Remediation do
+            let o = JsonObject()
+            o.["file"] <- JsonValue.Create file
+            o.["blocks"] <- JsonValue.Create blocks
+            remediation.Add o
+        root.["remediation"] <- remediation
         let findings = JsonArray()
         for f in report.Findings do
             let o = JsonObject()

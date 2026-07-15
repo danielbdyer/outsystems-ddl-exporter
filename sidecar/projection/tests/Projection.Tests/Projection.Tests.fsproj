@@ -190,6 +190,7 @@
     <Compile Include="CompareTests.fs" />
     <Compile Include="ReadinessTests.fs" />
     <Compile Include="EstateTests.fs" />
+    <Compile Include="EstateRemediationTests.fs" />
     <Compile Include="EstateEvidenceStoreTests.fs" />
     <Compile Include="RowDigestFoldTests.fs" />
     <Compile Include="RowFidelityTests.fs" />

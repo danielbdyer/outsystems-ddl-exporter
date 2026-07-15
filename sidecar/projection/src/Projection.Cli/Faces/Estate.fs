@@ -22,6 +22,7 @@ module Projection.Cli.Faces.Estate
 open System
 open Projection.Core
 open Projection.Pipeline
+open Projection.Targets.OperationalDiagnostics
 open Projection.Cli
 open Projection.Cli.OperatorConsole
 
@@ -174,9 +175,32 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 match store with
                 | Some dir -> Estate.EvidenceStoreBasis.Enabled dir
                 | None -> Estate.EvidenceStoreBasis.Disabled
-            let report =
+            let computed =
                 Estate.compute targetOperand target envs
                 |> Estate.withEvidence storeBasis provenanceByEnv
+            // The remediation artifacts (wave A5): one file per environment
+            // carrying REPAIR-lane blocks — written BEFORE the report is
+            // stamped, so the board's levers, the ARTIFACTS index, and the
+            // files on disk are one run's facts. The provenance header
+            // makes the wrong-environment mistake structurally detectable.
+            let connByEnv = args.Confirm |> Map.ofList
+            let remediationArtifacts =
+                envs
+                |> List.choose (fun (label, operandValue) ->
+                    let blocks =
+                        EstateRemediation.blocksFor label
+                            (Readiness.toLogicalShape operandValue.Catalog)
+                            operandValue.Profile computed
+                    if List.isEmpty blocks then None
+                    else
+                        let headerLines =
+                            EstateRemediation.header label
+                                (connByEnv |> Map.tryFind label |> Option.map Source.resolveConn |> Option.defaultValue "")
+                                nowUtc
+                        let file = EstateRemediation.fileNameFor label
+                        IO.File.WriteAllText(file, RemediationEmitter.emitEstate headerLines blocks)
+                        Some (file, List.length blocks))
+            let report = computed |> Estate.withRemediation remediationArtifacts
             let artifact = Estate.toJsonString report
             if args.AsJson then
                 printfn "%s" artifact

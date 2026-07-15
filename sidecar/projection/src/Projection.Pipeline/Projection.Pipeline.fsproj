@@ -42,6 +42,10 @@
     <Compile Include="Compare.fs" />
     <Compile Include="Readiness.fs" />
     <Compile Include="Estate.fs" />
+    <!-- EstateRemediation.fs: the per-environment remediation blocks for
+         check estate (wave A5) - reads Estate + the OperationalDiagnostics
+         emitter. -->
+    <Compile Include="EstateRemediation.fs" />
     <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />

@@ -377,6 +377,48 @@ module RemediationEmitter =
     /// plus the fidelity report's data-reality findings (2026-07-06).
     /// Deterministic ordering: per-axis decisions are emitted in their stored
     /// chronological order (the writer preserves A24 — earliest-first under
+    /// One estate remediation block (`check estate`'s per-environment
+    /// artifact, wave A5): the block id IS the finding's cross-artifact key
+    /// (`FindingKey.text` — the board's lever, the burndown, and this block
+    /// say one token and mean one thing), the finding statement rides as
+    /// context, the locating SELECT is active, and every repair candidate is
+    /// commented out. Core-only inputs by construction — the pipeline
+    /// resolves coordinates and shapes the SQL; this module owns the block
+    /// grammar and the artifact stitching.
+    type EstateBlock =
+        {
+            BlockId   : string
+            Statement : string
+            Locate    : string
+            Repairs   : string list
+        }
+
+    /// Stitch one environment's estate remediation artifact: the provenance
+    /// header lines (RT-12 — the wrong-environment mistake is structurally
+    /// detectable), the reading rule, then one block per finding. An empty
+    /// block list renders the empty-surface note (never a zero-byte file).
+    let emitEstate (headerLines: string list) (blocks: EstateBlock list) : string =
+        use _ = Bench.scope "emit.remediation.estate"
+        let sb = StringBuilder()
+        for line in headerLines do
+            sb.AppendLine(line) |> ignore
+        sb.AppendLine("-- The locating SELECT in each block is active; every repair is commented out.") |> ignore
+        sb.AppendLine("-- Read each block before uncommenting any destructive action; the block id is") |> ignore
+        sb.AppendLine("-- the finding's key on the estate board and in estate.json.") |> ignore
+        sb.AppendLine() |> ignore
+        match blocks with
+        | [] ->
+            sb.AppendLine("-- No prepared repairs for this environment this run.") |> ignore
+        | _ ->
+            for block in blocks do
+                sb.AppendLine(System.String.Concat("-- block ", block.BlockId)) |> ignore
+                sb.AppendLine(System.String.Concat("-- ", block.Statement)) |> ignore
+                sb.AppendLine(block.Locate) |> ignore
+                for repair in block.Repairs do
+                    sb.AppendLine(System.String.Concat("-- ", repair)) |> ignore
+                sb.AppendLine() |> ignore
+        sb.ToString()
+
     /// bind); axes themselves emit in fixed Nullability → ForeignKey →
     /// UniqueIndex order; the data-reality section follows in the fidelity
     /// report's sorted order, deduplicated against the decision blocks on
