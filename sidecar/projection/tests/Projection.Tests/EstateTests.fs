@@ -79,9 +79,11 @@ let ``presentation: a finding key is stable across mints and carries the kind's 
 // -- the aggregation ----------------------------------------------------------
 
 [<Fact>]
-let ``compute: a diverging environment yields DECIDE-lane schema findings naming that environment`` () =
+let ``T1: an environment missing the target's kinds reads as promotion lag — WATCH lane; the publish resolves it`` () =
     // cloud-qa is EMPTY against a populated target: every target kind is a
-    // presence divergence in cloud-qa; cloud-dev matches and contributes none.
+    // lag divergence in cloud-qa (behind the agreed shape); cloud-dev
+    // matches and contributes none. The direction classifier (wave A3)
+    // keeps lag out of the ruling queue.
     let report =
         Estate.compute agreed sampleCatalog
             [ "cloud-dev", operand "cloud-dev" sampleCatalog
@@ -89,10 +91,22 @@ let ``compute: a diverging environment yields DECIDE-lane schema findings naming
     Assert.Equal(Estate.Verdict.Converging, report.Verdict)
     Assert.NotEmpty report.Findings
     for f in report.Findings do
-        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Equal(EstateFindingKind.SchemaLag, f.Kind)
+        Assert.Equal(EstateLane.Watch, f.Lane)
         Assert.Equal(EstatePlane.Schema, f.Plane)
         Assert.Equal<string list>([ "cloud-qa" ], f.Envs |> List.map fst)
         Assert.Contains("cloud-qa", f.Statement)
+        Assert.Contains("promotion lag", f.Statement)
+
+[<Fact>]
+let ``T1: a kind an environment carries beyond the target reads as deployed-ahead drift — DECIDE lane`` () =
+    let report =
+        Estate.compute agreed emptyCat [ "cloud-uat", operand "cloud-uat" sampleCatalog ]
+    Assert.NotEmpty report.Findings
+    for f in report.Findings do
+        Assert.Equal(EstateFindingKind.SchemaPresence, f.Kind)
+        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Contains("deployed-ahead drift", f.Statement)
 
 [<Fact>]
 let ``compute: one divergence in two environments groups onto one key and names both`` () =
@@ -110,27 +124,40 @@ let ``compute: one divergence in two environments groups onto one key and names 
         Assert.Contains("cloud-uat", f.Statement)
 
 [<Fact>]
-let ``compute: a strict majority of diverging environments turns the closing clause on the target`` () =
-    let report =
+let ``compute: a strict majority of DRIFTING environments turns the closing clause on the target; a lag majority never does (T1)`` () =
+    // Drift direction: two of three environments carry kinds the target
+    // does not declare — the target may genuinely be the one behind.
+    let drifted =
+        Estate.compute agreed emptyCat
+            [ "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" sampleCatalog
+              "cloud-dev", operand "cloud-dev" emptyCat ]
+    Assert.NotEmpty drifted.Findings
+    for f in drifted.Findings do
+        Assert.Contains("the target may be the one behind", f.Statement)
+    // Lag direction: two of three environments MISS the target's kinds —
+    // the normal pre-publish state; the clause stays off.
+    let lagging =
         Estate.compute agreed sampleCatalog
             [ "cloud-qa",  operand "cloud-qa"  emptyCat
               "cloud-uat", operand "cloud-uat" emptyCat
               "cloud-dev", operand "cloud-dev" sampleCatalog ]
-    // 2 of 3 diverge — the statement says the target may be the one behind.
-    for f in report.Findings do
-        Assert.Contains("the target may be the one behind", f.Statement)
+    Assert.NotEmpty lagging.Findings
+    for f in lagging.Findings do
+        Assert.DoesNotContain("the target may be the one behind", f.Statement)
 
 [<Fact>]
-let ``compute: a minority divergence names its environment and never blames the target`` () =
+let ``compute: a minority drift names its environment and never blames the target`` () =
     let report =
-        Estate.compute agreed sampleCatalog
-            [ "cloud-qa",  operand "cloud-qa"  emptyCat
-              "cloud-uat", operand "cloud-uat" sampleCatalog
-              "cloud-dev", operand "cloud-dev" sampleCatalog ]
-    // 1 of 3 diverges — no majority clause.
+        Estate.compute agreed emptyCat
+            [ "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" emptyCat
+              "cloud-dev", operand "cloud-dev" emptyCat ]
+    // 1 of 3 drifts — no majority clause; the drifting environment is named.
     Assert.NotEmpty report.Findings
     for f in report.Findings do
         Assert.DoesNotContain("the target may be the one behind", f.Statement)
+        Assert.Contains("cloud-qa", f.Statement)
 
 // -- one substrate (board ≡ estate.json over one report value) ----------------
 
@@ -164,8 +191,9 @@ let ``board: the empty state is a full surface (masthead, lanes, matrix, artifac
 
 [<Fact>]
 let ``board: the action names the first DECIDE finding's key when one exists`` () =
+    // The drift direction fills the ruling queue (lag is watchable, T1).
     let report =
-        Estate.compute agreed sampleCatalog [ "cloud-qa", operand "cloud-qa" emptyCat ]
+        Estate.compute agreed emptyCat [ "cloud-qa", operand "cloud-qa" sampleCatalog ]
     let lines = Estate.render report
     let firstDecide = Estate.laneFindings EstateLane.Decide report |> List.head
     Assert.Contains(lines, fun (l: string) ->
@@ -253,6 +281,117 @@ let ``consensus: an environment with no evidence for the coordinate stays silent
               "cloud-qa",  operand "cloud-qa" sampleCatalog ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
     Assert.DoesNotContain("cloud-qa", finding.Statement)
+
+// -- the A3 detectors: sentinel, basis, trust, asymmetry, candidacy ------------
+
+/// An untruncated categorical distribution over the given frequencies —
+/// the smart constructor requires DistinctCount = Frequencies.Length.
+let private categoricalOn (attrKey: SsKey) (freqs: (string * int64) list) : AttributeDistribution =
+    AttributeDistribution.Categorical
+        (CategoricalDistribution.create attrKey freqs (int64 (List.length freqs)) false (ProbeStatus.observed 1000L)
+         |> Result.value)
+
+[<Fact>]
+let ``D3a: the categorical zero-frequency witnesses the unset-reference split on an orphan finding`` () =
+    let dirty =
+        { Profile.empty with
+            ForeignKeys = [ orphanEvidence orderRefToCustomer 20L ]
+            Distributions = [ categoricalOn orderCustomerFkKey [ "0", 15L; "7", 5L ] ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphans)
+    Assert.Contains(", of which 15 reference the unset value 0", finding.Statement)
+
+[<Fact>]
+let ``D3a: an orphan finding without categorical evidence keeps the plain statement — the split is never fabricated`` () =
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 20L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphans)
+    Assert.DoesNotContain("unset value", finding.Statement)
+
+[<Fact>]
+let ``D1×D5: a Text column's NOT-NULL finding names the empty-text basis; an integer column's does not`` () =
+    let dirty =
+        { Profile.empty with
+            Columns =
+                [ nullEvidence customerNameKey 5000L 4120L
+                  nullEvidence customerTenantKey 5000L 7L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let name =
+        report.Findings
+        |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.Name")
+    Assert.Contains("the count includes empty text, which normalizes to NULL on publish", name.Statement)
+    let tenant =
+        report.Findings
+        |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.TenantId")
+    Assert.DoesNotContain("empty text", tenant.Statement)
+
+[<Fact>]
+let ``S7/O3: a WITH NOCHECK relationship reads as a preparable repair naming its re-trust cost (the trust census)`` () =
+    let untrusted =
+        { Profile.empty with
+            Columns = [ nullEvidence orderCustomerFkKey 12400L 0L ]
+            ForeignKeys =
+                [ { ReferenceKey = orderRefToCustomer
+                    HasOrphan = false
+                    OrphanCount = 0L
+                    IsNoCheck = true
+                    ProbeStatus = ProbeStatus.observed 12400L } ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-qa", { operand "cloud-qa" sampleCatalog with Profile = Some untrusted } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaTrust)
+    Assert.Equal(EstateLane.Repair, finding.Lane)
+    Assert.Equal(EstatePlane.Schema, finding.Plane)
+    Assert.Contains("Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted)", finding.Statement)
+    Assert.Contains("re-trusting scans 12,400 row(s)", finding.Statement)
+
+[<Fact>]
+let ``D12: rowcount asymmetry past the factor reads as a WATCH advisory naming both ends; near-parity stays silent`` () =
+    let big  = { Profile.empty with Columns = [ nullEvidence customerNameKey 10400L 0L ] }
+    let tiny = { Profile.empty with Columns = [ nullEvidence customerNameKey 12L 0L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some big }
+              "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some tiny } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
+    Assert.Equal(EstateLane.Watch, finding.Lane)
+    Assert.Equal<string list>([ "cloud-dev"; "cloud-uat" ], finding.Envs |> List.map fst |> List.sort)
+    Assert.Contains("Customer holds 10,400 row(s) in cloud-uat", finding.Statement)
+    Assert.Contains("Customer holds 12 row(s) in cloud-dev — verdicts drawn on this evidence are advisory at the asymmetry", finding.Statement)
+    let nearA = { Profile.empty with Columns = [ nullEvidence customerNameKey 1000L 0L ] }
+    let nearB = { Profile.empty with Columns = [ nullEvidence customerNameKey 900L 0L ] }
+    let quiet =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some nearA }
+              "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some nearB } ]
+    Assert.DoesNotContain(quiet.Findings, fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
+
+[<Fact>]
+let ``D15: a column distinct in every observed row of every evidenced environment reads as a natural-key candidate; one duplicate kills the unanimity`` () =
+    let distinctFreqs (offset: int) = [ for i in 1 .. 60 -> string (offset + i), 1L ]
+    let devP = { Profile.empty with Distributions = [ categoricalOn customerTenantKey (distinctFreqs 0) ] }
+    let qaP  = { Profile.empty with Distributions = [ categoricalOn customerTenantKey (distinctFreqs 100) ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some devP }
+              "cloud-qa",  { operand "cloud-qa" sampleCatalog with Profile = Some qaP } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataUniquenessCandidate)
+    Assert.Equal(EstateLane.Watch, finding.Lane)
+    Assert.Contains("Customer.TenantId is distinct in every observed row of cloud-dev (60 of 60 row(s))", finding.Statement)
+    Assert.Contains("cloud-qa", finding.Statement)
+    let dupFreqs = ("1", 2L) :: [ for i in 2 .. 60 -> string i, 1L ]
+    let dupP = { Profile.empty with Distributions = [ categoricalOn customerTenantKey dupFreqs ] }
+    let quiet =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some devP }
+              "cloud-qa",  { operand "cloud-qa" sampleCatalog with Profile = Some dupP } ]
+    Assert.DoesNotContain(quiet.Findings, fun f -> f.Kind = EstateFindingKind.DataUniquenessCandidate)
 
 // -- the evidence provenance (wave A2.5): the masthead, the JSON, one fact ------
 

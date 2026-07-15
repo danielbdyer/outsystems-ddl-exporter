@@ -46,9 +46,13 @@ type EstatePlane =
 /// closed-DU expansion check then fires every total match in this module.
 [<RequireQualifiedAccess>]
 type EstateFindingKind =
-    /// A kind present in some environments and absent from the target shape
-    /// (or declared by the target and absent from an environment).
+    /// A kind an environment carries BEYOND the target shape — deployed-ahead
+    /// drift; no promotion explains it (the direction classifier's DECIDE arm).
     | SchemaPresence
+    /// A kind the target declares that an environment does not yet carry —
+    /// promotion lag; the ordinary publish resolves it (the direction
+    /// classifier's WATCH arm, wave A3).
+    | SchemaLag
     /// A kind carrying a different logical name than the target shape declares.
     | SchemaRename
     /// A kind whose attribute channel (columns) differs from the target shape.
@@ -60,6 +64,10 @@ type EstateFindingKind =
     /// A kind whose own facets (modality / activity / triggers / checks)
     /// differ from the target shape.
     | SchemaFacets
+    /// A relationship enforced WITH NOCHECK in an environment — the
+    /// constraint exists untrusted; the re-trust is a preparable repair
+    /// (S7/O3, wave A3).
+    | SchemaTrust
     /// A NOT-NULL (or PK) declaration the environment's data contradicts.
     | DataNotNull
     /// A UNIQUE/PK declaration the environment's data contradicts.
@@ -68,6 +76,13 @@ type EstateFindingKind =
     | DataOrphans
     /// Values past a column's declared length or type envelope.
     | DataOverflow
+    /// A kind whose row counts diverge across environments past the
+    /// asymmetry factor — verdicts drawn on the small side are advisory
+    /// (D12, wave A3; no lever, by design).
+    | DataAsymmetry
+    /// A column distinct in every observed row of every evidenced
+    /// environment — a natural-key candidate (D15, wave A3; advisory).
+    | DataUniquenessCandidate
 
 [<RequireQualifiedAccess>]
 module EstateFindingKind =
@@ -77,36 +92,46 @@ module EstateFindingKind =
     /// a variant added without a row here fails the coverage test).
     let all : EstateFindingKind list =
         [ EstateFindingKind.SchemaPresence
+          EstateFindingKind.SchemaLag
           EstateFindingKind.SchemaRename
           EstateFindingKind.SchemaAttributes
           EstateFindingKind.SchemaReferences
           EstateFindingKind.SchemaIndexes
           EstateFindingKind.SchemaFacets
+          EstateFindingKind.SchemaTrust
           EstateFindingKind.DataNotNull
           EstateFindingKind.DataUnique
           EstateFindingKind.DataOrphans
-          EstateFindingKind.DataOverflow ]
+          EstateFindingKind.DataOverflow
+          EstateFindingKind.DataAsymmetry
+          EstateFindingKind.DataUniquenessCandidate ]
 
     /// The stable machine token (the `FindingKey` prefix and the
     /// `estate.json` discriminator). Never operator-facing on its own.
     let token (kind: EstateFindingKind) : string =
         match kind with
-        | EstateFindingKind.SchemaPresence   -> "schema.presence"
-        | EstateFindingKind.SchemaRename     -> "schema.rename"
-        | EstateFindingKind.SchemaAttributes -> "schema.attributes"
-        | EstateFindingKind.SchemaReferences -> "schema.references"
-        | EstateFindingKind.SchemaIndexes    -> "schema.indexes"
-        | EstateFindingKind.SchemaFacets     -> "schema.facets"
-        | EstateFindingKind.DataNotNull      -> "data.notNull"
-        | EstateFindingKind.DataUnique       -> "data.unique"
-        | EstateFindingKind.DataOrphans      -> "data.orphans"
-        | EstateFindingKind.DataOverflow     -> "data.overflow"
+        | EstateFindingKind.SchemaPresence           -> "schema.presence"
+        | EstateFindingKind.SchemaLag                -> "schema.lag"
+        | EstateFindingKind.SchemaRename             -> "schema.rename"
+        | EstateFindingKind.SchemaAttributes         -> "schema.attributes"
+        | EstateFindingKind.SchemaReferences         -> "schema.references"
+        | EstateFindingKind.SchemaIndexes            -> "schema.indexes"
+        | EstateFindingKind.SchemaFacets             -> "schema.facets"
+        | EstateFindingKind.SchemaTrust              -> "schema.trust"
+        | EstateFindingKind.DataNotNull              -> "data.notNull"
+        | EstateFindingKind.DataUnique               -> "data.unique"
+        | EstateFindingKind.DataOrphans              -> "data.orphans"
+        | EstateFindingKind.DataOverflow             -> "data.overflow"
+        | EstateFindingKind.DataAsymmetry            -> "data.asymmetry"
+        | EstateFindingKind.DataUniquenessCandidate  -> "data.uniquenessCandidate"
 
-    /// The disposition lane a kind presents in (Appendix A). Schema kinds
-    /// open in DECIDE: until the direction classifier (lag / fork / drift)
-    /// lands, a shape divergence conservatively needs a ruling — the report's
-    /// method note names the coming refinement, and the classifier wave
-    /// re-lanes lag to WATCH without touching this vocabulary's shape.
+    /// The disposition lane a kind presents in (Appendix A). The direction
+    /// classifier (wave A3) splits presence: a kind an environment carries
+    /// BEYOND the target is deployed-ahead drift (DECIDE); a kind the target
+    /// declares that an environment has not yet received is promotion lag
+    /// (WATCH — the ordinary publish resolves it). The untrusted-constraint
+    /// census is a preparable repair; the asymmetry and candidacy advisories
+    /// are watchable by design (no lever).
     let laneOf (kind: EstateFindingKind) : EstateLane =
         match kind with
         | EstateFindingKind.SchemaPresence
@@ -114,25 +139,33 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaAttributes
         | EstateFindingKind.SchemaReferences
         | EstateFindingKind.SchemaIndexes
-        | EstateFindingKind.SchemaFacets     -> EstateLane.Decide
+        | EstateFindingKind.SchemaFacets            -> EstateLane.Decide
+        | EstateFindingKind.SchemaLag               -> EstateLane.Watch
+        | EstateFindingKind.SchemaTrust             -> EstateLane.Repair
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
         | EstateFindingKind.DataOrphans
-        | EstateFindingKind.DataOverflow     -> EstateLane.Repair
+        | EstateFindingKind.DataOverflow            -> EstateLane.Repair
+        | EstateFindingKind.DataAsymmetry
+        | EstateFindingKind.DataUniquenessCandidate -> EstateLane.Watch
 
     /// The plane a kind lives on.
     let planeOf (kind: EstateFindingKind) : EstatePlane =
         match kind with
         | EstateFindingKind.SchemaPresence
+        | EstateFindingKind.SchemaLag
         | EstateFindingKind.SchemaRename
         | EstateFindingKind.SchemaAttributes
         | EstateFindingKind.SchemaReferences
         | EstateFindingKind.SchemaIndexes
-        | EstateFindingKind.SchemaFacets     -> EstatePlane.Schema
+        | EstateFindingKind.SchemaFacets
+        | EstateFindingKind.SchemaTrust             -> EstatePlane.Schema
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
         | EstateFindingKind.DataOrphans
-        | EstateFindingKind.DataOverflow     -> EstatePlane.Data
+        | EstateFindingKind.DataOverflow
+        | EstateFindingKind.DataAsymmetry
+        | EstateFindingKind.DataUniquenessCandidate -> EstatePlane.Data
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

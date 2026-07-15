@@ -182,6 +182,12 @@ module Estate =
     /// never an expressible-but-inert key before its consumer).
     let decisionFloor : int64 = 100L
 
+    /// The rowcount-asymmetry factor (D12, wave A3): when one environment
+    /// holds at least this many times the rows of another for one kind,
+    /// verdicts drawn on the small side's evidence are advisory. A named
+    /// constant, same A44 discipline as the decision floor.
+    let asymmetryFactor : int64 = 100L
+
     /// Decide once on the evidence JOIN: fold every environment's profile
     /// through `Profile.merge` (commutative, associative, `Profile.empty`
     /// identity — worst case per axis) and run the fidelity engine against
@@ -221,20 +227,24 @@ module Estate =
         : EnvContribution list =
         let contribution (kind: EstateFindingKind) (subject: string) (fragment: string) (weight: int64) : EnvContribution =
             { Kind = kind; Subject = subject; Reference = None; Env = env; Fragment = fragment; Weight = weight }
+        // The direction classifier (T1, wave A3): a kind an environment
+        // carries BEYOND the target is deployed-ahead drift (a ruling);
+        // a kind the target declares that an environment has not received
+        // is promotion lag (watchable — the ordinary publish resolves it).
         let presenceInEnv =
             CatalogDiff.added diff
             |> Set.toList
             |> List.map (fun key ->
                 let name = kindNameIn envCatalog key
                 contribution EstateFindingKind.SchemaPresence name
-                    (sprintf "%s exists in %s and is absent from the target shape" name env) 1L)
+                    (sprintf "%s exists in %s and is absent from the target shape — deployed-ahead drift; no promotion explains it" name env) 1L)
         let presenceInTarget =
             CatalogDiff.removed diff
             |> Set.toList
             |> List.map (fun key ->
                 let name = kindNameIn targetCatalog key
-                contribution EstateFindingKind.SchemaPresence name
-                    (sprintf "the target shape declares %s and %s does not carry it" name env) 1L)
+                contribution EstateFindingKind.SchemaLag name
+                    (sprintf "the target shape declares %s and %s does not carry it — promotion lag; the ordinary publish resolves it" name env) 1L)
         let renames =
             CatalogDiff.renamed diff
             |> Map.toList
@@ -278,8 +288,16 @@ module Estate =
 
     // -- Data-plane findings (one env's data against the target's model) ----
 
+    /// `sentinelZeroOf` answers how many of a coordinate's observed values
+    /// are the unset reference `0` (the categorical distribution's witness,
+    /// D3a — `None` when the evidence does not carry it; the split is never
+    /// fabricated). `isTextTyped` answers whether the coordinate is a Text
+    /// column (D1×D5 — empty text folds into the NULL count at ingestion,
+    /// NM-18, and normalizes to NULL on publish; the statement says so).
     let private dataFindingOf
         (env: string)
+        (sentinelZeroOf: ModelFidelity.EntityColumn -> int64 option)
+        (isTextTyped: ModelFidelity.EntityColumn -> bool)
         (v: ModelFidelity.DataViolation)
         : EnvContribution =
         let subject = ModelFidelity.entityColumnText v.Reference
@@ -289,19 +307,173 @@ module Estate =
         match v.Kind with
         | ModelFidelity.NotNullButNullsPresent n ->
             let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
+            let emptyTextClause =
+                if n > 0L && isTextTyped v.Reference
+                then " (the count includes empty text, which normalizes to NULL on publish)"
+                else ""
             contribution EstateFindingKind.DataNotNull
-                (sprintf "%s declares NOT NULL; %s holds %s" subject env count) (max n 1L)
+                (sprintf "%s declares NOT NULL; %s holds %s%s" subject env count emptyTextClause) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
             contribution EstateFindingKind.DataUnique
                 (sprintf "%s declares unique; %s holds duplicate values" subject env) 1L
         | ModelFidelity.ForeignKeyOrphans n ->
+            let sentinelClause =
+                match sentinelZeroOf v.Reference with
+                | Some zeros when zeros > 0L ->
+                    sprintf ", of which %s reference the unset value 0" (humane64 (min zeros n))
+                | _ -> ""
             contribution EstateFindingKind.DataOrphans
-                (sprintf "%s: %s row(s) in %s reference a record that does not exist"
-                    subject (humane64 n) env) (max n 1L)
+                (sprintf "%s: %s row(s) in %s reference a record that does not exist%s"
+                    subject (humane64 n) env sentinelClause) (max n 1L)
         | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
             contribution EstateFindingKind.DataOverflow
                 (sprintf "%s holds values to %s against a declared %s in %s"
                     subject observed declared env) 1L
+
+    // -- The A3 detectors: trust census, rowcount asymmetry, candidacy ------
+
+    /// A reference's operator-facing display, resolved against the catalog
+    /// that carries it: (kind name, source attribute name, target name).
+    let private referenceDisplay (catalog: Catalog) (refKey: SsKey) : (string * string * string) option =
+        Catalog.allKinds catalog
+        |> List.tryPick (fun k ->
+            k.References
+            |> List.tryFind (fun r -> r.SsKey = refKey)
+            |> Option.map (fun r ->
+                let attrName =
+                    Kind.tryFindAttribute r.SourceAttribute k
+                    |> Option.map (fun a -> Name.value a.Name)
+                    |> Option.defaultValue (SsKey.rootOriginal r.SourceAttribute)
+                Name.value k.Name, attrName, Name.value r.Name))
+
+    /// The kind that carries a reference, resolved by the reference's key.
+    let private kindCarrying (catalog: Catalog) (refKey: SsKey) : Kind option =
+        Catalog.allKinds catalog
+        |> List.tryFind (fun k -> k.References |> List.exists (fun r -> r.SsKey = refKey))
+
+    /// A kind's representative observed row count in one profile — the
+    /// maximum `ColumnProfile.RowCount` across the kind's attributes
+    /// (Profile carries no per-kind axis; the maximum is the honest
+    /// representative under sampling).
+    let private kindRowCountIn (profile: Profile) (kind: Kind) : int64 option =
+        match
+            kind.Attributes
+            |> List.choose (fun a -> Profile.tryFindColumn a.SsKey profile |> Option.map (fun c -> c.RowCount))
+          with
+        | [] -> None
+        | counts -> Some (List.max counts)
+
+    /// The untrusted-constraint census (S7/O3, wave A3): every relationship
+    /// an environment enforces WITH NOCHECK is a preparable repair — the
+    /// re-trust cost rides the statement when the rowcount evidence exists.
+    let private trustFindingsOf
+        (env: string)
+        (envCatalog: Catalog)
+        (profile: Profile)
+        : EnvContribution list =
+        profile.ForeignKeys
+        |> List.filter (fun fk -> fk.IsNoCheck)
+        |> List.choose (fun fk ->
+            referenceDisplay envCatalog fk.ReferenceKey
+            |> Option.map (fun (kindName, attrName, targetName) ->
+                let subject = sprintf "%s.%s" kindName attrName
+                let rows =
+                    kindCarrying envCatalog fk.ReferenceKey
+                    |> Option.bind (kindRowCountIn profile)
+                let costClause =
+                    match rows with
+                    | Some n when n > 0L -> sprintf " — re-trusting scans %s row(s)" (humane64 n)
+                    | _ -> ""
+                { Kind = EstateFindingKind.SchemaTrust
+                  Subject = subject
+                  Reference = None
+                  Env = env
+                  Fragment =
+                    sprintf "the relationship %s → %s is enforced WITH NOCHECK in %s (untrusted)%s"
+                        subject targetName env costClause
+                  Weight = rows |> Option.defaultValue 1L }))
+
+    /// The rowcount-asymmetry advisories (D12, wave A3): a kind whose
+    /// environments' observed row counts diverge past the asymmetry factor
+    /// carries a WATCH finding naming both ends — verdicts drawn on the
+    /// small side's evidence are advisory. No lever, by design.
+    let private asymmetryContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            let counts =
+                profilesByEnv
+                |> List.choose (fun (env, p) -> kindRowCountIn p kind |> Option.map (fun c -> env, c))
+            if List.length counts < 2 then []
+            else
+                let maxEnv, maxCount = counts |> List.maxBy snd
+                let minEnv, minCount = counts |> List.minBy snd
+                if maxCount >= decisionFloor && maxCount >= asymmetryFactor * max 1L minCount then
+                    let name = Name.value kind.Name
+                    [ { Kind = EstateFindingKind.DataAsymmetry
+                        Subject = name
+                        Reference = None
+                        Env = maxEnv
+                        Fragment = sprintf "%s holds %s row(s) in %s" name (humane64 maxCount) maxEnv
+                        Weight = maxCount }
+                      { Kind = EstateFindingKind.DataAsymmetry
+                        Subject = name
+                        Reference = None
+                        Env = minEnv
+                        Fragment =
+                          sprintf "%s holds %s row(s) in %s — verdicts drawn on this evidence are advisory at the asymmetry"
+                              name (humane64 minCount) minEnv
+                        Weight = minCount } ]
+                else [])
+
+    /// The natural-key candidacies (D15, wave A3): a non-key column whose
+    /// categorical evidence is distinct-in-every-observed-row in EVERY
+    /// evidenced environment (per-environment unanimity — never the join:
+    /// merged frequencies would wrongly kill candidates on values every
+    /// environment legitimately shares), over at least the decision floor
+    /// of summed observations. Advisory; WATCH.
+    let private uniquenessCandidateContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        let pkAttrs =
+            Catalog.allKinds logicalTarget
+            |> List.collect (fun k ->
+                k.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.map (fun a -> a.SsKey))
+            |> Set.ofList
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            kind.Attributes
+            |> List.filter (fun a -> not (Set.contains a.SsKey pkAttrs))
+            |> List.collect (fun a ->
+                let evidenced =
+                    profilesByEnv
+                    |> List.choose (fun (env, p) ->
+                        Profile.tryFindCategorical a.SsKey p |> Option.map (fun c -> env, c))
+                let unanimous =
+                    not (List.isEmpty evidenced)
+                    && evidenced
+                       |> List.forall (fun (_, c) ->
+                           not c.IsTruncated
+                           && c.DistinctCount = CategoricalDistribution.totalObservations c)
+                let totalAcross =
+                    evidenced |> List.sumBy (fun (_, c) -> CategoricalDistribution.totalObservations c)
+                if unanimous && totalAcross >= decisionFloor then
+                    let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
+                    evidenced
+                    |> List.map (fun (env, c) ->
+                        let total = CategoricalDistribution.totalObservations c
+                        { Kind = EstateFindingKind.DataUniquenessCandidate
+                          Subject = subject
+                          Reference = None
+                          Env = env
+                          Fragment =
+                            sprintf "%s is distinct in every observed row of %s (%s of %s row(s))"
+                                subject env (humane64 c.DistinctCount) (humane64 total)
+                          Weight = total })
+                else []))
 
     // -- Grouping + the report ----------------------------------------------
 
@@ -340,6 +512,11 @@ module Estate =
                     Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.map (fun a -> (Name.value k.Name, Name.value a.Name), r.SsKey)))
             |> Map.ofList
+        let typeOf : Map<SsKey, PrimitiveType> =
+            logicalTarget
+            |> Catalog.allKinds
+            |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey, a.Type))
+            |> Map.ofList
         let perEnv =
             envs
             |> List.map (fun (env, operand) ->
@@ -352,8 +529,32 @@ module Estate =
                     match compare.SchemaDelta with
                     | Some diff -> schemaFindingsOf env logicalTarget logicalEnv diff
                     | None -> []
-                let data = compare.DataDealbreakers |> List.map (dataFindingOf env)
-                env, compare.DataEvidenceAvailable, schema @ data)
+                // The coordinate lookups the data-plane refinements read
+                // (wave A3): the zero-sentinel witness from this env's
+                // categorical evidence, and the Text-typing of the target's
+                // declared column.
+                let sentinelZeroFor (ec: ModelFidelity.EntityColumn) : int64 option =
+                    operand.Profile
+                    |> Option.bind (fun p ->
+                        Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
+                        |> Option.bind (fun key -> Profile.tryFindCategorical key p)
+                        |> Option.bind (fun c ->
+                            c.Frequencies
+                            |> List.tryFind (fun (value, _) -> value = "0")
+                            |> Option.map snd))
+                let isTextTyped (ec: ModelFidelity.EntityColumn) : bool =
+                    Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
+                    |> Option.bind (fun key -> Map.tryFind key typeOf)
+                    |> Option.map (fun t -> t = Text)
+                    |> Option.defaultValue false
+                let data =
+                    compare.DataDealbreakers
+                    |> List.map (dataFindingOf env sentinelZeroFor isTextTyped)
+                let trust =
+                    match operand.Profile with
+                    | Some p -> trustFindingsOf env logicalEnv p
+                    | None -> []
+                env, compare.DataEvidenceAvailable, schema @ data @ trust)
         let bases =
             perEnv
             |> List.map (fun (env, evidence, _) ->
@@ -402,9 +603,15 @@ module Estate =
                 match clauses with
                 | [] -> ""
                 | cs -> sprintf "; %s" (String.concat "; " cs)
+        // The cross-environment detectors (wave A3) read every profile at
+        // once: the rowcount-asymmetry advisories and the natural-key
+        // candidacies join the grouping input beside the per-env streams.
+        let crossEnv =
+            let profilesByEnv = Map.toList profileByEnv
+            asymmetryContributions logicalTarget profilesByEnv
+            @ uniquenessCandidateContributions logicalTarget profilesByEnv
         let findings =
-            perEnv
-            |> List.collect (fun (_, _, contributions) -> contributions)
+            (perEnv |> List.collect (fun (_, _, contributions) -> contributions)) @ crossEnv
             |> List.groupBy (fun c -> c.Kind, c.Subject)
             |> List.map (fun ((kind, subject), rows) ->
                 let plane = EstateFindingKind.planeOf kind
@@ -415,9 +622,12 @@ module Estate =
                     cleanClause (perEnvRows |> List.tryPick (fun c -> c.Reference)) kind envNames
                 // The majority clause is a SHAPE conclusion — data findings
                 // speak through their per-environment evidence and the clean
-                // clause instead.
+                // clause instead; a LAG majority is the normal pre-publish
+                // state, never target-behind evidence, so lag never carries
+                // it either (T1, wave A3).
                 let majorityNote =
                     if plane = EstatePlane.Schema
+                       && kind <> EstateFindingKind.SchemaLag
                        && envCount > 1
                        && List.length envNames * 2 > envCount then
                         sprintf
