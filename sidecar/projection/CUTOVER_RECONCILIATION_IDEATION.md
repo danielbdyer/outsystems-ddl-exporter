@@ -741,6 +741,103 @@ Fidelity-specific (§8):
 
 ---
 
+## 12 — What remains for operator ease: the two loops
+
+The engine slices (§9) make the capabilities *exist*; this section is the honest ledger of what
+makes them *livable*. The target experience is two tight loops:
+
+```
+projection check estate            → the board: who diverges, what blocks, the one lever each
+  <run the per-env remediation>    → concrete, ordered, block-numbered, safe-by-default SQL
+projection check estate            → burndown: 12 → 4 → 0; the overlay shrinks
+projection publish / migrate       → the ordinary pipeline; the posture is just config
+projection check fidelity <flow>   → "N rows identical · M excepted (ledgered) · 0 residual"
+```
+
+### 12.1 The estate loop (beyond slices α–η)
+
+- **E1 · Bare-command defaults + `init` scaffolding** (S). `check estate` with no arguments
+  works off the `readiness`/`estate` config block (envs from `confirm`, target from `model`);
+  `init` scaffolds the stanza. A command that needs six flags is not a loop.
+- **E2 · Pay-once evidence** (M — the biggest ease lever). Three live estate profiles per
+  iteration is minutes-to-hours at 300 tables. `profile <env> --out` already captures durable
+  profiles; `check estate` should consume cached evidence with cheap staleness fingerprints
+  (the `CaptureJournal.fingerprintOf` shape) and re-profile only what moved. Iteration cost is
+  the difference between a loop the operator runs after every fix and a report they run weekly.
+- **E3 · The estate board** (M). The go-board shape: statement-first verdict, env × axis
+  matrix with odd-one-out coloring, disclosure drill-down riding the existing Navigator +
+  `/`-filter + `--only`/`--module` (+ new `--env`) scoping. All at-scale rendering disciplines
+  (cap-and-name-the-remainder, group-by-category) already exist for diff — this is wiring, not
+  invention.
+- **E4 · The one-lever line** (S, discipline not code). Every finding ends with its next move:
+  "run block 7 of `estate.remediation.uat.sql`", "merge overlay entry 3", "probe retires at
+  orphans = 0". `code ⇔ copy` tested like every Voice surface.
+- **E5 · Stable block IDs in the remediation artifact** (S). Per-env files whose blocks carry
+  stable IDs keyed to `FindingKey`, so the board, the burndown, and the operator's SSMS window
+  all say "block 7" and mean the same thing across runs; each relaxation's reopen probe printed
+  adjacent to its block.
+- **E6 · Overlay merge affordance** (S→M). Emitting `estate.overlay.json` is table stakes; ease
+  is the merge preview — "this changes `projection.json` thus" (a config-diff view) — and a
+  refuse-on-conflict apply. A44 keeps the whole interim posture inside config either way.
+- **E7 · A consent-gated remediation executor** (M, the sensitive one). Without it the loop's
+  middle step is copy-paste into SSMS. A `remediate <env> [--block N]` that executes blocks
+  from the artifact — preview by default, `--go` + `PROJECTION_ALLOW_EXECUTE`, provenance-header
+  matching exactly like `revert`, per-act consent via the existing `WriteSignoff`/`ActConsent`
+  machinery, UPDATE/DELETE blocks requiring their uncommented form — closes the loop without
+  breaking advisory-by-default. Deliberately its own gated verb, never a `check` side effect.
+- **E8 · Burndown in the report by default** (S). Fixed / new / still-open vs the previous run
+  (stable `FindingKey`s), age on still-open, `--since @runId` for arbitrary baselines; the
+  ladder consumes consecutive-Unified counts.
+- **E9 · CI envelopes + cron-ability** (S). The `canaryEnvelopes` precedent: NDJSON verdicts,
+  stable exit codes, so the estate check runs nightly and the morning board is a diff, not a
+  discovery.
+
+### 12.2 The fidelity loop (beyond φ1–φ4)
+
+- **F1 · One-command defaults** (S). `check fidelity <flow>` resolves source, model, bundle,
+  and journal from the flow; `check data --rows` defaults `--model` from config and
+  `--interventions` from the target's most recent producing run (`@latest` via the `Ref`
+  algebra). The manual command should be two conn strings and nothing else on the happy path.
+- **F2 · The proof headline** (S). Count-first, sign-off-shaped: "17,431,882 rows identical ·
+  3,214 excepted (3,101 user re-keys · 113 sink-minted) · 0 residual · tolerances in force:
+  emptyText, decimalScale" — plus `fidelity.rows.json` for the record. The T-15 review reads
+  one line, not a table dump.
+- **F3 · Live progress on the stage board** (S). Per-kind scaffold → apply → load → compare
+  streaming through the Shell spine; a multi-hour proof must never be a hung spinner (the
+  operator-shell chapter's entire lesson).
+- **F4 · Incremental proof** (M — the fidelity twin of E2). Cache per-kind digest pairs in the
+  run ledger keyed by cheap fingerprints; re-runs re-prove only kinds whose fingerprint moved.
+  Turns the estate-scale proof from an event into a habit.
+- **F5 · Business-key naming in every row-level output** (S). Differing rows named by natural
+  key through the `nameIndex` discipline — never a surrogate/GUID wall — capped with honest
+  remainders, `--sample N` to bound enumeration.
+- **F6 · Targeted re-proof scoping** (S). `--kind` / `--module` so the fix-one-table iteration
+  doesn't re-pay the estate.
+- **F7 · The apply-order runbook** (M). The manual proof presumes "I personally run the applied
+  DDL and scripts" — at 300 tables that needs a numbered, ordered apply manifest (schema →
+  seeds → migration deps → post steps, with preconditions), emitted with the bundle. This is
+  the same artifact the chapter-5 cutover-day runbook wants; build it once here.
+- **F8 · Named degradation** (S). Exit 4 with the fix spelled out (warm container honored,
+  ephemeral otherwise); the CDC leg a named skip where ryuk/isolation is unavailable — never a
+  silent pass.
+- **F9 · Sign-off integration** (S). The proof verdict recorded to the episode/run ledger so
+  the readiness ladder gates on "last proof green" — §3.3's fourth Unified clause made
+  mechanical.
+
+### 12.3 Connective tissue (both loops)
+
+Voice codes + copy for every new finding/verdict (tested `code ⇔ copy`); `--help` and the
+no-arg listing grown with the new forms; `--query`/`--grep` come free by staying on the `View`
+substrate; every run a ledger record through the Shell's one door; and a short operator page in
+the handbook — the loop, the artifacts, the levers — so the first-day operator learns the
+rhythm from prose, not from `--help` archaeology.
+
+The pattern across all of it: the expensive thinking (detectors, ledgers, provers) is the §9/φ
+engine work; *ease* is almost entirely **defaults, caching, naming, and the board** — S/M-sized
+composition over surfaces this codebase has already built and disciplined.
+
+---
+
 *Companion provenance: `CROSS_ENVIRONMENT_READINESS.md` (the shipped star-shaped gate this
 generalizes), `THE_USE_CASE_ONTOLOGY.md` §5.9 (comparison regimes; this proposes the fourth),
 `MultiEnvironmentPromotionTests.fs` (the tolerance ladder), `Profile.fs:1391` (`merge`),
