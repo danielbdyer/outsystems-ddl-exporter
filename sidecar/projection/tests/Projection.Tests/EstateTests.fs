@@ -171,6 +171,89 @@ let ``board: the action names the first DECIDE finding's key when one exists`` (
     Assert.Contains(lines, fun (l: string) ->
         l.StartsWith "Next: rule the first DECIDE finding" && l.Contains (FindingKey.text firstDecide.Key))
 
+// -- the consensus (wave A2): the join law + clean-environment attribution ----
+
+let private nullEvidence (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
+    { AttributeKey = attrKey
+      RowCount = rowCount
+      NullCount = nullCount
+      MaxObservedLength = None
+      NullCountProbeStatus = ProbeStatus.observed rowCount }
+
+let private orphanEvidence (refKey: SsKey) (orphans: int64) : ForeignKeyReality =
+    { ReferenceKey = refKey
+      HasOrphan = orphans > 0L
+      OrphanCount = orphans
+      IsNoCheck = false
+      ProbeStatus = ProbeStatus.observed 1000L }
+
+open FsCheck.Xunit
+
+[<Property(MaxTest = 60)>]
+let ``law: deciding on the Profile.merge join equals the union of per-environment decisions (consensus = meet over the evidence join)`` (specs: (byte * byte * bool) list) =
+    // Each spec is one environment's evidence: NULLs observed under the two
+    // declared-NOT-NULL Customer columns + an orphan witness on the Order→
+    // Customer relationship. The law: a violation reaches the JOIN decision
+    // exactly when at least one environment's own decision carries it —
+    // identity at the (entity, column, category) grain (counts join as MAX).
+    let profileOf ((nameNulls, tenantNulls, orphan): byte * byte * bool) : Profile =
+        { Profile.empty with
+            Columns =
+                [ nullEvidence customerNameKey 1000L (int64 nameNulls)
+                  nullEvidence customerTenantKey 1000L (int64 tenantNulls) ]
+            ForeignKeys = [ orphanEvidence orderRefToCustomer (if orphan then 7L else 0L) ] }
+    let profiles = specs |> List.truncate 4 |> List.map profileOf
+    let violationId (v: ModelFidelity.DataViolation) =
+        v.Reference.Entity, v.Reference.Column, ModelFidelity.categoryOf v
+    let joined =
+        Estate.decideOnJoin sampleCatalog profiles |> List.map violationId |> Set.ofList
+    let union =
+        profiles
+        |> List.collect (fun p -> Estate.decideOnJoin sampleCatalog [ p ])
+        |> List.map violationId
+        |> Set.ofList
+    joined = union
+
+[<Fact>]
+let ``decideOnJoin: an orphaned relationship in one environment reaches the estate decision`` () =
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 7L ] }
+    let violations = Estate.decideOnJoin sampleCatalog [ Profile.empty; dirty ]
+    Assert.Contains(violations, fun v -> ModelFidelity.categoryOf v = ModelFidelity.OrphanCategory)
+
+[<Fact>]
+let ``consensus: the clean environments are named beside the divergence with their observation basis (RT-6)`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 4120L ] }
+    let clean = { Profile.empty with Columns = [ nullEvidence customerNameKey 1240L 0L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
+              "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some clean } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
+    Assert.Contains("cloud-uat holds 4,120 NULL row(s)", finding.Statement)
+    Assert.Contains("clean in cloud-dev (1,240 row(s) observed)", finding.Statement)
+    Assert.DoesNotContain("advisory", finding.Statement)
+
+[<Fact>]
+let ``consensus: a clean verdict below the decision floor renders advisory (sample-size honesty, RT-7)`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 4120L ] }
+    let tiny  = { Profile.empty with Columns = [ nullEvidence customerNameKey 12L 0L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
+              "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some tiny } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
+    Assert.Contains("clean in cloud-dev (12 row(s) observed — advisory; the sample is below the decision floor)", finding.Statement)
+
+[<Fact>]
+let ``consensus: an environment with no evidence for the coordinate stays silent in the clean clause (the masthead owns it)`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 4120L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
+              "cloud-qa",  operand "cloud-qa" sampleCatalog ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
+    Assert.DoesNotContain("cloud-qa", finding.Statement)
+
 // -- the verb routing (the `estate` planCheck arm) -----------------------------
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es

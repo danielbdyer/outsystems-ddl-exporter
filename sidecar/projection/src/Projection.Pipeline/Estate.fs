@@ -141,6 +141,40 @@ module Estate =
             let front = many |> List.take (List.length many - 1) |> String.concat ", "
             sprintf "%s, and %s" front (List.last many)
 
+    // -- The estate consensus (wave A2) --------------------------------------
+
+    /// The decision floor: a clean per-environment verdict observed over
+    /// fewer rows than this renders ADVISORY on the board — the sample is
+    /// too small to license an estate-grade conclusion. A named constant
+    /// until the estate config knobs land with their consumer wave (A44 —
+    /// never an expressible-but-inert key before its consumer).
+    let decisionFloor : int64 = 100L
+
+    /// Decide once on the evidence JOIN: fold every environment's profile
+    /// through `Profile.merge` (commutative, associative, `Profile.empty`
+    /// identity — worst case per axis) and run the fidelity engine against
+    /// the target's declared model. Deciding on the join IS the unanimity
+    /// consensus — a violation appears here exactly when at least one
+    /// environment's evidence carries it, so the board's per-environment
+    /// grouping and the single estate-grade decision cannot disagree (the
+    /// union law, property-tested).
+    let decideOnJoin (targetCatalog: Catalog) (profiles: Profile list) : ModelFidelity.DataViolation list =
+        let joined = profiles |> List.fold Profile.merge Profile.empty
+        (ModelFidelity.compose "the estate" targetCatalog joined { Decisions = [] } []).DataViolations
+
+    /// One environment's contribution to a finding, pre-grouping. `Reference`
+    /// carries the data-plane coordinate (the clean-environment attribution
+    /// resolves evidence through it); schema-plane contributions carry `None`.
+    type private EnvContribution =
+        {
+            Kind      : EstateFindingKind
+            Subject   : string
+            Reference : ModelFidelity.EntityColumn option
+            Env       : string
+            Fragment  : string
+            Weight    : int64
+        }
+
     // -- Schema-plane findings (one env against the target) -----------------
 
     /// The per-kind channel divergences of one environment against the target
@@ -152,35 +186,36 @@ module Estate =
         (targetCatalog: Catalog)
         (envCatalog: Catalog)
         (diff: CatalogDiff)
-        : (EstateFindingKind * string * string * int64) list =
-        // (kind, subject, per-env statement fragment, weight)
+        : EnvContribution list =
+        let contribution (kind: EstateFindingKind) (subject: string) (fragment: string) (weight: int64) : EnvContribution =
+            { Kind = kind; Subject = subject; Reference = None; Env = env; Fragment = fragment; Weight = weight }
         let presenceInEnv =
             CatalogDiff.added diff
             |> Set.toList
             |> List.map (fun key ->
                 let name = kindNameIn envCatalog key
-                EstateFindingKind.SchemaPresence, name,
-                sprintf "%s exists in %s and is absent from the target shape" name env, 1L)
+                contribution EstateFindingKind.SchemaPresence name
+                    (sprintf "%s exists in %s and is absent from the target shape" name env) 1L)
         let presenceInTarget =
             CatalogDiff.removed diff
             |> Set.toList
             |> List.map (fun key ->
                 let name = kindNameIn targetCatalog key
-                EstateFindingKind.SchemaPresence, name,
-                sprintf "the target shape declares %s and %s does not carry it" name env, 1L)
+                contribution EstateFindingKind.SchemaPresence name
+                    (sprintf "the target shape declares %s and %s does not carry it" name env) 1L)
         let renames =
             CatalogDiff.renamed diff
             |> Map.toList
             |> List.map (fun (key, _) ->
                 let targetName = kindNameIn targetCatalog key
                 let envName = kindNameIn envCatalog key
-                EstateFindingKind.SchemaRename, targetName,
-                sprintf "%s is named %s in %s" targetName envName env, 1L)
+                contribution EstateFindingKind.SchemaRename targetName
+                    (sprintf "%s is named %s in %s" targetName envName env) 1L)
         let channel
             (kind: EstateFindingKind)
             (noun: string)
             (diffs: Map<SsKey, ChannelDiff<'change>>)
-            : (EstateFindingKind * string * string * int64) list =
+            : EnvContribution list =
             diffs
             |> Map.toList
             |> List.map (fun (key, d) ->
@@ -188,19 +223,19 @@ module Estate =
                 let count =
                     Set.count d.Added + Set.count d.Removed
                     + Map.count d.Renamed + List.length d.Reshaped
-                kind, name,
-                sprintf "%s's %s differ from the target shape in %s (%s difference(s))"
-                    name noun env (humane count),
-                int64 count)
+                contribution kind name
+                    (sprintf "%s's %s differ from the target shape in %s (%s difference(s))"
+                        name noun env (humane count))
+                    (int64 count))
         let facets =
             CatalogDiff.kindFacetDiffs diff
             |> Map.toList
             |> List.map (fun (key, fs) ->
                 let name = kindNameIn targetCatalog key
-                EstateFindingKind.SchemaFacets, name,
-                sprintf "%s's own facets differ from the target shape in %s (%s facet(s))"
-                    name env (humane (Set.count fs)),
-                int64 (Set.count fs))
+                contribution EstateFindingKind.SchemaFacets name
+                    (sprintf "%s's own facets differ from the target shape in %s (%s facet(s))"
+                        name env (humane (Set.count fs)))
+                    (int64 (Set.count fs)))
         presenceInEnv
         @ presenceInTarget
         @ renames
@@ -214,24 +249,27 @@ module Estate =
     let private dataFindingOf
         (env: string)
         (v: ModelFidelity.DataViolation)
-        : EstateFindingKind * string * string * int64 =
+        : EnvContribution =
         let subject = ModelFidelity.entityColumnText v.Reference
+        let contribution (kind: EstateFindingKind) (fragment: string) (weight: int64) : EnvContribution =
+            { Kind = kind; Subject = subject; Reference = Some v.Reference
+              Env = env; Fragment = fragment; Weight = weight }
         match v.Kind with
         | ModelFidelity.NotNullButNullsPresent n ->
             let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
-            EstateFindingKind.DataNotNull, subject,
-            sprintf "%s declares NOT NULL; %s holds %s" subject env count, max n 1L
+            contribution EstateFindingKind.DataNotNull
+                (sprintf "%s declares NOT NULL; %s holds %s" subject env count) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
-            EstateFindingKind.DataUnique, subject,
-            sprintf "%s declares unique; %s holds duplicate values" subject env, 1L
+            contribution EstateFindingKind.DataUnique
+                (sprintf "%s declares unique; %s holds duplicate values" subject env) 1L
         | ModelFidelity.ForeignKeyOrphans n ->
-            EstateFindingKind.DataOrphans, subject,
-            sprintf "%s: %s row(s) in %s reference a record that does not exist"
-                subject (humane64 n) env, max n 1L
+            contribution EstateFindingKind.DataOrphans
+                (sprintf "%s: %s row(s) in %s reference a record that does not exist"
+                    subject (humane64 n) env) (max n 1L)
         | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
-            EstateFindingKind.DataOverflow, subject,
-            sprintf "%s holds values to %s against a declared %s in %s"
-                subject observed declared env, 1L
+            contribution EstateFindingKind.DataOverflow
+                (sprintf "%s holds values to %s against a declared %s in %s"
+                    subject observed declared env) 1L
 
     // -- Grouping + the report ----------------------------------------------
 
@@ -248,6 +286,28 @@ module Estate =
         (envs: (string * Compare.Operand) list)
         : EstateReport =
         let logicalTarget = Readiness.toLogicalShape targetCatalog
+        // The clean-environment attribution's evidence paths (wave A2): each
+        // environment's profile, and the target's logical coordinates resolved
+        // to attribute / reference identities once.
+        let profileByEnv : Map<string, Profile> =
+            envs
+            |> List.choose (fun (env, operand) -> operand.Profile |> Option.map (fun p -> env, p))
+            |> Map.ofList
+        let attributeKeyOf : Map<string * string, SsKey> =
+            logicalTarget
+            |> Catalog.allKinds
+            |> List.collect (fun k ->
+                k.Attributes |> List.map (fun a -> (Name.value k.Name, Name.value a.Name), a.SsKey))
+            |> Map.ofList
+        let referenceKeyOf : Map<string * string, SsKey> =
+            logicalTarget
+            |> Catalog.allKinds
+            |> List.collect (fun k ->
+                k.References
+                |> List.choose (fun r ->
+                    Kind.tryFindAttribute r.SourceAttribute k
+                    |> Option.map (fun a -> (Name.value k.Name, Name.value a.Name), r.SsKey)))
+            |> Map.ofList
         let perEnv =
             envs
             |> List.map (fun (env, operand) ->
@@ -265,23 +325,65 @@ module Estate =
         let bases =
             perEnv |> List.map (fun (env, evidence, _) -> { Env = env; DataEvidenceAvailable = evidence })
         let envCount = List.length perEnv
+        // The clean-environment clause (wave A2; RT-6): the environments that
+        // carry evidence for the finding's coordinate and DO NOT carry the
+        // finding are named beside the divergence with their observation
+        // basis — advisory beneath the decision floor. An environment with no
+        // evidence for the coordinate stays silent here; the masthead already
+        // names evidence-less environments estate-wide.
+        let cleanClause
+            (reference: ModelFidelity.EntityColumn option)
+            (kind: EstateFindingKind)
+            (dirtyEnvs: string list)
+            : string =
+            match reference with
+            | None -> ""
+            | Some ec ->
+                let coordinate = ec.Entity, ec.Column
+                let basisOf (env: string) : string option =
+                    match Map.tryFind env profileByEnv with
+                    | None -> None
+                    | Some profile ->
+                        match kind with
+                        | EstateFindingKind.DataOrphans ->
+                            Map.tryFind coordinate referenceKeyOf
+                            |> Option.bind (fun key -> Profile.tryFindForeignKey key profile)
+                            |> Option.filter (fun fk -> not fk.HasOrphan)
+                            |> Option.map (fun _ -> sprintf "clean in %s" env)
+                        | _ ->
+                            Map.tryFind coordinate attributeKeyOf
+                            |> Option.bind (fun key -> Profile.tryFindColumn key profile)
+                            |> Option.map (fun c ->
+                                if c.RowCount < decisionFloor then
+                                    sprintf "clean in %s (%s row(s) observed — advisory; the sample is below the decision floor)"
+                                        env (humane64 c.RowCount)
+                                else
+                                    sprintf "clean in %s (%s row(s) observed)" env (humane64 c.RowCount))
+                let clauses =
+                    perEnv
+                    |> List.choose (fun (env, _, _) ->
+                        if List.contains env dirtyEnvs then None else basisOf env)
+                match clauses with
+                | [] -> ""
+                | cs -> sprintf "; %s" (String.concat "; " cs)
         let findings =
             perEnv
-            |> List.collect (fun (env, _, fs) ->
-                fs |> List.map (fun (kind, subject, fragment, weight) -> kind, subject, (env, fragment, weight)))
-            |> List.groupBy (fun (kind, subject, _) -> kind, subject)
+            |> List.collect (fun (_, _, contributions) -> contributions)
+            |> List.groupBy (fun c -> c.Kind, c.Subject)
             |> List.map (fun ((kind, subject), rows) ->
-                let perEnvRows =
-                    rows
-                    |> List.map (fun (_, _, row) -> row)
-                    |> List.sortBy (fun (env, _, _) -> env)
-                let envNames = perEnvRows |> List.map (fun (env, _, _) -> env)
-                let body =
-                    perEnvRows
-                    |> List.map (fun (_, fragment, _) -> fragment)
-                    |> String.concat "; "
+                let plane = EstateFindingKind.planeOf kind
+                let perEnvRows = rows |> List.sortBy (fun c -> c.Env)
+                let envNames = perEnvRows |> List.map (fun c -> c.Env)
+                let body = perEnvRows |> List.map (fun c -> c.Fragment) |> String.concat "; "
+                let clean =
+                    cleanClause (perEnvRows |> List.tryPick (fun c -> c.Reference)) kind envNames
+                // The majority clause is a SHAPE conclusion — data findings
+                // speak through their per-environment evidence and the clean
+                // clause instead.
                 let majorityNote =
-                    if envCount > 1 && List.length envNames * 2 > envCount then
+                    if plane = EstatePlane.Schema
+                       && envCount > 1
+                       && List.length envNames * 2 > envCount then
                         sprintf
                             " Most environments differ from the target shape here (%s) — the target may be the one behind."
                             (envListText envNames)
@@ -289,9 +391,9 @@ module Estate =
                 { Key = FindingKey.create kind subject
                   Kind = kind
                   Lane = EstateFindingKind.laneOf kind
-                  Plane = EstateFindingKind.planeOf kind
-                  Envs = perEnvRows |> List.map (fun (env, _, weight) -> env, weight)
-                  Statement = sprintf "%s.%s" body majorityNote |> fun s -> s.TrimEnd()
+                  Plane = plane
+                  Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
+                  Statement = (sprintf "%s%s.%s" body clean majorityNote).TrimEnd()
                   Lever = None })
             |> List.sortByDescending weightOf
         let verdict =
