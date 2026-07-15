@@ -53,6 +53,9 @@
          renditions of one estate prove byte-identical; a flipped cell
          names its key. -->
     <Compile Include="FidelityRowsDockerTests.fs" />
+    <!-- ServerDigestDockerTests.fs: the two digest planes' per-type verdict
+         co-variance (wave B3; M1.8 donor). -->
+    <Compile Include="ServerDigestDockerTests.fs" />
     <Compile Include="ActConsentDockerTests.fs" />
     <Compile Include="CsvExportDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />

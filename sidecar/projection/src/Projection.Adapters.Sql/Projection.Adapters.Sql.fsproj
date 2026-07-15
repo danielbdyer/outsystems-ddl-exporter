@@ -17,6 +17,9 @@
     <!-- EvidenceFingerprint.fs: the estate evidence store's one-batch
          staleness probe (COUNT_BIG + MAX(pk) per kind; 2026-07-15). -->
     <Compile Include="EvidenceFingerprint.fs" />
+    <!-- ServerDigest.fs: the HASHBYTES fast-path digest plane (T17 wave B3;
+         M1.8 editorial donor — see the file header citation). -->
+    <Compile Include="ServerDigest.fs" />
     <Compile Include="DataIntegrityChecker.fs" />
     <Compile Include="ReadSide.fs" />
     <Compile Include="ClosureOracle.fs" />
