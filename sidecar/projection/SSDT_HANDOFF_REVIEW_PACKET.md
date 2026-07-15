@@ -1,46 +1,47 @@
-# SSDT_HANDOFF_REVIEW_PACKET.md — the emission decision register, for dev-lead review
+# SSDT_HANDOFF_REVIEW_PACKET.md — the emission decision register and remediation plan of record
 
-> **Prepared 2026-07-15** against the tree at `ef706ac`. Audience: the SSDT-owning dev leads who
-> will inherit the ejected schema + data, and the manager shepherding the handoff. Purpose: every
-> opinionated decision the F# sidecar (`sidecar/projection`) makes when it emits the SSDT bundle,
-> the data lanes, and the build artifacts — stated precisely, with its current setting, where it
-> lives, and what a reviewer might change. **This document restates for review convenience; when
-> it disagrees with the code or `DECISIONS.md`, they win** (the repo's latest-first rule). Line
-> references are as-of the commit above and will drift — the file names won't.
+> **Prepared 2026-07-15, revised same day after the deep-dive round** against the tree at
+> `ef706ac`. Audience: the SSDT-owning dev leads who will inherit the ejected schema + data, and
+> the manager shepherding the handoff. This document now serves **two purposes**: (1) the
+> decision register for review — every opinionated emission decision, its current setting, and
+> where it lives; (2) **the remediation plan of record** (§10) — the fixes we have already
+> decided to make, annotated inline with ⚑ markers. Nothing in §10 is implemented yet; the plan
+> is the artifact.
 >
-> Produced by profiling `Projection.Targets.SSDT`, `Projection.Targets.Data`, `Projection.Core`,
-> the adapters, `DECISIONS.md`, `CONFIG_REFERENCE.md`, `THE_GOLDEN_EMISSION.md`, and the golden
-> corpus (`tests/Projection.Tests/Golden/`). Where current docs lag the code, the drift is called
-> out inline and collected in §8.
+> **This document restates for review convenience; when it disagrees with the code or
+> `DECISIONS.md`, they win** (the repo's latest-first rule). Line references are as-of the
+> commit above. Produced by profiling `Projection.Targets.*`, `Projection.Core`, the adapters,
+> `DECISIONS.md`, `CONFIG_REFERENCE.md`, `THE_GOLDEN_EMISSION.md`, the golden corpus — and,
+> for the revision, the V1 pipeline at repo root (`src/`, `config/`), the handbook, and the
+> platform-reality evidence in `TEMPLATED_LOGIC_AND_BUSINESS_RULES.md` and the fixtures.
 
 ---
 
 ## 0 — How to review with this packet
 
-Every decision below carries:
+Every decision carries:
 
 - **an ID** (`A1`, `E2`, …) — cite these in review notes;
-- **a class**:
-  - **[KNOB]** — selectable in `projection.json` today (knob + default given);
-  - **[HARD]** — hard-coded emission behavior; changing it = code change + golden re-record + `DECISIONS.md` entry;
-  - **[GAP]** — not emitted / open debt you inherit;
-  - **[DEPLOY]** — outside emission; a deployment-time or SSDT-project setting the receiving team owns;
-- **a verdict line** — mark one of **Approve / Modify / Discuss** per row in the register.
+- **a class**: **[KNOB]** (selectable in `projection.json`), **[HARD]** (hard-coded; change =
+  code + golden re-record + DECISIONS entry), **[GAP]** (open debt), **[DEPLOY]** (deployment-
+  side, receiving team owns);
+- **a verdict line**. Rows the 2026-07-15 review already decided are marked
+  **Decided: planned fix — WP-n** (see §10) or **Locked: approved as-is**; open rows keep
+  ☐ Approve ☐ Modify ☐ Discuss.
+- **⚑ WP-n** inline = this behavior changes under the remediation plan; the entry describes
+  the *current* behavior, the WP describes the *target*.
 
 Three ways to see any decision concretely before blessing it:
 
 1. **The golden corpus** — `tests/Projection.Tests/Golden/master/` is the byte-pinned intended
-   output of a catalog containing every emission variance. Reading it top-to-bottom **is** the
-   review of most rows in this packet. (`pruned-platform-auto/` shows the one all-or-nothing flag
-   that can't coexist with the master.)
+   output of a catalog containing every emission variance; reading it top-to-bottom *is* the
+   review of most rows here.
 2. **`projection explain node <projection.json> "<Module>.<Entity>"`** — runs the pipeline with
    your shaping overlays and reports every transform + finding for one entity.
-3. **The blessing protocol** — any change you request lands as a byte diff on the goldens
-   (`GOLDEN_RECORD=1` + a `DECISIONS.md` note). An unexplained golden diff is a defect; your
-   sign-off on a diff is the blessing (`THE_GOLDEN_EMISSION.md` §2).
+3. **The blessing protocol** — every §10 fix will land as a byte diff on the goldens
+   (`GOLDEN_RECORD=1` + DECISIONS note). Your sign-off on the diff is the blessing.
 
-A representative emitted table, so the register below has a concrete referent
-(`Golden/master/Modules/Relations/dbo.Engagement.sql`):
+A representative emitted table (`Golden/master/Modules/Relations/dbo.Engagement.sql`):
 
 ```sql
 CREATE TABLE [dbo].[Engagement] (
@@ -67,23 +68,43 @@ ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User
 
 ---
 
-## 1 — Spotlight: the transforms that deliberately diverge from source reality
+## 1 — What diverges from source, and how to read it
 
-These are the rows the leads must actively bless or veto — ranked by blast radius. Each links to
-its register entry.
+### 1.0 By design — expected transforms (confirm, don't litigate)
 
-| # | Divergence | Register |
+These are the product working as intended. They are listed so nobody rediscovers them as
+surprises; they need a nod, not a debate.
+
+- **Logical naming throughout (H1).** Emitted DDL uses OutSystems *logical* names —
+  `[dbo].[Customer]`, never `[dbo].[OSUSR_ABC_CUSTOMER]`. This is the desired outcome of the
+  exporter: the ejected estate reads as the domain model, and the swap to External Entities
+  consumes it as such. The mechanics (what gets rewritten where) still have two planned
+  completions — trigger bodies and literal-safe rewriting (⚑ WP-6, H2).
+- **Synthesized names for generated objects (A1–A3).** Where the platform's names were
+  machine noise (`OSPRK_*`, `OSFRK_*`, `OSIDX_*`), the exporter synthesizes readable,
+  deterministic names in the logical vocabulary. That regime is expected. What remains under
+  review is *convention details inside the regime*: the PK pattern aligns to V1's
+  (⚑ WP-8, A1), and unnamed DEFAULTs/CHECKs gain synthesized names (⚑ WP-9, A4/A5).
+- **Tightening is the mission, not a side effect (E2).** The product's own name for itself is
+  "Extraction, **Tightening**, and SSDT Prep" (`readme.md:1`): the ejected schema is
+  deliberately *the schema the estate should have had* — real constraints included — with
+  every divergence from deployed reality named, never silent. The open question is not
+  *whether* to materialize constraints but *under what evidence regime* (§1.1 row 1).
+
+### 1.1 The divergences that need active blessing (risk-ranked)
+
+| # | Divergence | Register / plan |
 |---|---|---|
-| 1 | **Logical renaming of every table and column** — DDL emits OutSystems *logical* names (`[dbo].[Customer]`), not physical (`[dbo].[OSUSR_ABC_CUSTOMER]`). Default-on, **no config off-switch**. CHECK bodies and index filters are rewritten textually; **trigger bodies are NOT rewritten** and ship referencing physical tables. | H1, H2 |
-| 2 | **Foreign keys are created that never existed in the source DB.** OutSystems logical-only references emit as enforced, trusted FKs by default — including `ON DELETE CASCADE` ones — with **no orphan check at emit time** unless a `foreignKey` tightening intervention + live profile is configured. | E2, E3 |
-| 3 | **Every generated constraint and index name is synthesized**: `PK_<Schema>_<Table>`, `FK_<Owner>_<Target>_<SourceColumn>`, `IX_/UIX_<Kind>_<Attrs>` (+ `_1/_2/_3` ordinals on same-key collisions). Source-authored FK and index names are discarded (FK-name honoring is the open WP7 remainder; `overrides.indexNames` is a named re-open trigger, not yet built). | A1–A3 |
-| 4 | **Delete-rule semantics are flattened**: OutSystems `Protect` (an app-level blocker) and `Ignore` (no enforcement) both become `ON DELETE NO ACTION` **with the FK created**; `Delete` becomes `ON DELETE CASCADE` verbatim with no multiple-cascade-path (msg 1785) analysis. | E1 |
-| 5 | **Nullability and types come from the logical model, not the deployed DB.** Mandatory-but-physically-nullable columns emit `NOT NULL`; deployed type drift is not diagnosed (except nullability/identity warnings); identifiers emit `BIGINT`; `email`/`phone` emit ANSI `VARCHAR` in an otherwise-NVARCHAR schema; OutSystems `datetime` emits legacy `DATETIME`. | C1–C6 |
-| 6 | **Uniqueness is always a `UNIQUE INDEX`** — source UNIQUE *constraints* are silently flattened to unique indexes (object class changes); profile evidence can promote `IX → UIX` (additive-only). | A7, D4 |
-| 7 | **Empty string → NULL is a named, universal erasure** on the data plane (any type). Estates that distinguish `''` from `NULL` lose the distinction on eject. | F11 |
-| 8 | **Silently absent object classes**: temporal/system-versioning, sequences (from model-sourced runs), `PERSISTED` on computed columns, `ROWGUIDCOL`/`SPARSE`/`FILESTREAM`, non-PK clustered indexes, inactive attributes' columns. Some have no tolerance token — they violate the repo's own named-erasure law if present in the estate. | C7, C10, D1 |
-| 9 | **Platform-auto (OSIDX) indexes are kept by default** — but after name synthesis their provenance is gone from the ejected project (no extended property marks them), so keep-vs-prune is **irreversible post-eject**. Pruning instead leaves FK columns unindexed (nothing synthesizes FK-supporting indexes). | D2, D6 |
-| 10 | **Vendor metadata is added**: two `Projection.SsKey`/`Projection.LogicalName` extended properties per table *and* per column, plus `MS_Description` from OutSystems descriptions. Load-bearing for rename round-trips pre-eject; inert residue after. | H6 |
+| 1 | **FK creation posture: the evidence regime inverted between V1 and V2.** V1's shipped default was `EvidenceGated` — "no tightening without proof"; orphaned references withhold DDL until cleaned. V2's shipping default emits **every** deployable reference as an enforced, trusted FK with no orphan check at emit time; the evidence gate is opt-in. Compounding it, the live extraction path currently hardcodes `HasDbConstraint = true` for every reference, erasing the logical-vs-backed distinction the gate needs. | E2, E3 · ⚑ WP-1 |
+| 2 | **Delete-rule semantics deviate from database reality.** The platform physically creates: Protect → FK `NO ACTION`; Delete → FK `CASCADE`; **Ignore → no FK at all**. V2 emits an enforced FK for Ignore, and derives `ON DELETE` from the *model's* rule code even though the deployed action is extracted (`#FkReality.DeleteAction`) and then never consulted. No cascade-path (msg 1785) analysis exists. | E1 · ⚑ WP-1 |
+| 3 | **Empty string → NULL, universally, on the data plane.** A V2 regression: V1 preserved `N''` (its only coercion was the deliberate single-space sentinel). OutSystems Text has no NULL at the language level — `''` *is* its null value, the platform default-constrains Text columns with `DEFAULT ('')`, and compiled `=''` filters change meaning under NULL. | F11 · ⚑ WP-3 |
+| 4 | **Type/nullability authority is the logical model, not deployed reality.** `NOT NULL` where the DB column was NULL (by design, C6); identifiers forced `BIGINT` while the repo's own platform notes record `INT` reality (C2); `email`/`phone` emitted ANSI `VARCHAR` although the platform's own DDL is `NVARCHAR` — the code brands the VARCHAR widths "IMPOSED V1-parity inference, NOT a source-declared fact" (C3 · ⚑ WP-4); deployed type drift undiagnosed (C1). | C1–C6 |
+| 5 | **Silently absent object classes.** Temporal tables, sequences (model-sourced runs), `PERSISTED` on computed columns, `ROWGUIDCOL`/`SPARSE`/`FILESTREAM` — and **clustering**: neither pipeline captures `sys.indexes.type_desc`, so a DBA-re-clustered table is silently re-clustered back to PK-clustered on deploy (a data-layout rewrite). | C10, D1 · ⚑ WP-2, WP-5 |
+| 6 | **Source UNIQUE constraints are flattened to unique indexes** (object class changes; both pipelines do this — the fix is an upgrade over both). | A7 · ⚑ WP-10 |
+| 7 | **Trigger bodies ship with physical table references** (broken DDL for real triggered tables), and the CHECK/filter logical rewrite is textual (string-literal corruption is an accepted limitation). | H2 · ⚑ WP-6 |
+| 8 | **Platform-auto (OSIDX) index keep/prune is irreversible post-eject** (no provenance marker survives renaming) — and note V1's shipped default was *prune* (keeping unique ones), while V2's default is *keep all*. | D2 |
+| 9 | **Vendor extended properties are added** (`Projection.SsKey`/`LogicalName` on every table and column) — load-bearing pre-eject, residue after; keep-or-strip is an eject decision. | H6 |
+| 10 | **Inactive attributes' columns are dropped** from the model (default-on) — correct for eject, but the drops deserve explicit per-entity disposition in the ChangeManifest rather than a silent global filter. | C7 · ⚑ WP-7 |
 
 ---
 
@@ -91,674 +112,779 @@ its register entry.
 
 ### A. Identifier & constraint naming
 
-**A1. PK names are always synthesized `PK_<Schema>_<Table>`** — [HARD]
-Source PK names are never consulted (`SsdtDdlEmitter.fs:213`; e.g. `PK_dbo_Customer`,
-`PK_audit_ChangeLog`). Schema is embedded with an underscore. Renaming later = drop/recreate of
-the clustered index on deploy.
+**A1. PK names synthesized — convention aligns to V1** — [HARD] ⚑ **WP-8**
+Current V2: `PK_<Schema>_<Table>` (`SsdtDdlEmitter.fs:213`; `PK_dbo_Customer`). V1's convention
+is `PK_<LogicalTable>_<KeyCol…>` (`src/Osm.Smo/SmoIndexBuilder.cs:42-55`; test pins
+`PK_Customer_Id`), with physical→logical token replacement. Platform names (`OSPRK_*`) are
+machine noise and are correctly never passed through by either pipeline.
+*Decided (2026-07-15): planned fix — adopt V1's convention (WP-8).*
+
+**A2. FK names synthesized `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`** — [HARD]
+Expected under the synthesis regime (§1.0). The IR carries `Reference.Name` from source; honoring
+a *curated* name when present is the open WP7 remainder in the reconciliation plan
+(`SsdtDdlEmitter.fs:266-307`) — note V1 did honor evidence names, but mutated them (forced `FK`
+prefix, appended column segment, 128-capped: `ForeignKeyNameFactory.cs`). Duplicate names are a
+loud Error tripwire, not a silent dedupe.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**A2. FK names are always synthesized `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`** — [HARD]
-The IR carries `Reference.Name` from the source but the emitter never reads it — honoring it is
-the open WP7 remainder (`SsdtDdlEmitter.fs:266-307`). Estates with curated FK names will see
-rename churn in schema compare on first publish. Duplicate names across a schema are a loud
-Error tripwire (`emit.ssdt.foreignKey.nameCollision`), not a silent dedupe.
+**A3. Index names synthesized `IX_/UIX_<Kind>_<Attrs>` (+ SsKey-ordered `_1/_2/_3` collision ordinals)** — [HARD]
+Expected under the synthesis regime (shipped 2026-07-01; `Projection.Core/IndexNaming.fs:34-67`;
+`THE_GOLDEN_EMISSION.md:170` still says TODO — stale). Ordinals renumber if a sibling index is
+added/removed; a named re-open trigger exists for an `overrides.indexNames` axis if a handful of
+semantically-named indexes should survive. V1 likewise regenerated all index names.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**A3. Index names are synthesized from the logical vocabulary** — [HARD] *(shipped 2026-07-01)*
-`IX_<Kind>_<Attrs>` / `UIX_…` when unique (name and uniqueness always agree); PK-backing index
-takes the PK name; same-key collisions get a deterministic 1-based ordinal in SsKey order
-(`IX_ScalarGallery_Code_1/_2/_3`) — inserting an index can renumber siblings. Authored names are
-discarded (`UIX_ScalarGallery_Amount_Tuned` → `UIX_ScalarGallery_Amount`;
-`Projection.Core/IndexNaming.fs:34-67`). A named re-open trigger exists for an
-`overrides.indexNames` axis if authored names must survive. **Note:** `THE_GOLDEN_EMISSION.md:170`
-still says this is TODO — stale; DECISIONS 2026-07-01 + re-recorded goldens are current.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**A4. Unnamed DEFAULTs stay anonymous → server-generated names on deploy** — [HARD] ⚑ **WP-9**
+Named only when the source carried a name (`DF__*` auto-names filtered at the reader); V1
+behaved identically (`CreateTableStatementBuilder.cs:324-335` — no `DF_` synthesis anywhere in
+V1). Anonymous defaults deploy as `DF__<random>` per environment — perpetual schema-compare
+noise. The fix synthesizes `DF_<Table>_<Column>` when the source name is absent.
+*Decided (2026-07-15): planned fix — WP-9.*
 
-**A4. DEFAULT constraint names: pass-through only; unnamed defaults stay anonymous** — [HARD]
-A `CONSTRAINT [DF_…]` is emitted only when the source carried a name (SQL Server auto-names
-`DF__*` are filtered out at the reader); otherwise the DEFAULT deploys anonymous and **the server
-generates a per-environment name** — perpetual schema-compare noise across environments. There is
-no synthesis fallback knob. (`ScriptDomBuild.fs:424-433`; golden `dbo.ScalarGallery.sql:11,26`
-shows both shapes.) SSDT teams typically want every default named — this is a prime Modify
-candidate (synthesize `DF_<Table>_<Column>` when the source name is absent).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**A5. Unnamed CHECKs anonymous; untrusted CHECK state not reproduced; degenerate parse fallback** — [HARD] ⚑ **WP-9**
+Same anonymity story as A4 (V1 identical). Additionally `ColumnCheck.IsNotTrusted` is carried
+in IR but never emitted — an untrusted source CHECK deploys **trusted** (validation runs at
+deploy and can fail); only FKs get the NOCHECK two-step (B6). And a CHECK body that fails
+ScriptDom parse falls back to a degenerate `'text' = 'text'` expression instead of refusing
+(`ScriptDomBuild.fs:456-487`).
+*Decided (2026-07-15): planned fix — WP-9 (synthesize names; reproduce trust state; refuse on
+parse failure).*
 
-**A5. CHECK constraint names: pass-through only; anonymous allowed; untrusted state not reproduced** — [HARD]
-Same server-auto-name drift as A4 for unnamed CHECKs. Additionally `ColumnCheck.IsNotTrusted` is
-carried in the IR but never emitted — an untrusted source CHECK deploys **trusted** (validation
-runs against existing data at deploy and can fail); only FKs get the NOCHECK two-step (B6). A
-CHECK body that fails ScriptDom parse falls back to a degenerate `'text' = 'text'` expression
-instead of refusing (`ScriptDomBuild.fs:456-487`).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**A6. The >128 identifier budget: 115-char head + `_` + 12-hex SHA-256** — [HARD] ⚑ **WP-11**
+V2's algorithm (`Coordinates.fs:99-107`) is the faithful port of V1's `ForeignKeyNameFactory`
+truncation (`TruncateWithHash`, same 115+12 shape). Scope differs: V1 capped **FK names only**
+(PK/index names were renamed but never length-checked — a latent deploy-failure hole); V2
+already caps all *generated* PK/FK/index names (a safe superset). The shared remaining hole:
+**pass-through names** (authored DF_/CK_/trigger names) are uncapped in both — a >128 authored
+name fails at deploy. The fix closes that hole with fit-or-refuse.
+*Decided (2026-07-15): planned fix — WP-11.*
 
-**A6. The >128-char identifier budget: 115-char head + `_` + 12-hex SHA-256** — [HARD]
-Applies to *generated* PK/FK/index names only (`Coordinates.fs:99-107`; visible in the golden:
-`FK_…_P_b94286649f49`, exactly 128 chars). Pass-through DF_/CK_/trigger names get no cap — a
->128 authored name would fail at deploy.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
-
-**A7. No UNIQUE constraints are ever emitted — uniqueness is realized as `CREATE UNIQUE INDEX`** — [HARD]
-Source UNIQUE *constraints* are flattened to unique indexes (`sys.key_constraints` →
-`sys.indexes`; the constraint identity is lost). Schema compare against the legacy DB will show
-the object-class change.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**A7. No UNIQUE constraints — uniqueness flattened to `CREATE UNIQUE INDEX`** — [HARD] ⚑ **WP-10**
+Confirmed V1-parity: V1 also emitted only unique indexes (its sole `UniqueConstraintDefinition`
+uses are the PK; extraction captures deployed UNIQUE constraints as index rows with kind `'UQ'`
+via `is_unique_constraint = 1`, then tightening/emission treat UQ ≡ unique index). So the
+flattening is inherited, not new — and the fix is a deliberate **upgrade over both pipelines**:
+DB-level UNIQUE constraints re-emit as constraints (`ALTER TABLE … ADD CONSTRAINT … UNIQUE`),
+preserving object class for schema compare and FK-target semantics.
+*Decided (2026-07-15): planned fix — WP-10.*
 
 ### B. DDL shape & style
 
 **B1. Constraint placement: the inline ladder** — [HARD, operator-blessed]
-Single-column PK/FK/DEFAULT/CHECK render inline beneath their column at +4/+8/+12 indentation;
-several constraints on one column stack into one laddered statement; composite PK and
-multi-column CHECK go table-level. Composite PK omits the `CLUSTERED` keyword while single-column
-PK states it — deploy-equivalent, declaratively asymmetric. CHECK inlining is decided by a
-bracketed-token heuristic (exactly one referenced column).
+Single-column PK/FK/DEFAULT/CHECK inline beneath their column at +4/+8/+12; stacks on one
+column; composite PK and multi-column CHECK table-level. Composite PK omits the `CLUSTERED`
+keyword while single-column PK states it — deploy-equivalent, declaratively asymmetric.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **B2. `emission.renderConstraintsElegant` (default `true`)** — [KNOB]
-The ladder is a **text post-processor over ScriptDom output** (`ConstraintFormatter.fs`), pinned
-to ScriptDom 170.23.0's output shape. It also performs semantic-adjacent normalization: when only
-one of ON DELETE / ON UPDATE is present the other is backfilled as explicit `NO ACTION`, and when
-both are NO ACTION both are dropped. `false` bypasses everything (compact one-line constraints,
-raw explicit `ON DELETE NO ACTION`) — all-or-nothing, intended as the V1-parity bisect lever.
+The ladder is a text post-processor over ScriptDom output (pinned to ScriptDom 170.23.0's
+shape) and also normalizes `NO ACTION` clause presence (backfills the missing one of ON
+DELETE/ON UPDATE; drops both when both are NO ACTION — V1's convention). `false` bypasses it
+entirely — the V1-parity bisect lever.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **B3. GO framing** — [HARD]
-`GO` framed by blank lines on both sides; per-table files put GO *between* statements (never
-trailing); `stream.sql` keeps a terminal GO (deliberate asymmetry). Files end with newline; no
-CRLF anywhere; all golden-enforced as negative invariants.
+`GO` blank-framed both sides; per-table files GO-between-statements never trailing; `stream.sql`
+keeps a terminal GO (deliberate asymmetry). LF-only; files end with newline; golden-enforced.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **B4. Style constants** — [HARD]
-UPPERCASE keywords, bracket-quoted identifiers everywhere, 4-space indent, **no semicolons in
-DDL** (data lanes do use `;`), `EXECUTE [sys].[sp_addextendedproperty]` wrapped form. Column
-alignment inside CREATE TABLE rides an *unpinned* ScriptDom default (a package upgrade would
-re-bless every golden).
+UPPERCASE keywords, bracket-quoted identifiers, 4-space indent, no semicolons in DDL (data
+lanes use `;`), wrapped `EXECUTE [sys].[sp_addextendedproperty]`. CREATE TABLE column alignment
+rides an unpinned ScriptDom default (package upgrade would re-bless goldens).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**B5. SQL Server 2022 pin (Sql160) — generator, parser, `.sqlproj` DSP, dacpac model** — [HARD, named trigger]
-Uniform pin with a standing note to raise a DECISIONS amendment if production confirms a
-different target version. **Confirm your target platform before first publish.**
+**B5. SQL Server 2022 pin (Sql160) — generator, parser, DSP, dacpac model** — [HARD, named trigger]
+Confirm the production target platform before first publish; a different version needs a
+DECISIONS amendment (the trigger is named in code).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **B6. Untrusted FK reproduction: the NOCHECK two-step** — [HARD]
-`ALTER TABLE … NOCHECK CONSTRAINT fk` then `ALTER TABLE … WITH NOCHECK CHECK CONSTRAINT fk`
-(order verified against SQL Server; the second alone is a no-op for `is_not_trusted`). These
-imperative ALTERs live in the *table's* object file — fine for script/sqlcmd deployment, unusual
-for a declarative dacpac publish; decide whether untrusted-ness should be preserved at all after
-eject vs. re-validating once.
+`NOCHECK CONSTRAINT` then `WITH NOCHECK CHECK CONSTRAINT` (order verified against SQL Server).
+Faithful to deployed trust state; note untrusted FKs in an OutSystems estate are DBA-added
+anomalies by definition (the platform never creates them) — reflection-preserving them is the
+right default. Imperative ALTERs live in the table's object file — fine for script deployment,
+unusual for pure declarative publish.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**B7. No header comments** — [HARD, tolerance `HeaderCommentsOmitted`]
-V1's `/* Source: … */` banners are dropped. Cosmetic.
+**B7. No header comments** — [HARD, tolerance `HeaderCommentsOmitted`] — cosmetic.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 ### C. Types, nullability, identity, collation
 
-**C1. The OutSystems logical model is the type authority** — [HARD]
-Deployed storage evidence is carried and wins for *facets* when present, but ordinary logical
-types are **never widened by deployed reality** (only `bt*` reference attributes consult it).
-A physically-widened/retyped column emits per the logical model **with no per-column type
-diagnostic** (only nullability/identity divergences get warnings).
+**C1. The logical model is the type authority; deployed storage never widens ordinary scalars** — [HARD]
+V2 consults `#ColumnReality` only for `bt*` reference attributes. **V1 was more
+reality-preferring here**: its `TypeMappingPolicy` resolves the *on-disk* rule first for
+ordinary scalars, so a deployed `nvarchar` email column emitted `NVARCHAR` in V1 while V2 emits
+the logical mapping. Deployed type drift is undiagnosed (only nullability/identity get
+warnings). WP-4 partially restores on-disk precedence (for the email/phone family first) with
+divergence diagnostics.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**C2. Identifier/reference types → `BIGINT`; `integer` → `INT`** — [HARD]
-`identifier`/`autonumber`/entity-reference/`longinteger` all force `BIGINT` (even overriding an
-external dbType). Verify against the deployed OSUSR reality (OutSystems runtime ids are commonly
-32-bit `INT`) — a blanket BIGINT changes storage, index width, and any external consumers.
+**C2. Identifier/reference types → `BIGINT`** — [HARD]
+Both pipelines force BIGINT for `identifier`/`autonumber`/`longinteger` (V1:
+`ShouldPreferRuntimeMapping` skips even deployed INT identity; V2: forced in
+`OssysTranslation`). But the repo's own platform-reality note records `[ID] INT NOT NULL
+IDENTITY(1,1)` with identifier columns typed `INT` (`DECISIONS.md` 2026-05-23 source-semantics
+entry), and the code calls BIGINT "a default, not a law". **Verify against the deployed estate
+before eject** — a blanket INT→BIGINT changes storage, index width, and external consumers.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**C3. Text realization** — [HARD]
-`text(n)` → `NVARCHAR(n)`; **length ≥ 2000 promotes to `NVARCHAR(MAX)`** (V1 threshold);
-`email` → `VARCHAR(250)` and `phone` → `VARCHAR(20)` — two ANSI islands in an NVARCHAR schema
-(collation/codepage sensitivity, implicit-conversion risk in joins).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**C3. `email` → `VARCHAR(250)`, `phone` → `VARCHAR(20)` — a deviation from platform reality** — [HARD] ⚑ **WP-4**
+The platform's own DDL for Email/Phone is **NVARCHAR** (modeled `ossys_User.EMAIL` is on-disk
+`nvarchar(250)`; the handbook's guidance table says "Email, Phone Number → NVARCHAR(n)";
+`notes/note14.md` lists "Using VARCHAR for User Text" as an anti-pattern). V1's
+`email→varchar(250)` rule existed but rarely fired on live runs because on-disk metadata won
+(C1); V2 applies the logical mapping directly, so the VARCHAR actually lands. The code itself
+brands the widths "IMPOSED V1-parity … NOT a source-declared fact" (`OssysTypeMapping.fs:79-85`).
+Two ANSI islands in an NVARCHAR schema = collation/codepage sensitivity, implicit-conversion
+risk, and possible non-Latin truncation on round-trip.
+*Decided (2026-07-15): planned fix — NVARCHAR(250)/(20) + on-disk precedence (WP-4).*
 
-**C4. Temporal & numeric realization** — [HARD]
-`datetime` → legacy `DATETIME` (3.33 ms precision; `rtDateTime2` is the path to `DATETIME2`);
-`datetime2` → `DATETIME2(7)`; `time` → `TIME(7)`; `currency` → `DECIMAL(37,8)`; `decimal` with
-missing precision/scale clamps to `(18,0)`.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**C4. `datetime` → legacy `DATETIME` — recommendation: keep it at eject; modernize deliberately later**
+Premise correction: **V1 does not pivot to DATETIME2** — `config/type-mapping.default.json:12`
+maps `"datetime": "datetime"`; the `datetime2` rule fires only when the source column is already
+datetime2. So V1, V2, and the platform's own DDL all agree on legacy `DATETIME`.
+**Recommendation: stay on `DATETIME` for the eject emission.** Reasons: (a) it *is* database
+reality — the cutover should change one thing at a time, and type changes belong to a
+deliberate migration, not the eject diff; (b) `datetime → datetime2` is lossless and cheap to
+do later per-column, while the reverse is lossy — deferring keeps the option; (c) mixed
+`datetime` parameters against `datetime2` columns and older drivers/SSIS mappings are exactly
+the class of cutover surprise we want zero of. **Post-cutover**, a planned `DATETIME2(3)`
+modernization (exact round-trip of every legacy value at 1 less byte) is a sensible dev-lead-
+owned migration; both pipelines keep the seam (one mapping line in V1's config; the named
+`rtDateTime2` path in V2's `OssysTypeMapping`). Related facts to keep: `datetime2` sources emit
+`DATETIME2(7)`; `time → TIME(7)`; `currency → DECIMAL(37,8)`; bare decimal clamps `(18,0)`;
+`text ≥ 2000` promotes to `NVARCHAR(MAX)` (threshold inclusive, V1-identical).
+*Verdict:* ☐ Approve (recommended) ☐ Modify ☐ Discuss
 
-**C5. Identity: `Is_AutoNumber` → `IDENTITY (1, 1)`, always seed 1 / increment 1** — [HARD]
-No reader ever populates a non-default seed (`sys.identity_columns` is not consulted); no
-`DBCC CHECKIDENT` is emitted. Matters only for fresh builds + loads (which bracket with
-IDENTITY_INSERT anyway), but confirm for any external table with a deliberate seed.
+**C5. Identity: `Is_AutoNumber` → `IDENTITY (1, 1)` fixed** — [HARD]
+No reader consults `sys.identity_columns`; no `DBCC CHECKIDENT` emitted. Matters for fresh
+builds + loads only (IDENTITY_INSERT brackets preserve values). Confirm for any external table
+with a deliberate seed.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **C6. Nullability = `Is_Mandatory`; the tool never tightens or loosens** — [HARD, decided 2026-06-22]
-Config-driven NULL→NOT NULL coercion was deliberately disabled (an accepted no-op): "a
-nullability intervention is the team's modeling decision, not the tool's." Consequence:
-mandatory-but-physically-nullable estates emit `NOT NULL` where the deployed column was NULL —
-legacy NULLs surface as **data violations in `fidelity.json`** and will fail the load, by design.
-The fix is upstream in the OutSystems model, not a knob.
+Given (per review): the OutSystems model is authoritative; config-driven NULL→NOT NULL coercion
+stays disabled; legacy NULLs surface as data violations in `fidelity.json` and the fix is
+upstream in the model. Note the platform norm this rides on: `isMandatory` is logical — deployed
+Text columns are typically `NULL` with `DEFAULT ('')`.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**C7. `model.onlyActiveAttributes` (default `true`)** — [KNOB]
-Inactive attributes never enter the IR (prevents duplicate columns/FKs and DacFx SQL71508).
-OutSystems keeps dropped-attribute columns physically present, so schema compare against the old
-DB shows them as to-drop — intended, but the leads should know the drops are coming.
+**C7. `model.onlyActiveAttributes` (default `true`) — inactive columns dropped** — [KNOB] ⚑ **WP-7**
+Correct for eject (prevents duplicate columns/FKs, DacFx SQL71508), but today it is a silent
+global filter. The fix makes the disposition explicit: an inactive-attribute inventory per
+entity, drops declared in the terminal ChangeManifest (the named-erasure discipline), and an
+opt-in preserve list for the exceptions.
+*Decided (2026-07-15): planned fix — WP-7.*
+
+**C8. Collation: per-column COLLATE only when it differed from the *source* DB default** — [HARD/GAP]
+Default-collation columns inherit the *target* DB default at deploy; `.sqlproj` pins
+`ModelCollation 1033, CI` only; collation drift is invisible to the round-trip proof. Pin the
+target database collation as a deployment prerequisite (J-list).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**C8. Collation: emitted per column only when it differed from the *source* DB default** — [HARD/GAP]
-Default-collation columns emit no `COLLATE` and inherit whatever the *target* database default
-is at deploy; the `.sqlproj` pins `ModelCollation = 1033, CI` only. Collation drift is invisible
-to the round-trip proof (no collation field in the comparator). **Pin the target database
-collation as a deployment prerequisite (J2).**
+**C9. DEFAULT literals: authored channel only; deployed hand-added DEFAULTs not lifted** — [HARD]
+(named trigger on record). Platform-shaped Text columns carry `DEFAULT ('')` — see F11/WP-3 for
+the empty-string default fidelity question.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**C9. DEFAULT literals: authored channel only** — [HARD]
-Only the OutSystems-authored default flows; a deployed hand-added DEFAULT constraint (e.g.
-`getutcdate()`) is **not lifted** (named trigger on record). Empty raw string is the IR's
-universal NULL sentinel (see F11).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
-
-**C10. Object classes with partial or no support** — [GAP]
-Computed columns emit but `PERSISTED` is lost (reader can't see `is_persisted`); temporal
-system-versioning has emit support but **no adapter ever produces the mark** — such tables emit
-as plain tables silently; sequences are silently absent from model-sourced runs;
-`ROWGUIDCOL`/`SPARSE`/`ANSI_PADDING`/`FILESTREAM` are unmodeled. None of these carries a
-tolerance token. **Inventory the estate for each class before eject** (a simple sys-catalog
-sweep) — if present, they need hand-authored objects in the SSDT project.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**C10. Partially/un-supported object classes** — [GAP] ⚑ **WP-5**
+Computed columns emit but `PERSISTED` is lost (reader hardcodes false); temporal has emit
+support but no adapter produces the mark (system-versioned tables emit as plain tables,
+silently); sequences absent from model-sourced runs; `ROWGUIDCOL`/`SPARSE`/`ANSI_PADDING`/
+`FILESTREAM` unmodeled. None carries a tolerance token — silent loss, against the repo's own
+named-erasure law.
+*Decided (2026-07-15): planned fix — WP-5 (capture-or-refuse, plus estate inventory first).*
 
 ### D. Indexes
 
-**D1. The PK is the only possible clustered index** — [HARD]
-The IR has no clustered flag; a source clustered non-PK index or nonclustered PK is silently
-normalized (no diagnostic, no tolerance token — the one index-area erasure without a name).
-PK-less kinds emit as true heaps and must be allow-listed (`overrides.allowMissingPrimaryKey`).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**D1. Clustering: PK hard-wired as the only clustered index** — [HARD/GAP] ⚑ **WP-2**
+Platform reality: Service Studio cannot author clustered indexes at all — the handbook glossary
+marks "Clustered index … **(Hidden)**", and platform convention is PK-clustered. So the
+*platform* never creates the shapes V2 can't represent — but **DBAs do** (re-clustering a large
+table on tenant/date keys is a real on-prem pattern, invisible to the platform model), and
+neither V1 nor V2 captures `sys.indexes.type_desc` (V1's own `IsClustered` domain field is
+aspirational, never populated). Consequence today: deploying the ejected project over a
+DBA-re-clustered table silently re-clusters it back to the PK — a physical data-layout rewrite
+with no diagnostic and no tolerance token.
+*Decided (2026-07-15): planned fix — WP-2 (capture clustering + heaps at extraction; emit
+`CLUSTERED`/`NONCLUSTERED` per reality; diagnostic in the interim).*
 
 **D2. `emission.includePlatformAutoIndexes` (default `true` = keep)** — [KNOB]
-Platform-auto detection is the `OSIDX_%` name-prefix heuristic on the live path. Keep ⇒ inherit
-possibly-redundant OutSystems auto indexes, and (post-A3 renaming) **no provenance marker
-survives into the project** — the decision is irreversible from the ejected artifacts alone.
-Prune ⇒ FK columns commonly lose their only index and nothing synthesizes replacements (D6).
-Recommendation to discuss: keep, and have the leads run their own index rationalization after
-cutover with production query stats in hand.
+Detection is the `OSIDX_%` name-prefix heuristic. Keep ⇒ inherit possibly-redundant auto
+indexes; prune ⇒ FK columns commonly lose their only index (nothing synthesizes replacements,
+D6). Two V1 divergences to weigh: V1's shipped default was **prune** (`includePlatformAutoIndexes:
+false` in `config/default-tightening.json`), and V1's prune **kept unique** platform-auto
+indexes (`SmoIndexBuilder.cs:74-77` drops only non-unique ones) — V2 prunes all flagged. Also:
+post-renaming, no provenance marker survives into the project, so keep-vs-prune is irreversible
+from the ejected artifacts alone.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **D3. Index option fidelity is forward-only** — [HARD/GAP, tolerance `IndexOptionsUnreflected`]
-FILLFACTOR / PAD_INDEX / IGNORE_DUP_KEY / uniform DATA_COMPRESSION / lock flags / filegroup /
-DESC / INCLUDE / filtered predicates all emit (WITH options only when deviating from defaults;
-disabled indexes emit `ALTER INDEX … DISABLE` after the CREATEs). But the verification leg
-recovers none of them — **post-handoff drift in index options is invisible to the tool; SSDT
-schema compare becomes the only guard.**
+Options emit faithfully (FILLFACTOR/PAD_INDEX/IGNORE_DUP_KEY/uniform DATA_COMPRESSION/locks/
+filegroup/DESC/INCLUDE/filtered; disabled → post-CREATE `ALTER INDEX … DISABLE`), but the
+verification leg recovers none of them — post-handoff drift is invisible to the tool; SSDT
+schema compare is the only guard.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **D4. `uniqueIndex` tightening: evidence-driven IX→UIX promotion (additive-only)** — [KNOB]
-Never un-uniques a source-unique index. Gotcha: registering the intervention while omitting the
-booleans defaults **both** `enforceSingleColumnUnique`/`enforceMultiColumnUnique` to `true`.
-Promotion is point-in-time evidence — data can regress after cutover and fail on first duplicate.
+Never un-uniques. Gotcha: registering the intervention without the booleans defaults both
+`enforceSingleColumnUnique`/`enforceMultiColumnUnique` to `true` (V1's shipped default was also
+both-true). Promotions are point-in-time evidence.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**D5. `categoricalUniqueness` is advisory-only** — [KNOB]
-Surfaces `UniquenessCandidates` in the fidelity report; never touches DDL.
+**D5. `categoricalUniqueness` advisory-only** — [KNOB] — fidelity-report candidates; never DDL.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **D6. Nothing synthesizes FK-supporting indexes** — [HARD]
-Emitted indexes = source indexes − PK-backing − pruned platform-auto. New FKs created by E2 may
-have no supporting index at all. Plan a deliberate FK-indexing pass post-cutover.
+Emitted = source − PK-backing − pruned. New FKs from tightening may be unindexed; plan a
+deliberate FK-indexing pass post-cutover.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 ### E. References & foreign-key policy
 
-**E1. Delete-rule mapping** — [HARD]
-`Delete → CASCADE`; `Protect → NO ACTION`; `Ignore → NO ACTION` (FK still created); missing →
-NO ACTION; unknown code = hard adapter error (`OssysTranslation.fs:377-395`). Two semantic
-shifts to bless: OutSystems `Protect` is an *application-level* blocker that becomes a DB-level
-constraint only because the tool creates the FK; `Ignore` (“app tolerates orphans”) becomes an
-*enforced* FK. `Delete → CASCADE` is emitted verbatim with **no multiple-cascade-path (msg 1785)
-analysis** — some OutSystems-legal shapes will be rejected by SQL Server at deploy.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E1. Delete-rule semantics — current mapping vs database reality** — [HARD] ⚑ **WP-1**
+What the platform physically creates (repo's own evidence — `TEMPLATED_LOGIC_AND_BUSINESS_RULES.md:529-534`,
+fixtures, and the platform-shaped seed): **Protect → real FK, `ON DELETE NO ACTION`** (the
+"cannot delete" error is ultimately DB-enforced — correcting this packet's earlier framing of
+Protect as application-level-only); **Delete → real FK, `ON DELETE CASCADE`** (with the known
+platform caveat that cascaded deletes bypass application logic); **Ignore → no FK at all**
+(application-managed; the classic orphan source, also the shape of external/cross-DB refs).
+What V2 emits today: the **model's** rule code mapped `Delete→CASCADE, Protect→NO ACTION,
+Ignore→NO ACTION` — *with the FK created even for Ignore* (V1's mapping was identical, but its
+evidence gate meant Ignore-refs only materialized on proven-clean data). Meanwhile the deployed
+FK's actual delete action **is extracted** (`#FkReality.DeleteAction`,
+`outsystems_metadata_rowsets.sql:654-660`) **and never consulted** — `ON DELETE` restates the
+model while `ON UPDATE` alone is reflection-sourced (E4). No multiple-cascade-path (msg 1785)
+pre-analysis exists in either pipeline.
+**Recommendation (adopted into WP-1):** for physically-backed FKs, mirror `sys.foreign_keys` —
+emit the *reflected* delete action (model code becomes a cross-check diagnostic when they
+disagree); treat Ignore/missing-rule references with no physical FK as *expected no-FK cases*
+that only the evidence-gated tightening channel may materialize; make
+`treatMissingDeleteRuleAsIgnore` real (missing → Ignore semantics = no FK) or delete it; and add
+cascade-path (1785) pre-analysis to the backlog as a pre-emit diagnostic — SQL Server will
+reject some OutSystems-legal `Delete` topologies at deploy and nothing predicts that today.
+*Decided (2026-07-15): planned fix — WP-1; 1785 analysis signaled to backlog.*
 
-**E2. Logical-only references emit as real, enforced, trusted FKs by default** — [KNOB via tightening]
-The headline transform. With **no** `foreignKey` intervention configured, every deployable
-reference — including OutSystems logical-only ones (`HasDbConstraint=false`) — emits as an
-inline FK, with no orphan check at emit time; orphans surface as deploy-time failures. The
-golden pins this deliberately (logical-only Cascade/SetNull FKs on `Engagement`).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E2. Materializing logical-only references as FKs — the mission, and the regime question** — [KNOB via tightening] ⚑ **WP-1**
+Answering the review question "are references *meant* to be logical-only in this estate?":
+logical-only (`HasDbConstraint=false`) is a real, expected class, not an anomaly — it is
+exactly what the platform produces for Ignore-rule references, references touching External
+Entities (the platform never issues DDL against an external database; its references there are
+pure metadata), out-of-scope targets, and DBA-touched tables. And **materializing them into
+real FKs is the product's declared end state** — "Extraction, Tightening, and SSDT Prep"
+(`readme.md:1`), "evidence-gated NOT NULL, UNIQUE, and FK creation" (`readme.md:8`): the
+ejected schema is *the schema the estate should have had*, with every strengthening named.
+The genuine decision is the **regime**: V1 shipped `EvidenceGated` + `enableCreation: true` —
+creation only on proven-clean data, orphans withhold DDL ("no tightening without proof",
+`docs/core-flows.md:136`) — while V2's shipping default emits every deployable reference as an
+enforced trusted FK with the evidence gate as opt-in. Source-backed FKs always re-emit in both
+(correct). **Recommendation (adopted into WP-1): make the V1 regime the mandatory eject
+posture** — `foreignKey` intervention + live profiler always on for production emissions, so
+every created FK is an evidence-named decision and every withheld one a named refusal.
+*Decided (2026-07-15): planned fix — WP-1 (posture + the E3 gate defaults review).*
 
-**E3. The `foreignKey` intervention gate order — and its inversion surprise** — [KNOB]
-Gate order: source-backed FKs always emit (regardless of orphans); `enableCreation:false` drops
-all logical-only FKs; **with the intervention ON but no live profile, logical-only FKs become
-`EvidenceMissing` and are dropped** — turning the knob on without profiling is *more*
-conservative than leaving it off. With a profile: orphans + `allowNoCheckCreation:false` ⇒
-dropped (named decision); orphans + `true` ⇒ emitted then NOCHECK'd; clean ⇒ emitted. Every
-drop/non-introduction is a named diagnostic (`decision.fkDropped` / `decision.fkNotIntroduced`).
-**Recommended review posture: production emission runs with the intervention registered AND the
-live profiler on, so every FK decision is evidence-named rather than implicit** (see §6).
+**E3. The `foreignKey` intervention gate — defaults and surprises** — [KNOB] ⚑ **WP-1**
+Gate order: source-backed always emits → `enableCreation` → evidence (no profile ⇒
+`EvidenceMissing` ⇒ dropped — so intervention-on-without-profile is *more* conservative than
+off) → orphans (`allowNoCheckCreation` decides dropped-vs-NOCHECK'd) → cross-schema check.
 Binder defaults when registered: `enableCreation=true, allowCrossSchema=true,
-allowCrossCatalog=false, treatMissingDeleteRuleAsIgnore=false, allowNoCheckCreation=false`.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+allowCrossCatalog=false, allowNoCheckCreation=false`. Note **V1's shipped `allowCrossSchema`
+was `false`** (V2 flipped to true) — revisit under WP-1. **Critical defect found during this
+review: the live-snapshot path hardcodes `HasDbConstraint = true` for every reference**
+(`MetadataSnapshotRunner.fs:1326`, contradicting its own doc comment; the JSON path correctly
+defaults absent→false) — on live extractions every reference presents as source-backed, which
+bypasses the entire gate. WP-1 fixes this first; the regime decision is moot until it lands.
+*Decided (2026-07-15): planned fix — WP-1.*
 
-**E4. ON UPDATE is preserved from source reflection** — [HARD]
-V1 dropped it; V2 carries it (`ON UPDATE CASCADE` visible in the golden). Confirm the estate
-wants deployed `ON UPDATE CASCADE` on user FKs preserved rather than normalized.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E4. ON UPDATE preserved from source reflection** — [HARD]
+The platform never authors ON UPDATE actions (immutable autonumber PKs make update-cascade
+meaningless); a non-default action in the estate is DBA-added. V1 dropped the fact; V2
+round-trips it. Preserving deployed reality here is the right default — flag any observed
+`ON UPDATE CASCADE` for the leads as a curiosity to review, not a normalization target.
+*Verdict:* ☐ Approve (recommended) ☐ Modify ☐ Discuss
 
-**E5. Inverse exclusion + collision tripwire** — [HARD]
-Derived inverse references never become FKs (pure-target kinds like `User` emit zero FKs); FK
-name collisions are loud Errors, not silent dedupe. Bug-fix-class guarantee; nothing to bless.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E5. Inverse exclusion + FK name-collision tripwire** — [HARD]
+Derived inverse references never become FKs (pure-target kinds emit zero FKs); collisions are
+loud Errors.
+*Locked (2026-07-15): approved as-is.*
 
-**E6. Placebo knobs, named** — [KNOB, inert]
-`treatMissingDeleteRuleAsIgnore` (unreachable — the IR can't represent "missing"),
-`allowCrossCatalog` (IR doesn't model catalogs on references), and
-`overrides.circularDependencies.strictMode` (parsed, zero consumers). Documented so nobody
-builds confidence on them.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E6. Placebo knobs** — [KNOB, inert] ⚑ **WP-1**
+`treatMissingDeleteRuleAsIgnore` (unreachable), `allowCrossCatalog` (IR lacks catalogs on
+references), `circularDependencies.strictMode` (parsed, zero consumers). Under WP-1 each is
+made real or removed — a fail-closed config surface must not carry decorative switches.
+*Decided (2026-07-15): planned fix — WP-1.*
 
-**E7. Composite-PK FK targets: first-leg-only** — [GAP, tolerance `CompositePkFkUnreflected`]
-`Reference` is single-column; an FK to a composite-PK target emits only its first leg — which is
-*invalid SQL* unless that column has its own unique index. The guard is "OutSystems never does
-this" (operator-confirmed), not a refusal. **Inventory composite-PK targets before eject.**
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E7. Composite-PK FK targets: first-leg-only emission** — [GAP, tolerance `CompositePkFkUnreflected`] ⚑ **WP-12**
+Single-column `Reference` IR; an FK to a composite-PK target emits only its first leg — invalid
+SQL unless that column has its own unique index. Guard is "OutSystems never does this"
+(operator-confirmed for native estates), not a refusal — but external/DBA tables can.
+*Decided (2026-07-15): planned fix — WP-12 (refuse loudly at emit until multi-leg lands; estate
+audit as precondition).*
 
-**E8. Schema cycles: automatic weak-edge resolution; config is annotate-only** — [HARD]
-Nullable + NoAction/SetNull edges defer (data phase-2); non-deferrable cycles are a named
-refusal telling you which column to make nullable. `overrides.circularDependencies.allowedCycles`
-only *acknowledges* (silences the diagnostic) — it does not change ordering. With an unresolved
-cycle the flat `stream.sql` falls back to alphabetical order and contains forward FK references
-— fine for DacFx publish, broken for linear sqlcmd execution.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E8. Schema cycles: automatic weak-edge resolution; alphabetical fallback breaks linear streams** — [HARD] ⚑ **WP-13**
+Nullable+NoAction/SetNull edges defer to data phase-2; non-deferrable cycles are a named
+refusal. `allowedCycles` is annotate-only (does not change ordering); `strictMode` is dead
+(E6/WP-1). With an unresolved cycle the flat `stream.sql` falls back to alphabetical order and
+contains forward FK references — fine for DacFx publish, broken for linear sqlcmd execution.
+*Decided (2026-07-15): planned fix — WP-13.*
 
-**E9. `UserReflow` transform group: opt-in, data-plane, currently near-inert** — [KNOB/GAP]
-Remaps `CreatedBy`/`UpdatedBy` *values* across environments (by email match by default); does
-not retarget FK DDL. Today the OSSYS adapter never marks `IsUserFk` and the matching-strategy
-config was removed, so enabling the group in `full-export` is close to a no-op — the real path
-is `transfer --reconcile <UserTable>:<emailColumn>`. Unmatched users = row skipped (diagnosed).
-**State which path the org blesses, and require full match coverage before a real reflow.**
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E9. `UserReflow`: opt-in, data-plane, currently near-inert** — [KNOB/GAP] ⚑ **WP-14**
+Remaps `CreatedBy`/`UpdatedBy` *values* cross-environment; never retargets FK DDL. Today the
+OSSYS adapter never sets `IsUserFk` and the matching-strategy config was removed — enabling the
+group in `full-export` is close to a no-op; the real path is `transfer --reconcile`. Unmatched
+users = row skipped (diagnosed).
+*Decided (2026-07-15): planned fix — WP-14 (wire it or formally retire it in favor of the
+reconcile path; no half-alive transform groups at eject).*
 
-**E10. FK trust after bulk loads** — [DEPLOY]
-Default transfer path re-trusts (`WITH CHECK CHECK CONSTRAINT`) after `SqlBulkCopy`; FKs
-untrusted *by decision* stay untrusted deliberately. The **streaming and synthetic legs do not
-yet wire re-trust** (named follow-on) — big loads need a `sys.foreign_keys.is_not_trusted = 1`
-sweep + re-check in the runbook (tolerance token `FkTrustNotRestoredOnBulkLoad` names the
-opt-out).
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**E10. FK trust after bulk loads** — [DEPLOY/GAP] ⚑ **WP-15**
+Default materialized-transfer path re-trusts post-load; **streaming and synthetic legs do not
+yet wire re-trust** (named follow-on) — they always exhibit `FkTrustNotRestoredOnBulkLoad`
+today. Until WP-15 lands, big loads need the `is_not_trusted` sweep + `WITH CHECK CHECK
+CONSTRAINT` in the runbook.
+*Decided (2026-07-15): planned fix — WP-15.*
 
 ### F. Data lanes (static seeds / migration dependencies / bootstrap)
 
-**F1. Three disjoint lanes; bootstrap is the complement** — [KNOB]
-`emission.staticSeeds` / `migrationDependencies` / `bootstrap` all default `true`; disjointness
-is asserted (a kind claimed twice is a run error). `bootstrapAllData:true` flips to the full
-first-deploy snapshot (only Bootstrap fires). The fused `Data/seed.sql` is retired — per-lane
-files are the artifacts (stale references survive in a few docs; §8).
+**F1. Three disjoint lanes; bootstrap = complement; `bootstrapAllData` flips to full snapshot** — [KNOB]
+Disjointness asserted; fused `Data/seed.sql` retired (per-lane files are the artifacts).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F2. Seed shape: one idempotent MERGE per kind, `USING (VALUES …)`** — [HARD]
-Deterministic row order (PK-first sort); CDC-enabled kinds get a null-asymmetric
-change-detection predicate on WHEN MATCHED so idempotent redeploys are CDC-silent (a proven,
-canaried property — V1 had the leak). **No `HOLDLOCK`** — single-writer deploy windows are
-assumed. Literals: `N'…'` texts, bare `0x…` binary, invariant date formats.
+**F2. Seed shape: one idempotent MERGE per kind; CDC-aware predicates on CDC-enabled kinds** — [HARD]
+Deterministic row order; CDC-silence on idempotent redeploy is canaried. No `HOLDLOCK` —
+single-writer deploy windows assumed.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F3. IDENTITY kinds: `SET IDENTITY_INSERT ON/OFF` bracketing the MERGE in ONE GO batch** — [HARD]
-Session-scoped by design (the deploy executor opens a connection per batch). Requires
-ownership/ALTER rights on the table in the post-deploy execution context.
+**F3. IDENTITY kinds: `SET IDENTITY_INSERT` bracket in ONE GO batch** — [HARD]
+Requires ownership/ALTER rights in the post-deploy execution context.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F4. FK cycles in data: phase-1 NULL insert, phase-2 UPDATE re-point** — [HARD]
-All phase-1 MERGEs (topological order), then all phase-2 UPDATEs. A deploy failure between
-phases leaves visible NULL FKs; rerun converges. NOT-NULL cycles are a named refusal.
+**F4. FK cycles in data: phase-1 NULL insert, phase-2 UPDATE re-point; NOT-NULL cycles refuse** — [HARD]
+Mid-state visible if a deploy fails between phases; rerun converges.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F5. `emission.deleteScope`: opt-in convergent DELETE arm, gated by sign-off** — [KNOB]
-Adds `WHEN NOT MATCHED BY SOURCE AND <term predicate> THEN DELETE` per kind that carries every
-term column. Since 2026-07-09 it is **refused unless `emission.signoff` carries `delete-scope`**
-(the destructive-write greenlight family: `replace/fresh/drops/cdc/identity-insert/delete-scope`).
-One global term set per run; terms name the **logical** column (two docs still say physical —
-stale, §8). Bootstrap never deletes.
+**F5. `deleteScope`: opt-in convergent DELETE arm, sign-off-gated** — [KNOB]
+`WHEN NOT MATCHED BY SOURCE AND <terms> THEN DELETE`; refused unless `emission.signoff` carries
+`delete-scope`; terms name the **logical** column (two docs still say physical — stale, §8).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F6. `emission.dataVerification`: `"standard"` (default) vs `"validateBeforeApply"`** — [KNOB]
-The opt-in prepends a symmetric-EXCEPT drift guard (`THROW 50000` before the MERGE) per kind.
-Finding for review: in the *inline* form the guard is its own GO batch (doc says same batch) —
-under plain `sqlcmd` without `-b` a THROW in batch N does not stop batch N+1. SSDT publish and
-the repo's executor fail loud; the staged form is airtight (guard inside the XACT_ABORT TRY).
+**F6. `dataVerification`: `standard` vs `validateBeforeApply` (symmetric-EXCEPT guard)** — [KNOB]
+Finding: the inline form emits the guard as its own GO batch (docstring says same batch) —
+under `sqlcmd` without `-b` a tripped guard may not stop the following MERGE; SSDT publish and
+the repo's executor fail loud; the staged form is airtight.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F7. `emission.dataStaging`: `auto` / threshold 1000 / indexThreshold 100000** — [KNOB]
-Above 1000 rows a kind stages through `#temp` inside one `SET XACT_ABORT ON` TRY/TRAN batch
-(dodges the ~25-30k inline-MERGE plan-complexity wall, error 8623); above 100k the `#temp` gets
-a clustered PK index (measured 33-37% faster). Rights: tempdb create + `BEGIN TRAN`; `"inline"`
-is the locked-down escape hatch accepting the ceiling. Inline sub-threshold MERGEs are NOT in an
-explicit transaction — recovery model is idempotent rerun. **Do not hand-wrap GO-separated
-batches in an outer transaction** (IDENTITY_INSERT/#temp are per-connection).
+**F7. `dataStaging`: auto / 1000 / 100k thresholds; XACT_ABORT atomic staged batches** — [KNOB]
+Rights: tempdb create + `BEGIN TRAN` (`inline` = locked-down escape hatch, ~30k ceiling).
+Inline sub-threshold MERGEs are not in explicit transactions; recovery model = idempotent
+rerun. Do not hand-wrap GO-separated batches in an outer transaction.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F8. Deployment choreography: bootstrap is NOT in the post-deploy** — [HARD, operator decision 2026-06-24]
-`Script.PostDeployment.sql` `:r`-includes StaticSeeds + MigrationData only; Bootstrap ships in
-the project folder as a `None` item and is a **separate post-publish load step the receiving
-team's pipeline must add explicitly**. `Microsoft.Build.Sql` inlines `:r` at build time — editing
-`Data/*.sql` after build changes nothing. (This decision currently lives only in a code
-docstring, not `DECISIONS.md` — §8.)
+**F8. Choreography: post-deploy carries StaticSeeds + MigrationData; Bootstrap is a separate post-publish step** — [HARD]
+`Microsoft.Build.Sql` inlines `:r` at build time. The receiving pipeline must add the bootstrap
+step explicitly. (Decision currently recorded only in a code docstring — §8.)
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F9. `overrides.migrationDependencies`: operator-curated rows** — [KNOB]
-Logical-keyed JSON; `""` (and JSON null) = NULL; naming a kind excludes the **whole kind** from
-Bootstrap — the operator owns completeness for named kinds.
+**F9. `migrationDependencies` file: logical-keyed rows; `""` = NULL; kind-level bootstrap exclusion** — [KNOB]
+Naming a kind removes the whole kind from Bootstrap — the operator owns completeness.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F10. Determinism & read concurrency** — [KNOB]
-Rendered plans are deterministic and dependency-ordered; `emission.dataReadConcurrency` (default
-4) parallelizes only row *reads* (measured; inverts past ~4).
+**F10. Determinism & read concurrency (`dataReadConcurrency` 4, acquisition-only)** — [KNOB]
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F11. Empty string → NULL, universally** — [HARD, tolerance `EmptyTextNormalizedToNull`]
-The empty raw string is the IR's universal NULL sentinel for every type (including stored `N''`
-and zero-length binary). A NOT-NULL Text column with an empty source value fails the load
-loudly. **Audit any application semantics that distinguish `''` from `NULL` before trusting
-transferred data.** (DDL corner: the golden currently renders an empty-string DEFAULT as
-`DEFAULT N''` while two docs still say `DEFAULT NULL` — reconcile at blessing time; §8.)
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**F11. Empty string → NULL, universally — a V2 regression against both V1 and the platform** — [HARD, tolerance `EmptyTextNormalizedToNull`] ⚑ **WP-3**
+The platform: OutSystems Text has no NULL at the language level — `''` *is* the null value; the
+runtime writes `''`, never NULL; the platform column shape for optional Text is `NULL` with
+`DEFAULT ('')` (fixtures: `[FIRSTNAME] NVARCHAR(100) NULL … DEFAULT ('')`). V1: preserved `N''`
+— its only coercion was the deliberate OutSystems single-space sentinel (`" "` → NULL, nullable
+columns only, `StaticEntitySeedScriptGenerator.cs:236-244`). V2: the empty raw string is the
+IR's *universal* NULL sentinel for every type — so `''` is erased on transfer-write, three
+distinct meanings collapse (`EXECUTION_PLAN.md:960-966`), compiled `=''` filters change results
+under NULL semantics, tightened NOT-NULL loads fail on values that were never NULL, and
+`DEFAULT ('')` fidelity wobbles (golden currently renders `DEFAULT N''`; two docs say `DEFAULT
+NULL` — reconcile at blessing).
+*Decided (2026-07-15): planned fix — WP-3 (preserve `''` end-to-end; distinct empty-vs-NULL
+representation; deliberate single-space-sentinel handling; retire the tolerance).*
 
 ### G. Bundle, `.sqlproj`, dacpac, refactorlog
 
-**G1. Bundle layout: `Modules/<Module>/<Schema>.<Table>.sql`** — [HARD + KNOB]
-Folder-per-module (not SSDT's conventional `Schema\Tables\…`); `overrides.emissionFolders`
-redirects per entity (basename preserved). Output directory is atomically **replaced** on each
-run. Also emitted: `manifest.json`, per-lane `Data/*.sql`, `fidelity.json/.txt`,
-`catalog.snapshot.json`, remediation/summary/suggest artifacts.
+**G1. Bundle layout `Modules/<Module>/<Schema>.<Table>.sql`; atomic replace; `emissionFolders` redirects** — [HARD + KNOB]
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G2. `emission.sqlproj` (default `false`): a deliberately minimal SDK project** — [KNOB]
-Emits `ProjectionCatalog.sqlproj` (SDK `Microsoft.Build.Sql/2.2.0` pinned; DSP Sql160;
-`ModelCollation 1033, CI`; Build-Remove of post-deploy + data lanes; schema files via the SDK
-glob). **Not set:** `nuget.config` (required to restore — the repo's own build tests write their
-own), SqlCmd variables, publish profiles, `TreatTSqlWarningsAsErrors`/`SuppressTSqlWarnings`,
-code analysis, `DacVersion`, `DefaultSchema`, PreDeploy, RefactorLog item. The hand-authored
-proving-ground project shows the richer form the leads will likely want. No DECISIONS entry
-records the sqlproj feature (§8). **For the eject handoff, `sqlproj: true` is the obvious
-setting — the leads receive a buildable project, then harden it (J4).**
+**G2. `emission.sqlproj` (default `false`): minimal SDK project** — [KNOB]
+SDK `Microsoft.Build.Sql/2.2.0`, DSP Sql160, `ModelCollation 1033, CI`, lane Build-Removes —
+and nothing else (no `nuget.config` though restore requires one, no SqlCmd vars, publish
+profiles, warnings-as-errors, code analysis, `DacVersion`, PreDeploy, RefactorLog item). For
+the eject handoff `sqlproj: true` is the obvious setting; hardening is the J-list.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G3. The refactorlog never reaches the bundle — highest-stakes gap** — [GAP]
-Rename detection, cumulative accumulation (stable UUIDv5 operation keys, prior-wins dedupe), and
-a byte-deterministic XML renderer all exist and are law-tested — but **no production path writes
-`<project>.refactorlog` into the bundle or references it from the emitted `.sqlproj`** (the XML
-renderer has zero production callers; entries live in the episode store). Consequence: an
-incremental publish of the ejected project DROP+CREATEs on any rename — the "Silent Catastrophe"
-the machinery was built to prevent. The eject contract (`THE_USE_CASE_ONTOLOGY` P-7) promises
-"the complete accumulated refactorlog" in the terminal package. **Close this before eject, or
-the leads must export the log and wire the `<RefactorLog>` item by hand.**
+**G3. The refactorlog never reaches the bundle — highest-stakes wiring gap** — [GAP]
+Rename detection, stable-UUIDv5 accumulation, and the XML renderer all exist and are tested —
+but no production path writes `<project>.refactorlog` or the `.sqlproj` item. Incremental
+publish of the ejected project DROP+CREATEs on any rename. The eject contract (P-7) promises
+the complete accumulated refactorlog in the terminal package — close before eject.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **G4. `emission.dacpac` (default `false`): dev-tooling, schema-only, content-equality determinism** — [KNOB]
-Built in-process via DacFx (`Sql160`), refuses the package if any object would be dropped
-(NM-24). No post-deploy embedded (DacFx limitation) — the `.sqlproj` build is the production
-package path. Constant `Version=1.0.0.0`; model collation left at DacFx default (not mirrored).
-Don't build binary-diff pipelines on it (Origin.xml wall-clock).
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G5. Two wired-path hazards found during profiling** — [GAP → fix before `sqlproj:true` handoff]
-(a) `manifest.remediation.sql` is written unconditionally at bundle root and is **not**
-Build-Removed — with findings present it contains active SELECTs the SDK glob would compile as a
-schema object (build break). (b) The wired post-deploy `:r` order is **alphabetical**
-(`MigrationData` before `StaticSeeds`), while the emitter's doc/tests pin StaticSeeds-first — an
-FK-ordering risk if migration rows reference static rows.
+**G5. Two wired-path hazards** — [GAP → fix before `sqlproj:true` handoff]
+(a) `manifest.remediation.sql` written unconditionally at bundle root, not Build-Removed — with
+findings it would compile as a schema object and break the build; (b) wired post-deploy `:r`
+order is alphabetical (Migration before Static) against the emitter's documented deploy order.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G6. No `CREATE SCHEMA` objects are emitted** — [GAP]
-Cross-schema kinds exist (golden `audit.ChangeLog`), but the bundle contains no schema objects —
-a fresh SSDT build/publish of a non-dbo estate fails until the leads hand-author
-`Security/<schema>.sql`.
+**G6. No `CREATE SCHEMA` objects emitted** — [GAP]
+Non-dbo estates don't build/publish until schema objects are hand-authored.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **G7. Ancillary emitters** — [info]
-`SchemaMigrationEmitter` = imperative ALTER preview/verification lens (never feeds the dacpac;
-additive-safe; drops/narrowings refuse without `--allow-drops`). `DockerImageEmitter` (self
-standing-up SQL 2022 container with the dacpac baked in) is **dormant** — no knob or CLI verb;
-decide ship-or-cut at eject. `PhysicalSchemaReader` is the in-process round-trip backstop.
+`SchemaMigrationEmitter` = ALTER preview/verification lens (never feeds dacpac);
+`DockerImageEmitter` dormant (ship-or-cut at eject); `PhysicalSchemaReader` = in-process
+round-trip backstop.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 ### H. Renames, scope, metadata annotations
 
-**H1. Logical-name substitution is default-on with no config off-switch** — [HARD]
-"Substitution, not rename": emitted DDL uses logical names; physical→logical fallback is silent
-for blank/>128 logical names (one physically-named table in an otherwise logical estate, no
-diagnostic). Reverting to physical emission is a recompile, not a knob.
+**H1. Logical-name substitution — by design, default-on** — [HARD, expected]
+The desired outcome (§1.0). Residual sharp edges, kept visible: no config off-switch
+(recompile-only fallback to physical), and blank/>128 logical names silently keep the physical
+name with no diagnostic (worth a cheap tripwire when convenient).
+*Verdict:* ☐ Approve (expected) ☐ Discuss edge handling
+
+**H2. What the substitution rewrites — and what it doesn't** — [HARD/GAP] ⚑ **WP-6**
+CHECK bodies and index filters are rewritten via bracket-token string replace (string-literal
+corruption is an accepted limitation); **trigger bodies are not rewritten** — the golden ships
+a trigger targeting the physical table (broken DDL for real triggered tables). Column renames
+are not operator-configurable (no `columnRenames` axis).
+*Decided (2026-07-15): planned fix — WP-6 (ScriptDom-based, literal-safe rewrites incl. trigger
+bodies; refusal parity with the dacpac path for unparseable bodies).*
+
+**H3. `tableRenames`: dual-form, fail-closed; physical form pins** — [KNOB]
+Renames feed the refactorlog channel (see G3) and SsKeys are preserved.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**H2. What the substitution rewrites — and what it doesn't** — [HARD/GAP]
-CHECK bodies and index filter predicates are rewritten via bracket-token string replace (a
-string literal containing a physical name would also be rewritten — accepted limitation; audit
-the real estate). **Trigger bodies are not rewritten** — the golden ships a trigger targeting
-the physical table name, i.e. broken DDL for any real triggered table. Column renames are not
-operator-configurable at all (no `columnRenames` axis).
+**H4. Schema pass-through; modules ≠ schemas** — [HARD]
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**H3. `overrides.tableRenames`: dual-form, fail-closed; physical form pins** — [KNOB]
-Logical `{module,entity}` XOR physical `{schema,table}` source; all misses/ambiguities/dup
-targets are named refusals; a physical-form rename pins the kind out of logical substitution.
-Renames feed the refactorlog channel (but see G3) and SsKeys are preserved so FKs keep resolving.
+**H5. Scope gates and the A7-polarity trap** — [KNOB]
+Empty `model.modules` ⇒ include-flags inert (named note) and system modules ride along. Decide
+explicitly which platform (OSSYS-backed) entities belong in the ejected estate; express it as a
+non-empty modules list.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**H4. Schema is pass-through; modules ≠ schemas** — [HARD]
-Everything lands in the source schema (effectively `dbo`); the only lever is a rename's target
-schema. Module-level metadata lands as SCHEMA-level extended properties.
+**H6. Extended properties: MS_Description + `Projection.SsKey`/`LogicalName` on every table and column** — [KNOB]
+Load-bearing for rename round-trips pre-eject; inert vendor residue after. Decide keep-or-strip
+at eject (stripping forfeits future diff/migrate tooling; keeping needs a schema-compare
+exclusion). Audit for legacy `V2.*`-named properties on pre-rename deployments.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**H5. Scope gates and the A7 polarity trap** — [KNOB]
-`model.modules` is the opt-in gate: with an **empty** module list, `includeSystemModules:false`
-etc. are inert (a named Info note fires) and an unscoped run **carries the OutSystems system
-modules** into the export. `onlyActiveAttributes` alone applies unconditionally. Cross-scope FK
-pruning keeps filtered catalogs closed. **Decide explicitly which platform (OSSYS-backed)
-entities belong in the ejected estate, and express it as a non-empty `model.modules` list.**
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
-
-**H6. Extended properties: descriptions + vendor identity annotations** — [KNOB]
-`MS_Description` at table+column from OutSystems designer descriptions. Plus two
-`Projection.SsKey`/`Projection.LogicalName` properties per table *and* per column
-(`emission.identityAnnotations`, default `true`; `false` is a named downgrade that degrades
-rename round-trips to drop+add). Pre-eject they are load-bearing; post-eject they are inert
-vendor residue — **decide keep-or-strip at eject** (stripping forfeits future diff/migrate
-tooling; keeping means schema-compare noise unless excluded). Legacy `V2.*`-named properties may
-survive on environments deployed pre-rename — audit.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
-
-**H7. No cross-module table-name collision tripwire** — [GAP]
-Two same-named entities in different modules would emit duplicate `CREATE TABLE`s surfacing only
-at DacFx build; same-module duplicates would silently last-win in the bundle map. (FK names have
-a tripwire; table names don't.) Cheap pre-eject audit: group logical names, assert uniqueness.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+**H7. Cross-module table-name collision tripwire — to be added** — [GAP] ⚑ **WP-16**
+Two same-named entities in different modules would emit duplicate CREATE TABLEs surfacing only
+at DacFx; same-module duplicates would silently last-win. FK names have a tripwire; table names
+will get one.
+*Locked (2026-07-15): tripwire to be added — WP-16.*
 
 ---
 
-## 3 — The accepted-divergence vocabulary (what the tool tolerates, by name)
+## 3 — The accepted-divergence vocabulary (tolerance tokens)
 
-`emission.tolerance` parses **fail-closed** (unknown token = refused run). Absent ⇒ permissive
-(all 10 accepted, every firing reported); `[]` ⇒ strict. The environment ladder
-Dev ⊇ QA ⊇ UAT ⊇ PROD=strict is property-tested. The manifest publishes the vocabulary in-band
-(`unsupported`); each run's `fidelity.txt` prints the ACCEPTED DIVERGENCES that actually fired.
+`emission.tolerance` parses fail-closed; absent ⇒ permissive (all 10), `[]` ⇒ strict; env
+ladder Dev ⊇ QA ⊇ UAT ⊇ PROD=strict is property-tested; the manifest publishes the vocabulary
+in-band; `fidelity.txt` reports what fired per run.
 
-| Token | Meaning (one line) | Dev-lead action |
+| Token | Meaning | Dev-lead action |
 |---|---|---|
-| `HeaderCommentsOmitted` | No V1 header banners | none |
-| `PostDeployForeignKeysSplit` | FK *file placement* is not contract (today all inline; split is the sanctioned fallback if deploy-order failures surface) | compare deployed FK sets, not layout |
-| `IndexOptionsUnreflected` | **OpenGap** — canary blind to filter/INCLUDE/options drift | own it via schema compare |
-| `StaticPopulationsUnreflected` | seed content not on the schema-compare surface | run the data-leg canary when it matters |
-| `EmptyTextNormalizedToNull` | `''` → NULL universally on transfer-write | audit `''`-vs-NULL semantics |
-| `CompositePkFkUnreflected` | **OpenGap** — composite-PK FK targets, first-leg-only | inventory composite-PK targets |
-| `CharAnsiPaddingTolerated` | char(n) trailing-blank equality; CDC-invisible | none (SQL Server property) |
+| `HeaderCommentsOmitted` | no V1 header banners | none |
+| `PostDeployForeignKeysSplit` | FK *file placement* is not contract (all inline today) | compare deployed FK sets, not layout |
+| `IndexOptionsUnreflected` | **OpenGap** — canary blind to filter/INCLUDE/options drift | own via schema compare |
+| `StaticPopulationsUnreflected` | seed content not on the schema surface | data-leg canary when it matters |
+| `EmptyTextNormalizedToNull` | `''` → NULL on transfer-write — **slated for retirement under WP-3** | audit `''`-vs-NULL semantics meanwhile |
+| `CompositePkFkUnreflected` | **OpenGap** — first-leg-only composite-PK FKs — **WP-12 upgrades to refusal** | inventory composite-PK targets |
+| `CharAnsiPaddingTolerated` | char(n) padding equality; CDC-invisible | none |
 | `DecimalScaleTolerated` | `1.0` vs `1.00` same stored value | none |
-| `FkTrustNotRestoredOnBulkLoad` | names the re-trust opt-out; streaming/synthetic legs always exhibit it today | post-load `is_not_trusted` sweep |
-| `TriggerBodyUnparsedDropped` | **OpenGap** — unparseable trigger body omitted from text artifacts **with an in-band marker comment**; dacpac path refuses instead | `grep -r "TriggerBodyUnparsedDropped" <bundle>` before accepting |
+| `FkTrustNotRestoredOnBulkLoad` | names the re-trust opt-out; streaming/synthetic legs always exhibit it — **WP-15 wires them** | post-load `is_not_trusted` sweep until then |
+| `TriggerBodyUnparsedDropped` | **OpenGap** — unparseable trigger body omitted from text artifacts with an in-band marker; dacpac refuses — **WP-6 aligns text path to refusal** | `grep -r "TriggerBodyUnparsedDropped" <bundle>` |
 
-Also know the *unnamed* erasures (no token, silent): temporal tables, sequences (model-sourced),
-`PERSISTED`, ROWGUIDCOL/SPARSE/FILESTREAM, non-PK clustering, deployed hand-added DEFAULTs (C9,
-C10, D1). These are the packet's §8 audit items, not tolerance rows.
+Unnamed erasures (no token — the §10 estate-audit list): temporal, sequences (model-sourced),
+`PERSISTED`, ROWGUIDCOL/SPARSE/FILESTREAM, non-PK clustering (WP-2/WP-5 close these),
+deployed hand-added DEFAULTs (C9, named trigger).
 
 ---
 
-## 4 — What is proven vs. what is assumed
+## 4 — What is proven vs. assumed
 
-**Proven, byte-level:** the golden corpus (every text artifact byte-pinned; re-record only via
-`GOLDEN_RECORD=1` + DECISIONS note); LF-only, trailing-newline, framed-GO negative invariants;
-SsKey-sorted deterministic ordering; T1 bit-identical text output.
-**Proven, behavioral:** CDC-silence on idempotent redeploy (canaried); NOCHECK/unique decisions
-survive emit→deploy→read-back (falsifiability-armed); bundle-deploy ≡ dacpac-publish
-(PhysicalSchema equality, Docker-witnessed); eject self-verifies (replay from genesis must
-reproduce the frozen schema — exit 5 otherwise).
-**Excluded/assumed:** dacpac bytes (content-equality only — DacFx wall-clock); `manifest.json`
-bytes (wall-clock stamp; possibly stale exclusion, §8); the four OpenGap tolerances; emit-path
-ACCEPTED DIVERGENCES is a structural report, **not** a round-trip proof (the canary is the
-separate `check` verb); publish **rollback** was never proven (forward-only proving ground).
+**Proven, byte-level:** golden corpus (re-record only via `GOLDEN_RECORD=1` + DECISIONS note);
+LF-only/trailing-newline/framed-GO invariants; SsKey-sorted determinism; T1 bit-identical text.
+**Proven, behavioral:** CDC-silence on idempotent redeploy; NOCHECK/unique decisions survive
+emit→deploy→read-back; bundle-deploy ≡ dacpac-publish (PhysicalSchema equality); eject
+self-verifies by replay.
+**Excluded/assumed:** dacpac bytes (content-equality only); `manifest.json` bytes; the OpenGap
+tolerances; emit-path ACCEPTED DIVERGENCES is structural, not a round-trip proof; publish
+rollback never proven.
 
 ---
 
 ## 5 — The eject bill of materials
 
-Per the P-7 contract, the terminal package is: **(a)** the frozen SSDT bundle; **(b)** the
-complete accumulated refactorlog (see G3 — wiring gap); **(c)** the full episode chain
-(`LifecycleStore`) so any prior state stays reconstructable; **(d)** the terminal ChangeManifest
-with any eject-time drops declared; **(e)** the operator-owned provenance declaration.
-`projection eject --store <path>` (alias `seal`) self-verifies by reconstruction. Until then the
-R6 dual-track holds: V2 emits-but-doesn't-ship; per-pair cutover gates on N=10 consecutive green
-canaries + operator sign-off; V1 warm through cutover+30.
-
-Per-run artifacts the leads will see: the bundle + `manifest.json` (with the divergence
-vocabulary in-band), per-lane `Data/*.sql`, `fidelity.json/.txt` (data violations + fired
-divergences + uniqueness candidates), `catalog.snapshot.json`, and (opt-in) the
-`.sqlproj`/post-deploy/dacpac.
+Terminal package (P-7): frozen SSDT bundle + complete accumulated refactorlog (G3 wiring gap
+must close first) + full episode chain (`LifecycleStore`) + terminal ChangeManifest (eject-time
+drops declared — WP-7's inactive-attribute dispositions land here) + operator-owned provenance
+declaration. `projection eject --store` self-verifies by reconstruction. Until then, R6
+dual-track: per-pair cutover gates on N=10 consecutive green canaries + operator sign-off.
 
 ---
 
 ## 6 — Proposed eject-emission baseline config (strawman to bless)
 
-The defaults are byte-conservative for the dual-track, not necessarily right for the final eject.
-Proposed shaping for the handoff emission — every line here is a decision the leads can flip:
+Updated for the review decisions. Every line is still a lead-flippable choice; ⚑ marks lines
+whose semantics change under §10.
 
 ```jsonc
 {
   "model": {
-    "env": "prod",                       // canonical source, named once
-    "modules": [ /* EXPLICIT list — decide the platform-entity question (H5) */ ],
+    "env": "prod",
+    "modules": [ /* EXPLICIT list — settle the platform-entity question (H5) */ ],
     "includeSystemModules": false,
     "includeInactiveModules": false,
-    "onlyActiveAttributes": true         // C7: inactive columns are dropped — confirmed?
+    "onlyActiveAttributes": true         // C7 ⚑ WP-7: dispositions become explicit in the ChangeManifest
   },
   "overrides": {
-    "tableRenames": [ /* curated; each lands in the refactorlog channel (G3!) */ ],
-    "allowMissingPrimaryKey": [ /* audited heap list, not a dumping ground */ ]
+    "tableRenames": [ /* curated; refactorlog channel — G3 must be wired */ ],
+    "allowMissingPrimaryKey": [ /* audited heap list */ ]
   },
   "emission": {
     "ssdt": true,
-    "sqlproj": true,                     // G2: hand the leads a buildable project
-    "dacpac": false,                     // G4: dev-tooling; the .sqlproj build is the package path
-    "includePlatformAutoIndexes": true,  // D2: keep; rationalize post-cutover with prod stats
-    "identityAnnotations": true,         // H6: keep until eject; decide strip-or-keep at freeze
+    "sqlproj": true,                     // hand the leads a buildable project (harden per J-list)
+    "dacpac": false,
+    "includePlatformAutoIndexes": true,  // D2: keep; note V1 shipped prune-but-keep-unique — decide once, it's irreversible
+    "identityAnnotations": true,         // H6: keep until eject; strip-or-keep decided at freeze
     "renderConstraintsElegant": true,
     "staticSeeds": true, "migrationDependencies": true, "bootstrap": true,
-    "bootstrapAllData": false,           // F1: complement-only unless first-deploy snapshot wanted
-    "dataVerification": "validateBeforeApply",  // F6: drift guard on managed environments — discuss
-    "dataStaging": { "mode": "auto" },   // F7: portable default
-    "tolerance": [ /* PROD: [] (strict) per the env ladder; name exceptions deliberately */ ]
+    "bootstrapAllData": false,
+    "dataVerification": "validateBeforeApply",  // F6: drift guard on managed environments — per-env choice
+    "dataStaging": { "mode": "auto" },
+    "tolerance": []                      // PROD strict; name exceptions deliberately per env ladder
   },
   "policy": {
     "insertion": "SchemaOnly",
     "tightening": {
       "interventions": [
-        { "kind": "foreignKey", "id": "eject-fks",
-          "enableCreation": true,        // E2/E3: THE decision — FKs from logical refs, evidence-gated
-          "allowCrossSchema": true,
-          "allowNoCheckCreation": true } // orphaned FKs become named NOCHECK decisions, not deploy failures
+        { "kind": "foreignKey", "id": "eject-fks",   // E2/E3 ⚑ WP-1: the V1 regime, mandatory
+          "enableCreation": true,
+          "allowCrossSchema": false,     // V1's shipped default; V2's binder default (true) is the deviation
+          "allowNoCheckCreation": false } // V1-strict: orphans withhold DDL → remediate data pre-eject.
+                                          // Alternative: true ⇒ orphaned FKs become named NOCHECK decisions.
       ]
     }
   },
-  "profiler": { "provider": "live" }     // E3: evidence, so FK/unique decisions are named, never implicit
+  "profiler": { "provider": "live" }     // evidence, so every FK/unique decision is named — mandatory posture
 }
 ```
 
-Open questions this config forces (the four to settle in the review session): the
-`model.modules` scope list (H5); `enableCreation` + NOCHECK posture (E2/E3/E1 cascade review);
-`dataVerification` on/off per environment (F6); the PROD tolerance set (§3).
+The four decisions this config forces: the `model.modules` scope list (H5); the FK regime —
+V1-strict vs NOCHECK-pragmatic (E2/E3, WP-1); `dataVerification` per environment (F6); the
+per-environment tolerance ladder (§3).
 
 ---
 
-## 7 — Deployment-side ownership (outside emission — [DEPLOY], all yours after handoff)
+## 7 — Deployment-side ownership ([DEPLOY] — the receiving team's list)
 
-Already recommended in-repo (`ssdt-playbook/Foundations/SSDT-Deployment-Safety.md`, standards in
-`ssdt-playbook/Reference/SSDT-Standards.md`):
+Recommended in-repo (`ssdt-playbook/Foundations/SSDT-Deployment-Safety.md`, standards in
+`ssdt-playbook/Reference/SSDT-Standards.md`): `BlockOnPossibleDataLoss=True` always;
+`DropObjectsNotInSource=False` UAT+Prod; `IgnoreColumnOrder=True`; `GenerateSmartDefaults`
+Dev-only; `AllowIncompatiblePlatform=False`; `TreatTSqlWarningsAsErrors` Test+. Empirics: the
+NULL→NOT NULL guard fires on *table-has-rows*, not *column-has-NULLs* — plan explicit pre-deploy
+migrations for mandatory-column tightening.
 
-| Publish property | Recommended |
-|---|---|
-| `BlockOnPossibleDataLoss` | `True` always, every environment — non-negotiable |
-| `DropObjectsNotInSource` | `False` UAT+Prod; `True` Dev/Test |
-| `IgnoreColumnOrder` | `True` everywhere |
-| `GenerateSmartDefaults` | `False` Test+ (`True` Dev only) |
-| `AllowIncompatiblePlatform` | `False` |
-| `TreatTSqlWarningsAsErrors` | `False` Dev / `True` Test+ |
-
-Known empirics worth keeping: the NULL→NOT NULL data-loss guard fires on *table-has-rows*, not
-*column-has-NULLs* — backfilling doesn't appease it; plan explicit pre-deploy migrations for
-mandatory-column tightening. `BlockOnPossibleDataLoss` is a global binary, not per-object.
-
-**Unaddressed anywhere in the repo — the leads should pin these before first publish:**
-1. Pre-compare noise family: `IgnoreWhitespace`, `IgnoreKeywordCasing`, `IgnoreAnsiNulls`,
-   `IgnoreSemicolonBetweenStatements` (relevant: emitted DDL has no semicolons, B4).
-2. `DoNotDropObjectTypes` / `ExcludeObjectTypes` (protect: extended properties if keeping H6,
-   users/permissions, any hand-added objects like `CREATE SCHEMA` from G6).
-3. `ScriptDatabaseOptions`, `VerifyDeployment`, `CommandTimeout` values; deployment contributors.
-4. Committed per-environment `.publish.xml` profiles + the `.refactorlog` project item (G3) —
-   prescribed by the standards doc, absent from the emitted project.
-5. Environment prerequisites the tool does NOT check: server/database collation vs
-   `ModelCollation 1033, CI` (C8), compatibility level (emission pins Sql160 — B5), edition,
-   `CREATE SCHEMA` for non-dbo schemas (G6), cross-environment user-id reconciliation (E9).
-6. SSDT project hardening backlog: `nuget.config`, `DacVersion` stamping, code analysis /
-   `TreatTSqlWarningsAsErrors`, SqlCmd variables, PreDeploy hook (G2).
-7. Deployment pipeline: post-publish Bootstrap step (F8), post-load FK trust sweep (E10),
-   single-writer deploy windows (F2), rollback strategy (never proven — §4).
-8. Going forward, adopt the repo's own change-review discipline: **schema changes land as golden
-   diffs**; treat any diff under the SSDT project as a contract change and review it as one.
+Unaddressed anywhere in the repo — pin before first publish: pre-compare noise family
+(`IgnoreWhitespace`/`IgnoreKeywordCasing`/`IgnoreAnsiNulls`/`IgnoreSemicolonBetweenStatements` —
+emitted DDL has no semicolons); `DoNotDropObjectTypes`/`ExcludeObjectTypes` (protect extended
+properties if keeping H6, hand-added schemas from G6); `ScriptDatabaseOptions`,
+`VerifyDeployment`, `CommandTimeout`, contributors; committed per-env `.publish.xml` +
+`.refactorlog` project item (G3); environment prerequisites the tool does not check (server/DB
+collation vs `ModelCollation 1033, CI`; compat level vs the Sql160 pin; editions; `CREATE
+SCHEMA`; cross-env user reconciliation); post-publish Bootstrap step (F8); post-load FK trust
+sweep (E10 until WP-15); single-writer deploy windows (F2); rollback strategy (never proven);
+and adopting golden-diff-as-change-review going forward.
 
 ---
 
-## 8 — Inherited worklist: gaps and stale docs (fix-before-eject candidates)
+## 8 — Gaps and stale docs (with plan pointers)
 
-**Functional gaps, ranked:**
-1. Refactorlog not wired into the bundle/.sqlproj (G3) — rename = DROP+CREATE post-eject.
-2. Trigger bodies keep physical references (H2) — broken DDL for real triggered tables; plus the
-   unparseable-body drop marker (§3) to grep for.
-3. `manifest.remediation.sql` build-glob hazard + alphabetical post-deploy lane order (G5).
-4. No `CREATE SCHEMA` emission (G6).
-5. Unnamed erasures inventory: temporal / sequences / PERSISTED / ROWGUIDCOL / SPARSE /
-   FILESTREAM / non-PK clustering / hand-added DEFAULTs (C9-C10, D1) — run the estate audit.
-6. No cross-module table-name collision tripwire (H7).
-7. Composite-PK FK first-leg emission (E7) — audit for zero occurrences.
-8. Unnamed-DEFAULT/CHECK server-name drift (A4/A5) — decide on a synthesis fallback.
-9. Cascade-path (msg 1785) pre-analysis absent (E1).
-10. Streaming-leg FK re-trust unwired (E10).
+**Functional gaps, ranked** (⚑ = in the §10 plan):
+1. Refactorlog not wired into bundle/.sqlproj (G3) — close before eject.
+2. **Live-path `HasDbConstraint = true` hardcode** (`MetadataSnapshotRunner.fs:1326`) — erases
+   the logical-vs-backed distinction; blocks the FK evidence regime. ⚑ WP-1 (first).
+3. Trigger bodies keep physical refs + unparsed-body drop marker. ⚑ WP-6.
+4. Empty-string → NULL universal erasure (V2 regression). ⚑ WP-3.
+5. Delete-rule reality: Ignore→FK-created; reflected `DeleteAction` unused; no 1785 analysis. ⚑ WP-1.
+6. Clustering not captured — silent re-clustering of DBA-modified tables. ⚑ WP-2.
+7. `manifest.remediation.sql` build hazard + alphabetical lane order (G5).
+8. No `CREATE SCHEMA` emission (G6).
+9. Unnamed erasures: temporal/sequences/PERSISTED/ROWGUIDCOL/SPARSE/FILESTREAM. ⚑ WP-5.
+10. email/phone VARCHAR vs platform NVARCHAR. ⚑ WP-4.
+11. UNIQUE-constraint flattening. ⚑ WP-10. · Unnamed DF/CK anonymity. ⚑ WP-9. · Pass-through
+    >128 names. ⚑ WP-11. · Composite-PK FK legs. ⚑ WP-12. · Cycle-fallback stream order. ⚑ WP-13.
+    · UserReflow half-wiring. ⚑ WP-14. · Streaming re-trust. ⚑ WP-15. · Table-name collision
+    tripwire. ⚑ WP-16. · Inactive-attribute disposition. ⚑ WP-7. · PK convention. ⚑ WP-8.
 
-**Doc drift found while profiling (trust code + DECISIONS over these):**
-`THE_GOLDEN_EMISSION.md:170` (index-name synthesis "TODO" — shipped 2026-07-01) and `:129`
-(empty-text DEFAULT "renders NULL" — golden renders `N''`); `DeleteScopePolicy`/`CONFIG_REFERENCE`
-"terms name PHYSICAL columns" (they resolve logical, post-chain); `Policy.fs` validate-guard
-"one GO batch" docstring (inline form is its own batch); retired `Data/seed.sql` references in
-`Pipeline.fs`/`DataEmissionComposer.fs`/golden tree doc; the 2026-06-24 bootstrap-out-of-post-deploy
-and the sqlproj feature itself have no `DECISIONS.md` entries.
+**Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
+(index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
+`CONFIG_REFERENCE` "physical columns" (terms resolve logical); `Policy.fs` validate-guard "one
+GO batch" docstring; retired `Data/seed.sql` references; the 2026-06-24 bootstrap decision and
+the sqlproj feature lack DECISIONS entries; `MetadataSnapshotRunner.fs:946-947` doc comment
+contradicts its own `:1326` behavior.
 
 ---
 
-## 9 — Suggested review session plan (2 × 90 min)
+## 9 — Suggested review sessions (2 × 90 min)
 
-**Session 1 — the schema contract.** Read `Golden/master/Modules/` top-to-bottom (30 min), then
-walk: naming (A1-A7) → spotlight rows 1-4 (H1/H2, E1-E3) → types C1-C6 → indexes D1-D3. Output:
-verdicts on every [HARD] row + the E2/E3 FK posture.
-**Session 2 — data + project + deployment.** `Data/StaticSeeds.sql` walkthrough → F-register →
-G-register (sqlproj/dacpac/refactorlog — G3 decision) → §6 strawman config line-by-line → §7
-deployment ownership + §8 worklist assignment. Output: the blessed `projection.json`, the
-publish-profile matrix, and owners for each §8 item.
+**Session 1 — the schema contract.** Golden corpus read-through (30 min) → §1.0 confirmations →
+§1.1 rows 1–5 (the FK regime decision is the headline) → open A/B/C/D verdicts.
+**Session 2 — data + project + plan.** `Data/StaticSeeds.sql` walkthrough → F/G registers (G3
+refactorlog decision) → §6 strawman line-by-line → §7 ownership assignments → **§10 work-plan
+walkthrough: confirm scope and sequencing of WP-1 … WP-16**.
 
-Between sessions, cheap estate audits that de-risk verdicts: sys-catalog sweeps for triggers,
-computed/persisted columns, temporal tables, sequences, composite PKs targeted by FKs,
-non-`OSIDX_` platform indexes, `''`-meaningful text columns, >128-char names, cross-module
-duplicate entity names.
+Pre-session estate audits that de-risk verdicts: sys-catalog sweeps for triggers,
+computed/persisted columns, temporal tables, sequences, composite PKs targeted by FKs, non-PK
+clustered indexes and heaps, deployed identifier widths (INT vs BIGINT), email/phone column
+types and non-Latin data, `''`-meaningful text columns, >128-char names, cross-module duplicate
+entity names, FKs with non-default ON UPDATE or untrusted state, and the
+`HasDbConstraint=false` population (per delete rule) — that last one sizes the entire WP-1
+decision.
+
+---
+
+## 10 — The remediation work plan (plan of record — nothing here is implemented yet)
+
+Decided at the 2026-07-15 review. Each WP lands with its golden re-record + `DECISIONS.md`
+entry per the blessing protocol; tolerance retirements delete their `@ladder` tags in the same
+commit. Sequencing note: WP-1(a) — the `HasDbConstraint` fix — precedes everything that reasons
+about the logical-vs-backed split.
+
+### Group I — restore database-reality fidelity
+
+**WP-1 · FK reality & regime (E1, E2, E3, E6)** — the headline package.
+(a) Fix the live-path `HasDbConstraint = true` hardcode (`MetadataSnapshotRunner.fs:1326`) so
+the logical-vs-backed distinction survives live extraction (JSON-path parity: absent → false).
+(b) For physically-backed FKs, emit the **reflected** delete action (`#FkReality.DeleteAction`
+— extracted today, consumed nowhere); when model rule code and deployed action disagree, keep
+the reflected action and raise a named divergence diagnostic.
+(c) References with no physical FK (Ignore, missing rule, external-entity, out-of-scope) are
+*expected no-FK cases*: never default-emit; materialization happens only through the
+evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated` posture as the
+mandatory eject regime (intervention + live profiler always on).
+(d) Make `treatMissingDeleteRuleAsIgnore` real (missing → Ignore semantics) or remove it;
+implement-or-remove `allowCrossCatalog`; delete dead `strictMode`; revisit `allowCrossSchema`
+default (V1 shipped `false`; V2's binder default `true`).
+(e) **Backlog signal (analysis worth doing):** cascade-path pre-analysis — walk the emitted FK
+graph for multiple-cascade-path shapes (SQL Server msg 1785) and self-referencing cascade
+limits, and report them as pre-emit diagnostics instead of deploy-time failures.
+*Done means:* live-vs-JSON extraction parity test on `HasDbConstraint`; goldens show reflected
+delete actions; an Ignore-rule fixture emits no FK without an intervention; placebo knobs gone
+or functional; 1785 analyzer ticketed separately.
+
+**WP-2 · Clustering fidelity (D1).** Extract `sys.indexes.type_desc` (+ heap detection) per
+table; carry a clustered flag in the Index IR (and PK clustered/nonclustered); emit
+`CLUSTERED`/`NONCLUSTERED` per deployed reality. Until it lands: a per-table diagnostic when
+extraction detects a non-PK clustered index or nonclustered PK (today that fact never leaves
+the source DB). Platform context: Service Studio cannot author these — every occurrence is DBA
+intent, exactly what must not be silently reverted by a deploy.
+*Done means:* fixture with a re-clustered table round-trips; the silent-normalization erasure
+gets a token or dies.
+
+**WP-3 · Empty-string preservation (F11).** Distinct empty-vs-NULL representation in the
+transfer IR (kill the universal `""`-as-NULL sentinel); preserve `N''` end-to-end on write
+(V1 parity); handle the OutSystems single-space sentinel as a *deliberate, documented* rule
+(V1: `" "` → NULL on nullable columns only) rather than an accident; reconcile the
+empty-string DEFAULT rendering (`DEFAULT ('')` platform shape vs golden `DEFAULT N''` vs stale
+`DEFAULT NULL` docs); retire `EmptyTextNormalizedToNull`.
+*Done means:* round-trip canary distinguishes `''`/NULL; tolerance token gone; goldens
+re-blessed.
+
+**WP-4 · Unicode fidelity for email/phone (C3, C1).** Map `email` → `NVARCHAR(250)`, `phone` →
+`NVARCHAR(20)` (platform-native; handbook-aligned); prefer on-disk column reality over the
+logical mapping for ordinary scalars (V1's `onDisk` precedence pattern) with a named divergence
+diagnostic when they disagree.
+*Done means:* goldens show NVARCHAR; a deployed-NVARCHAR fixture emits NVARCHAR even with a
+VARCHAR logical rule; divergence diagnostic tested.
+
+**WP-5 · Silent object classes (C10).** Capture `is_persisted` (emit `PERSISTED`); produce
+temporal marks in the adapters (emission already supports them); extract sequences on the
+OSSYS path; capture-or-refuse ROWGUIDCOL/SPARSE/FILESTREAM (named refusal if unmodeled).
+Precondition: the §9 estate inventory says which of these actually exist — scope the WP to
+reality.
+*Done means:* each class either round-trips or refuses loudly with a named code; no silent
+loss remains.
+
+**WP-6 · Rewrite fidelity (H2).** Replace bracket-token string substitution with
+ScriptDom-based identifier rewriting (literal-safe) for CHECK bodies and index filters; extend
+the rewrite to **trigger bodies** (tables and columns); align the text-artifact path with the
+dacpac path on unparseable trigger bodies (refuse, don't marker-drop) — retiring
+`TriggerBodyUnparsedDropped`.
+*Done means:* the golden trigger targets `[dbo].[ScalarGallery]`; a string literal containing a
+physical name survives; both artifact paths refuse identically.
+
+**WP-7 · Inactive-attribute disposition (C7).** Emit an inactive-attribute inventory
+(per entity: name, type, last-active metadata); drops declared in the terminal ChangeManifest
+as named erasures; opt-in preserve list for exceptions. The global filter stays the default —
+it just stops being silent.
+
+### Group II — naming & constraint-object fidelity
+
+**WP-8 · PK naming convention (A1).** Adopt V1's `PK_<LogicalTable>_<KeyCol…>` (e.g.
+`PK_Customer_Id`), replacing `PK_<Schema>_<Table>`. One golden re-record; schema embedded in
+names disappears.
+
+**WP-9 · DEFAULT/CHECK constraint completeness (A4, A5).** Synthesize deterministic
+`DF_<Table>_<Column>` / `CK_<Table>_<Column…>` names when the source name is absent (both
+budget-fitted); reproduce untrusted CHECK state (the CHECK analogue of the FK NOCHECK
+two-step); replace the degenerate `'text' = 'text'` CHECK parse fallback with a named refusal.
+*Done means:* zero anonymous constraints in the goldens; an untrusted CHECK fixture round-trips
+its trust bit; parse failure refuses with the object named.
+
+**WP-10 · UNIQUE constraints as constraints (A7).** Extraction already distinguishes kind
+`'UQ'`; carry it through the IR and emit `ALTER TABLE … ADD CONSTRAINT … UNIQUE` for DB-level
+UNIQUE constraints (unique *indexes* stay indexes). A deliberate upgrade over both pipelines —
+V1 flattened too.
+*Done means:* a UQ fixture emits a constraint; schema compare against source shows no
+object-class change.
+
+**WP-11 · Identifier budget closure (A6).** Fit-or-refuse for pass-through names (authored
+DF_/CK_/trigger/index names >128 — today they'd fail at deploy); when FK evidence-name honoring
+lands (WP7 remainder), route those through the same shaping + budget discipline V1's
+`ForeignKeyNameFactory` applied.
+
+### Group III — machinery completion
+
+**WP-12 · Composite-PK FK targets (E7).** Upgrade the tolerance to a loud emit-time refusal
+naming the reference (an invalid first-leg FK must be impossible to ship); multi-leg reference
+modeling only if the estate audit finds real occurrences.
+
+**WP-13 · Cycle-fallback ordering (E8).** Under unresolved cycles, keep the stream
+dependency-ordered (or flip to the sanctioned post-deploy FK split) instead of the alphabetical
+fallback that produces forward references; `allowedCycles` stays annotate-only but says so in
+its config docs.
+
+**WP-14 · UserReflow disposition (E9).** Either wire it end-to-end (OSSYS adapter `IsUserFk`
+resolution + matching-strategy config restored) or formally retire the transform group and
+bless `transfer --reconcile` as the only user-remap path. No half-alive transform groups at
+eject.
+
+**WP-15 · Streaming FK re-trust (E10).** Wire the post-load `WITH CHECK CHECK CONSTRAINT`
+sweep into the streaming and synthetic realizations (materialized-path parity); until then the
+runbook owns it.
+
+**WP-16 · Table-name collision tripwire (H7).** Error (not last-wins) when two kinds resolve to
+the same emitted `(schema, table)`; mirror of the existing FK-name tripwire. Locked in.
 
 ---
 
 *Register short-links: golden corpus `tests/Projection.Tests/Golden/`; config schema
 `CONFIG_REFERENCE.md`; decision ledger `DECISIONS.md` (latest-first; Active deferrals index at
 top); tolerance vocabulary `src/Projection.Core/Tolerance.fs`; blessing protocol
-`THE_GOLDEN_EMISSION.md` §2.*
+`THE_GOLDEN_EMISSION.md` §2; platform-reality evidence `TEMPLATED_LOGIC_AND_BUSINESS_RULES.md`
+§delete-rules, `handbook/03-The-Translation-Layer.md`, `ossys-edge-case.seed.sql`; V1 ground
+truth `config/type-mapping.default.json`, `src/Osm.Smo/`.*
