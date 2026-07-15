@@ -977,6 +977,74 @@ module Voice =
                 |> Option.filter (fun s -> s <> "")
                 |> Option.map (fun path -> View.Action(sprintf "Review %s — each finding carries a locating query and a commented repair." path)) }
 
+    /// `estate.unified` — the estate verdict, green (`check estate`;
+    /// CHAPTER_ESTATE_OPEN.md Appendix A.4). The clauses name exactly what
+    /// this run proved — the schema and data planes; the posture and fidelity
+    /// clauses join the copy with their waves, so the verdict never claims a
+    /// clause that does not yet run.
+    let private estateUnified : Copy =
+        { Code           = "estate.unified"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "The estate is one shape. %s environment(s) match the target schema and the data fits every declared constraint."
+                        (humane (textOr "envs" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.diverged` — the estate verdict, amber: the per-lane counts
+    /// lead (only the lanes that carry findings are named); the ruling queue
+    /// is called first when one exists; the action routes to the machine
+    /// record. Count-first, humane, constant-size at any estate scale (§12).
+    let private estateDiverged : Copy =
+        { Code           = "estate.diverged"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                let lanes =
+                    [ "decide", "awaiting a ruling"
+                      "repair", "on the repair queue"
+                      "relax",  "under an interim relaxation"
+                      "watch",  "under watch" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p
+                        |> Option.filter (fun n -> n <> "0")
+                        |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
+                let total = humane (textOr "total" "0" p)
+                let envs  = humane (textOr "envs" "0" p)
+                let queueClause =
+                    match text "decide" p with
+                    | Some n when n <> "0" -> " The ruling queue is first below."
+                    | _ -> ""
+                match lanes with
+                | [] ->
+                    View.Hero(View.Warn,
+                        sprintf "The estate is converging: %s finding(s) remain across %s environment(s).%s" total envs queueClause)
+                | ls ->
+                    View.Hero(View.Warn,
+                        sprintf "The estate is converging: %s finding(s) remain across %s environment(s) — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every finding with its lane, key, and evidence, machine-readable." path)) }
+
+    /// `estate.envUnreadable` — §14: a named environment could not be read.
+    /// The estate verdict needs every named environment (no partial estate —
+    /// DECISIONS 2026-07-15); the cause leads, the lever follows.
+    let private estateEnvUnreadable : Copy =
+        { Code           = "estate.envUnreadable"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "%s could not be read: %s. The estate verdict needs every named environment."
+                        (textOr "env" "an environment" p) (textOr "reason" "the connection did not open" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some (View.Action "Restore the connection, or narrow readiness.confirm deliberately.") }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1041,6 +1109,11 @@ module Voice =
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
           fidelityDataViolations
+          // §3 / §14 — the estate instrument's verdict pair + unreadable-env
+          // finding (check estate; CHAPTER_ESTATE_OPEN.md Appendix A.4)
+          estateUnified
+          estateDiverged
+          estateEnvUnreadable
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

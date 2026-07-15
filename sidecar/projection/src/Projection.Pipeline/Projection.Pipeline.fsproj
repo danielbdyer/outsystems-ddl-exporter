@@ -41,6 +41,7 @@
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
     <Compile Include="Readiness.fs" />
+    <Compile Include="Estate.fs" />
     <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />

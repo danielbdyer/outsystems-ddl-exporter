@@ -65,6 +65,9 @@ let private inScopeCodes : Set<string> =
           // the §12 data-reality rollup — the fidelity report's violations
           // condensed to one Warn envelope (2026-07-06)
           "fidelity.dataViolations"
+          // the estate instrument's verdict pair + unreadable-env finding
+          // (check estate — CHAPTER_ESTATE_OPEN.md Appendix A.4, 2026-07-15)
+          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -130,6 +133,9 @@ let private knownEmittableCodes : Set<string> =
           // the fidelity data-violation rollup (Compose.runWithConfigCore —
           // one Warn envelope when the source data contradicts the model)
           "fidelity.dataViolations"
+          // the estate instrument's verdicts — render-synthesized at the
+          // `check estate` face (`runCheckEstate`), consumed at render
+          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"
@@ -184,7 +190,16 @@ let private samplePayload : Voice.Payload =
           "refactorLogCount", box 5
           "rowDeltas",     box "OrderHeader    before=12 after=14 (change=+2)"
           "nullDeltas",    box "OrderHeader    Email    before=0 after=3 (change=+3)"
-          "schemaWarnings", box "the After deployment carries an added index (verify.schema.indexAdded)" ]
+          "schemaWarnings", box "the After deployment carries an added index (verify.schema.indexAdded)"
+          // the estate verdicts' filled branches (check estate, 2026-07-15)
+          "envs",          box 3
+          "total",         box 13
+          "decide",        box 4
+          "repair",        box 6
+          "relax",         box 2
+          "watch",         box 1
+          "env",           box "uat"
+          "artifactPath",  box "estate.json" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
@@ -250,6 +265,7 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "canary.cdcCaptured"; "canary.cdcSilent"
           "verifyData.matched"; "verifyData.diverged"
           "drift.none"; "drift.diverged"
+          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"

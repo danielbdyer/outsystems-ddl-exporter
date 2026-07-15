@@ -62,6 +62,7 @@
     <Compile Include="CatalogRisk.fs" />
     <Compile Include="Lifecycle.fs" />
     <Compile Include="Tolerance.fs" />
+    <Compile Include="EstateFinding.fs" />
     <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />

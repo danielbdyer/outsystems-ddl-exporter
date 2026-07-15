@@ -1,0 +1,478 @@
+namespace Projection.Pipeline
+
+// LINT-ALLOW-FILE: the estate board's rolled-up text renderer + the estate.json
+//   codec compose operator-facing statements (THE_VOICE twelve-rule register;
+//   the presentation contract, CHAPTER_ESTATE_OPEN.md Appendix A) and structured
+//   JSON at a terminal reporting boundary. The aggregation core (findings from
+//   CatalogDiff channels + the ModelFidelity dealbreakers; grouping; the verdict
+//   formula) is pure and carries no I/O — operand resolution (the OSSYS reads +
+//   profiling) lives one layer up (the CLI run face), exactly as `Compare.fs` /
+//   `Readiness.fs` split.
+
+open System.Text.Json.Nodes
+open Projection.Core
+
+/// `projection check estate` — the estate-convergence instrument
+/// (`CHAPTER_ESTATE_OPEN.md`; `DECISIONS 2026-07-15 — The estate chapter
+/// opens`). Given the unification TARGET (the agreed environment's shape, or
+/// the authored model under `--against model`) and N confirm environments, it
+/// presents every divergence as a finding on a disposition lane
+/// (DECIDE → REPAIR → RELAX → WATCH) with a stable cross-artifact key:
+///
+///   - **Schema plane** — each environment's logical shape against the
+///     target's (`CatalogDiff` over `Readiness.toLogicalShape`, so the
+///     comparison is espace-safe; A45): presence / rename / attribute /
+///     reference / index / facet divergences, grouped across environments by
+///     `FindingKey`.
+///   - **Data plane** — each environment's profiled data against the target's
+///     declared constraints (the `ModelFidelity` engine via `Compare`): NULLs
+///     under NOT NULL, duplicates under UNIQUE/PK, relationship orphans,
+///     length/type overflow — per-environment evidence on one keyed finding.
+///
+/// Read-only / advisory — a convergence instrument, not a move. Pure over
+/// resolved operands. One substrate: the rendered board and `estate.json` are
+/// projections of one `EstateReport` value.
+[<RequireQualifiedAccess>]
+module Estate =
+
+    /// The unification target the run compared against — named on the
+    /// masthead, so the basis of every verdict is explicit (DECISIONS
+    /// 2026-07-15: the run states which operand it used).
+    [<RequireQualifiedAccess>]
+    type TargetOperand =
+        /// The agreed environment's OSSYS shape (`readiness.schema` — the
+        /// default basis).
+        | AgreedEnv of label: string
+        /// The authored model (`--against model` — the cutover's declared
+        /// destination).
+        | AuthoredModel of label: string
+
+    [<RequireQualifiedAccess>]
+    module TargetOperand =
+        let label (t: TargetOperand) : string =
+            match t with
+            | TargetOperand.AgreedEnv l -> l
+            | TargetOperand.AuthoredModel l -> l
+
+        /// The masthead's basis phrase.
+        let basisText (t: TargetOperand) : string =
+            match t with
+            | TargetOperand.AgreedEnv l -> sprintf "the agreed shape (%s)" l
+            | TargetOperand.AuthoredModel l -> sprintf "the authored model (%s)" l
+
+    /// One finding — a keyed divergence with its per-environment evidence.
+    /// `Envs` carries `(environment, weight)` pairs: the weight is the
+    /// count-evidence (NULL rows, orphan rows, channel-change count) that
+    /// ranks the finding and fills its statement. The `Statement` and `Lever`
+    /// are minted ONCE here (the presentation contract's row), so the board
+    /// and `estate.json` cannot drift.
+    type Finding =
+        {
+            Key       : FindingKey
+            Kind      : EstateFindingKind
+            Lane      : EstateLane
+            Plane     : EstatePlane
+            Envs      : (string * int64) list
+            Statement : string
+            /// The one next move, when its artifact exists. `None` renders no
+            /// dangling pointer (the remediation artifacts join the board at
+            /// their own wave; a lever is never promised before it exists).
+            Lever     : string option
+        }
+
+    /// The impact rank — the largest consequence anywhere in the estate.
+    let weightOf (f: Finding) : int64 =
+        f.Envs |> List.map snd |> List.fold max 0L
+
+    /// One environment's masthead line: whether live data evidence backed its
+    /// data-plane verdicts (capture age joins at the evidence-store wave).
+    type EnvBasis =
+        {
+            Env                   : string
+            DataEvidenceAvailable : bool
+        }
+
+    /// The estate verdict — the ONLY verdict vocabulary on the surface.
+    /// (`Forked` joins at the posture wave, when a finding can carry "no
+    /// lawful disposition"; the closed-DU expansion check re-opens every
+    /// match in this module at that moment.)
+    [<RequireQualifiedAccess>]
+    type Verdict =
+        | Unified
+        | Converging
+
+    /// The assembled estate report — the one value the board, the JSON, and
+    /// the exit code project.
+    type EstateReport =
+        {
+            Target   : TargetOperand
+            Bases    : EnvBasis list
+            Findings : Finding list
+            Verdict  : Verdict
+        }
+
+    // ----------------------------------------------------------------------
+    // The aggregation — pure over resolved operands.
+    // ----------------------------------------------------------------------
+
+    let private humane (n: int) : string =
+        (int64 n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+
+    let private humane64 (n: int64) : string =
+        n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+
+    /// The operator-facing name of a kind key, resolved against the catalog
+    /// that carries it; the identity's display root when the catalog does not
+    /// (an impossible state on the constructing side, kept total).
+    let private kindNameIn (catalog: Catalog) (key: SsKey) : string =
+        match Catalog.tryFindKind key catalog with
+        | Some k -> Name.value k.Name
+        | None   -> SsKey.rootOriginal key
+
+    /// The comma-joined environment list of a grouped finding — "dev and uat"
+    /// / "dev, qa, and uat" (the finding names its environments; THE_VOICE
+    /// rule 10, the exact referent).
+    let private envListText (envs: string list) : string =
+        match envs with
+        | [] -> "no environment"
+        | [ one ] -> one
+        | [ a; b ] -> sprintf "%s and %s" a b
+        | many ->
+            let front = many |> List.take (List.length many - 1) |> String.concat ", "
+            sprintf "%s, and %s" front (List.last many)
+
+    // -- Schema-plane findings (one env against the target) -----------------
+
+    /// The per-kind channel divergences of one environment against the target
+    /// shape. `diff = CatalogDiff.between targetCatalog envCatalog`, so
+    /// `added` = kinds the ENVIRONMENT carries that the target does not, and
+    /// `removed` = kinds the target declares that the environment does not.
+    let private schemaFindingsOf
+        (env: string)
+        (targetCatalog: Catalog)
+        (envCatalog: Catalog)
+        (diff: CatalogDiff)
+        : (EstateFindingKind * string * string * int64) list =
+        // (kind, subject, per-env statement fragment, weight)
+        let presenceInEnv =
+            CatalogDiff.added diff
+            |> Set.toList
+            |> List.map (fun key ->
+                let name = kindNameIn envCatalog key
+                EstateFindingKind.SchemaPresence, name,
+                sprintf "%s exists in %s and is absent from the target shape" name env, 1L)
+        let presenceInTarget =
+            CatalogDiff.removed diff
+            |> Set.toList
+            |> List.map (fun key ->
+                let name = kindNameIn targetCatalog key
+                EstateFindingKind.SchemaPresence, name,
+                sprintf "the target shape declares %s and %s does not carry it" name env, 1L)
+        let renames =
+            CatalogDiff.renamed diff
+            |> Map.toList
+            |> List.map (fun (key, _) ->
+                let targetName = kindNameIn targetCatalog key
+                let envName = kindNameIn envCatalog key
+                EstateFindingKind.SchemaRename, targetName,
+                sprintf "%s is named %s in %s" targetName envName env, 1L)
+        let channel
+            (kind: EstateFindingKind)
+            (noun: string)
+            (diffs: Map<SsKey, ChannelDiff<'change>>)
+            : (EstateFindingKind * string * string * int64) list =
+            diffs
+            |> Map.toList
+            |> List.map (fun (key, d) ->
+                let name = kindNameIn targetCatalog key
+                let count =
+                    Set.count d.Added + Set.count d.Removed
+                    + Map.count d.Renamed + List.length d.Reshaped
+                kind, name,
+                sprintf "%s's %s differ from the target shape in %s (%s difference(s))"
+                    name noun env (humane count),
+                int64 count)
+        let facets =
+            CatalogDiff.kindFacetDiffs diff
+            |> Map.toList
+            |> List.map (fun (key, fs) ->
+                let name = kindNameIn targetCatalog key
+                EstateFindingKind.SchemaFacets, name,
+                sprintf "%s's own facets differ from the target shape in %s (%s facet(s))"
+                    name env (humane (Set.count fs)),
+                int64 (Set.count fs))
+        presenceInEnv
+        @ presenceInTarget
+        @ renames
+        @ channel EstateFindingKind.SchemaAttributes "columns" (CatalogDiff.attributeDiffs diff)
+        @ channel EstateFindingKind.SchemaReferences "relationships" (CatalogDiff.referenceDiffs diff)
+        @ channel EstateFindingKind.SchemaIndexes "indexes" (CatalogDiff.indexDiffs diff)
+        @ facets
+
+    // -- Data-plane findings (one env's data against the target's model) ----
+
+    let private dataFindingOf
+        (env: string)
+        (v: ModelFidelity.DataViolation)
+        : EstateFindingKind * string * string * int64 =
+        let subject = ModelFidelity.entityColumnText v.Reference
+        match v.Kind with
+        | ModelFidelity.NotNullButNullsPresent n ->
+            let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
+            EstateFindingKind.DataNotNull, subject,
+            sprintf "%s declares NOT NULL; %s holds %s" subject env count, max n 1L
+        | ModelFidelity.UniqueButDuplicatesPresent ->
+            EstateFindingKind.DataUnique, subject,
+            sprintf "%s declares unique; %s holds duplicate values" subject env, 1L
+        | ModelFidelity.ForeignKeyOrphans n ->
+            EstateFindingKind.DataOrphans, subject,
+            sprintf "%s: %s row(s) in %s reference a record that does not exist"
+                subject (humane64 n) env, max n 1L
+        | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
+            EstateFindingKind.DataOverflow, subject,
+            sprintf "%s holds values to %s against a declared %s in %s"
+                subject observed declared env, 1L
+
+    // -- Grouping + the report ----------------------------------------------
+
+    /// Compute the estate report from the resolved target and confirm
+    /// operands. Every catalog is normalized to its espace-invariant logical
+    /// shape first (A45), so a divergence is a REAL estate fact. Findings
+    /// with one identity across environments group onto one key — the
+    /// per-environment evidence rides the finding, and a strict majority of
+    /// diverging environments turns the statement's closing clause around
+    /// (the target, not the environments, may be the one behind).
+    let compute
+        (target: TargetOperand)
+        (targetCatalog: Catalog)
+        (envs: (string * Compare.Operand) list)
+        : EstateReport =
+        let logicalTarget = Readiness.toLogicalShape targetCatalog
+        let perEnv =
+            envs
+            |> List.map (fun (env, operand) ->
+                let logicalEnv = Readiness.toLogicalShape operand.Catalog
+                let compare =
+                    Compare.compute
+                        { operand with Label = env; Catalog = logicalEnv }
+                        { Label = TargetOperand.label target; Catalog = logicalTarget; Profile = None }
+                let schema =
+                    match compare.SchemaDelta with
+                    | Some diff -> schemaFindingsOf env logicalTarget logicalEnv diff
+                    | None -> []
+                let data = compare.DataDealbreakers |> List.map (dataFindingOf env)
+                env, compare.DataEvidenceAvailable, schema @ data)
+        let bases =
+            perEnv |> List.map (fun (env, evidence, _) -> { Env = env; DataEvidenceAvailable = evidence })
+        let envCount = List.length perEnv
+        let findings =
+            perEnv
+            |> List.collect (fun (env, _, fs) ->
+                fs |> List.map (fun (kind, subject, fragment, weight) -> kind, subject, (env, fragment, weight)))
+            |> List.groupBy (fun (kind, subject, _) -> kind, subject)
+            |> List.map (fun ((kind, subject), rows) ->
+                let perEnvRows =
+                    rows
+                    |> List.map (fun (_, _, row) -> row)
+                    |> List.sortBy (fun (env, _, _) -> env)
+                let envNames = perEnvRows |> List.map (fun (env, _, _) -> env)
+                let body =
+                    perEnvRows
+                    |> List.map (fun (_, fragment, _) -> fragment)
+                    |> String.concat "; "
+                let majorityNote =
+                    if envCount > 1 && List.length envNames * 2 > envCount then
+                        sprintf
+                            " Most environments differ from the target shape here (%s) — the target may be the one behind."
+                            (envListText envNames)
+                    else ""
+                { Key = FindingKey.create kind subject
+                  Kind = kind
+                  Lane = EstateFindingKind.laneOf kind
+                  Plane = EstateFindingKind.planeOf kind
+                  Envs = perEnvRows |> List.map (fun (env, _, weight) -> env, weight)
+                  Statement = sprintf "%s.%s" body majorityNote |> fun s -> s.TrimEnd()
+                  Lever = None })
+            |> List.sortByDescending weightOf
+        let verdict =
+            if List.isEmpty findings then Verdict.Unified else Verdict.Converging
+        { Target = target
+          Bases = bases
+          Findings = findings
+          Verdict = verdict }
+
+    /// The estate is unified — the exit-0 predicate.
+    let isUnified (report: EstateReport) : bool =
+        report.Verdict = Verdict.Unified
+
+    /// The lane's findings, board-ordered (impact-ranked within the lane).
+    let laneFindings (lane: EstateLane) (report: EstateReport) : Finding list =
+        report.Findings |> List.filter (fun f -> f.Lane = lane)
+
+    /// The per-lane counts the verdict copy and the JSON both read.
+    let laneCounts (report: EstateReport) : (EstateLane * int) list =
+        [ EstateLane.Decide; EstateLane.Repair; EstateLane.Relax; EstateLane.Watch ]
+        |> List.map (fun lane -> lane, List.length (laneFindings lane report))
+
+    // ----------------------------------------------------------------------
+    // The board — the rolled-up text projection (ten regions, fixed order;
+    // CHAPTER_ESTATE_OPEN Appendix A.1). The VERDICT region renders through
+    // the Voice catalog at the face (`estate.unified` / `estate.diverged`);
+    // every other region renders here, from the same report value the JSON
+    // projects (one substrate).
+    // ----------------------------------------------------------------------
+
+    let private laneTitle (lane: EstateLane) : string =
+        match lane with
+        | EstateLane.Decide -> "DECIDE — the ruling queue"
+        | EstateLane.Repair -> "REPAIR — prepared repairs"
+        | EstateLane.Relax  -> "RELAX — the interim posture"
+        | EstateLane.Watch  -> "WATCH — advisories"
+
+    let private laneEmptyLine (lane: EstateLane) : string =
+        match lane with
+        | EstateLane.Decide -> "  Nothing awaits a ruling."
+        | EstateLane.Repair -> "  Nothing carries a repair."
+        | EstateLane.Relax  -> "  The interim posture is empty."
+        | EstateLane.Watch  -> "  Nothing is under watch."
+
+    let private planeToken (p: EstatePlane) : string =
+        match p with
+        | EstatePlane.Schema -> "schema"
+        | EstatePlane.Data -> "data"
+        | EstatePlane.Identity -> "identity"
+        | EstatePlane.Operational -> "operational"
+
+    /// The per-lane cap — the top consequences are named; the remainder is
+    /// counted (THE_VOICE §12: cap the breadth, name the remainder; the full
+    /// list is `estate.json`'s, searchable, never scrollable).
+    let private laneCap : int = 8
+
+    /// Render the board regions BELOW the verdict (the masthead through the
+    /// action), from the one report value. The face renders the verdict Hero
+    /// through the Voice catalog first, then these lines.
+    let render (report: EstateReport) : string list =
+        [ // MASTHEAD — the estate and its basis.
+          yield sprintf "ESTATE — %s environment(s) against %s"
+                    (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
+          for basis in report.Bases do
+              let evidence =
+                  if basis.DataEvidenceAvailable then "live data evidence"
+                  else "no data evidence this run — the data plane is advisory-silent"
+              yield sprintf "  %-14s %s" basis.Env evidence
+          yield ""
+
+          // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
+          for lane in [ EstateLane.Decide; EstateLane.Repair; EstateLane.Relax; EstateLane.Watch ] do
+              let findings = laneFindings lane report
+              yield laneTitle lane
+              match findings with
+              | [] -> yield laneEmptyLine lane
+              | fs ->
+                  let shown = fs |> List.truncate laneCap
+                  for f in shown do
+                      yield sprintf "  %s" f.Statement
+                      match f.Lever with
+                      | Some lever -> yield sprintf "      → %s" lever
+                      | None -> ()
+                  let remainder = List.length fs - List.length shown
+                  if remainder > 0 then
+                      yield sprintf "  … and %s more — estate.json carries every finding." (humane remainder)
+              yield ""
+
+          // MATRIX — environment × plane counts (the drill-down door).
+          yield "MATRIX — findings by environment and plane"
+          if List.isEmpty report.Findings then
+              yield "  No findings; the matrix is empty."
+          else
+              for basis in report.Bases do
+                  let cells =
+                      [ EstatePlane.Schema; EstatePlane.Data; EstatePlane.Identity; EstatePlane.Operational ]
+                      |> List.map (fun plane ->
+                          let count =
+                              report.Findings
+                              |> List.filter (fun f ->
+                                  f.Plane = plane && f.Envs |> List.exists (fun (e, _) -> e = basis.Env))
+                              |> List.length
+                          sprintf "%s %s" (planeToken plane) (humane count))
+                      |> String.concat " · "
+                  yield sprintf "  %-14s %s" basis.Env cells
+          yield ""
+
+          // BURNDOWN — joins at the history wave; the first run says so.
+          yield "BURNDOWN — this run is the estate's first recorded reading; movement renders from the next run."
+          yield ""
+
+          // ARTIFACTS — the index: one line per artifact naming its role.
+          yield "ARTIFACTS"
+          yield "  estate.json — the full findings record: every board element, machine-readable."
+          yield ""
+
+          // ACTION — the one next move.
+          let action =
+              match laneFindings EstateLane.Decide report with
+              | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.text f.Key)
+              | [] ->
+                  match laneFindings EstateLane.Repair report with
+                  | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.text f.Key)
+                  | [] -> "Next: the estate holds; re-run on the publish cadence."
+          yield action ]
+
+    // ----------------------------------------------------------------------
+    // The estate.json codec — the structured sibling of the board (one
+    // substrate: both project the one report value).
+    // ----------------------------------------------------------------------
+
+    let private verdictToken (v: Verdict) : string =
+        match v with
+        | Verdict.Unified -> "unified"
+        | Verdict.Converging -> "converging"
+
+    let private laneToken (lane: EstateLane) : string =
+        match lane with
+        | EstateLane.Decide -> "decide"
+        | EstateLane.Repair -> "repair"
+        | EstateLane.Relax -> "relax"
+        | EstateLane.Watch -> "watch"
+
+    let toJson (report: EstateReport) : JsonObject =
+        let root = JsonObject()
+        root.["verdict"] <- JsonValue.Create(verdictToken report.Verdict)
+        root.["target"] <- JsonValue.Create(TargetOperand.basisText report.Target)
+        let envs = JsonArray()
+        for basis in report.Bases do
+            let o = JsonObject()
+            o.["env"] <- JsonValue.Create basis.Env
+            o.["dataEvidenceAvailable"] <- JsonValue.Create basis.DataEvidenceAvailable
+            envs.Add o
+        root.["environments"] <- envs
+        let lanes = JsonObject()
+        for lane, count in laneCounts report do
+            lanes.[laneToken lane] <- JsonValue.Create count
+        root.["lanes"] <- lanes
+        let findings = JsonArray()
+        for f in report.Findings do
+            let o = JsonObject()
+            o.["key"] <- JsonValue.Create(FindingKey.text f.Key)
+            o.["kind"] <- JsonValue.Create(EstateFindingKind.token f.Kind)
+            o.["lane"] <- JsonValue.Create(laneToken f.Lane)
+            o.["plane"] <- JsonValue.Create(planeToken f.Plane)
+            o.["statement"] <- JsonValue.Create f.Statement
+            (match f.Lever with
+             | Some lever -> o.["lever"] <- JsonValue.Create lever
+             | None -> ())
+            let perEnv = JsonArray()
+            for env, weight in f.Envs do
+                let e = JsonObject()
+                e.["env"] <- JsonValue.Create env
+                e.["weight"] <- JsonValue.Create weight
+                perEnv.Add e
+            o.["environments"] <- perEnv
+            findings.Add o
+        root.["findings"] <- findings
+        root
+
+    /// Serialize to a pretty-printed JSON string (the artifact body).
+    let toJsonString (report: EstateReport) : string =
+        let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
+        (toJson report).ToJsonString(opts)

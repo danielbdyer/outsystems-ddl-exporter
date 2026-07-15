@@ -24,6 +24,7 @@ open Projection.Cli.Faces.Operational
 open Projection.Cli.Faces.Explain
 open Projection.Cli.Faces.Inspect
 open Projection.Cli.Faces.Diff
+open Projection.Cli.Faces.Estate
 open Projection.Cli.Faces.Slice
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
@@ -103,7 +104,11 @@ let private usageLines : string list =
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
-        "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR)."
+        "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR) · shape (the"
+        "  cross-environment readiness gate over the readiness block) · estate (the"
+        "  convergence instrument: every divergence as a finding on a disposition lane,"
+        "  environments from readiness.confirm, target from readiness.schema or"
+        "  --against model; [--format json] → estate.json; exits 0 unified / 5 / 6)."
         ""
         "EXPLAIN — understand before shipping.  diff (two refs) · policy (two configs) · node"
         "  (one node's transforms + findings) · suggest (ranked config edits) · migrate"
@@ -319,6 +324,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
+    | PlanAction.CheckEstate args -> shellRun "projection check estate" Shell.ReadOnly (fun () -> runCheckEstate args)
     | PlanAction.CheckGo args -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) args)
     | PlanAction.CheckPlan (flow, plan, asJson) -> shellRun "projection check plan" Shell.ReadOnly (fun () -> runTransferPlan flow plan asJson)
     | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)

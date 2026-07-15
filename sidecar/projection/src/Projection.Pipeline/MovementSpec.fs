@@ -637,6 +637,15 @@ type PlanAction =
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
     | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `check estate` — the estate-convergence instrument
+    /// (CHAPTER_ESTATE_OPEN.md; DECISIONS 2026-07-15). The unification target
+    /// (the readiness block's agreed environment by default; the authored
+    /// model under `--against model` — the run states which it used) plus the
+    /// confirm set, each as (label, D9 conn-ref); the runner reads every
+    /// environment via OSSYS (native GUID identity) and rolls an
+    /// `Estate.EstateReport`. Payload reified to a record from birth (the
+    /// CheckGoArgs positional-misordering lesson).
+    | CheckEstate of args: CheckEstateArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -727,6 +736,24 @@ and CheckGoArgs =
       EmitImpact : bool
       Review     : bool
       Planned    : PlanAction }
+
+/// `check estate`'s coordinates (the `CheckEstate` payload). `TargetLabel` is
+/// the masthead's display name for the unification basis; `Target` is its
+/// resolution source; `Confirm` the (label, D9 conn-ref) environments the
+/// estate verdict needs — every one of them (no partial estate; an unreadable
+/// environment refuses by name at the face).
+and CheckEstateArgs =
+    { TargetLabel : string
+      Target      : EstateTargetSource
+      Confirm     : (string * string) list
+      AsJson      : bool }
+
+/// The estate target's resolution source: the agreed environment's live OSSYS
+/// conn-ref (the `readiness.schema` default), or the authored model under the
+/// live-OSSYS-primary / file-fallback policy (`ModelResolution`).
+and [<RequireQualifiedAccess>] EstateTargetSource =
+    | AgreedEnv of connRef: string
+    | AuthoredModel of modelOssys: string option * modelFile: string option
 
 /// A planned execution: the unhonored-axis notes (surfaced, never dropped —
 /// fidelity #2) plus the routed action.

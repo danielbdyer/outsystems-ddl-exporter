@@ -1,3 +1,64 @@
+# Handoff addendum — 2026-07-15, THE ESTATE CHAPTER OPENS: `check estate` wave A1 shipped (the instrument's skeleton — findings model, decision-first board, estate.json, three Voice codes, A45's pure witness). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
+
+To the next agent.
+
+**You are at the open of a two-track chapter** — read `CHAPTER_ESTATE_OPEN.md` FIRST (the
+strategic frame + Appendix A, the binding presentation contract), then the two DECISIONS
+entries dated 2026-07-15 (the laws: the ReadOnly boundary named, the estate evidence store,
+prove-implies-journal, the two digest planes), then the requirements corpus
+(`CUTOVER_RECONCILIATION_IDEATION.md`, same PR). A45 + T17 are AXIOMS candidates with
+AxiomTests stubs; A45's executable witness is LIVE (`EstateTests`), T17's promotion trigger is
+wave B2.
+
+**What you now operate (wave A1, this session):**
+- `projection check estate` — zero-flag: environments from `readiness.confirm`, target from
+  `readiness.schema` (`--against model` selects the authored model; the run names its basis).
+  Exit 0 unified / 5 diverged / 6 unreadable (no partial estate — an unreadable env refuses by
+  name, verified live). `--format json` prints `estate.json`'s content; every run writes the
+  artifact.
+- The findings model is Core (`EstateFinding.fs`): `FindingKey` (stable cross-artifact token,
+  `<kind>:<logical subject>` — the burndown, block IDs, overlay entries, and probes will all
+  key on it), `EstateLane` (Decide/Repair/Relax/Watch), `EstatePlane`, and the closed
+  `EstateFindingKind` (ten kinds at A1; each new detector adds its variant + contract row —
+  the `finding ⇔ presentation` test walks `EstateFindingKind.all`).
+- `Pipeline/Estate.fs`: `compute` (pure over resolved operands; reuses `Compare.compute` +
+  `Readiness.toLogicalShape`, so the comparison is espace-safe), cross-env grouping by key
+  with the strict-majority clause ("the target may be the one behind"), the ten-region board
+  in rolled-up text, and the `estate.json` codec — one report value, two projections.
+- Voice: `estate.unified` / `estate.diverged` / `estate.envUnreadable`, wired through all
+  three VoiceTotality lists; the verdict renders through the catalog at the face, the board
+  beneath it.
+
+**Deliberate A1 shapes (do not "fix" without the contract in hand):**
+- Schema findings sit in DECIDE — the lag/fork/drift classifier (wave A3) re-lanes lag to
+  WATCH; the lane vocabulary is stable, the assignment refines.
+- Data findings carry `Lever = None` — a lever is never promised before its artifact exists;
+  the remediation wave (A5) fills them. The BURNDOWN region says "first recorded reading"
+  until the history wave (A7).
+- `Estate.Verdict` is `Unified | Converging`; `Forked` joins at the posture wave (A6) — the
+  closed-DU expansion check will re-open every match in Estate.fs then.
+
+**Your next moves (the interleave lanes):** A2 (consensus: `Estate.decideOnJoin` over
+`Profile.merge` + per-env attribution + sample-floor honesty + masthead evidence provenance)
+∥ B1 (the RowDigestFold rebuild — the recipe is in PhysicalSchema.fs:294-304's docstring)
+∥ B4a (journal promotion + `filterSeedRows` de-silencing — early, independent, makes running
+transfers retroactively provable). Then A2.5 (the evidence store — the DECISIONS entry
+specifies layout, fingerprints, refresh-replaces).
+
+**Traps found this session:**
+- **The lint baseline is RED on this branch: 65 pre-existing violations** (ReviewNavigator,
+  TransferImpact, Pipeline/EvidenceCache, NameAlignment — mutation + string rules), verified
+  by stash-and-rerun. My files lint clean; the debt predates the chapter. Do not absorb a
+  sweep into an estate slice; surface it to the operator as its own hygiene item.
+- The CLI assembly is `projection.dll` (lowercase apphost `projection`), not
+  Projection.Cli.dll — driving it by path needs the right name.
+- This container's session-start is DEGRADED (no warm SQL container; ryuk unpullable) — the
+  pure pool is the verification surface; docker canaries need a healthier host.
+- The Voice donor idiom for run faces: a `// LINT-ALLOW-FILE:` header covering payload boxing
+  (the Canary.fs wording); a per-line marker must be a TRAILING comment on the flagged line.
+
+Hold the spine.
+
 # Handoff addendum — 2026-07-03 (sixth letter), THE OPERATOR SHELL: the hang, the flood, and the four-path TTY unified behind one door. Branch `claude/spectre-tty-export-publish-d5vcis`
 
 To the next agent.

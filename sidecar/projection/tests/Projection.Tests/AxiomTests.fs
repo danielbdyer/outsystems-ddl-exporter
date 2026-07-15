@@ -1609,9 +1609,11 @@ cells, the OSSYS-read catalogs normalized to logical shape are pairwise \
 CatalogDiff-empty; a residue is a REAL estate divergence, never an espace \
 artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS §2; the \
 OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check estate` \
-compares. Promotion trigger: wave A1 lands `EstateTests` — N espace cells of one \
-model produce zero estate findings after toLogicalShape — and this stub promotes \
-to a pointer at that executable witness.")>]
+compares. EXECUTABLE WITNESS LIVE (wave A1, same date): `EstateTests` — ``A45: N \
+espace cells of one model produce zero estate findings after toLogicalShape \
+(espace invariance)`` runs three espace-variant cells + an espace-variant target \
+through Estate.compute and asserts zero findings. This entry stays as the \
+axiom-file pointer; the witness is the EstateTests fact.")>]
 let ``A45 candidate: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
 
 [<Fact(Skip = "T17 candidate — row fidelity: Ingest_rows ∘ Transfer = ι modulo \

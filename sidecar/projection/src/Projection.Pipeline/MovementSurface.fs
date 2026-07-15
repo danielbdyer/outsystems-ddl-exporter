@@ -2205,6 +2205,49 @@ module Command =
                         let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
+            | "estate" :: _ ->
+                // THE ESTATE INSTRUMENT (CHAPTER_ESTATE_OPEN.md; DECISIONS
+                // 2026-07-15) — the zero-flag contract: environments from
+                // `readiness.confirm`, the target from `readiness.schema`
+                // (`--against model` selects the authored model instead; the
+                // run states which basis it used). Every named environment is
+                // required — a non-direct or unknown one is a NAMED refusal.
+                match cfg.Readiness with
+                | None ->
+                    PlanAction.Refused (2, err "cli.check.estateNoBlock" "projection check estate: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs ->
+                    let refOf (envName: string) : Result<string * string> =
+                        match Map.tryFind envName cfg.Environments with
+                        | Some env ->
+                            match env.Access with
+                            | Access.Direct r -> Result.success (envName, connSpecOf r)
+                            | _ -> Result.failureOf (err "cli.check.estateNotDirect" (sprintf "estate environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
+                        | None -> Result.failureOf (err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." envName))
+                    let target : Result<string * EstateTargetSource> =
+                        if valueOf "--against" = Some "model" then
+                            match (cfg.ModelOssys |> Option.orElse cfg.Shaping.Model.Ossys), cfg.Model with
+                            | None, None ->
+                                Result.failureOf (err "cli.check.estateNoModel" "projection check estate --against model: no authored model is configured (set model.env / model.ossys, or model).")
+                            | ossys, file -> Result.success ("model", EstateTargetSource.AuthoredModel (ossys, file))
+                        else
+                            refOf rs.Schema
+                            |> Result.map (fun (label, conn) -> label, EstateTargetSource.AgreedEnv conn)
+                    let confirmRs = rs.Confirm |> List.map refOf
+                    let confirmError = confirmRs |> List.tryPick (function Error (e :: _) -> Some e | _ -> None)
+                    match target, confirmError with
+                    // A missing authored model is a config-shape refusal (2);
+                    // an unresolvable environment is a connection-plane one (6).
+                    | Error (e :: _), _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _ -> PlanAction.Refused (6, e)
+                    | Error [], _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
+                    | Ok _, Some e -> PlanAction.Refused (6, e)
+                    | Ok (label, source), None ->
+                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
+                        PlanAction.CheckEstate
+                            { TargetLabel = label
+                              Target      = source
+                              Confirm     = confirm
+                              AsJson      = (valueOf "--format" = Some "json") }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
