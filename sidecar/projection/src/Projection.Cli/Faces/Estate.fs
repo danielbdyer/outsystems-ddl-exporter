@@ -74,6 +74,28 @@ let runCheckEstate (args: CheckEstateArgs) : int =
     match targetCatalog with
     | Error errs -> unreadable args.TargetLabel errs
     | Ok target ->
+        // The posture (wave A6): the loaded config's tightening section
+        // binds against the resolved target catalog — logical names are
+        // espace-stable, so the bound keys match every environment's
+        // evidence. A posture the operator wrote that cannot bind is a
+        // NAMED config-shape refusal (exit 2), never silently ignored.
+        let postureBinding =
+            TighteningBinding.fromConfig target args.Tightening
+            |> Result.map (fun bound ->
+                let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
+                ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
+                   RelaxedReferences = relaxedRefs
+                   RelaxedAttributes = relaxedAttrs } : Estate.Posture))
+        let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []
+        if not (List.isEmpty postureErrors) then
+            printErrors Console.Error postureErrors
+            2
+        else
+
+        let posture =
+            match postureBinding with
+            | Ok p -> p
+            | Error _ -> Estate.Posture.defaults   // unreachable behind the guard above
         // One environment's data-plane evidence under the store discipline.
         // A store/probe failure prints as an advisory and the run proceeds
         // live — the evidence stays fresh; only the pay-once saving is lost.
@@ -176,7 +198,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 | Some dir -> Estate.EvidenceStoreBasis.Enabled dir
                 | None -> Estate.EvidenceStoreBasis.Disabled
             let computed =
-                Estate.compute targetOperand target envs
+                Estate.computeWith posture targetOperand target envs
                 |> Estate.withEvidence storeBasis provenanceByEnv
             // The remediation artifacts (wave A5): one file per environment
             // carrying REPAIR-lane blocks — written BEFORE the report is
@@ -200,17 +222,46 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                         let file = EstateRemediation.fileNameFor label
                         IO.File.WriteAllText(file, RemediationEmitter.emitEstate headerLines blocks)
                         Some (file, List.length blocks))
-            let report = computed |> Estate.withRemediation remediationArtifacts
+            // The interim posture's artifacts (wave A6): every RELAX-lane
+            // PROPOSED finding resolves to one overlay entry + one reopen
+            // probe — written before stamping, so the board's levers, the
+            // ARTIFACTS index, and the files are one run's facts
+            // (π-coherence: report ⇔ overlay ⇔ probes, keyed alike).
+            let relaxations =
+                EstatePosture.relaxationsFor (Readiness.toLogicalShape target) computed
+            if not (List.isEmpty relaxations) then
+                let note =
+                    sprintf "projection:estate-overlay generated=%s target=%s — suggested config edits; the merge is an operator edit, and the engine never applies it."
+                        (nowUtc.ToString "o") args.TargetLabel
+                IO.File.WriteAllText("estate.overlay.json", EstateOverlayEmitter.emitOverlay note relaxations)
+                IO.File.WriteAllText(
+                    "estate.probes.sql",
+                    EstateOverlayEmitter.emitProbes
+                        [ sprintf "-- projection:estate-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
+                        relaxations)
+            let report =
+                computed
+                |> Estate.withRemediation remediationArtifacts
+                |> (fun r ->
+                    if List.isEmpty relaxations then r
+                    else Estate.withOverlay (List.length relaxations) r)
             let artifact = Estate.toJsonString report
             if args.AsJson then
                 printfn "%s" artifact
             else
                 // The provenance notices lead — the run's evidence basis is
-                // said before any verdict stands on it (RT-7).
+                // said before any verdict stands on it (RT-7); the posture
+                // notice follows them (the overlay exists before the
+                // verdict cites the relaxation lane).
                 for basis in report.Bases do
                     match noticeOf basis with
                     | Some (code, payload) -> TtyRenderer.renderVoicedTo Console.Out code payload
                     | None -> ()
+                (match report.OverlayEntries with
+                 | Some entries when entries > 0 ->
+                     TtyRenderer.renderVoicedTo Console.Out "estate.overlay"
+                         (Map.ofList [ "relaxations", box entries ])
+                 | _ -> ())
                 let laneCount lane =
                     Estate.laneCounts report
                     |> List.tryFind (fun (l, _) -> l = lane)
@@ -224,9 +275,13 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                           "repair",       box (laneCount EstateLane.Repair)
                           "relax",        box (laneCount EstateLane.Relax)
                           "watch",        box (laneCount EstateLane.Watch)
+                          "forks",        box (report.Findings |> List.filter (fun f -> f.Fork) |> List.length)
                           "artifactPath", box "estate.json" ]
                 let verdictCode =
-                    if Estate.isUnified report then "estate.unified" else "estate.diverged"
+                    match report.Verdict with
+                    | Estate.Verdict.Unified -> "estate.unified"
+                    | Estate.Verdict.Converging -> "estate.diverged"
+                    | Estate.Verdict.Forked -> "estate.forked"
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
                 Estate.render report |> List.iter (fun line -> printfn "%s" line)

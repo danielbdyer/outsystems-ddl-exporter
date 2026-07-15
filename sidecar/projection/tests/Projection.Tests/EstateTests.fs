@@ -57,17 +57,44 @@ let ``A45: N espace cells of one model produce zero estate findings after toLogi
 // -- finding ⇔ presentation (the totality seed) -------------------------------
 
 [<Fact>]
-let ``presentation: every finding kind carries its lane, plane, and a distinct machine token (finding ⇔ presentation)`` () =
+let ``presentation: every finding kind carries its contract row — statement specimen, lane-coherent lever form (finding ⇔ presentation)`` () =
+    // The Appendix A table, held to the code (wave A6 completes the seed):
+    // tokens distinct (keys cannot collide across kinds); lane + plane +
+    // specimen + lever form total (a kind cannot land without its row — the
+    // compiler enforces the matches, this walks the list); each specimen a
+    // complete sentence in the register (the mechanical twelve-rule laws:
+    // non-empty, ends on a period, banned-substring-clean — mirroring the
+    // VoiceTotality scan); each lever form coherent with its lane (DECIDE ⇔
+    // a ruling imperative; REPAIR ⇔ the block review; RELAX ⇒ the overlay
+    // merge, or — for the ACTIVE posture, whose next move is the probe's
+    // meter — no lever; WATCH ⇔ no lever, by design).
     let kinds = EstateFindingKind.all
     Assert.NotEmpty kinds
-    // Tokens are distinct (the projection is injective — keys cannot collide
-    // across kinds) and every kind resolves a lane + plane (total matches; the
-    // compiler enforces totality, this pins the walkable list's coverage).
     let tokens = kinds |> List.map EstateFindingKind.token
     Assert.Equal(List.length kinds, tokens |> List.distinct |> List.length)
+    let banned =
+        [ "your"; "you "; " i "; " we "; "not assumed"; "that's real"; ", not "
+          "cleaned up"; "cleans up"; "destroy"; "blast radius"; "fatal"
+          "dig"; "diggable"; "green hush"; "jewel"; "oops"; "let's"; "hang on"
+          "refused"; "error!"; "failed!" ]
     for kind in kinds do
-        EstateFindingKind.laneOf kind |> ignore
-        EstateFindingKind.planeOf kind |> ignore
+        let token = EstateFindingKind.token kind
+        let specimen = EstateFindingKind.specimenOf kind
+        Assert.False(System.String.IsNullOrWhiteSpace specimen, sprintf "%s carries no specimen" token)
+        Assert.True(specimen.EndsWith ".", sprintf "%s's specimen is a fragment (no closing period): %s" token specimen)
+        let lowered = specimen.ToLowerInvariant()
+        for b in banned do
+            Assert.False(lowered.Contains b, sprintf "%s's specimen breaks the banned list (THE_VOICE.md §2.2): contains '%s'" token b)
+        match EstateFindingKind.leverFormOf kind, EstateFindingKind.laneOf kind with
+        | EstateLeverForm.Ruling imperative, EstateLane.Decide ->
+            Assert.True(imperative.StartsWith "Rule ", sprintf "%s's ruling does not lead with the ruling: %s" token imperative)
+            Assert.True(imperative.EndsWith ".", sprintf "%s's ruling is a fragment: %s" token imperative)
+        | EstateLeverForm.ReviewBlock, EstateLane.Repair -> ()
+        | EstateLeverForm.MergeOverlayEntry, EstateLane.Relax -> ()
+        | EstateLeverForm.NoLever, EstateLane.Watch -> ()
+        | EstateLeverForm.NoLever, EstateLane.Relax when kind = EstateFindingKind.PostureActive -> ()
+        | form, lane ->
+            Assert.Fail(sprintf "%s's lever form %A is incoherent with its lane %A" token form lane)
 
 [<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
@@ -703,3 +730,198 @@ let ``check estate: --refresh naming an environment outside readiness.confirm �
         Assert.Equal(2, exit)
         Assert.Equal("cli.check.estateRefreshUnknownEnv", e.Code)
     | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+// -- the posture wave (A6): bands, the interim posture, the fork witness ------
+
+[<Fact>]
+let ``D3′: true orphans past the repair band land on the RELAX lane with the overlay-merge lever`` () =
+    // 130,000 orphans, 20,000 of them the unset value 0 — 110,000 TRUE
+    // orphans exceed the default band (100,000); the repair defers to the
+    // interim relaxation and the lever names the overlay entry by the
+    // finding's key (π-coherence).
+    let dirty =
+        { Profile.empty with
+            ForeignKeys = [ orphanEvidence orderRefToCustomer 130_000L ]
+            Distributions = [ categoricalOn orderCustomerFkKey [ "0", 20_000L; "7", 5L ] ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphansPastBand)
+    Assert.Equal(EstateLane.Relax, finding.Lane)
+    Assert.Contains("110,000 true orphan row(s) in cloud-uat exceed the repair band", finding.Statement)
+    Assert.Equal(
+        Some "Merge overlay entry data.orphansPastBand:Order.CustomerId of estate.overlay.json.",
+        finding.Lever)
+    Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphans))
+
+[<Fact>]
+let ``D3′: true orphans within the band stay on the repair queue — the sentinel split spends before the band`` () =
+    // 130,000 orphans but 40,000 unset references: 90,000 true orphans sit
+    // inside the band; the prepared repair stands.
+    let dirty =
+        { Profile.empty with
+            ForeignKeys = [ orphanEvidence orderRefToCustomer 130_000L ]
+            Distributions = [ categoricalOn orderCustomerFkKey [ "0", 40_000L; "7", 5L ] ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataOrphans))
+    Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphansPastBand))
+
+[<Fact>]
+let ``D1 relax arm: NOT-NULL contradictions past the band propose the keep-nullable relaxation`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 500_000L 200_000L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand)
+    Assert.Equal(EstateLane.Relax, finding.Lane)
+    Assert.Contains("200,000 contradicting row(s) in cloud-uat exceed the repair band", finding.Statement)
+    Assert.Equal(
+        Some "Merge overlay entry data.notNullPastBand:Customer.Name of estate.overlay.json.",
+        finding.Lever)
+
+[<Fact>]
+let ``the band knob: readiness.estate.repairBand moves the split (A44 — the key is consumed)`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
+    let tight : Estate.Posture = { Estate.Posture.defaults with RepairBand = 100L }
+    let report =
+        Estate.computeWith tight agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
+
+[<Fact>]
+let ``the active posture: a relaxed relationship renders its meter and absorbs the orphan finding`` () =
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.Equal(EstateLane.Relax, active.Lane)
+    Assert.Contains("the relationship Order.CustomerId → Customer is untracked by the interim posture; the reopen probe stands at 113 in cloud-uat", active.Statement)
+    Assert.Equal(None, active.Lever)
+    Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphans))
+
+[<Fact>]
+let ``the active posture: an unevidenced environment reads unobserved — the meter never fabricates`` () =
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
+              "cloud-qa",  operand "cloud-qa" sampleCatalog ]
+    let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.Contains("the reopen probe is unobserved in cloud-qa", active.Statement)
+
+[<Fact>]
+let ``the retirement notice: a relaxation whose probe reads zero everywhere becomes a preparable repair`` () =
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some cleanNow } ]
+    let retirable = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureRetirable)
+    Assert.Equal(EstateLane.Repair, retirable.Lane)
+    Assert.Contains("the relaxation is retirable; the relationship can track WITH CHECK", retirable.Statement)
+    Assert.Equal(
+        Some "Review block posture.retirable:Order.CustomerId of estate.remediation.cloud-uat.sql.",
+        retirable.Lever)
+
+[<Fact>]
+let ``the retirement notice: one dirty environment keeps the relaxation active everywhere (estate-grade, never per-env)`` () =
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
+    let dirty    = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 40L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some cleanNow }
+              "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.PostureRetirable))
+    let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.Contains("stands at 40 in cloud-uat", active.Statement)
+    Assert.Contains("stands at 0 in cloud-dev", active.Statement)
+
+[<Fact>]
+let ``the active posture: a kept-nullable column renders its meter and absorbs the NOT-NULL finding`` () =
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedAttributes = Set.singleton customerNameKey }
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.Contains("Customer.Name is kept nullable by the interim posture; the reopen probe stands at 4,120 in cloud-uat", active.Statement)
+    Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataNotNull))
+
+// -- the fork witness + the Forked verdict (A6) --------------------------------
+
+[<Fact>]
+let ``Forked: two environments diverging DIFFERENTLY on one subject fork the estate — no promotion order explains it`` () =
+    let alphaKey = attrKey [ "ForkAlpha" ]
+    let betaKey  = attrKey [ "ForkBeta" ]
+    let mkAttr (key: SsKey) (name: string) : Attribute =
+        let template = customer.Attributes |> List.find (fun a -> a.SsKey = customerNameKey)
+        { template with SsKey = key; Name = mkName name }
+    let withExtra (key: SsKey) (name: string) : Catalog =
+        withCustomerKind (fun k -> { k with Attributes = k.Attributes @ [ mkAttr key name ] })
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" (withExtra alphaKey "ForkAlpha")
+              "cloud-uat", operand "cloud-uat" (withExtra betaKey "ForkBeta") ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaAttributes)
+    Assert.True(finding.Fork)
+    Assert.Contains("The environments disagree among themselves here — a fork; no single adoption resolves it.", finding.Statement)
+    Assert.Equal(Estate.Verdict.Forked, report.Verdict)
+    Assert.False(Estate.isUnified report)
+    Assert.Contains("\"verdict\": \"forked\"", Estate.toJsonString report)
+    Assert.Contains("\"fork\": true", Estate.toJsonString report)
+
+[<Fact>]
+let ``Forked: two environments diverging IDENTICALLY on one subject converge — one adoption resolves it`` () =
+    let alphaKey = attrKey [ "ForkAlpha" ]
+    let mkAttr (key: SsKey) (name: string) : Attribute =
+        let template = customer.Attributes |> List.find (fun a -> a.SsKey = customerNameKey)
+        { template with SsKey = key; Name = mkName name }
+    let withExtra : Catalog =
+        withCustomerKind (fun k -> { k with Attributes = k.Attributes @ [ mkAttr alphaKey "ForkAlpha" ] })
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" withExtra
+              "cloud-uat", operand "cloud-uat" withExtra ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaAttributes)
+    Assert.False(finding.Fork)
+    Assert.Equal(Estate.Verdict.Converging, report.Verdict)
+
+// -- the DECIDE ruling levers + the masthead's fidelity clause (A6, §3) --------
+
+[<Fact>]
+let ``presentation: a DECIDE finding ends on its ruling — the contract's lever, minted`` () =
+    let report =
+        Estate.compute agreed emptyCat [ "cloud-uat", operand "cloud-uat" sampleCatalog ]
+    for finding in Estate.laneFindings EstateLane.Decide report do
+        match finding.Lever with
+        | Some lever -> Assert.StartsWith("Rule ", lever)
+        | None -> Assert.Fail(sprintf "DECIDE finding %s carries no ruling" (FindingKey.text finding.Key))
+
+[<Fact>]
+let ``the masthead names the unconfigured fidelity clause — never silent (RT-10)`` () =
+    let report = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    Assert.Contains(
+        Estate.render report,
+        fun (l: string) -> l.Contains "The fidelity clause is not configured")
+    Assert.Contains("\"fidelityClause\": \"notConfigured\"", Estate.toJsonString report)
+
+[<Fact>]
+let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` () =
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+        |> Estate.withOverlay 3
+    let lines = Estate.render report
+    Assert.Contains(lines, fun (l: string) -> l.Contains "estate.overlay.json — 3 interim relaxation(s)")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "estate.probes.sql — every reopen probe, runnable as one batch")
+    Assert.Contains("\"entries\": 3", Estate.toJsonString report)

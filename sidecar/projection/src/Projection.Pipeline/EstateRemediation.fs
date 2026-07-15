@@ -121,16 +121,6 @@ module EstateRemediation =
                             (sentinelRepair
                              @ [ sprintf "DELETE FROM %s WHERE %s IS NOT NULL AND %s NOT IN (SELECT %s FROM %s); -- operator: confirm row removal" t c c targetCol targetTable ])
                     | _ -> None))
-        | EstateFindingKind.DataOverflow ->
-            resolve ()
-            |> Option.bind (fun (k, a) ->
-                a.Length
-                |> Option.bind (fun declared ->
-                    let t = tableOf k
-                    let c = columnOf a
-                    blockOf
-                        (sprintf "SELECT * FROM %s WHERE LEN(%s) > %d;" t c declared)
-                        [ sprintf "UPDATE %s SET %s = LEFT(%s, %d) WHERE LEN(%s) > %d; -- truncates to the declared width; operator: confirm the loss" t c c declared c declared ]))
         | EstateFindingKind.DataCollationCollision ->
             resolve ()
             |> Option.bind (fun (k, a) ->
@@ -146,6 +136,27 @@ module EstateRemediation =
                 blockOf
                     (sprintf "SELECT [name], [is_not_trusted] FROM sys.foreign_keys WHERE [parent_object_id] = OBJECT_ID(N'%s');" t)
                     [ sprintf "ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL; -- re-trusts every constraint on the kind; scans the table" t ])
+        | EstateFindingKind.PostureRetirable ->
+            // The retirement repair (wave A6): the reopen probe reads zero
+            // in every evidenced environment. An FK-anchored subject earns
+            // the re-trust path; a plain column earns the re-tighten path
+            // (the `<DECLARED TYPE>` placeholder rides the house idiom —
+            // the operator restates the type; the overlay entry's removal
+            // re-tightens on the next publish either way).
+            resolve ()
+            |> Option.bind (fun (k, a) ->
+                let t = tableOf k
+                let c = columnOf a
+                let anchorsReference =
+                    k.References |> List.exists (fun r -> r.SourceAttribute = a.SsKey)
+                if anchorsReference then
+                    blockOf
+                        (sprintf "SELECT [name], [is_not_trusted] FROM sys.foreign_keys WHERE [parent_object_id] = OBJECT_ID(N'%s');" t)
+                        [ sprintf "ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL; -- the reopen probe reads zero; re-trusts the relationship (remove overlay entry %s first)" t keyText ]
+                else
+                    blockOf
+                        (sprintf "SELECT COUNT_BIG(*) AS [remaining] FROM %s WHERE %s IS NULL;" t c)
+                        [ sprintf "ALTER TABLE %s ALTER COLUMN %s <DECLARED TYPE> NOT NULL; -- the reopen probe reads zero; operator: restate the declared type (remove overlay entry %s first)" t c keyText ])
         | _ -> None
 
     /// One environment's blocks: every REPAIR-lane finding naming the

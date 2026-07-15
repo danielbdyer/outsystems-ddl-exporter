@@ -82,6 +82,14 @@ The `finding ⇔ presentation` totality test holds this table to the code. Direc
 classification (T1) is not a row — it assigns S-rows to lanes: lag → WATCH, fork → DECIDE,
 deployed-ahead drift → DECIDE (first in queue).
 
+**Code-resident since wave A6:** the registry lives in `Core/EstateFinding.fs` —
+`EstateFindingKind.specimenOf` (the statement specimen per kind) and
+`EstateFindingKind.leverFormOf` (the lever discipline per kind: a DECIDE ruling carries its
+imperative; REPAIR composes the block review; RELAX composes the overlay merge; WATCH and the
+ACTIVE posture carry none) — both total matches, so a kind cannot land without its row, and
+the totality test reads every specimen against the mechanical register laws. When this table
+and the registry disagree, the registry is law and this table has a bug.
+
 ### A.1 The board (ten regions, fixed order)
 
 ```

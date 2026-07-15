@@ -1031,6 +1031,42 @@ module Voice =
                 |> Option.filter (fun s -> s <> "")
                 |> Option.map (fun path -> View.Action(sprintf "Review %s — every finding with its lane, key, and evidence, machine-readable." path)) }
 
+    /// `estate.forked` — §3: the estate verdict's strongest amber (wave A6;
+    /// Appendix A.4). Environments have both changed, differently — no
+    /// promotion order explains it, and no single adoption resolves it;
+    /// each forked finding names its environments, and the ruling queue
+    /// leads the board.
+    let private estateForked : Copy =
+        { Code           = "estate.forked"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "The estate is forked in %s place(s): the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
+                        (humane (textOr "forks" "0" p)))
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every finding with its lane, key, and evidence, machine-readable." path)) }
+
+    /// `estate.overlay` — §6: the interim posture's artifact notice (wave
+    /// A6; Appendix A.4). The overlay is a suggestion surface: every entry
+    /// carries the probe that retires it, and the engine never applies the
+    /// edit — the merge is the operator's.
+    let private estateOverlay : Copy =
+        { Code           = "estate.overlay"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Warn,
+                    sprintf "Interim posture: %s relaxation(s) in estate.overlay.json — each carries the probe that retires it."
+                        (humane (textOr "relaxations" "0" p)))
+          Substantiation =
+            fun _ -> [ View.Note "The merge is an operator edit; the engine never applies it. estate.probes.sql carries every reopen probe as one runnable batch." ]
+          Action         = fun _ -> None }
+
     /// `estate.envUnreadable` — §14: a named environment could not be read.
     /// The estate verdict needs every named environment (no partial estate —
     /// DECISIONS 2026-07-15); the cause leads, the lever follows.
@@ -1210,10 +1246,13 @@ module Voice =
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
           fidelityDataViolations
-          // §3 / §14 — the estate instrument's verdict pair + unreadable-env
-          // finding (check estate; CHAPTER_ESTATE_OPEN.md Appendix A.4)
+          // §3 / §6 / §14 — the estate instrument's verdict vocabulary, the
+          // posture notice, and the unreadable-env finding (check estate;
+          // CHAPTER_ESTATE_OPEN.md Appendix A.4)
           estateUnified
           estateDiverged
+          estateForked
+          estateOverlay
           estateEnvUnreadable
           // §5 / §14 — the estate evidence-provenance notices (pay-once
           // evidence; DECISIONS 2026-07-15 entry 4)

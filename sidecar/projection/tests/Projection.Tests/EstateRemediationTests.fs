@@ -143,3 +143,21 @@ let ``watch findings carry no lever — a lever is never promised before its art
               "cloud-dev", operand "cloud-dev" sampleCatalog (Some tiny) ]
     let watch = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
     Assert.Equal(None, watch.Lever)
+
+[<Fact>]
+let ``the retirement block: a zero-probe relaxation earns the re-trust candidate, keyed like every artifact`` () =
+    // The posture keeps Order→Customer untracked; the evidence now reads
+    // zero — the retirement is a preparable repair whose block leads with
+    // the probe (the locating SELECT) and the re-trust statement.
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", operand "cloud-uat" sampleCatalog (Some cleanNow) ]
+    let block =
+        EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some cleanNow) report
+        |> List.find (fun b -> b.BlockId = "posture.retirable:Order.CustomerId")
+    Assert.Contains("sys.foreign_keys", block.Locate)
+    Assert.Contains(block.Repairs, fun (r: string) ->
+        r.Contains "WITH CHECK CHECK CONSTRAINT ALL" && r.Contains "remove overlay entry posture.retirable:Order.CustomerId first")

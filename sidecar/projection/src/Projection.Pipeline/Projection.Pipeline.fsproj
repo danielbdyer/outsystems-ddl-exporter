@@ -46,6 +46,12 @@
          check estate (wave A5) - reads Estate + the OperationalDiagnostics
          emitter. -->
     <Compile Include="EstateRemediation.fs" />
+    <!-- EstatePosture.fs: the interim posture's typed carriers (wave A6) -
+         resolves the report's RELAX-lane proposals to Relaxation values
+         (config edit + evidence + reopen probe) and reads the bound
+         tightening policy's active posture. Reads Estate; the overlay
+         emitter (OperationalDiagnostics) consumes the Core carrier. -->
+    <Compile Include="EstatePosture.fs" />
     <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />

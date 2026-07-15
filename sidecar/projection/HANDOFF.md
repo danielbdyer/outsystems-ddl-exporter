@@ -1,3 +1,74 @@
+# Handoff addendum — 2026-07-15 (latest), MID-CHAPTER: waves B4b → A4α → A5 → A6 shipped — the exception-ledger compare, the probe/static detectors, the remediation artifacts, and the POSTURE (the nullability-binder amendment, the interim overlay + reopen probes, the Forked verdict, the code-resident presentation contract). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
+
+To the next agent.
+
+**Where the chapter stands.** Thirteen build waves are landed (`e94ce41` A0+B0 → `3138fc3`
+A1 → `4b49b35` B1+A2 → `c1bccf6`/`d7c85b0` A2.5 → `ab909fd` B2 → `a01d62f` B3 → `5a3f470`
+A3 → `e476e40` B4b → `2585e2a` A4α → `8d87a7d` A5 → `0057f3d` A6α, with A6β committed on
+top of this letter). The interleave's remaining lanes: **A7** (burndown + NDJSON envelopes +
+`--since @runId` + the streak) ∥ **B5** (the container proof: seed apply, the container
+transfer sink, the `check fidelity <flow>` arm — flow-map membership BEFORE the `.sql`
+default; the deploy-docker note fix at MovementSurface.fs:1448-1467) → **A8** (the live
+Spectre board, the `runInit` stanza, `Profile.replaceKindEvidence`) → **B6** (the
+incremental proof cache + ApplyRunbookEmitter). Deferred by name: **B4a** (journal
+promotion on the materialized path — fresh session; also unblocks `--interventions
+@runId`), **A4β** (D10/D11 static alignment + EstateAlignmentEmitter, D14 users, O2
+grants), **ProofMissing/ProofStale** (with B5/B6 — the masthead names the unconfigured
+fidelity clause meanwhile). The operator's plan file carries a current resume-state section
+naming every landed edit.
+
+**What you now operate beyond the letter below (waves B4b → A6):**
+- The exception-ledger compare (B4b): `check data --rows --interventions <journal>` replays
+  the capture journal's key remaps before comparing; the `@runId` form refuses by name
+  (`Run.Ledgers` is `[]` until B4a); three tolerances minted
+  (`BooleanCanonicalizationTolerated` / `DateTimeTickPrecisionTolerated` /
+  `IntegerWidthNormalized` — 13 named now) with only the datetime one cell-effective
+  (millisecond canonicalization); `tolerancesInForce` rides the report and the Voice line.
+- The probe/static detectors (A4α): D13 headroom (declared-storage ceilings only), D8 date
+  sentinels (1900-01-01 categorical witness), D6 collation collisions (case-fold over
+  categorical evidence on declared-unique text), I3 identity-provenance MISMATCH (uniform
+  estates silent — the A45 fixture trap), O1 CDC parity (≥2 evidenced envs).
+- The remediation artifacts (A5): `EstateRemediation.blocksFor` (REPAIR-lane findings →
+  blocks; block id = the finding's key), `RemediationEmitter.emitEstate` (active locating
+  SELECT, commented repairs), RT-12 provenance headers from the TYPED connection builder,
+  and the REPAIR levers minted beside the files.
+- **The posture (A6 — the biggest wave; read its two commits first):**
+  - The AMENDMENT (A6α, the DECISIONS-scheduled decision, first-in-PR):
+    `TighteningDirection` (EvidenceDriven | RelaxationOnly) on BOTH tightening configs;
+    budget-less `kind:"nullability"` entries BIND again (RelaxationOnly — only the
+    keepNullable overrides act; the 2026-06-22 coercion drop stays whole; budgeted entries
+    stay dropped); per-reference `referenceOverrides` (`keepUntracked`) make the single-FK
+    untrack expressible, absolute in both directions, outranking the source-backed
+    carve-out; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes ONLY) reaches
+    `SsdtDdlEmitter.columnDef` — the wave-2 additive-only law AMENDED: evidence never
+    loosens, the operator's named posture may. The A44 enforcement test drives config →
+    binder → passes → overlay → emission with a baseline contrast.
+  - The instrument (A6β): `repairBandDefault = 100_000L` + `readiness.estate.repairBand`;
+    past-band violations become RELAX-lane PROPOSALS (`DataOrphansPastBand` — TRUE orphans,
+    past the sentinel split — and `DataNotNullPastBand`) whose levers name overlay entries;
+    `EstatePosture.relaxationsFor` → `EstateOverlayEmitter` → `estate.overlay.json`
+    (suggestedEdits whose `value` is EXACTLY the entry shape the binder binds — the A44
+    circle) + `estate.probes.sql` (π-coherence: one key set across findings, entries,
+    probes — property-tested); the ACTIVE posture (read from the bound config via
+    `EstatePosture.activeOf`) renders its meters (`PostureActive`, absorbing the violations
+    it covers) and its retirement notices (`PostureRetirable`, REPAIR, estate-grade: every
+    evidenced env zero); the `Forked` verdict (fork = one subject, ≥2 envs, DIFFERENT
+    divergence signatures — `%A` equality witnesses, never displayed) with `estate.forked`;
+    the masthead names the unconfigured fidelity clause (RT-10); and the §3 presentation
+    contract is now CODE (`EstateFindingKind.specimenOf` + `leverFormOf`, total — DECIDE
+    rulings mint from it; the upgraded `finding ⇔ presentation` totality test reads every
+    specimen against the register laws). `DataOverflow` moved to DECIDE (the contract's D4
+    ruling); its truncation block is deleted.
+- Traps this session re-confirmed: flat-`else` continuation is legal F#, a flat match-arm
+  is NOT (offside); System.Text.Json's default encoder escapes `+` and em-dashes (use
+  `UnsafeRelaxedJsonEscaping` ONLY for operator-read artifacts); the cwd resets between
+  Bash commands (absolute paths, always); `dotnet test` filters run against the LAST BUILT
+  assemblies — never trust a green focused run taken before your latest edit compiled.
+
+The letter below (A2 → A3 and B1 → B3) still describes machinery you operate; read it next.
+
+---
+
 # Handoff addendum — 2026-07-15 (later), MID-CHAPTER: waves A2 → A3 and B1 → B3 shipped — consensus, the pay-once evidence store, the detectors' pure wave, the RowDigestFold rebuild, the lockstep comparator (`check data --rows`, T17 executable), and the HASHBYTES plane. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
 
 To the next agent.

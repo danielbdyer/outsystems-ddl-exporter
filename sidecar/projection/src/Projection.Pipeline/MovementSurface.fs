@@ -251,7 +251,13 @@ type SliceFlowSpec =
 /// citizen (rendered, so `parse ∘ render = id`); absent ⇒ `None`.
 type ReadinessSpec =
     { Schema  : string
-      Confirm : string list }
+      Confirm : string list
+      /// The estate knobs (`readiness.estate`, wave A6): the repair band —
+      /// the contradicting-row count past which a prepared repair defers
+      /// to the interim relaxation. `None` = the engine's named default
+      /// (`Estate.repairBandDefault`); consumed by `check estate` in the
+      /// same wave that parses it (A44 — never an inert key).
+      RepairBand : int64 option }
 
 type ProjectionConfig =
     {
@@ -459,9 +465,21 @@ module ProjectionConfig =
     let private parseReadiness (defaultSchema: string option) (root: JsonElement) : ReadinessSpec option =
         match root.TryGetProperty "readiness" with
         | true, r when r.ValueKind = JsonValueKind.Object ->
+            // The estate knobs (wave A6): `estate.repairBand`, an int64.
+            let repairBand =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "repairBand" with
+                    | true, v when v.ValueKind = JsonValueKind.Number ->
+                        let mutable n = 0L
+                        if v.TryGetInt64(&n) then Some n
+                        else failwith "readiness.estate.repairBand must be a 64-bit integer."
+                    | true, _ -> failwith "readiness.estate.repairBand must be a 64-bit integer."
+                    | _ -> None
+                | _ -> None
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm" }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm" }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1384,6 +1402,12 @@ module ProjectionConfig =
                  let a = JsonArray()
                  for c in rs.Confirm do a.Add(JsonValue.Create c)
                  o.["confirm"] <- a)
+             (match rs.RepairBand with
+              | Some band ->
+                  let e = JsonObject()
+                  e.["repairBand"] <- JsonValue.Create band
+                  o.["estate"] <- e
+              | None -> ())
              root.["readiness"] <- o
          | None -> ())
         root
@@ -2328,7 +2352,9 @@ module Command =
                               Target      = source
                               Confirm     = confirm
                               AsJson      = (valueOf "--format" = Some "json")
-                              Evidence    = evidenceMode }
+                              Evidence    = evidenceMode
+                              RepairBand  = rs.RepairBand
+                              Tightening  = cfg.Shaping.Policy.Tightening }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

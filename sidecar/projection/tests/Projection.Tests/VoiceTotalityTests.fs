@@ -65,9 +65,11 @@ let private inScopeCodes : Set<string> =
           // the §12 data-reality rollup — the fidelity report's violations
           // condensed to one Warn envelope (2026-07-06)
           "fidelity.dataViolations"
-          // the estate instrument's verdict pair + unreadable-env finding
-          // (check estate — CHAPTER_ESTATE_OPEN.md Appendix A.4, 2026-07-15)
-          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          // the estate instrument's verdict vocabulary + the posture notice
+          // + unreadable-env finding (check estate — CHAPTER_ESTATE_OPEN.md
+          // Appendix A.4, 2026-07-15; Forked + the overlay join at wave A6)
+          "estate.unified"; "estate.diverged"; "estate.forked"
+          "estate.overlay"; "estate.envUnreadable"
           // the estate evidence-provenance notices (wave A2.5 — the pay-once
           // store says which basis each environment's verdicts stand on)
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
@@ -138,9 +140,11 @@ let private knownEmittableCodes : Set<string> =
           // the fidelity data-violation rollup (Compose.runWithConfigCore —
           // one Warn envelope when the source data contradicts the model)
           "fidelity.dataViolations"
-          // the estate instrument's verdicts — render-synthesized at the
-          // `check estate` face (`runCheckEstate`), consumed at render
-          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          // the estate instrument's verdicts + the posture notice —
+          // render-synthesized at the `check estate` face (`runCheckEstate`),
+          // consumed at render
+          "estate.unified"; "estate.diverged"; "estate.forked"
+          "estate.overlay"; "estate.envUnreadable"
           // the estate evidence-provenance notices — render-synthesized at the
           // same face from the report's stamped `EvidenceProvenance`
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
@@ -219,7 +223,10 @@ let private samplePayload : Voice.Payload =
           "rows",          box 17431882L
           "diffs",         box 3
           "ledger",        box "./journal/transfer-a1b2c3d4e5f60718.ndjson"
-          "tolerances",    box "BooleanCanonicalizationTolerated, DateTimeTickPrecisionTolerated, IntegerWidthNormalized" ]
+          "tolerances",    box "BooleanCanonicalizationTolerated, DateTimeTickPrecisionTolerated, IntegerWidthNormalized"
+          // the estate posture wave's filled branches (wave A6)
+          "forks",         box 2
+          "relaxations",   box 4 ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
@@ -285,7 +292,8 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "canary.cdcCaptured"; "canary.cdcSilent"
           "verifyData.matched"; "verifyData.diverged"
           "drift.none"; "drift.diverged"
-          "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          "estate.unified"; "estate.diverged"; "estate.forked"
+          "estate.overlay"; "estate.envUnreadable"
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           "fidelity.rows.matched"; "fidelity.rows.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"

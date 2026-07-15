@@ -753,7 +753,14 @@ and CheckEstateArgs =
       Target      : EstateTargetSource
       Confirm     : (string * string) list
       AsJson      : bool
-      Evidence    : EstateEvidenceMode }
+      Evidence    : EstateEvidenceMode
+      /// `readiness.estate.repairBand` (wave A6) — `None` rides the
+      /// engine's named default.
+      RepairBand  : int64 option
+      /// The loaded config's tightening section (wave A6): the face binds
+      /// it against the resolved target catalog to read the ACTIVE interim
+      /// posture — the relaxation keys whose meter lines the board carries.
+      Tightening  : Config.TighteningSection option }
 
 /// The row-fidelity proof's operands (T17, wave B2): the two environments
 /// by label + resolved conn, the model reference whose rename map closes the
