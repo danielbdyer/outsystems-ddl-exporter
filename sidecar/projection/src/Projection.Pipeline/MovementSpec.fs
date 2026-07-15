@@ -768,7 +768,11 @@ and CheckDataRowsArgs =
       Kind        : string option
       Module      : string option
       SampleCap   : int
-      AsJson      : bool }
+      AsJson      : bool
+      /// The intervention ledger's path (`--interventions <journal>`, wave
+      /// B4b) — a transfer journal file, or the `--journal` directory that
+      /// holds exactly one. `None` claims strict byte-identity.
+      Interventions : string option }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

@@ -201,6 +201,9 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> ()
         | ToleratedDivergence.TriggerBodyUnparsedDropped   -> ()
+        | ToleratedDivergence.BooleanCanonicalizationTolerated -> ()
+        | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ()
+        | ToleratedDivergence.IntegerWidthNormalized       -> ()
     // AC-D6 (NEITHER→HELD) added the two representation-only tolerances;
     // NM-28 (2026-06-14) added CompositePkFkUnreflected; NM-17 (2026-06-14)
     // RETIRED the four NM-16 kind-facet diff-erasure tolerances (now a real
@@ -212,7 +215,10 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // unique-promotion through the general comparator — dropping the count to 9.
     // **Option C (Wave 1 follow-on, 2026-06-15):** 10 — FkTrustNotRestoredOnBulkLoad
     // (Decision, AcceptedFaithful) names the transfer-leg re-trust opt-out.
-    Assert.Equal(10, Set.count ToleratedDivergence.allKnown)
+    // **T17/B4b (2026-07-15):** 13 — the row-fidelity comparator's three
+    // canonical-form erasures (Boolean canonicalization, datetime tick
+    // precision, integer width), all Data AcceptedFaithful.
+    Assert.Equal(13, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

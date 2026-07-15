@@ -81,7 +81,7 @@ module FidelityRowsDockerTests =
                             task {
                                 // -- identical data in the two renditions → byte-identity across the gap
                                 let! firstR =
-                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20
+                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None
                                 let first = Result.value firstR
                                 Assert.True(RowFidelityReport.agrees first, "identical renditions read as differing")
                                 let verdict = first.Kinds |> List.exactlyOne
@@ -99,7 +99,7 @@ module FidelityRowsDockerTests =
                                         (ColumnRealization.columnNameText (logicalKind.Attributes |> List.find (fun a -> a.IsPrimaryKey)).Column)
                                 let! _ = flip.ExecuteNonQueryAsync()
                                 let! secondR =
-                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20
+                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None
                                 let second = Result.value secondR
                                 Assert.False(RowFidelityReport.agrees second)
                                 let flipped = second.Kinds |> List.exactlyOne

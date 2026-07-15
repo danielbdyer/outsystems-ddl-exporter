@@ -215,9 +215,11 @@ let private samplePayload : Voice.Payload =
           "age",           box "9"
           "kinds",         box 214
           "moved",         box 3
-          // the row-fidelity proof pair's filled branches (wave B2)
+          // the row-fidelity proof pair's filled branches (wave B2 + B4b)
           "rows",          box 17431882L
-          "diffs",         box 3 ]
+          "diffs",         box 3
+          "ledger",        box "./journal/transfer-a1b2c3d4e5f60718.ndjson"
+          "tolerances",    box "BooleanCanonicalizationTolerated, DateTimeTickPrecisionTolerated, IntegerWidthNormalized" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality

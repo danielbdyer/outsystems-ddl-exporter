@@ -27,7 +27,7 @@ let runCheckDataRows (args: CheckDataRowsArgs) : int =
                 args.BeforeLabel args.BeforeConn
                 args.AfterLabel args.AfterConn
                 args.ModelRef model
-                args.Kind args.Module args.SampleCap).GetAwaiter().GetResult()
+                args.Kind args.Module args.SampleCap args.Interventions).GetAwaiter().GetResult()
         match outcome with
         | Error errs ->
             printErrors Console.Error errs
@@ -42,6 +42,8 @@ let runCheckDataRows (args: CheckDataRowsArgs) : int =
                         [ "rows",  box (RowFidelityReport.rowsCompared report)
                           "kinds", box (List.length report.Kinds)
                           "diffs", box (RowFidelityReport.differenceTotal report)
+                          "ledger", box (report.Interventions |> Option.defaultValue "")
+                          "tolerances", box (String.concat ", " report.TolerancesInForce)
                           "artifactPath", box "fidelity.rows.json" ]
                 let verdictCode =
                     if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"

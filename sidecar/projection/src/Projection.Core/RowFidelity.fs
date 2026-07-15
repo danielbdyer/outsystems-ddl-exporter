@@ -110,6 +110,60 @@ module RowFidelity =
                 | None -> Some name)
         differing |> Array.truncate cap |> Array.toList
 
+    /// Millisecond-canonicalize `DateTime`-typed cells before hashing (the
+    /// `DateTimeTickPrecisionTolerated` erasure, in force on the row-fidelity
+    /// path): the canonical cell form is `yyyy-MM-dd HH:mm:ss.fffffff` (23 +
+    /// 4 sub-millisecond digits); truncating to 23 characters absorbs the
+    /// `datetime` (1/300 s) vs `datetime2` (100 ns) tick residue while a
+    /// genuine at-or-above-millisecond difference still fails. Identity when
+    /// `ordinals` is empty or no cell exceeds the millisecond form — the
+    /// quantum is shared, never mutated.
+    let canonicalizeDateTimeCells (ordinals: int[]) (q: RowQuantum) : RowQuantum =
+        let millisecondFormLength = 23
+        let needsWork =
+            ordinals
+            |> Array.exists (fun i -> i < q.Cells.Length && q.Cells.[i].Length > millisecondFormLength)
+        if not needsWork then q
+        else
+            let cells = Array.copy q.Cells
+            for i in ordinals do
+                if i < cells.Length && cells.[i].Length > millisecondFormLength then
+                    cells.[i] <- cells.[i].Substring(0, millisecondFormLength)  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
+            { Cells = cells }
+
+    /// Replay a transfer run's key interventions onto one SOURCE row — the
+    /// predicted-target transform (T17: `κ (key r)` over the row's own key,
+    /// `remapFks r` over its referencing cells). `keyRewrite` is the kind's
+    /// own (source → assigned) pair map at the key ordinal; `fkRewrites`
+    /// pairs each referencing cell's ordinal with the TARGET kind's pair
+    /// map. A value absent from a map rides unchanged (preserved keys are
+    /// identity). Identity when nothing rewrites — the quantum is shared,
+    /// never mutated.
+    let replayQuantum
+        (keyRewrite: (int * Map<string, string>) option)
+        (fkRewrites: (int * Map<string, string>) list)
+        (q: RowQuantum)
+        : RowQuantum =
+        let rewriteAt (cells: string[] option) (ordinal: int) (map: Map<string, string>) : string[] option =
+            let current = match cells with Some c -> c | None -> q.Cells
+            if ordinal >= current.Length then cells
+            else
+                match Map.tryFind current.[ordinal] map with
+                | Some assigned when assigned <> current.[ordinal] ->
+                    let c = match cells with Some c -> c | None -> Array.copy q.Cells
+                    c.[ordinal] <- assigned  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
+                    Some c
+                | _ -> cells
+        let afterKey =
+            match keyRewrite with
+            | Some (ordinal, map) -> rewriteAt None ordinal map
+            | None -> None
+        let afterFks =
+            fkRewrites |> List.fold (fun cells (ordinal, map) -> rewriteAt cells ordinal map) afterKey
+        match afterFks with
+        | Some cells -> { Cells = cells }
+        | None -> q
+
     /// The pure ordered-merge comparator — the law surface. Both lists are
     /// (key, row) ascending by key (the server's `ORDER BY pk` order); the
     /// bases align the two renditions' column names. Returns the named

@@ -76,6 +76,17 @@ module CaptureJournal =
 
     let filePath (journal: CaptureJournal) : string = journal.FilePath
 
+    /// Open an EXISTING journal by its file path — the second consumer's
+    /// door (2026-07-15, fidelity wave B4b): the row-fidelity comparator
+    /// replays a journal the operator names directly (the transfer's
+    /// `--journal` directory holds `transfer-<digest>.ndjson`), where the
+    /// (directory, marker) pair `create` derives the path from is not in
+    /// hand. Read-side only — writers keep arriving through `create`, so
+    /// the marker-keyed addressing (and its drift guard) stays the one
+    /// write-path rule.
+    let ofFile (path: string) : CaptureJournal =
+        { FilePath = path }
+
     /// Phase 3 — the address-drift guard. The journal is addressed by the
     /// plan-marker digest (`transfer-<digest>.ndjson`), so if the marker
     /// changes between a crashed run and its resume — a `planMarker`/schema

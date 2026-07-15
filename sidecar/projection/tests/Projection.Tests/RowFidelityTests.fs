@@ -208,3 +208,104 @@ let ``check data without --rows keeps its aggregate-count path (the arm is addit
     match (Command.planCheck cfg [ "data"; "--before"; "cloud-dev"; "--after"; "cloud-qa" ]).Action with
     | PlanAction.CheckData _ -> ()
     | other -> Assert.Fail(sprintf "expected CheckData; got %A" other)
+
+// -- the intervention replay + the canonical-form erasures (wave B4b) ---------
+
+[<Fact>]
+let ``canonicalizeDateTimeCells: sub-millisecond tick residue truncates to the millisecond form; the original quantum is never mutated`` () =
+    let ordinals = [| 1 |]
+    let q = quantum [ "7"; "2026-01-02 03:04:05.0033333"; "alpha" ]
+    let canonical = RowFidelity.canonicalizeDateTimeCells ordinals q
+    Assert.Equal("2026-01-02 03:04:05.003", canonical.Cells.[1])
+    Assert.Equal("7", canonical.Cells.[0])
+    Assert.Equal("2026-01-02 03:04:05.0033333", q.Cells.[1])
+    // identity when nothing exceeds the millisecond form
+    let short = quantum [ "7"; "2026-01-02 03:04:05.003"; "alpha" ]
+    Assert.Equal<string[]>(short.Cells, (RowFidelity.canonicalizeDateTimeCells ordinals short).Cells)
+
+[<Fact>]
+let ``canonicalizeDateTimeCells: one instant stored at datetime and datetime2 precision reads equal after the erasure`` () =
+    let ordinals = [| 0 |]
+    let fromDateTime  = RowFidelity.canonicalizeDateTimeCells ordinals (quantum [ "2026-01-02 03:04:05.0030000" ])
+    let fromDateTime2 = RowFidelity.canonicalizeDateTimeCells ordinals (quantum [ "2026-01-02 03:04:05.0033333" ])
+    Assert.Equal<string[]>(fromDateTime.Cells, fromDateTime2.Cells)
+
+[<Fact>]
+let ``replayQuantum: the own key and the referencing cells rewrite through their maps; absent values ride unchanged (preserved keys are identity)`` () =
+    let q = quantum [ "3"; "10"; "alpha" ]
+    let keyMap = Map.ofList [ "3", "2001" ]
+    let fkMap = Map.ofList [ "10", "907" ]
+    let replayed = RowFidelity.replayQuantum (Some (0, keyMap)) [ 1, fkMap ] q
+    Assert.Equal<string list>([ "2001"; "907"; "alpha" ], replayed.Cells |> Array.toList)
+    Assert.Equal("3", q.Cells.[0])
+    let unmatched = RowFidelity.replayQuantum (Some (0, Map.ofList [ "99", "1" ])) [ 1, Map.ofList [ "99", "1" ] ] q
+    Assert.Equal<string[]>(q.Cells, unmatched.Cells)
+
+[<Fact>]
+let ``loadReplayMaps: journaled pairs fold keep-first per source key in chunk order; the --journal directory resolves its single file (at-least-once dedupe)`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-journal-" + System.Guid.NewGuid().ToString "N")
+    try
+        let journal = CaptureJournal.create dir "b4b-replay-witness"
+        let chunk (ix: int) (pairs: (string * string) list) : ChunkRecord =
+            { Kind = "Customer"; ChunkIx = ix; FirstPk = "1"; LastPk = "9"
+              RawCount = List.length pairs; WrittenCount = List.length pairs
+              Pairs = pairs |> List.map (fun (s, a) -> [| s; a |]) |> List.toArray }
+        CaptureJournal.append journal (chunk 0 [ "1", "901"; "2", "902" ])
+        // the resumed run re-appends its chunk (at-least-once) — last write
+        // per chunk index wins at load, so the fold sees it once
+        CaptureJournal.append journal (chunk 0 [ "1", "901"; "2", "902" ])
+        // a later chunk overlapping an earlier source key — keep-first wins
+        CaptureJournal.append journal (chunk 1 [ "2", "888"; "3", "903" ])
+        let maps =
+            match FidelityCompareRun.loadReplayMaps (CaptureJournal.filePath journal) with
+            | Ok m -> m
+            | Error es -> failwithf "loadReplayMaps failed: %A" es
+        let customer = maps.["Customer"]
+        Assert.Equal("901", customer.["1"])
+        Assert.Equal("902", customer.["2"])
+        Assert.Equal("903", customer.["3"])
+        Assert.Equal(3, customer.Count)
+        let viaDirectory =
+            match FidelityCompareRun.loadReplayMaps dir with
+            | Ok m -> m
+            | Error es -> failwithf "directory resolution failed: %A" es
+        Assert.Equal("901", viaDirectory.["Customer"].["1"])
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+[<Fact>]
+let ``loadReplayMaps: a missing path and an ambiguous directory refuse by name`` () =
+    match FidelityCompareRun.loadReplayMaps (System.IO.Path.Combine(System.IO.Path.GetTempPath(), "no-such-journal.ndjson")) with
+    | Error (e :: _) -> Assert.Equal("fidelity.rows.journalMissing", e.Code)
+    | other -> Assert.Fail(sprintf "expected the missing refusal; got %A" other)
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-journal-ambig-" + System.Guid.NewGuid().ToString "N")
+    try
+        System.IO.Directory.CreateDirectory dir |> ignore
+        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-aaaa.ndjson"), "")
+        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-bbbb.ndjson"), "")
+        match FidelityCompareRun.loadReplayMaps dir with
+        | Error (e :: _) -> Assert.Equal("fidelity.rows.journalAmbiguous", e.Code)
+        | other -> Assert.Fail(sprintf "expected the ambiguity refusal; got %A" other)
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+[<Fact>]
+let ``check data --rows: --interventions rides the args record; the run-reference form refuses by name until the envelope carries its ledger refs`` () =
+    let cfg = ProjectionConfig.parse rowsJson |> mustOk
+    match (Command.planCheck cfg [ "data"; "--rows"; "--before"; "cloud-dev"; "--after"; "cloud-qa"; "--model"; "m.json"; "--interventions"; "./journal" ]).Action with
+    | PlanAction.CheckDataRows args -> Assert.Equal(Some "./journal", args.Interventions)
+    | other -> Assert.Fail(sprintf "expected CheckDataRows; got %A" other)
+    match (Command.planCheck cfg [ "data"; "--rows"; "--before"; "cloud-dev"; "--after"; "cloud-qa"; "--model"; "m.json"; "--interventions"; "@01HXYZ" ]).Action with
+    | PlanAction.Refused (exit, e) ->
+        Assert.Equal(2, exit)
+        Assert.Equal("cli.check.dataRowsInterventionsRunRef", e.Code)
+    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+[<Fact>]
+let ``the three canonical-form erasures are minted, named, and declared in force on the rows proof`` () =
+    for t in FidelityCompareRun.tolerancesInForce do
+        Assert.Contains(t, ToleratedDivergence.allKnown)
+        Assert.Equal(Some t, ToleratedDivergence.tryParse (ToleratedDivergence.name t))
+    Assert.Equal<string list>(
+        [ "BooleanCanonicalizationTolerated"; "DateTimeTickPrecisionTolerated"; "IntegerWidthNormalized" ],
+        FidelityCompareRun.tolerancesInForce |> List.map ToleratedDivergence.name)

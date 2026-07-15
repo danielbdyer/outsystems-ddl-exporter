@@ -2106,9 +2106,20 @@ module Command =
                                       (match System.Int32.TryParse raw with
                                        | true, n when n > 0 -> Ok n
                                        | _ -> Error (err "cli.check.dataRowsSample" (sprintf "projection check data --rows: --sample needs a positive whole number; '%s' is not one." raw)))
-                              (match sampleCap with
-                               | Error e -> PlanAction.Refused (2, e)
-                               | Ok cap ->
+                              // `--interventions` names the transfer journal
+                              // (a file, or the --journal directory). The
+                              // `@runId` form waits on the run envelope's
+                              // ledger refs (the journal-promotion wave) —
+                              // refused by name, never a silent guess.
+                              let interventions =
+                                  match valueOf "--interventions" with
+                                  | Some r when r.StartsWith "@" ->
+                                      Error (err "cli.check.dataRowsInterventionsRunRef" (sprintf "projection check data --rows: --interventions %s — a stored run does not yet carry its ledger references; name the journal file itself (the transfer's --journal directory holds transfer-<digest>.ndjson)." r))
+                                  | other -> Ok other
+                              (match sampleCap, interventions with
+                               | Error e, _ -> PlanAction.Refused (2, e)
+                               | _, Error e -> PlanAction.Refused (2, e)
+                               | Ok cap, Ok ledger ->
                                    PlanAction.CheckDataRows
                                        { BeforeLabel = b
                                          BeforeConn  = bc
@@ -2118,7 +2129,8 @@ module Command =
                                          Kind        = valueOf "--kind"
                                          Module      = valueOf "--module"
                                          SampleCap   = cap
-                                         AsJson      = (valueOf "--format" = Some "json") }))
+                                         AsJson      = (valueOf "--format" = Some "json")
+                                         Interventions = ledger }))
                      | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data --rows: requires --before <environment> --after <environment> --model <ref>.")
             | "data" :: _ ->

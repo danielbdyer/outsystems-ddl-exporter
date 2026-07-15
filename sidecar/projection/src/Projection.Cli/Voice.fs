@@ -1059,7 +1059,16 @@ module Voice =
                     sprintf "Every compared row is byte-identical across the physical-to-logical gap: %s row(s) across %s kind(s)."
                         (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
           Substantiation =
-            fun _ -> [ View.Note "No intervention ledger was supplied — this proof claims strict byte-identity." ]
+            fun p ->
+                let ledger =
+                    match text "ledger" p |> Option.filter (fun s -> s <> "") with
+                    | Some path -> View.Note(sprintf "The proof holds modulo the named ledger: %s — every replayed key remap is that journal's record." path)
+                    | None -> View.Note "No intervention ledger was supplied — this proof claims strict byte-identity."
+                let tolerances =
+                    text "tolerances" p
+                    |> Option.filter (fun s -> s <> "")
+                    |> Option.map (fun t -> View.Note(sprintf "Tolerances in force: %s — the canonical row form's named erasures." t))
+                ledger :: (tolerances |> Option.toList)
           Action         =
             fun p ->
                 text "artifactPath" p
@@ -1076,7 +1085,11 @@ module Voice =
                 View.Hero(View.Bad,
                     sprintf "The rows differ across the gap: %s difference(s) over %s compared row(s) across %s kind(s). The first differing rows are named below, each by its key."
                         (humane (textOr "diffs" "0" p)) (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
-          Substantiation = fun _ -> []
+          Substantiation =
+            fun p ->
+                match text "ledger" p |> Option.filter (fun s -> s <> "") with
+                | Some path -> [ View.Note(sprintf "The named ledger was replayed before comparing: %s — these differences stand OUTSIDE it." path) ]
+                | None -> []
           Action         =
             fun p ->
                 text "artifactPath" p
