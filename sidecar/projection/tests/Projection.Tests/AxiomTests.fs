@@ -1603,6 +1603,30 @@ static product algebra (Pass.product / `&&&`) once anticipated this but was \
 retired 2026-06-04 (unused); rebuild it when the trigger eventually fires.")>]
 let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
 
+[<Fact(Skip = "A45 candidate — espace invariance across the environment lattice \
+(estate chapter open, 2026-07-15). For any authored model deployed at N espace \
+cells, the OSSYS-read catalogs normalized to logical shape are pairwise \
+CatalogDiff-empty; a residue is a REAL estate divergence, never an espace \
+artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS §2; the \
+OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check estate` \
+compares. Promotion trigger: wave A1 lands `EstateTests` — N espace cells of one \
+model produce zero estate findings after toLogicalShape — and this stub promotes \
+to a pointer at that executable witness.")>]
+let ``A45 candidate: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
+
+[<Fact(Skip = "T17 candidate — row fidelity: Ingest_rows ∘ Transfer = ι modulo \
+named row interventions, residual zero (fidelity chapter open, 2026-07-15). \
+Every source row not removed by the row-set ledger satisfies \
+canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the canonical \
+row form over an SsKey/logical basis; every target row outside image(κ) ∪ adds \
+is a violation; every exception cites its ledger record. The data-plane sibling \
+of the soul adjunction. Promotion trigger: wave B2 lands the lockstep \
+comparator's docker witness (two identical databases prove byte-identity; one \
+flipped cell names its business key) and this stub promotes to a pointer at \
+that executable witness. The two digest planes (client-canonical SHA256 \
+authoritative; server HASHBYTES fast-path) agree per SQL type at wave B3.")>]
+let ``T17 candidate: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
+
 // ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)
 // ===========================================================================

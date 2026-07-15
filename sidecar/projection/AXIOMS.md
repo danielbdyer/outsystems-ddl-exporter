@@ -2074,3 +2074,51 @@ scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
 opens.** Future chapters that surface new amendment candidates
 append to this section at chapter open with TBD bodies; the
 scaffolding grows monotonically with the chapter pre-scopes.
+
+## A45 candidate — espace invariance across the environment lattice (estate chapter open, 2026-07-15)
+
+*Status: candidate (proposed at the estate chapter open; promoted to law when its N-way witness
+holds).*
+
+**Statement.** For any authored model M and any set of OutSystems environment cells that carry M
+(the same logical model deployed under per-espace physical names), the OSSYS-read catalogs of
+those cells, normalized to logical shape (`Readiness.toLogicalShape` — realization-name
+artifacts blanked: triggers, column checks, default-constraint names), are pairwise
+`CatalogDiff`-empty:
+
+    ∀ i, j :  CatalogDiff.between (logical cellᵢ) (logical cellⱼ) = ∅
+
+A non-empty residue is a REAL logical divergence of the estate (a finding), never an espace
+artifact. This lifts the shipped two-cell law (`CROSS_ENVIRONMENT_READINESS.md` §2, witnessed
+by the `OssysComprehensiveFixtureTests` two-DB canary) to the N-way estate the `check estate`
+verb compares.
+
+**Witness.** `AxiomTests.fs` — Skip-stub at chapter open; promoted to executable in wave A1
+(`EstateTests`: N espace cells of one model produce zero estate findings after
+`toLogicalShape`).
+
+## T17 candidate — row fidelity: transfer is byte-faithful modulo named row interventions (fidelity chapter open, 2026-07-15)
+
+*Status: candidate (proposed at the fidelity chapter open; promotion trigger: wave B2's
+executable comparator witness).*
+
+**Statement.** For a transfer run with recorded intervention ledger ι = (κ, ν, π, σ) — κ the
+keyed remaps (every PK/FK rewrite routes through one `SurrogateRemapContext`), ν the named
+value normalizations (`ToleratedDivergence`'s byte-affecting members), π the column projection
+(schema-plane named erasures), σ the row-set adjustments (each with its record) — and kinds
+paired across renditions by `SsKey`:
+
+    Ingest_rows ∘ Transfer = ι        (modulo named row interventions; residual zero)
+
+Concretely: every source row not removed by σ satisfies
+`canonical_target (κ (key r)) = canonical (ν (π (remapFks_κ r)))` at the canonical row form
+(the `RowDigester` recipe over an SsKey/logical basis, so byte-identity is well-defined across
+the physical→logical rendition gap); every target row outside `image(κ) ∪ σ.adds` is a
+violation; every exception cites its ledger record. The data-plane sibling of the soul
+adjunction: `Ingest ∘ Project = id` modulo named erasures, landed at row grain.
+
+**Witness.** `AxiomTests.fs` — Skip-stub at chapter open with the promotion trigger (wave B2:
+the lockstep comparator's docker witness — two identical databases prove byte-identity; one
+flipped cell names its business key). The two digest planes (client-canonical SHA256
+authoritative; server `HASHBYTES` fast-path) are projections of one canonical form; their
+agreement is property-tested per SQL type (wave B3).
