@@ -393,6 +393,97 @@ let ``D15: a column distinct in every observed row of every evidenced environmen
               "cloud-qa",  { operand "cloud-qa" sampleCatalog with Profile = Some dupP } ]
     Assert.DoesNotContain(quiet.Findings, fun f -> f.Kind = EstateFindingKind.DataUniquenessCandidate)
 
+// -- the A4 detectors: CDC parity, headroom, sentinels, collation, identity ----
+
+/// Rewrite one attribute of the Customer kind across the sample catalog.
+let private withCustomerAttr (attrKey: SsKey) (rewrite: Attribute -> Attribute) : Catalog =
+    { sampleCatalog with
+        Modules =
+            sampleCatalog.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            if k.SsKey = customerKey then
+                                { k with Attributes = k.Attributes |> List.map (fun a -> if a.SsKey = attrKey then rewrite a else a) }
+                            else k) }) }
+
+/// Rewrite the Customer kind itself across the sample catalog.
+let private withCustomerKind (rewrite: Kind -> Kind) : Catalog =
+    { sampleCatalog with
+        Modules =
+            sampleCatalog.Modules
+            |> List.map (fun m ->
+                { m with Kinds = m.Kinds |> List.map (fun k -> if k.SsKey = customerKey then rewrite k else k) }) }
+
+[<Fact>]
+let ``O1: CDC tracking one environment and not another reads as a DECIDE parity finding on the operational plane`` () =
+    let tracked = { Profile.empty with CdcAwareness = CdcAwareness.create (Set.singleton customerKey) Map.empty }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some tracked }
+              "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some Profile.empty } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.OperationalCdc)
+    Assert.Equal(EstateLane.Decide, finding.Lane)
+    Assert.Equal(EstatePlane.Operational, finding.Plane)
+    Assert.Contains("CDC tracks Customer in cloud-uat and not in cloud-dev", finding.Statement)
+
+[<Fact>]
+let ``D13: a primary key past half its declared int ceiling reads as a WATCH headroom advisory; unknown storage never guesses a ceiling`` () =
+    let catalog = withCustomerAttr customerIdAttrKey (fun a -> { a with SqlStorage = Some SqlStorageType.Int })
+    let dist =
+        NumericDistribution.create customerIdAttrKey 1M 1M 1M 1M 1M 1M 1340000000M 1000L (ProbeStatus.observed 1000L)
+        |> Result.value
+    let p = { Profile.empty with Distributions = [ AttributeDistribution.Numeric dist ] }
+    let report =
+        Estate.compute agreed catalog [ "cloud-uat", { operand "cloud-uat" catalog with Profile = Some p } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataHeadroom)
+    Assert.Equal(EstateLane.Watch, finding.Lane)
+    Assert.Contains("Customer.Id stands at 1,340,000,000 of int's 2,147,483,647 in cloud-uat — 62% of the ceiling is consumed", finding.Statement)
+    let silent =
+        Estate.compute agreed sampleCatalog [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some p } ]
+    Assert.DoesNotContain(silent.Findings, fun f -> f.Kind = EstateFindingKind.DataHeadroom)
+
+[<Fact>]
+let ``D8: the 1900-01-01 empty-date convention reads as a WATCH sentinel advisory when the categorical evidence carries it`` () =
+    let catalog = withCustomerAttr customerTenantKey (fun a -> { a with Type = Date })
+    let p =
+        { Profile.empty with
+            Distributions = [ categoricalOn customerTenantKey [ "1900-01-01", 812L; "2026-01-02", 5L ] ] }
+    let report =
+        Estate.compute agreed catalog [ "cloud-uat", { operand "cloud-uat" catalog with Profile = Some p } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataDateSentinel)
+    Assert.Equal(EstateLane.Watch, finding.Lane)
+    Assert.Contains("Customer.TenantId holds 812 row(s) at 1900-01-01 in cloud-uat", finding.Statement)
+    Assert.Contains("empty of meaning", finding.Statement)
+
+[<Fact>]
+let ``D6: case-distinct values under a unique declaration read as a REPAIR collation collision`` () =
+    let uniqueIx =
+        { Index.ofKeyColumns (idxKey [ "Customer"; "Name" ]) (mkName "UIX_Customer_Name") [ customerNameKey ] with
+            Uniqueness = Unique }
+    let catalog = withCustomerKind (fun k -> { k with Indexes = uniqueIx :: k.Indexes })
+    let p = { Profile.empty with Distributions = [ categoricalOn customerNameKey [ "Alpha", 3L; "alpha", 2L; "bravo", 1L ] ] }
+    let report =
+        Estate.compute agreed catalog [ "cloud-qa", { operand "cloud-qa" catalog with Profile = Some p } ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataCollationCollision)
+    Assert.Equal(EstateLane.Repair, finding.Lane)
+    Assert.Contains("Customer.Name collapses 1 case-distinct value(s) into duplicates in cloud-qa", finding.Statement)
+
+[<Fact>]
+let ``I3: mixed identity provenance for one name reads as a WATCH advisory on the identity plane; a uniformly synthesized estate stays silent`` () =
+    let nativeCustomer =
+        withCustomerKind (fun k -> { k with SsKey = SsKey.ossysOriginal (System.Guid.NewGuid()) })
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-qa", operand "cloud-qa" nativeCustomer ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
+    Assert.Equal(EstateLane.Watch, finding.Lane)
+    Assert.Equal(EstatePlane.Identity, finding.Plane)
+    Assert.Contains("1 kind(s) in cloud-qa carry a different identity provenance than the target", finding.Statement)
+    let uniform = Estate.compute agreed sampleCatalog [ "cloud-qa", operand "cloud-qa" sampleCatalog ]
+    Assert.DoesNotContain(uniform.Findings, fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
+
 // -- the evidence provenance (wave A2.5): the masthead, the JSON, one fact ------
 
 let private capturedTwoDaysBack = System.DateTimeOffset(2026, 7, 13, 8, 0, 0, System.TimeSpan.Zero)

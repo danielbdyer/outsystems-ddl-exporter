@@ -83,6 +83,22 @@ type EstateFindingKind =
     /// A column distinct in every observed row of every evidenced
     /// environment — a natural-key candidate (D15, wave A3; advisory).
     | DataUniquenessCandidate
+    /// A primary key consuming a named share of its declared storage
+    /// ceiling (D13, wave A4; advisory until the widening is scheduled).
+    | DataHeadroom
+    /// A date column carrying the platform's empty-date convention
+    /// (1900-01-01) — satisfied NOT NULL, empty of meaning (D8, wave A4).
+    | DataDateSentinel
+    /// Values a unique declaration keeps distinct that a case-insensitive
+    /// collation collapses into duplicates (D6, wave A4).
+    | DataCollationCollision
+    /// Kinds whose identity provenance differs from the target's for the
+    /// same name (synthesized against native) — renames across that pair
+    /// are unstable until the identity anchors (I3, wave A4).
+    | IdentitySynthesized
+    /// CDC tracks a kind in some environments and not others — a cutover
+    /// write feeds live consumers unevenly (O1, wave A4).
+    | OperationalCdc
 
 [<RequireQualifiedAccess>]
 module EstateFindingKind =
@@ -104,7 +120,12 @@ module EstateFindingKind =
           EstateFindingKind.DataOrphans
           EstateFindingKind.DataOverflow
           EstateFindingKind.DataAsymmetry
-          EstateFindingKind.DataUniquenessCandidate ]
+          EstateFindingKind.DataUniquenessCandidate
+          EstateFindingKind.DataHeadroom
+          EstateFindingKind.DataDateSentinel
+          EstateFindingKind.DataCollationCollision
+          EstateFindingKind.IdentitySynthesized
+          EstateFindingKind.OperationalCdc ]
 
     /// The stable machine token (the `FindingKey` prefix and the
     /// `estate.json` discriminator). Never operator-facing on its own.
@@ -124,6 +145,11 @@ module EstateFindingKind =
         | EstateFindingKind.DataOverflow             -> "data.overflow"
         | EstateFindingKind.DataAsymmetry            -> "data.asymmetry"
         | EstateFindingKind.DataUniquenessCandidate  -> "data.uniquenessCandidate"
+        | EstateFindingKind.DataHeadroom             -> "data.headroom"
+        | EstateFindingKind.DataDateSentinel         -> "data.dateSentinel"
+        | EstateFindingKind.DataCollationCollision   -> "data.collation"
+        | EstateFindingKind.IdentitySynthesized      -> "identity.synthesized"
+        | EstateFindingKind.OperationalCdc           -> "operational.cdc"
 
     /// The disposition lane a kind presents in (Appendix A). The direction
     /// classifier (wave A3) splits presence: a kind an environment carries
@@ -147,7 +173,12 @@ module EstateFindingKind =
         | EstateFindingKind.DataOrphans
         | EstateFindingKind.DataOverflow            -> EstateLane.Repair
         | EstateFindingKind.DataAsymmetry
-        | EstateFindingKind.DataUniquenessCandidate -> EstateLane.Watch
+        | EstateFindingKind.DataUniquenessCandidate
+        | EstateFindingKind.DataHeadroom
+        | EstateFindingKind.DataDateSentinel
+        | EstateFindingKind.IdentitySynthesized     -> EstateLane.Watch
+        | EstateFindingKind.DataCollationCollision  -> EstateLane.Repair
+        | EstateFindingKind.OperationalCdc          -> EstateLane.Decide
 
     /// The plane a kind lives on.
     let planeOf (kind: EstateFindingKind) : EstatePlane =
@@ -165,7 +196,12 @@ module EstateFindingKind =
         | EstateFindingKind.DataOrphans
         | EstateFindingKind.DataOverflow
         | EstateFindingKind.DataAsymmetry
-        | EstateFindingKind.DataUniquenessCandidate -> EstatePlane.Data
+        | EstateFindingKind.DataUniquenessCandidate
+        | EstateFindingKind.DataHeadroom
+        | EstateFindingKind.DataDateSentinel
+        | EstateFindingKind.DataCollationCollision  -> EstatePlane.Data
+        | EstateFindingKind.IdentitySynthesized     -> EstatePlane.Identity
+        | EstateFindingKind.OperationalCdc          -> EstatePlane.Operational
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

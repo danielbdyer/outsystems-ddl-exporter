@@ -475,6 +475,196 @@ module Estate =
                           Weight = total })
                 else []))
 
+    /// The headroom floor (D13, wave A4): a primary key consuming at least
+    /// this percentage of its declared storage ceiling carries the advisory.
+    /// A named constant, same A44 discipline as the decision floor.
+    let headroomFloorPercent : int = 50
+
+    /// D13 (wave A4): a primary key's observed maximum against its DECLARED
+    /// storage ceiling — evidence-gated twice (the storage must be known,
+    /// the numeric distribution must exist); never a guessed ceiling.
+    let private headroomContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            kind.Attributes
+            |> List.filter (fun a -> a.IsPrimaryKey)
+            |> List.collect (fun a ->
+                let ceiling =
+                    match a.SqlStorage with
+                    | Some SqlStorageType.Int -> Some (decimal Int32.MaxValue, "int's 2,147,483,647")
+                    | Some SqlStorageType.BigInt -> Some (decimal Int64.MaxValue, "bigint's 9,223,372,036,854,775,807")
+                    | _ -> None
+                match ceiling with
+                | None -> []
+                | Some (cap, capText) ->
+                    profilesByEnv
+                    |> List.choose (fun (env, p) ->
+                        Profile.tryFindNumeric a.SsKey p
+                        |> Option.bind (fun d ->
+                            let percent = int (d.Max / cap * 100M)
+                            if percent >= headroomFloorPercent then
+                                let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
+                                Some
+                                    { Kind = EstateFindingKind.DataHeadroom
+                                      Subject = subject
+                                      Reference = None
+                                      Env = env
+                                      Fragment =
+                                        sprintf "%s stands at %s of %s in %s — %d%% of the ceiling is consumed"
+                                            subject (d.Max.ToString("N0", Globalization.CultureInfo.InvariantCulture)) capText env percent
+                                      Weight = int64 percent }
+                            else None))))
+
+    /// D8 (wave A4): the platform's empty-date convention — a date column's
+    /// categorical evidence carrying 1900-01-01 values reads as satisfied
+    /// NOT NULL, empty of meaning. Witnessed or silent, never guessed.
+    let private dateSentinelContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            kind.Attributes
+            |> List.filter (fun a -> match a.Type with | Date | DateTime -> true | _ -> false)
+            |> List.collect (fun a ->
+                profilesByEnv
+                |> List.choose (fun (env, p) ->
+                    Profile.tryFindCategorical a.SsKey p
+                    |> Option.bind (fun c ->
+                        let sentinelCount =
+                            c.Frequencies
+                            |> List.filter (fun (value, _) -> value.StartsWith "1900-01-01")
+                            |> List.sumBy snd
+                        if sentinelCount > 0L then
+                            let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
+                            Some
+                                { Kind = EstateFindingKind.DataDateSentinel
+                                  Subject = subject
+                                  Reference = None
+                                  Env = env
+                                  Fragment =
+                                    sprintf "%s holds %s row(s) at 1900-01-01 in %s — the platform's empty-date convention; a NOT NULL reading of the column is satisfied and empty of meaning"
+                                        subject (humane64 sentinelCount) env
+                                  Weight = sentinelCount }
+                        else None))))
+
+    /// D6 (wave A4): values a single-column unique declaration keeps
+    /// distinct that a case-insensitive collation collapses — the unique
+    /// index fails on unification. Witnessed by categorical evidence on the
+    /// declared column.
+    let private collationCollisionContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        let uniqueTextAttrs =
+            Catalog.allKinds logicalTarget
+            |> List.collect (fun kind ->
+                kind.Indexes
+                |> List.choose (fun ix ->
+                    match ix.Uniqueness, ix.Columns with
+                    | IndexUniqueness.Unique, [ column ] ->
+                        kind.Attributes
+                        |> List.tryFind (fun a -> a.SsKey = column.Attribute && a.Type = Text)
+                        |> Option.map (fun a -> kind, a)
+                    | _ -> None))
+        uniqueTextAttrs
+        |> List.collect (fun (kind, a) ->
+            profilesByEnv
+            |> List.choose (fun (env, p) ->
+                Profile.tryFindCategorical a.SsKey p
+                |> Option.bind (fun c ->
+                    let collapsedPairs =
+                        c.Frequencies
+                        |> List.groupBy (fun (value, _) -> value.ToLowerInvariant())
+                        |> List.sumBy (fun (_, values) -> max 0 (List.length values - 1))
+                    if collapsedPairs > 0 then
+                        let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
+                        Some
+                            { Kind = EstateFindingKind.DataCollationCollision
+                              Subject = subject
+                              Reference = None
+                              Env = env
+                              Fragment =
+                                sprintf "under a case-insensitive collation, %s collapses %s case-distinct value(s) into duplicates in %s — the unique declaration fails on unification"
+                                    subject (humane collapsedPairs) env
+                              Weight = int64 collapsedPairs }
+                    else None)))
+
+    /// I3 (wave A4): identity provenance across the estate — kinds whose
+    /// root differs from the target's for the SAME logical name (synthesized
+    /// against native). Renames across such a pair cannot track by identity
+    /// until it anchors. A uniformly-synthesized estate (fixtures; file
+    /// models compared to file models) stays silent — the hazard is the MIX.
+    let private synthesizedIdentityContributions
+        (logicalTarget: Catalog)
+        (logicalEnvs: (string * Catalog) list)
+        : EnvContribution list =
+        let isNative (key: SsKey) : bool =
+            match SsKey.rootKey key with
+            | OssysOriginal _ -> true
+            | _ -> false
+        let targetProvenance : Map<string, bool> =
+            Catalog.allKinds logicalTarget
+            |> List.map (fun k -> Name.value k.Name, isNative k.SsKey)
+            |> Map.ofList
+        logicalEnvs
+        |> List.choose (fun (env, catalog) ->
+            let mismatched =
+                Catalog.allKinds catalog
+                |> List.filter (fun k ->
+                    match Map.tryFind (Name.value k.Name) targetProvenance with
+                    | Some targetNative -> isNative k.SsKey <> targetNative
+                    | None -> false)
+                |> List.length
+            if mismatched > 0 then
+                Some
+                    { Kind = EstateFindingKind.IdentitySynthesized
+                      Subject = env
+                      Reference = None
+                      Env = env
+                      Fragment =
+                        sprintf "%s kind(s) in %s carry a different identity provenance than the target (synthesized against native) — renames across this pair are unstable until the identity anchors"
+                            (humane mismatched) env
+                      Weight = int64 mismatched }
+            else None)
+
+    /// O1 (wave A4): CDC parity — a kind tracked in some environments and
+    /// not in other evidenced ones; a cutover write feeds live consumers
+    /// unevenly. Needs at least two evidenced environments (parity is a
+    /// comparison).
+    let private cdcParityContributions
+        (logicalTarget: Catalog)
+        (profilesByEnv: (string * Profile) list)
+        : EnvContribution list =
+        if List.length profilesByEnv < 2 then []
+        else
+            Catalog.allKinds logicalTarget
+            |> List.collect (fun kind ->
+                let tracking =
+                    profilesByEnv
+                    |> List.filter (fun (_, p) -> CdcAwareness.isEnabled kind.SsKey p.CdcAwareness)
+                    |> List.map fst
+                let silent =
+                    profilesByEnv
+                    |> List.map fst
+                    |> List.filter (fun env -> not (List.contains env tracking))
+                if List.isEmpty tracking || List.isEmpty silent then []
+                else
+                    let name = Name.value kind.Name
+                    tracking
+                    |> List.map (fun env ->
+                        { Kind = EstateFindingKind.OperationalCdc
+                          Subject = name
+                          Reference = None
+                          Env = env
+                          Fragment =
+                            sprintf "CDC tracks %s in %s and not in %s — a cutover write to this kind feeds live consumers in %s alone"
+                                name env (envListText silent) env
+                          Weight = 1L }))
+
     // -- Grouping + the report ----------------------------------------------
 
     /// Compute the estate report from the resolved target and confirm
@@ -603,13 +793,21 @@ module Estate =
                 match clauses with
                 | [] -> ""
                 | cs -> sprintf "; %s" (String.concat "; " cs)
-        // The cross-environment detectors (wave A3) read every profile at
-        // once: the rowcount-asymmetry advisories and the natural-key
-        // candidacies join the grouping input beside the per-env streams.
+        // The cross-environment detectors (waves A3 + A4) read every profile
+        // (and, for the identity plane, every normalized catalog) at once;
+        // their contributions join the grouping input beside the per-env
+        // streams.
         let crossEnv =
             let profilesByEnv = Map.toList profileByEnv
+            let logicalEnvs =
+                envs |> List.map (fun (env, operand) -> env, Readiness.toLogicalShape operand.Catalog)
             asymmetryContributions logicalTarget profilesByEnv
             @ uniquenessCandidateContributions logicalTarget profilesByEnv
+            @ headroomContributions logicalTarget profilesByEnv
+            @ dateSentinelContributions logicalTarget profilesByEnv
+            @ collationCollisionContributions logicalTarget profilesByEnv
+            @ synthesizedIdentityContributions logicalTarget logicalEnvs
+            @ cdcParityContributions logicalTarget profilesByEnv
         let findings =
             (perEnv |> List.collect (fun (_, _, contributions) -> contributions)) @ crossEnv
             |> List.groupBy (fun c -> c.Kind, c.Subject)
