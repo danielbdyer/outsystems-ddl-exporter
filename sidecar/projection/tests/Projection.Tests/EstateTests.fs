@@ -254,6 +254,66 @@ let ``consensus: an environment with no evidence for the coordinate stays silent
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
     Assert.DoesNotContain("cloud-qa", finding.Statement)
 
+// -- the evidence provenance (wave A2.5): the masthead, the JSON, one fact ------
+
+let private capturedTwoDaysBack = System.DateTimeOffset(2026, 7, 13, 8, 0, 0, System.TimeSpan.Zero)
+
+let private singleEnvReport (provenance: Estate.EvidenceProvenance) : Estate.EstateReport =
+    Estate.compute agreed sampleCatalog [ "cloud-uat", operand "cloud-uat" sampleCatalog ]
+    |> Estate.withEvidence
+        (Estate.EvidenceStoreBasis.Enabled "/var/projection/estate")
+        (Map.ofList [ "cloud-uat", provenance ])
+
+[<Fact>]
+let ``provenance: cached evidence renders its capture age and clean-fingerprint count on the masthead (RT-7)`` () =
+    let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "cloud-uat" && l.Contains "evidence captured 2 day(s) ago; fingerprints clean across 214 kind(s)")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence store: /var/projection/estate.")
+
+[<Fact>]
+let ``provenance: a refreshed environment names its moved kinds, capped at three with the remainder counted`` () =
+    let lines =
+        Estate.render (singleEnvReport (Estate.EvidenceProvenance.Refreshed [ "Orders"; "OrderLine"; "Customer"; "Invoice"; "Payment" ]))
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "5 kind(s) moved since capture (Orders, OrderLine, Customer, and 2 more) — re-profiled this run")
+
+[<Fact>]
+let ``provenance: offline evidence renders its age and the advisory downgrade — named, never silent`` () =
+    let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Offline (capturedTwoDaysBack, 9)))
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "offline evidence, captured 9 day(s) ago and unprobed — every verdict standing on it is advisory")
+
+[<Fact>]
+let ``provenance: a same-day capture reads as today`` () =
+    let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 0, 3)))
+    Assert.Contains(lines, fun (l: string) -> l.Contains "evidence captured today")
+
+[<Fact>]
+let ``provenance: a store-blind report says the run reads live — a disabled store is stated, never silent`` () =
+    let report = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    Assert.Equal(Estate.EvidenceStoreBasis.Disabled, report.Evidence)
+    let lines = Estate.render report
+    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence reads live this run — no store is configured")
+
+/// Nullness-narrowed JsonNode child access (the `requireNode` test idiom).
+let private node (label: string) (n: System.Text.Json.Nodes.JsonNode | null) : System.Text.Json.Nodes.JsonNode =
+    match Option.ofObj n with
+    | Some v -> v
+    | None ->
+        Assert.Fail (sprintf "%s: required JsonNode child was null" label)
+        Unchecked.defaultof<System.Text.Json.Nodes.JsonNode>
+
+[<Fact>]
+let ``provenance: estate.json carries the same provenance facts the masthead renders (one substrate)`` () =
+    let json = Estate.toJson (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
+    Assert.Equal("/var/projection/estate", (node "evidenceStore" json.["evidenceStore"]).GetValue<string>())
+    let env = (node "environments[0]" ((node "environments" json.["environments"]).AsArray().[0])).AsObject()
+    let evidence = (node "evidence" env.["evidence"]).AsObject()
+    Assert.Equal("cached", (node "basis" evidence.["basis"]).GetValue<string>())
+    Assert.Equal(2, (node "ageDays" evidence.["ageDays"]).GetValue<int>())
+    Assert.Equal(214, (node "kindCount" evidence.["kindCount"]).GetValue<int>())
+
 // -- the verb routing (the `estate` planCheck arm) -----------------------------
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
@@ -358,4 +418,58 @@ let ``check estate: an unknown environment ⇒ named refusal, exit 6`` () =
     | PlanAction.Refused (exit, e) ->
         Assert.Equal(6, exit)
         Assert.Equal("cli.check.estateUnknownEnv", e.Code)
+    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+// -- the evidence flags (wave A2.5) ---------------------------------------------
+
+[<Fact>]
+let ``check estate: the default evidence mode is fingerprint-gated (pay once, stay honest)`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(EstateEvidenceMode.FingerprintGated, args.Evidence)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check estate: --refresh forces every environment; a comma list forces the named subset`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate"; "--refresh" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(EstateEvidenceMode.Refresh None, args.Evidence)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+    match (Command.planCheck cfg [ "estate"; "--refresh"; "cloud-qa,cloud-uat" ]).Action with
+    | PlanAction.CheckEstate args ->
+        Assert.Equal(EstateEvidenceMode.Refresh (Some [ "cloud-qa"; "cloud-uat" ]), args.Evidence)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check estate: --refresh followed by another flag reads as refresh-all (a flag is never its value)`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate"; "--refresh"; "--format"; "json" ]).Action with
+    | PlanAction.CheckEstate args ->
+        Assert.Equal(EstateEvidenceMode.Refresh None, args.Evidence)
+        Assert.True args.AsJson
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check estate: --offline rides the args record`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate"; "--offline" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(EstateEvidenceMode.Offline, args.Evidence)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check estate: --refresh with --offline ⇒ named refusal, exit 2 (the flags contradict)`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate"; "--refresh"; "--offline" ]).Action with
+    | PlanAction.Refused (exit, e) ->
+        Assert.Equal(2, exit)
+        Assert.Equal("cli.check.estateEvidenceConflict", e.Code)
+    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+[<Fact>]
+let ``check estate: --refresh naming an environment outside readiness.confirm ⇒ named refusal, exit 2`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "estate"; "--refresh"; "cloud-prod" ]).Action with
+    | PlanAction.Refused (exit, e) ->
+        Assert.Equal(2, exit)
+        Assert.Equal("cli.check.estateRefreshUnknownEnv", e.Code)
     | other -> Assert.Fail(sprintf "expected Refused; got %A" other)

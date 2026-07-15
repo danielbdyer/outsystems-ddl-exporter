@@ -2234,20 +2234,52 @@ module Command =
                             |> Result.map (fun (label, conn) -> label, EstateTargetSource.AgreedEnv conn)
                     let confirmRs = rs.Confirm |> List.map refOf
                     let confirmError = confirmRs |> List.tryPick (function Error (e :: _) -> Some e | _ -> None)
-                    match target, confirmError with
-                    // A missing authored model is a config-shape refusal (2);
-                    // an unresolvable environment is a connection-plane one (6).
-                    | Error (e :: _), _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
-                    | Error (e :: _), _ -> PlanAction.Refused (6, e)
-                    | Error [], _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
-                    | Ok _, Some e -> PlanAction.Refused (6, e)
-                    | Ok (label, source), None ->
+                    // The evidence flags (DECISIONS 2026-07-15 entry 4):
+                    // `--refresh [env,…]` forces re-profiling; `--offline`
+                    // reuses stored evidence unprobed. Together they
+                    // contradict — a named refusal, never a silent winner.
+                    let offline = List.contains "--offline" args
+                    let refreshRequested = List.contains "--refresh" args
+                    let refreshEnvs : string list option =
+                        match args |> List.tryFindIndex ((=) "--refresh") with
+                        | Some i when i + 1 < List.length args && not ((List.item (i + 1) args).StartsWith "--") ->
+                            Some
+                                ((List.item (i + 1) args).Split(',')
+                                 |> Array.toList
+                                 |> List.map (fun s -> s.Trim())
+                                 |> List.filter (fun s -> s <> ""))
+                        | _ -> None
+                    let unknownRefreshEnv =
+                        refreshEnvs
+                        |> Option.defaultValue []
+                        |> List.tryFind (fun e -> not (List.contains e rs.Confirm))
+                    let evidence : Result<EstateEvidenceMode> =
+                        match offline, refreshRequested, unknownRefreshEnv with
+                        | true, true, _ ->
+                            Result.failureOf (err "cli.check.estateEvidenceConflict" "projection check estate: --refresh and --offline contradict — refresh probes and re-captures; offline forbids the probe. Choose one.")
+                        | _, true, Some env ->
+                            Result.failureOf (err "cli.check.estateRefreshUnknownEnv" (sprintf "projection check estate: --refresh names '%s', which is not in readiness.confirm." env))
+                        | true, false, _ -> Result.success EstateEvidenceMode.Offline
+                        | false, true, None -> Result.success (EstateEvidenceMode.Refresh refreshEnvs)
+                        | false, false, _ -> Result.success EstateEvidenceMode.FingerprintGated
+                    match target, confirmError, evidence with
+                    // A missing authored model or a contradictory evidence
+                    // flag is a config-shape refusal (2); an unresolvable
+                    // environment is a connection-plane one (6).
+                    | _, _, Error (e :: _) -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _ -> PlanAction.Refused (6, e)
+                    | Error [], _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
+                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check estate: the evidence flags did not resolve.")
+                    | Ok _, Some e, _ -> PlanAction.Refused (6, e)
+                    | Ok (label, source), None, Ok evidenceMode ->
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckEstate
                             { TargetLabel = label
                               Target      = source
                               Confirm     = confirm
-                              AsJson      = (valueOf "--format" = Some "json") }
+                              AsJson      = (valueOf "--format" = Some "json")
+                              Evidence    = evidenceMode }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

@@ -746,7 +746,21 @@ and CheckEstateArgs =
     { TargetLabel : string
       Target      : EstateTargetSource
       Confirm     : (string * string) list
-      AsJson      : bool }
+      AsJson      : bool
+      Evidence    : EstateEvidenceMode }
+
+/// How `check estate` acquires each environment's data evidence
+/// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).
+and [<RequireQualifiedAccess>] EstateEvidenceMode =
+    /// The default: stored evidence rides when its fingerprints hold; a
+    /// moved kind re-profiles its environment (pay once, stay honest).
+    | FingerprintGated
+    /// `--refresh [env,…]` — force re-profiling: every environment, or the
+    /// named subset.
+    | Refresh of envs: string list option
+    /// `--offline` — reuse stored evidence unprobed; every verdict standing
+    /// on it downgrades to advisory (named, never silent).
+    | Offline
 
 /// The estate target's resolution source: the agreed environment's live OSSYS
 /// conn-ref (the `readiness.schema` default), or the authored model under the

@@ -9,6 +9,7 @@ namespace Projection.Pipeline
 //   profiling) lives one layer up (the CLI run face), exactly as `Compare.fs` /
 //   `Readiness.fs` split.
 
+open System
 open System.Text.Json.Nodes
 open Projection.Core
 
@@ -84,12 +85,42 @@ module Estate =
     let weightOf (f: Finding) : int64 =
         f.Envs |> List.map snd |> List.fold max 0L
 
+    /// How one environment's data evidence reached this run — the masthead's
+    /// honesty line (RT-7: a decision line never hides the age of what it
+    /// stands on). `compute` defaults to the live pair (`Live` when a profile
+    /// rode the operand, `Absent` when none did); the face overrides from the
+    /// evidence store's actual path via `withEvidence`.
+    [<RequireQualifiedAccess>]
+    type EvidenceProvenance =
+        /// Profiled during this run (no store, a first capture, or `--refresh`).
+        | Live
+        /// The store's evidence, reused under clean fingerprints.
+        | Cached of capturedAtUtc: DateTimeOffset * ageDays: int * kindCount: int
+        /// Re-profiled this run — fingerprints moved; the moved kinds named.
+        | Refreshed of movedKinds: string list
+        /// The store's evidence reused unprobed (`--offline`) — every verdict
+        /// standing on it is advisory.
+        | Offline of capturedAtUtc: DateTimeOffset * ageDays: int
+        /// No data evidence reached this run — the data plane is
+        /// advisory-silent for this environment.
+        | Absent
+
+    /// Whether a durable evidence store backed this run — the masthead states
+    /// it either way (a disabled store is a live-only run, said, never
+    /// silent). `compute` is store-blind and defaults to `Disabled`; the face
+    /// stamps the resolved basis via `withEvidence`.
+    [<RequireQualifiedAccess>]
+    type EvidenceStoreBasis =
+        | Enabled of dir: string
+        | Disabled
+
     /// One environment's masthead line: whether live data evidence backed its
-    /// data-plane verdicts (capture age joins at the evidence-store wave).
+    /// data-plane verdicts, and how that evidence reached the run.
     type EnvBasis =
         {
             Env                   : string
             DataEvidenceAvailable : bool
+            Provenance            : EvidenceProvenance
         }
 
     /// The estate verdict — the ONLY verdict vocabulary on the surface.
@@ -109,6 +140,7 @@ module Estate =
             Bases    : EnvBasis list
             Findings : Finding list
             Verdict  : Verdict
+            Evidence : EvidenceStoreBasis
         }
 
     // ----------------------------------------------------------------------
@@ -323,7 +355,11 @@ module Estate =
                 let data = compare.DataDealbreakers |> List.map (dataFindingOf env)
                 env, compare.DataEvidenceAvailable, schema @ data)
         let bases =
-            perEnv |> List.map (fun (env, evidence, _) -> { Env = env; DataEvidenceAvailable = evidence })
+            perEnv
+            |> List.map (fun (env, evidence, _) ->
+                { Env = env
+                  DataEvidenceAvailable = evidence
+                  Provenance = if evidence then EvidenceProvenance.Live else EvidenceProvenance.Absent })
         let envCount = List.length perEnv
         // The clean-environment clause (wave A2; RT-6): the environments that
         // carry evidence for the finding's coordinate and DO NOT carry the
@@ -401,7 +437,27 @@ module Estate =
         { Target = target
           Bases = bases
           Findings = findings
-          Verdict = verdict }
+          Verdict = verdict
+          Evidence = EvidenceStoreBasis.Disabled }
+
+    /// The face's evidence stamp: the resolved store basis and each
+    /// environment's actual acquisition path, applied onto a computed report
+    /// (`compute` stays store-blind and pure; the boundary owns clocks and
+    /// directories). An environment absent from the map keeps compute's
+    /// default pair.
+    let withEvidence
+        (store: EvidenceStoreBasis)
+        (provenance: Map<string, EvidenceProvenance>)
+        (report: EstateReport)
+        : EstateReport =
+        { report with
+            Evidence = store
+            Bases =
+                report.Bases
+                |> List.map (fun b ->
+                    match Map.tryFind b.Env provenance with
+                    | Some p -> { b with Provenance = p }
+                    | None -> b) }
 
     /// The estate is unified — the exit-0 predicate.
     let isUnified (report: EstateReport) : bool =
@@ -450,6 +506,35 @@ module Estate =
     /// list is `estate.json`'s, searchable, never scrollable).
     let private laneCap : int = 8
 
+    /// The humane capture-age clause ("today" / "N day(s) ago").
+    let private ageText (ageDays: int) : string =
+        if ageDays <= 0 then "today" else sprintf "%s day(s) ago" (humane ageDays)
+
+    /// The capped moved-kind enumeration — the first three named, the
+    /// remainder counted (§12: cap the breadth, name the remainder).
+    let private movedKindsText (moved: string list) : string =
+        let shown = moved |> List.truncate 3
+        let remainder = List.length moved - List.length shown
+        if remainder > 0 then
+            sprintf "%s, and %s more" (String.concat ", " shown) (humane remainder)
+        else String.concat ", " shown
+
+    /// One environment's masthead evidence clause — the provenance made
+    /// legible (RT-7: capture age and fingerprint status ride the masthead).
+    let private provenanceText (basis: EnvBasis) : string =
+        match basis.Provenance with
+        | EvidenceProvenance.Live ->
+            "live data evidence, profiled this run"
+        | EvidenceProvenance.Cached (_, age, kinds) ->
+            sprintf "evidence captured %s; fingerprints clean across %s kind(s)" (ageText age) (humane kinds)
+        | EvidenceProvenance.Refreshed moved ->
+            sprintf "%s kind(s) moved since capture (%s) — re-profiled this run"
+                (humane (List.length moved)) (movedKindsText moved)
+        | EvidenceProvenance.Offline (_, age) ->
+            sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
+        | EvidenceProvenance.Absent ->
+            "no data evidence this run — the data plane is advisory-silent"
+
     /// Render the board regions BELOW the verdict (the masthead through the
     /// action), from the one report value. The face renders the verdict Hero
     /// through the Voice catalog first, then these lines.
@@ -458,10 +543,13 @@ module Estate =
           yield sprintf "ESTATE — %s environment(s) against %s"
                     (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
           for basis in report.Bases do
-              let evidence =
-                  if basis.DataEvidenceAvailable then "live data evidence"
-                  else "no data evidence this run — the data plane is advisory-silent"
-              yield sprintf "  %-14s %s" basis.Env evidence
+              yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
+          yield
+              (match report.Evidence with
+               | EvidenceStoreBasis.Enabled dir ->
+                   sprintf "  Evidence store: %s." dir
+               | EvidenceStoreBasis.Disabled ->
+                   "  Evidence reads live this run — no store is configured (PROJECTION_ESTATE_DIR, or the ledger directory's estate child, enables pay-once evidence).")
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
@@ -537,15 +625,46 @@ module Estate =
         | EstateLane.Relax -> "relax"
         | EstateLane.Watch -> "watch"
 
+    /// One environment's provenance, projected for `estate.json` (one
+    /// substrate: the same facts the masthead line renders).
+    let private provenanceJson (p: EvidenceProvenance) : JsonObject =
+        let o = JsonObject()
+        match p with
+        | EvidenceProvenance.Live ->
+            o.["basis"] <- JsonValue.Create "live"
+        | EvidenceProvenance.Cached (captured, age, kinds) ->
+            o.["basis"] <- JsonValue.Create "cached"
+            o.["capturedAtUtc"] <- JsonValue.Create(captured.ToString "O")
+            o.["ageDays"] <- JsonValue.Create age
+            o.["kindCount"] <- JsonValue.Create kinds
+        | EvidenceProvenance.Refreshed moved ->
+            o.["basis"] <- JsonValue.Create "refreshed"
+            let arr = JsonArray()
+            for kind in moved do arr.Add(JsonValue.Create kind)
+            o.["movedKinds"] <- arr
+        | EvidenceProvenance.Offline (captured, age) ->
+            o.["basis"] <- JsonValue.Create "offline"
+            o.["capturedAtUtc"] <- JsonValue.Create(captured.ToString "O")
+            o.["ageDays"] <- JsonValue.Create age
+        | EvidenceProvenance.Absent ->
+            o.["basis"] <- JsonValue.Create "absent"
+        o
+
     let toJson (report: EstateReport) : JsonObject =
         let root = JsonObject()
         root.["verdict"] <- JsonValue.Create(verdictToken report.Verdict)
         root.["target"] <- JsonValue.Create(TargetOperand.basisText report.Target)
+        root.["evidenceStore"] <-
+            JsonValue.Create(
+                match report.Evidence with
+                | EvidenceStoreBasis.Enabled dir -> dir
+                | EvidenceStoreBasis.Disabled -> "disabled")
         let envs = JsonArray()
         for basis in report.Bases do
             let o = JsonObject()
             o.["env"] <- JsonValue.Create basis.Env
             o.["dataEvidenceAvailable"] <- JsonValue.Create basis.DataEvidenceAvailable
+            o.["evidence"] <- provenanceJson basis.Provenance
             envs.Add o
         root.["environments"] <- envs
         let lanes = JsonObject()

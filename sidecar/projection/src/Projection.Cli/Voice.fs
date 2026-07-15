@@ -1045,6 +1045,56 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> Some (View.Action "Restore the connection, or narrow readiness.confirm deliberately.") }
 
+    /// The humane capture-age clause the three evidence notices share
+    /// ("today" / "N day(s) ago") — mirrors the board masthead's wording so
+    /// the notice and the masthead read as one fact.
+    let private ageClause (age: string) : string =
+        if age = "0" then "today" else sprintf "%s day(s) ago" (humane age)
+
+    /// `estate.evidence.cached` — §5: the run's evidence basis, stated up
+    /// front (RT-7 — pay-once evidence says so when it rides; the second
+    /// run reuses evidence and the operator reads that it did).
+    let private estateEvidenceCached : Copy =
+        { Code           = "estate.evidence.cached"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "Evidence for %s rides the store: captured %s, fingerprints clean across %s kind(s)."
+                        (textOr "env" "an environment" p)
+                        (ageClause (textOr "age" "0" p))
+                        (humane (textOr "kinds" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.evidence.stale` — §5: fingerprints moved; the re-profile is
+    /// the consequence, named as it happens (never a silent re-read).
+    let private estateEvidenceStale : Copy =
+        { Code           = "estate.evidence.stale"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "For %s, %s kind(s) moved since capture — re-profiled this run; the store now carries the fresh evidence."
+                        (textOr "env" "an environment" p)
+                        (humane (textOr "moved" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.evidence.offline` — §14: the operator chose the unprobed
+    /// basis; every dependent verdict is advisory, said before the verdict.
+    let private estateEvidenceOffline : Copy =
+        { Code           = "estate.evidence.offline"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "%s reads from offline evidence, captured %s and unprobed — every verdict standing on it is advisory."
+                        (textOr "env" "an environment" p)
+                        (ageClause (textOr "age" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1114,6 +1164,11 @@ module Voice =
           estateUnified
           estateDiverged
           estateEnvUnreadable
+          // §5 / §14 — the estate evidence-provenance notices (pay-once
+          // evidence; DECISIONS 2026-07-15 entry 4)
+          estateEvidenceCached
+          estateEvidenceStale
+          estateEvidenceOffline
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

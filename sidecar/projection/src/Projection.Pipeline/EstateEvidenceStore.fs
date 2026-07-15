@@ -10,7 +10,10 @@ namespace Projection.Pipeline
 open System
 open System.IO
 open System.Text.Json.Nodes
+open System.Threading.Tasks
+open Microsoft.Data.SqlClient
 open Projection.Core
+open Projection.Adapters.Sql
 open Projection.Targets.Json
 
 /// One kind's staleness fingerprint — the cheap re-derivable shape that gates
@@ -263,3 +266,52 @@ module EstateEvidenceStore =
         with
         | :? IOException -> None
         | :? UnauthorizedAccessException -> None
+
+    // ------------------------------------------------------------------
+    // The live fingerprint — the schema-shape half is pure (the catalog's
+    // canonical kind bytes, hashed); the row half is the one-batch SQL
+    // probe (`EvidenceFingerprint.probe`, Adapters.Sql).
+    // ------------------------------------------------------------------
+
+    /// SHA256 over one kind's canonical JSON (`CatalogCodec.serializeKind`)
+    /// — the fingerprint's counterweight to the `(RowCount, MaxPk)` caveat:
+    /// a type or nullability change invalidates a kind's data evidence at
+    /// an identical row count. Pure and deterministic by the codec's law.
+    let shapeHashOf (kind: Kind) : string =
+        sha256Hex (CatalogCodec.serializeKind kind)
+
+    /// Join the probe's row readings with the catalog's shape hashes into
+    /// the store's fingerprint form. Pure; a reading whose kind the catalog
+    /// no longer carries hashes empty — record inequality then reads as
+    /// movement, the safe direction.
+    let fingerprintsOf (catalog: Catalog) (readings: FingerprintReading list) : KindFingerprint list =
+        let hashByKind =
+            catalog
+            |> Catalog.allKinds
+            |> List.map (fun k -> k.SsKey, shapeHashOf k)
+            |> Map.ofList
+        readings
+        |> List.map (fun r ->
+            { Kind = r.Kind
+              RowCount = r.RowCount
+              MaxPk = r.MaxPk
+              SchemaShapeHash = Map.tryFind r.Kind hashByKind |> Option.defaultValue "" })
+
+    /// The live staleness probe for one environment: resolve the conn-ref
+    /// under the one resolution rule (`Source.resolveConn`), read every
+    /// kind's `(COUNT_BIG, MAX(pk))` in one round-trip, and join the pure
+    /// shape hashes. A failure is the caller's NAMED degradation — the
+    /// estate falls back to live profiling (fresh evidence; only the
+    /// pay-once saving is lost).
+    let probeLive (connRef: string) (catalog: Catalog) : Task<Result<KindFingerprint list>> =
+        task {
+            try
+                use cnn = new SqlConnection(Source.resolveConn connRef)
+                do! cnn.OpenAsync()
+                let! readings = EvidenceFingerprint.probe cnn (Catalog.allKinds catalog)
+                return readings |> Result.map (fingerprintsOf catalog)
+            with ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.create "estate.evidence.probeFailed" ex.Message)
+        }

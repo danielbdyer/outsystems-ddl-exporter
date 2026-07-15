@@ -68,6 +68,9 @@ let private inScopeCodes : Set<string> =
           // the estate instrument's verdict pair + unreadable-env finding
           // (check estate — CHAPTER_ESTATE_OPEN.md Appendix A.4, 2026-07-15)
           "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          // the estate evidence-provenance notices (wave A2.5 — the pay-once
+          // store says which basis each environment's verdicts stand on)
+          "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -136,6 +139,9 @@ let private knownEmittableCodes : Set<string> =
           // the estate instrument's verdicts — render-synthesized at the
           // `check estate` face (`runCheckEstate`), consumed at render
           "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          // the estate evidence-provenance notices — render-synthesized at the
+          // same face from the report's stamped `EvidenceProvenance`
+          "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"
@@ -199,7 +205,11 @@ let private samplePayload : Voice.Payload =
           "relax",         box 2
           "watch",         box 1
           "env",           box "uat"
-          "artifactPath",  box "estate.json" ]
+          "artifactPath",  box "estate.json"
+          // the evidence-provenance notices' filled branches (wave A2.5)
+          "age",           box "9"
+          "kinds",         box 214
+          "moved",         box 3 ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
@@ -266,6 +276,7 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "verifyData.matched"; "verifyData.diverged"
           "drift.none"; "drift.diverged"
           "estate.unified"; "estate.diverged"; "estate.envUnreadable"
+          "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
