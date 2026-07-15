@@ -25,6 +25,7 @@ open Projection.Cli.Faces.Explain
 open Projection.Cli.Faces.Inspect
 open Projection.Cli.Faces.Diff
 open Projection.Cli.Faces.Estate
+open Projection.Cli.Faces.Fidelity
 open Projection.Cli.Faces.Slice
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
@@ -103,7 +104,9 @@ let private usageLines : string list =
         "  in the projection.json `synthetic` block; --seed/--scale override it per run."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
-        "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
+        "  silence assertion) · drift (deployed vs model) · data (row/null counts; --rows"
+        "  adds the byte-identity proof — --model <ref> aligns the physical-to-logical"
+        "  gap, differing rows named by key; exits 0 identical / 5 / 6) · ready"
         "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR) · shape (the"
         "  cross-environment readiness gate over the readiness block) · estate (the"
         "  convergence instrument: every divergence as a finding on a disposition lane,"
@@ -319,6 +322,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
     | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
     | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
+    | PlanAction.CheckDataRows args -> shellRun "projection check data --rows" Shell.ReadOnly (fun () -> runCheckDataRows args)
     | PlanAction.CheckReady                ->
         // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
         // no-append contract rides the ReadOnly register).

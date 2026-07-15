@@ -646,6 +646,12 @@ type PlanAction =
     /// `Estate.EstateReport`. Payload reified to a record from birth (the
     /// CheckGoArgs positional-misordering lesson).
     | CheckEstate of args: CheckEstateArgs
+    /// `check data --rows --before <env> --after <env> --model <ref>` — the
+    /// row-fidelity proof (T17, wave B2): stream both sides in primary-key
+    /// order, align the physical rendition's column names to the model's
+    /// logical shape, and name every differing row by its key. Payload
+    /// reified to a record from birth.
+    | CheckDataRows of args: CheckDataRowsArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -748,6 +754,21 @@ and CheckEstateArgs =
       Confirm     : (string * string) list
       AsJson      : bool
       Evidence    : EstateEvidenceMode }
+
+/// The row-fidelity proof's operands (T17, wave B2): the two environments
+/// by label + resolved conn, the model reference whose rename map closes the
+/// physical-to-logical gap, the optional kind/module scope, and the cap on
+/// NAMED differences (the totals stay exact).
+and CheckDataRowsArgs =
+    { BeforeLabel : string
+      BeforeConn  : string
+      AfterLabel  : string
+      AfterConn   : string
+      ModelRef    : string
+      Kind        : string option
+      Module      : string option
+      SampleCap   : int
+      AsJson      : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

@@ -192,6 +192,7 @@
     <Compile Include="EstateTests.fs" />
     <Compile Include="EstateEvidenceStoreTests.fs" />
     <Compile Include="RowDigestFoldTests.fs" />
+    <Compile Include="RowFidelityTests.fs" />
     <Compile Include="ReadinessConfigTests.fs" />
     <Compile Include="CanaryResidualTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />

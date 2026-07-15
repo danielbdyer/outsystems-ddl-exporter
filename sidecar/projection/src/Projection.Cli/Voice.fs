@@ -1045,6 +1045,44 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> Some (View.Action "Restore the connection, or narrow readiness.confirm deliberately.") }
 
+    /// `fidelity.rows.matched` — §6: the row-fidelity proof, green (`check
+    /// data --rows`; T17, wave B2). The statement names what this run
+    /// proved; the strict-mode clause rides the substantiation until the
+    /// intervention ledger joins the copy at its wave (never a claim ahead
+    /// of what runs).
+    let private fidelityRowsMatched : Copy =
+        { Code           = "fidelity.rows.matched"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "Every compared row is byte-identical across the physical-to-logical gap: %s row(s) across %s kind(s)."
+                        (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+          Substantiation =
+            fun _ -> [ View.Note "No intervention ledger was supplied — this proof claims strict byte-identity." ]
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "%s carries the full proof record, machine-readable." path)) }
+
+    /// `fidelity.rows.diverged` — §6: differing rows exist and the first
+    /// are named below by their keys; the totals stay exact at any scale.
+    let private fidelityRowsDiverged : Copy =
+        { Code           = "fidelity.rows.diverged"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "The rows differ across the gap: %s difference(s) over %s compared row(s) across %s kind(s). The first differing rows are named below, each by its key."
+                        (humane (textOr "diffs" "0" p)) (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every kind's totals and every named difference, machine-readable." path)) }
+
     /// The humane capture-age clause the three evidence notices share
     /// ("today" / "N day(s) ago") — mirrors the board masthead's wording so
     /// the notice and the masthead read as one fact.
@@ -1169,6 +1207,9 @@ module Voice =
           estateEvidenceCached
           estateEvidenceStale
           estateEvidenceOffline
+          // §6 — the row-fidelity proof pair (check data --rows; T17, B2)
+          fidelityRowsMatched
+          fidelityRowsDiverged
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

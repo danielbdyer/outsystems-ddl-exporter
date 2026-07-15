@@ -83,6 +83,10 @@
          are shared by the board and the execute gate. -->
     <Compile Include="ActEvidence.fs" />
     <Compile Include="TransferRun.fs" />
+    <!-- FidelityCompareRun.fs: the row-fidelity compare run (T17, wave B2) —
+         two PK-ordered streams through the pure comparator core; placed after
+         TransferRun.fs per the chapter plan's compile-order note. -->
+    <Compile Include="FidelityCompareRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
     <Compile Include="EjectRun.fs" />

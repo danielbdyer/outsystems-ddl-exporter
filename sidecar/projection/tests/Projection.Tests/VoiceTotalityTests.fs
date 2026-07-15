@@ -71,6 +71,8 @@ let private inScopeCodes : Set<string> =
           // the estate evidence-provenance notices (wave A2.5 — the pay-once
           // store says which basis each environment's verdicts stand on)
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          // the row-fidelity proof pair (check data --rows — T17, wave B2)
+          "fidelity.rows.matched"; "fidelity.rows.diverged"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -142,6 +144,9 @@ let private knownEmittableCodes : Set<string> =
           // the estate evidence-provenance notices — render-synthesized at the
           // same face from the report's stamped `EvidenceProvenance`
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          // the row-fidelity proof pair — render-synthesized at the
+          // `check data --rows` face (`runCheckDataRows`)
+          "fidelity.rows.matched"; "fidelity.rows.diverged"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"
@@ -209,7 +214,10 @@ let private samplePayload : Voice.Payload =
           // the evidence-provenance notices' filled branches (wave A2.5)
           "age",           box "9"
           "kinds",         box 214
-          "moved",         box 3 ]
+          "moved",         box 3
+          // the row-fidelity proof pair's filled branches (wave B2)
+          "rows",          box 17431882L
+          "diffs",         box 3 ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
@@ -277,6 +285,7 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "drift.none"; "drift.diverged"
           "estate.unified"; "estate.diverged"; "estate.envUnreadable"
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          "fidelity.rows.matched"; "fidelity.rows.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"

@@ -2084,6 +2084,43 @@ module Command =
                 match valueOf "--model", valueOf "--to" with
                 | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
+            | "data" :: rest when List.contains "--rows" rest ->
+                // THE ROW-FIDELITY PROOF (T17, wave B2) — the manual check:
+                // two connection strings, the authored model as the alignment
+                // basis, every differing row named by its key. The model is
+                // REQUIRED because the two sides carry different renditions
+                // of one estate — without its rename map, physical and
+                // logical column names read as different rows.
+                match valueOf "--before", valueOf "--after" with
+                | Some b, Some a ->
+                    (match connOf b, connOf a with
+                     | Ok bc, Ok ac ->
+                         (match valueOf "--model" with
+                          | None ->
+                              PlanAction.Refused (2, err "cli.check.dataRowsNoModel" "projection check data --rows: needs --model <ref> — the row comparison aligns each side's physical column names to the model's logical shape, and without the model's rename map two renditions of one estate read as different rows.")
+                          | Some modelRef ->
+                              let sampleCap =
+                                  match valueOf "--sample" with
+                                  | None -> Ok 20
+                                  | Some raw ->
+                                      (match System.Int32.TryParse raw with
+                                       | true, n when n > 0 -> Ok n
+                                       | _ -> Error (err "cli.check.dataRowsSample" (sprintf "projection check data --rows: --sample needs a positive whole number; '%s' is not one." raw)))
+                              (match sampleCap with
+                               | Error e -> PlanAction.Refused (2, e)
+                               | Ok cap ->
+                                   PlanAction.CheckDataRows
+                                       { BeforeLabel = b
+                                         BeforeConn  = bc
+                                         AfterLabel  = a
+                                         AfterConn   = ac
+                                         ModelRef    = modelRef
+                                         Kind        = valueOf "--kind"
+                                         Module      = valueOf "--module"
+                                         SampleCap   = cap
+                                         AsJson      = (valueOf "--format" = Some "json") }))
+                     | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data --rows: requires --before <environment> --after <environment> --model <ref>.")
             | "data" :: _ ->
                 match valueOf "--before", valueOf "--after" with
                 | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))

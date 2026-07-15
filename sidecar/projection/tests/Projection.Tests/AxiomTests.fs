@@ -1622,11 +1622,17 @@ Every source row not removed by the row-set ledger satisfies \
 canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the canonical \
 row form over an SsKey/logical basis; every target row outside image(κ) ∪ adds \
 is a violation; every exception cites its ledger record. The data-plane sibling \
-of the soul adjunction. Promotion trigger: wave B2 lands the lockstep \
-comparator's docker witness (two identical databases prove byte-identity; one \
-flipped cell names its business key) and this stub promotes to a pointer at \
-that executable witness. The two digest planes (client-canonical SHA256 \
-authoritative; server HASHBYTES fast-path) agree per SQL type at wave B3.")>]
+of the soul adjunction. EXECUTABLE WITNESSES LIVE (wave B2, same date): \
+`RowFidelityTests` carries the pure comparator laws (identical streams name \
+nothing; a flipped cell names its key and columns; the streaming lockstep's \
+reference `compareOrdered` law) and `FidelityRowsDockerTests` runs the live \
+triangle — two seeded databases in the two renditions prove byte-identity \
+across the physical-to-logical gap via `check data --rows`' run path, and one \
+flipped cell names its key. The strict form (no intervention ledger) is what \
+B2 proves; the ledger-modulated form promotes at B4b, and the two digest \
+planes (client-canonical SHA256 authoritative; server HASHBYTES fast-path) \
+agree per SQL type at wave B3. This entry stays as the axiom-file pointer; \
+the witnesses are those test facts.")>]
 let ``T17 candidate: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
 
 // ===========================================================================
