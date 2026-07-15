@@ -1,4 +1,64 @@
-# Handoff addendum — 2026-07-15, THE ESTATE CHAPTER OPENS: `check estate` wave A1 shipped (the instrument's skeleton — findings model, decision-first board, estate.json, three Voice codes, A45's pure witness). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
+# Handoff addendum — 2026-07-15 (later), MID-CHAPTER: waves A2 → A3 and B1 → B3 shipped — consensus, the pay-once evidence store, the detectors' pure wave, the RowDigestFold rebuild, the lockstep comparator (`check data --rows`, T17 executable), and the HASHBYTES plane. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
+
+To the next agent.
+
+**Where the chapter stands.** Eight build waves are landed and pushed (`e94ce41` A0+B0 →
+`3138fc3` A1 → `4b49b35` B1+A2 → `c1bccf6`/`d7c85b0` A2.5 → `ab909fd` B2 → `a01d62f` B3 →
+`5a3f470` A3); the PR body is current through B3 and one refresh behind after A3. The
+approved plan (with a resume-state section naming every landed edit) lives at the
+operator's plan file; the interleave's NEXT steps are **B4b** (the exception-ledger
+compare: `--interventions @runId` replay over the capture journal + minting
+`BooleanCanonicalizationTolerated` / `DateTimeTickPrecisionTolerated` /
+`IntegerWidthNormalized`, first consumer the comparator) then **A4** (detectors,
+probe/static wave: D10/D11 N-way static alignment, D6, D8, D13, D14, I3, O1 CDC parity,
+O2 grants), then A5 → A6 (the TighteningBinding nullability amendment FIRST-IN-PR) →
+A7 ∥ B5 → A8 → B6. B4a stays deferred with rationale in the `4b49b35` message.
+
+**What you now operate beyond the A1 letter below:**
+- Consensus (A2): `Estate.decideOnJoin` — the decision meet over the `Profile.merge` join,
+  union law property-tested; clean-environment attribution with the 100-row `decisionFloor`.
+- The pay-once evidence store (A2.5): `EstateEvidenceStore` (SHA-bound profile+sidecar
+  pair under `PROJECTION_ESTATE_DIR` → ledger `estate/` → disabled-and-said; atomic
+  writes, advisory failures, fail-closed loads; `staleKinds`), the one-round-trip
+  `EvidenceFingerprint` probe, `--refresh [env,…]`/`--offline` with named refusals, and
+  `EvidenceProvenance` stamped via `Estate.withEvidence` — masthead, `estate.json`, and
+  the three `estate.evidence.*` Voice notices project one value.
+- The detectors' pure wave (A3): presence now splits by direction (`SchemaLag`/WATCH —
+  "the ordinary publish resolves it" — vs `SchemaPresence`/DECIDE "deployed-ahead
+  drift"); the majority clause excludes lag; `SchemaTrust` (WITH NOCHECK census, REPAIR,
+  re-trust cost named), `DataAsymmetry` (100× `asymmetryFactor`, WATCH), and
+  `DataUniquenessCandidate` (per-environment unanimity over categorical evidence — never
+  the join) joined the closed kind DU; DataOrphans gains the zero-sentinel split from
+  categorical evidence; Text NOT-NULL findings name the empty-text basis (NM-18).
+- The fidelity track: `RowDigestFold` (B1, order-independent aggregate + T17 triangle),
+  `RowFidelity.compareOrdered` + `FidelityCompareRun` + `check data --rows --before
+  --after --model` (B2 — the model operand REQUIRED, refusal names why; differing rows
+  named by key; `fidelity.rows.json`; T17's AxiomTests stub now points at its live
+  witnesses), and `ServerDigest` (B3 — the M1.8 HASHBYTES fast-path under the model's
+  name bridge; `supportOf` descent by name; per-type verdict co-variance proven live).
+
+**Traps refreshed for you:**
+- The warm SQL container came UP mid-session and the docker witnesses ran LIVE (probe,
+  T17 triangle, digest planes) — then the probe hook later reported **no containers
+  running** again. Re-probe before docker work; `scripts/warm-sql.sh` is the remedy;
+  A3 was pure-only so it did not matter there.
+- The Voice banned-substring scan rejects "digest" in VOICED copy (it contains the
+  figurative "dig") — keep the term below the statement line (board lines, JSON).
+- `flagValue` returns the next token blindly — `--refresh --format json` style flags need
+  the hand-parse (see the estate arm); a flag is never its value.
+- The lint baseline is still exactly **65 pre-existing violations** — verify with the
+  count line, not the exit code, and sweep nothing.
+- FS3511 bit once more (a task `for` over a case list in the B3 docker test) — the fix
+  is always the module-level `rec` walk with cursor state as parameters.
+- The A2 union-law property and the D12 asymmetry detector share fixtures: dirty 5,000
+  vs tiny 12 rows TRIPS the asymmetry advisory — find findings by Kind, never by count.
+
+The A1 letter below still describes the instrument's skeleton faithfully; its "coming
+waves" list is now history through A3. Hold the spine.
+
+---
+
+# (superseded 2026-07-15-later) Handoff addendum — 2026-07-15, THE ESTATE CHAPTER OPENS: `check estate` wave A1 shipped (the instrument's skeleton — findings model, decision-first board, estate.json, three Voice codes, A45's pure witness). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
 
 To the next agent.
 
