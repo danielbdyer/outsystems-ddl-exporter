@@ -346,6 +346,27 @@ type InsertionPolicy =
 // at that point.
 
 
+/// Which direction a tightening intervention may move the emitted shape
+/// (DECISIONS 2026-07-15 — the estate chapter's A6 amendment, amending the
+/// 2026-06-22 coercion drop). The Policy.fs mode note below anticipated
+/// this moment: "if a real second mode lands later, it arrives as a new
+/// field" — the estate's interim posture is that second mode.
+[<RequireQualifiedAccess>]
+type TighteningDirection =
+    /// The V1-shaped signal hierarchy: evidence + budget may propose a
+    /// TIGHTER shape than the source declares (NOT NULL beyond physical
+    /// nullability; evidence-gated FK enforcement). Unreachable from
+    /// operator config for nullability since 2026-06-22 (the coercion
+    /// drop); constructible directly and still exercised by the rules'
+    /// own unit tests.
+    | EvidenceDriven
+    /// The estate posture's direction: ONLY the explicit named overrides
+    /// act, and they only ever RELAX (keep a column nullable; keep a
+    /// relationship untracked). No evidence signal proposes tightening,
+    /// so the coercion drop stays whole; every non-overridden subject
+    /// carries the declared shape untouched.
+    | RelaxationOnly
+
 /// One row of the override table on a NullabilityTighteningConfig.
 /// Keyed by attribute identity (per A4) rather than by (module, entity,
 /// attribute) names — the V2 boundary resolves V1's name-keyed overrides
@@ -388,6 +409,12 @@ type NullabilityTighteningConfig = {
     /// signal hierarchy entirely for its target attribute. Empty
     /// list = no overrides.
     Overrides                : TighteningOverride list
+    /// Which direction this intervention may move nullability
+    /// (DECISIONS 2026-07-15, the estate A6 amendment). Under
+    /// `RelaxationOnly` the budget hierarchy never runs: the ONLY
+    /// acts are the explicit `KeepNullable` overrides, which RELAX
+    /// emission below the declared shape (`DecisionOverlay.KeepNullable`).
+    Direction                : TighteningDirection
 }
 
 
@@ -436,6 +463,27 @@ type CategoricalUniquenessConfig = {
 /// preserved by `AllowNoCheckCreation` — the caller registering
 /// the intervention chooses whether the WITH NOCHECK fallback is
 /// allowed.
+/// What a per-reference override does (DECISIONS 2026-07-15, the estate
+/// A6 amendment — the interim posture's untrack arm). Mirrors
+/// `OverrideAction` in shape; grows when a second per-reference act
+/// surfaces under evidence.
+type ForeignKeyOverrideAction =
+    /// Keep the relationship untracked: the FK constraint is not emitted
+    /// for this reference — absolute, outranking even the
+    /// source-backed-constraint carve-out (the operator's interim posture
+    /// targets constraints the agreed shape carries; the reopen probe
+    /// retires it at zero orphans).
+    | KeepUntracked
+
+/// One row of the per-reference override table on a
+/// `ForeignKeyTighteningConfig`. Keyed by reference identity — the V2
+/// boundary resolves the operator's `Module.Entity.Attribute` form to
+/// the anchoring reference's SsKey before it reaches the pure core.
+type ForeignKeyOverride = {
+    ReferenceKey : SsKey
+    Action       : ForeignKeyOverrideAction
+}
+
 type ForeignKeyTighteningConfig = {
     /// Should FK constraints be created at all?
     /// V1's `ForeignKeyOptions.EnableCreation`.
@@ -460,6 +508,18 @@ type ForeignKeyTighteningConfig = {
     /// Ignore-rules would otherwise block it? V1's
     /// `AllowNoCheckCreation` plus the (now collapsed) Cautious mode.
     AllowNoCheckCreation           : bool
+    /// Operator-approved per-reference overrides (DECISIONS 2026-07-15,
+    /// the estate A6 amendment). Each override bypasses the signal
+    /// hierarchy entirely for its reference — absolute in BOTH
+    /// directions, mirroring the nullability hierarchy's step 1. Empty
+    /// list = no overrides (every pre-amendment construction).
+    Overrides                      : ForeignKeyOverride list
+    /// Which direction this intervention may act (DECISIONS 2026-07-15).
+    /// Under `RelaxationOnly` the evidence hierarchy never runs: the
+    /// explicit `KeepUntracked` overrides act, and every other reference
+    /// carries the declared shape untouched — the surgical form the
+    /// estate overlay emits.
+    Direction                      : TighteningDirection
 }
 
 
@@ -844,9 +904,11 @@ module NullabilityTighteningConfig =
             "nullabilityTighteningConfig.nullBudget.outOfRange"
             "NullBudget must be in [0, 1]."
 
-    /// Construct a `NullabilityTighteningConfig`. Validates
-    /// `NullBudget ∈ [0, 1]`. Carries no defaults — every field is
-    /// explicit.
+    /// Construct the EVIDENCE-DRIVEN `NullabilityTighteningConfig` (the
+    /// V1-shaped signal hierarchy — the direction every pre-amendment
+    /// caller means). Validates `NullBudget ∈ [0, 1]`. Carries no
+    /// defaults — every field is explicit; the direction is this
+    /// constructor's name.
     let create
         (nullBudget: decimal)
         (allowMandatoryRelaxation: bool)
@@ -859,7 +921,24 @@ module NullabilityTighteningConfig =
             Result.success
                 { NullBudget               = nullBudget
                   AllowMandatoryRelaxation = allowMandatoryRelaxation
-                  Overrides                = overrides }
+                  Overrides                = overrides
+                  Direction                = TighteningDirection.EvidenceDriven }
+
+    /// Construct the RELAXATION-ONLY `NullabilityTighteningConfig`
+    /// (DECISIONS 2026-07-15, the estate A6 amendment): only the named
+    /// `KeepNullable` overrides act; no budget hierarchy runs, so there
+    /// is no budget to validate. `allowMandatoryRelaxation` is carried
+    /// verbatim for the policy fingerprint; with the hierarchy dormant
+    /// it has no signal to act on, and the binder says so.
+    let relaxationOnly
+        (allowMandatoryRelaxation: bool)
+        (overrides: TighteningOverride list)
+        : NullabilityTighteningConfig =
+        use _ = Bench.scope "ir.policy.nullability.relaxationOnly"
+        { NullBudget               = 0.0m
+          AllowMandatoryRelaxation = allowMandatoryRelaxation
+          Overrides                = overrides
+          Direction                = TighteningDirection.RelaxationOnly }
 
     /// True iff there's a `KeepNullable` override for the given
     /// attribute in this intervention's override list.
@@ -915,11 +994,13 @@ module CategoricalUniquenessConfig =
 [<RequireQualifiedAccess>]
 module ForeignKeyTighteningConfig =
 
-    /// Construct a `ForeignKeyTighteningConfig`. No validation
-    /// required — every field is a boolean. Carries no defaults; the
-    /// caller registering the intervention chooses every value
-    /// explicitly per V2's strict-default discipline (DECISIONS
-    /// 2026-05-09 — Tightening as a registry of named interventions).
+    /// Construct the EVIDENCE-DRIVEN `ForeignKeyTighteningConfig` (the
+    /// V1-shaped hierarchy — the direction every pre-amendment caller
+    /// means; no per-reference overrides). No validation required —
+    /// every field is a boolean. Carries no defaults; the caller
+    /// registering the intervention chooses every value explicitly per
+    /// V2's strict-default discipline (DECISIONS 2026-05-09 —
+    /// Tightening as a registry of named interventions).
     let create
         (enableCreation: bool)
         (allowCrossSchema: bool)
@@ -932,7 +1013,32 @@ module ForeignKeyTighteningConfig =
           AllowCrossSchema               = allowCrossSchema
           AllowCrossCatalog              = allowCrossCatalog
           TreatMissingDeleteRuleAsIgnore = treatMissingDeleteRuleAsIgnore
-          AllowNoCheckCreation           = allowNoCheckCreation }
+          AllowNoCheckCreation           = allowNoCheckCreation
+          Overrides                      = []
+          Direction                      = TighteningDirection.EvidenceDriven }
+
+    /// Construct the RELAXATION-ONLY `ForeignKeyTighteningConfig`
+    /// (DECISIONS 2026-07-15, the estate A6 amendment — the surgical
+    /// form the estate overlay emits): only the named `KeepUntracked`
+    /// overrides act; every other reference carries the declared shape
+    /// untouched. The five V1 toggles are dormant under this direction
+    /// (the evidence hierarchy never runs); they hold the values that
+    /// would be identity if it did.
+    let relaxationOnly (overrides: ForeignKeyOverride list) : ForeignKeyTighteningConfig =
+        use _ = Bench.scope "ir.policy.foreignKey.relaxationOnly"
+        { EnableCreation                 = true
+          AllowCrossSchema               = true
+          AllowCrossCatalog              = false
+          TreatMissingDeleteRuleAsIgnore = false
+          AllowNoCheckCreation           = false
+          Overrides                      = overrides
+          Direction                      = TighteningDirection.RelaxationOnly }
+
+    /// True iff there's a `KeepUntracked` override for the given
+    /// reference in this intervention's override list.
+    let shouldKeepUntracked (referenceKey: SsKey) (config: ForeignKeyTighteningConfig) : bool =
+        config.Overrides
+        |> List.exists (fun o -> o.ReferenceKey = referenceKey && o.Action = KeepUntracked)
 
 
 [<RequireQualifiedAccess>]

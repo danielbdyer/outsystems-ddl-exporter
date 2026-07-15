@@ -21,6 +21,14 @@ type DecisionOverlay =
     {
         /// AttributeKeys decided `NullabilityOutcome.EnforceNotNull`.
         EnforceNotNull : Set<SsKey>
+        /// AttributeKeys decided `KeepNullable OperatorOverride` — the
+        /// operator's EXPLICIT posture relaxes the emitted nullability
+        /// below the source's declaration (DECISIONS 2026-07-15, the
+        /// estate A6 amendment: the one lawful loosening; the reopen
+        /// probe retires it). Evidence-reasoned KeepNullable outcomes
+        /// (NoTighteningSignal / RelaxedUnderEvidence) never land here —
+        /// evidence never loosens source truth.
+        KeepNullable : Set<SsKey>
         /// IndexKeys decided `UniqueIndexOutcome.EnforceUnique`.
         EnforceUnique : Set<SsKey>
         /// ReferenceKeys decided `ForeignKeyOutcome.DoNotEnforce` — drop the
@@ -39,6 +47,7 @@ module DecisionOverlay =
     let empty : DecisionOverlay =
         {
             EnforceNotNull = Set.empty
+            KeepNullable = Set.empty
             EnforceUnique = Set.empty
             DropFk = Set.empty
             NoCheckFk = Set.empty
@@ -52,6 +61,21 @@ module DecisionOverlay =
             |> List.choose (fun d ->
                 match d.Outcome with
                 | NullabilityOutcome.EnforceNotNull _ -> Some d.AttributeKey
+                | _ -> None)
+            |> Set.ofList
+
+    /// The operator's explicit keep-nullable posture — `OperatorOverride`
+    /// outcomes ONLY (the estate A6 amendment). The evidence-reasoned
+    /// KeepNullable variants stay out by construction: a relaxation is an
+    /// operator's named act, never an evidence inference.
+    let private keepNullableKeys (decisions: NullabilityDecisionSet option) : Set<SsKey> =
+        match decisions with
+        | None -> Set.empty
+        | Some s ->
+            s.Decisions
+            |> List.choose (fun d ->
+                match d.Outcome with
+                | NullabilityOutcome.KeepNullable OperatorOverride -> Some d.AttributeKey
                 | _ -> None)
             |> Set.ofList
 
@@ -94,6 +118,7 @@ module DecisionOverlay =
     let ofComposeState (state: ComposeState) : DecisionOverlay =
         {
             EnforceNotNull = nullabilityKeys state.NullabilityDecisions
+            KeepNullable = keepNullableKeys state.NullabilityDecisions
             EnforceUnique = uniqueKeys state.UniqueIndexDecisions
             DropFk = fkKeys isDropFk state.ForeignKeyDecisions
             NoCheckFk = fkKeys isNoCheckFk state.ForeignKeyDecisions

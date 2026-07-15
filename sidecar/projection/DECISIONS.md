@@ -242,7 +242,7 @@ table before continuing.
 | **Sub-unanimity consensus thresholds (`check estate`)** | 2026-07-15 (the estate chapter opens) | The operator asks for a per-axis apply threshold below unanimity. Until then: the estate decision is the meet over the evidence join (deciding on `Profile.merge` ≡ unanimous per-env decisions); consensus ratios live in `estate.json` only and never lead a rendered line (the blocking environment is named instead). | deferred (2026-07-15) |
 | **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
 | **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | deferred (2026-07-15) |
-| **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | scheduled (2026-07-15; decision point = wave A6) |
+| **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | **Cashed out — 2026-07-15, estate wave A6 (first-in-PR).** The relaxation direction is STRUCTURAL: `TighteningDirection` (`EvidenceDriven \| RelaxationOnly`) on both nullability and FK configs; budget-less `kind:"nullability"` entries bind `relaxationOnly` (budgeted entries stay dropped — coercion unchanged); per-reference `referenceOverrides` (`keepUntracked`) land the previously-inexpressible single-FK untrack; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes only) reaches `SsdtDdlEmitter.columnDef` — the one lawful loosening. A44 enforcement test: `` `overlay: every emitted key binds through TighteningBinding and reaches emission` `` (TighteningBindingTests). See `2026-07-15 — The nullability-binder amendment lands` entry below. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -27503,3 +27503,81 @@ wave A1's N-way witness).
 canonicalization, DateTime tick precision, integer-width normalization) mint as
 `ToleratedDivergence` variants at wave B4b — with their first consumer, the intervention-aware
 comparator — never before (the no-inert-names rule). Trigger already scheduled: B4b opens.
+
+## 2026-07-15 — The nullability-binder amendment lands: the relaxation direction binds and reaches emission (estate wave A6, first-in-PR)
+
+**Context.** The scheduled decision point named at the estate chapter's open (the Active
+deferral "The nullability-binder relaxation-direction amendment"; wave A6 = the posture wave).
+The 2026-06-22 entry dropped the whole `kind:"nullability"` intervention class from
+`TighteningBinding.fromConfig` — config-driven nullable→NOT NULL coercion is the team's
+modeling decision, not the tool's — which left `overrides` (the `keepNullable` table)
+EXPRESSIBLE-BUT-INERT, the exact NM-69 class A44 exists to forbid. The estate overlay
+(`estate.overlay.json`) emits `keepNullable` and per-reference untrack entries as its interim
+posture, so the gap had to close before the overlay's first emission.
+
+**The decision (this amendment, taken at the scheduled point):** re-open the class for the
+RELAXATION direction only — and make the direction STRUCTURAL, not a binder convention.
+
+1. **`TighteningDirection` (Core, closed DU): `EvidenceDriven | RelaxationOnly`** — a new
+   field on BOTH `NullabilityTighteningConfig` and `ForeignKeyTighteningConfig` (the Policy.fs
+   mode note anticipated exactly this: "a real second mode… arrives as a new field").
+   `create` keeps its signature and constructs `EvidenceDriven` (every pre-amendment caller
+   verbatim); the new `relaxationOnly` constructors are the posture's named forms. Under
+   `RelaxationOnly` the rules run ONLY the operator's explicit overrides: `NullabilityRules`
+   reads every non-overridden attribute as `KeepNullable(NoTighteningSignal)` (never the
+   step-2/3/4 enforce arms — the coercion drop stays whole); `ForeignKeyRules` carries every
+   non-overridden reference as the new `EnforceConstraint(DeclaredShapeCarried)` (identity at
+   emission — neither `DropFk` nor `NoCheckFk`).
+2. **Per-reference FK overrides (Core): `ForeignKeyOverride { ReferenceKey; Action }`,
+   `ForeignKeyOverrideAction = KeepUntracked`** — the ideation's "untrack ONE relationship"
+   arm, previously inexpressible (FK configs were intervention-wide). The override is
+   ABSOLUTE in both directions (mirrors the nullability hierarchy's step 1) and outranks the
+   source-backed-constraint carve-out (2026-06-12) deliberately: the interim posture targets
+   relationships the agreed shape carries; its decision reads
+   `DoNotEnforce(OperatorUntracked)` and lands in `DropFk` (the existing emission path; the
+   FK-dropped diff note already speaks it).
+3. **`keepNullable` reaches emission — the one lawful loosening.** `DecisionOverlay` gains
+   `KeepNullable : Set<SsKey>`, minted from `KeepNullable OperatorOverride` outcomes ONLY
+   (evidence-reasoned KeepNullable variants stay out by construction), and
+   `SsdtDdlEmitter.columnDef` consults it: the wave-2 "additive-only" law is AMENDED, not
+   repealed — an EVIDENCE outcome still never loosens source truth; the operator's explicit,
+   named posture override may, absolutely (it also outranks a sibling `EnforceNotNull`), and
+   its reopen probe retires it.
+4. **The binder split (`TighteningBinding.fromConfig`).** A `kind:"nullability"` entry naming
+   a `nullBudget` is the COERCION direction: still dropped, not refused (an existing config
+   never hard-fails; null-density stays a profiling statistic). A budget-less entry binds as
+   `relaxationOnly` — `allowMandatoryRelaxation` binds verbatim onto the config (the policy
+   fingerprint sees it; under RelaxationOnly no budget hierarchy runs to consult it, said
+   here and in the binder's docstring). A `kind:"foreignKey"` entry carrying
+   `referenceOverrides` and NONE of the five V1 toggles binds as the SURGICAL
+   `relaxationOnly` form (the shape the overlay emits); any toggle present keeps
+   `EvidenceDriven` with the overrides still consulted first. New config surface:
+   `referenceOverrides: [{ referenceRef, action: "keepUntracked" }]` — a DISTINCT key from
+   the nullability `overrides` so the two grains never share a shape; `referenceRef` names
+   the relationship by its anchoring attribute (logical or physical form), and an attribute
+   that anchors no relationship refuses by name (`referenceRef.noReference`).
+5. **The A44 enforcement law, executable:** `` `overlay: every emitted key binds through
+   TighteningBinding and reaches emission — no expressible-but-inert key (A44)` ``
+   (TighteningBindingTests) drives both overlay entry shapes config → binder → passes →
+   `DecisionOverlay` → `statementsWith`: the named column loosens to NULL, the named
+   relationship is not created, `EnforceNotNull`/`NoCheckFk` stay empty, and the baseline run
+   proves both edits are the posture's doing. Red if the amendment is skipped.
+6. **`VersionedPolicy.digestOf` fingerprints the new content** (`;dir=` on both variants;
+   `;rov=` + per-override entries on ForeignKey) — a posture edit is policy content and must
+   move every digest-keyed cache.
+7. **Relationship to `tighteningRelaxations` (F7), named:** DIFFERENT machinery, deliberately
+   untouched. That key is the migrate face's §5 data-compat gate blessing — headless honoring
+   of relax-once/relax-always choices when TIGHTENING-work violates live data, applied by
+   `Preflight.relaxTightening` at the face. The overlay's `keepNullable` entries are a
+   STANDING posture bound through the policy and applied at every overlay-threaded emission.
+   Both say "keep nullable"; they differ in lifecycle (gate blessing vs. standing posture)
+   and in plane (face-local catalog edit vs. pass-discharged decision). A future unification
+   is possible once the estate posture subsumes the migrate gate's use cases; it is not this
+   amendment.
+
+**Ripples, contained:** `ForeignKeyPass.opportunityEntry` gains total-match arms for the two
+new cases (both `None` — a chosen posture is not an opportunity, mirroring
+`KeepNullable(OperatorOverride)`); `SummaryFormatter`'s wildcard buckets the untrack decision
+as no-remediation (correct — it IS the remediation); the structured displays gain their tags.
+Every pre-amendment construction site compiles verbatim through the unchanged `create`
+signatures.

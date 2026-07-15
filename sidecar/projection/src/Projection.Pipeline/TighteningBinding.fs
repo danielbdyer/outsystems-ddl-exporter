@@ -89,22 +89,27 @@ module TighteningBinding =
             }
         }
 
-    /// Build a `TighteningIntervention.Nullability` from a config
-    /// entry. Defaults: `NullBudget = 0.0` (strict), `Allow
-    /// MandatoryRelaxation = false` (V1 cautious default). Overrides
-    /// resolve against the catalog.
+    /// Build the RELAXATION-ONLY `TighteningIntervention.Nullability`
+    /// from a config entry (DECISIONS 2026-07-15, the estate A6
+    /// amendment — amends 2026-06-22). Only budget-less entries reach
+    /// this binder (`fromConfig` drops the coercion direction), so the
+    /// bound intervention's ONLY reachable acts are its resolved
+    /// `keepNullable` overrides — they relax emission below the declared
+    /// shape (`DecisionOverlay.KeepNullable`) until the reopen probe
+    /// retires them. `allowMandatoryRelaxation` binds verbatim for the
+    /// policy fingerprint; under RelaxationOnly no budget hierarchy runs
+    /// to consult it.
     let private bindNullability
         (catalog: Catalog)
         (entry: Config.TighteningInterventionEntry)
         : Result<TighteningIntervention> =
-        let nullBudget = defaultArg entry.NullBudget 0m
         let allowMand = defaultArg entry.AllowMandatoryRelaxation false
         result {
             let! overrides =
                 entry.NullabilityOverrides
                 |> List.map (bindOverride catalog)
                 |> Result.aggregate
-            let! config = NullabilityTighteningConfig.create nullBudget allowMand overrides
+            let config = NullabilityTighteningConfig.relaxationOnly allowMand overrides
             return TighteningIntervention.Nullability (entry.Id, config)
         }
 
@@ -117,17 +122,83 @@ module TighteningBinding =
         }
         Result.success (TighteningIntervention.UniqueIndex (entry.Id, config))
 
+    let private parseReferenceOverrideAction
+        (raw: string)
+        : Result<ForeignKeyOverrideAction> =
+        match raw with
+        | "keepUntracked" -> Result.success KeepUntracked
+        | other ->
+            Result.failureOf (
+                bindError
+                    "referenceOverrideAction.unknown"
+                    (sprintf "Reference override action '%s' is unknown. Valid: 'keepUntracked'." other))
+
+    /// Resolve a `referenceRef` (the relationship named by its ANCHORING
+    /// attribute, logical or physical form) to the reference's `SsKey`:
+    /// the attribute resolves first, then the kind carrying it yields
+    /// the relationship it anchors. An attribute that anchors no
+    /// relationship is a structured refusal — never a silent drop.
+    let private bindReferenceOverride
+        (catalog: Catalog)
+        (entry: Config.TighteningReferenceOverride)
+        : Result<ForeignKeyOverride> =
+        result {
+            let! attrKey = resolveAttributeRef catalog entry.ReferenceRef
+            let! action = parseReferenceOverrideAction entry.Action
+            let referenceKey =
+                Catalog.allKinds catalog
+                |> List.tryPick (fun k ->
+                    k.References
+                    |> List.tryFind (fun r -> r.SourceAttribute = attrKey)
+                    |> Option.map (fun r -> r.SsKey))
+            match referenceKey with
+            | Some key -> return { ReferenceKey = key; Action = action }
+            | None ->
+                return!
+                    Result.failureOf (
+                        bindError
+                            "referenceRef.noReference"
+                            (sprintf
+                                "Reference override '%s' resolves to an attribute that anchors no relationship."
+                                entry.ReferenceRef))
+        }
+
+    /// Build a `TighteningIntervention.ForeignKey` from a config entry.
+    /// The DIRECTION is the entry's shape (DECISIONS 2026-07-15, the
+    /// estate A6 amendment): an entry carrying `referenceOverrides` and
+    /// NONE of the five V1 toggles is the SURGICAL relaxation-only form
+    /// (only the named references move; everything else carries the
+    /// declared shape) — the form the estate overlay emits. Any toggle
+    /// present keeps the evidence-driven hierarchy, with the overrides
+    /// still consulted first (absolute in both directions).
     let private bindForeignKey
+        (catalog: Catalog)
         (entry: Config.TighteningInterventionEntry)
         : Result<TighteningIntervention> =
-        let config : ForeignKeyTighteningConfig = {
-            EnableCreation                 = defaultArg entry.EnableCreation true
-            AllowCrossSchema               = defaultArg entry.AllowCrossSchema true
-            AllowCrossCatalog              = defaultArg entry.AllowCrossCatalog false
-            TreatMissingDeleteRuleAsIgnore = defaultArg entry.TreatMissingDeleteRuleAsIgnore false
-            AllowNoCheckCreation           = defaultArg entry.AllowNoCheckCreation false
+        result {
+            let! overrides =
+                entry.ForeignKeyOverrides
+                |> List.map (bindReferenceOverride catalog)
+                |> Result.aggregate
+            let togglesAbsent =
+                entry.EnableCreation.IsNone
+                && entry.AllowCrossSchema.IsNone
+                && entry.AllowCrossCatalog.IsNone
+                && entry.TreatMissingDeleteRuleAsIgnore.IsNone
+                && entry.AllowNoCheckCreation.IsNone
+            let config : ForeignKeyTighteningConfig =
+                if togglesAbsent && not (List.isEmpty overrides) then
+                    ForeignKeyTighteningConfig.relaxationOnly overrides
+                else
+                    { EnableCreation                 = defaultArg entry.EnableCreation true
+                      AllowCrossSchema               = defaultArg entry.AllowCrossSchema true
+                      AllowCrossCatalog              = defaultArg entry.AllowCrossCatalog false
+                      TreatMissingDeleteRuleAsIgnore = defaultArg entry.TreatMissingDeleteRuleAsIgnore false
+                      AllowNoCheckCreation           = defaultArg entry.AllowNoCheckCreation false
+                      Overrides                      = overrides
+                      Direction                      = TighteningDirection.EvidenceDriven }
+            return TighteningIntervention.ForeignKey (entry.Id, config)
         }
-        Result.success (TighteningIntervention.ForeignKey (entry.Id, config))
 
     let private bindCategoricalUniqueness
         (entry: Config.TighteningInterventionEntry)
@@ -147,7 +218,7 @@ module TighteningBinding =
         match entry.Kind with
         | "nullability"           -> bindNullability catalog entry
         | "uniqueIndex"           -> bindUniqueIndex entry
-        | "foreignKey"            -> bindForeignKey entry
+        | "foreignKey"            -> bindForeignKey catalog entry
         | "categoricalUniqueness" -> bindCategoricalUniqueness entry
         | other ->
             Result.failureOf (
@@ -168,16 +239,24 @@ module TighteningBinding =
         match section with
         | None -> Result.success TighteningPolicy.empty
         | Some s ->
-            // DECISIONS 2026-06-22 — config-driven nullable→NOT NULL coercion is
-            // disabled (the team's declared nullability is authoritative, not the
-            // tool's). A `kind:"nullability"` intervention creates NO intervention
-            // (a no-op), so the run proceeds without coercion. The `bindNullability`
-            // path + `NullabilityPass`/`NullabilityRules` REMAIN (still exercised by
-            // their direct unit tests) but are no longer reachable from config;
-            // null-density stays as a profiling statistic only. The kind is dropped
-            // here (not refused) so an existing config does not hard-fail.
+            // DECISIONS 2026-06-22 (config-driven nullable→NOT NULL coercion
+            // disabled — the team's declared nullability is authoritative, not
+            // the tool's), AS AMENDED 2026-07-15 (the estate chapter's A6
+            // relaxation-direction re-opening): a `kind:"nullability"` entry
+            // that names a `nullBudget` is the COERCION direction and stays
+            // dropped (not refused, so an existing config does not hard-fail;
+            // null-density stays a profiling statistic only). An entry WITHOUT
+            // a budget binds as a RELAXATION-ONLY intervention — its
+            // `keepNullable` overrides (and nothing else) act, relaxing
+            // emission below the declared shape. That is the estate overlay's
+            // nullability arm, and it closes the A44 gap the 2026-06-22 drop
+            // opened: `overrides` was expressible-but-inert; now every
+            // expressible key binds and reaches emission. The sibling
+            // blessing surface, `tighteningRelaxations` (F7), is DIFFERENT
+            // machinery — the migrate face's data-compat gate honoring, scoped
+            // to tightening-work violations — and stays untouched.
             s.Interventions
-            |> List.filter (fun e -> e.Kind <> "nullability")
+            |> List.filter (fun e -> not (e.Kind = "nullability" && e.NullBudget.IsSome))
             |> List.map (bindEntry catalog)
             |> Result.aggregate
             |> Result.map (fun interventions -> { Interventions = interventions })

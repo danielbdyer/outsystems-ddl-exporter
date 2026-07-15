@@ -393,6 +393,19 @@ module Config =
         Action       : string
     }
 
+    /// One row of the per-reference override table inside a `foreignKey`
+    /// intervention (DECISIONS 2026-07-15, the estate A6 amendment — the
+    /// interim posture's untrack arm; the estate overlay emits these).
+    /// `ReferenceRef` names the relationship by its ANCHORING attribute,
+    /// in the same logical `Module.Entity.Attribute` or physical
+    /// `Schema.Table.Column` form the nullability overrides use; the
+    /// binder resolves it to the reference's `SsKey` at bind time and
+    /// refuses by name when the attribute anchors no relationship.
+    type TighteningReferenceOverride = {
+        ReferenceRef : string
+        Action       : string
+    }
+
     /// One operator-supplied tightening intervention. The `Kind` field
     /// names the DU variant (`"nullability"` / `"uniqueIndex"` /
     /// `"foreignKey"` / `"categoricalUniqueness"`); the per-variant
@@ -414,6 +427,7 @@ module Config =
         AllowCrossCatalog            : bool option
         TreatMissingDeleteRuleAsIgnore : bool option
         AllowNoCheckCreation         : bool option
+        ForeignKeyOverrides          : TighteningReferenceOverride list
         // CategoricalUniqueness fields
         MinDistinctCountForUniqueness : int64 option
     }
@@ -1417,6 +1431,29 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
 
+    let private parseTighteningReferenceOverride (element: JsonElement) : Result<TighteningReferenceOverride> =
+        result {
+            let! ref = getString element "referenceRef"
+            let! action = getString element "action"
+            return { ReferenceRef = ref; Action = action }
+        }
+
+    /// The `referenceOverrides` array on a `foreignKey` intervention
+    /// (DECISIONS 2026-07-15, the estate A6 amendment). A distinct key
+    /// from the nullability `overrides` so the two override grains
+    /// (attribute / reference) never share a shape ambiguously.
+    let private parseTighteningReferenceOverrides (element: JsonElement) : Result<TighteningReferenceOverride list> =
+        match element.TryGetProperty("referenceOverrides") with
+        | false, _ -> Result.success []
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            v.EnumerateArray()
+            |> Seq.toList
+            |> List.map parseTighteningReferenceOverride
+            |> Result.aggregate
+        | _ ->
+            Result.failureOf (
+                configError "typeMismatch" "tightening intervention 'referenceOverrides' must be an array.")
+
     let private parseTighteningIntervention (element: JsonElement) : Result<TighteningInterventionEntry> =
         result {
             let! kind = getString element "kind"
@@ -1431,6 +1468,7 @@ module Config =
             let! crossCatalog = getOptionalBool element "allowCrossCatalog"
             let! missingDR = getOptionalBool element "treatMissingDeleteRuleAsIgnore"
             let! nocheck = getOptionalBool element "allowNoCheckCreation"
+            let! refOverrides = parseTighteningReferenceOverrides element
             let! minDist = getOptionalInt64 element "minDistinctCountForUniqueness"
             return {
                 Kind = kind
@@ -1445,6 +1483,7 @@ module Config =
                 AllowCrossCatalog = crossCatalog
                 TreatMissingDeleteRuleAsIgnore = missingDR
                 AllowNoCheckCreation = nocheck
+                ForeignKeyOverrides = refOverrides
                 MinDistinctCountForUniqueness = minDist
             }
         }

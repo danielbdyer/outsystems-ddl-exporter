@@ -208,6 +208,15 @@ module VersionedPolicy =
         match a with
         | KeepNullable -> "KeepNullable"
 
+    let private fkOverrideActionTok (a: ForeignKeyOverrideAction) : string =
+        match a with
+        | KeepUntracked -> "KeepUntracked"
+
+    let private directionTok (d: TighteningDirection) : string =
+        match d with
+        | TighteningDirection.EvidenceDriven -> "EvidenceDriven"
+        | TighteningDirection.RelaxationOnly -> "RelaxationOnly"
+
     let private appendIntervention (sb: StringBuilder) (i: TighteningIntervention) : unit =
         match i with
         | Nullability (id, cfg) ->
@@ -216,6 +225,7 @@ module VersionedPolicy =
             sb.Append(";nb=")  |> ignore
             appendLP sb (cfg.NullBudget.ToString(System.Globalization.CultureInfo.InvariantCulture))
             sb.Append(";amr=") |> ignore; sb.Append(boolTok cfg.AllowMandatoryRelaxation) |> ignore
+            sb.Append(";dir=") |> ignore; sb.Append(directionTok cfg.Direction) |> ignore
             sb.Append(";ov=")  |> ignore; sb.Append(List.length cfg.Overrides) |> ignore
             for o in cfg.Overrides do
                 sb.Append('{') |> ignore
@@ -236,6 +246,14 @@ module VersionedPolicy =
             sb.Append(";acc=") |> ignore; sb.Append(boolTok cfg.AllowCrossCatalog) |> ignore
             sb.Append(";tmd=") |> ignore; sb.Append(boolTok cfg.TreatMissingDeleteRuleAsIgnore) |> ignore
             sb.Append(";anc=") |> ignore; sb.Append(boolTok cfg.AllowNoCheckCreation) |> ignore
+            sb.Append(";dir=") |> ignore; sb.Append(directionTok cfg.Direction) |> ignore
+            sb.Append(";rov=") |> ignore; sb.Append(List.length cfg.Overrides) |> ignore
+            for o in cfg.Overrides do
+                sb.Append('{') |> ignore
+                appendLP sb (SsKey.serialize o.ReferenceKey)
+                sb.Append(',') |> ignore
+                sb.Append(fkOverrideActionTok o.Action) |> ignore
+                sb.Append('}') |> ignore
         | CategoricalUniqueness (id, cfg) ->
             appendField sb "tv" "CategoricalUniqueness"
             appendLP sb id
