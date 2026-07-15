@@ -105,6 +105,11 @@
          referenced non-static rows (CsvReferencedPull + ClosureOracle), and
          renders through Targets.Data/CsvExport. -->
     <Compile Include="CsvExportRun.fs" />
+    <!-- EstateEvidenceStore.fs: the pay-once evidence store for `check estate`
+         (DECISIONS 2026-07-15, the estate chapter opens, entry 4). Placed after
+         the profile-capture cluster and before MovementSpec.fs so the A2.5β
+         flag threading (refresh/offline) can reach it from the surface. -->
+    <Compile Include="EstateEvidenceStore.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />
