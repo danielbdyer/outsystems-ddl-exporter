@@ -135,8 +135,10 @@ let ``OSSYS adapter maps rtText / rtEmail / rtPhoneNumber (previously unmapped)`
     let emailCat = parseOk (singleAttrJson "rtEmail" "null" "null")
     let phoneCat = parseOk (singleAttrJson "rtPhoneNumber" "null" "null")
     Assert.Equal (Some (SqlStorageType.NVarChar Max), (findAttr "Subject" textCat).SqlStorage)
-    Assert.Equal (Some (SqlStorageType.VarChar (Bounded 250)), (findAttr "Subject" emailCat).SqlStorage)
-    Assert.Equal (Some (SqlStorageType.VarChar (Bounded 20)), (findAttr "Subject" phoneCat).SqlStorage)
+    // WP-4 (DECISIONS 2026-07-16): email/phone are platform-native
+    // NVARCHAR(250)/(20) — the ANSI VARCHAR mapping was the defect.
+    Assert.Equal (Some (SqlStorageType.NVarChar (Bounded 250)), (findAttr "Subject" emailCat).SqlStorage)
+    Assert.Equal (Some (SqlStorageType.NVarChar (Bounded 20)), (findAttr "Subject" phoneCat).SqlStorage)
 
 [<Fact>]
 let ``OSSYS adapter folds declared length into Text storage`` () =
