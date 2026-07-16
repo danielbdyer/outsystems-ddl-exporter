@@ -153,8 +153,8 @@ let ``valid file resolves logical Module.Entity to the kind SsKey with synthesiz
     // The complement-exclusion set is exactly { Role }.
     Assert.Equal<Set<SsKey>>(Set.ofList [ role.SsKey ], MigrationDependenciesBinding.kindKeysOf ctx)
     // Values resolve by logical column name.
-    let admin = ctx.Rows |> List.find (fun r -> Map.tryFind (Name.create "Label" |> Result.value) r.Values = Some "Administrator")
-    Assert.Equal(Some "1", Map.tryFind (Name.create "Id" |> Result.value) admin.Values)
+    let admin = ctx.Rows |> List.find (fun r -> Map.tryFind (Name.create "Label" |> Result.value) r.Values = Some (Some "Administrator"))
+    Assert.Equal(Some (Some "1"), Map.tryFind (Name.create "Id" |> Result.value) admin.Values)
     // Row identities are distinct (synthesized from id).
     Assert.Equal(2, ctx.Rows |> List.map (fun r -> r.Identifier) |> List.distinct |> List.length)
 
@@ -174,8 +174,10 @@ let ``scalar cells coerce: number and bool render raw, null is the empty-string 
             | Ok c -> c
             | Error errs -> failwithf "expected Ok, got %A" errs)
     let row = List.exactlyOne ctx.Rows
-    Assert.Equal(Some "7", Map.tryFind (Name.create "Id" |> Result.value) row.Values)
-    Assert.Equal(Some "", Map.tryFind (Name.create "Label" |> Result.value) row.Values)
+    Assert.Equal(Some (Some "7"), Map.tryFind (Name.create "Id" |> Result.value) row.Values)
+    // WP-3 (rule: the documented file convention): JSON `null` — and `""` —
+    // now parse to `None` (SQL NULL), no longer the `""` sentinel.
+    Assert.Equal(Some None, Map.tryFind (Name.create "Label" |> Result.value) row.Values)
 
 // ----------------------------------------------------------------------
 // Fail-loud paths

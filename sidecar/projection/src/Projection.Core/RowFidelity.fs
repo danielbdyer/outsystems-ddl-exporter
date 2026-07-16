@@ -120,15 +120,22 @@ module RowFidelity =
     /// quantum is shared, never mutated.
     let canonicalizeDateTimeCells (ordinals: int[]) (q: RowQuantum) : RowQuantum =
         let millisecondFormLength = 23
+        let exceedsMillisecondForm (cell: string voption) : bool =
+            match cell with
+            | ValueSome s -> s.Length > millisecondFormLength
+            | ValueNone -> false   // a NULL cell has no tick residue to absorb
         let needsWork =
             ordinals
-            |> Array.exists (fun i -> i < q.Cells.Length && q.Cells.[i].Length > millisecondFormLength)
+            |> Array.exists (fun i -> i < q.Cells.Length && exceedsMillisecondForm q.Cells.[i])
         if not needsWork then q
         else
             let cells = Array.copy q.Cells
             for i in ordinals do
-                if i < cells.Length && cells.[i].Length > millisecondFormLength then
-                    cells.[i] <- cells.[i].Substring(0, millisecondFormLength)  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
+                if i < cells.Length then
+                    match cells.[i] with
+                    | ValueSome s when s.Length > millisecondFormLength ->
+                        cells.[i] <- ValueSome (s.Substring(0, millisecondFormLength))  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
+                    | _ -> ()
             { Cells = cells }
 
     /// Replay a transfer run's key interventions onto one SOURCE row — the
@@ -144,16 +151,19 @@ module RowFidelity =
         (fkRewrites: (int * Map<string, string>) list)
         (q: RowQuantum)
         : RowQuantum =
-        let rewriteAt (cells: string[] option) (ordinal: int) (map: Map<string, string>) : string[] option =
+        let rewriteAt (cells: string voption[] option) (ordinal: int) (map: Map<string, string>) : string voption[] option =
             let current = match cells with Some c -> c | None -> q.Cells
             if ordinal >= current.Length then cells
             else
-                match Map.tryFind current.[ordinal] map with
-                | Some assigned when assigned <> current.[ordinal] ->
-                    let c = match cells with Some c -> c | None -> Array.copy q.Cells
-                    c.[ordinal] <- assigned  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
-                    Some c
-                | _ -> cells
+                match current.[ordinal] with
+                | ValueNone -> cells   // a NULL key/FK rides unchanged
+                | ValueSome v ->
+                    match Map.tryFind v map with
+                    | Some assigned when assigned <> v ->
+                        let c = match cells with Some c -> c | None -> Array.copy q.Cells
+                        c.[ordinal] <- ValueSome assigned  // LINT-ALLOW: function-local mutation of the freshly copied cell array (copy-on-write); the input quantum is never touched
+                        Some c
+                    | _ -> cells
         let afterKey =
             match keyRewrite with
             | Some (ordinal, map) -> rewriteAt None ordinal map

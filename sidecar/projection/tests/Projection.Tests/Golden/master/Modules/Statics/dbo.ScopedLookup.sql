@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[ScopedLookup] (
     [Id]       INT           NOT NULL
-        CONSTRAINT [PK_dbo_ScopedLookup]
+        CONSTRAINT [PK_ScopedLookup_Id]
             PRIMARY KEY CLUSTERED,
     [TenantId] INT           NOT NULL,
     [Value]    NVARCHAR (80) NOT NULL

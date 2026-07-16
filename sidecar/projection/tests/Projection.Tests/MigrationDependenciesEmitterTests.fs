@@ -76,7 +76,7 @@ let private mkMigrationRow (kindKey: SsKey) (idValue: string) (code: string) (la
         KindKey    = kindKey
         Identifier = mkKey ["TestModule"; "Country"; "MigRow"; idValue]
         Values =
-            Map.ofList
+            StaticRow.presentValues
                 [ mkName "Id",    idValue
                   mkName "Code",  code
                   mkName "Label", label ]

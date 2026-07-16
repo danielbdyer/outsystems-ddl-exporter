@@ -126,7 +126,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | DEFAULT — unnamed inline | COVERED |
 | DEFAULT — named constraint | COVERED |
 | The full scalar×DEFAULT enumeration on ONE master table (every `PrimitiveType` with its DEFAULT-able literal: Integer/Decimal/Text/Boolean/DateTime/Date/Time/Guid/Binary + the no-default contrast column) | COVERED (slice 3, `ScalarGallery`) |
-| DEFAULT — empty-string Text (the `EmptyTextNormalizedToNull` tolerance, renders `DEFAULT NULL`) | COVERED — **known-unblessed** (named tolerance with retirement trigger) |
+| DEFAULT — empty-string Text (renders `DEFAULT N''` — the platform shape for optional Text; the constraint plane was always faithful, and WP-3/F11 retired the data-plane `EmptyTextNormalizedToNull` erasure to match) | COVERED |
 | Computed columns | TODO (IR support pending) |
 | Collation overrides | TODO |
 

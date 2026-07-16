@@ -145,15 +145,15 @@ let private countryRowKey (code: string) : SsKey =
 
 let countryPopulations : StaticRow list = [
     { Identifier = countryRowKey "US"
-      Values = Map.ofList [
+      Values = StaticRow.presentValues [
           name "Code",  "US"
           name "Label", "United States" ] }
     { Identifier = countryRowKey "CA"
-      Values = Map.ofList [
+      Values = StaticRow.presentValues [
           name "Code",  "CA"
           name "Label", "Canada" ] }
     { Identifier = countryRowKey "MX"
-      Values = Map.ofList [
+      Values = StaticRow.presentValues [
           name "Code",  "MX"
           name "Label", "Mexico" ] }
 ]

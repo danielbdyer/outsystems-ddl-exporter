@@ -82,8 +82,10 @@ let private scalarGallery : Kind =
               DefaultValue = Some (SqlLiteral.TextLit "Pending")
               DefaultName  = Some (nm "DF_ScalarGallery_Code")
               Description  = Some "Workflow code; defaults to Pending." }
-          // Text + EMPTY-STRING DEFAULT — the EmptyTextNormalizedToNull
-          // tolerance (renders DEFAULT NULL; known-unblessed).
+          // Text + EMPTY-STRING DEFAULT — the platform shape for optional
+          // Text (`DEFAULT ('')`); renders `DEFAULT N''` (the constraint
+          // plane always carried `TextLit ""` faithfully — WP-3/F11 fixed
+          // the DATA plane to match).
           { attr notesA "Notes" "NOTES" Text true with
               Length = Some 2000
               DefaultValue = Some (SqlLiteral.TextLit "") }
@@ -301,11 +303,11 @@ let private countryKindKey = kkey "Country"
 
 let private countryRows : StaticRow list =
     [ { Identifier = rowk "Country.US"
-        Values = Map.ofList [ nm "Id", "1"; nm "Code", "US"; nm "Label", "United States" ] }
+        Values = StaticRow.presentValues [ nm "Id", "1"; nm "Code", "US"; nm "Label", "United States" ] }
       { Identifier = rowk "Country.CA"
-        Values = Map.ofList [ nm "Id", "2"; nm "Code", "CA"; nm "Label", "Canada" ] }
+        Values = StaticRow.presentValues [ nm "Id", "2"; nm "Code", "CA"; nm "Label", "Canada" ] }
       { Identifier = rowk "Country.MX"
-        Values = Map.ofList [ nm "Id", "3"; nm "Code", "MX"; nm "Label", "Mexico" ] } ]
+        Values = StaticRow.presentValues [ nm "Id", "3"; nm "Code", "MX"; nm "Label", "Mexico" ] } ]
 
 /// Static lookup with a non-identity PK and authored rows — the
 /// idempotent MERGE seed.
@@ -317,6 +319,31 @@ let private country : Kind =
           { attr (akey "Country.Label") "Label" "LABEL" Text false with Length = Some 100 } ]
       with
         Modality = [ Static countryRows ] }
+
+/// WP-3 (F11) — the text-fidelity witness: a static kind whose rows
+/// demonstrate the three distinct Text states end-to-end in the emitted
+/// seeds: a genuine empty string (`N''`), an explicit NULL, the
+/// OutSystems single-space sentinel (`" "` on a nullable Text attribute
+/// → NULL, the deliberate V1-parity rule), and an ordinary value.
+let private textFidelityKey = kkey "TextFidelity"
+
+let private textFidelityRows : StaticRow list =
+    [ { Identifier = rowk "TextFidelity.Empty"
+        Values = Map.ofList [ nm "Id", Some "1"; nm "Body", Some "" ] }
+      { Identifier = rowk "TextFidelity.Null"
+        Values = Map.ofList [ nm "Id", Some "2"; nm "Body", None ] }
+      { Identifier = rowk "TextFidelity.Space"
+        Values = Map.ofList [ nm "Id", Some "3"; nm "Body", Some " " ] }
+      { Identifier = rowk "TextFidelity.Word"
+        Values = Map.ofList [ nm "Id", Some "4"; nm "Body", Some "hello" ] } ]
+
+let private textFidelity : Kind =
+    { Kind.create textFidelityKey (nm "TextFidelity")
+        (table "dbo" "GOLD_TEXT_FIDELITY")
+        [ pkAttr (akey "TextFidelity.Id") "Id" "ID" false
+          { attr (akey "TextFidelity.Body") "Body" "BODY" Text true with Length = Some 50 } ]
+      with
+        Modality = [ Static textFidelityRows ] }
 
 let private regionAKey = kkey "RegionA"
 let private regionBKey = kkey "RegionB"
@@ -336,7 +363,7 @@ let private regionA : Kind =
         Modality =
             [ Static
                 [ { Identifier = rowk "RegionA.North"
-                    Values = Map.ofList [ nm "Id", "1"; nm "Name", "North"; nm "PartnerId", "1" ] } ] ] }
+                    Values = StaticRow.presentValues [ nm "Id", "1"; nm "Name", "North"; nm "PartnerId", "1" ] } ] ] }
 
 let private regionB : Kind =
     let partner = akey "RegionB.PartnerId"
@@ -350,7 +377,7 @@ let private regionB : Kind =
         Modality =
             [ Static
                 [ { Identifier = rowk "RegionB.South"
-                    Values = Map.ofList [ nm "Id", "1"; nm "Name", "South"; nm "PartnerId", "1" ] } ] ] }
+                    Values = StaticRow.presentValues [ nm "Id", "1"; nm "Name", "South"; nm "PartnerId", "1" ] } ] ] }
 
 /// Static kind carrying the delete-scope gate column (logical name
 /// `TenantId` post-substitution) — the `delete-scope` scenario adds the
@@ -365,9 +392,9 @@ let private scopedLookup : Kind =
         Modality =
             [ Static
                 [ { Identifier = rowk "ScopedLookup.A"
-                    Values = Map.ofList [ nm "Id", "1"; nm "TenantId", "42"; nm "Value", "Alpha" ] }
+                    Values = StaticRow.presentValues [ nm "Id", "1"; nm "TenantId", "42"; nm "Value", "Alpha" ] }
                   { Identifier = rowk "ScopedLookup.B"
-                    Values = Map.ofList [ nm "Id", "2"; nm "TenantId", "42"; nm "Value", "Beta" ] } ] ] }
+                    Values = StaticRow.presentValues [ nm "Id", "2"; nm "TenantId", "42"; nm "Value", "Beta" ] } ] ] }
 
 let private tierKindKey = kkey "Tier"
 
@@ -387,11 +414,11 @@ let private tier : Kind =
         Modality =
             [ Static
                 [ { Identifier = rowk "Tier.Bronze"
-                    Values = Map.ofList [ nm "Id", "1"; nm "Name", "Bronze" ] }
+                    Values = StaticRow.presentValues [ nm "Id", "1"; nm "Name", "Bronze" ] }
                   { Identifier = rowk "Tier.Silver"
-                    Values = Map.ofList [ nm "Id", "2"; nm "Name", "Silver" ] }
+                    Values = StaticRow.presentValues [ nm "Id", "2"; nm "Name", "Silver" ] }
                   { Identifier = rowk "Tier.Gold"
-                    Values = Map.ofList [ nm "Id", "3"; nm "Name", "Gold" ] } ] ] }
+                    Values = StaticRow.presentValues [ nm "Id", "3"; nm "Name", "Gold" ] } ] ] }
 
 // ---------------------------------------------------------------------
 // The catalog
@@ -407,7 +434,7 @@ let catalog : Catalog =
         Catalog.create
             [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; assignment; heap ]
               mkModule (mkey "Relations") "Relations" [ user; customer; engagement; ecrmSnapshot; ledger; changeLog ]
-              mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup; tier ] ]
+              mkModule (mkey "Statics")   "Statics"   [ country; textFidelity; regionA; regionB; scopedLookup; tier ] ]
             []
     with
     | Ok c -> c

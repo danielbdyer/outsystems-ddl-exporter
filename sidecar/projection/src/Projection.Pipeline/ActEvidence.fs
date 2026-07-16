@@ -50,7 +50,10 @@ module ActEvidence =
             plan.Loads
             |> List.tryFind (fun l -> l.Kind = kind)
             |> Option.map (fun l ->
-                let pks = l.Rows |> List.map (fun r -> r.Values |> Map.tryFind pkName |> Option.defaultValue "")
+                // `valueOrEmpty` (NULL → "") keeps the persisted consent
+                // fingerprint BYTE-STABLE across WP-3 — do not lift to the
+                // option grain here without a re-bless decision.
+                let pks = l.Rows |> List.map (StaticRow.valueOrEmpty pkName)
                 { FirstKey = (match pks with [] -> "" | first :: _ -> first)
                   LastKey  = (match List.tryLast pks with Some last -> last | None -> "")
                   RowCount = List.length pks })
@@ -69,8 +72,9 @@ module ActEvidence =
             |> Option.map (fun l ->
                 l.Rows
                 |> List.map (fun r ->
-                    (r.Values |> Map.tryFind pkName |> Option.defaultValue ""),
-                    (r.Values |> Map.tryFind column |> Option.defaultValue "")))
+                    // Blessing-stable flatten (NULL → ""), as above.
+                    StaticRow.valueOrEmpty pkName r,
+                    StaticRow.valueOrEmpty column r))
             |> Option.defaultValue []
 
     /// A Match act's effect substrate per reconcile strategy: the resolution

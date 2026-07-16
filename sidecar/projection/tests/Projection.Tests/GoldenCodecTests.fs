@@ -16,13 +16,13 @@ let private mustOk r =
 let private nm (s: string) : Name = Name.create s |> mustOk
 
 let private sample : GoldenDataset =
-    { Version = 1
+    { Version = GoldenDataset.CurrentVersion
       Entities =
-        [ { Entity = "Country"; Rows = [ Map.ofList [ nm "ID", "10" ] ] }
+        [ { Entity = "Country"; Rows = [ StaticRow.presentValues [ nm "ID", "10" ] ] }
           { Entity = "Order"
             Rows =
-              [ Map.ofList [ nm "ID", "1000"; nm "USER_ID", "100" ]
-                Map.ofList [ nm "ID", "1001"; nm "USER_ID", "100" ] ] } ] }
+              [ StaticRow.presentValues [ nm "ID", "1000"; nm "USER_ID", "100" ]
+                StaticRow.presentValues [ nm "ID", "1001"; nm "USER_ID", "100" ] ] } ] }
 
 [<Fact>]
 let ``golden codec round-trips: deserialize (serialize ds) = Ok ds`` () =
@@ -36,13 +36,13 @@ let ``golden codec serialization is deterministic and column-order-independent``
     // Same row, columns inserted in the opposite order — a `Map` is
     // order-independent, so the serialized bytes must be identical.
     let reordered : GoldenDataset =
-        { Version = 1
+        { Version = GoldenDataset.CurrentVersion
           Entities =
-            [ { Entity = "Country"; Rows = [ Map.ofList [ nm "ID", "10" ] ] }
+            [ { Entity = "Country"; Rows = [ StaticRow.presentValues [ nm "ID", "10" ] ] }
               { Entity = "Order"
                 Rows =
-                  [ Map.ofList [ nm "USER_ID", "100"; nm "ID", "1000" ]
-                    Map.ofList [ nm "USER_ID", "100"; nm "ID", "1001" ] ] } ] }
+                  [ StaticRow.presentValues [ nm "USER_ID", "100"; nm "ID", "1000" ]
+                    StaticRow.presentValues [ nm "USER_ID", "100"; nm "ID", "1001" ] ] } ] }
     Assert.Equal(GoldenCodec.serialize sample, GoldenCodec.serialize reordered)
 
 [<Fact>]

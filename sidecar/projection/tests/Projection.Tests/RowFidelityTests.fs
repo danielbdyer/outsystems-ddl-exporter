@@ -38,7 +38,10 @@ let private renameMap : Map<Name, Name> =
 let private sourceBasis = RowBasis.rename renameMap (RowBasis.ofNames (physicalNames |> List.map mkName))
 let private targetBasis = RowBasis.ofNames (logicalNames |> List.map mkName)
 
-let private quantum (cells: string list) : RowQuantum = { Cells = List.toArray cells }
+/// Fixture cells are all present (non-NULL); a NULL cell is authored
+/// with an explicit `ValueNone` at the site that needs one (WP-3).
+let private quantum (cells: string list) : RowQuantum =
+    { Cells = cells |> List.toArray |> Array.map ValueSome }
 
 let private row (id: int64) (email: string) (name: string) : int64 * RowQuantum =
     id, quantum [ string id; email; name ]
@@ -216,19 +219,19 @@ let ``canonicalizeDateTimeCells: sub-millisecond tick residue truncates to the m
     let ordinals = [| 1 |]
     let q = quantum [ "7"; "2026-01-02 03:04:05.0033333"; "alpha" ]
     let canonical = RowFidelity.canonicalizeDateTimeCells ordinals q
-    Assert.Equal("2026-01-02 03:04:05.003", canonical.Cells.[1])
-    Assert.Equal("7", canonical.Cells.[0])
-    Assert.Equal("2026-01-02 03:04:05.0033333", q.Cells.[1])
+    Assert.Equal(ValueSome "2026-01-02 03:04:05.003", canonical.Cells.[1])
+    Assert.Equal(ValueSome "7", canonical.Cells.[0])
+    Assert.Equal(ValueSome "2026-01-02 03:04:05.0033333", q.Cells.[1])
     // identity when nothing exceeds the millisecond form
     let short = quantum [ "7"; "2026-01-02 03:04:05.003"; "alpha" ]
-    Assert.Equal<string[]>(short.Cells, (RowFidelity.canonicalizeDateTimeCells ordinals short).Cells)
+    Assert.Equal<string voption[]>(short.Cells, (RowFidelity.canonicalizeDateTimeCells ordinals short).Cells)
 
 [<Fact>]
 let ``canonicalizeDateTimeCells: one instant stored at datetime and datetime2 precision reads equal after the erasure`` () =
     let ordinals = [| 0 |]
     let fromDateTime  = RowFidelity.canonicalizeDateTimeCells ordinals (quantum [ "2026-01-02 03:04:05.0030000" ])
     let fromDateTime2 = RowFidelity.canonicalizeDateTimeCells ordinals (quantum [ "2026-01-02 03:04:05.0033333" ])
-    Assert.Equal<string[]>(fromDateTime.Cells, fromDateTime2.Cells)
+    Assert.Equal<string voption[]>(fromDateTime.Cells, fromDateTime2.Cells)
 
 [<Fact>]
 let ``replayQuantum: the own key and the referencing cells rewrite through their maps; absent values ride unchanged (preserved keys are identity)`` () =
@@ -236,10 +239,10 @@ let ``replayQuantum: the own key and the referencing cells rewrite through their
     let keyMap = Map.ofList [ "3", "2001" ]
     let fkMap = Map.ofList [ "10", "907" ]
     let replayed = RowFidelity.replayQuantum (Some (0, keyMap)) [ 1, fkMap ] q
-    Assert.Equal<string list>([ "2001"; "907"; "alpha" ], replayed.Cells |> Array.toList)
-    Assert.Equal("3", q.Cells.[0])
+    Assert.Equal<string voption list>([ ValueSome "2001"; ValueSome "907"; ValueSome "alpha" ], replayed.Cells |> Array.toList)
+    Assert.Equal(ValueSome "3", q.Cells.[0])
     let unmatched = RowFidelity.replayQuantum (Some (0, Map.ofList [ "99", "1" ])) [ 1, Map.ofList [ "99", "1" ] ] q
-    Assert.Equal<string[]>(q.Cells, unmatched.Cells)
+    Assert.Equal<string voption[]>(q.Cells, unmatched.Cells)
 
 [<Fact>]
 let ``loadReplayMaps: journaled pairs fold keep-first per source key in chunk order; the --journal directory resolves its single file (at-least-once dedupe)`` () =

@@ -99,7 +99,7 @@ let private migrationRow (orderId: int) (createdBySourceUserId: int) : Migration
         KindKey    = kindKey
         Identifier = orderRowKey orderId
         Values =
-            Map.ofList
+            StaticRow.presentValues
                 [ mkName "Id",        sprintf "%d" orderId
                   mkName "CreatedBy", sprintf "%d" createdBySourceUserId ]
     }
@@ -185,7 +185,7 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
             [ { KindKey    = kindKey
                 Identifier = mkKey ["TestModule"; "Country"; "Row"; "1"]
                 Values =
-                    Map.ofList
+                    StaticRow.presentValues
                         [ mkName "Id",    "1"
                           mkName "Label", "United States" ] } ] }
     // Even with a populated UserRemap, no rewrite happens (no User-FKs).

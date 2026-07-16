@@ -242,13 +242,15 @@ type IndexDef =
     }
 
 /// One column's value within an `InsertRow`. `Raw` is the V2 IR
-/// contract: invariant-culture string, `""` denotes NULL. The
-/// realization layer formats per `Type`.
+/// contract: invariant-culture string, carried at the option grain
+/// (WP-3, F11) — `None` denotes SQL NULL; `Some ""` is a genuine
+/// empty string (Text renders `N''`, Binary a zero-length `0x`).
+/// The realization layer formats per `Type`.
 type CellValue =
     {
         Column : string
         Type : PrimitiveType
-        Raw : string
+        Raw : string option
     }
 
 /// What object owns an extended-property attachment in SQL Server's

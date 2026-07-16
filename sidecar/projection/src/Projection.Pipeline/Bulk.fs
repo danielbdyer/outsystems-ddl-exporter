@@ -37,20 +37,20 @@ module Bulk =
         | Binary   -> typeof<byte[]>
 
     /// Inverse of `Render.formatSqlLiteral` and the dual of
-    /// `ReadSide.formatRawValue`: parse the IR raw form back into
-    /// the CLR object SqlBulkCopy expects. `""` → `DBNull`.
+    /// `ReadSide.formatRawValue`: parse the IR raw cell back into
+    /// the CLR object SqlBulkCopy expects. WP-3 (F11): NULL is
+    /// carried out-of-band — `None` → `DBNull`; a `Some ""` `Text`
+    /// value is a genuine empty string and writes as one (the 6.A.4
+    /// tolerance `EmptyTextNormalizedToNull` is retired). A `Some ""`
+    /// on a non-Text type falls into its parser, which throws the
+    /// same loud `FormatException` any malformed raw does (NM-20).
     /// All format rules (DateTime / Date / Boolean canonical, Hex
     /// prefix) flow through `RawValueCodec` so the V2 raw-form
     /// contract has a single source of truth.
-    ///
-    /// 6.A.4 — the `"" → DBNull` rule applies to `Text` too: `ReadSide`
-    /// already collapses both `DBNull` and a genuine empty string to `""`,
-    /// so the IR cannot distinguish them and an empty-string `Text` value
-    /// normalizes to `NULL` on write. This is the named, closed tolerance
-    /// `ToleratedDivergence.EmptyTextNormalizedToNull` — not a silent drop.
-    let parseRaw (t: PrimitiveType) (raw: string) : obj | null =
-        if raw = "" then box DBNull.Value
-        else
+    let parseRaw (t: PrimitiveType) (raw: string option) : obj | null =
+        match raw with
+        | None -> box DBNull.Value
+        | Some raw ->
             let inv = CultureInfo.InvariantCulture
             match t with
             | Integer ->

@@ -68,7 +68,7 @@ let private catalog : Catalog =
     Catalog.create [ m ] [] |> Result.value
 
 let private row (kind: string) (values: (string * string) list) : StaticRow =
-    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, v) |> Map.ofList }
+    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, Some v) |> Map.ofList }
 
 let private cache : EvidenceCache.Cache =
     { SourceRows =

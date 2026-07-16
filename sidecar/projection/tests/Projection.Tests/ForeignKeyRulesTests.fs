@@ -20,7 +20,7 @@ let private mkConfig
     (allowCrossSchema: bool)
     (allowNoCheckCreation: bool) : ForeignKeyTighteningConfig =
     ForeignKeyTighteningConfig.create
-        enableCreation allowCrossSchema true false allowNoCheckCreation
+        enableCreation allowCrossSchema allowNoCheckCreation
 
 let private mkProbe (rowCount: int64) (outcome: ProbeOutcome) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount outcome
@@ -425,7 +425,7 @@ let ``CrossCatalogBlocked is currently unreachable from any V2 IR shape`` () =
     // produces CrossCatalogBlocked because V2's IR has no catalog
     // (database) field. When the IR refinement lands, this test
     // documents the moment the rule becomes reachable.
-    let cfg = ForeignKeyTighteningConfig.create true false false true true
+    let cfg = ForeignKeyTighteningConfig.create true false true
     // Probe in every outcome state.
     let outcomes = [ Succeeded; FallbackTimeout; Cancelled; TrustedConstraint; AmbiguousMapping ]
     for outcome in outcomes do

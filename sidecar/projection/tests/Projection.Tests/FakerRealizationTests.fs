@@ -38,11 +38,11 @@ let private rowId (i: int) : SsKey = SsKey.synthesizedComposite "FK_ROW" [ strin
 let private dataset : Map<SsKey, StaticRow list> =
     let row i =
         { Identifier = rowId i
-          Values = Map.ofList [ name "Email", "syn:x:0"; name "FullName", "syn:y:0"; name "Status", "Active" ] }
+          Values = StaticRow.presentValues [ name "Email", "syn:x:0"; name "FullName", "syn:y:0"; name "Status", "Active" ] }
     Map.ofList [ kKey, [ row 0; row 1; row 2 ] ]
 
 let private valuesOf (m: Map<SsKey, StaticRow list>) (col: string) : string list =
-    m.[kKey] |> List.choose (fun (r: StaticRow) -> Map.tryFind (name col) r.Values)
+    m.[kKey] |> List.choose (StaticRow.value (name col))
 
 [<Fact>]
 let ``F2: PII columns realize to Faker shapes (email has an at-sign, name non-empty); non-PII untouched`` () =
@@ -116,8 +116,8 @@ let ``F-Faker: referential consistency — FirstName is part of the row's FullNa
     let corr = Correction.create [ fk "M" "Person" "Email" FakerGenerator.FirstName; fk "M" "Person" "FullName" FakerGenerator.FullName ] |> mkOk
     let realized = FakerRealization.realizeFaker catalog corr dataset
     for r in realized.[kKey] do
-        let first = Map.find (name "Email") r.Values     // the Email column now holds a FirstName
-        let full  = Map.find (name "FullName") r.Values
+        let first = (Map.find (name "Email") r.Values).Value     // the Email column now holds a FirstName
+        let full  = (Map.find (name "FullName") r.Values).Value
         Assert.Contains(first, full)
 
 [<Fact>]

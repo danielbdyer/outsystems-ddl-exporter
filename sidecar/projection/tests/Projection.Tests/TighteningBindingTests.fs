@@ -108,8 +108,6 @@ let private emptyEntry (kind: string) (id: string) : Config.TighteningInterventi
         EnforceMultiColumnUnique        = None
         EnableCreation                  = None
         AllowCrossSchema                = None
-        AllowCrossCatalog               = None
-        TreatMissingDeleteRuleAsIgnore  = None
         AllowNoCheckCreation            = None
         ForeignKeyOverrides             = []
         MinDistinctCountForUniqueness   = None
@@ -246,14 +244,14 @@ let ``C.1: uniqueIndex intervention defaults both enforce flags to true`` () =
     | Error es -> failwithf "expected Ok, got %A" es
 
 [<Fact>]
-let ``C.1: foreignKey intervention threads all 5 flags and stays evidence-driven`` () =
+let ``C.1: foreignKey intervention threads the live flags and stays evidence-driven`` () =
+    // WP-1d: the inert AllowCrossCatalog / TreatMissingDeleteRuleAsIgnore
+    // toggles were removed; the binder threads the three live flags.
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "foreignKey" "fk-ops" with
             EnableCreation = Some true
             AllowCrossSchema = Some false
-            AllowCrossCatalog = Some false
-            TreatMissingDeleteRuleAsIgnore = Some true
             AllowNoCheckCreation = Some true }
     let result =
         TighteningBinding.fromConfig
@@ -266,8 +264,6 @@ let ``C.1: foreignKey intervention threads all 5 flags and stays evidence-driven
             Assert.Equal("fk-ops", id)
             Assert.True(config.EnableCreation)
             Assert.False(config.AllowCrossSchema)
-            Assert.False(config.AllowCrossCatalog)
-            Assert.True(config.TreatMissingDeleteRuleAsIgnore)
             Assert.True(config.AllowNoCheckCreation)
             Assert.Equal(TighteningDirection.EvidenceDriven, config.Direction)
             Assert.Empty config.Overrides

@@ -145,6 +145,7 @@ let private fkReferenceRow
       DeleteRuleCode      = Some "Protect"
       HasDbConstraint     = true
       OnUpdate            = onUpdate
+      ReflectedOnDelete   = None
       IsConstraintTrusted = isConstraintTrusted }
 
 let private buildBundle (refRow: OssysRowsetTypes.ReferenceRow) : OssysRowsetTypes.RowsetBundle =

@@ -95,7 +95,7 @@ let ``migration: a dropped column is refused fail-loud (no DROP emitted)`` () =
 let ``migration: a DEFAULT-constraint facet change is refused fail-loud`` () =
     // Customer.Name gains a DEFAULT — a DefaultValue facet ALTER COLUMN can't
     // express in one statement; refused (no partial/misleading ALTER).
-    let lit = SqlLiteral.ofRaw Text "unknown"
+    let lit = SqlLiteral.ofRaw Text (Some "unknown")
     let target = withCustomerName (fun a -> { a with DefaultValue = Some lit })
     let stmts, entries = migrationOf target
     Assert.Empty(alterColumns stmts)

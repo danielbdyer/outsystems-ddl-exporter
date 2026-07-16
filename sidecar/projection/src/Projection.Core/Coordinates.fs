@@ -81,7 +81,7 @@ module internal CoordinatesLimits =
 /// (reconciliation slice 3b, DECISIONS 2026-06-13; V1's
 /// `ConstraintNameNormalizer` hash-truncation discipline, ported).
 /// SQL Server caps identifiers at 128 chars; V2's synthesized names
-/// (`FK_<Owner>_<Target>_<SourceColumn>`, `PK_<Schema>_<Table>`) can
+/// (`FK_<Owner>_<Target>_<SourceColumn>`, `PK_<Kind>_<KeyColumn…>`) can
 /// overflow on long logical names.
 [<RequireQualifiedAccess>]
 module IdentifierBudget =

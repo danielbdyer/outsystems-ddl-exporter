@@ -125,7 +125,7 @@ let ``WP6 step 2: BootstrapEmitter.emitFromPlan delegates to the static-seeds re
         Map.ofList
             [ customer.SsKey,
               [ { Identifier = mkKey ["TestModule"; "Customer"; "Row"; "1"]
-                  Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Acme" ] } ] ]
+                  Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Name", "Acme" ] } ] ]
     let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
     let boot = BootstrapEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
     let stat = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap

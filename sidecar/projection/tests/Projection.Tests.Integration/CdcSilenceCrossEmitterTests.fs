@@ -70,7 +70,7 @@ module private CdcSilenceCrossEmitterFixtures =
         let row code label =
             { Identifier = mkKey ["Country"; "Row"; code]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",    code
                         mkName "Code",  code
                         mkName "Label", label ] }
@@ -142,7 +142,7 @@ module private CdcSilenceCrossEmitterFixtures =
             [ { KindKey = legacyKindKey
                 Identifier = mkKey ["LegacyOrder"; "Row"; "1"]
                 Values =
-                    Map.ofList
+                    StaticRow.presentValues
                         [ mkName "Id",       "1"
                           mkName "ParentId", parentId ] } ] }
 
@@ -457,7 +457,7 @@ type CdcSilenceCrossEmitterTests(fixture: IsolatedContainerFixture) =
             let row code label =
                 { Identifier = mkKey ["Country"; "Row"; code]
                   Values =
-                      Map.ofList
+                      StaticRow.presentValues
                           [ mkName "Id",    code
                             mkName "Code",  code
                             mkName "Label", label ] }

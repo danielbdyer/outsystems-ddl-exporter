@@ -317,6 +317,15 @@ module RowDigester =
     /// N1, collapsed 2026-06-11). Per session-35 the single
     /// `StringBuilder` accumulation replaced a `sortBy -> map sprintf ->
     /// String.concat` chain (~8 → ~4 us/row at 500k scale).
+    ///
+    /// WP-3 (F11) NULL encoding: a NULL cell OMITS its pair entirely —
+    /// the same rule the SQL-side plane (`ServerDigest`, FOR XML) already
+    /// applies — while an empty string contributes `name=`. NULL and `''`
+    /// therefore hash DISTINCTLY; rows without NULL cells keep their
+    /// pre-WP-3 bytes. Nothing persists these hashes across runs (the
+    /// 2026-07-16 survey: every consumer compares intra-run; consent
+    /// fingerprints and the estate store use independent recipes), so the
+    /// encoding change carries no re-bless / re-record cost.
     let hashRowBytes (row: StaticRow) : byte[] =
         let pairs =
             row.Values
@@ -325,9 +334,12 @@ module RowDigester =
         let sb = System.Text.StringBuilder(64)
         let mutable first = true
         for (n, v) in pairs do
-            if not first then sb.Append('') |> ignore
-            sb.Append(Name.value n).Append('=').Append(v) |> ignore
-            first <- false
+            match v with
+            | None -> ()   // NULL omits its attribute (the ServerDigest rule)
+            | Some v ->
+                if not first then sb.Append('') |> ignore
+                sb.Append(Name.value n).Append('=').Append(v) |> ignore
+                first <- false
         let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
         System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
 
@@ -345,9 +357,12 @@ module RowDigester =
         let sb = System.Text.StringBuilder(64)
         let mutable first = true
         for i in order do
-            if not first then sb.Append('') |> ignore
-            sb.Append(Name.value names.[i]).Append('=').Append(q.Cells.[i]) |> ignore
-            first <- false
+            match q.Cells.[i] with
+            | ValueNone -> ()   // NULL omits its attribute (the ServerDigest rule)
+            | ValueSome v ->
+                if not first then sb.Append('') |> ignore
+                sb.Append(Name.value names.[i]).Append('=').Append(v) |> ignore
+                first <- false
         let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
         System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
 

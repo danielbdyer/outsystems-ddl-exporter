@@ -46,7 +46,7 @@ let private catalog : Catalog =
 
 let private row (kind: string) (pk: string) (cells: (string * string) list) : StaticRow =
     { Identifier = kKey (kind + pk)
-      Values     = ("Id", pk) :: cells |> List.map (fun (k, v) -> nm k, v) |> Map.ofList }
+      Values     = ("Id", pk) :: cells |> List.map (fun (k, v) -> nm k, v) |> StaticRow.presentValues }
 
 let private scope = Set.ofList [ kKey "City"; kKey "Customer"; kKey "Order"; kKey "OrderLine" ]
 

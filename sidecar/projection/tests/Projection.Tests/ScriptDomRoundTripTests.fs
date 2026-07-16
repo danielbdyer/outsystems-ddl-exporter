@@ -283,9 +283,9 @@ let ``ScriptDom CreateTable carries the primary-key constraint`` () =
 
 let private sampleCells : CellValue list =
     [
-        { Column = "Id"; Type = Integer; Raw = "42" }
-        { Column = "Name"; Type = Text; Raw = "Acme Corp" }
-        { Column = "Score"; Type = Decimal; Raw = "3.14" }
+        { Column = "Id"; Type = Integer; Raw = Some "42" }
+        { Column = "Name"; Type = Text; Raw = Some "Acme Corp" }
+        { Column = "Score"; Type = Decimal; Raw = Some "3.14" }
     ]
 
 [<Fact>]
@@ -309,8 +309,8 @@ let ``Parse-roundtrip: ScriptDom InsertRow re-parses to InsertStatement`` () =
 let ``ScriptDom InsertRow with NULL cell preserves NULL through round-trip`` () =
     let cellsWithNull =
         [
-            { Column = "Id"; Type = Integer; Raw = "1" }
-            { Column = "Name"; Type = Text; Raw = "" }   // NULL
+            { Column = "Id"; Type = Integer; Raw = Some "1" }
+            { Column = "Name"; Type = Text; Raw = None }   // explicit NULL (WP-3: out-of-band)
         ]
     let fragment = ScriptDomBuild.buildInsertRow sampleTable cellsWithNull
     let emitted = ScriptDomGenerate.generateOne fragment
@@ -321,6 +321,25 @@ let ``ScriptDom InsertRow with NULL cell preserves NULL through round-trip`` () 
     let valuesSrc = stmt.InsertSpecification.InsertSource :?> ValuesInsertSource
     let row = valuesSrc.RowValues.[0]
     Assert.IsType<NullLiteral>(row.ColumnValues.[1])
+
+[<Fact>]
+let ``ScriptDom InsertRow with an empty-string Text cell renders N'' — a value, not NULL (F11)`` () =
+    let cellsWithEmpty =
+        [
+            { Column = "Id"; Type = Integer; Raw = Some "1" }
+            { Column = "Name"; Type = Text; Raw = Some "" }   // genuine empty string
+        ]
+    let fragment = ScriptDomBuild.buildInsertRow sampleTable cellsWithEmpty
+    let emitted = ScriptDomGenerate.generateOne fragment
+    let reparsed, errors = parseSql emitted
+    Assert.Empty(errors)
+    let script = reparsed :?> TSqlScript
+    let stmt = script.Batches.[0].Statements.[0] :?> InsertStatement
+    let valuesSrc = stmt.InsertSpecification.InsertSource :?> ValuesInsertSource
+    let row = valuesSrc.RowValues.[0]
+    let lit = Assert.IsType<StringLiteral>(row.ColumnValues.[1])
+    Assert.True(lit.IsNational, "empty-string Text renders as the national N'' literal")
+    Assert.Equal("", lit.Value)
 
 // ---------------------------------------------------------------------------
 // SetIdentityInsert.

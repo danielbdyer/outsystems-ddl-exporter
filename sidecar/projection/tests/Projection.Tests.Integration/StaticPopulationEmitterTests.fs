@@ -48,7 +48,7 @@ let private mkCountryKind () : Kind =
     let row code label =
         { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",    code
                     mkName "Code",  code
                     mkName "Label", label ] }
@@ -83,7 +83,7 @@ let private mkLanguageKind () : Kind =
     let row code name =
         { Identifier = mkKey ["TestModule"; "Language"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Code", code
                     mkName "Name", name ] }
     {

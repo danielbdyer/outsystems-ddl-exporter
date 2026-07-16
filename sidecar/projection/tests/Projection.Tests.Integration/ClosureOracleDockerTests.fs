@@ -150,7 +150,7 @@ type ClosureOracleDockerTests(fixture: EphemeralContainerFixture) =
         match GoldenCodec.deserialize golden with
         | Ok ds ->
             let hasValue (v: string) =
-                ds.Entities |> List.exists (fun e -> e.Rows |> List.exists (Map.exists (fun _ cell -> cell = v)))
+                ds.Entities |> List.exists (fun e -> e.Rows |> List.exists (Map.exists (fun _ cell -> cell = Some v)))
             Assert.True(hasValue "1000", "golden missing the root order id")
             Assert.True(hasValue "100", "golden missing the closed user id")
             Assert.False(hasValue "1002", "golden wrongly included an out-of-slice order")

@@ -160,7 +160,7 @@ module TransferImpact =
                 col |> Option.map (fun c -> Name.value r.Name, c, r.TargetKind))
 
     let private valueOf (col: Name) (row: StaticRow) : string =
-        Map.tryFind col row.Values |> Option.defaultValue ""
+        StaticRow.valueOrEmpty col row
 
     // -- 1. segmentation: weakly-connected components over the FK graph -------
 
@@ -215,7 +215,7 @@ module TransferImpact =
         let pk = pkNameOf inputs.Catalog kind
         match Map.tryFind kind inputs.BusinessKeys with
         | Some bk ->
-            let keyOf (r: StaticRow) = Map.tryFind bk r.Values |> Option.filter (fun v -> not (System.String.IsNullOrWhiteSpace v))
+            let keyOf (r: StaticRow) = StaticRow.value bk r |> Option.filter (fun v -> not (System.String.IsNullOrWhiteSpace v))
             let beforeByKey = before |> List.choose (fun r -> keyOf r |> Option.map (fun k -> k, r)) |> List.rev |> Map.ofList
             let afterKeys   = after  |> List.choose keyOf |> Set.ofList
             let matchedOrAdded =
@@ -236,8 +236,11 @@ module TransferImpact =
                                 |> Set.toList
                                 |> List.filter (fun c -> c <> bk && (match pk with Some p -> c <> p | None -> true) && not (Set.contains c inputs.Ignore))
                                 |> List.choose (fun c ->
-                                    let bv, av = valueOf c b, valueOf c a
-                                    if bv = av then None else Some { Column = c; Before = bv; After = av })
+                                    // Option-grain compare (WP-3: NULL vs `''`
+                                    // is a real change); display flattens.
+                                    let bv, av = StaticRow.value c b, StaticRow.value c a
+                                    if bv = av then None
+                                    else Some { Column = c; Before = Option.defaultValue "" bv; After = Option.defaultValue "" av })
                                 |> List.sortBy (fun d -> Name.value d.Column)
                             Some (a, (if List.isEmpty diffs then ChangeKind.Unchanged else ChangeKind.Changed), diffs))
             let deleted =
@@ -282,6 +285,8 @@ module TransferImpact =
             row.Values
             |> Map.toList
             |> List.filter (fun (c, _) -> (match pk with Some p -> c <> p | None -> true) && not (Set.contains c inputs.Ignore))
+            // Display flattens NULL to `""` (the pre-WP-3 rendering).
+            |> List.map (fun (c, v) -> c, Option.defaultValue "" v)
         // Inline the referenced parents (reconciled refs) this row points at.
         let refs =
             edgesOf inputs.Catalog inputs.Scope kind
@@ -299,7 +304,8 @@ module TransferImpact =
                             |> Option.map (fun pr ->
                                 let firstText =
                                     pr.Values |> Map.toList |> List.filter (fun (c, _) -> c <> ppk) |> List.tryHead
-                                    |> Option.map snd |> Option.defaultValue fkVal
+                                    |> Option.map (fun (_, v) -> Option.defaultValue "" v)
+                                    |> Option.defaultValue fkVal
                                 sprintf "%s %s (matched, kept)" (nameOf inputs.Catalog target) firstText)
                         | None -> None
                     parentDisplay |> Option.map (fun d -> label, d))

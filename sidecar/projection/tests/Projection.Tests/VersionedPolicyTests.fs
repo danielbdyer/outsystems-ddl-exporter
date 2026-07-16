@@ -63,7 +63,7 @@ let ``H-085: changing Insertion produces a different digest`` () =
 // ---------------------------------------------------------------------------
 
 let private fkIntervention (id: string) (enableCreation: bool) : TighteningIntervention =
-    ForeignKey (id, ForeignKeyTighteningConfig.create enableCreation false false false false)
+    ForeignKey (id, ForeignKeyTighteningConfig.create enableCreation false false)
 
 [<Fact>]
 let ``M5: changing Tightening (registering an intervention) produces a different digest`` () =

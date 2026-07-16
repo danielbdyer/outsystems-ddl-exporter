@@ -66,28 +66,39 @@ type SqlLiteral =
 [<RequireQualifiedAccess>]
 module SqlLiteral =
 
-    /// Project an IR `(PrimitiveType, raw)` pair into a typed
-    /// `SqlLiteral`. The empty raw form is the V2 IR's NULL sentinel
-    /// per `RawValueCodec` convention. All canonical-form normalization
-    /// (Boolean parse, hex prefix) flows through `RawValueCodec` so the
-    /// V2 raw-form contract has a single source of truth across emit /
-    /// parse / readback.
-    let ofRaw (typ: PrimitiveType) (raw: string) : SqlLiteral =
-        // NM-18 — the empty raw string is the IR's UNIVERSAL NULL sentinel: this
-        // test fires before the type match, so an empty value of ANY type (incl.
-        // a stored empty Text `N''` or a zero-length Binary `0x`) becomes NULL.
-        // The named, witnessed erasure is `Tolerance.EmptyTextNormalizedToNull`
-        // (see its scope note); retiring it needs a faithful empty/zero sentinel.
-        if raw = "" then NullLit
-        else
+    /// The named refusal code for an empty raw on a type with no
+    /// empty-capable literal form (WP-3). `category.subject.problem`
+    /// lower-dot convention; carried in the `FormatException` message
+    /// (the NM-20 malformed-raw precedent — loud, named, never coerced).
+    [<Literal>]
+    let EmptyNotEmptyCapableCode : string = "rawValue.empty.notEmptyCapable"
+
+    /// Project an IR `(PrimitiveType, raw)` cell into a typed
+    /// `SqlLiteral`. WP-3 (F11): NULL is carried OUT-OF-BAND as `None`
+    /// — the retired NM-18 universal `""`-as-NULL sentinel is gone.
+    /// `Some ""` is a faithful value only where the type has an empty
+    /// form: Text (`N''`) and Binary (zero-length `0x`); on any other
+    /// type an empty raw is malformed and refuses loudly (NM-20
+    /// precedent). All canonical-form normalization (Boolean parse,
+    /// hex prefix) flows through `RawValueCodec` so the V2 raw-form
+    /// contract has a single source of truth across emit / parse /
+    /// readback.
+    let ofRaw (typ: PrimitiveType) (raw: string option) : SqlLiteral =
+        match raw with
+        | None -> NullLit
+        | Some raw ->
             match typ with
+            | Text -> TextLit raw
+            | Binary -> BinaryLit (RawValueCodec.withHexPrefix raw)
+            | _ when raw = "" ->
+                raise (System.FormatException(
+                    sprintf "%s: empty raw value for %A (only Text/Binary carry an empty form; NULL is None)"
+                        EmptyNotEmptyCapableCode typ))
             | Integer -> IntegerLit raw
             | Decimal -> DecimalLit raw
             | Boolean -> BooleanLit (RawValueCodec.parseBoolean raw)
             | DateTime | Date | Time -> TemporalLit raw
             | Guid -> GuidLit raw
-            | Text -> TextLit raw
-            | Binary -> BinaryLit (RawValueCodec.withHexPrefix raw)
 
     /// Render a typed `SqlLiteral` as SQL text. The terminal boundary
     /// — strings emerge here, not earlier. SQL injection isn't a
@@ -113,7 +124,7 @@ module SqlLiteral =
 
     /// Convenience: `ofRaw` then `toString`. The combined surface
     /// matches the legacy `Render.formatSqlLiteral` shape (typed
-    /// `PrimitiveType -> raw -> string`) so consumers can migrate
+    /// `PrimitiveType -> raw cell -> string`) so consumers can migrate
     /// without restructuring their call sites.
-    let formatRaw (typ: PrimitiveType) (raw: string) : string =
+    let formatRaw (typ: PrimitiveType) (raw: string option) : string =
         ofRaw typ raw |> toString

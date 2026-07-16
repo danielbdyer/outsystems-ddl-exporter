@@ -25,7 +25,7 @@ open Projection.Tests.Fixtures
 
 let private cellRow (identifier: int) (values: (string * string) list) : StaticRow =
     { Identifier = SsKey.synthesizedComposite "RDF_ROW" [ string identifier ] |> Result.value
-      Values = values |> List.map (fun (n, v) -> mkName n, v) |> Map.ofList }
+      Values = values |> List.map (fun (n, v) -> mkName n, v) |> StaticRow.presentValues }
 
 let private foldRows (rows: StaticRow list) : RowDigestFold.TableDigest =
     rows
@@ -80,7 +80,7 @@ let ``Q1 lifted: folding quanta against the basis equals folding the equivalent 
           [| "2"; "b@x.example"; "bravo" |] ]
     let viaQuanta =
         cells
-        |> List.map (fun c -> ({ Cells = c } : RowQuantum))
+        |> List.map (fun c -> ({ Cells = Array.map ValueSome c } : RowQuantum))
         |> List.fold (RowDigestFold.addQuantum basis) RowDigestFold.empty
         |> RowDigestFold.finalize
     let viaRows =
@@ -115,7 +115,7 @@ let ``T17 triangle: a physical stream folded under the renamed basis digests ide
           [| "three"; "3" |] ]
     let foldUnder (basis: RowBasis) : RowDigestFold.TableDigest =
         cells
-        |> List.map (fun c -> ({ Cells = c } : RowQuantum))
+        |> List.map (fun c -> ({ Cells = Array.map ValueSome c } : RowQuantum))
         |> List.fold (RowDigestFold.addQuantum basis) RowDigestFold.empty
         |> RowDigestFold.finalize
     Assert.Equal((foldUnder logicalBasis).Aggregate, (foldUnder rebasedPhysical).Aggregate)

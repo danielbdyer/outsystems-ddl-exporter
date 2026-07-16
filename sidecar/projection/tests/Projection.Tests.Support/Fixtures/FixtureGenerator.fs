@@ -595,11 +595,11 @@ module FixtureGenerator =
             |> ignore
             bulkRows.Add
                 [
-                    { Column = "ID";        Type = Integer; Raw = string i }
-                    { Column = "LABEL";     Type = Text;    Raw = label }
-                    { Column = "CODE";      Type = Text;    Raw = code }
-                    { Column = "IS_ACTIVE"; Type = Boolean; Raw = if active = 1 then "true" else "false" }
-                    { Column = "SS_KEY";    Type = Guid;    Raw = guid }
+                    { Column = "ID";        Type = Integer; Raw = Some (string i) }
+                    { Column = "LABEL";     Type = Text;    Raw = Some label }
+                    { Column = "CODE";      Type = Text;    Raw = Some code }
+                    { Column = "IS_ACTIVE"; Type = Boolean; Raw = Some (if active = 1 then "true" else "false") }
+                    { Column = "SS_KEY";    Type = Guid;    Raw = Some guid }
                 ]
         if rowsPerEntity > 0 then
             sb.AppendLine "GO" |> ignore

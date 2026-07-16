@@ -93,7 +93,7 @@ type IngestionIntegrationTests(fixture: EphemeralContainerFixture) =
                     // column round-trips its three distinct values.
                     let codes =
                         itemRows
-                        |> List.choose (fun r -> Map.tryFind (IngestionFixtures.mkName "Code") r.Values)
+                        |> List.choose (StaticRow.value (IngestionFixtures.mkName "Code"))
                         |> Set.ofList
                     Assert.Equal<Set<string>>(Set.ofList [ "A1"; "A2"; "A3" ], codes)
 

@@ -110,15 +110,15 @@ let private catalog : Catalog =
 // -- rows ------------------------------------------------------------------
 let private countryRow (id: string) : StaticRow =
     { Identifier = mkKey ["Country"; "Row"; id]
-      Values = Map.ofList [ mkName "ID", id ] }
+      Values = StaticRow.presentValues [ mkName "ID", id ] }
 
 let private userRow (id: string) (countryId: string) : StaticRow =
     { Identifier = mkKey ["User"; "Row"; id]
-      Values = Map.ofList [ mkName "ID", id; mkName "COUNTRY_ID", countryId ] }
+      Values = StaticRow.presentValues [ mkName "ID", id; mkName "COUNTRY_ID", countryId ] }
 
 let private orderRow (id: string) (userId: string) : StaticRow =
     { Identifier = mkKey ["Order"; "Row"; id]
-      Values = Map.ofList [ mkName "ID", id; mkName "USER_ID", userId ] }
+      Values = StaticRow.presentValues [ mkName "ID", id; mkName "USER_ID", userId ] }
 
 /// The full source "database" — what the fake oracle reads.
 let private sourceDb : Map<SsKey, StaticRow list> =

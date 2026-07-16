@@ -10,7 +10,9 @@ open Projection.Core
 /// physical-name requirement).
 type GoldenEntity =
     { Entity : string
-      Rows   : Map<Name, string> list }
+      /// WP-3 (F11): a cell is `string option` — `None` is SQL NULL
+      /// (serialized as JSON `null`), `Some ""` a genuine empty string.
+      Rows   : Map<Name, string option> list }
 
 /// The portable, committable **golden dataset** (Slice 6 — the deterministic
 /// emission vehicle): the closure's row-set serialized in logical space. The
@@ -22,8 +24,10 @@ type GoldenDataset =
 [<RequireQualifiedAccess>]
 module GoldenDataset =
 
+    /// Version 2 (WP-3, F11): NULL cells serialize as JSON `null`; a v1
+    /// dataset's `""` still reads as NULL (the retired sentinel era).
     [<Literal>]
-    let CurrentVersion = 1
+    let CurrentVersion = 2
 
     /// Project a closed `Closure.ClosureState` into the portable dataset, in
     /// LOGICAL space: each kind's entity `Name`, rows sorted by PK value,
@@ -74,7 +78,9 @@ module GoldenCodec =
             for row in e.Rows do
                 jw.WriteStartObject()
                 for (name, v) in (row |> Map.toList |> List.sortBy (fun (n, _) -> Name.value n)) do
-                    jw.WriteString(Name.value name, v)
+                    match v with
+                    | Some s -> jw.WriteString(Name.value name, s)
+                    | None   -> jw.WriteNull(Name.value name)
                 jw.WriteEndObject()
             jw.WriteEndArray()
             jw.WriteEndObject()
@@ -91,23 +97,34 @@ module GoldenCodec =
     let private asString (el: JsonElement) : Result<string> = JsonCodecKernel.asString "golden" el
     let private prop (el: JsonElement) (name: string) : Result<JsonElement> = JsonCodecKernel.prop "golden" el name
 
-    let private readRow (el: JsonElement) : Result<Map<Name, string>> =
+    /// Version-gated cell read (WP-3): JSON `null` → NULL; a string is the
+    /// value — except in v1 datasets, where `""` was the universal NULL
+    /// sentinel and still reads as NULL.
+    let private readRow (ver: int) (el: JsonElement) : Result<Map<Name, string option>> =
         if el.ValueKind <> JsonValueKind.Object then fail "golden.expectedRowObject" "row is not a JSON object"
         else
             el.EnumerateObject()
             |> Seq.map (fun p ->
-                asString p.Value
+                let value =
+                    match p.Value.ValueKind with
+                    | JsonValueKind.Null -> Ok None
+                    | JsonValueKind.String ->
+                        match p.Value.GetString() with
+                        | null -> Ok None // unreachable for a String element; read as NULL
+                        | s -> if ver < 2 && s = "" then Ok None else Ok (Some s)
+                    | _ -> fail "golden.expectedString" (sprintf "field '%s': expected string or null" p.Name)
+                value
                 |> Result.bind (fun v -> Name.create p.Name |> Result.map (fun n -> n, v)))
             |> Result.collect
             |> Result.map Map.ofList
 
-    let private readEntity (el: JsonElement) : Result<GoldenEntity> =
+    let private readEntity (ver: int) (el: JsonElement) : Result<GoldenEntity> =
         prop el "entity"
         |> Result.bind asString
         |> Result.bind (fun entity ->
             match el.TryGetProperty "rows" with
             | true, rowsEl when rowsEl.ValueKind = JsonValueKind.Array ->
-                rowsEl.EnumerateArray() |> Seq.map readRow |> Result.collect
+                rowsEl.EnumerateArray() |> Seq.map (readRow ver) |> Result.collect
                 |> Result.map (fun rows -> { Entity = entity; Rows = rows })
             | true, _ -> fail "golden.expectedArray" "field 'rows': expected array"
             | _       -> Ok { Entity = entity; Rows = [] })
@@ -123,13 +140,13 @@ module GoldenCodec =
                 | Ok v when v.ValueKind = JsonValueKind.Number -> Ok (v.GetInt32())
                 | Ok _  -> fail "golden.version" "field 'version' is not a number"
                 | Error e -> Error e
-            let entities =
-                match root.TryGetProperty "entities" with
-                | true, v when v.ValueKind = JsonValueKind.Array ->
-                    v.EnumerateArray() |> Seq.map readEntity |> Result.collect
-                | true, _ -> fail "golden.expectedArray" "field 'entities': expected array"
-                | _       -> Ok []
-            match decodedVersion, entities with
-            | Ok ver, Ok ents -> Ok { Version = ver; Entities = ents }
-            | Error e, _ -> Error e
-            | _, Error e -> Error e
+            match decodedVersion with
+            | Error e -> Error e
+            | Ok ver ->
+                let entities =
+                    match root.TryGetProperty "entities" with
+                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                        v.EnumerateArray() |> Seq.map (readEntity ver) |> Result.collect
+                    | true, _ -> fail "golden.expectedArray" "field 'entities': expected array"
+                    | _       -> Ok []
+                entities |> Result.map (fun ents -> { Version = ver; Entities = ents })

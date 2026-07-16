@@ -105,7 +105,7 @@ module OssysRowsetReader =
                       row.DefaultValue
                       |> Option.bind (fun raw ->
                           if System.String.IsNullOrWhiteSpace raw then None
-                          else Some (SqlLiteral.ofRaw p raw))
+                          else Some (SqlLiteral.ofRaw p (Some raw)))
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for
@@ -208,7 +208,16 @@ module OssysRowsetReader =
                 | Some key -> Result.success key
                 | None     -> resolveByName ()
             | None -> resolveByName ()
-        let onDelete   = parseDeleteRule refRow.DeleteRuleCode
+        // WP-1b (DECISIONS 2026-07-16) — the emitted ON DELETE action.
+        // For a physically-backed FK the reflected `#FkReality.DeleteAction`
+        // is database reality and outranks the model's delete-rule code
+        // (E1: mirror `sys.foreign_keys`); a logical-only reference (no
+        // reflected FK) keeps the model rule. `chooseOnDeleteAction`
+        // encapsulates the preference; `deleteRuleDivergences` (the
+        // OssysSql runner) surfaces the named diagnostic when the model and
+        // the reflected action disagree, so reality wins the value while the
+        // disagreement is announced, never silently swallowed.
+        let onDelete   = chooseOnDeleteAction refRow.DeleteRuleCode refRow.ReflectedOnDelete
         // Slice A.4.7'-prelude.row17-18-rowset-roundtrip — `OnUpdate`
         // carries SQL Server's `sys.foreign_keys.update_referential_action
         // _desc` vocabulary (NO_ACTION / CASCADE / SET_NULL / SET_DEFAULT),

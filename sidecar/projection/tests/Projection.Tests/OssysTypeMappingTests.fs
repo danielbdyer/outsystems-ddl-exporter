@@ -25,10 +25,11 @@ let ``tryParse: currency is the imposed DECIMAL(37,8); decimal defaults to (18,0
     Assert.Equal(Some (Decimal, SqlStorageType.Decimal (12, 4)), OssysTypeMapping.tryParse "decimal" None (Some 12) (Some 4))
 
 [<Fact>]
-let ``tryParse: email/phone carry the imposed V1-parity widths, overridden by a declared length`` () =
-    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 250)), OssysTypeMapping.tryParse "email" None None None)
-    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 50)),  OssysTypeMapping.tryParse "email" (Some 50) None None)
-    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 20)),  OssysTypeMapping.tryParse "phone" None None None)
+let ``WP-4: email/phone map to platform-native NVARCHAR, with the default width overridden by a declared length`` () =
+    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 250)), OssysTypeMapping.tryParse "email" None None None)
+    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 50)),  OssysTypeMapping.tryParse "email" (Some 50) None None)
+    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 20)),  OssysTypeMapping.tryParse "phone" None None None)
+    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 20)),  OssysTypeMapping.tryParse "phonenumber" None None None)
 
 [<Fact>]
 let ``tryParse: a reference (entityreference and the bt*-binding form) stores the target identifier as BIGINT`` () =

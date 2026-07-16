@@ -904,7 +904,7 @@ where the slice spec is now misleading, the residual gap.
 | 6.A.1 transfer fail-loud drop-set | ✅ LANDED (exit-9 `DroppedReferencesExit`) | — |
 | 6.A.2 cyclic `AssignedBySink` refusal | ✅ LANDED (execute-gate refusal) | — |
 | 6.A.3 composite-identity refusal | ✅ LANDED (execute-gate refusal) | — |
-| 6.A.4 empty-string↔NULL | ✅ LANDED as **named tolerance** (`EmptyTextNormalizedToNull`) | faithful preservation deferred-with-trigger |
+| 6.A.4 empty-string↔NULL | ✅ **RESOLVED FAITHFUL** (WP-3/F11, 2026-07-16): option-grain cells end-to-end; `''` survives transfer distinct from NULL; the `EmptyTextNormalizedToNull` tolerance is RETIRED | — |
 | 6.A.5 un-hollow `ReadSide` | ◑ **PARTIAL** — FK-trust **recovered**; A42 fixed; **indexes reconstructed AND compared** (E1: `PhysicalSchema.Indexes`, structure round-trips) | FK-trust **not enforced** (G2 → F1); index *options* residual (`IndexOptionsUnreflected`) |
 | 6.A.6 name remaining schema erasures | ◑ PARTIAL — NOCHECK-FK emit landed | user ext-props / IDENTITY-seed still to enumerate |
 | 6.A.7 `Synthesized`-key rename | ✅ LANDED (`synthesizedRenameWarnings`) | identity-threading on first import still operator-supplied |
@@ -957,13 +957,15 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
   column. Representing composite keys (tuple `SourceKey`) is the follow-on under a real fixture.
 - **Acceptance:** `` ``data canary: composite-IDENTITY AssignedBySink is refused, not half-captured`` ``. **~S.**
 
-##### 6.A.4 — Empty-string ↔ NULL fidelity (Data → L2)
-- **Gap (red-team Data #4):** `toCellRows` maps deferred/missing → `""`; `Bulk.parseRaw` maps `""` → `DBNull`; so a
-  genuine empty-string Text value round-trips as NULL. Three distinct meanings collapse onto `""`.
-- **First slice:** decide the rule and make it explicit — either a sentinel distinguishing *absent* from
-  *empty-string* in `CellValue.Raw`, or a named `Tolerance` ("empty-string Text normalizes to NULL") so the
-  erasure is *closed*, not silent. Trace `RawValueCodec` to confirm the read-side already distinguishes them.
-- **Acceptance:** `` ``data canary: empty-string Text round-trips faithfully (or names the tolerance)`` ``. **~M.**
+##### 6.A.4 — Empty-string ↔ NULL fidelity (Data → L2) — ✅ RESOLVED FAITHFUL (WP-3/F11, 2026-07-16)
+- **Was (red-team Data #4):** `toCellRows` mapped deferred/missing → `""`; `Bulk.parseRaw` mapped `""` → `DBNull`;
+  a genuine empty-string Text value round-tripped as NULL (three distinct meanings collapsed onto `""`). Closed
+  first as the named tolerance `EmptyTextNormalizedToNull` (2026-06-02).
+- **Resolution (WP-3):** the cell carriers went option-grain end-to-end (`StaticRow.Values : Map<Name, string
+  option>`, `RowQuantum.Cells : string voption[]`, `CellValue.Raw : string option`): `None` is SQL NULL,
+  `Some ""` a genuine empty string (renders `N''`, bulk-writes `''`), an absent Map key "column not provided".
+  The tolerance and its per-cell detector are RETIRED.
+- **Witness:** `` ``data canary: empty-string Text survives transfer distinct from NULL (F11 preservation)`` ``.
 
 ##### 6.A.5 — Un-hollow `ReadSide`: indexes + FK-trust (Schema + Decision → L2) — **keystone for Decision** — ◑ PARTIAL (2026-06-02)
 > **Reconciled:** FK-trust is now *recovered* (`ReadSide.fs:1075`) and the A42 readback gap is fixed — but two

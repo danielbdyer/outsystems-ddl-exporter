@@ -2,7 +2,7 @@ CREATE TABLE [dbo].[Assignment] (
     [ProjectId]  INT           NOT NULL,
     [ResourceId] INT           NOT NULL,
     [Role]       NVARCHAR (40) NULL,
-    CONSTRAINT [PK_dbo_Assignment]
+    CONSTRAINT [PK_Assignment_ProjectId_ResourceId]
         PRIMARY KEY ([ProjectId], [ResourceId])
 )
 
@@ -64,7 +64,7 @@ GO
 
 CREATE TABLE [audit].[ChangeLog] (
     [Id]     INT       IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_audit_ChangeLog]
+        CONSTRAINT [PK_ChangeLog_Id]
             PRIMARY KEY CLUSTERED,
     [At]     DATETIME2 NOT NULL,
     [UserId] INT       NOT NULL
@@ -130,7 +130,7 @@ GO
 
 CREATE TABLE [dbo].[Country] (
     [Id]    INT            NOT NULL
-        CONSTRAINT [PK_dbo_Country]
+        CONSTRAINT [PK_Country_Id]
             PRIMARY KEY CLUSTERED,
     [Code]  NVARCHAR (2)   NOT NULL,
     [Label] NVARCHAR (100) NOT NULL
@@ -194,7 +194,7 @@ GO
 
 CREATE TABLE [dbo].[Customer] (
     [Id]   INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Customer]
+        CONSTRAINT [PK_Customer_Id]
             PRIMARY KEY CLUSTERED,
     [Name] NVARCHAR (120) NOT NULL
 )
@@ -243,7 +243,7 @@ GO
 
 CREATE TABLE [dbo].[EnterpriseCustomerRelationshipManagementProfileSnapshot] (
     [Id] INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_EnterpriseCustomerRelationshipManagementProfileSnapshot]
+        CONSTRAINT [PK_EnterpriseCustomerRelationshipManagementProfileSnapshot_Id]
             PRIMARY KEY CLUSTERED
 )
 
@@ -277,24 +277,16 @@ GO
 
 CREATE TABLE [dbo].[Engagement] (
     [Id]            INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Engagement]
+        CONSTRAINT [PK_Engagement_Id]
             PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
-        DEFAULT 0
-        CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
-            FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE SET NULL
-                ON UPDATE NO ACTION,
+        DEFAULT 0,
     [CreatedBy]     INT            NOT NULL
         CONSTRAINT [FK_Engagement_User_CreatedBy]
             FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
                 ON DELETE NO ACTION
                 ON UPDATE CASCADE,
-    [CustomerId]    INT            NOT NULL
-        CONSTRAINT [FK_Engagement_Customer_CustomerId]
-            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE CASCADE
-                ON UPDATE NO ACTION,
+    [CustomerId]    INT            NOT NULL,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
@@ -483,7 +475,7 @@ GO
 
 CREATE TABLE [dbo].[InterdepartmentalResourceAllocationAuthorizationLedger] (
     [Id]                                                        INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_InterdepartmentalResourceAllocationAuthorizationLedger]
+        CONSTRAINT [PK_InterdepartmentalResourceAllocationAuthorizationLedger_Id]
             PRIMARY KEY CLUSTERED,
     [PrimaryResponsibleEnterpriseCustomerRelationshipManagerId] INT NOT NULL
         CONSTRAINT [FK_InterdepartmentalResourceAllocationAuthorizationLedger_EnterpriseCustomerRelationshipManagementProfileSnapshot_P_b94286649f49]
@@ -534,12 +526,10 @@ GO
 
 CREATE TABLE [dbo].[RegionA] (
     [Id]        INT           NOT NULL
-        CONSTRAINT [PK_dbo_RegionA]
+        CONSTRAINT [PK_RegionA_Id]
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL
-        CONSTRAINT [FK_RegionA_RegionB_PartnerId]
-            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionB] ([Id])
 )
 
 GO
@@ -600,12 +590,10 @@ GO
 
 CREATE TABLE [dbo].[RegionB] (
     [Id]        INT           NOT NULL
-        CONSTRAINT [PK_dbo_RegionB]
+        CONSTRAINT [PK_RegionB_Id]
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL
-        CONSTRAINT [FK_RegionB_RegionA_PartnerId]
-            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionA] ([Id])
 )
 
 GO
@@ -666,7 +654,7 @@ GO
 
 CREATE TABLE [dbo].[ScalarGallery] (
     [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_ScalarGallery]
+        CONSTRAINT [PK_ScalarGallery_Id]
             PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',
@@ -965,7 +953,7 @@ GO
 
 CREATE TABLE [dbo].[ScopedLookup] (
     [Id]       INT           NOT NULL
-        CONSTRAINT [PK_dbo_ScopedLookup]
+        CONSTRAINT [PK_ScopedLookup_Id]
             PRIMARY KEY CLUSTERED,
     [TenantId] INT           NOT NULL,
     [Value]    NVARCHAR (80) NOT NULL
@@ -1027,9 +1015,58 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
+CREATE TABLE [dbo].[TextFidelity] (
+    [Id]   INT           NOT NULL
+        CONSTRAINT [PK_TextFidelity_Id]
+            PRIMARY KEY CLUSTERED,
+    [Body] NVARCHAR (50) NULL
+)
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'TextFidelity',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_KIND1:112:TextFidelity',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:TextFidelity.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Body',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Body'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:117:TextFidelity.Body',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Body'
+
+GO
+
 CREATE TABLE [dbo].[Tier] (
     [Id]   INT           IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Tier]
+        CONSTRAINT [PK_Tier_Id]
             PRIMARY KEY CLUSTERED,
     [Name] NVARCHAR (40) NOT NULL
 )
@@ -1084,7 +1121,7 @@ GO
 
 CREATE TABLE [dbo].[User] (
     [Id]    INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_User]
+        CONSTRAINT [PK_User_Id]
             PRIMARY KEY CLUSTERED,
     [Email] NVARCHAR (250) NOT NULL
 )

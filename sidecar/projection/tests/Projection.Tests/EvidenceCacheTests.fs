@@ -78,7 +78,7 @@ let private catalog : Catalog =
     Catalog.create [ m ] [] |> Result.value
 
 let private row (kind: string) (values: (string * string) list) : StaticRow =
-    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, v) |> Map.ofList }
+    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, Some v) |> Map.ofList }
 
 /// Source Buyer 2 (bob) has NO sink match; every Tag matches. Deal 11
 /// references the unmatched buyer, so it drops and its (resolvable) Tag

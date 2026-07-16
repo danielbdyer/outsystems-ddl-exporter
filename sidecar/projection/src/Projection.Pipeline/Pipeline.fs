@@ -470,42 +470,18 @@ module Compose =
     /// Divergences`, NM-32/33 final hop); a clean pure emit yields the empty
     /// residual, the honest base case.
     /// NM-32/33 (final hop) — the per-run accepted-divergence residual,
-    /// computed STRUCTURALLY from the emitted catalog's static data. The emit
-    /// path has no deploy round-trip (the canary is the separate `check` verb),
-    /// so the residual is the set of named tolerances the EMITTED output
-    /// structurally invokes — today, the empty-text → NULL normalization
-    /// (`CanaryResidual.observeCell`) — resolved against the accepted set.
-    /// `Tolerance.permissive` is the accepted set until an operator tolerance
-    /// config is wired (then it becomes that configured value). Closes the
-    /// `runStoreLeg` / `fidelityOf` FLAG.
-    let private emittedResidualCollector (catalog: Catalog) : CanaryResidual.Collector =
-        Catalog.allKinds catalog
-        |> List.fold
-            (fun coll (k: Kind) ->
-                let typeByName = k.Attributes |> List.map (fun a -> a.Name, a.Type) |> Map.ofList
-                Kind.staticPopulations k
-                |> List.fold
-                    (fun c (row: StaticRow) ->
-                        row.Values
-                        |> Map.fold
-                            (fun c2 name raw ->
-                                match Map.tryFind name typeByName with
-                                | Some typ -> CanaryResidual.observeCell typ raw c2
-                                | None     -> c2)
-                            c)
-                    coll)
-            CanaryResidual.empty
+    /// computed STRUCTURALLY from the emitted output. WP-3 (F11): the one
+    /// tolerance the emit path used to structurally invoke — the
+    /// empty-text → NULL normalization — is RETIRED (the option-grain
+    /// cell carriers keep `''` and NULL distinct end-to-end), so a pure
+    /// emit's residual is the honest EMPTY base case. The functions stay
+    /// (the store-leg/report plumbing consumes them); the deploy-side
+    /// canary still records the divergences it observes per comparison.
+    let private emittedToleranceResidual (configured: Tolerance) (_catalog: Catalog) : Tolerance =
+        CanaryResidual.resolve configured CanaryResidual.empty
 
-    /// Wave-3 3.4 (now WIRED) — the per-run tolerance residual, resolved against
-    /// the operator's CONFIGURED accepted set (`emission.tolerance` →
-    /// `EmissionPolicy.ConfiguredTolerance`) rather than a hardcoded constant.
-    /// `Tolerance.permissive` (the default when `emission.tolerance` is absent)
-    /// reports every fired divergence — byte-identical to the prior behavior.
-    let private emittedToleranceResidual (configured: Tolerance) (catalog: Catalog) : Tolerance =
-        CanaryResidual.resolve configured (emittedResidualCollector catalog)
-
-    let private emittedAcceptedDivergences (configured: Tolerance) (catalog: Catalog) : ToleratedDivergence list =
-        CanaryResidual.resolvedDivergences configured (emittedResidualCollector catalog)
+    let private emittedAcceptedDivergences (configured: Tolerance) (_catalog: Catalog) : ToleratedDivergence list =
+        CanaryResidual.resolvedDivergences configured CanaryResidual.empty
 
     let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
         let categoricalDecisions =
@@ -1592,6 +1568,12 @@ module Compose =
                         // silent dedupe).
                         @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
                             decisionOverlay fkResolutions
+                        // WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision
+                        // tripwire (schema-qualified CREATE TABLE identity; one
+                        // Error per participating kind, never a silent last-win).
+                        // Threads the already-computed AllKinds (no fourth walk).
+                        @ SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing
+                            fkLookups.AllKinds
                         // NM-70 (WP5) — the named downgrade. When the operator
                         // omits the identity annotations, the `Projection.*`
                         // extended properties are NOT written, so identity
@@ -1860,6 +1842,29 @@ module Compose =
                 let outputs, _ =
                     projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
                 Result.success outputs
+            | Error errors -> Result.failure errors
+
+    /// Sibling of `projectWithConfig` that also returns the post-chain
+    /// `ComposeState`, so a caller can derive BOTH the composed catalog
+    /// (`state.Catalog`) and the emission `DecisionOverlay`
+    /// (`DecisionOverlay.ofComposeState state`) — e.g. to render a flat-stream
+    /// realization (`stream.sql`) that gates FK/decision drops IDENTICALLY to
+    /// the per-table bundle from the same state (the golden corpus's stream
+    /// path). Always runs the full policy-built path (no `defaultConfig`
+    /// short-circuit — the overlay-needing callers are non-default by
+    /// construction, e.g. any config that registers a tightening intervention).
+    let projectWithConfigAndState
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Outputs * ComposeState> =
+        let pins = physicalRenamePins shaping catalog
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match bindShapingTriple shaping renamedCatalog with
+            | Ok (policy, folders, groups) ->
+                Result.success
+                    (projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog)
             | Error errors -> Result.failure errors
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of

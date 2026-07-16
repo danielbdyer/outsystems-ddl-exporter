@@ -71,12 +71,17 @@ module Origin =
 /// One row of a Static kind's population. Populations live in the catalog
 /// per A7; the unfold pass lifts them into type-level metadata for Pi.
 /// `Identifier` is the row's stable SsKey; `Values` carries cell values
-/// keyed by attribute name. Cell values are kept as strings here — the
+/// keyed by attribute name. Cell values are kept as raw strings here — the
 /// projection's type-correspondence policy (A13) determines how they are
-/// rendered on the surface.
+/// rendered on the surface. WP-3 (F11): a cell is `string option` — `None`
+/// is SQL NULL, `Some ""` is a genuine empty string (they are DISTINCT;
+/// the retired universal `""`-as-NULL sentinel lives only at the config
+/// parse boundary, where the file convention `"" = NULL` maps to `None`).
+/// An ABSENT key is a third state: column not provided — the sink's own
+/// DEFAULT applies at bulk insert (the availability-set rule).
 type StaticRow = {
     Identifier : SsKey
-    Values     : Map<Name, string>
+    Values     : Map<Name, string option>
 }
 
 /// The positional row carrier for data in flight (CONSTELLATION §9.5;
@@ -84,10 +89,16 @@ type StaticRow = {
 /// a per-stream `RowBasis`; the typed Map vocabulary lives at the
 /// stream's header, not in every element. `[<Struct>]` per the §9.7
 /// promotion the H3 carrier-cost measurement fired (carrier build
-/// 4.77 µs/row = 42% of stream wall); a single-field struct over a
-/// `string[]` reference copies one word — no large-struct hazard.
+/// 4.77 µs/row = 42% of stream wall); a single-field struct over an
+/// array reference copies one word — no large-struct hazard.
+/// WP-3 (F11): a cell is `string voption` — `ValueNone` is SQL NULL,
+/// `ValueSome ""` a genuine empty string. `voption` (not `option`) by
+/// the same measured-allocation prior that fired the `[<Struct>]`
+/// promotion: a reference `Some` per non-NULL cell at estate scale is
+/// exactly the per-cell allocation the quantum exists to avoid; the
+/// struct option adds a tag word in-place instead.
 [<Struct>]
-type RowQuantum = { Cells : string[] }
+type RowQuantum = { Cells : string voption[] }
 
 /// The per-stream column basis a `RowQuantum` is positional against. Two
 /// facts, established once per stream and never per row: the column
@@ -100,8 +111,9 @@ type RowQuantum = { Cells : string[] }
 ///
 /// **Totality precondition.** A `RowQuantum` hashed or rebuilt against a
 /// basis must be TOTAL over it — every column present (in-flight
-/// ReadSide-origin rows always are; NULL → ""). The omit-vs-NULL
-/// distinction the IR-grain `StaticRow` Map carries is deliberately NOT
+/// ReadSide-origin rows always are; NULL → `ValueNone`, WP-3). The
+/// omit-vs-provided distinction the IR-grain `StaticRow` Map carries
+/// (an ABSENT key = column not provided) is deliberately NOT
 /// representable here; it stays at the IR grain.
 type RowBasis = private { Names : Name[]; NameSortedPerm : int[] }
 
@@ -146,37 +158,60 @@ module RowBasis =
 module RowQuantum =
 
     /// Project a (total) `StaticRow` onto the basis: cell i is the value
-    /// for basis column i, or "" if absent (the `readRowsStream`
-    /// NULL → "" convention). For an in-flight total row every column is
-    /// present, so no cell defaults.
+    /// for basis column i; an absent key and an explicit NULL both
+    /// project as `ValueNone` (the quantum is total — "not provided"
+    /// has no positional meaning). For an in-flight total row every
+    /// column is present, so no cell defaults.
     let ofStaticRow (basis: RowBasis) (row: StaticRow) : RowQuantum =
         { Cells =
             RowBasis.names basis
-            |> Array.map (fun n -> Map.tryFind n row.Values |> Option.defaultValue "") }
+            |> Array.map (fun n ->
+                match Map.tryFind n row.Values with
+                | Some (Some v) -> ValueSome v
+                | Some None | None -> ValueNone) }
 
     /// Rebuild the value Map from a quantum (the boundary back to the IR
     /// grain — `StaticRow` reconstruction at the buffered `readRows`
-    /// path). Total over the basis by construction.
-    let toValues (basis: RowBasis) (q: RowQuantum) : Map<Name, string> =
-        Array.zip (RowBasis.names basis) q.Cells |> Map.ofArray
+    /// path). Total over the basis by construction: every basis column
+    /// lands in the Map, a `ValueNone` cell as an explicit `None` (NULL).
+    let toValues (basis: RowBasis) (q: RowQuantum) : Map<Name, string option> =
+        Array.zip
+            (RowBasis.names basis)
+            (q.Cells |> Array.map (function ValueSome v -> Some v | ValueNone -> None))
+        |> Map.ofArray
 
     /// STAGED by-name accessor: resolve the ordinal once per kind/stream,
-    /// index per row (Q3 — the quantum counterpart of `Map.tryFind name
-    /// row.Values |> Option.defaultValue ""`; a name absent from the basis
-    /// reads as the empty raw, exactly as an absent Map key does).
-    let cellGetter (basis: RowBasis) (name: Name) : (RowQuantum -> string) =
+    /// index per row (Q3 — the quantum counterpart of `StaticRow.value`;
+    /// a name absent from the basis reads as `ValueNone`, exactly as an
+    /// absent Map key reads as no-value).
+    let cellGetter (basis: RowBasis) (name: Name) : (RowQuantum -> string voption) =
         match RowBasis.tryOrdinal name basis with
         | Some ix -> fun q -> q.Cells.[ix]
-        | None -> fun _ -> ""
+        | None -> fun _ -> ValueNone
 
 [<RequireQualifiedAccess>]
 module StaticRow =
 
-    /// The Map-carried row's by-name accessor, empty-raw default — named
-    /// once so the carrier-generic consumers (Q3: the capture ladder, the
-    /// cell projections) read identically over both grains.
+    /// The Map-carried row's by-name accessor at the WP-3 cell grain:
+    /// `None` for SQL NULL *and* for an absent key (both are no-value at
+    /// a by-name read), `Some v` for a present value (`Some ""` = genuine
+    /// empty string). Named once so the carrier-generic consumers (Q3:
+    /// the capture ladder, the cell projections) read identically over
+    /// both grains.
+    let value (name: Name) (row: StaticRow) : string option =
+        Map.tryFind name row.Values |> Option.flatten
+
+    /// The by-name accessor flattened to the empty-raw default — for
+    /// display/keying sites that deliberately render NULL as `""`. Write-
+    /// path consumers use `value` (NULL and `""` are distinct there).
     let valueOrEmpty (name: Name) (row: StaticRow) : string =
-        Map.tryFind name row.Values |> Option.defaultValue ""
+        value name row |> Option.defaultValue ""
+
+    /// Build a `Values` map where every listed cell is PRESENT (non-NULL)
+    /// — the declared-fixture shape. A NULL cell is authored by inserting
+    /// `None` explicitly at the caller.
+    let presentValues (pairs: (Name * string) list) : Map<Name, string option> =
+        pairs |> List.map (fun (n, v) -> n, Some v) |> Map.ofList
 
     /// The IR-grain boundary: rebuild a `StaticRow` from an in-flight
     /// quantum (Q2 — `RowQuantum.ofStaticRow`'s inverse over a total row;

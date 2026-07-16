@@ -372,8 +372,30 @@ let ``Slice 4: SsdtDdlEmitter emits composite PK as table-constraint (not inline
     Assert.Contains ("PRIMARY KEY", body)
     Assert.Contains ("TENANTID", body)
     Assert.Contains ("CODE", body)
-    // The PK constraint name follows V1 convention `PK_<Schema>_<Table>`.
-    Assert.Contains ("PK_dbo_OSUSR_X_COMPOSITE", body)
+    // WP-8 — the PK constraint name follows V1 convention
+    // `PK_<LogicalKind>_<KeyColumn…>` (logical kind + logical key-column
+    // names, in the catalog's deterministic PK-column order — here Code
+    // before TenantId, matching the emitted PRIMARY KEY column clause).
+    Assert.Contains ("PK_Composite_Code_TenantId", body)
+
+[<Fact>]
+let ``WP-8: primaryKeyName follows V1's PK_<LogicalKind>_<KeyColumn...> convention`` () =
+    // The packet's canonical example: a Customer with a single "Id" PK →
+    // PK_Customer_Id (the logical kind name + logical key-column name),
+    // NOT the old schema-qualified PK_<Schema>_<Table> (PK_dbo_...).
+    let mkPk (label: string) : Attribute =
+        { Attribute.create (attrKey ["Customer"; label]) (mkName label) Integer with
+            Column = ColumnRealization.create (label.ToUpperInvariant()) false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true }
+    let customer =
+        Kind.create (kindKey ["Customer"]) (mkName "Customer") (mkTableId "dbo" "OSUSR_X_CUSTOMER")
+            [ mkPk "Id" ]
+    Assert.Equal<string>("PK_Customer_Id", IndexNaming.primaryKeyName customer)
+    // Composite: PK_<Kind>_<col1>_<col2>, in the kind's PK-attribute order.
+    let composite =
+        Kind.create (kindKey ["Order"]) (mkName "Order") (mkTableId "dbo" "OSUSR_X_ORDER")
+            [ mkPk "TenantId"; mkPk "OrderNo" ]
+    Assert.Equal<string>("PK_Order_TenantId_OrderNo", IndexNaming.primaryKeyName composite)
 
 [<Fact>]
 let ``Slice 4: T1 byte-determinism holds for composite PK fixture`` () =
@@ -931,11 +953,11 @@ let private columnFeaturesKind : Kind =
     let idAttr = mkAttr "Id" "Id" Integer true
     let priceAttr =
         { mkAttr "Price" "Price" Integer false with
-            DefaultValue = Some (SqlLiteral.ofRaw Integer "0") }
+            DefaultValue = Some (SqlLiteral.ofRaw Integer (Some "0")) }
     let nameAttr =
         { mkAttr "Name" "Name" Text false with
             Length = Some 100
-            DefaultValue = Some (SqlLiteral.ofRaw Text "unknown") }
+            DefaultValue = Some (SqlLiteral.ofRaw Text (Some "unknown")) }
     let checkOk =
         ColumnCheck.create
             (attrKey ["Widget"; "CK_Price"])

@@ -37,7 +37,7 @@ let private mkCountryKind () : Kind =
     let row code label =
         { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",    code  // simulate Id-as-Code for test simplicity
                     mkName "Code",  code
                     mkName "Label", label ] }
@@ -223,6 +223,60 @@ let ``StaticSeedsEmitter.emit Phase1Merges carry KindKey + Identifier from Stati
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     for row in script.Phase1Merges do
         Assert.Equal<SsKey> (country.SsKey, row.KindKey)
+
+[<Fact>]
+let ``WP-3: the OutSystems single-space sentinel — `" "` on a NULLABLE Text attribute seeds as NULL, everything else is faithful`` () =
+    // V1 parity (`StaticEntitySeedScriptGenerator.NormalizeValue`): the
+    // platform stores a single space in a nullable Text attribute of a
+    // static entity to mean "no value". Exactly `" "` + nullable + Text
+    // coerces; `''`, multi-space, and mandatory-`" "` pass through.
+    let kindKey = mkKey ["TestModule"; "Note"]
+    let mkA (n: string) (col: string) (mandatory: bool) =
+        { Attribute.create (mkKey ["TestModule"; "Note"; n]) (mkName n) Text with
+            Column = ColumnRealization.create col false |> Result.value
+            IsMandatory = mandatory }
+    let idA =
+        { Attribute.create (mkKey ["TestModule"; "Note"; "Id"]) (mkName "Id") Integer with
+            Column = ColumnRealization.create "ID" false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true }
+    let row =
+        { Identifier = mkKey ["TestModule"; "Note"; "Row"; "1"]
+          Values =
+            Map.ofList
+                [ mkName "Id",       Some "1"
+                  mkName "Blank",    Some " "    // nullable + exactly one space → NULL
+                  mkName "Spaces",   Some "  "   // two spaces → faithful
+                  mkName "Empty",    Some ""     // genuine empty string → N''
+                  mkName "Required", Some " " ] } // mandatory → faithful N' '
+    let kind =
+        { SsKey    = kindKey
+          Name     = mkName "Note"
+          Origin   = Native
+          Modality = [ Static [ row ] ]
+          Physical = mkTableId "dbo" "OSUSR_TEST_NOTE"
+          Attributes =
+            [ idA
+              mkA "Blank" "BLANK" false
+              mkA "Spaces" "SPACES" false
+              mkA "Empty" "EMPTY" false
+              mkA "Required" "REQUIRED" true ]
+          References = []
+          Indexes = []
+          Description = None
+          IsActive = true
+          Triggers = []
+          ColumnChecks = []
+          ExtendedProperties = [] }
+    let catalog = mkCatalog [ kind ]
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let sql = (ArtifactByKind.toMap artifact |> Map.find kindKey).RenderedPhase1
+    // The VALUES tuple: Id, then BLANK → NULL, SPACES → N'  ', EMPTY → N'', REQUIRED → N' '.
+    Assert.Contains("NULL", sql)
+    Assert.Contains("N'  '", sql)
+    Assert.Contains("N''", sql)
+    // Exactly ONE single-space literal survives — the MANDATORY one; the
+    // nullable single-space cell became the NULL above.
+    Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(sql, "N' '").Count)
 
 [<Fact>]
 let ``StaticSeedsEmitter.emit Phase2Updates is empty at slice α (no cycle-breaking yet)`` () =
@@ -466,7 +520,7 @@ let private mkTreeKind () : Kind =
     let row =
         { Identifier = mkKey ["TestModule"; "Tree"; "Row"; "ROOT"]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",       "1"
                     mkName "Label",    "root"
                     mkName "ParentId", "1" ] }
@@ -604,10 +658,10 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let bRefK = mkKey ["TestModule"; "B"; "ToA"]
     let aRow =
         { Identifier = mkKey ["TestModule"; "A"; "Row"; "1"]
-          Values = Map.ofList [ mkName "Id", "1"; mkName "BId", "1" ] }
+          Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "BId", "1" ] }
     let bRow =
         { Identifier = mkKey ["TestModule"; "B"; "Row"; "1"]
-          Values = Map.ofList [ mkName "Id", "1"; mkName "AId", "1" ] }
+          Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "AId", "1" ] }
     let mkAttr ssk name typ col isPk isNull =
         { Attribute.create ssk (mkName name) typ with Column = ColumnRealization.create (col) (isNull) |> Result.value; IsPrimaryKey = isPk; IsMandatory = not isNull }
     let mkRef ssk name srcAttr tgt =
@@ -688,7 +742,7 @@ let private mkComputedColumnKind () : Kind =
     let row code label =
         { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",    code
                     mkName "Code",  code
                     mkName "Label", label ] }
@@ -848,7 +902,7 @@ let private mkNonPkIdentityKind () : Kind =
     let row code seq name =
         { Identifier = mkKey ["TestModule"; "Region"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Code", code
                     mkName "Seq",  seq
                     mkName "Name", name ] }
@@ -924,7 +978,7 @@ let private mkHeapKind () : Kind =
     let row code label =
         { Identifier = mkKey ["TestModule"; "Heap"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Code",  code
                     mkName "Label", label ] }
     {
@@ -988,8 +1042,8 @@ let ``MergeRender.renderUpdate: a no-PK kind's Phase-2 row scope excludes the de
     let deferred = Set.ofList [ mkName "Label" ]
     let typedValues =
         Map.ofList
-            [ mkName "Code",  SqlLiteral.ofRaw PrimitiveType.Text "A"
-              mkName "Label", SqlLiteral.ofRaw PrimitiveType.Text "Alpha" ]
+            [ mkName "Code",  SqlLiteral.ofRaw PrimitiveType.Text (Some "A")
+              mkName "Label", SqlLiteral.ofRaw PrimitiveType.Text (Some "Alpha") ]
     let sql = normWs (MergeRender.renderUpdate "emit.test" false heap deferred typedValues)
     Assert.Contains("SET [LABEL] = N'Alpha'", sql)
     Assert.Contains("WHERE [CODE] = N'A'", sql)
@@ -1036,8 +1090,8 @@ let ``renderQuanta ≡ renderLoad over materialized rows at FULL record grain (t
     let schemaText = TableId.schemaText country.Physical
     let tableText  = TableId.tableText country.Physical
     let quanta : RowQuantum list =
-        [ { Cells = [| "1"; "US"; "United States" |] }
-          { Cells = [| "2"; "CA"; "Canada" |] } ]
+        [ { Cells = [| ValueSome "1"; ValueSome "US"; ValueSome "United States" |] }
+          { Cells = [| ValueSome "2"; ValueSome "CA"; ValueSome "Canada" |] } ]
     let rows =
         quanta
         |> List.mapi (fun i q ->

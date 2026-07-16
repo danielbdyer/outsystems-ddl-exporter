@@ -363,8 +363,14 @@ module FidelityCompareRun =
             | RowFidelity.KeyPlan.Int64Key pkName ->
                 let sourceCell = RowQuantum.cellGetter sourceBasis pkName
                 let targetCell = RowQuantum.cellGetter targetBasis pkName
-                let keyOfLeft (q: RowQuantum) : int64 = Int64.Parse(sourceCell q, Globalization.CultureInfo.InvariantCulture)
-                let keyOfRight (q: RowQuantum) : int64 = Int64.Parse(targetCell q, Globalization.CultureInfo.InvariantCulture)
+                // A NULL primary-key cell violates the keyed-compare
+                // precondition — refuse loudly, never coerce (WP-3).
+                let keyValue (side: string) (cell: string voption) : int64 =
+                    match cell with
+                    | ValueSome v -> Int64.Parse(v, Globalization.CultureInfo.InvariantCulture)
+                    | ValueNone -> invalidOp (sprintf "fidelity.keyOf: NULL primary-key cell on the %s stream" side)
+                let keyOfLeft (q: RowQuantum) : int64 = keyValue "source" (sourceCell q)
+                let keyOfRight (q: RowQuantum) : int64 = keyValue "target" (targetCell q)
                 match keyRewrite with
                 | Some _ ->
                     // The replayed key rewrite reorders the source stream in

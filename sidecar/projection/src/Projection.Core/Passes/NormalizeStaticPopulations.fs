@@ -32,7 +32,7 @@ module NormalizeStaticPopulations =
     /// `Identifier` and the same `Values` are indistinguishable; in
     /// practice rows are uniquely identified, so the tiebreaker is
     /// defensive.
-    let private rowSortKey (row: StaticRow) : SsKey * (Name * string) list =
+    let private rowSortKey (row: StaticRow) : SsKey * (Name * string option) list =
         (row.Identifier, Map.toList row.Values)
 
     let private normalizeModality (m: ModalityMark) : ModalityMark =

@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[User] (
     [Id]    INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_User]
+        CONSTRAINT [PK_User_Id]
             PRIMARY KEY CLUSTERED,
     [Email] NVARCHAR (250) NOT NULL
 )

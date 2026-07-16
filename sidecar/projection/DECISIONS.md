@@ -27581,3 +27581,488 @@ new cases (both `None` — a chosen posture is not an opportunity, mirroring
 as no-remediation (correct — it IS the remediation); the structured displays gain their tags.
 Every pre-amendment construction site compiles verbatim through the unchanged `create`
 signatures.
+
+## 2026-07-16 — WP-1a: the live-extraction `HasDbConstraint` hardcode is fixed (the FK evidence gate can see logical-only references again)
+
+**Context.** The first landed item of the SSDT-handoff remediation plan
+(`SSDT_HANDOFF_REVIEW_PACKET.md` §10, WP-1a — the plan's own sequencing note makes it "precede
+everything that reasons about the logical-vs-backed split"). The live-extraction projection
+`MetadataSnapshotRunner.toBundle` JOINs each `OssysReferenceRow` to `#FkReality` (via
+`#FkColumns.ParentAttrId`) to decide whether an attribute's FK is physically reflected — but it
+hardcoded `HasDbConstraint = true` for every reference. Consequence: on a LIVE extraction every
+reference presented as source-backed, so the FK tightening gate — whose source-backed carve-out
+(2026-06-12 reconciliation slice 1) lets a reflected FK enforce BEFORE and REGARDLESS of the
+orphan / enable-creation gates — could never observe a logical-only (`HasDbConstraint = false`)
+reference. The whole logical-vs-backed distinction the E2/E3 evidence regime depends on was
+erased on the one path that reads a real estate. The hardcode also contradicted this function's
+own doc comment ("`HasDbConstraint` … true when an FK is reflected") and diverged from the JSON
+adapter path, which already defaults absent → `false` (V1's `ISNULL(HasFK, 0)` parity, chapter
+4.6 slice α).
+
+**The decision.** `HasDbConstraint = Option.isSome fkOpt` — true exactly when the reference's
+attribute carries a reflected `#FkReality` row (`fkOpt` was already in scope, computed for the
+sibling `OnUpdate` / `IsConstraintTrusted` axes; the fix reads the join it already performs). No
+other behaviour moves: the two sibling axes keep their prior derivation, and the emitted OUTPUT
+under the default (no-intervention) config is unchanged — a logical-only reference still emits an
+FK by default (the `THE_GOLDEN_EMISSION.md` "logical-only → FK under no intervention" pin holds).
+The fix only lets a CONFIGURED `foreignKey` intervention gate a logical-only reference on a live
+extraction, which is the entire point of the evidence regime.
+
+**Witness.** `ReferenceHasDbConstraintLivePathTests` (pure, at the `toBundle` seam, upstream of
+`FkRealityRowsetRoundTripTests`' RowsetBundle-layer fixtures): a two-reference snapshot — one with
+a matching `#FkColumns`+`#FkReality` pair, one logical-only — projects `HasDbConstraint`
+true/false respectively, and the sibling FK-reality axes stay intact. The JSON path's
+`ReferenceHasDbConstraintTests` already pinned absent → false; the live and JSON paths now agree.
+
+**Scope note.** This is WP-1a ONLY — the isolated hardcode. The remainder of WP-1 (emitting the
+reflected `#FkReality.DeleteAction` for physically-backed FKs, making the evidence-gated posture
+the mandatory eject default, and resolving the placebo knobs `treatMissingDeleteRuleAsIgnore` /
+`allowCrossCatalog` / `strictMode`) rides later slices.
+
+## 2026-07-16 — WP-1b: emit the reflected `#FkReality.DeleteAction` (database reality wins the ON DELETE action for physically-backed FKs)
+
+**Context.** The second slice of the SSDT-handoff FK-reality package
+(`SSDT_HANDOFF_REVIEW_PACKET.md` §10, WP-1(b); register rows E1). The deployed FK's actual delete
+action is extracted into `#FkReality.DeleteAction` (SQL-Server vocabulary — `NO_ACTION` /
+`CASCADE` / `SET_NULL` / `SET_DEFAULT`) but was consumed NOWHERE: `Reference.OnDelete` restated the
+OutSystems *model's* `reference_deleteRuleCode` (Delete→Cascade, Protect/Ignore→NoAction,
+SetNull→SetNull), while only the sibling `ON UPDATE` axis was reflection-sourced (E4). A DBA who
+altered a deployed FK's delete action away from the platform default therefore had that reality
+silently overwritten by the model rule on every emission — the opposite of the packet's governing
+rule (mirror database reality, or name the divergence).
+
+**The decision.** For a physically-backed FK the reflected delete action IS database reality and
+outranks the model rule (E1 — "mirror `sys.foreign_keys`"). Three coordinated moves:
+- **Carry it.** `OssysRowsetTypes.ReferenceRow` gains `ReflectedOnDelete : string option`, mirroring
+  the existing `OnUpdate` field; `MetadataSnapshotRunner.toBundle` populates it from the same
+  `#FkReality` JOIN it already performs (`fkOpt |> Option.bind (fun fk -> fk.DeleteAction)`).
+- **Prefer it.** `OssysTranslation.chooseOnDeleteAction modelCode reflectedDeleteAction` resolves the
+  emitted action: the reflected action when it is present AND representable in V2's
+  `ReferenceAction` DU, else the model rule (so logical-only references with no reflected FK keep
+  their model rule, and an unrepresentable reflected action such as `SET_DEFAULT` falls back rather
+  than dropping the reference). `OssysRowsetReader.parseReferenceRowFor` calls it in place of the
+  bare `parseDeleteRule refRow.DeleteRuleCode`.
+- **Name the disagreement.** `MetadataSnapshotRunner.deleteRuleDivergences` — a pure snapshot pass
+  mirroring the F9 `columnRealityDivergences` / `primaryKeyDivergences` idiom, wired into
+  `LiveModelRead.surfaceDivergences` — emits a `Warning`
+  (`adapter.ossys.fkReality.deleteActionDivergence`) for every physically-backed FK whose model rule
+  maps to a *different* action than the reflected one. Reality wins the value; the operator is told
+  the model diverged, never silently overridden. The `#FkReality` JOIN is factored into one private
+  `fkRealityByParentAttrIdMap` so `toBundle` and the divergence pass cannot drift.
+
+**Witness.** `ReferenceReflectedDeleteActionTests` (pure, 10 cases): `chooseOnDeleteAction` (reflected
+CASCADE beats model Protect; logical-only keeps the model rule; `SET_DEFAULT` falls back);
+`deleteActionDivergence` (disagreement → `Some (model, reflected)`; agreement / logical-only /
+unmapped-model → `None`); the `toBundle` seam (`ReflectedOnDelete` carried on the backed reference,
+`None` on the logical-only one); and `deleteRuleDivergences` (one named `Warning` for the diverging
+backed reference, silent on agreement). The FK-reality / reference sibling suites
+(`FkRealityRowsetRoundTripTests`, `ReferenceHasDbConstraintLivePathTests`, `OsmRowsetReaderTests`,
+`ColumnRealityDivergenceTests`, `ReferenceConstraintStateTests` — 86 cases) stay green.
+
+**Golden note.** No golden re-record: the golden corpus (`GoldenCatalog.fs`) builds domain
+`Reference` values directly (`Reference.create … with OnDelete = …`), never through the OSSYS rowset
+`#FkReality` path, so `ReflectedOnDelete` is always `None` there and the emitted output is unchanged.
+The reflected-action preference is a live-extraction fidelity fix (same posture as WP-1a): the
+`GoldenEmissionTests` / `DataLaneGoldenTests` / `GoldenCodecTests` corpus is byte-unchanged.
+
+**Scope note.** WP-1(b) only — the reflected delete action + its divergence diagnostic. The rest of
+WP-1 rides later slices: WP-1(c) the mandatory evidence-gated eject posture and Ignore/missing-rule
+→ *no FK* semantics; WP-1(d) the placebo knobs (`treatMissingDeleteRuleAsIgnore` /
+`allowCrossCatalog` / `strictMode`); WP-1(e) the msg-1785 cascade-path pre-analyzer. The reflected
+action only *replaces* the model rule here — it does not yet suppress FK creation for Ignore
+references (that is WP-1(c)).
+
+## 2026-07-16 — WP-16: the table-name collision tripwire (duplicate CREATE TABLE identity is named, never a silent last-win)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-16 / register H7. Every kind emits exactly one
+`CREATE TABLE` at its schema-qualified `(schema, table) = (k.Physical.Schema, k.Physical.Table)`
+(the emitted `ArtifactByKind` keyset ≡ `Catalog.allKinds`). Two kinds resolving to the SAME emitted
+`(schema, table)` — two same-named entities in different modules, or a same-module duplicate —
+produce duplicate `CREATE TABLE`s: across modules a DacFx duplicate-object build failure that only
+surfaces at publish time; within one module a silent last-wins on the shared
+`Modules/<Module>/<Schema>.<Table>.sql` file. The FK-constraint namespace already had a loud
+tripwire (`emit.ssdt.foreignKey.nameCollision`, reconciliation slice 1); the table namespace did
+not — the last conspicuously-unguarded emission-identity collision.
+
+**The decision.** Mirror the FK-name tripwire for table identity.
+`SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing (allKinds: Kind list)` groups the emitted kinds
+by `(schemaText, tableText)` and raises one `Error` (`emit.ssdt.table.nameCollision`, with the
+kind's `SsKey` + schema/table/kind metadata) per participating kind whenever a group has more than
+one member — so every collision site is visible, never a silent last-win. A catalog-taking
+convenience form (`tableNameCollisionDiagnostics catalog`) delegates through `Catalog.allKinds`; the
+publish threads the already-computed `FkEmissionLookups.AllKinds` (no fourth `allKinds` walk, per
+the PL-4 compute-once discipline). Wired into `Pipeline.fs` alongside the FK collision tripwire on
+the diagnostics `@`-chain over `finalState.Catalog`. On a well-formed catalog the pass is silent
+(distinct table names ⇒ zero diagnostics); it guards the invariant, it does not change behavior —
+`Catalog.create` dedupes on Kind `SsKey`, not on `(schema, table)`, so the collision is
+constructable and reaches emission.
+
+**Witness.** `DeployableReferenceTests` (pure, 3 new cases): two distinct kinds at `(dbo, Customer)`
+in different modules → 2 `Error`s (`emit.ssdt.table.nameCollision`, schema=dbo, table=Customer); a
+same-module duplicate → 2 `Error`s (the silent-last-wins case is now named); a distinct-table
+catalog (`corporateShape`) → empty. The emitter / golden pure suites (`SsdtDdlEmitterTests`,
+`GoldenEmissionTests`, 98 cases) stay green.
+
+**Golden note.** No golden re-record: the golden corpus has no table-name collision, so the new pass
+emits zero diagnostics over it and the byte-pinned output is unchanged.
+
+## 2026-07-16 — WP-8: PK naming adopts V1's `PK_<LogicalKind>_<KeyColumn…>` convention
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-8 / register A1. V2 synthesized primary-key
+constraint names as `PK_<Schema>_<Table>` (`PK_dbo_Customer`) — embedding the physical schema in
+the name. V1's convention (`src/Osm.Smo/SmoIndexBuilder.cs:42-55`, pinned to `PK_Customer_Id`) is
+`PK_<LogicalTable>_<KeyColumn…>`: the logical entity name plus the key columns, no schema token.
+Under the exporter's logical-naming regime the schema-qualified form is the odd one out — every
+other synthesized name (`FK_<Owner>_<Target>_<Column>`, `IX_/UIX_<Kind>_<Attrs>`) already reads in
+the logical vocabulary.
+
+**The decision.** Adopt V1's convention. A single derivation — `IndexNaming.primaryKeyName (k: Kind)`
+— builds `PK_<logical kind name>_<logical key-column names, joined by "_">` from the kind's
+PK-marked attributes (in the catalog's deterministic attribute order, so name and the emitted
+`PRIMARY KEY` column clause agree). Both name sites consume it: `SsdtDdlEmitter.pkDef` (the CREATE
+TABLE constraint name) and `IndexNaming.baseNameOf`'s PK-index branch (the backing-index name +
+extended property). Deriving both from ONE function over the kind's PK attributes — not from
+`idx.Columns` for the index branch — means the constraint and its backing index agree by
+construction, closing the composite-PK column-order divergence risk the two-site form carried.
+The name still rides the identifier budget at each call site.
+
+**Witness.** `SsdtDdlEmitterTests`: a new `WP-8: primaryKeyName follows V1's …` unit test pins the
+packet's canonical `PK_Customer_Id` (single column) and `PK_Order_TenantId_OrderNo` (composite, in
+PK-attribute order); the existing composite-emitter test now asserts `PK_Composite_Code_TenantId`
+(the catalog's deterministic PK-column order). The index/read-back suites
+(`IndexNaming`/`IndexRoundtrip`/`SsdtSchemaFidelity`/`PhysicalSchema`, 117 pure cases) stay green —
+`PhysicalSchema.ofCatalogWith` consumes the same `IndexNaming`, so emit↔deploy read-back agrees.
+
+**Golden note.** Golden corpus RE-RECORDED (`GOLDEN_RECORD=1`, blessing protocol). The byte diff is
+exactly the PK-name change on every table + the `stream.sql` references (16 files, 28 lines) — e.g.
+`PK_dbo_Customer` → `PK_Customer_Id`, `PK_audit_ChangeLog` → `PK_ChangeLog_Id`, composite
+`PK_dbo_Assignment` → `PK_Assignment_ProjectId_ResourceId`. No non-PK line changed (verified by
+diff). `GoldenEmissionTests` (master + pruned-platform-auto) re-blessed.
+
+**Test-run note.** Validated on the pure surface (Docker-free `dotnet test` filters — the emitter /
+index / golden / fidelity / physical-schema suites). The Docker publish-equivalence / canary suites,
+which re-derive PK names through the same `IndexNaming` on both emit and read-back sides, were not
+run here (no warm container in this environment) — same posture as WP-1a; a warm-container full
+sweep is the follow-up gate.
+
+## 2026-07-16 — WP-4: `email`/`phone` map to platform-native NVARCHAR (the ANSI islands close)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-4 / register C3. `OssysTypeMapping.tryParse`
+mapped the OutSystems `email`/`phone` types to ANSI `VARCHAR(250)/(20)` — a width the code itself
+branded "IMPOSED V1-parity … NOT a source-declared fact". But the platform's own storage is
+NVARCHAR (modeled `ossys_User.EMAIL` is on-disk `nvarchar(250)`; the handbook's guidance is "Email,
+Phone Number → NVARCHAR(n)"; `notes/note14.md` names "Using VARCHAR for User Text" an anti-pattern).
+The VARCHAR mapping left two ANSI islands in an otherwise-NVARCHAR schema — collation/codepage
+sensitivity, implicit-conversion risk, and possible non-Latin truncation on round-trip — and V2's
+text literals already emit as `N'…'`, so VARCHAR was also the inconsistent carrier.
+
+**The decision.** `email → NVARCHAR(250)`, `phone`/`phonenumber → NVARCHAR(20)` (the default width
+budgets unchanged; an explicit declared length still wins via `boundedOr`). One-line-per-arm change
+in `OssysTypeMapping.tryParse` (`SqlStorageType.VarChar` → `NVarChar`), the single source for these
+mappings. The `PrimitiveType` stays `Text` (unchanged), so the data plane is untouched; only the
+concrete DDL storage type widens VARCHAR→NVARCHAR (a safe widening, and NVARCHAR matches the `N'…'`
+literal form the codec already emits).
+
+**Witness.** `OssysTypeMappingTests` — the `WP-4: email/phone map to platform-native NVARCHAR …`
+case pins `NVarChar (Bounded 250)` for `email`, `NVarChar (Bounded 20)` for `phone`/`phonenumber`,
+and the declared-length override (`email (Some 50) → NVarChar (Bounded 50)`). The adapter /
+type-mapping / column-reality suites (70 pure cases) stay green.
+
+**Golden note.** No golden change. The golden corpus is catalog-direct (`GoldenCatalog` sets each
+attribute's `SqlStorage` explicitly and builds its `Email` column as a generic `Text` attribute,
+already `NVARCHAR(250)`), so it never exercised `tryParse`'s `email`/`phone` arms. WP-4 is a
+live/rowset-extraction fidelity fix (same posture as WP-1a/WP-1b): an attribute whose OSSYS
+`DataType` is literally `email`/`phone` now extracts as NVARCHAR.
+
+**Scope note / split.** WP-4 as planned had a second half — register C1's **on-disk type precedence
+for ordinary scalars** (prefer the reflected `#ColumnReality` storage over the logical mapping, with
+a named divergence diagnostic when they disagree). That is a larger, separate change to the
+type-resolution architecture: `OssysTranslation.parseSemanticTypeWithStorage` currently prefers
+deployed storage ONLY for `bt*` reference attributes, and generalizing it to ordinary scalars needs
+the divergence-diagnostic pass and a deliberate "which scalars" decision. It is SPLIT OUT as a
+follow-up (WP-4b). The email/phone ANSI-island deviation (C3) that Danny flagged is fully closed by
+this commit on its own — the logical mapping now equals platform reality, so the specific
+"deployed-NVARCHAR-vs-VARCHAR-logical" conflict no longer arises for email/phone.
+
+## 2026-07-16 — WP-1d: the three placebo FK/cycle config knobs are removed (a fail-closed surface carries no decorative switches)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1d / register E6. Three config toggles were
+parsed and carried but never influenced any decision:
+- **`policy.tightening.foreignKey.allowCrossCatalog`** — `ForeignKeyRules.evaluate` never reads
+  `config.AllowCrossCatalog`; the cross-catalog branch is absent (V2's IR has no catalog field on a
+  reference). Provably inert.
+- **`policy.tightening.foreignKey.treatMissingDeleteRuleAsIgnore`** — flows only through
+  `isIgnoreRule`, which is hardcoded `false` (V2's `OnDelete` DU has no `Ignore` variant and cannot
+  be missing). Provably inert.
+- **`overrides.circularDependencies.strictMode`** — parsed in `Config.fs` and carried on
+  `CircularDependenciesSection`, but `SpecialCircumstancesBinding` reads only `AllowedCycles`. Zero
+  consumers.
+
+A fail-closed config surface must not carry decorative switches (E6): a knob that appears real but
+does nothing is a lie to the operator.
+
+**The decision.** Remove all three (the "or remove it" arm of the packet — "make it real" requires
+IR changes that belong to WP-1c / a future catalog-field refinement). Concretely:
+`ForeignKeyTighteningConfig` loses `AllowCrossCatalog` + `TreatMissingDeleteRuleAsIgnore` (record +
+`create` smart ctor, now 3-arg `enableCreation/allowCrossSchema/allowNoCheckCreation` + the
+`relaxationOnly` literal); `VersionedPolicy` drops the `;acc=`/`;tmd=` fingerprint tokens;
+`Config.fs` drops the DTO fields + JSON parsing (`allowCrossCatalog` /
+`treatMissingDeleteRuleAsIgnore` / `strictMode` become ignored unknown keys — the parser is
+lenient); `TighteningBinding` drops the two `.IsNone`/`defaultArg` pairs; `CircularDependenciesSection`
+loses `StrictMode`; `isIgnoreRule` loses its unused `_config` param. The reserved
+`ForeignKeyOutcome.CrossCatalogBlocked` / `DeleteRuleIgnored` DU variants STAY (they are internal
+outcome variants for pattern-exhaustiveness / the future WP-1c posture, not config switches) — so
+the codec surface is untouched. `CONFIG_REFERENCE.md` records all three retirements.
+
+**Witness.** The affected suites stay green (414 pure cases): `VersionedPolicyTests` (the
+`digestOf Policy.empty` comparisons hold — an empty policy carries no FK config, so no `acc=`/`tmd=`
+token was ever emitted for it; its fingerprint is byte-unchanged), `ConfigTests`,
+`TighteningBindingTests` (the `C.1` binder test now threads the three live flags),
+`SpecialCircumstancesBindingTests`, `ForeignKeyRulesTests` / `ForeignKeyPassTests` (the `create`
+helpers drop the two inert positional args — the live `allowNoCheckCreation` value is preserved),
+`CategoricalUniquenessPassTests`, `DiagnosticsEndToEndTests`, `DeployableReferenceTests`,
+`ApprovalWorkflowTests`, `GoldenEmissionTests` (no golden change — the digest only appears in
+`manifest.json`, which the golden byte-comparison excludes).
+
+**Golden note.** No golden re-record: `Policy.empty` (the golden pipeline's policy) has no FK
+intervention, so its serialized fingerprint is unchanged, and the only surface the fingerprint
+reaches — `manifest.json` — is excluded from the byte-pinned corpus.
+
+---
+
+### Amendment — correcting the "no warm container" caveat in the WP-1a…WP-4 test-run notes
+
+The WP-1b / WP-16 / WP-8 / WP-4 DECISIONS entries (and WP-1a's) carried a test-run caveat asserting
+the Docker suites "were not run" because there was "no warm SQL container in this environment." **That
+reason was wrong and unverified** — it was inherited from the handoff letter's Testcontainers-wedge
+warning and restated without checking; `scripts/test.sh focus` had in fact printed
+`warm: auto-detected container 'projection-mssql-warm' → reusing it`. A warm container was available
+the whole time. On 2026-07-16 the full Docker pool was run against it on the four-WP tree
+(`ff2dda57`): **`scripts/test.sh docker` → 314 passed, 0 failed (803s)**; the only skips are the
+env-var-gated opt-ins (`comprehensive-canary`, `perf-harness`, `perf-corpus`). This closes the
+WP-8 publish-equivalence / canary read-back validation the earlier notes left open, and corrects the
+record: the Docker suites were simply not run *by those commits' inner loop*, not blocked by a
+missing container.
+
+## 2026-07-16 — WP-4b: on-disk type precedence for ordinary scalars (same-category refinement) + the storage-divergence diagnostic
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-4 remainder / register C1. `resolveAttributeType`
+preferred the deployed `#ColumnReality` storage over the logical type mapping ONLY for reference-shaped
+`bt*` attributes; every ordinary scalar used the logical mapping and ignored deployed reality (C1:
+"V1 was more reality-preferring here — its `TypeMappingPolicy` resolves the on-disk rule first for
+ordinary scalars"). Deployed type drift went undiagnosed (only nullability/identity got warnings).
+
+**The decision.** Restore V1's on-disk precedence for ordinary scalars, bounded by a strict safety
+guard, plus name every gap:
+- **Value precedence (`OssysTranslation.resolveAttributeType`).** An ordinary scalar now prefers the
+  deployed storage over the logical mapping — but ONLY as a SAME-CATEGORY refinement: the deployed
+  storage's `PrimitiveType` must equal the logical one (so the data-plane category and row hydration
+  are unchanged; e.g. a logical `text`→NVARCHAR column deployed as VARCHAR, or a width difference). A
+  CROSS-category deployed type (`rtDate` deployed as `datetime`) is a genuine conflict, not a
+  refinement: the logical value stands — no silent reclassification. The forced-runtime-mapping family
+  (`identifier`/`autonumber`/`longinteger`) is EXEMPT (register C2 — the deliberate `BIGINT` is never
+  silently downgraded to a deployed `INT`; that is an estate-verification decision).
+- **Divergence diagnostic (`MetadataSnapshotRunner.columnStorageDivergences`, wired into
+  `LiveModelRead.surfaceDivergences`).** One `Warning`
+  (`adapter.ossys.columnReality.storageDivergence`) per ordinary scalar whose logical-mapped storage
+  differs from the deployed storage, stating which value the engine emits (DEPLOYED for same-category
+  refinements; LOGICAL for the forced-BIGINT family and cross-category conflicts). `bt*` refs are
+  excluded (their deployed-storage precedence is a separate always-on channel).
+
+**Witness.** `ColumnRealitySourceSidePopulationTests` — the same-category deployed win
+(logical `text`/NVARCHAR + deployed `VARCHAR(250)` → emits VARCHAR(250)), the forced-family exemption
+(`identifier` + deployed `int` → keeps BIGINT), and the cross-category guard (reworded: `rtDate` +
+deployed `datetime` → keeps DATE, no reclassification). `ColumnRealityDivergenceTests` — the four
+`columnStorageDivergences` cases (same-category → emits deployed; forced-family → emits logical;
+cross-category → emits logical; agreement → silent; `bt*` → excluded). 95 pure cases green; the full
+Docker pool passed 314/314 (no live fixture had a same-category drift that changed an asserted type).
+
+**Golden note.** No golden change — the golden corpus is catalog-direct (no `#ColumnReality` deployed
+storage), so `resolveAttributeType`'s deployed arm never fires there. Live/rowset-extraction fidelity
+fix (same posture as WP-4).
+
+**Scope.** This completes the WP-4 remainder split out at the WP-4 commit; register C1's on-disk
+precedence is now landed (same-category) with the divergence named. WP-4 (email/phone → NVARCHAR)
+and WP-4b together close register C3 + the ordinary-scalar half of C1.
+
+## 2026-07-16 — WP-1c(i): the `allowCrossSchema` binder default flips to `false` (V1 parity); the three eject-regime decisions are locked in
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. The operator (Danny) settled
+the three open FK-regime decisions the packet §6 flagged as "decisions to bless":
+1. **Orphan handling — V1-strict WITHHOLD.** When the profiler finds orphan rows, the FK is withheld
+   entirely (`allowNoCheckCreation = false`) — "no tightening without proof"; the operator remediates
+   the data upstream before the FK ships. (Not the NOCHECK-pragmatic alternative.)
+2. **`allowCrossSchema` default — FLIP to `false`** (V1's shipped default + the §6 eject strawman).
+3. **Goldens — RE-RECORD to the gated posture** (accepting the byte diff — logical-only references
+   become withheld/refused; source-backed references keep their FKs).
+
+**The decision (this slice — WP-1c(i)).** The `TighteningBinding` binder default for `allowCrossSchema`
+is now `false` (was `true`): a foreignKey intervention parsed from config that omits `allowCrossSchema`
+withholds cross-schema FKs (named `CrossSchemaBlocked` refusal) instead of silently materializing them.
+Only the config-parsed default moves; explicit `allowCrossSchema` values and the `relaxationOnly`
+identity-carry (dormant under `RelaxationOnly`) are unchanged.
+
+**Witness.** 340 pure cases green (`TighteningBinding` / `ForeignKey*` / `Config` /
+`DeployableReference` / `GoldenEmission` / `EstatePosture` / `DiagnosticsEndToEnd`). No test relied on
+the old `true` default (the cross-schema rules tests set the flag explicitly). No golden change — the
+golden corpus does not register a config-parsed foreignKey intervention, so the binder default does
+not reach it.
+
+**Scope note / the WP-1c(ii) remainder.** The MANDATORY evidence-gated eject posture (decisions 1 + 3
+— logical-only references materialize ONLY through the evidence-gated intervention; without evidence
+they are withheld with a named refusal; source-backed references always re-emit) is NOT in this slice.
+It is a larger emission-pipeline change and rides WP-1c(ii). The analysis, for the next agent:
+- **Approach.** Option B (make the foreignKey intervention MANDATORY for eject/production emissions +
+  register it in the golden pipeline) is preferred over Option A (invert the emitter's emit-unless-
+  `DropFk` default to a gated default via a new `DecisionOverlay.EnforceFk` set): B keeps the wide
+  pure-emitter-test surface (which registers no intervention) unaffected, and reuses the existing
+  `DropFk` machinery — under a registered intervention with no profile, a logical-only ref already
+  resolves `EvidenceMissing → DoNotEnforce → DropFk`, and source-backed refs keep their FK via the
+  `DatabaseConstraintPresent` carve-out.
+- **Golden diff is bounded** (~4 FKs): `GoldenCatalog` refs are a MIX — the `withConstraintState true`
+  ones (Engagement.CreatedBy/UpdatedBy/Parent, Ledger.Manager, ChangeLog.User) are source-backed and
+  KEEP their FKs; the plain-`Reference.create` ones (Engagement.Customer, Engagement.AltCustomer,
+  RegionA.Partner, RegionB.Partner) are logical-only and become WITHHELD under gating.
+- **Two golden emission paths** must both gate: the per-table bundle via `Compose.projectWithConfig`
+  (runs tightening → `DecisionOverlay`) and `stream.sql` via `Compose.applyShapingToCatalog` +
+  `SsdtDdlEmitter.statements` (verify its overlay source). The golden `baseConfig.Policy.Tightening`
+  must carry the mandatory foreignKey intervention for the corpus to show the gated posture.
+- **Named refusal.** Every withheld logical-only ref needs a named refusal on the diagnostics stream
+  (the existing `foreignKeyDecisionDropDiagnostics` `decision.fkNotIntroduced` covers the
+  intervention-present case).
+- Validate with the full Docker pool (the canary/publish-equivalence suites exercise FK emission).
+
+## 2026-07-16 — WP-1c(ii): the mandatory evidence-gated eject posture (logical-only references are withheld; the goldens demonstrate it)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. WP-1c(i) landed the operator
+regime decisions (orphans = V1-strict WITHHOLD; `allowCrossSchema` default = `false`; goldens =
+re-record to gated) and the `allowCrossSchema` flip. This slice lands the posture itself: under the
+evidence-gated `foreignKey` intervention, a reference with no physical FK (logical-only —
+`HasDbConstraint = false`: Ignore-rule, external-entity, out-of-scope) and no orphan-free evidence is
+WITHHELD (`EvidenceMissing → DoNotEnforce`, a named `decision.fkNotIntroduced` refusal); a
+source-backed reference re-emits via the `DatabaseConstraintPresent` carve-out. The gate already
+worked when an intervention was registered; the missing piece was making the eject corpus DEMONSTRATE
+it, consistently across both emission paths.
+
+**The decision (Option B — mandatory intervention, not an emitter-default inversion).** The gated
+posture is the packet's "make the intervention mandatory / always on" — reuse the existing `DropFk`
+machinery rather than invert the emitter's emit-unless-dropped default (Option A would have rippled
+through the wide pure-emitter test surface that registers no intervention). Concretely:
+- The golden corpus's `baseConfig` now registers the eject `foreignKey` intervention
+  (`enableCreation = true`, `allowNoCheckCreation = false` — V1-strict; `allowCrossSchema` omitted ⇒
+  the WP-1c(i) `false` default). The golden path derives no profile (`Profile.empty`), so every
+  logical-only reference resolves `EvidenceMissing` and is withheld; source-backed references
+  (`GoldenCatalog`'s `withConstraintState true …`) re-emit.
+- **Both golden emission paths now gate consistently.** The per-table bundle already ran the full
+  tightening (`Compose.projectWithConfig`); the flat `stream.sql` previously used
+  `SsdtDdlEmitter.statements` with an EMPTY overlay and silently kept every FK. New
+  `Compose.projectWithConfigAndState` returns the post-chain `ComposeState`, so `emitScenario` renders
+  the stream from `state.Catalog` under `DecisionOverlay.ofComposeState state` — the same overlay the
+  bundle used. A reference withheld in the per-table files is now withheld in the flat stream too.
+
+**Witness.** Goldens RE-RECORDED (`GOLDEN_RECORD=1`, blessing protocol): the byte diff is exactly the
+four LOGICAL-ONLY FKs withheld — `FK_Engagement_Customer_CustomerId`,
+`FK_Engagement_Customer_AltCustomerId`, `FK_RegionA_RegionB_PartnerId`, `FK_RegionB_RegionA_PartnerId`
+— each dropped from BOTH its per-table file and `stream.sql` (bundle/stream now consistent), with the
+adjacent column/DEFAULT comma reflow; every SOURCE-BACKED FK (Engagement.CreatedBy/UpdatedBy/Parent,
+Ledger.Manager, ChangeLog.User) is unchanged. `DeployableReferenceTests` gains two emission-level
+witnesses: a logical-only corporate shape under the gated intervention + no profile emits ZERO FKs;
+a source-backed corporate shape emits both (the carve-out). 176 pure cases green across
+`GoldenEmission` / `DeployableReference` / `ForeignKey*` / `DecisionOverlay` / `DecisionEmission` /
+`Composition` / `TighteningBinding`.
+
+**Scope note.** The "mandatory" is realized as the eject/production CONFIG registering the intervention
+(the §6 strawman already does; the golden corpus now models it) — not a code-forced injection, so
+dev/test emissions without an intervention keep the permissive default. This is the faithful reading
+of "evidence gate as opt-in → mandatory eject posture": the eject config opts in, always. Together
+with WP-1a/1b/1d/1c(i) this closes register E1/E2/E3/E6; the only WP-1 remainder is WP-1e (the msg-1785
+cascade-path pre-analyzer, backlog).
+
+## 2026-07-16 — WP-3: empty-string preservation (F11) — option-grain cells end-to-end; `''` survives distinct from NULL; the tolerance retires
+
+**Context.** Register F11 / packet top-table row 3, the campaign's largest change. The V2 IR used the
+empty raw string as its UNIVERSAL NULL sentinel (NM-18): `ReadSide`'s row loop wrote `""` for
+`IsDBNull`, `SqlLiteral.ofRaw ""` = `NullLit` for every type, `Bulk.parseRaw ""` = `DBNull` — so a
+genuine empty-string Text value (which IS OutSystems' null-at-the-language-level, platform shape
+`NULL … DEFAULT ('')`) was erased to NULL on every write path. V1 preserved `N''`; its only coercion
+was the deliberate single-space static-seed sentinel. The erasure was closed (the
+`EmptyTextNormalizedToNull` tolerance), not silent — this entry retires it by removing the erasure.
+A first attempt (2026-07-16, reverted) taught the true shape: the fix is NOT a `CellValue` change —
+the distinction dies at `ReadSide → RowQuantum`, upstream of everything, so the CARRIERS had to move.
+
+**The decision — three-state cells, one grain at a time.**
+- `StaticRow.Values : Map<Name, string option>`; `RowQuantum.Cells : string voption[]`;
+  `CellValue.Raw : string option`. `None`/`ValueNone` = SQL NULL (out-of-band, no in-band sentinel);
+  `Some ""` = a genuine empty string (Text renders `N''`, Binary the zero-length `0x`); an ABSENT Map
+  key = column-not-provided (the availability-set / sink-DEFAULT rule) — three distinct states where
+  one string used to conflate them. The quantum takes `voption` (struct option), by the same
+  measured-allocation prior that fired its `[<Struct>]` promotion — a reference `Some` per non-NULL
+  cell at estate scale is exactly the per-cell allocation the carrier exists to avoid.
+- `ReadSide`'s row loop reads `IsDBNull → ValueNone` else `ValueSome (formatter …)` (the actual fix),
+  as do the three sibling DB readers (workbench `EvidenceCache.rowsOf`, the CLI impact `readBefore`,
+  `PeerEstateHarness`). Formatters still see non-null cells only.
+- `SqlLiteral.ofRaw` / `Bulk.parseRaw` / `CachedValue.ofRaw` take the option cell. An empty raw on a
+  type with NO empty form (Integer/Decimal/Boolean/temporal/Guid) refuses loudly —
+  `rawValue.empty.notEmptyCapable`, the NM-20 `FormatException` shape — never a silent NULL.
+- **Config conventions are boundary mappings, not carrier states:** the migration-dependencies file's
+  documented `"" = NULL` maps to `None` at parse (JSON `null` too; a genuine `''` is not expressible
+  in that file — pre-existing, now explicit); the σ synthetic boundary and `Policy` delete-scope
+  terms keep their `""`-authors-NULL conventions at their own parse edges.
+- **The row hash distinguishes NULL from `''` by OMISSION** (a NULL cell contributes no `name=` pair)
+  — the rule the SQL-side plane (`ServerDigest`, FOR XML) already applied. Rows without NULLs keep
+  their pre-WP-3 bytes; present-`None` ≡ absent-key. Surveyed before deciding: NO consumer persists
+  these hashes across runs (fidelity/canary compares are intra-run; ActConsent fingerprints and the
+  estate store use independent recipes) — so no re-bless and no evidence re-record. The write-only
+  `fidelity.rows.json` digest STRINGS change value where NULLs occur; nothing reads them back.
+- **Deliberately byte-stable flattens** (`StaticRow.valueOrEmpty`): ActConsent/ActEvidence consent
+  fingerprints (persisted blessings — lifting them is a RE-BLESS decision, named and deferred),
+  capture-journal chunk text and capture src-key pairs, NM-58 reconcile keying (NULL ≡ blank ≡
+  no-key), FK-follow/orphan keying (NULL-or-empty FK = unpopulated, both remap grains mirrored).
+  Option-grain COMPARES landed where distinctness is the point: reconcile divergences,
+  static-lookup drift, the workbench FieldDiff (NULL-vs-`''` is a real difference now).
+- **The single-space sentinel is V1's rule, adopted deliberately** —
+  `KindColumns.outSystemsSpaceSentinel`, the executable form of `StaticEntitySeedScriptGenerator
+  .NormalizeValue` (exactly `" "`, NULLABLE Text only): applied by the STATIC-SEED lanes only (both
+  grains + the population emitter); NEVER on transfer/reflection (mirror reality) or the
+  operator-authored migration lane.
+- **Codecs version-gate.** `CatalogCodec` and `GoldenCodec` go to version 2: NULL serializes as JSON
+  `null`; a v1 artifact's `""` still READS as NULL (its original meaning — replay semantics
+  preserved), while v2 round-trips `Some ""` faithfully. Consequence, named: `serializeKind` feeds
+  the estate store's `SchemaShapeHash`, so NULL-bearing static kinds show one-time staleness and
+  self-heal by re-profiling.
+- **CSV destination**: RFC 4180 has no NULL, so the convention is deliberate and carried in
+  `export-manifest.json` (`nullEncoding`): a bare empty field is NULL; a force-quoted `""` is an
+  empty string.
+- **`EmptyTextNormalizedToNull` retires** — variant, `@ladder` row, detector
+  (`detectEmptyTextNormalization`/`observeCell`), and the emit path's structural residual collector
+  (now the honest empty base case). `allKnown` drops to 12. Migration note: the config token now
+  fails CLOSED (witnessed) — operator configs carrying it must drop it.
+- **Evidence-plane semantics change, named:** a `''` Text cell no longer profiles as NULL evidence
+  (`CachedValue.ofRaw Text (Some "") = StringValue ""`) — the derived plane now matches what the
+  live profiler measures (`COUNT(*) WHERE col IS NULL` never counted `''`). Tightening verdicts over
+  derived evidence can differ from pre-WP-3 runs where `''` was the only "NULL".
+
+**Witness.** The flipped Docker canary ``data canary: empty-string Text survives transfer distinct
+from NULL (F11 preservation)`` (sink now `[(1,false);(2,true);(3,false)]`); the `TextFidelity` golden
+static kind seeding `(1, N''), (2, NULL), (3, NULL ← the sentinel), (4, N'hello')` in BOTH blessed
+corpora (master + data-lanes — the additive diff IS the demonstration); F11 hash-distinctness +
+omission-rule pins (`RowQuantumTests`); the seeds-lane sentinel test (exactly one `N' '` survives —
+the mandatory one); `ofRaw`/`parseRaw`/`CachedValue` contract tests incl. the named refusal; the
+`N''` ScriptDom insert round-trip; the CSV encoding witness incl. the manifest key; the fail-closed
+retired-token config witness; codec v2 round-trip law incl. `Some ""`. **Final gates at this
+commit: full Docker pool 314/314; full pure pool 4360/0.** (En route: the slices-1–3 checkpoint's
+full pure run surfaced 1 PRE-EXISTING failure — the WP-4 SqlStorage-axis witness, fixed as its own
+commit — and the first Docker run surfaced three Integration fixtures still authoring NULL as the
+retired `""` sentinel, exactly the erasure class WP-3 removes; the named
+`rawValue.empty.notEmptyCapable` refusal caught them, and they now author `None`.)
+
+**Scope notes.** Display flattens are DEFERRED to the Voice deliberately: the workbench "(blank)"
+renders NULL and `''` identically, divergence samples flatten NULL to `""` — a distinct NULL
+rendering is operator-copy design, not carrier semantics. The V1-JSON default lift keeps a non-text
+`"default": ""` at its pre-WP-3 `DEFAULT NULL` (ambiguous V1 authoring; refusing would fail
+whole-model ingest) while a Text one now faithfully yields `DEFAULT N''`. `ReadSide.attachDefaults`'s
+reflected-default literal parsing carries quotes through `normalizeDefault` (`('')` → the two-char
+`''` text) — a pre-existing WP-9/17-territory shape, untouched. `DEFAULT ('')` reconciliation proved
+docs-only: the constraint plane always rendered `DEFAULT N''`; the two stale "renders DEFAULT NULL"
+claims (GoldenCatalog comment, THE_GOLDEN_EMISSION) are corrected. WP-17's Float/Real/DateTimeOffset/
+Xml faithful-or-refuse work now rides an option-grain carrier that can express what it needs.

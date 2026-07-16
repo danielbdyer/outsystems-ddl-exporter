@@ -28,6 +28,13 @@ WHEN MATCHED THEN UPDATE
         [Target].[VALUE]     = [Source].[VALUE]
 WHEN NOT MATCHED THEN INSERT ([ID], [TENANT_ID], [VALUE]) VALUES ([Source].[ID], [Source].[TENANT_ID], [Source].[VALUE]);
 GO
+MERGE INTO [dbo].[GOLD_TEXT_FIDELITY]
+ AS [Target]
+USING (VALUES (1, N''), (2, NULL), (3, NULL), (4, N'hello')) AS [Source]([ID], [BODY]) ON [Target].[ID] = [Source].[ID]
+WHEN MATCHED THEN UPDATE 
+    SET [Target].[BODY] = [Source].[BODY]
+WHEN NOT MATCHED THEN INSERT ([ID], [BODY]) VALUES ([Source].[ID], [Source].[BODY]);
+GO
 SET IDENTITY_INSERT [dbo].[GOLD_TIER] ON;
 MERGE INTO [dbo].[GOLD_TIER]
  AS [Target]

@@ -185,11 +185,12 @@ module private TransferCanaryFixtures =
         "(1,100,N'a'),(2,100,N'b'); " +
         "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] OFF;"
 
-    /// 6.A.4 — a Text column seeded with a genuine empty string, a NULL,
-    /// and a non-empty value. `ReadSide.formatRawValue` collapses both the
-    /// empty string and NULL to the raw `""`, and `Bulk.parseRaw` maps `""`
-    /// back to `DBNull`, so the empty string normalizes to NULL on the sink
-    /// (the named tolerance `EmptyTextNormalizedToNull`).
+    /// WP-3 (F11) — a Text column seeded with a genuine empty string, a
+    /// NULL, and a non-empty value. The read side carries NULL out-of-band
+    /// (`ValueNone`) and the empty string as a value (`ValueSome ""`), and
+    /// `Bulk.parseRaw` writes them back distinctly — the empty string
+    /// SURVIVES transfer (the 6.A.4 tolerance `EmptyTextNormalizedToNull`
+    /// is retired).
     let emptyTextDdl =
         "CREATE TABLE [dbo].[OSUSR_ET_NOTE] (" +
         "[ID] INT NOT NULL PRIMARY KEY, [BODY] NVARCHAR(50) NULL);"
@@ -938,17 +939,13 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
-    // 6.A.4 — empty-string Text ↔ NULL fidelity. The transfer IR cannot
-    // distinguish a genuine empty-string Text value from NULL (ReadSide
-    // collapses both to ""), so an empty string normalizes to NULL on the
-    // sink. This is the named, CLOSED tolerance `EmptyTextNormalizedToNull`
-    // (not a silent drop): the witness asserts the rule explicitly at the
-    // sink-DB level (the canary's row-hash can't see it — both sides read "").
+    // WP-3 (F11) — empty-string Text ↔ NULL fidelity. The transfer IR now
+    // carries NULL out-of-band, so a genuine empty-string Text value and a
+    // NULL are DISTINCT end-to-end and both survive transfer faithfully —
+    // the witness asserts preservation at the sink-DB level.
     [<Fact>]
-    member _.``data canary: empty-string Text normalizes to NULL on transfer (named tolerance)`` () =
+    member _.``data canary: empty-string Text survives transfer distinct from NULL (F11 preservation)`` () =
         if not (TransferCanaryFixtures.skipIfNoDocker "XferEmptyText") then () else
-        // The behavior is a named, closed tolerance — not a silent erasure.
-        Assert.Contains(ToleratedDivergence.EmptyTextNormalizedToNull, ToleratedDivergence.allKnown)
         TaskSync.run (fun () ->
             fixture.WithEphemeralDatabase "XferEmptyTextSrc" (fun src _ ->
                 task {
@@ -968,10 +965,10 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! srcBodies = TransferCanaryFixtures.noteBodies src
                                 Assert.Equal<(int * bool) list>([ (1, false); (2, true); (3, false) ], srcBodies)
 
-                                // Sink: row 1's empty string normalized to NULL (the tolerance);
+                                // Sink: row 1's empty string SURVIVES non-null (F11);
                                 // NULL stays NULL; 'hello' survives non-null.
                                 let! sinkBodies = TransferCanaryFixtures.noteBodies sink
-                                Assert.Equal<(int * bool) list>([ (1, true); (2, true); (3, false) ], sinkBodies)
+                                Assert.Equal<(int * bool) list>([ (1, false); (2, true); (3, false) ], sinkBodies)
                             })
                 }))
 

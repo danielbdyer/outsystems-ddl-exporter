@@ -72,7 +72,7 @@ let private migRow (n: int) : MigrationDependencyRow =
         | _       -> sprintf "Role%d" n
     { KindKey    = migrationKind.SsKey
       Identifier = SsKey.synthesized "Assignment" (sprintf "MigRow%d" n) |> Result.value
-      Values     = migrationKind.Attributes |> List.map cell |> Map.ofList }
+      Values     = migrationKind.Attributes |> List.map cell |> StaticRow.presentValues }
 
 // The bootstrap lane is a NON-static, NON-migration kind (Customer) so the
 // three lanes are disjoint (the partition law holds). Its rows are supplied in
@@ -90,7 +90,7 @@ let private bootRow (n: int) : StaticRow =
         | Integer -> string n
         | _       -> sprintf "Customer%d" n
     { Identifier = SsKey.synthesized "Customer" (sprintf "BootRow%d" n) |> Result.value
-      Values     = bootstrapKind.Attributes |> List.map cell |> Map.ofList }
+      Values     = bootstrapKind.Attributes |> List.map cell |> StaticRow.presentValues }
 
 let private bootstrapRows : Map<SsKey, StaticRow list> =
     Map.ofList [ bootstrapKind.SsKey, [ bootRow 1; bootRow 2 ] ]

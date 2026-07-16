@@ -330,15 +330,27 @@ module OssysTranslation =
     ///      `longinteger`, which force the runtime mapping (so a
     ///      `longinteger` stays `BIGINT` regardless of any external
     ///      override).
-    ///   2. `deployedStorage` (concrete `#ColumnReality` evidence) — for
-    ///      reference-shaped `bt*` attributes ONLY, and only when no
-    ///      explicit external type is present. The `bt*` → BIGINT
-    ///      reference convention is a default, not a law: an estate may
-    ///      deploy a reference over textual physical storage, and forcing
-    ///      such a column through an integer conversion corrupts row
-    ///      hydration. Ordinary logical types (e.g. `rtDate`) are NEVER
-    ///      widened by deployed storage — only an explicit external type
-    ///      may change them.
+    ///   2. `deployedStorage` (concrete `#ColumnReality` evidence), when no
+    ///      explicit external type is present:
+    ///        - reference-shaped `bt*` attributes: always adopt the deployed
+    ///          storage (the `bt*` → BIGINT convention is a default, not a law
+    ///          — an estate may deploy a reference over textual storage, and
+    ///          forcing it through an integer conversion corrupts hydration);
+    ///        - **ordinary scalars (WP-4b, register C1): prefer the deployed
+    ///          storage over the logical mapping when it is a SAME-CATEGORY
+    ///          refinement** (its `PrimitiveType` equals the logical one, so
+    ///          the data-plane category and row hydration are unchanged — e.g.
+    ///          a logical `VARCHAR` column deployed as `NVARCHAR`, or a width
+    ///          difference). This restores V1's on-disk precedence. A
+    ///          CROSS-category deployed type (`rtDate` deployed as `datetime`)
+    ///          is a genuine conflict, not a refinement: the logical value
+    ///          stands (no silent reclassification), and the divergence is
+    ///          named by `MetadataSnapshotRunner.columnStorageDivergences`.
+    ///        - the forced-runtime-mapping family (`identifier` / `autonumber`
+    ///          / `longinteger`) is EXEMPT (register C2): the deliberate
+    ///          `BIGINT` imposition is never silently downgraded to a deployed
+    ///          `INT` — that INT-vs-BIGINT call is an estate-verification
+    ///          decision. Its divergence is still named.
     ///
     /// When either channel overrides a reference-shaped attribute's
     /// storage, the semantic `PrimitiveType` is re-projected from the
@@ -362,16 +374,33 @@ module OssysTranslation =
         let isBtReference =
             normalized.StartsWith("bt", System.StringComparison.Ordinal)
             && normalized.Contains "*"
+        // The forced-runtime-mapping family: `identifier` / `autonumber` /
+        // `longinteger` force the runtime `BIGINT` regardless of any storage
+        // evidence (external or deployed). Register C2: the INT-vs-BIGINT call
+        // on identity columns is a deliberate estate-verification decision, not
+        // an automatic follow-the-deployed-type.
+        let isForcedRuntimeMapping =
+            match normalized with
+            | "identifier" | "autonumber" | "longinteger" -> true
+            | _ -> false
         parseSemanticType normalized length precision scale
         |> Result.map (fun (pt, ossysStorage) ->
             let externalOverride =
-                match normalized with
-                | "identifier" | "autonumber" | "longinteger" -> None
-                | _ -> externalDbType |> Option.bind (fun raw -> SqlStorageType.ofSqlType raw None None None)
+                if isForcedRuntimeMapping then None
+                else externalDbType |> Option.bind (fun raw -> SqlStorageType.ofSqlType raw None None None)
             match externalOverride, deployedStorage with
             | Some ext, _ when isBtReference -> SqlStorageType.toPrimitiveType ext, ext
             | Some ext, _ -> pt, ext
             | None, Some deployed when isBtReference -> SqlStorageType.toPrimitiveType deployed, deployed
+            // WP-4b (DECISIONS 2026-07-16): an ordinary scalar prefers the
+            // deployed storage as a SAME-CATEGORY refinement (deployed primitive
+            // == logical primitive ⇒ the data-plane category / hydration are
+            // unchanged); the forced-runtime-mapping family is exempt (C2), and
+            // a cross-category deployed type keeps the logical value (named as a
+            // divergence, never a silent reclassification).
+            | None, Some deployed
+                when not isForcedRuntimeMapping
+                     && SqlStorageType.toPrimitiveType deployed = pt -> pt, deployed
             | None, _ -> pt, ossysStorage)
 
     /// V1 reference_deleteRuleCode → V2 ReferenceAction. Mirrors the
@@ -414,6 +443,36 @@ module OssysTranslation =
         | Some "SET_NULL"     -> Some SetNull
         | Some "SET_DEFAULT"  -> None
         | Some _              -> None
+
+    /// WP-1b (DECISIONS 2026-07-16) — resolve a reference's emitted
+    /// ON DELETE action. For a physically-backed FK the deployed action
+    /// reflected in `#FkReality.DeleteAction` (SQL-Server vocabulary) IS
+    /// database reality and outranks the OutSystems model's delete-rule
+    /// code: `E1` — "for physically-backed FKs, mirror `sys.foreign_keys`".
+    /// The reflected action wins when it is present AND representable in
+    /// V2's `ReferenceAction` DU; otherwise (logical-only references with no
+    /// reflected FK, or a reflected action V2 cannot carry such as
+    /// `SET_DEFAULT`) the model rule stands. `reflectedDeleteAction` is the
+    /// raw `#FkReality.DeleteAction` string; `modelCode` the
+    /// `reference_deleteRuleCode`.
+    let chooseOnDeleteAction (modelCode: string option) (reflectedDeleteAction: string option) : Result<ReferenceAction> =
+        match parseSqlForeignKeyAction reflectedDeleteAction with
+        | Some reflected -> Result.success reflected
+        | None           -> parseDeleteRule modelCode
+
+    /// WP-1b — the companion to `chooseOnDeleteAction`: `Some (model,
+    /// reflected)` exactly when a physically-backed FK carries a
+    /// representable reflected delete action that DIFFERS from the action
+    /// the model's delete-rule code maps to (so `chooseOnDeleteAction`
+    /// silently preferred the reflected value). Callers surface this as a
+    /// named divergence diagnostic — reality wins the emitted action, but
+    /// the operator is told the model disagreed, never silently overridden.
+    /// `None` when there is no reflected FK, the reflected action is
+    /// unrepresentable, the model code is unmapped, or the two agree.
+    let deleteActionDivergence (modelCode: string option) (reflectedDeleteAction: string option) : (ReferenceAction * ReferenceAction) option =
+        match parseSqlForeignKeyAction reflectedDeleteAction, parseDeleteRule modelCode with
+        | Some reflected, Ok model when reflected <> model -> Some (model, reflected)
+        | _ -> None
 
     // -----------------------------------------------------------------------
     // Translation — V1 attribute → V2 Attribute.

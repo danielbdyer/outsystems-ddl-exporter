@@ -529,6 +529,7 @@ let private userAccountRefRow : OssysRowsetTypes.ReferenceRow =
         DeleteRuleCode      = Some "Protect"
         HasDbConstraint     = true
         OnUpdate            = None
+        ReflectedOnDelete   = None
         IsConstraintTrusted = true
     }
 
@@ -1615,6 +1616,7 @@ let ``a reference aimed at a dropped shadow's EntityId re-aims at the survivor (
                     DeleteRuleCode      = None
                     HasDbConstraint     = true
                     OnUpdate            = None
+                    ReflectedOnDelete   = None
                     IsConstraintTrusted = true } ] }
     let normalized, _ = OssysRowsetReader.normalizeBundle bundle
     let reference = Assert.Single(normalized.References)

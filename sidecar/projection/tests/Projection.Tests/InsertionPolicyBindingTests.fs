@@ -157,10 +157,10 @@ let ``Wave-3 3.4: buildPolicyFromConfig threads emission.tolerance into Emission
         { baseCfg with
             Emission =
                 { baseCfg.Emission with
-                    Tolerance = Some (Projection.Core.Tolerance.ofSet (Set.ofList [ Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull ])) } }
+                    Tolerance = Some (Projection.Core.Tolerance.ofSet (Set.ofList [ Projection.Core.ToleratedDivergence.CharAnsiPaddingTolerated ])) } }
     match Compose.buildPolicyFromConfig cfg emptyCatalog with
     | Ok policy ->
-        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull policy.Emission.ConfiguredTolerance)
+        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.CharAnsiPaddingTolerated policy.Emission.ConfiguredTolerance)
         Assert.False(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.DecimalScaleTolerated policy.Emission.ConfiguredTolerance)
     | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
 
@@ -171,7 +171,7 @@ let ``Wave-3 3.4: buildPolicyFromConfig defaults ConfiguredTolerance to permissi
     let cfg = mkConfig "SchemaOnly"
     match Compose.buildPolicyFromConfig cfg emptyCatalog with
     | Ok policy ->
-        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull policy.Emission.ConfiguredTolerance)
+        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.CharAnsiPaddingTolerated policy.Emission.ConfiguredTolerance)
         Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.HeaderCommentsOmitted policy.Emission.ConfiguredTolerance)
     | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
 

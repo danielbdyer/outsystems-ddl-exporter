@@ -84,7 +84,9 @@ module PeerEstateHarness =
                         kind.Attributes
                         |> List.choose (fun a ->
                             match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
-                            | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                            // WP-3 (F11): NULL reads as `None`, a genuine
+                            // empty string as `Some ""`.
+                            | Some i -> Some (a.Name, (if r.IsDBNull i then None else Some (string (r.GetValue i))))
                             | None -> None)
                         |> Map.ofList
                     acc.Add { Identifier = kind.SsKey; Values = values }

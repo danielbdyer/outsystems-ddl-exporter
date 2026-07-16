@@ -570,12 +570,12 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     let idAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey && a.IsIdentity)
                     let rows =
                         [ { Identifier = ReverseLegFixtures.aKey "Floor" "r1"
-                            Values = Map.ofList [ ReverseLegFixtures.nm "Id", "1000"; ReverseLegFixtures.nm "Email", "floor-a@x" ] }
+                            Values = StaticRow.presentValues [ ReverseLegFixtures.nm "Id", "1000"; ReverseLegFixtures.nm "Email", "floor-a@x" ] }
                           { Identifier = ReverseLegFixtures.aKey "Floor" "r2"
-                            Values = Map.ofList [ ReverseLegFixtures.nm "Id", "1001"; ReverseLegFixtures.nm "Email", "floor-b@x" ] } ]
+                            Values = StaticRow.presentValues [ ReverseLegFixtures.nm "Id", "1001"; ReverseLegFixtures.nm "Email", "floor-b@x" ] } ]
                     let! pairs =
                         SurrogateCapture.captureChunk sink customer
-                            (fun (a: Attribute) -> StaticRow.valueOrEmpty a.Name)
+                            (fun (a: Attribute) -> StaticRow.value a.Name)
                             idAttr Set.empty
                             CaptureLane.RowwiseScopeIdentity rows
                     Assert.Equal<(string * string) list>([ ("1000", "1"); ("1001", "2") ], pairs)

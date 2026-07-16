@@ -192,7 +192,7 @@ let ``C.2: AllowedCycles resolves logical { module, entity } entries to SsKey se
     }
     let overrides =
         { emptyOverrides with
-            CircularDependencies = Some { AllowedCycles = [ cycle ]; StrictMode = false } }
+            CircularDependencies = Some { AllowedCycles = [ cycle ] } }
     let cfg = mkConfig overrides
     match SpecialCircumstancesBinding.fromConfig catalog cfg with
     | Ok sc ->
@@ -212,7 +212,7 @@ let ``C.2: AllowedCycles unresolved logical ref surfaces structured error`` () =
     }
     let overrides =
         { emptyOverrides with
-            CircularDependencies = Some { AllowedCycles = [ cycle ]; StrictMode = false } }
+            CircularDependencies = Some { AllowedCycles = [ cycle ] } }
     let cfg = mkConfig overrides
     match SpecialCircumstancesBinding.fromConfig catalog cfg with
     | Ok _ -> Assert.Fail("expected Error")
@@ -234,7 +234,7 @@ let ``C.2: errors aggregate across both allowMissingPk and allowedCycles axes`` 
     let overrides =
         { emptyOverrides with
             AllowMissingPrimaryKey = [ { Module = "Ghost"; Entity = "Kind" } ]
-            CircularDependencies   = Some { AllowedCycles = [ cycle ]; StrictMode = false } }
+            CircularDependencies   = Some { AllowedCycles = [ cycle ] } }
     let cfg = mkConfig overrides
     match SpecialCircumstancesBinding.fromConfig catalog cfg with
     | Ok _ -> Assert.Fail("expected Error")

@@ -66,7 +66,7 @@ let private tenantKey = mkKey [ "Sales"; "Tenant" ]
 let private tenantCatalog () : Catalog =
     let row idVal code tid =
         { Identifier = mkKey [ "Sales"; "Tenant"; "Row"; code ]
-          Values = Map.ofList [ mkName "Id", idVal; mkName "Code", code; mkName "TenantId", tid ] }
+          Values = StaticRow.presentValues [ mkName "Id", idVal; mkName "Code", code; mkName "TenantId", tid ] }
     let kind : Kind =
         { SsKey = tenantKey; Name = mkName "Tenant"; Origin = Native
           Modality = [ Static [ row "1" "US" "1"; row "2" "CA" "1" ] ]
@@ -83,7 +83,7 @@ let private settingKey = mkKey [ "Ops"; "Setting" ]
 let private settingCatalog () : Catalog =
     let kind : Kind =
         { SsKey = settingKey; Name = mkName "Setting"; Origin = Native
-          Modality = [ Static [ { Identifier = mkKey [ "Ops"; "Setting"; "Row"; "S1" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Val", "Alice" ] } ] ]
+          Modality = [ Static [ { Identifier = mkKey [ "Ops"; "Setting"; "Row"; "S1" ]; Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Val", "Alice" ] } ] ]
           Physical = mkTableId "dbo" "OSUSR_E2E_SETTING"
           Attributes =
             [ { Attribute.create (mkKey [ "Ops"; "Setting"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
@@ -96,7 +96,7 @@ let private orderLineKey = mkKey [ "Sales"; "OrderLine" ]
 let private orderLineCatalog () : Catalog =
     let row o p q =
         { Identifier = mkKey [ "Sales"; "OrderLine"; "Row"; o + "-" + p ]
-          Values = Map.ofList [ mkName "OrderId", o; mkName "ProductId", p; mkName "Qty", q ] }
+          Values = StaticRow.presentValues [ mkName "OrderId", o; mkName "ProductId", p; mkName "Qty", q ] }
     let kind : Kind =
         { SsKey = orderLineKey; Name = mkName "OrderLine"; Origin = Native
           Modality = [ Static [ row "1" "10" "5"; row "1" "20" "3" ] ]
@@ -114,7 +114,7 @@ let private couponCatalog () : Catalog =
     let codeKey = mkKey [ "Sales"; "Coupon"; "Code" ]
     let row idv code =
         { Identifier = mkKey [ "Sales"; "Coupon"; "Row"; code ]
-          Values = Map.ofList [ mkName "Id", idv; mkName "Code", code ] }
+          Values = StaticRow.presentValues [ mkName "Id", idv; mkName "Code", code ] }
     let kind : Kind =
         { SsKey = couponKey; Name = mkName "Coupon"; Origin = Native
           Modality = [ Static [ row "1" "SAVE10"; row "2" "SAVE20" ] ]
