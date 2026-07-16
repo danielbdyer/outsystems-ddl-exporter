@@ -943,8 +943,10 @@ module MetadataSnapshotRunner =
     ///   - Each `OssysReferenceRow` produces one `ReferenceRow` with the
     ///     DeleteRule lifted from the joined Attribute (V1 carries it on
     ///     the attribute; V2's `ReferenceRow` carries it on the reference).
-    ///     `HasDbConstraint` defaults to `true` when an FK is reflected
-    ///     in the references rowset.
+    ///     `HasDbConstraint` is `true` exactly when the attribute's FK is
+    ///     reflected in `#FkReality` (the `sys.foreign_keys` projection);
+    ///     a reference with no reflected FK is logical-only and carries
+    ///     `false` (JSON-path `ISNULL(HasFK, 0)` parity — WP-1a).
 
     /// Parse V1's `#AllIdx.DataCompressionJson` into a single-value
     /// compression code when the JSON encodes uniform compression
@@ -1306,10 +1308,24 @@ module MetadataSnapshotRunner =
             |> List.choose (fun r ->
                 match r.RefEntityName, Map.tryFind r.AttrId attributeById with
                 | Some refName, Some attr ->
-                    // The JOIN: when this attribute's FK is reflected
-                    // in #FkReality, propagate UpdateAction + the
-                    // inverted IsNoCheck. Absent rows degrade to the
-                    // ReferenceRow defaults (None / true).
+                    // The JOIN: this attribute's FK is reflected in
+                    // #FkReality iff `fkOpt` is Some. That presence IS
+                    // `HasDbConstraint` — a reflected FK propagates
+                    // UpdateAction + the inverted IsNoCheck; a reference
+                    // with NO reflected FK is logical-only, so
+                    // HasDbConstraint = false (mirroring the JSON path's
+                    // ISNULL(HasFK, 0) parity), OnUpdate None, trusted by
+                    // default.
+                    //
+                    // WP-1a (DECISIONS 2026-07-16) — this field was
+                    // hardcoded `true`, so every live-extracted reference
+                    // presented as source-backed and the FK evidence gate
+                    // (which lets source-backed FKs bypass orphan checks)
+                    // could never see a logical-only reference. The
+                    // hardcode contradicted this function's own doc
+                    // ("HasDbConstraint defaults to true when an FK is
+                    // reflected") and diverged from the JSON path, which
+                    // already defaults absent → false.
                     let fkOpt = Map.tryFind r.AttrId fkRealityByParentAttrId
                     let onUpdate =
                         fkOpt |> Option.bind (fun fk -> fk.UpdateAction)
@@ -1323,7 +1339,7 @@ module MetadataSnapshotRunner =
                             RefEntityName       = refName
                             RefEntityId         = r.RefEntityId
                             DeleteRuleCode      = attr.DeleteRule
-                            HasDbConstraint     = true
+                            HasDbConstraint     = Option.isSome fkOpt
                             OnUpdate            = onUpdate
                             IsConstraintTrusted = isTrusted
                         } : OssysRowsetTypes.ReferenceRow)

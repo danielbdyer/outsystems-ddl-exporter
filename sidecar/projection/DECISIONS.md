@@ -27581,3 +27581,40 @@ new cases (both `None` — a chosen posture is not an opportunity, mirroring
 as no-remediation (correct — it IS the remediation); the structured displays gain their tags.
 Every pre-amendment construction site compiles verbatim through the unchanged `create`
 signatures.
+
+## 2026-07-16 — WP-1a: the live-extraction `HasDbConstraint` hardcode is fixed (the FK evidence gate can see logical-only references again)
+
+**Context.** The first landed item of the SSDT-handoff remediation plan
+(`SSDT_HANDOFF_REVIEW_PACKET.md` §10, WP-1a — the plan's own sequencing note makes it "precede
+everything that reasons about the logical-vs-backed split"). The live-extraction projection
+`MetadataSnapshotRunner.toBundle` JOINs each `OssysReferenceRow` to `#FkReality` (via
+`#FkColumns.ParentAttrId`) to decide whether an attribute's FK is physically reflected — but it
+hardcoded `HasDbConstraint = true` for every reference. Consequence: on a LIVE extraction every
+reference presented as source-backed, so the FK tightening gate — whose source-backed carve-out
+(2026-06-12 reconciliation slice 1) lets a reflected FK enforce BEFORE and REGARDLESS of the
+orphan / enable-creation gates — could never observe a logical-only (`HasDbConstraint = false`)
+reference. The whole logical-vs-backed distinction the E2/E3 evidence regime depends on was
+erased on the one path that reads a real estate. The hardcode also contradicted this function's
+own doc comment ("`HasDbConstraint` … true when an FK is reflected") and diverged from the JSON
+adapter path, which already defaults absent → `false` (V1's `ISNULL(HasFK, 0)` parity, chapter
+4.6 slice α).
+
+**The decision.** `HasDbConstraint = Option.isSome fkOpt` — true exactly when the reference's
+attribute carries a reflected `#FkReality` row (`fkOpt` was already in scope, computed for the
+sibling `OnUpdate` / `IsConstraintTrusted` axes; the fix reads the join it already performs). No
+other behaviour moves: the two sibling axes keep their prior derivation, and the emitted OUTPUT
+under the default (no-intervention) config is unchanged — a logical-only reference still emits an
+FK by default (the `THE_GOLDEN_EMISSION.md` "logical-only → FK under no intervention" pin holds).
+The fix only lets a CONFIGURED `foreignKey` intervention gate a logical-only reference on a live
+extraction, which is the entire point of the evidence regime.
+
+**Witness.** `ReferenceHasDbConstraintLivePathTests` (pure, at the `toBundle` seam, upstream of
+`FkRealityRowsetRoundTripTests`' RowsetBundle-layer fixtures): a two-reference snapshot — one with
+a matching `#FkColumns`+`#FkReality` pair, one logical-only — projects `HasDbConstraint`
+true/false respectively, and the sibling FK-reality axes stay intact. The JSON path's
+`ReferenceHasDbConstraintTests` already pinned absent → false; the live and JSON paths now agree.
+
+**Scope note.** This is WP-1a ONLY — the isolated hardcode. The remainder of WP-1 (emitting the
+reflected `#FkReality.DeleteAction` for physically-backed FKs, making the evidence-gated posture
+the mandatory eject default, and resolving the placebo knobs `treatMissingDeleteRuleAsIgnore` /
+`allowCrossCatalog` / `strictMode`) rides later slices.

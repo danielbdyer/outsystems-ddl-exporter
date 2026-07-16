@@ -226,6 +226,7 @@
     <Compile Include="ColumnRealityDivergenceTests.fs" />
     <Compile Include="AdvisoryTuningTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
+    <Compile Include="ReferenceHasDbConstraintLivePathTests.fs" />
     <Compile Include="DataIntegrityCheckerTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
     <Compile Include="SqlprojWireTests.fs" />
