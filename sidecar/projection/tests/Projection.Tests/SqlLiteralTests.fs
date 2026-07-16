@@ -76,10 +76,10 @@ let ``SqlLiteral.ofRaw on an unrecognized Boolean raw fails loud, not silent-fal
     Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw Boolean (Some "2") |> ignore) |> ignore
 
 [<Fact>]
-let ``SqlLiteral.ofRaw maps temporal types to TemporalLit`` () =
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10", SqlLiteral.ofRaw Date (Some "2026-05-10"))
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime (Some "2026-05-10 12:30:00.0000000"))
-    Assert.Equal<SqlLiteral> (TemporalLit "12:30:00", SqlLiteral.ofRaw Time (Some "12:30:00"))
+let ``SqlLiteral.ofRaw maps each temporal category to its own variant (WP-17d)`` () =
+    Assert.Equal<SqlLiteral> (DateLit "2026-05-10", SqlLiteral.ofRaw Date (Some "2026-05-10"))
+    Assert.Equal<SqlLiteral> (DateTimeLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime (Some "2026-05-10 12:30:00.0000000"))
+    Assert.Equal<SqlLiteral> (TimeLit "12:30:00", SqlLiteral.ofRaw Time (Some "12:30:00"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Guid to GuidLit`` () =
@@ -116,8 +116,15 @@ let ``SqlLiteral.toString renders TextLit with N prefix and single-quote doublin
     Assert.Equal<string> ("N'O''Brien'", SqlLiteral.toString (TextLit "O'Brien"))
 
 [<Fact>]
-let ``SqlLiteral.toString renders TemporalLit and GuidLit with single-quote wrapping`` () =
-    Assert.Equal<string> ("'2026-05-10'", SqlLiteral.toString (TemporalLit "2026-05-10"))
+let ``SqlLiteral.toString renders the V1 explicit-CAST temporal forms (WP-17d)`` () =
+    // V1 `SqlLiteralFormatter.cs:90` parity: precision-explicit,
+    // language-independent — never a bare quoted string.
+    Assert.Equal<string> ("CAST('2026-05-10' AS date)", SqlLiteral.toString (DateLit "2026-05-10"))
+    Assert.Equal<string> ("CAST('2026-05-10 12:30:00.0000000' AS datetime2(7))", SqlLiteral.toString (DateTimeLit "2026-05-10 12:30:00.0000000"))
+    Assert.Equal<string> ("CAST('08:30:00' AS time(7))", SqlLiteral.toString (TimeLit "08:30:00"))
+
+[<Fact>]
+let ``SqlLiteral.toString renders GuidLit with single-quote wrapping`` () =
     Assert.Equal<string> ("'0F0E0D0C-0B0A-0908-0706-050403020100'", SqlLiteral.toString (GuidLit "0F0E0D0C-0B0A-0908-0706-050403020100"))
 
 [<Fact>]

@@ -126,7 +126,14 @@ module ScriptDomBuild =
         | Decimal  -> SqlDataTypeOption.Decimal
         | Text     -> SqlDataTypeOption.NVarChar
         | Boolean  -> SqlDataTypeOption.Bit
-        | DateTime -> SqlDataTypeOption.DateTime2
+        // WP-17(d) (DECISIONS 2026-07-16; audit §5a; packet C4): the
+        // evidence-less fallback carries the PLATFORM legacy default —
+        // `DATETIME` — matching the storage-evidence lane, so a
+        // catalog-direct emission (goldens, ReadSide-derived, JSON
+        // without SqlStorage) no longer silently upgrades to DATETIME2
+        // and misrepresents what a live export deploys. A datetime2
+        // SOURCE still emits DATETIME2 via its storage evidence.
+        | DateTime -> SqlDataTypeOption.DateTime
         | Date     -> SqlDataTypeOption.Date
         | Time     -> SqlDataTypeOption.Time
         | Binary   -> SqlDataTypeOption.VarBinary
@@ -276,10 +283,35 @@ module ScriptDomBuild =
             | _ -> ()
             r :> DataTypeReference
 
+    /// WP-17(d) — build the `CAST('<raw>' AS <temporal-type>)` expression
+    /// the three temporal `SqlLiteral` variants render to. The parameter
+    /// is a non-national string literal (SQL temporal strings); the
+    /// target type carries its scale when the type takes one
+    /// (`datetime2(7)` / `time(7)`; `date` is scale-less).
+    let private temporalCast (raw: string) (option: SqlDataTypeOption) (scale: int option) : ScalarExpression =
+        let dt = SqlDataTypeReference()
+        dt.SqlDataTypeOption <- option
+        dt.Name <- SchemaObjectName()
+        dt.Name.Identifiers.Add(bracketed (string option))
+        scale
+        |> Option.iter (fun s ->
+            let lit = IntegerLiteral()
+            lit.Value <- string s
+            dt.Parameters.Add(lit))
+        let param = StringLiteral()
+        param.Value <- raw
+        param.IsNational <- false
+        let cast = CastCall()
+        cast.DataType <- dt
+        cast.Parameter <- param
+        cast :> ScalarExpression
+
     /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
     /// (specifically a `Literal` subclass projected to its supertype
-    /// for use in `RowValue.ColumnValues` + DEFAULT clauses). Per the
-    /// Tier-1 #4 transition (RawTextEmitter retirement arc): the
+    /// for use in `RowValue.ColumnValues` + DEFAULT clauses; the WP-17(d)
+    /// temporal variants project to `CastCall` — still a
+    /// `ScalarExpression`, so every consumer below is shape-unchanged).
+    /// Per the Tier-1 #4 transition (RawTextEmitter retirement arc): the
     /// IR→typed-literal projection lives in
     /// `Projection.Core.SqlLiteral`; this is the SSDT-resident
     /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by
@@ -303,11 +335,18 @@ module ScriptDomBuild =
             let l = IntegerLiteral()
             l.Value <- if b then "1" else "0"
             l :> ScalarExpression
-        | TemporalLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- false
-            l :> ScalarExpression
+        // WP-17(d) (DECISIONS 2026-07-16) — V1's explicit-CAST temporal
+        // forms (`SqlLiteralFormatter.cs:90`): `CAST('<raw>' AS
+        // datetime2(7) / date / time(7))`. Precision-explicit and
+        // language-independent; the typed `#temp`/column reconciles the
+        // storage type on INSERT exactly as the bare literal did, so
+        // CDC-silence is unchanged (audit §5c).
+        | DateTimeLit raw ->
+            temporalCast raw SqlDataTypeOption.DateTime2 (Some 7)
+        | DateLit raw ->
+            temporalCast raw SqlDataTypeOption.Date None
+        | TimeLit raw ->
+            temporalCast raw SqlDataTypeOption.Time (Some 7)
         | GuidLit raw ->
             let l = StringLiteral()
             l.Value <- raw

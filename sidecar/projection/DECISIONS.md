@@ -28187,3 +28187,45 @@ schema APPEARING mid-timeline arrives via new kinds whose CREATE TABLEs the bund
 carries alongside the new `Schemas/` file; an in-place `migrate` against an estate missing the
 schema still requires the bundle deploy (or hand DDL) first — the named residual, re-opened if
 a real mid-timeline schema-add migration surfaces.
+
+## 2026-07-16 — WP-17(d): the temporal contract — the fallback lane carries legacy `DATETIME`; seed literals carry V1's explicit CAST
+
+**Decision (packet C4, adopted 2026-07-15; audit §5).** Two coupled temporal fixes, one commit:
+
+- **The evidence-less DDL fallback is the platform legacy `DATETIME`.** Pre-WP-17, the same
+  logical `DateTime` attribute emitted `DATETIME` from a live export (storage evidence) and
+  `DATETIME2` from the fallback lane (catalog-direct goldens, ReadSide-derived catalogs, JSON
+  without `SqlStorage`) — the goldens misrepresented what a live export deploys. Three mirror
+  sites flipped together: `ScriptDomBuild.sqlDataTypeOption`, `SqlStorageType.ofPrimitiveType`,
+  `SqlTypeCorrespondence.baseName`. A `datetime2` SOURCE still emits `DATETIME2` via its
+  storage evidence — only the no-evidence default moved.
+- **Temporal literals render as V1's explicit CAST** (`SqlLiteralFormatter.cs:90` parity):
+  `CAST('…' AS datetime2(7))` / `AS date` / `AS time(7)` — precision-explicit and
+  language-independent (`datetime2` parses the ISO form identically under any
+  `SET DATEFORMAT`/`LANGUAGE`; the bare quoted string relied on implicit conversion whose
+  space-separated no-`T` form is a parsing boundary case against legacy `DATETIME`). The
+  category-blind `SqlLiteral.TemporalLit` split into `DateTimeLit`/`DateLit`/`TimeLit` — each
+  variant owns its CAST target (the compiler enumerated every site). ScriptDom plane renders
+  via a `CastCall` (`temporalCast`); the text plane via `toString`. CDC-silence is unchanged:
+  the typed `#temp`/column reconciles the storage type on INSERT exactly as the bare literal
+  did (audit §5c); the Docker pool's CDC-silence canaries are the executable witness.
+- **Codec compatibility, replay preserved:** the codec writes the three new kinds; a pre-WP-17
+  artifact's category-blind `"TemporalLit"` still READS, classified by the canonical raw shape
+  (`RawValueCodec` forms are disjoint: space ⇒ DateTime, colon ⇒ Time, else Date) — witnessed.
+  No version refusal, no re-record of old artifacts.
+
+**Witness.** The `ofRaw` per-category mapping; the three `toString` CAST forms; the ScriptDom
+row-value CAST pin (`InsertRow` temporal cells render `CAST ('…' AS DATETIME2 (7))`/`DATE`/
+`TIME (7)`); the legacy-`TemporalLit` codec read; `ofPrimitiveType`/`baseName` mirror pins
+updated with the rationale; the golden re-record (both corpora commands; only master moved):
+`DATETIME2 → DATETIME` on the fallback-lane columns + the ScalarGallery temporal DEFAULTs now
+carrying the CAST forms — the diff is exactly the two decided changes and their alignment
+whitespace, nothing else.
+
+**Scope notes.** The storage-evidence lane is untouched (`DATETIME` already; `datetime2`
+sources keep `DATETIME2(s)`). The audit's S3 hazard row closes; S1/S2/S4/S5 (Float/Real,
+DateTimeOffset, control chars, Xml) remain WP-17(a–c,e,f) — the option-grain carrier and this
+CAST machinery are their substrate. V1's byte-form (`CAST('…' AS datetime2(7))`, lowercase,
+no space) vs V2's ScriptDom house form (`CAST ('…' AS DATETIME2 (7))`) differ in rendering,
+deliberately: the DECISION adopts the explicit-CAST semantics; each terminal boundary keeps
+its own pinned generator style.

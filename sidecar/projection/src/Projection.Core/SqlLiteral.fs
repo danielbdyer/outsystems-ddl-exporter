@@ -48,12 +48,22 @@ type SqlLiteral =
     /// rendered as `N'<escaped>'` (single-quote doubled). Maps to
     /// ScriptDom `StringLiteral` with `IsNational=true`.
     | TextLit of raw: string
-    /// Temporal literal (DateTime / Date / Time) — the raw ISO-8601
-    /// form per `RawValueCodec.DateTimeFormat` / `DateFormat` /
-    /// `TimeFormat`. Rendered as `'<raw>'`. Maps to ScriptDom
-    /// `StringLiteral` with `IsNational=false` (SQL Server temporal
-    /// literals are non-national strings).
-    | TemporalLit of raw: string
+    /// DateTime literal — the raw 7-digit form per `RawValueCodec
+    /// .DateTimeFormat`. WP-17(d) (DECISIONS 2026-07-16): rendered as
+    /// V1's explicit `CAST('<raw>' AS datetime2(7))`
+    /// (`SqlLiteralFormatter.cs:90` parity) — precision-explicit and
+    /// language-independent (`datetime2` parses the ISO form the same
+    /// under any `SET DATEFORMAT`/`LANGUAGE`; the pre-WP-17 bare
+    /// `'<raw>'` relied on implicit conversion). Maps to ScriptDom
+    /// `CastCall`. The three temporal categories are distinct variants
+    /// because each owns its CAST target type.
+    | DateTimeLit of raw: string
+    /// Date literal — the raw `yyyy-MM-dd` form per `RawValueCodec
+    /// .DateFormat`. Rendered as `CAST('<raw>' AS date)` (V1 parity).
+    | DateLit of raw: string
+    /// Time literal — the raw TimeSpan `c` form per `RawValueCodec
+    /// .TimeFormat`. Rendered as `CAST('<raw>' AS time(7))` (V1 parity).
+    | TimeLit of raw: string
     /// Guid literal — the raw `D` form per `RawValueCodec.GuidFormat`
     /// (8-4-4-4-12 hyphenated). Rendered as `'<raw>'`. Maps to
     /// ScriptDom `StringLiteral` with `IsNational=false`.
@@ -97,7 +107,9 @@ module SqlLiteral =
             | Integer -> IntegerLit raw
             | Decimal -> DecimalLit raw
             | Boolean -> BooleanLit (RawValueCodec.parseBoolean raw)
-            | DateTime | Date | Time -> TemporalLit raw
+            | DateTime -> DateTimeLit raw
+            | Date -> DateLit raw
+            | Time -> TimeLit raw
             | Guid -> GuidLit raw
 
     /// Render a typed `SqlLiteral` as SQL text. The terminal boundary
@@ -113,7 +125,12 @@ module SqlLiteral =
         | DecimalLit s       -> s
         | BooleanLit true    -> "1"
         | BooleanLit false   -> "0"
-        | TemporalLit raw    -> System.String.Concat("'", raw, "'")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateTimeFormat` / `DateFormat` / `TimeFormat` (typed canonical form, no escapable characters); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
+        // WP-17(d) — V1's explicit-CAST temporal forms (SqlLiteralFormatter.cs:90):
+        // precision-explicit, language-independent. The raw carries no escapable
+        // characters (RawValueCodec canonical forms).
+        | DateTimeLit raw    -> System.String.Concat("CAST('", raw, "' AS datetime2(7))")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateTimeFormat` (typed canonical form, no escapable characters); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
+        | DateLit raw        -> System.String.Concat("CAST('", raw, "' AS date)")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateFormat`; same boundary as above
+        | TimeLit raw        -> System.String.Concat("CAST('", raw, "' AS time(7))")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.TimeFormat`; same boundary as above
         | GuidLit raw        -> System.String.Concat("'", raw, "'")  // LINT-ALLOW: terminal SQL Guid-literal text formatting; raw is from `RawValueCodec.GuidFormat` (canonical D form, no escapable characters); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
         | TextLit raw        ->
             // Single-quote doubling per the SQL-standard escape; `N`

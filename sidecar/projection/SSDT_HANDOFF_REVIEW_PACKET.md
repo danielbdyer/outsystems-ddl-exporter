@@ -289,6 +289,12 @@ DECIMAL(37,8)`; bare decimal clamps `(18,0)`; `text ≥ 2000` → `NVARCHAR(MAX)
 V1-identical).
 *Decided (2026-07-15): planned fix — WP-17 (fallback-lane datetime default + explicit-CAST seed
 literals), with the broader scalar-fidelity gaps it belongs to.*
+*Landed (2026-07-16, WP-17(d)): the evidence-less fallback now carries legacy `DATETIME`
+(three mirror sites: `sqlDataTypeOption`/`ofPrimitiveType`/`baseName` — the goldens now show
+what a live export deploys), and temporal literals render V1's explicit CAST
+(`SqlLiteral.DateTimeLit/DateLit/TimeLit` → `CAST(… AS datetime2(7)/date/time(7))`, both
+planes); pre-WP-17 codec artifacts' category-blind `TemporalLit` still reads (raw-shape
+classification, witnessed). DECISIONS 2026-07-16 — WP-17(d).*
 
 **C5. Identity: `Is_AutoNumber` → `IDENTITY (1, 1)` fixed** — [HARD]
 No reader consults `sys.identity_columns`; no `DBCC CHECKIDENT` emitted. Matters for fresh
@@ -832,9 +838,10 @@ and adopting golden-diff-as-change-review going forward.
     tripwire. ⚑ WP-16. · Inactive-attribute disposition. ⚑ WP-7. · PK convention. ⚑ WP-8.
 12. **Data-plane scalar collapse** (C11, `SCALAR_REPRESENTATION_AUDIT.md`) — `Float`/`Real`
     precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
-    re-serialize + CDC `<>` compile error, temporal bare-literal vs V1's CAST, and the
-    fallback-lane `DateTime → DATETIME2` upgrade. ⚑ WP-17 (bites on DBA/External columns —
-    size via the §9 estate inventory).
+    re-serialize + CDC `<>` compile error, ~~temporal bare-literal vs V1's CAST, and the
+    fallback-lane `DateTime → DATETIME2` upgrade~~ (**✅ WP-17(d) landed 2026-07-16** — CAST
+    literals + legacy-`DATETIME` fallback). ⚑ WP-17(a–c,e,f) remain (bite on DBA/External
+    columns — size via the §9 estate inventory).
 
 **Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
 (index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
@@ -990,7 +997,8 @@ so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c
 (d) **Temporal literals** — adopt V1's explicit `CAST(… AS datetime2(7))` / `AS date` / `AS
 time(7)` seed-literal form (language-independent, precision-explicit), replacing the bare quoted
 string; and fix the fallback DDL lane so `DateTime` without storage evidence defaults to legacy
-`DATETIME` rather than `DATETIME2` (aligns the goldens with a live export).
+`DATETIME` rather than `DATETIME2` (aligns the goldens with a live export). **✅ LANDED
+2026-07-16 (DECISIONS — WP-17(d)).**
 (e) **Text control characters** — escape CR/LF/TAB (V1's `CHAR()` concatenation) rather than
 embedding raw control bytes in `N'…'`.
 (f) **Fixture backlog** — a round-trip witness for every concrete type that has none today

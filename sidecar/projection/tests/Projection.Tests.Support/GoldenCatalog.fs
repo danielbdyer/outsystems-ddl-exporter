@@ -101,13 +101,15 @@ let private scalarGallery : Kind =
           { attr (akey "ScalarGallery.IsActive") "IsActive" "IS_ACTIVE" Boolean false with
               DefaultValue = Some (SqlLiteral.BooleanLit true)
               DefaultName  = Some (nm "DF_ScalarGallery_IsActive") }
-          // DateTime / Date / Time — each with its temporal DEFAULT.
+          // DateTime / Date / Time — each with its temporal DEFAULT
+          // (WP-17(d): the category-bearing variants; rendered as V1's
+          // explicit CAST forms).
           { attr (akey "ScalarGallery.OccurredOn") "OccurredOn" "OCCURRED_ON" DateTime true with
-              DefaultValue = Some (SqlLiteral.TemporalLit "2020-01-01 00:00:00") }
+              DefaultValue = Some (SqlLiteral.DateTimeLit "2020-01-01 00:00:00") }
           { attr (akey "ScalarGallery.DueDate") "DueDate" "DUE_DATE" Date true with
-              DefaultValue = Some (SqlLiteral.TemporalLit "2020-01-01") }
+              DefaultValue = Some (SqlLiteral.DateLit "2020-01-01") }
           { attr (akey "ScalarGallery.AlarmAt") "AlarmAt" "ALARM_AT" Time true with
-              DefaultValue = Some (SqlLiteral.TemporalLit "08:30:00") }
+              DefaultValue = Some (SqlLiteral.TimeLit "08:30:00") }
           // Guid + DEFAULT.
           { attr (akey "ScalarGallery.ExternalKey") "ExternalKey" "EXTERNAL_KEY" Guid true with
               DefaultValue = Some (SqlLiteral.GuidLit "00000000-0000-0000-0000-000000000000") }

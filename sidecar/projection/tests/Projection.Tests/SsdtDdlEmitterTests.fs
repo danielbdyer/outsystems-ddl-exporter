@@ -1401,3 +1401,25 @@ let ``G6: the dacpac arm accepts a non-dbo catalog (schema objects join the decl
     match DacpacEmitter.emit (enrich catalog) with
     | FsResult.Ok bytes -> Assert.True(bytes.Length > 0, "dacpac bytes present")
     | FsResult.Error e -> failwithf "expected the non-dbo dacpac to build; got %A" e
+
+// ---------------------------------------------------------------------------
+// WP-17(d) (DECISIONS 2026-07-16) — the DATA-plane temporal literal carries
+// V1's explicit CAST form through the ScriptDom boundary (the golden
+// ScalarGallery DEFAULTs pin the DDL-plane form; this pins the row-value
+// plane the MERGE/INSERT lanes ride).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17d: an InsertRow temporal cell renders as the explicit CAST form (ScriptDom plane)`` () =
+    let table = mkTableId "dbo" "OSUSR_T_EVENT"
+    let cells : CellValue list =
+        [ { Column = "ID";          Type = Integer;  Raw = Some "1" }
+          { Column = "OCCURRED_ON"; Type = DateTime; Raw = Some "2026-05-10 12:30:00.0000000" }
+          { Column = "DUE_ON";      Type = Date;     Raw = Some "2026-05-10" }
+          { Column = "ALARM_AT";    Type = Time;     Raw = Some "08:30:00" } ]
+    let sql = Render.toText [ Statement.InsertRow (table, cells) ]
+    Assert.Contains("CAST ('2026-05-10 12:30:00.0000000' AS DATETIME2 (7))", sql)
+    Assert.Contains("CAST ('2026-05-10' AS DATE)", sql)
+    Assert.Contains("CAST ('08:30:00' AS TIME (7))", sql)
+    // And never the pre-WP-17 bare quoted forms.
+    Assert.DoesNotContain("'2026-05-10 12:30:00.0000000',", sql)

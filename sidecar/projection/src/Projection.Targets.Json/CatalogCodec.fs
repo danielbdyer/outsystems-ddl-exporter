@@ -172,7 +172,13 @@ module CatalogCodec =
          | SqlLiteral.DecimalLit d    -> jw.WriteString("kind", "DecimalLit");  jw.WriteString("value", d)
          | SqlLiteral.BooleanLit b    -> jw.WriteString("kind", "BooleanLit");  jw.WriteBoolean("value", b)
          | SqlLiteral.TextLit r       -> jw.WriteString("kind", "TextLit");     jw.WriteString("value", r)
-         | SqlLiteral.TemporalLit r   -> jw.WriteString("kind", "TemporalLit"); jw.WriteString("value", r)
+         // WP-17(d) — the three temporal categories write their own kinds
+         // (each owns a distinct CAST target); a pre-WP-17 artifact's
+         // category-blind "TemporalLit" still READS (classified by the
+         // canonical raw shape — see rSqlLiteral).
+         | SqlLiteral.DateTimeLit r   -> jw.WriteString("kind", "DateTimeLit"); jw.WriteString("value", r)
+         | SqlLiteral.DateLit r       -> jw.WriteString("kind", "DateLit");     jw.WriteString("value", r)
+         | SqlLiteral.TimeLit r       -> jw.WriteString("kind", "TimeLit");     jw.WriteString("value", r)
          | SqlLiteral.GuidLit r       -> jw.WriteString("kind", "GuidLit");     jw.WriteString("value", r)
          | SqlLiteral.BinaryLit h     -> jw.WriteString("kind", "BinaryLit");   jw.WriteString("value", h))
         jw.WriteEndObject()
@@ -580,7 +586,21 @@ module CatalogCodec =
             | "DecimalLit"  -> field el "value" asString |> Result.map SqlLiteral.DecimalLit
             | "BooleanLit"  -> field el "value" asBool   |> Result.map SqlLiteral.BooleanLit
             | "TextLit"     -> field el "value" asString |> Result.map SqlLiteral.TextLit
-            | "TemporalLit" -> field el "value" asString |> Result.map SqlLiteral.TemporalLit
+            // WP-17(d) — the category-bearing temporal kinds.
+            | "DateTimeLit" -> field el "value" asString |> Result.map SqlLiteral.DateTimeLit
+            | "DateLit"     -> field el "value" asString |> Result.map SqlLiteral.DateLit
+            | "TimeLit"     -> field el "value" asString |> Result.map SqlLiteral.TimeLit
+            // Pre-WP-17 artifacts wrote one category-blind "TemporalLit";
+            // classify by the canonical raw shape (`RawValueCodec`
+            // formats are disjoint: DateTimeFormat carries a space,
+            // TimeFormat carries colons but no space, DateFormat
+            // neither) — replay semantics preserved, no re-record.
+            | "TemporalLit" ->
+                field el "value" asString
+                |> Result.map (fun r ->
+                    if r.Contains " " then SqlLiteral.DateTimeLit r
+                    elif r.Contains ":" then SqlLiteral.TimeLit r
+                    else SqlLiteral.DateLit r)
             | "GuidLit"     -> field el "value" asString |> Result.map SqlLiteral.GuidLit
             | "BinaryLit"   -> field el "value" asString |> Result.map SqlLiteral.BinaryLit
             | o -> fail "codec.sqlLiteral.unknown" (sprintf "unknown SqlLiteral kind '%s'" o)) el
