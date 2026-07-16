@@ -123,6 +123,16 @@ module Compose =
             /// (the default) writes neither — byte-identical to the pre-wire bundle.
             Sqlproj : string option
             PostDeploy : string option
+            /// G3 (DECISIONS 2026-07-16) — the ACCUMULATED `.refactorlog`
+            /// document (deployed-vocabulary; prior chain ⊕ this run's
+            /// displacement, deduped by `OperationKey`), rendered at the
+            /// episode's `At`. Present exactly when the run is store-
+            /// threaded (`--lifecycle-store` / an env `store`): the store
+            /// is the rename evidence; a store-less run is genesis and
+            /// writes nothing — byte-identical to the pre-G3 bundle.
+            /// Written as `ProjectionCatalog.refactorlog` beside the
+            /// `.sqlproj`, which carries the matching `RefactorLog` item.
+            RefactorLog : string option
             /// The typed SSDT manifest built during projection (the same
             /// value serialized into `manifest.json` within `SsdtBundle`).
             /// Surfaced here so consumers — `runWithConfig`'s `RunReport`,
@@ -233,6 +243,34 @@ module Compose =
         | DisplacementFailed of EmitError
         | RecordFailed of message: string
 
+    /// G3 (DECISIONS 2026-07-16) — the store's PRE-EMISSION read phase,
+    /// threaded into the emission core so the bundle carries the accumulated
+    /// `.refactorlog` inside the ATOMIC write (and the `.sqlproj` its
+    /// matching `RefactorLog` item). The chain is loaded and its edge fold
+    /// derived ONCE per store-threaded run (the S51 one-durable-load
+    /// discipline — the load moved BEFORE the emission; it did not
+    /// duplicate); the post-bundle record phase reuses the same values.
+    /// Consequence, named: a malformed store now refuses BEFORE the bundle
+    /// lands (the bundle's content depends on the store, so emitting
+    /// without it would ship a wrong document); a RECORD failure still
+    /// surfaces after the bundle (the emission succeeded, provenance did
+    /// not).
+    type RefactorLogContext = {
+        /// The prior emission's schema plane (genesis ⇒ the empty catalog).
+        Prior : Catalog
+        /// The prior chain's accumulated deployed-vocabulary entries — the
+        /// fold of `RefactorLogEmitter.emitDeployed` over the timeline's
+        /// edges (genesis ⇒ empty). Historical edges fold with NO pins:
+        /// pins are a this-run config fact; an old operation a today-pin
+        /// would suppress is a no-match no-op for DacFx either way, and
+        /// the simpler derivation wins (rationale at the fold site).
+        PriorEntries : RefactorLogEntry list
+        /// The episode's boundary-supplied instant — the rendered
+        /// document's `ChangeDateTime` (audit metadata; T1 holds because
+        /// `at` is an input, never a clock read).
+        At : System.DateTimeOffset
+    }
+
     /// Per-artifact relative path. Centralized so tests and the CLI
     /// agree on naming.
     [<RequireQualifiedAccess>]
@@ -265,6 +303,11 @@ module Compose =
         let sqlproj = "ProjectionCatalog.sqlproj"
         [<Literal>]
         let postDeploy = "Script.PostDeployment.sql"
+        /// G3 — the accumulated refactorlog of a store-threaded run. Mirror
+        /// `SqlprojEmitter.refactorLogFileName` (the `.sqlproj`'s `RefactorLog`
+        /// item names this file; the `.sqlproj`-build test pins the pairing).
+        [<Literal>]
+        let refactorLog = "ProjectionCatalog.refactorlog"
         /// The Model Fidelity Report — structured (`fidelity.json`) + the
         /// rolled-up operator text (`fidelity.txt`). Default-on; emitted
         /// alongside the other run artifacts on full-export and migrate.
@@ -515,6 +558,9 @@ module Compose =
           // `runWithConfigCore` seam alongside `Dacpac`, not by an `EmitStep`.
           Sqlproj           = None
           PostDeploy        = None
+          // Store-gated accumulated refactorlog (G3); populated at the
+          // `runWithConfigCore` seam when the run is store-threaded.
+          RefactorLog       = None
           // The faithful, round-trippable snapshot of the emitted model — seeded
           // directly (like `Manifest` / `Fidelity`), written on every bundle
           // emission so two publish dirs can be diffed precisely.
@@ -1020,11 +1066,13 @@ module Compose =
                 File.WriteAllBytes(Path.Combine(stagingDir, ArtifactPath.dacpac), bytes)
                 [ Path.Combine(outputDir, ArtifactPath.dacpac) ]
         // The SDK-style SSDT project + its post-deploy (operator-gated, absent by
-        // default). Text artifacts written into the same staging dir so the
-        // atomic-replace contract covers them; final paths projected post-swap.
+        // default) + the accumulated refactorlog (store-gated, G3). Text
+        // artifacts written into the same staging dir so the atomic-replace
+        // contract covers them; final paths projected post-swap.
         let sqlprojFinalPaths =
-            [ ArtifactPath.sqlproj,    outputs.Sqlproj
-              ArtifactPath.postDeploy, outputs.PostDeploy ]
+            [ ArtifactPath.sqlproj,     outputs.Sqlproj
+              ArtifactPath.postDeploy,  outputs.PostDeploy
+              ArtifactPath.refactorLog, outputs.RefactorLog ]
             |> List.choose (fun (rel, body) ->
                 body
                 |> Option.map (fun b ->
@@ -1200,6 +1248,51 @@ module Compose =
                 Projection.Core.Catalog.allKinds catalog
                 |> List.filter (fun k -> Set.contains k.Physical physicalSources)
                 |> List.map (fun k -> k.SsKey)
+                |> Set.ofList
+
+    /// G3 (DECISIONS 2026-07-16) — the kinds whose DEPLOYED table name is the
+    /// operator-authored `Physical.Table`, not the logical name: every kind an
+    /// operator `tableRenames` override targets, in EITHER form. The chain's
+    /// LAST writer to `Kind.Physical` is the operator rename (physical-form
+    /// kinds additionally ride the S6.3 pins past the logical substitution),
+    /// so the emitted CREATE TABLE carries the operator's physical target for
+    /// all of them. The refactorlog's deployed-name projection must follow —
+    /// a model-side rename on such a kind changes no deployed name (suppress),
+    /// and a column rename on one must qualify by the operator's table.
+    /// Physical sources resolve against the ORIGINAL catalog (the OSSYS
+    /// coordinate the operator named — the `physicalRenamePins` precedent);
+    /// logical sources resolve by exact (module, entity) logical names (the
+    /// rename pass owns authoritative matching; this projection mirrors it).
+    let private operatorRenamedKinds
+        (cfg: Config.Config)
+        (catalog: Projection.Core.Catalog)
+        : Set<SsKey> =
+        match cfg.Overrides.TableRenames with
+        | [] -> Set.empty
+        | renames ->
+            match RenameBinding.fromConfig renames with
+            | Error _ -> Set.empty   // binding errors surface in `applyRenames`.
+            | Ok specs ->
+                let physicalSources =
+                    specs
+                    |> List.choose (fun s ->
+                        match s.Key with
+                        | Projection.Core.Passes.TableRename.Physical source -> Some source
+                        | Projection.Core.Passes.TableRename.Logical _       -> None)
+                    |> Set.ofList
+                let logicalSources =
+                    specs
+                    |> List.choose (fun s ->
+                        match s.Key with
+                        | Projection.Core.Passes.TableRename.Logical (m, e) -> Some (Name.value m, Name.value e)
+                        | Projection.Core.Passes.TableRename.Physical _     -> None)
+                    |> Set.ofList
+                catalog.Modules
+                |> List.collect (fun m -> m.Kinds |> List.map (fun k -> (m, k)))
+                |> List.filter (fun (m, k) ->
+                    Set.contains k.Physical physicalSources
+                    || Set.contains (Name.value m.Name, Name.value k.Name) logicalSources)
+                |> List.map (fun (_, k) -> k.SsKey)
                 |> Set.ofList
 
     /// Build the full `Policy` aggregate from a parsed `Config` and
@@ -1445,6 +1538,7 @@ module Compose =
     /// report-only callers).
     let private runWithConfigCore
         (cfg: Config.Config)
+        (refactorCtx: RefactorLogContext option)
         (parsed: Result<Catalog>)
         (bootstrapLane: DataComposer.BootstrapLane)
         (migration: Projection.Targets.Data.MigrationDependencyContext)
@@ -1498,6 +1592,35 @@ module Compose =
                     | Error errors -> Result.failure errors
                     | Ok dacpac ->
                     let outputs = { outputs with Dacpac = dacpac }
+                    // G3 (DECISIONS 2026-07-16) — the store-threaded run's
+                    // accumulated `.refactorlog`, computed HERE so it rides the
+                    // ATOMIC bundle write. The displacement derives over the
+                    // RENAMED catalog — the same pre-chain plane episodes record
+                    // (the hydration graft adds static ROWS only, so the rename
+                    // channels agree with the record phase's read-catalog plane;
+                    // the file⇔leg agreement is pinned by test). Deployed
+                    // vocabulary via `emitDeployed` (this run's S6.3 pins);
+                    // accumulation against the prior chain's fold (deduped by
+                    // `OperationKey`); rendered at the episode's `At`. Store-less
+                    // runs (`refactorCtx = None`) write nothing — byte-identical.
+                    let refactorLogR : Result<string option> =
+                        match refactorCtx with
+                        | None -> Result.success None
+                        | Some ctx ->
+                            match RefactorLogEmitter.emitDeployed (operatorRenamedKinds cfg catalog) (CatalogDiff.between ctx.Prior renamedCatalog) with
+                            | Error e ->
+                                Result.failureOf
+                                    (ValidationError.create
+                                        "pipeline.refactorLog.emitFailed"
+                                        (sprintf "The run's refactorlog displacement could not be emitted: %A" e))
+                            | Ok current ->
+                                let accumulated =
+                                    RefactorLogEmitter.accumulateArtifact ctx.PriorEntries current
+                                Result.success (Some (RefactorLogRender.ofEntriesAt ctx.At accumulated))
+                    match refactorLogR with
+                    | Error errors -> Result.failure errors
+                    | Ok refactorLog ->
+                    let outputs = { outputs with RefactorLog = refactorLog }
                     // `emission.sqlproj: true` — drop a buildable SDK-style SSDT
                     // project (the `.sqlproj` + its post-deploy) over the data
                     // lanes the publish already emitted, so the operator's
@@ -1517,7 +1640,8 @@ module Compose =
                             let postDeploy =
                                 if List.isEmpty postDeployLanes then None
                                 else Some (PostDeployEmitter.renderIncludes postDeployLanes)
-                            let sqlproj = SqlprojEmitter.emit dataLanes (Option.isSome postDeploy)
+                            let sqlproj =
+                                SqlprojEmitter.emit dataLanes (Option.isSome postDeploy) (Option.isSome refactorLog)
                             { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
                     // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
                     // per-reference resolutions, and the decision overlay
@@ -2267,8 +2391,13 @@ module Compose =
     /// The publish, returning the `EstateAcquisition` beside the report —
     /// the combined verbs (`runWithConfigAndLoad` / `runWithConfigAndStore`)
     /// ride this so one verb pays for ONE estate acquisition (PL-1).
-    /// `runWithConfig` is the report-only projection.
-    let runWithConfigAcquiring (cfg: Config.Config) : Task<Result<RunReport * EstateAcquisition>> =
+    /// `runWithConfig` is the report-only projection. `refactorCtx` is the
+    /// store-threaded runs' pre-loaded refactorlog read phase (G3) — `None`
+    /// for every store-less caller (byte-identical bundle).
+    let runWithConfigAcquiringWithPrior
+        (refactorCtx: RefactorLogContext option)
+        (cfg: Config.Config)
+        : Task<Result<RunReport * EstateAcquisition>> =
         task {
             // Card S4a — the publish arc rides the spine. The `staged { }`
             // CE owns the "pipeline" umbrella root + the extract / profile /
@@ -2317,7 +2446,7 @@ module Compose =
                                 task {
                                     let lane = DataComposer.BootstrapLane.Prerendered extracted.Prerendered
                                     let result =
-                                        runWithConfigCore cfg (Ok extracted.Hydrated)
+                                        runWithConfigCore cfg refactorCtx (Ok extracted.Hydrated)
                                             lane extracted.Migration profile
                                         |> Result.map (fun (report, finalState) ->
                                             report,
@@ -2369,7 +2498,7 @@ module Compose =
                                     // artifact write.
                                     let lane = DataComposer.BootstrapLane.Rows bootstrapRows
                                     let result =
-                                        runWithConfigCore cfg (Ok catalog)
+                                        runWithConfigCore cfg refactorCtx (Ok catalog)
                                             lane migration profile
                                         |> Result.map (fun (report, finalState) ->
                                             report,
@@ -2388,6 +2517,11 @@ module Compose =
             // composition's crash semantics for the caller's catch.
             return StagedVerdict.toResult verdict
         }
+
+    /// The store-less acquisition — every pre-G3 caller's shape, byte-identical
+    /// (no refactorlog read phase, no `.refactorlog` artifact).
+    let runWithConfigAcquiring (cfg: Config.Config) : Task<Result<RunReport * EstateAcquisition>> =
+        runWithConfigAcquiringWithPrior None cfg
 
     /// The report-only publish (`runWithConfigAcquiring` with the
     /// acquisition dropped) — the established entry for callers without a
@@ -2556,11 +2690,42 @@ module Compose =
                     match remaining with
                     | [] -> Ok (acc : RefactorLogEntry list)
                     | edge :: rest ->
-                        match RefactorLogEmitter.emit edge with
+                        // G3 — the accumulated document speaks the DEPLOYED
+                        // vocabulary (`emitDeployed`), since DacFx matches
+                        // operations against the deployed model's element
+                        // names. Historical edges fold with NO pins: pins are
+                        // a this-run config fact, and an operation a today-pin
+                        // would suppress is a no-match no-op for DacFx either
+                        // way — the simpler derivation wins.
+                        match RefactorLogEmitter.emitDeployed Set.empty edge with
                         | Error e -> Error (DisplacementFailed e)
                         | Ok artifact ->
                             loop (RefactorLogEmitter.accumulateArtifact acc artifact) rest
                 loop [] edgeDiffs
+
+    /// G3 — the store's whole PRE-EMISSION read phase in one value: the ONE
+    /// durable load (S51) plus its pure derivations, hoisted BEFORE the
+    /// emission so the bundle can embed the accumulated `.refactorlog` and
+    /// the post-bundle record phase can reuse the same loaded chain (no
+    /// second load, no second edge-fold — S53). A missing store file is
+    /// genesis (empty prior, empty entries), same as before.
+    type StorePrior = {
+        Loaded       : EpisodicLifecycle option
+        Prior        : Catalog
+        PriorEntries : RefactorLogEntry list
+    }
+
+    let private loadStorePrior (path: string) : Result<StorePrior, FullExportStoreError> =
+        match loadStoreChain path with
+        | Error e -> Error e
+        | Ok loaded ->
+            match priorSchemaOfChain loaded with
+            | Error e -> Error e
+            | Ok prior ->
+                match priorAccumulatedRefactorLogOfChain loaded with
+                | Error e -> Error e
+                | Ok priorEntries ->
+                    Ok { Loaded = loaded; Prior = prior; PriorEntries = priorEntries }
 
     /// The next monotone `EpisodeCoordinate` for the loaded timeline — ordinal
     /// 0 for a genesis (no chain), else the latest episode's ordinal + 1.
@@ -2605,13 +2770,20 @@ module Compose =
             | Ok ()   -> Ok appended
             | Error e -> Error (StoreReadFailed (string e))
 
-    /// The diff-vs-prior store leg for one full-export run (seam T2). Given the
-    /// run's emitted schema (state B) and the timeline at `path`: load the prior
-    /// emission's schema (state A), measure `B ⊖ A`, accumulate the
-    /// displacement's refactorlog against the prior committed log, build the
-    /// `ChangeManifest` for the edge, and record exactly one new episode. Pure
-    /// w.r.t. the genesis emission (it runs *after* the bundle lands and never
-    /// alters it); the only side effect is the durable store write.
+    /// The diff-vs-prior store leg's RECORD phase (seam T2). Given the run's
+    /// emitted schema (state B) and the PRE-LOADED store read phase (state A +
+    /// the prior accumulated entries — `loadStorePrior`, G3): measure `B ⊖ A`,
+    /// accumulate the displacement's deployed-vocabulary refactorlog against
+    /// the prior committed log, build the `ChangeManifest` for the edge, and
+    /// record exactly one new episode. Runs *after* the bundle lands and never
+    /// alters it; the only side effect is the durable store write. (G3 split:
+    /// the read phase moved BEFORE the emission so the bundle embeds the
+    /// accumulated `.refactorlog`; this phase reuses the loaded chain — the
+    /// S51 one-durable-load discipline holds across the split.)
+    ///
+    /// `pins` are this run's S6.3 physical-rename pins — the SAME set the
+    /// bundle's document derived under, so the leg's accumulated entries and
+    /// the bundle's `ProjectionCatalog.refactorlog` agree (pinned by test).
     ///
     /// `appliedTransforms` is the composed run's §5.5 per-artifact overlay
     /// enumeration (`ManifestEmitter.appliedTransforms` over the run's lineage
@@ -2624,8 +2796,10 @@ module Compose =
     /// the config carries no per-environment divergence axis and `Tolerance.parse`
     /// is unwired; see `storeLegFromConfig`. The wiring is live so a future
     /// tolerance-resolving caller populates it without re-touching this seam.)
-    let private runStoreLeg
+    let private runStoreLegOnPrior
         (path: string)
+        (storePrior: StorePrior)
+        (pins: Set<SsKey>)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
@@ -2635,22 +2809,14 @@ module Compose =
         (appliedTransforms: (SsKey * OverlayAxis option) list)
         (emitted: Catalog)
         : Result<FullExportStoreLeg, FullExportStoreError> =
-        // PL-1 (S51) — ONE durable load; the four consumers below thread it.
-        match loadStoreChain path with
-        | Error e -> Error e
-        | Ok loaded ->
-        match priorSchemaOfChain loaded with
-        | Error e -> Error e
-        | Ok prior ->
-            let displacement = CatalogDiff.between prior emitted
-            match priorAccumulatedRefactorLogOfChain loaded with
-            | Error e -> Error e
-            | Ok priorLog ->
-                    match RefactorLogEmitter.emit displacement with
-                    | Error e -> Error (DisplacementFailed e)
-                    | Ok currentArtifact ->
+        let loaded = storePrior.Loaded
+        let prior = storePrior.Prior
+        let displacement = CatalogDiff.between prior emitted
+        match RefactorLogEmitter.emitDeployed pins displacement with
+        | Error e -> Error (DisplacementFailed e)
+        | Ok currentArtifact ->
                         let accumulated =
-                            RefactorLogEmitter.accumulateArtifact priorLog currentArtifact
+                            RefactorLogEmitter.accumulateArtifact storePrior.PriorEntries currentArtifact
                         match nextStoreCoordinateOfChain loaded environment at with
                         | Error e -> Error e
                         | Ok coordinate ->
@@ -2689,44 +2855,47 @@ module Compose =
         | DisplacementFailed e -> ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
         | RecordFailed m -> ValidationError.create "pipeline.fullExport.store.recordFailed" m
 
-    /// The diff-vs-prior store leg over the publish's own acquisition, or
-    /// `Ok None` when no store is supplied. PL-1: the emitted-schema plane
-    /// derives from `acquired.ReadCatalog` by the same pure `applyRenames`
-    /// the retired second read fed — no second `MetadataSnapshotRunner` run
-    /// against the live source. Pure/synchronous (no await — the acquisition
-    /// is already in hand).
+    /// The diff-vs-prior store leg's RECORD phase over the publish's own
+    /// acquisition (the read phase — `loadStorePrior` — ran BEFORE the
+    /// emission; G3). PL-1: the emitted-schema plane derives from
+    /// `acquired.ReadCatalog` by the same pure `applyRenames` the retired
+    /// second read fed — no second `MetadataSnapshotRunner` run against the
+    /// live source. Pure/synchronous (no await — the acquisition is already
+    /// in hand). The pins recompute here from the same `(cfg, ReadCatalog)`
+    /// pair the emission core used, so the leg's accumulated entries agree
+    /// with the bundle's document.
     /// `appliedTransforms` is the run's §5.5 overlay enumeration, taken from
     /// `RunReport.Manifest.AppliedTransforms` (the composed run the caller
     /// already produced), threaded onto the recorded episode (NM-33). The
     /// tolerance residual is `Tolerance.strict` here — the only resolved value
     /// available: the unified config carries no per-environment divergence axis
     /// and `Tolerance.parse` has no production caller, so a non-strict residual
-    /// is not yet reachable at this site (FLAGGED on `runStoreLeg`).
+    /// is not yet reachable at this site (FLAGGED on `runStoreLegOnPrior`).
     let private storeLegFromAcquisition
         (cfg: Config.Config)
         (acquired: EstateAcquisition)
-        (storePath: string option)
+        (storePrior: StorePrior)
+        (storePath: string)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
         (appliedTransforms: (SsKey * OverlayAxis option) list)
         : Result<FullExportStoreLeg option> =
-        match storePath with
-        | None -> Result.success None
-        | Some p when System.String.IsNullOrWhiteSpace p -> Result.success None
-        | Some path ->
-            match applyRenames cfg acquired.ReadCatalog with
-            | Error errors -> Result.failure errors
-            | Ok emitted ->
-                match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
-                | Ok leg -> Result.success (Some leg)
-                | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
+        match applyRenames cfg acquired.ReadCatalog with
+        | Error errors -> Result.failure errors
+        | Ok emitted ->
+            let physicalNamed = operatorRenamedKinds cfg acquired.ReadCatalog
+            match runStoreLegOnPrior storePath storePrior physicalNamed timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
+            | Ok leg -> Result.success (Some leg)
+            | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
 
     /// Track W1-B (seam T2) — `runWithConfig` with the **optional diff-vs-prior
     /// store leg**. Additive over the genesis path: when `storePath` is `None`
     /// or empty, this is byte-identical to `runWithConfig` (the genesis emission
-    /// alone, `snd = None`); when a store is supplied, the CREATE files are
-    /// emitted first (unchanged), then the store leg loads the prior emission,
+    /// alone, `snd = None`); when a store is supplied, the run FIRST loads the
+    /// prior emission (the G3 read phase — one durable load, before the
+    /// emission, so the bundle embeds the accumulated `.refactorlog` and the
+    /// `.sqlproj` its item), then emits the bundle, then the record phase
     /// measures the displacement, accumulates the refactorlog, builds the
     /// `ChangeManifest`, and records exactly one new episode.
     ///
@@ -2735,10 +2904,11 @@ module Compose =
     /// larger feature, out of scope for 6b); `DataObservation.empty` is recorded
     /// (the CDC-measure leg is a sibling track the parent joins).
     ///
-    /// The store write is fail-loud: a malformed store, an unobservable
-    /// displacement, or a non-monotone record surface as `Error` on the run,
-    /// *after* the bundle has landed (the operator knows the emission succeeded
-    /// but provenance did not).
+    /// Failure surfaces, split by phase (G3): a malformed store refuses BEFORE
+    /// the bundle (its content depends on the store — emitting without it would
+    /// ship a wrong document); an unobservable displacement or a non-monotone
+    /// record surfaces *after* the bundle has landed (the operator knows the
+    /// emission succeeded but provenance did not).
     /// Bracket a post-root publish leg (`store` / `seed-load`) in the stage
     /// wire events (2026-07-02 — the legs join the declared publish spine so
     /// the live board covers the whole run). Same wire shape as
@@ -2773,29 +2943,40 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<RunReport * FullExportStoreLeg option>> =
         task {
-            // PL-1 — one estate acquisition: the store leg consumes the
-            // publish's own read catalog instead of re-extracting the model.
-            let! acquiredR = runWithConfigAcquiring cfg
-            match acquiredR with
-            | Error errors -> return Result.failure errors
-            | Ok (report, acquired) ->
-                match storePath with
-                | Some p when not (System.String.IsNullOrWhiteSpace p) ->
-                    // The store leg is a declared stage on the publish spine
-                    // (`Spines.publishWith true …`) — bracketed so the board's
-                    // store line opens, works, and closes honestly.
-                    let! legR =
-                        stagedLeg (StageName.value Stages.store) (fun () ->
-                            Task.FromResult
-                                (storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms))
-                    return legR |> Result.map (fun legOpt -> report, legOpt)
-                | _ ->
-                    // No store — the genesis emission; no store stage was
-                    // seeded (dispatch chose the bare pipeline spine), so no
-                    // bracket fires.
-                    return
-                        storeLegFromAcquisition cfg acquired storePath timeline environment at report.Manifest.AppliedTransforms
-                        |> Result.map (fun legOpt -> report, legOpt)
+            match storePath with
+            | Some path when not (System.String.IsNullOrWhiteSpace path) ->
+                // G3 read phase — the ONE durable load (S51), BEFORE the
+                // emission so the bundle embeds the accumulated refactorlog.
+                // Rides ahead of the pipeline spine's extract stage (a light
+                // read next to the emission arc; the RECORD phase below keeps
+                // the board's bracketed store line).
+                match loadStorePrior path with
+                | Error storeErr -> return Result.failureOf (mapStoreErr storeErr)
+                | Ok storePrior ->
+                    let refactorCtx =
+                        { Prior = storePrior.Prior
+                          PriorEntries = storePrior.PriorEntries
+                          At = at }
+                    // PL-1 — one estate acquisition: the store leg consumes the
+                    // publish's own read catalog instead of re-extracting.
+                    let! acquiredR = runWithConfigAcquiringWithPrior (Some refactorCtx) cfg
+                    match acquiredR with
+                    | Error errors -> return Result.failure errors
+                    | Ok (report, acquired) ->
+                        // The record phase is a declared stage on the publish
+                        // spine (`Spines.publishWith true …`) — bracketed so the
+                        // board's store line opens, works, and closes honestly.
+                        let! legR =
+                            stagedLeg (StageName.value Stages.store) (fun () ->
+                                Task.FromResult
+                                    (storeLegFromAcquisition cfg acquired storePrior path timeline environment at report.Manifest.AppliedTransforms))
+                        return legR |> Result.map (fun legOpt -> report, legOpt)
+            | _ ->
+                // No store — the genesis emission; no store stage was seeded
+                // (dispatch chose the bare pipeline spine), so no bracket
+                // fires and no refactorlog artifact is written.
+                let! acquiredR = runWithConfigAcquiring cfg
+                return acquiredR |> Result.map (fun (report, _acquired) -> report, None)
         }
 
     /// AC-X1 (part B) — the **live data-load leg core**: load the idempotent
@@ -2812,6 +2993,7 @@ module Compose =
     let private recordLoad
         (emitted: Catalog)
         (cdcDelta: int)
+        (pins: Set<SsKey>)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
@@ -2830,9 +3012,16 @@ module Compose =
             // This data-load leg is config-less (unit-testable), so it resolves against
             // `Tolerance.permissive` (report every fired divergence) — the schema-publish
             // store leg is where the operator's `emission.tolerance` threads (Wave-3 3.4).
-            match runStoreLeg path timeline environment at None data (emittedToleranceResidual Tolerance.permissive emitted) [] emitted with
-            | Ok leg -> Result.success (Some leg, cdcDelta)
+            // G3 — the record leg loads its OWN read phase at record time (a
+            // data load may run long; a fresh read narrows the lost-update
+            // window before the monotone append). One durable load per leg
+            // (S51 holds per-leg).
+            match loadStorePrior path with
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
+            | Ok storePrior ->
+                match runStoreLegOnPrior path storePrior pins timeline environment at None data (emittedToleranceResidual Tolerance.permissive emitted) [] emitted with
+                | Ok leg -> Result.success (Some leg, cdcDelta)
+                | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
 
     /// The CDC-bracketed load-measure-record core shared by the two load
@@ -2845,6 +3034,7 @@ module Compose =
         (load: unit -> Task<unit>)
         (emitted: Catalog)
         (sink: SqlConnection)
+        (pins: Set<SsKey>)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
@@ -2861,7 +3051,7 @@ module Compose =
                 match! cdcCaptureTotal sink with
                 | Error es -> return Result.failure es
                 | Ok post ->
-                    return recordLoad emitted (post - baseline) storePath timeline environment at
+                    return recordLoad emitted (post - baseline) pins storePath timeline environment at
         }
 
     /// The fused-string load shape — what an operator executing the
@@ -2882,13 +3072,15 @@ module Compose =
         // `cdcCaptureTotal` / `executeBatch` are injected (the `Deploy` module
         // compiles AFTER this one, so Compose cannot name it; callers pass
         // `Deploy.cdcCaptureTotal` / `Deploy.executeBatch`).
+        // Config-less witness surface — no operator physical-rename pins in
+        // scope, so the record's deployed-vocabulary projection runs pinless.
         loadMeasureAndRecord
             cdcCaptureTotal
             (fun () ->
                 // An empty seed loads nothing.
                 if System.String.IsNullOrWhiteSpace seed then Task.FromResult ()
                 else executeBatch sink seed)
-            emitted sink storePath timeline environment at
+            emitted sink Set.empty storePath timeline environment at
 
     /// Card P2 — the LEVELED production load: same CDC bracket, same
     /// episode recording, but the seed deploys as the leveled plan
@@ -2896,7 +3088,8 @@ module Compose =
     /// `Deploy.executeLeveledSeed <connection string>` — the executor
     /// closes over the connection STRING because every segment opens its
     /// own pooled connection; `sink` stays the CDC measure's connection).
-    let loadLeveledSeedAndRecord
+    let private loadLeveledSeedAndRecordWithPins
+        (pins: Set<SsKey>)
         (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (emitted: Catalog)
@@ -2915,7 +3108,22 @@ module Compose =
                 // whitespace gate.
                 if DataComposer.LeveledDeploymentText.isEmpty plan then Task.FromResult ()
                 else executeLeveled plan)
-            emitted sink storePath timeline environment at
+            emitted sink pins storePath timeline environment at
+
+    let loadLeveledSeedAndRecord
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
+        (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
+        (emitted: Catalog)
+        (plan: DataComposer.LeveledDeploymentText)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        // Config-less witness surface (pins parity with `loadSeedAndRecord`);
+        // the production path threads real pins via `loadFromAcquisition`.
+        loadLeveledSeedAndRecordWithPins Set.empty cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
 
     /// AC-X1 (part B) — `runWithConfig` PLUS the live data-load leg the W1-B
     /// store leg deferred. After the bundle is published (unchanged), the
@@ -2945,7 +3153,10 @@ module Compose =
         match projectSeedPlanUsing cfg acquired with
         | Error errors -> Task.FromResult (Result.failure errors)
         | Ok (emitted, plan) ->
-            loadLeveledSeedAndRecord cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
+            // G3 — the production record leg carries this run's operator-renamed
+            // kind set so its deployed-vocabulary entries agree with the bundle's.
+            let physicalNamed = operatorRenamedKinds cfg acquired.ReadCatalog
+            loadLeveledSeedAndRecordWithPins physicalNamed cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
 
     /// Card P2 re-threaded seam: the second argument is the LEVELED seed
     /// executor (`Deploy.executeLeveledSeed <connection string>` at the CLI
@@ -2962,10 +3173,26 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<RunReport * FullExportStoreLeg option * int>> =
         task {
+            // G3 read phase — when a store rides, load the prior BEFORE the
+            // emission so the published bundle embeds the accumulated
+            // `.refactorlog` (the record leg re-reads at record time: the data
+            // load between the two may run long, and a fresh read narrows the
+            // lost-update window before the monotone append).
+            let refactorCtxR : Result<RefactorLogContext option> =
+                match storePath with
+                | Some p when not (System.String.IsNullOrWhiteSpace p) ->
+                    match loadStorePrior p with
+                    | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
+                    | Ok sp ->
+                        Result.success (Some { Prior = sp.Prior; PriorEntries = sp.PriorEntries; At = at })
+                | _ -> Result.success None
+            match refactorCtxR with
+            | Error errors -> return Result.failure errors
+            | Ok refactorCtx ->
             // PL-1 — one estate acquisition: the load leg consumes the
             // publish's extract triple + composed state instead of paying a
             // second full publish (model read + hydration + chain + render).
-            let! acquiredR = runWithConfigAcquiring cfg
+            let! acquiredR = runWithConfigAcquiringWithPrior refactorCtx cfg
             match acquiredR with
             | Error errors -> return Result.failure errors
             | Ok (report, acquired) ->

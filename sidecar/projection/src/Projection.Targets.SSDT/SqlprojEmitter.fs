@@ -43,12 +43,23 @@ module SqlprojEmitter =
     [<Literal>]
     let fileName : string = "ProjectionCatalog.sqlproj"
 
+    /// The bundle-relative `.refactorlog` the project carries when the run
+    /// is store-threaded (G3, DECISIONS 2026-07-16). Named `<project>
+    /// .refactorlog` per SSDT convention; mirror `Compose.ArtifactPath
+    /// .refactorLog` — the `.sqlproj`-build test pins the pairing.
+    [<Literal>]
+    let refactorLogFileName : string = "ProjectionCatalog.refactorlog"
+
     /// Emit the `.sqlproj` XML. `dataLaneRelPaths` are the bundle-relative
     /// `Data/*.sql` paths (re-classified `None`, `:r`-included by the
     /// post-deploy); `hasPostDeploy` adds the `Script.PostDeployment.sql`
-    /// `PostDeploy` item. The schema `.sql` under `Modules/**` ride the SDK's
+    /// `PostDeploy` item; `hasRefactorLog` adds the `<RefactorLog>` item
+    /// for the bundle's accumulated `ProjectionCatalog.refactorlog` (G3 —
+    /// present exactly when the run was store-threaded, so DacFx converts
+    /// renames into `sp_rename` instead of DROP+CREATE on incremental
+    /// publish). The schema `.sql` under `Modules/**` ride the SDK's
     /// default `Build` glob and are intentionally not enumerated.
-    let emit (dataLaneRelPaths: string list) (hasPostDeploy: bool) : string =
+    let emit (dataLaneRelPaths: string list) (hasPostDeploy: bool) (hasRefactorLog: bool) : string =
         let settings =
             XmlWriterSettings(
                 Indent = true,
@@ -82,6 +93,14 @@ module SqlprojEmitter =
             for p in dataLaneRelPaths do
                 elem "Build" "Remove" p
                 elem "None" "Include" p
+            // G3 — the accumulated refactorlog rides the project as an
+            // explicit `RefactorLog` item so `dotnet build` embeds it into
+            // the `.dacpac` (refactor.xml) and incremental publish renames
+            // instead of DROP+CREATE. Explicit rather than glob-reliant:
+            // the SDK's default-item surface varies across versions; the
+            // gated `.sqlproj`-build test proves the pairing compiles.
+            if hasRefactorLog then
+                elem "RefactorLog" "Include" refactorLogFileName
             w.WriteEndElement() // ItemGroup
 
             w.WriteEndElement() // Project

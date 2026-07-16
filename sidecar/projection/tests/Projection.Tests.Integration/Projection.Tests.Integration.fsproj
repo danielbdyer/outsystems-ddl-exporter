@@ -64,6 +64,7 @@
     <Compile Include="KeymapSpillTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DacpacPublishEquivalenceTests.fs" />
+    <Compile Include="RefactorLogPublishCanaryTests.fs" />
     <Compile Include="SsdtArtifactDeployE2ETests.fs" />
     <Compile Include="IndexPhysicalMetadataDeployE2ETests.fs" />
     <Compile Include="SsdtDataBehaviorE2ETests.fs" />

@@ -60,6 +60,7 @@ let private trivialOutputs () : Compose.Outputs =
             Dacpac            = None
             Sqlproj           = None
             PostDeploy        = None
+            RefactorLog       = None
             Manifest          = Projection.Targets.SSDT.ManifestEmitter.build Fixtures.sampleCatalog
             Trail             = []
             PassEntries       = []

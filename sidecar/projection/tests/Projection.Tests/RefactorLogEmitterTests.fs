@@ -325,3 +325,104 @@ let ``composition: rename → one SqlSimpleColumn AND reshape → one ALTER COLU
         migration.Value |> List.choose (function Statement.AlterTableAlterColumn (_, c) -> Some c | _ -> None)
     Assert.Equal(1, List.length alters)
     Assert.False(migration.Value |> List.exists (function Statement.CreateTable _ -> true | _ -> false))
+
+// ---------------------------------------------------------------------------
+// G3 (DECISIONS 2026-07-16) — `emitDeployed`, the DEPLOYED-vocabulary sibling.
+// The estate deploys LOGICAL names (`LogicalTableEmission` /
+// `LogicalColumnEmission`, default-on), so DacFx can only match refactor
+// operations whose ElementName speaks logical names. `emit`'s catalog-plane
+// vocabulary (`[dbo].[OSUSR_S1S_CUSTOMER]`) matches nothing deployed; these
+// witnesses pin the deployed projection: old/new names through the emission
+// passes' exact name-decision rules, pins suppress, keys unchanged.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``emitDeployed: a table rename speaks logical names — ElementName is the OLD deployed table`` () =
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
+    let artifact = RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+    let entries = Map.find customerKey (ArtifactByKind.toMap artifact)
+    Assert.Equal(1, List.length entries)
+    let e = List.head entries
+    Assert.Equal(SqlTable, e.ElementType)
+    Assert.Equal("[dbo].[Customer]", e.ElementName)
+    Assert.Equal("[dbo]", e.ParentElementName)
+    Assert.Equal(SqlSchema, e.ParentElementType)
+    Assert.Equal("Patron", e.NewName)
+
+[<Fact>]
+let ``emitDeployed: OperationKey equals emit's key for the same rename (dedup identity unchanged)`` () =
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
+    let legacyKey =
+        (RefactorLogEmitter.emit diff |> mustOk
+         |> ArtifactByKind.toMap |> Map.find customerKey |> List.head).OperationKey
+    let deployedKey =
+        (RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+         |> ArtifactByKind.toMap |> Map.find customerKey |> List.head).OperationKey
+    Assert.Equal(legacyKey, deployedKey)
+
+[<Fact>]
+let ``emitDeployed: an operator-pinned kind's logical rename emits NO operation (deployed name is the pin)`` () =
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
+    let artifact = RefactorLogEmitter.emitDeployed (Set.singleton customerKey) diff |> mustOk
+    Assert.Empty(Map.find customerKey (ArtifactByKind.toMap artifact))
+
+[<Fact>]
+let ``emitDeployed: a column rename qualifies by the deployed (logical) table and speaks logical column names`` () =
+    let diff = CatalogDiff.between sampleCatalog columnRenameTarget
+    let artifact = RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+    let entries =
+        Map.find customerKey (ArtifactByKind.toMap artifact)
+        |> List.filter (fun e -> e.ElementType = SqlSimpleColumn)
+    Assert.Equal(1, List.length entries)
+    let e = List.head entries
+    Assert.Equal("[dbo].[Customer].[Name]", e.ElementName)
+    Assert.Equal("[dbo].[Customer]", e.ParentElementName)
+    Assert.Equal(SqlTable, e.ParentElementType)
+    Assert.Equal("FullName", e.NewName)
+
+[<Fact>]
+let ``emitDeployed: a compound rename (table AND column) qualifies the column by the OLD deployed table name`` () =
+    // Both renames in ONE displacement: operations sort by OperationKey (not
+    // authored order), so all must speak the PRE-publish vocabulary — the
+    // column operation's qualifier is the OLD table name.
+    let compound : Kind =
+        { customer with
+            Name = nameOf "Patron"
+            Attributes =
+                customer.Attributes
+                |> List.map (fun a ->
+                    if a.SsKey = customerNameKey then { a with Name = nameOf "FullName" } else a) }
+    let target = IRBuilders.mkCatalog [ { salesModule with Kinds = [ compound; order; country ] } ]
+    let diff = CatalogDiff.between sampleCatalog target
+    let entries =
+        RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+        |> ArtifactByKind.toMap |> Map.find customerKey
+    let tableOp = entries |> List.find (fun e -> e.ElementType = SqlTable)
+    let columnOp = entries |> List.find (fun e -> e.ElementType = SqlSimpleColumn)
+    Assert.Equal("[dbo].[Customer]", tableOp.ElementName)
+    Assert.Equal("Patron", tableOp.NewName)
+    Assert.Equal("[dbo].[Customer].[Name]", columnOp.ElementName)
+    Assert.Equal("[dbo].[Customer]", columnOp.ParentElementName)
+    Assert.Equal("FullName", columnOp.NewName)
+
+[<Fact>]
+let ``emitDeployed: the FK channel is named-absent (synthesized deployed FK names — WP-7)`` () =
+    // Deployed FK names are synthesized (`FK_<Owner>_<Target>_<Col>`); a
+    // logical `Reference.Name` rename changes no deployed constraint, so an
+    // operation for it could never match. The channel stays closed until
+    // WP-7 honors `Reference.Name` in emission.
+    let diff = CatalogDiff.between sampleCatalog fkRenameTarget
+    let artifact = RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+    let allFk =
+        ArtifactByKind.toMap artifact
+        |> Map.toSeq |> Seq.collect snd
+        |> Seq.filter (fun e -> e.ElementType = SqlForeignKey)
+    Assert.Empty(allFk)
+
+[<Fact>]
+let ``emitDeployed: T11 keyset equals the target Catalog's kinds (sibling contract holds)`` () =
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
+    let expected =
+        Catalog.allKinds targetCatalog |> List.map (fun k -> k.SsKey) |> Set.ofList
+    let artifact = RefactorLogEmitter.emitDeployed Set.empty diff |> mustOk
+    Assert.Equal<Set<SsKey>>(expected, ArtifactByKind.keys artifact)

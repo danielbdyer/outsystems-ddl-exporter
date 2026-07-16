@@ -28066,3 +28066,89 @@ reflected-default literal parsing carries quotes through `normalizeDefault` (`('
 docs-only: the constraint plane always rendered `DEFAULT N''`; the two stale "renders DEFAULT NULL"
 claims (GoldenCatalog comment, THE_GOLDEN_EMISSION) are corrected. WP-17's Float/Real/DateTimeOffset/
 Xml faithful-or-refuse work now rides an option-grain carrier that can express what it needs.
+
+## 2026-07-16 — G3: the accumulated refactorlog reaches the bundle + `.sqlproj` — in DEPLOYED vocabulary, DacFx-proven
+
+**Decision.** The store-threaded publish now writes `ProjectionCatalog.refactorlog` — the
+timeline's ACCUMULATED rename document (prior chain ⊕ this run's displacement, deduped by
+`OperationKey`, rendered at the episode's `At`) — inside the ATOMIC bundle, and (under
+`emission.sqlproj: true`) the project carries the matching explicit `<RefactorLog>` item, so
+`dotnet build` embeds `refactor.xml` into the `.dacpac` and DacFx's incremental publish
+converts a rename into `sp_rename` instead of DROP+CREATE. Presence contract: file (and item)
+exist ⟺ the run is store-threaded — the store IS the rename evidence; a store-less run is
+genesis and stays byte-identical to the pre-G3 bundle. Covers `full-export --lifecycle-store`,
+the flow path (`publish` → `PublishBundle` with an env `store`), and the `--load` combined verb.
+
+**The plane finding (why this was the highest-stakes gap, not a plumbing job).** The existing
+`RefactorLogEmitter.emit` speaks the CATALOG plane: `ElementName` renders the kind's OSSYS
+physical table (`[dbo].[OSUSR_S1S_CUSTOMER]`, pinned by its own render test). The deployed
+estate speaks LOGICAL names (`LogicalTableEmission`/`LogicalColumnEmission`, default-on, no
+config off-switch — H1), and DacFx matches refactor operations against the DEPLOYED model's
+element names — so wiring `emit`'s output into the bundle would have shipped operations that
+match nothing, get silently skipped, and DROP+CREATE anyway: G3 "closed" but wrong. What
+landed instead is `RefactorLogEmitter.emitDeployed`, the deployed-vocabulary sibling:
+
+- Old/new names project through the SAME name-decision rules the emission passes apply —
+  validity by construction (`TableName.create`/`ColumnName.create` embed the exact blank/>128
+  fallback), the OLD side through the SOURCE kind's plane, the NEW through the target's.
+- `physicalNamedKinds` (new `Compose.operatorRenamedKinds`) suppresses operations for kinds an
+  operator `tableRenames` override targets in EITHER form — the operator rename is the chain's
+  LAST `Kind.Physical` writer, so those kinds deploy under the authored physical name and a
+  model-side logical rename on one changes no deployed element. A rename whose old and new
+  deployed names coincide emits nothing.
+- The FK channel is NAMED-ABSENT: deployed FK names are synthesized
+  (`FK_<Owner>_<Target>_<Col>`; honoring `Reference.Name` is WP-7's open remainder), so a
+  logical FK rename changes no deployed constraint and its operation could never match.
+  Re-opens with WP-7.
+- `OperationKey` derivations are UNCHANGED (keys are over the logical rename triple), so
+  accumulation dedup, cross-run identity, and the target DB's `__RefactorLog` ledger are
+  unaffected by the vocabulary fix; `emit` itself is untouched (its migrate-preview consumer
+  keeps the catalog plane).
+
+**Sequencing (the atomic-bundle constraint).** The bundle write is atomic-replace, so the
+document must ride `Outputs` (`Outputs.RefactorLog`, `ArtifactPath.refactorLog`, the staging
+writer's optional-text arm) — which forces the store READ phase ahead of the emission. The
+store leg split accordingly: `loadStorePrior` (ONE durable load + `priorSchemaOfChain` + the
+per-edge deployed-vocabulary fold, hoisted BEFORE `runWithConfigAcquiringWithPrior`; S51's
+one-load-per-leg and S53's fold-once both hold across the split) → the core computes this
+run's displacement over the RENAMED catalog and renders `accumulate(priorEntries, current)`
+into the bundle → `runStoreLegOnPrior` records the episode AFTER the bundle lands, reusing the
+loaded chain. Consequences, named: (1) a MALFORMED store now refuses BEFORE the bundle (its
+content depends on the store; emitting without it would ship a wrong document) — record-phase
+failures still surface after the bundle, as before; (2) the load-leg (`--load`) record re-reads
+the store at record time (a data load may run long; the fresh read narrows the lost-update
+window ahead of the monotone append); (3) the bundle derives over renamed(HYDRATED) while the
+episode plane stays renamed(READ) — the hydration graft adds static rows only, so the rename
+channels agree, and the file⇔leg agreement is pinned by test; (4) historical edges fold with
+NO pins (pins are a this-run config fact; a today-pin-suppressed old operation is a DacFx
+no-match no-op either way), and the accumulated document re-derives from the chain under
+today's rules each run — rendered names on old entries can drift with config, keys cannot.
+
+**Witness.** `emitDeployed` unit pins (logical ElementName; pin suppression; compound
+table+column rename speaks ONE pre-publish vocabulary; FK channel absent; key equality with
+`emit`; T11 keyset); the store-wire witnesses (file present + reported ⟺ store-threaded; the
+empty genesis document; the hand-seeded-prior rename lands in the file in deployed vocabulary
+agreeing with the leg; the CUMULATIVE document survives a no-change run; the `.sqlproj` item
+pairs with the file); the real-SDK build witness (`RefactorLog` item + file build clean under
+Microsoft.Build.Sql/2.2.0 — no default-glob duplicate — and the built `.dacpac` embeds
+`refactor.xml`); and **the DacFx-grade canary** (`RefactorLogPublishCanaryTests`, Docker):
+full-export A → `dotnet build` → `DacServices.Deploy` → live rows under `[dbo].[User]` →
+store-threaded full-export B (rename to `Client`) → build → INCREMENTAL publish with the
+default `BlockOnPossibleDataLoss = true` armed → the publish succeeds, the rows survive under
+`[dbo].[Client]` with IDENTITY values intact, and `[dbo].[User]` is gone — `sp_rename`, not
+DROP+CREATE, end-to-end through the operator's real path.
+
+**Named residuals.** (1) Operator `tableRenames` rewrite `Kind.Physical` and never touch
+`Kind.Name`, so they produce NO `RenameRecord` — the deployed rename they cause (logical name →
+authored physical, or pin→pin) is INVISIBLE to `CatalogDiff`'s Name-keyed rename channel and
+therefore absent from the refactorlog; H3's "renames feed the refactorlog channel" holds only
+for identity-stable MODEL-side renames (a Service-Studio entity/attribute rename over a
+GUID-keyed source, or any rename the store's persisted SsKeys thread). Re-open trigger: a
+`Physical`-change rename channel on `CatalogDiff`. (2) File-sourced models synthesize SsKeys
+from names, so they cannot thread rename identity at all (the standing 6.A.7 limitation — the
+witnesses seed the store to simulate an identity-stable source). (3) The eject package
+(`EjectRun`) still carries `RefactorLogRefs` (the reference chain), not the rendered document;
+rendering the terminal accumulated document into the eject artifact is the eject verb's slice
+of P-7. (4) `MigrationRun.preview` keeps the catalog-plane `emit` for its report artifact —
+migrating that surface to deployed vocabulary is its own decision when the migrate path grows
+a DacFx consumer.
