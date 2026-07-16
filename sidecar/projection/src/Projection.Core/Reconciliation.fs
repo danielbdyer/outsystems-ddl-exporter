@@ -172,7 +172,7 @@ module Reconciliation =
         : ReconciledIdentity =
 
         let surrogateOf (row: StaticRow) : SourceKey option =
-            Map.tryFind pkColumn row.Values |> Option.map SourceKey.ofString
+            StaticRow.value pkColumn row |> Option.map SourceKey.ofString
 
         // NM-58 — a BLANK match key is "no key", never "a key that is empty".
         // The production user directory carries many rows with a blank/missing
@@ -205,7 +205,7 @@ module Reconciliation =
                 let sinkPairs =
                     sinkRows
                     |> List.choose (fun r ->
-                        match Map.tryFind col r.Values, Map.tryFind pkColumn r.Values with
+                        match StaticRow.value col r, StaticRow.value pkColumn r with
                         // Index under the collation-parity `matchKey` (case-fold +
                         // trailing-trim) so two sink rows differing only by case /
                         // trailing space collide here exactly as they do under the
@@ -225,7 +225,7 @@ module Reconciliation =
                         mv, winner)
                     |> Map.ofList
                 fun _ row ->
-                    match Map.tryFind col row.Values with
+                    match StaticRow.value col row with
                     | Some mv when isKey mv -> Map.tryFind (matchKey mv) sinkIndex
                     | _                     -> None
             | ReconciliationStrategy.MatchByColumns cols ->
@@ -235,7 +235,9 @@ module Reconciliation =
                 // (the determinism layer's no-concat rule). Same oldest-row-wins
                 // tiebreaker on a duplicate composite key (NM-58).
                 let compositeKey (r: StaticRow) : string list option =
-                    let present = cols |> List.choose (fun c -> Map.tryFind c r.Values)
+                    // `StaticRow.value` flattens NULL to absent — a NULL
+                    // component is "no key" exactly as a blank one (NM-58).
+                    let present = cols |> List.choose (fun c -> StaticRow.value c r)
                     if not (List.isEmpty cols)
                        && List.length present = List.length cols
                        && List.forall isKey present
@@ -247,7 +249,7 @@ module Reconciliation =
                 let sinkIndex =
                     sinkRows
                     |> List.choose (fun r ->
-                        match compositeKey r, Map.tryFind pkColumn r.Values with
+                        match compositeKey r, StaticRow.value pkColumn r with
                         | Some k, Some sinkSurrogate -> Some (k, AssignedKey.ofString sinkSurrogate)
                         | _ -> None)
                     |> List.groupBy fst
@@ -315,10 +317,9 @@ module Reconciliation =
             let assignments = remap.Assignments |> Map.tryFind kind |> Option.defaultValue Map.empty
             let sinkByPk : Map<string, StaticRow> =
                 sinkRows
-                |> List.choose (fun r -> Map.tryFind pkColumn r.Values |> Option.map (fun pk -> pk, r))
+                |> List.choose (fun r -> StaticRow.value pkColumn r |> Option.map (fun pk -> pk, r))
                 |> List.rev   // PK-ascending input; first (oldest) wins the fold below
                 |> Map.ofList
-            let valueOr (col: Name) (r: StaticRow) = Map.tryFind col r.Values |> Option.defaultValue ""
             sourceRows
             |> List.fold
                 (fun (acc: Map<Name, int * (AssignedKey * string * string) list>) row ->
@@ -333,11 +334,16 @@ module Reconciliation =
                                 (fun acc col srcValue ->
                                     if col = pkColumn || Set.contains col ignore then acc
                                     else
-                                        let sinkValue = valueOr col sinkRow
+                                        // Cells compare at the option grain (WP-3:
+                                        // a sink NULL against a source `''` is a
+                                        // real difference); an absent sink key
+                                        // compares as NULL.
+                                        let sinkValue = StaticRow.value col sinkRow
                                         if srcValue = sinkValue then acc
                                         else
                                             let count, samples = Map.tryFind col acc |> Option.defaultValue (0, [])
-                                            let samples' = if count < 3 then (ak, srcValue, sinkValue) :: samples else samples
+                                            let sample = (ak, Option.defaultValue "" srcValue, Option.defaultValue "" sinkValue)
+                                            let samples' = if count < 3 then sample :: samples else samples
                                             Map.add col (count + 1, samples') acc)
                                 acc)
                 Map.empty
@@ -388,7 +394,7 @@ module Reconciliation =
         : StaticLookupDivergence =
         let hasKey (v: string) : bool = not (System.String.IsNullOrWhiteSpace v)
         let keyOf (r: StaticRow) : string option =
-            Map.tryFind businessKey r.Values |> Option.filter hasKey
+            StaticRow.value businessKey r |> Option.filter hasKey
         // Index by business key; a duplicate key keeps the first (PK-ascending
         // input → oldest wins, matching `reconcileKindWith`'s tiebreaker).
         let indexBy (rows: StaticRow list) : Map<string, StaticRow> =
@@ -402,7 +408,6 @@ module Reconciliation =
         let sinkKeys  = sinkByKey |> Map.toList |> List.map fst |> Set.ofList
         let missingOnTarget = Set.difference srcKeys sinkKeys |> Set.toList |> List.sort
         let extraOnTarget   = Set.difference sinkKeys srcKeys |> Set.toList |> List.sort
-        let valueOr (col: Name) (r: StaticRow) = Map.tryFind col r.Values |> Option.defaultValue ""
         let drifts =
             Set.intersect srcKeys sinkKeys
             |> Set.toList
@@ -424,12 +429,15 @@ module Reconciliation =
                         (fun acc col ->
                             if col = businessKey || col = surrogatePk || Set.contains col ignore then acc
                             else
-                                let sv = valueOr col s
-                                let tv = valueOr col t
+                                // Option-grain compare (WP-3): NULL vs `''`
+                                // is a real difference; absent ≡ NULL.
+                                let sv = StaticRow.value col s
+                                let tv = StaticRow.value col t
                                 if sv = tv then acc
                                 else
                                     let count, samples = Map.tryFind col acc |> Option.defaultValue (0, [])
-                                    let samples' = if count < 3 then (AssignedKey.ofString bk, sv, tv) :: samples else samples
+                                    let sample = (AssignedKey.ofString bk, Option.defaultValue "" sv, Option.defaultValue "" tv)
+                                    let samples' = if count < 3 then sample :: samples else samples
                                     Map.add col (count + 1, samples') acc)
                         acc)
                 Map.empty

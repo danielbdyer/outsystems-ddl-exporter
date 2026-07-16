@@ -603,7 +603,9 @@ module SyntheticData =
                  | _ ->
                      SsKey.synthesizedComposite "SYNTH_ROW" [ SsKey.rootOriginal kind.SsKey; string i ]
                      |> function Ok k -> k | Error _ -> kind.SsKey)
-              Values = Map.ofList cells } ]
+              // WP-3 bridge: the σ samplers still speak the raw-string
+              // convention (`""` = NULL); lift at the carrier boundary.
+              Values = Map.ofList (cells |> List.map (fun (n, v) -> n, (if v = "" then None else Some v))) } ]
         rows, unsatisfiableFks
 
     /// The volume for a kind (design §7: "profiled `RowCount` per kind", with

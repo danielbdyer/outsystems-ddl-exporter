@@ -31,7 +31,7 @@ let private buildCatalog () : Catalog =
     let country =
         let row idVal code label =
             { Identifier = mkKey [ "Sales"; "Country"; "Row"; code ]
-              Values = Map.ofList [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
+              Values = StaticRow.presentValues [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
         { SsKey = countryKey; Name = mkName "Country"; Origin = Native
           Modality = [ Static [ row "1" "US" "United States"; row "2" "CA" "Canada" ] ]
           Physical = mkTableId "dbo" "OSUSR_BLD_COUNTRY"
@@ -51,7 +51,7 @@ let private buildCatalog () : Catalog =
       Sequences = [] }
 
 let private migrationCtx () : MigrationDependencyContext =
-    { Rows = [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Label", "Administrator" ] } ] }
+    { Rows = [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ]; Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Label", "Administrator" ] } ] }
 
 let private writeFile (dir: string) (rel: string) (body: string) : unit =
     let path = Path.Combine(dir, rel)

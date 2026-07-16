@@ -38,7 +38,7 @@ let private catOf (k: Kind) : Catalog =
     IRBuilders.mkCatalog [ IRBuilders.mkModule (kKey "Mod") (nm "M") [ k ] ]
 
 let private rowOf (vals: (string * string) list) : StaticRow =
-    { Identifier = aKey "row"; Values = vals |> List.map (fun (k, v) -> nm k, v) |> Map.ofList }
+    { Identifier = aKey "row"; Values = vals |> List.map (fun (k, v) -> nm k, v) |> StaticRow.presentValues }
 
 [<Fact>]
 let ``6.B.2: renames extracts the column rename from the A->B diff`` () =
@@ -63,8 +63,8 @@ let ``6.B.2: a renamed column is re-pointed by the rename map, not matched by or
         |> RenameProjection.forKind (kKey "Customer")
     let row = rowOf [ "Email", "alice@x"; "Phone", "555" ]
     let out = RenameProjection.repointRow map row
-    Assert.Equal("alice@x", out.Values.[nm "Contact"])
-    Assert.Equal("555", out.Values.[nm "Phone"])
+    Assert.Equal(Some "alice@x", out.Values.[nm "Contact"])
+    Assert.Equal(Some "555", out.Values.[nm "Phone"])
     Assert.False(out.Values.ContainsKey(nm "Email"))
 
 [<Fact>]
@@ -77,8 +77,8 @@ let ``6.B.2: the value follows the name regardless of insertion order (not ordin
     // because it keys on the name, not the position.
     let a = RenameProjection.repointRow map (rowOf [ "Email", "x"; "Phone", "y" ])
     let b = RenameProjection.repointRow map (rowOf [ "Phone", "y"; "Email", "x" ])
-    Assert.Equal<Map<Name, string>>(a.Values, b.Values)
-    Assert.Equal("x", a.Values.[nm "Contact"])
+    Assert.Equal<Map<Name, string option>>(a.Values, b.Values)
+    Assert.Equal(Some "x", a.Values.[nm "Contact"])
 
 [<Fact>]
 let ``6.B.2: an empty rename map is identity (a no-rename transfer is byte-identical)`` () =
@@ -98,8 +98,8 @@ let ``6.B.2: end-to-end — diff-derived renames re-point a source row onto the 
         |> RenameProjection.forKind (kKey "Customer")
     let sourceRow = rowOf [ "Id", "1"; "Email", "bob@x" ]
     let sinkRow = RenameProjection.repointRow map sourceRow
-    Assert.Equal("bob@x", sinkRow.Values.[nm "Contact"])
-    Assert.Equal("1", sinkRow.Values.[nm "Id"])
+    Assert.Equal(Some "bob@x", sinkRow.Values.[nm "Contact"])
+    Assert.Equal(Some "1", sinkRow.Values.[nm "Id"])
 
 // A5 — the migrate-with-data data leg re-points A→B because the data source is
 // at the OLD schema A. `executeWithData` now derives its rename map exactly as
@@ -119,7 +119,7 @@ let ``A5: the migrate-with-data rename map derives from between(sinkSource=A, ta
     // A row carrying the A-schema name re-points onto the B name (not lost to NULL).
     let aRow = rowOf [ "Id", "1"; "Email", "alice@x" ]
     let repointed = RenameProjection.repointRow map aRow
-    Assert.Equal("alice@x", repointed.Values.[nm "Contact"])
+    Assert.Equal(Some "alice@x", repointed.Values.[nm "Contact"])
     Assert.False(repointed.Values.ContainsKey(nm "Email"))
 
 [<Fact>]
@@ -167,9 +167,9 @@ let ``kind-scoping: a rename in one kind does NOT re-key the same name in anothe
     // The poisoning scenario, dead: an Order row's Status survives untouched
     // under ORDER's map, while an Invoice row's Status re-keys under INVOICE's.
     let orderRow = RenameProjection.repointRow (RenameProjection.forKind (kKey "Order") byKind) (rowOf [ "Id", "7"; "Status", "OPEN" ])
-    Assert.Equal("OPEN", orderRow.Values.[nm "Status"])
+    Assert.Equal(Some "OPEN", orderRow.Values.[nm "Status"])
     let invoiceRow = RenameProjection.repointRow (RenameProjection.forKind (kKey "Invoice") byKind) (rowOf [ "Id", "9"; "Status", "PAID" ])
-    Assert.Equal("PAID", invoiceRow.Values.[nm "State"])
+    Assert.Equal(Some "PAID", invoiceRow.Values.[nm "State"])
     Assert.False(invoiceRow.Values.ContainsKey(nm "Status"))
 
 // AC-I7 — the composed Transfer: a column rename AND a Dev→UAT re-key in
@@ -243,8 +243,8 @@ let private rpReconciliation : Map<SsKey, ReconciliationStrategy> =
 
 /// Pre-existing Sink (UAT) User rows: Dev user 280 (alice) is UAT 18.
 let private rpSinkUserRows : StaticRow list =
-    [ { Identifier = aKey "u18"; Values = Map.ofList [ nm "ID", "18"; nm "Email", "alice@x" ] }
-      { Identifier = aKey "u19"; Values = Map.ofList [ nm "ID", "19"; nm "Email", "bob@x" ] } ]
+    [ { Identifier = aKey "u18"; Values = StaticRow.presentValues [ nm "ID", "18"; nm "Email", "alice@x" ] }
+      { Identifier = aKey "u19"; Values = StaticRow.presentValues [ nm "ID", "19"; nm "Email", "bob@x" ] } ]
 
 /// Reproduce `runCore`'s post-ingestion pipeline faithfully. `renameMap`
 /// empty = the rename leg dropped; `reconciliation` empty = the reconcile
@@ -294,7 +294,7 @@ let ``AC-I7: composed rename+rekey — FK value follows its SsKey to BUYER AND r
     // BOTH legs landed: the value followed its SsKey to BUYER (rename),
     // AND the FK re-keyed 280 → 18 (reconcile). The source coordinates
     // (OWNER / 280) are gone.
-    Assert.Equal(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    Assert.Equal(Some "18", StaticRow.value (nm "Buyer") row)
     Assert.False(row.Values.ContainsKey(nm "Owner"))
     Assert.Empty plan.SkippedReferences
 
@@ -309,7 +309,7 @@ let ``AC-I7 discrimination: dropping the RENAME leg loses the FK re-key (Map.emp
     let row = List.exactlyOne (orderLoad plan).Rows
     // No BUYER column carries the re-keyed value; the reconcile leg alone
     // cannot place it — proving the rename leg is load-bearing.
-    Assert.NotEqual<string option>(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    Assert.NotEqual<string option>(Some "18", StaticRow.value (nm "Buyer") row)
 
 [<Fact>]
 let ``AC-I7 discrimination: dropping the RECONCILE leg leaves the FK at the source key (Map.empty recon)`` () =
@@ -324,8 +324,8 @@ let ``AC-I7 discrimination: dropping the RECONCILE leg leaves the FK at the sour
         |> RenameProjection.forKind rpOrderKey
     let plan = composePlan renameMap Map.empty sourceOrder
     let row = List.exactlyOne (orderLoad plan).Rows
-    Assert.Equal(Some "280", Map.tryFind (nm "Buyer") row.Values)
-    Assert.NotEqual<string option>(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    Assert.Equal(Some "280", StaticRow.value (nm "Buyer") row)
+    Assert.NotEqual<string option>(Some "18", StaticRow.value (nm "Buyer") row)
 
 [<Fact>]
 let ``AC-I7 adversarial: an ordinal rename would mis-assign — the SsKey re-point keeps the FK correct`` () =
@@ -343,9 +343,9 @@ let ``AC-I7 adversarial: an ordinal rename would mis-assign — the SsKey re-poi
     let sourceOrder = [ rowOf [ "Decoy", "ZZZ"; "Owner", "280"; "Id", "1000" ] ]
     let plan = composePlan renameMap rpReconciliation sourceOrder
     let row = List.exactlyOne (orderLoad plan).Rows
-    Assert.Equal(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    Assert.Equal(Some "18", StaticRow.value (nm "Buyer") row)
     // The decoy did NOT become BUYER — the re-point is by identity, not ordinal.
-    Assert.NotEqual<string option>(Some "ZZZ", Map.tryFind (nm "Buyer") row.Values)
+    Assert.NotEqual<string option>(Some "ZZZ", StaticRow.value (nm "Buyer") row)
 
 [<Fact(Skip = "AC-I7 DB end-to-end witness needs Docker (another track holds Docker this round). The pure composition above is the discriminating witness; this canary asserts the same composition through Transfer.runReconcilingWithRenames against a real Source+Sink: source at contract A (Owner/OWNER_ID), sink at contract B (Buyer/BUYER_ID) with pre-existing UAT User rows, reconciliation = User-by-Email. Expect the written Order row's BUYER column to carry the reconciled UAT User key.")>]
 let ``AC-I7 canary: runReconcilingWithRenames composes rename + re-key end-to-end (Docker)`` () =

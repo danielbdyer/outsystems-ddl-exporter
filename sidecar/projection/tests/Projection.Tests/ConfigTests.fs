@@ -41,13 +41,24 @@ let private withTolerance (tokensJson: string) : string =
 
 [<Fact>]
 let ``Config.parse: emission.tolerance parses known divergence tokens into the configured set`` () =
-    let cfg = Config.parse (withTolerance """["EmptyTextNormalizedToNull", "DecimalScaleTolerated"]""") |> mustOk
+    let cfg = Config.parse (withTolerance """["CharAnsiPaddingTolerated", "DecimalScaleTolerated"]""") |> mustOk
     match cfg.Emission.Tolerance with
     | None -> failwith "expected Some tolerance"
     | Some t ->
-        Assert.True(Tolerance.tolerates ToleratedDivergence.EmptyTextNormalizedToNull t)
+        Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated t)
         Assert.True(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated t)
         Assert.False(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted t)
+
+[<Fact>]
+let ``Config.parse: the RETIRED EmptyTextNormalizedToNull token is refused fail-closed (WP-3 migration note)`` () =
+    // WP-3 (F11) retired the tolerance: `''` and NULL are distinct
+    // end-to-end, so there is no erasure left to accept. An operator
+    // config still carrying the token fails loudly — edit the config,
+    // never silently ignore a named acceptance.
+    let errors = Config.parse (withTolerance """["EmptyTextNormalizedToNull"]""") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Message.Contains "EmptyTextNormalizedToNull" || e.Code.Contains "invalidValue"),
+        sprintf "expected the retired token to fail closed; got %A" (errors |> List.map (fun e -> e.Code)))
 
 [<Fact>]
 let ``Config.parse: emission.tolerance with an unknown token fails FAIL-CLOSED (never silently widens)`` () =
@@ -70,7 +81,7 @@ let ``Config.parse: emission.tolerance empty array is strict (accept nothing)`` 
 
 [<Fact>]
 let ``Config.parse: emission.tolerance non-array fails with a typeMismatch`` () =
-    let errors = Config.parse (withTolerance "\"EmptyTextNormalizedToNull\"") |> mustFail
+    let errors = Config.parse (withTolerance "\"CharAnsiPaddingTolerated\"") |> mustFail
     Assert.True(
         errors |> List.exists (fun e -> e.Code.Contains "typeMismatch" || e.Message.Contains "must be an array"),
         sprintf "expected a typeMismatch for a non-array tolerance; got %A" (errors |> List.map (fun e -> e.Code)))

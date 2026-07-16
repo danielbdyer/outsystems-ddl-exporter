@@ -84,12 +84,13 @@ let private treeCatalog (n: int) : Catalog =
         { Identifier = mkKey [ "Tree"; "Row"; string i ]
           Values =
               Map.ofList
-                  [ mkName "Id",       string i
-                    mkName "Label",    sprintf "n%d" i
-                    // root (Id=1) has no parent; every other row points at i-1,
-                    // a chain whose targets all exist once Phase-1 has inserted
-                    // every row (with ParentId NULLed) — the deferral's reason.
-                    mkName "ParentId", (if i = 1 then "" else string (i - 1)) ] }
+                  [ mkName "Id",       Some (string i)
+                    mkName "Label",    Some (sprintf "n%d" i)
+                    // root (Id=1) has no parent (explicit NULL); every other row
+                    // points at i-1, a chain whose targets all exist once Phase-1
+                    // has inserted every row (with ParentId NULLed) — the
+                    // deferral's reason.
+                    mkName "ParentId", (if i = 1 then None else Some (string (i - 1))) ] }
     let kind : Kind =
         { SsKey = kindKey; Name = mkName "Tree"; Origin = Native
           Modality = [ Static [ for i in 1 .. n -> row i ] ]
@@ -123,7 +124,7 @@ let private migrationContext (physical: string) (n: int) : MigrationDependencyCo
         [ for i in 1 .. n ->
             { KindKey = kindKey
               Identifier = mkKey [ physical; "Row"; string i ]
-              Values = Map.ofList [ mkName "Id", string i; mkName "Code", sprintf "C%05d" i ] } ] }
+              Values = StaticRow.presentValues [ mkName "Id", string i; mkName "Code", sprintf "C%05d" i ] } ] }
 
 /// The rendered MigrationDependencies lane (the staged MERGE under test) via the composer.
 let private migrationSeeds (policy: Policy) (catalog: Catalog) (context: MigrationDependencyContext) : string =

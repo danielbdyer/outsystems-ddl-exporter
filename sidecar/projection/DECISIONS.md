@@ -27977,3 +27977,92 @@ dev/test emissions without an intervention keep the permissive default. This is 
 of "evidence gate as opt-in → mandatory eject posture": the eject config opts in, always. Together
 with WP-1a/1b/1d/1c(i) this closes register E1/E2/E3/E6; the only WP-1 remainder is WP-1e (the msg-1785
 cascade-path pre-analyzer, backlog).
+
+## 2026-07-16 — WP-3: empty-string preservation (F11) — option-grain cells end-to-end; `''` survives distinct from NULL; the tolerance retires
+
+**Context.** Register F11 / packet top-table row 3, the campaign's largest change. The V2 IR used the
+empty raw string as its UNIVERSAL NULL sentinel (NM-18): `ReadSide`'s row loop wrote `""` for
+`IsDBNull`, `SqlLiteral.ofRaw ""` = `NullLit` for every type, `Bulk.parseRaw ""` = `DBNull` — so a
+genuine empty-string Text value (which IS OutSystems' null-at-the-language-level, platform shape
+`NULL … DEFAULT ('')`) was erased to NULL on every write path. V1 preserved `N''`; its only coercion
+was the deliberate single-space static-seed sentinel. The erasure was closed (the
+`EmptyTextNormalizedToNull` tolerance), not silent — this entry retires it by removing the erasure.
+A first attempt (2026-07-16, reverted) taught the true shape: the fix is NOT a `CellValue` change —
+the distinction dies at `ReadSide → RowQuantum`, upstream of everything, so the CARRIERS had to move.
+
+**The decision — three-state cells, one grain at a time.**
+- `StaticRow.Values : Map<Name, string option>`; `RowQuantum.Cells : string voption[]`;
+  `CellValue.Raw : string option`. `None`/`ValueNone` = SQL NULL (out-of-band, no in-band sentinel);
+  `Some ""` = a genuine empty string (Text renders `N''`, Binary the zero-length `0x`); an ABSENT Map
+  key = column-not-provided (the availability-set / sink-DEFAULT rule) — three distinct states where
+  one string used to conflate them. The quantum takes `voption` (struct option), by the same
+  measured-allocation prior that fired its `[<Struct>]` promotion — a reference `Some` per non-NULL
+  cell at estate scale is exactly the per-cell allocation the carrier exists to avoid.
+- `ReadSide`'s row loop reads `IsDBNull → ValueNone` else `ValueSome (formatter …)` (the actual fix),
+  as do the three sibling DB readers (workbench `EvidenceCache.rowsOf`, the CLI impact `readBefore`,
+  `PeerEstateHarness`). Formatters still see non-null cells only.
+- `SqlLiteral.ofRaw` / `Bulk.parseRaw` / `CachedValue.ofRaw` take the option cell. An empty raw on a
+  type with NO empty form (Integer/Decimal/Boolean/temporal/Guid) refuses loudly —
+  `rawValue.empty.notEmptyCapable`, the NM-20 `FormatException` shape — never a silent NULL.
+- **Config conventions are boundary mappings, not carrier states:** the migration-dependencies file's
+  documented `"" = NULL` maps to `None` at parse (JSON `null` too; a genuine `''` is not expressible
+  in that file — pre-existing, now explicit); the σ synthetic boundary and `Policy` delete-scope
+  terms keep their `""`-authors-NULL conventions at their own parse edges.
+- **The row hash distinguishes NULL from `''` by OMISSION** (a NULL cell contributes no `name=` pair)
+  — the rule the SQL-side plane (`ServerDigest`, FOR XML) already applied. Rows without NULLs keep
+  their pre-WP-3 bytes; present-`None` ≡ absent-key. Surveyed before deciding: NO consumer persists
+  these hashes across runs (fidelity/canary compares are intra-run; ActConsent fingerprints and the
+  estate store use independent recipes) — so no re-bless and no evidence re-record. The write-only
+  `fidelity.rows.json` digest STRINGS change value where NULLs occur; nothing reads them back.
+- **Deliberately byte-stable flattens** (`StaticRow.valueOrEmpty`): ActConsent/ActEvidence consent
+  fingerprints (persisted blessings — lifting them is a RE-BLESS decision, named and deferred),
+  capture-journal chunk text and capture src-key pairs, NM-58 reconcile keying (NULL ≡ blank ≡
+  no-key), FK-follow/orphan keying (NULL-or-empty FK = unpopulated, both remap grains mirrored).
+  Option-grain COMPARES landed where distinctness is the point: reconcile divergences,
+  static-lookup drift, the workbench FieldDiff (NULL-vs-`''` is a real difference now).
+- **The single-space sentinel is V1's rule, adopted deliberately** —
+  `KindColumns.outSystemsSpaceSentinel`, the executable form of `StaticEntitySeedScriptGenerator
+  .NormalizeValue` (exactly `" "`, NULLABLE Text only): applied by the STATIC-SEED lanes only (both
+  grains + the population emitter); NEVER on transfer/reflection (mirror reality) or the
+  operator-authored migration lane.
+- **Codecs version-gate.** `CatalogCodec` and `GoldenCodec` go to version 2: NULL serializes as JSON
+  `null`; a v1 artifact's `""` still READS as NULL (its original meaning — replay semantics
+  preserved), while v2 round-trips `Some ""` faithfully. Consequence, named: `serializeKind` feeds
+  the estate store's `SchemaShapeHash`, so NULL-bearing static kinds show one-time staleness and
+  self-heal by re-profiling.
+- **CSV destination**: RFC 4180 has no NULL, so the convention is deliberate and carried in
+  `export-manifest.json` (`nullEncoding`): a bare empty field is NULL; a force-quoted `""` is an
+  empty string.
+- **`EmptyTextNormalizedToNull` retires** — variant, `@ladder` row, detector
+  (`detectEmptyTextNormalization`/`observeCell`), and the emit path's structural residual collector
+  (now the honest empty base case). `allKnown` drops to 12. Migration note: the config token now
+  fails CLOSED (witnessed) — operator configs carrying it must drop it.
+- **Evidence-plane semantics change, named:** a `''` Text cell no longer profiles as NULL evidence
+  (`CachedValue.ofRaw Text (Some "") = StringValue ""`) — the derived plane now matches what the
+  live profiler measures (`COUNT(*) WHERE col IS NULL` never counted `''`). Tightening verdicts over
+  derived evidence can differ from pre-WP-3 runs where `''` was the only "NULL".
+
+**Witness.** The flipped Docker canary ``data canary: empty-string Text survives transfer distinct
+from NULL (F11 preservation)`` (sink now `[(1,false);(2,true);(3,false)]`); the `TextFidelity` golden
+static kind seeding `(1, N''), (2, NULL), (3, NULL ← the sentinel), (4, N'hello')` in BOTH blessed
+corpora (master + data-lanes — the additive diff IS the demonstration); F11 hash-distinctness +
+omission-rule pins (`RowQuantumTests`); the seeds-lane sentinel test (exactly one `N' '` survives —
+the mandatory one); `ofRaw`/`parseRaw`/`CachedValue` contract tests incl. the named refusal; the
+`N''` ScriptDom insert round-trip; the CSV encoding witness incl. the manifest key; the fail-closed
+retired-token config witness; codec v2 round-trip law incl. `Some ""`. **Final gates at this
+commit: full Docker pool 314/314; full pure pool 4360/0.** (En route: the slices-1–3 checkpoint's
+full pure run surfaced 1 PRE-EXISTING failure — the WP-4 SqlStorage-axis witness, fixed as its own
+commit — and the first Docker run surfaced three Integration fixtures still authoring NULL as the
+retired `""` sentinel, exactly the erasure class WP-3 removes; the named
+`rawValue.empty.notEmptyCapable` refusal caught them, and they now author `None`.)
+
+**Scope notes.** Display flattens are DEFERRED to the Voice deliberately: the workbench "(blank)"
+renders NULL and `''` identically, divergence samples flatten NULL to `""` — a distinct NULL
+rendering is operator-copy design, not carrier semantics. The V1-JSON default lift keeps a non-text
+`"default": ""` at its pre-WP-3 `DEFAULT NULL` (ambiguous V1 authoring; refusing would fail
+whole-model ingest) while a Text one now faithfully yields `DEFAULT N''`. `ReadSide.attachDefaults`'s
+reflected-default literal parsing carries quotes through `normalizeDefault` (`('')` → the two-char
+`''` text) — a pre-existing WP-9/17-territory shape, untouched. `DEFAULT ('')` reconciliation proved
+docs-only: the constraint plane always rendered `DEFAULT N''`; the two stale "renders DEFAULT NULL"
+claims (GoldenCatalog comment, THE_GOLDEN_EMISSION) are corrected. WP-17's Float/Real/DateTimeOffset/
+Xml faithful-or-refuse work now rides an option-grain carrier that can express what it needs.

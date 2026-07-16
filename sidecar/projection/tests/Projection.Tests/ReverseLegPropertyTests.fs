@@ -233,7 +233,7 @@ let ``remap algebra: remapRowFks re-points exactly the FK columns whose targets 
                         return
                             { Identifier = aKey 2 (sprintf "Row%d" r)
                               Values =
-                                Map.ofList
+                                StaticRow.presentValues
                                     [ nm "Id", string (100 + r)
                                       nm "Fk0", v0
                                       nm "Fk1", v1
@@ -254,7 +254,7 @@ let ``remap algebra: remapRowFks re-points exactly the FK columns whose targets 
         let rowSurvives (row: StaticRow) =
             fkTargets
             |> Map.forall (fun col _ ->
-                match Map.tryFind col row.Values with
+                match StaticRow.value col row with
                 | None | Some "" -> true
                 | Some v -> Set.contains v (capturedFor col))
         let expectedKept = rows |> List.filter rowSurvives
@@ -266,9 +266,10 @@ let ``remap algebra: remapRowFks re-points exactly the FK columns whose targets 
                     && orig.Values
                        |> Map.forall (fun col v ->
                             let expected =
-                                if Map.containsKey col fkTargets && v <> "" && Set.contains v (capturedFor col)
-                                then "A" + v
-                                else v
+                                match v with
+                                | Some s when Map.containsKey col fkTargets && s <> "" && Set.contains s (capturedFor col) ->
+                                    Some ("A" + s)
+                                | _ -> v
                             Map.tryFind col kept.Values = Some expected))
                 result.Rows expectedKept
         let skippedMatch =

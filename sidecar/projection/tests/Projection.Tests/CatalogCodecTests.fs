@@ -142,7 +142,7 @@ let private richCatalog () : Catalog =
 
     let staticPop : StaticRow =
         { Identifier = key 99
-          Values = Map.ofList [ nm "Id", "1"; nm "FullName", "seed" ] }
+          Values = StaticRow.presentValues [ nm "Id", "1"; nm "FullName", "seed" ] }
 
     let selfRef =
         { Reference.create (key 14) (nm "SponsorFk") selfFkAttr patronKey with
@@ -297,7 +297,7 @@ let ``every SqlLiteral round-trips as a DEFAULT`` () =
         assertRoundTrips (sprintf "SqlLiteral %A" lit) (catalogOf (kindOfAttr a))
 
 let private allModalityMarks : ModalityMark list =
-    [ ModalityMark.Static [ { Identifier = key 5; Values = Map.ofList [ nm "Col", "v" ] } ]
+    [ ModalityMark.Static [ { Identifier = key 5; Values = StaticRow.presentValues [ nm "Col", "v" ] } ]
       ModalityMark.Static []
       ModalityMark.TenantScoped
       ModalityMark.SoftDeletable

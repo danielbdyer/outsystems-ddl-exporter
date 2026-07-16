@@ -82,7 +82,11 @@ module DeleteScopePolicy =
             // SQL's default-collation case-insensitivity), not a raw `.Equals`
             // (recon #24; the `columnNameEquals` docstring named this site).
             |> List.tryFind (fun a -> ColumnRealization.columnNameEquals (ColumnName.value t.Column) a.Column)
-            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column, SqlLiteral.ofRaw a.Type t.Value)
+            // The delete-scope term keeps its config-file convention:
+            // `""` authors NULL (pre-WP-3 rendering, unchanged).
+            |> Option.map (fun a ->
+                ColumnRealization.columnNameText a.Column,
+                SqlLiteral.ofRaw a.Type (if t.Value = "" then None else Some t.Value))
         let resolved = policy.Terms |> List.map resolveTerm
         if not (List.isEmpty resolved) && List.forall Option.isSome resolved
         then Some (List.choose id resolved)

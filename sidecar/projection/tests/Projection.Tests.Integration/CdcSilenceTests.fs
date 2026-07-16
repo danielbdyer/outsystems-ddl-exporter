@@ -89,7 +89,7 @@ module private CdcSilenceFixtures =
         let row code label =
             { Identifier = mkKey ["Country"; "Row"; code]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",    code
                         mkName "Code",  code
                         mkName "Label", label ] }
@@ -163,7 +163,7 @@ module private CdcSilenceFixtures =
         let row code label =
             { Identifier = mkKey ["Country"; "Row"; code]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",    code
                         mkName "Code",  code
                         mkName "Label", label ] }
@@ -195,11 +195,12 @@ module private CdcSilenceFixtures =
     // nvarchar/Text is exercised above; these fixtures add a NULLABLE column of
     // each PrimitiveType. SPIKE finding: the SSDT emitter reads
     // `Column.IsNullable` (not `IsMandatory`), so a nullable column MUST set
-    // `ColumnRealization.create (...) (true)`. `SqlLiteral.ofRaw`'s `"" → NullLit`
-    // sentinel is the single per-type NULL encoding each case discriminates.
+    // `ColumnRealization.create (...) (true)`. WP-3 (F11): NULL is authored
+    // OUT-OF-BAND (`None` on the option cell) — the retired `""` sentinel no
+    // longer encodes it.
     // -----------------------------------------------------------------------
 
-    let buildNullableFixture (typ: PrimitiveType) (nullableRaw: string) : Catalog * Kind =
+    let buildNullableFixture (typ: PrimitiveType) (nullableCell: string option) : Catalog * Kind =
         let typeTag =
             match typ with
             | Integer  -> "INT"
@@ -218,8 +219,8 @@ module private CdcSilenceFixtures =
             { Identifier = mkKey ["Nullable"; typeTag; "Row"; "1"]
               Values =
                   Map.ofList
-                      [ mkName "Id",  "1"
-                        mkName "Val", nullableRaw ] }
+                      [ mkName "Id",  Some "1"
+                        mkName "Val", nullableCell ] }
         let valAttr =
             match typ with
             | Decimal ->
@@ -283,7 +284,7 @@ module private CdcSilenceFixtures =
         let row i =
             { Identifier = mkKey ["Delta"; "Row"; string i]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",    string i
                         mkName "Code",  sprintf "C%02d" i
                         mkName "Label", labelOf i ] }
@@ -341,7 +342,7 @@ module private CdcSilenceFixtures =
         { KindKey    = kindKey
           Identifier = mkKey ["MigCountry"; "Row"; id]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",    id
                     mkName "Code",  code
                     mkName "Label", label ] }
@@ -558,8 +559,8 @@ type CdcSilenceTests(fixture: IsolatedContainerFixture) =
     [<MemberData("NullableTypeMatrix")>]
     member _.``Track D / AC-D1 left-null arm: NULL -> value on a nullable column fires exactly +2 CDC captures`` (typ: PrimitiveType) (value1: string) (_value2: string) =
         if not (skipIfNoDocker (sprintf "cdc-nullable-null-to-value-%A" typ)) then () else
-        let nullCatalog,  kind = buildNullableFixture typ ""
-        let valueCatalog, _    = buildNullableFixture typ value1
+        let nullCatalog,  kind = buildNullableFixture typ None
+        let valueCatalog, _    = buildNullableFixture typ (Some value1)
         let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
         let schemaSql,     nullSeed  = renderArtifacts nullCatalog  kind cdcAware
         let _,             valueSeed = renderArtifacts valueCatalog kind cdcAware
@@ -574,8 +575,8 @@ type CdcSilenceTests(fixture: IsolatedContainerFixture) =
     [<MemberData("NullableTypeMatrix")>]
     member _.``Track D / AC-D1 right-null arm: value -> NULL on a nullable column fires exactly +2 CDC captures`` (typ: PrimitiveType) (value1: string) (_value2: string) =
         if not (skipIfNoDocker (sprintf "cdc-nullable-value-to-null-%A" typ)) then () else
-        let valueCatalog, kind = buildNullableFixture typ value1
-        let nullCatalog,  _    = buildNullableFixture typ ""
+        let valueCatalog, kind = buildNullableFixture typ (Some value1)
+        let nullCatalog,  _    = buildNullableFixture typ None
         let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
         let schemaSql,     valueSeed = renderArtifacts valueCatalog kind cdcAware
         let _,             nullSeed  = renderArtifacts nullCatalog  kind cdcAware
@@ -590,7 +591,7 @@ type CdcSilenceTests(fixture: IsolatedContainerFixture) =
     [<MemberData("NullableTypeMatrix")>]
     member _.``Track D / D2.4 nullable-stays-NULL: NULL -> NULL redeploy on a nullable column is CDC-silent (zero new captures)`` (typ: PrimitiveType) (_value1: string) (_value2: string) =
         if not (skipIfNoDocker (sprintf "cdc-nullable-null-to-null-%A" typ)) then () else
-        let nullCatalog, kind = buildNullableFixture typ ""
+        let nullCatalog, kind = buildNullableFixture typ None
         let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
         let schemaSql, nullSeed = renderArtifacts nullCatalog kind cdcAware
         Assert.Contains ("WHEN MATCHED AND (", nullSeed)

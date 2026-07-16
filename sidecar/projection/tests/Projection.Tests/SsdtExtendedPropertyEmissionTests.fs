@@ -195,7 +195,6 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
         | ToleratedDivergence.IndexOptionsUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
-        | ToleratedDivergence.EmptyTextNormalizedToNull    -> ()
         | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
@@ -218,7 +217,10 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // **T17/B4b (2026-07-15):** 13 — the row-fidelity comparator's three
     // canonical-form erasures (Boolean canonicalization, datetime tick
     // precision, integer width), all Data AcceptedFaithful.
-    Assert.Equal(13, Set.count ToleratedDivergence.allKnown)
+    // **WP-3 / F11 (2026-07-16):** 12 — EmptyTextNormalizedToNull RETIRED
+    // (the option-grain cell carriers keep '' and NULL distinct end-to-end;
+    // the erasure it named no longer exists to tolerate).
+    Assert.Equal(12, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

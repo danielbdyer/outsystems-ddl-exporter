@@ -128,7 +128,7 @@ let private microFkProtectProfile : Profile =
 let private cityRows : StaticRow list =
     [ for (id, nm) in [ 1, "Lisbon"; 2, "Porto"; 3, "Madrid" ] ->
         { Identifier = SsKey.synthesizedComposite "E2E_CITY_ROW" [ string id ] |> Result.value
-          Values = Map.ofList [ mkName "Id", string id; mkName "Name", nm ] } ]
+          Values = StaticRow.presentValues [ mkName "Id", string id; mkName "Name", nm ] } ]
 
 /// `endToEndCatalog` with the Country kind's `Static` modality populated.
 let private populatedCatalog : Catalog =

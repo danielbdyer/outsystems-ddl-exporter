@@ -103,7 +103,7 @@ surprises; they need a nod, not a debate.
 |---|---|---|
 | 1 | **FK creation posture: the evidence regime inverted between V1 and V2.** V1's shipped default was `EvidenceGated` — "no tightening without proof"; orphaned references withhold DDL until cleaned. V2's shipping default emits **every** deployable reference as an enforced, trusted FK with no orphan check at emit time; the evidence gate is opt-in. Compounding it, the live extraction path currently hardcodes `HasDbConstraint = true` for every reference, erasing the logical-vs-backed distinction the gate needs. | E2, E3 · ⚑ WP-1 |
 | 2 | **Delete-rule semantics deviate from database reality.** The platform physically creates: Protect → FK `NO ACTION`; Delete → FK `CASCADE`; **Ignore → no FK at all**. V2 emits an enforced FK for Ignore, and derives `ON DELETE` from the *model's* rule code even though the deployed action is extracted (`#FkReality.DeleteAction`) and then never consulted. No cascade-path (msg 1785) analysis exists. | E1 · ⚑ WP-1 |
-| 3 | **Empty string → NULL, universally, on the data plane.** A V2 regression: V1 preserved `N''` (its only coercion was the deliberate single-space sentinel). OutSystems Text has no NULL at the language level — `''` *is* its null value, the platform default-constrains Text columns with `DEFAULT ('')`, and compiled `=''` filters change meaning under NULL. | F11 · ⚑ WP-3 |
+| 3 | **Empty string → NULL, universally, on the data plane.** A V2 regression: V1 preserved `N''` (its only coercion was the deliberate single-space sentinel). OutSystems Text has no NULL at the language level — `''` *is* its null value, the platform default-constrains Text columns with `DEFAULT ('')`, and compiled `=''` filters change meaning under NULL. **✅ WP-3 LANDED (DECISIONS 2026-07-16):** option-grain cells end-to-end; `''` survives distinct from NULL; the single-space sentinel is the deliberate V1-parity rule on the static-seed lanes; tolerance retired. | F11 · ✅ WP-3 |
 | 4 | **Type/nullability authority is the logical model, not deployed reality.** `NOT NULL` where the DB column was NULL (by design, C6); identifiers forced `BIGINT` while the repo's own platform notes record `INT` reality (C2); `email`/`phone` emitted ANSI `VARCHAR` although the platform's own DDL is `NVARCHAR` — the code brands the VARCHAR widths "IMPOSED V1-parity inference, NOT a source-declared fact" (C3 · ⚑ WP-4); deployed type drift undiagnosed (C1). | C1–C6 |
 | 5 | **Silently absent object classes.** Temporal tables, sequences (model-sourced runs), `PERSISTED` on computed columns, `ROWGUIDCOL`/`SPARSE`/`FILESTREAM` — and **clustering**: neither pipeline captures `sys.indexes.type_desc`, so a DBA-re-clustered table is silently re-clustered back to PK-clustered on deploy (a data-layout rewrite). | C10, D1 · ⚑ WP-2, WP-5 |
 | 6 | **Source UNIQUE constraints are flattened to unique indexes** (object class changes; both pipelines do this — the fix is an upgrade over both). | A7 · ⚑ WP-10 |
@@ -552,7 +552,7 @@ Naming a kind removes the whole kind from Bootstrap — the operator owns comple
 **F10. Determinism & read concurrency (`dataReadConcurrency` 4, acquisition-only)** — [KNOB]
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**F11. Empty string → NULL, universally — a V2 regression against both V1 and the platform** — [HARD, tolerance `EmptyTextNormalizedToNull`] ⚑ **WP-3**
+**F11. Empty string → NULL, universally — a V2 regression against both V1 and the platform** — [HARD; the `EmptyTextNormalizedToNull` tolerance is now RETIRED] ✅ **WP-3 LANDED (DECISIONS 2026-07-16)**
 The platform: OutSystems Text has no NULL at the language level — `''` *is* the null value; the
 runtime writes `''`, never NULL; the platform column shape for optional Text is `NULL` with
 `DEFAULT ('')` (fixtures: `[FIRSTNAME] NVARCHAR(100) NULL … DEFAULT ('')`). V1: preserved `N''`
@@ -565,6 +565,15 @@ under NULL semantics, tightened NOT-NULL loads fail on values that were never NU
 NULL` — reconcile at blessing).
 *Decided (2026-07-15): planned fix — WP-3 (preserve `''` end-to-end; distinct empty-vs-NULL
 representation; deliberate single-space-sentinel handling; retire the tolerance).*
+*✅ LANDED (WP-3, DECISIONS 2026-07-16): option-grain cells end-to-end (`None` = NULL out-of-band,
+`Some ""` = a value — Text renders `N''`, Binary `0x`); the single-space sentinel is the deliberate,
+documented V1-parity rule on the STATIC-SEED lanes only (`KindColumns.outSystemsSpaceSentinel`);
+the row hash distinguishes NULL from `''` (omission encoding, the ServerDigest rule); the CSV
+destination encodes NULL as a bare empty field vs `""` quoted (manifest-documented); the
+`DEFAULT ('')` wobble reconciled — the constraint plane was always faithful (`DEFAULT N''`), the
+two stale `DEFAULT NULL` doc claims corrected; `EmptyTextNormalizedToNull` + its detector retired
+(a config still carrying the token fails closed). Golden witness: `TextFidelity` seeds
+`(1, N''), (2, NULL), (3, NULL ← the sentinel), (4, N'hello')`.*
 
 ### G. Bundle, `.sqlproj`, dacpac, refactorlog
 
@@ -661,7 +670,7 @@ in-band; `fidelity.txt` reports what fired per run.
 | `PostDeployForeignKeysSplit` | FK *file placement* is not contract (all inline today) | compare deployed FK sets, not layout |
 | `IndexOptionsUnreflected` | **OpenGap** — canary blind to filter/INCLUDE/options drift | own via schema compare |
 | `StaticPopulationsUnreflected` | seed content not on the schema surface | data-leg canary when it matters |
-| `EmptyTextNormalizedToNull` | `''` → NULL on transfer-write — **slated for retirement under WP-3** | audit `''`-vs-NULL semantics meanwhile |
+| `EmptyTextNormalizedToNull` | **RETIRED (WP-3, 2026-07-16)** — `''` and NULL are distinct end-to-end; the erasure no longer exists | — |
 | `CompositePkFkUnreflected` | **OpenGap** — first-leg-only composite-PK FKs — **WP-12 upgrades to refusal** | inventory composite-PK targets |
 | `CharAnsiPaddingTolerated` | char(n) padding equality; CDC-invisible | none |
 | `DecimalScaleTolerated` | `1.0` vs `1.00` same stored value | none |
@@ -779,7 +788,7 @@ and adopting golden-diff-as-change-review going forward.
 2. **Live-path `HasDbConstraint = true` hardcode** (`MetadataSnapshotRunner.fs:1326`) — erases
    the logical-vs-backed distinction; blocks the FK evidence regime. ⚑ WP-1 (first).
 3. Trigger bodies keep physical refs + unparsed-body drop marker. ⚑ WP-6.
-4. Empty-string → NULL universal erasure (V2 regression). ⚑ WP-3.
+4. Empty-string → NULL universal erasure (V2 regression). **✅ WP-3 landed** (option-grain cells; tolerance retired).
 5. Delete-rule reality: Ignore→FK-created (⚑ WP-1c, open); reflected `DeleteAction` unused
    (**✅ WP-1b landed** — reader prefers it + named divergence diagnostic); no 1785 analysis (⚑ WP-1e).
 6. Clustering not captured — silent re-clustering of DBA-modified tables. ⚑ WP-2.
@@ -884,7 +893,18 @@ transfer IR (kill the universal `""`-as-NULL sentinel); preserve `N''` end-to-en
 empty-string DEFAULT rendering (`DEFAULT ('')` platform shape vs golden `DEFAULT N''` vs stale
 `DEFAULT NULL` docs); retire `EmptyTextNormalizedToNull`.
 *Done means:* round-trip canary distinguishes `''`/NULL; tolerance token gone; goldens
-re-blessed.
+re-blessed. **✅ LANDED (DECISIONS 2026-07-16):** option-grain cells end-to-end
+(`Map<Name, string option>` / `string voption[]` / `CellValue.Raw : string option`; `None` =
+NULL, `Some ""` = a value, absent key = not-provided); ReadSide reads `IsDBNull → ValueNone`;
+`ofRaw`/`parseRaw`/`CachedValue.ofRaw` refuse an empty raw loudly where no empty form exists
+(`rawValue.empty.notEmptyCapable`); the row hash uses omission encoding (NULL omits its pair —
+the ServerDigest rule; no hash persists cross-run, so no re-bless); the single-space sentinel
+lives on the static-seed lanes only (`KindColumns.outSystemsSpaceSentinel`); CSV encodes NULL
+as a bare vs `""` quoted empty field (manifest-documented); catalog/golden codecs at v2 with
+version-gated v1 reads; tolerance + detector retired (config token fails closed). Witnesses:
+the flipped Docker canary (`empty-string Text survives transfer distinct from NULL`), the
+`TextFidelity` golden (`(1, N''), (2, NULL), (3, NULL ← sentinel), (4, N'hello')`), F11
+hash-distinctness pins, and the seeds-lane sentinel test.
 
 **WP-4 · Unicode fidelity for email/phone (C3, C1).** Map `email` → `NVARCHAR(250)`, `phone` →
 `NVARCHAR(20)` (platform-native; handbook-aligned) — **✅ LANDED (DECISIONS 2026-07-16)** in

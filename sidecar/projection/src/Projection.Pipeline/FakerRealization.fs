@@ -102,10 +102,10 @@ module FakerRealization =
                         let faker = fakerOf (seedOf row.Identifier)
                         let values =
                             piiByName
-                            |> List.fold (fun (acc: Map<Name, string>) (colName, kind) ->
+                            |> List.fold (fun (acc: Map<Name, string option>) (colName, kind) ->
                                 if Map.containsKey colName acc then
                                     match fieldOf faker kind with
-                                    | Some v      -> Map.add colName v acc
+                                    | Some v      -> Map.add colName (Some v) acc
                                     | Option.None -> acc
                                 else acc) row.Values
                         { row with Values = values }))
@@ -224,7 +224,7 @@ module FakerRealization =
     /// Realize one row's bound cells. Person-based groups process FIRST (each
     /// faker's person fully materialized before the next faker construction —
     /// Bogus's global `Randomizer.Seed` footgun); fresh-draw/value cells follow.
-    let private realizeRow (rowKey: SsKey) (bindings: (Name * FakerSpec) list) (values: Map<Name, string>) : Map<Name, string> =
+    let private realizeRow (rowKey: SsKey) (bindings: (Name * FakerSpec) list) (values: Map<Name, string option>) : Map<Name, string option> =
         let present = bindings |> List.filter (fun (n, _) -> Map.containsKey n values)
         if List.isEmpty present then values
         else
@@ -237,15 +237,18 @@ module FakerRealization =
                 present
                 |> List.filter (fun (_, s) -> isPersonBased s.Generator)
                 |> List.groupBy (fun (_, s) -> localeOf s)
-                |> List.fold (fun (acc: Map<Name, string>) (locale, group) ->
+                |> List.fold (fun (acc: Map<Name, string option>) (locale, group) ->
                     let f = fakerOfLocale locale rowSeed
                     let p = f.Person  // materialize the coherent individual under the row seed
                     group |> List.fold (fun acc2 (colName, spec) ->
-                        Map.add colName (personField p spec.Generator) acc2) acc) values
+                        Map.add colName (Some (personField p spec.Generator)) acc2) acc) values
             present
             |> List.filter (fun (_, s) -> not (isPersonBased s.Generator))
-            |> List.fold (fun (acc: Map<Name, string>) (colName, spec) ->
-                Map.add colName (freshOrValue basis colName acc.[colName] spec) acc) afterPerson
+            |> List.fold (fun (acc: Map<Name, string option>) (colName, spec) ->
+                // A masked NULL masks the empty string — the pre-WP-3
+                // behavior (NULL read as `""` upstream).
+                let existing = acc.[colName] |> Option.defaultValue ""
+                Map.add colName (Some (freshOrValue basis colName existing spec)) acc) afterPerson
 
     /// FUZZING §5 — the coordinate-addressed Faker pass. Resolve each `Faker`
     /// binding → (owning kind SsKey, column Name) against the catalog (the

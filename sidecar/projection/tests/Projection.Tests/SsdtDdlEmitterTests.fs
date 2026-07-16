@@ -953,11 +953,11 @@ let private columnFeaturesKind : Kind =
     let idAttr = mkAttr "Id" "Id" Integer true
     let priceAttr =
         { mkAttr "Price" "Price" Integer false with
-            DefaultValue = Some (SqlLiteral.ofRaw Integer "0") }
+            DefaultValue = Some (SqlLiteral.ofRaw Integer (Some "0")) }
     let nameAttr =
         { mkAttr "Name" "Name" Text false with
             Length = Some 100
-            DefaultValue = Some (SqlLiteral.ofRaw Text "unknown") }
+            DefaultValue = Some (SqlLiteral.ofRaw Text (Some "unknown")) }
     let checkOk =
         ColumnCheck.create
             (attrKey ["Widget"; "CK_Price"])

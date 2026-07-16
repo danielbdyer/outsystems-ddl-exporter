@@ -133,9 +133,9 @@ let ``Episode.withProvenance carries a canary-resolved tolerance residual (close
     // A canary-coupled run resolves a non-strict residual (the empty-text → NULL
     // erasure fired and was accepted); withProvenance records it on the episode,
     // replacing the Tolerance.strict placeholder.
-    let residual = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ])
+    let residual = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ])
     let withProv = Episode.withProvenance residual [] e0
     Assert.False(Tolerance.isStrict withProv.Tolerances)
-    Assert.True(Tolerance.tolerates ToleratedDivergence.EmptyTextNormalizedToNull withProv.Tolerances)
+    Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated withProv.Tolerances)
     // The genesis episode itself stays strict (the honest no-canary base case).
     Assert.True(Tolerance.isStrict e0.Tolerances)

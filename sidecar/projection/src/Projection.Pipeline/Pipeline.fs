@@ -470,42 +470,18 @@ module Compose =
     /// Divergences`, NM-32/33 final hop); a clean pure emit yields the empty
     /// residual, the honest base case.
     /// NM-32/33 (final hop) — the per-run accepted-divergence residual,
-    /// computed STRUCTURALLY from the emitted catalog's static data. The emit
-    /// path has no deploy round-trip (the canary is the separate `check` verb),
-    /// so the residual is the set of named tolerances the EMITTED output
-    /// structurally invokes — today, the empty-text → NULL normalization
-    /// (`CanaryResidual.observeCell`) — resolved against the accepted set.
-    /// `Tolerance.permissive` is the accepted set until an operator tolerance
-    /// config is wired (then it becomes that configured value). Closes the
-    /// `runStoreLeg` / `fidelityOf` FLAG.
-    let private emittedResidualCollector (catalog: Catalog) : CanaryResidual.Collector =
-        Catalog.allKinds catalog
-        |> List.fold
-            (fun coll (k: Kind) ->
-                let typeByName = k.Attributes |> List.map (fun a -> a.Name, a.Type) |> Map.ofList
-                Kind.staticPopulations k
-                |> List.fold
-                    (fun c (row: StaticRow) ->
-                        row.Values
-                        |> Map.fold
-                            (fun c2 name raw ->
-                                match Map.tryFind name typeByName with
-                                | Some typ -> CanaryResidual.observeCell typ raw c2
-                                | None     -> c2)
-                            c)
-                    coll)
-            CanaryResidual.empty
+    /// computed STRUCTURALLY from the emitted output. WP-3 (F11): the one
+    /// tolerance the emit path used to structurally invoke — the
+    /// empty-text → NULL normalization — is RETIRED (the option-grain
+    /// cell carriers keep `''` and NULL distinct end-to-end), so a pure
+    /// emit's residual is the honest EMPTY base case. The functions stay
+    /// (the store-leg/report plumbing consumes them); the deploy-side
+    /// canary still records the divergences it observes per comparison.
+    let private emittedToleranceResidual (configured: Tolerance) (_catalog: Catalog) : Tolerance =
+        CanaryResidual.resolve configured CanaryResidual.empty
 
-    /// Wave-3 3.4 (now WIRED) — the per-run tolerance residual, resolved against
-    /// the operator's CONFIGURED accepted set (`emission.tolerance` →
-    /// `EmissionPolicy.ConfiguredTolerance`) rather than a hardcoded constant.
-    /// `Tolerance.permissive` (the default when `emission.tolerance` is absent)
-    /// reports every fired divergence — byte-identical to the prior behavior.
-    let private emittedToleranceResidual (configured: Tolerance) (catalog: Catalog) : Tolerance =
-        CanaryResidual.resolve configured (emittedResidualCollector catalog)
-
-    let private emittedAcceptedDivergences (configured: Tolerance) (catalog: Catalog) : ToleratedDivergence list =
-        CanaryResidual.resolvedDivergences configured (emittedResidualCollector catalog)
+    let private emittedAcceptedDivergences (configured: Tolerance) (_catalog: Catalog) : ToleratedDivergence list =
+        CanaryResidual.resolvedDivergences configured CanaryResidual.empty
 
     let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
         let categoricalDecisions =

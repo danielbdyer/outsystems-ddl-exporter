@@ -105,7 +105,7 @@ module OssysRowsetReader =
                       row.DefaultValue
                       |> Option.bind (fun raw ->
                           if System.String.IsNullOrWhiteSpace raw then None
-                          else Some (SqlLiteral.ofRaw p raw))
+                          else Some (SqlLiteral.ofRaw p (Some raw)))
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for

@@ -22,11 +22,14 @@ let private anyKey () : SsKey = SsKey.synthesized "OS_TEST_RQ" "row" |> mustOk
 
 /// Build a StaticRow whose Values are total over `cols` (attribute order
 /// preserved by the caller), and the matching attribute-order name list.
+/// WP-3: every authored cell is PRESENT — including `Some ""`, which the
+/// voption quantum now represents faithfully (`ValueSome ""` ≠ `ValueNone`),
+/// so the round-trip laws quantify over the full value space.
 let private rowOf (cols: (string * string) list) : Name list * StaticRow =
     let names = cols |> List.map (fst >> nm)
     let row =
         { Identifier = anyKey ()
-          Values = cols |> List.map (fun (c, v) -> nm c, v) |> Map.ofList }
+          Values = StaticRow.presentValues (cols |> List.map (fun (c, v) -> nm c, v)) }
     names, row
 
 let private assertByteIdentity (cols: (string * string) list) =
@@ -36,7 +39,7 @@ let private assertByteIdentity (cols: (string * string) list) =
     // The invariant: byte-identical hashes …
     Assert.Equal<byte[]>(RowDigester.hashRowBytes row, RowDigester.hashQuantumBytes basis quantum)
     // … and a lossless round-trip back to the IR-grain value Map.
-    Assert.Equal<Map<Name, string>>(row.Values, RowQuantum.toValues basis quantum)
+    Assert.Equal<Map<Name, string option>>(row.Values, RowQuantum.toValues basis quantum)
 
 // -- the permutation must actually do work --------------------------------
 
@@ -118,9 +121,9 @@ let ``Q3: remapQuantumFksWith equals remapRowFksWith over any total rows`` (seed
             { Identifier = anyKey ()
               Values =
                 Map.ofList
-                    [ nm "Id", string i
-                      nm "FkA", string (abs a % 10)
-                      nm "FkB", (if b % 3 = 0 then "" else string (abs b % 10)) ] })
+                    [ nm "Id", Some (string i)
+                      nm "FkA", Some (string (abs a % 10))
+                      nm "FkB", (if b % 3 = 0 then None else Some (string (abs b % 10))) ] })
     let viaRows = SurrogateRemap.remapRowFksWith tryFind fkTargets rows
     let viaQuanta =
         SurrogateRemap.remapQuantumFksWith
@@ -142,22 +145,51 @@ let ``Q3: RowBasis.rename — the header rename equals the per-row rename walk``
     let renamed = RowBasis.rename map basis
     let row =
         { Identifier = anyKey ()
-          Values = Map.ofList [ nm "OldA", "a"; nm "Keep", "k"; nm "OldB", "b=x" ] }
+          Values = StaticRow.presentValues [ nm "OldA", "a"; nm "Keep", "k"; nm "OldB", "b=x" ] }
     let q = RowQuantum.ofStaticRow basis row
-    Assert.Equal<Map<Name, string>>(
+    Assert.Equal<Map<Name, string option>>(
         (RenameProjection.repointRow map row).Values,
         RowQuantum.toValues renamed q)
     // Empty map → the same basis (the no-rename stream is byte-identical).
     Assert.Equal<RowBasis>(basis, RowBasis.rename Map.empty basis)
 
+// -- WP-3 (F11): the NULL-vs-empty hash distinction -------------------------
+
 [<Fact>]
-let ``Q3: cellGetter reads by name through the basis; absent names read empty`` () =
+let ``F11: a NULL cell and an empty-string cell hash DISTINCTLY, on both carriers`` () =
+    let names = [ nm "Id"; nm "Body" ]
+    let basis = RowBasis.ofNames names
+    let withEmpty : StaticRow =
+        { Identifier = anyKey (); Values = Map.ofList [ nm "Id", Some "1"; nm "Body", Some "" ] }
+    let withNull : StaticRow =
+        { Identifier = anyKey (); Values = Map.ofList [ nm "Id", Some "1"; nm "Body", None ] }
+    Assert.NotEqual<byte[]>(RowDigester.hashRowBytes withEmpty, RowDigester.hashRowBytes withNull)
+    Assert.NotEqual<byte[]>(
+        RowDigester.hashQuantumBytes basis (RowQuantum.ofStaticRow basis withEmpty),
+        RowDigester.hashQuantumBytes basis (RowQuantum.ofStaticRow basis withNull))
+    // And the carriers agree with each other on both rows (Q1 holds).
+    Assert.Equal<byte[]>(
+        RowDigester.hashRowBytes withNull,
+        RowDigester.hashQuantumBytes basis (RowQuantum.ofStaticRow basis withNull))
+
+[<Fact>]
+let ``F11: a NULL cell omits its attribute — present-None and absent-key rows hash identically`` () =
+    // The ServerDigest rule, mirrored: NULL contributes nothing, so an
+    // explicit NULL cell and a wholly absent key are the same content.
+    let presentNone : StaticRow =
+        { Identifier = anyKey (); Values = Map.ofList [ nm "Id", Some "1"; nm "Body", None ] }
+    let absent : StaticRow =
+        { Identifier = anyKey (); Values = Map.ofList [ nm "Id", Some "1" ] }
+    Assert.Equal<byte[]>(RowDigester.hashRowBytes presentNone, RowDigester.hashRowBytes absent)
+
+[<Fact>]
+let ``Q3: cellGetter reads by name through the basis; absent names read as no value`` () =
     let names = [ "Zebra"; "Apple" ] |> List.map nm
     let basis = RowBasis.ofNames names
-    let q : RowQuantum = { Cells = [| "z"; "a" |] }
-    Assert.Equal<string>("z", RowQuantum.cellGetter basis (nm "Zebra") q)
-    Assert.Equal<string>("a", RowQuantum.cellGetter basis (nm "Apple") q)
-    Assert.Equal<string>("", RowQuantum.cellGetter basis (nm "Missing") q)
+    let q : RowQuantum = { Cells = [| ValueSome "z"; ValueSome "a" |] }
+    Assert.Equal(ValueSome "z", RowQuantum.cellGetter basis (nm "Zebra") q)
+    Assert.Equal(ValueSome "a", RowQuantum.cellGetter basis (nm "Apple") q)
+    Assert.Equal(ValueNone, RowQuantum.cellGetter basis (nm "Missing") q)
 
 // -- the property: byte-identity over any total row, any column order -----
 

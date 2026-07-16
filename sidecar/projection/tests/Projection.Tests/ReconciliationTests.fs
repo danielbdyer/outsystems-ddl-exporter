@@ -13,7 +13,7 @@ let private mkName (s: string) : Name = Name.create s |> mustOk
 /// A row with an "ID" surrogate column plus extra columns.
 let private row (pk: string) (extra: (string * string) list) : StaticRow =
     { Identifier = mkKey [ "row"; pk ]
-      Values     = ("ID", pk) :: extra |> List.map (fun (k, v) -> mkName k, v) |> Map.ofList }
+      Values     = ("ID", pk) :: extra |> List.map (fun (k, v) -> mkName k, Some v) |> Map.ofList }
 
 let private userKey = mkKey [ "User" ]
 let private idCol = mkName "ID"
@@ -88,8 +88,8 @@ let ``reconcileKind carries the FULL unmatched source row, aligned with Unmatche
     let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
     let (k, ghost) = List.exactlyOne result.UnmatchedRows
     Assert.Equal(userKey, k)
-    Assert.Equal("ghost@x", ghost.Values.[mkName "Email"])
-    Assert.Equal("Ghost", ghost.Values.[mkName "Name"])
+    Assert.Equal(Some "ghost@x", ghost.Values.[mkName "Email"])
+    Assert.Equal(Some "Ghost", ghost.Values.[mkName "Name"])
 
 [<Fact>]
 let ``reconcileKindWith: matched pairs whose non-key columns differ surface as Divergences; the sink value is reported`` () =
@@ -294,7 +294,7 @@ let ``remapRowFks re-points a targeted FK value through the matched assigned sur
     let remap = SurrogateRemapContext.capture userKey (SourceKey.ofString "280") (AssignedKey.ofString "18") SurrogateRemapContext.empty |> mustOk
     let result = SurrogateRemap.remapRowFks fkTargets remap [ row "10" [ "USER_ID", "280" ] ]
     Assert.Empty result.Skipped
-    Assert.Equal(Some "18", Map.tryFind (mkName "USER_ID") result.Rows.Head.Values)
+    Assert.Equal(Some "18", StaticRow.value (mkName "USER_ID") result.Rows.Head)
 
 [<Fact>]
 let ``remapRowFks drops a row whose targeted FK has no assigned counterpart (skip-and-diagnose)`` () =

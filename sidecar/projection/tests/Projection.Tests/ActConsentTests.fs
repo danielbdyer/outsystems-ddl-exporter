@@ -45,7 +45,7 @@ let private catalog : Catalog =
     Catalog.create [ m ] [] |> Result.value
 
 let private row (kind: string) (values: (string * string) list) : StaticRow =
-    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, v) |> Map.ofList }
+    { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, Some v) |> Map.ofList }
 
 let private load (kind: string) (disposition: IdentityDisposition) (rows: StaticRow list) : DataLoadKind =
     { Kind = kKey kind; Disposition = disposition; DeferredFkColumns = Set.empty; Rows = rows }

@@ -305,10 +305,13 @@ module SurrogateRemap =
                         | Ok values ->
                             match Map.tryFind col values with
                             | None -> Ok values
-                            | Some v when v = "" -> Ok values
-                            | Some v ->
+                            // A NULL FK cell (and, conservatively, an empty-
+                            // string one — no-reference under the platform
+                            // convention) carries no reference to remap.
+                            | Some None | Some (Some "") -> Ok values
+                            | Some (Some v) ->
                                 match tryFindAssigned target v with
-                                | Some assigned -> Ok (Map.add col assigned values)
+                                | Some assigned -> Ok (Map.add col (Some assigned) values)
                                 | None ->
                                     Error { Column = col; Target = target; UnresolvedSource = SourceKey.ofString v })
                     (Ok row.Values)
@@ -356,14 +359,19 @@ module SurrogateRemap =
                 let mutable failure : UnresolvedReference option = None
                 for (ix, col, target) in fkTargets do
                     if Option.isNone failure then
-                        let v = cells.[ix]
-                        if v <> "" then
+                        match cells.[ix] with
+                        // A NULL FK cell (and, conservatively, an empty-
+                        // string one — no-reference under the platform
+                        // convention) carries no reference to remap; the
+                        // Map-grain remap's arm, mirrored.
+                        | ValueNone | ValueSome "" -> ()
+                        | ValueSome v ->
                             match tryFindAssigned target v with
                             | Some assigned ->
                                 if not copied then
                                     cells <- Array.copy cells
                                     copied <- true
-                                cells.[ix] <- assigned
+                                cells.[ix] <- ValueSome assigned
                             | None ->
                                 failure <-
                                     Some

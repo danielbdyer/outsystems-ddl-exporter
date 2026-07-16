@@ -388,7 +388,7 @@ module ComprehensiveCanaryTests =
             let suppRow id parent label =
                 { Identifier = mkSuppKey ["Cyclic"; "Row"; id]
                   Values =
-                      Map.ofList
+                      StaticRow.presentValues
                           [ mkSuppName "Id",       id
                             mkSuppName "ParentId", parent
                             mkSuppName "Label",    label ] }
@@ -450,7 +450,7 @@ module ComprehensiveCanaryTests =
                     [ { KindKey = cyclicKind.SsKey
                         Identifier = mkSuppKey ["Cyclic"; "MigRow"; "1"]
                         Values =
-                            Map.ofList
+                            StaticRow.presentValues
                                 [ mkSuppName "Id",       "1"
                                   mkSuppName "ParentId", "1"
                                   mkSuppName "Label",    "mig-self" ] } ] }

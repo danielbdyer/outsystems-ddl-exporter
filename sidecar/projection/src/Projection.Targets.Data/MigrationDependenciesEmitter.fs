@@ -41,10 +41,12 @@ type MigrationDependencyRow =
         /// migration adapter publishes carries an SsKey so cross-
         /// version diffs and re-publication are trackable).
         Identifier : SsKey
-        /// Column-name → raw-value-string. Same shape as
-        /// `StaticRow.Values` so static-vs-migration provenance is
-        /// the only structural distinction.
-        Values     : Map<Name, string>
+        /// Column-name → raw cell. Same shape as `StaticRow.Values`
+        /// so static-vs-migration provenance is the only structural
+        /// distinction. WP-3 (F11): `None` is SQL NULL; the config
+        /// file's documented `"" = NULL` convention maps to `None`
+        /// at the binding parse.
+        Values     : Map<Name, string option>
     }
 
 /// Operator-published row inventory for the migration-dependency

@@ -80,10 +80,10 @@ let private catalog : Catalog =
 let private golden : GoldenDataset =
     { Version = 1
       Entities =
-        [ { Entity = "Country"; Rows = [ Map.ofList [ mkName "ID", "10" ] ] }
-          { Entity = "User";    Rows = [ Map.ofList [ mkName "ID", "100"; mkName "COUNTRY_ID", "10" ] ] }
+        [ { Entity = "Country"; Rows = [ StaticRow.presentValues [ mkName "ID", "10" ] ] }
+          { Entity = "User";    Rows = [ StaticRow.presentValues [ mkName "ID", "100"; mkName "COUNTRY_ID", "10" ] ] }
           { Entity = "Order"
-            Rows = [ Map.ofList [ mkName "ID", "1000"; mkName "USER_ID", "100"; mkName "REGION", "West" ] ] } ] }
+            Rows = [ StaticRow.presentValues [ mkName "ID", "1000"; mkName "USER_ID", "100"; mkName "REGION", "West" ] ] } ] }
 
 let private occurrences (needle: string) (haystack: string) : int =
     if needle = "" then 0
@@ -108,7 +108,7 @@ let ``slice-reset delete-scope adds the DELETE arm to the root kind ALONE`` () =
 [<Fact>]
 let ``slice-apply refuses a golden whose entity is absent from the target (schema parity)`` () =
     let alien : GoldenDataset =
-        { Version = 1; Entities = [ { Entity = "Nonexistent"; Rows = [ Map.ofList [ mkName "ID", "1" ] ] } ] }
+        { Version = 1; Entities = [ { Entity = "Nonexistent"; Rows = [ StaticRow.presentValues [ mkName "ID", "1" ] ] } ] }
     match SliceApplyRun.emit catalog alien None with
     | Ok _     -> Assert.Fail "expected a schema-parity refusal for an unknown entity"
     | Error es -> Assert.Equal("slice.schemaParity", (List.head es).Code)
@@ -117,7 +117,7 @@ let ``slice-apply refuses a golden whose entity is absent from the target (schem
 let ``slice-apply refuses a golden column absent from the target (schema parity)`` () =
     let extraCol : GoldenDataset =
         { Version = 1
-          Entities = [ { Entity = "Country"; Rows = [ Map.ofList [ mkName "ID", "10"; mkName "GHOST", "x" ] ] } ] }
+          Entities = [ { Entity = "Country"; Rows = [ StaticRow.presentValues [ mkName "ID", "10"; mkName "GHOST", "x" ] ] } ] }
     match SliceApplyRun.emit catalog extraCol None with
     | Ok _     -> Assert.Fail "expected a schema-parity refusal for an unknown column"
     | Error es -> Assert.Equal("slice.schemaParity", (List.head es).Code)

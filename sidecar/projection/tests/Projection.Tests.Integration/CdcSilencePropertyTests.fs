@@ -111,7 +111,7 @@ module private CdcSilencePropertyFixtures =
         let row =
             { Identifier = mkKey ["SingleRow"; "Row"; "1"]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",  "1"
                         mkName "Val", "alpha" ] }
         let kind : Kind =
@@ -151,7 +151,7 @@ module private CdcSilencePropertyFixtures =
         let row id name active price =
             { Identifier = mkKey ["MultiType"; "Row"; id]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",     id
                         mkName "Name",   name
                         mkName "Active", active
@@ -202,7 +202,7 @@ module private CdcSilencePropertyFixtures =
         let row id label =
             { Identifier = mkKey ["ManyRows"; "Row"; id]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",    id
                         mkName "Label", label ] }
         let rows =

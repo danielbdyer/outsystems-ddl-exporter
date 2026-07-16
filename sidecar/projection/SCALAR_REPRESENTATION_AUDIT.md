@@ -227,7 +227,7 @@ Ranked by data-fidelity stakes:
 | S3 | Fallback DDL lane upgrades `DateTime → DATETIME2`; seed literal bare (no CAST) | `ScriptDomBuild.fs:129`, `:306-310` | storage-evidence-less catalog (goldens, ReadSide, JSON-no-storage) | WP-17 (+ C4) |
 | S4 | Text control chars embedded raw in `N'…'` | `SqlLiteral.toString:107-111` | any seed value with CR/LF/TAB | WP-17 |
 | S5 | `Xml` re-serialization + empty-xml erase + CDC `<>` compile error | `toPrimitiveType:98` → `Text`; CDC predicate | any `xml` column, esp. on a CDC-enabled kind | WP-17 (+ WP-3 for the erase) |
-| S6 | `''` → NULL universal erasure | `SqlLiteral.ofRaw:81`, `Bulk.parseRaw:52` | every empty-string Text value | WP-3 (already in the packet) |
+| S6 | `''` → NULL universal erasure | `SqlLiteral.ofRaw:81`, `Bulk.parseRaw:52` | every empty-string Text value | **✅ WP-3 LANDED (2026-07-16)** — option-grain cells; `''` survives; an empty raw on a non-empty-capable type refuses loudly |
 
 ---
 
@@ -237,7 +237,7 @@ Ranked by data-fidelity stakes:
 |---|---|---|
 | Integer / Decimal / Boolean / Guid / Binary | `RawValueCodec` round-trip property + golden seed rows (`Tier`, `Country`) | **witnessed** |
 | DateTime / Date / Time | golden seed rows + CDC-silence Docker canary | **witnessed** (legacy-datetime rounding not explicitly asserted) |
-| Text incl. `''`, control chars | `EmptyTextNormalizedToNull` is a *known* erasure; control-char form **unwitnessed** | **partial** |
+| Text incl. `''`, control chars | `''` preserved end-to-end (WP-3: the `TextFidelity` golden + the F11 Docker canary); control-char form **unwitnessed** | **partial** |
 | `Money` / `SmallMoney` | via Decimal carrier; no dedicated fixture | **unwitnessed** |
 | `Float` / `Real` | none found | **UNWITNESSED** (S1) |
 | `DateTimeOffset` | none found | **UNWITNESSED** (S2) |

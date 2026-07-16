@@ -132,7 +132,7 @@ type DefaultAxis =
     | IntLiteral  of int
     | TextLiteral of string
 
-// Text variants exclude empty string: `SqlLiteral.ofRaw Text ""` returns
+// Text variants exclude empty string: `SqlLiteral.ofRaw Text (Some "")` returns
 // `NullLit` (V2 IR's NULL sentinel per `SqlLiteral.fs:75`). The NULL-as-
 // default axis is structurally distinct from "DEFAULT <text>" and is
 // deferred — covered by V2's "no DefaultValue → no DEFAULT clause" axis,
@@ -159,14 +159,14 @@ let private defaultAxisKind (axis: DefaultAxis) : Kind =
         | DefaultAxis.IntLiteral n ->
             { baseAttr with
                 Column       = ColumnRealization.create ("VAL") (false) |> Result.value
-                DefaultValue = Some (SqlLiteral.ofRaw Integer (string n))
+                DefaultValue = Some (SqlLiteral.ofRaw Integer (Some (string n)))
                 IsMandatory  = true }
         | DefaultAxis.TextLiteral s ->
             { baseAttr with
                 Type         = Text
                 Length       = Some 100
                 Column       = ColumnRealization.create ("VAL") (false) |> Result.value
-                DefaultValue = Some (SqlLiteral.ofRaw Text s)
+                DefaultValue = Some (SqlLiteral.ofRaw Text (Some s))
                 IsMandatory  = true }
     { Kind.create defaultAxisKey (mkName "PropDefault")
         (mkTableId "dbo" "OSUSR_PD_DEFAULT")

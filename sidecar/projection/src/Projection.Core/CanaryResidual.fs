@@ -70,28 +70,10 @@ module CanaryResidual =
         |> Set.toList
         |> List.sortBy ToleratedDivergence.name
 
-    // ------------------------------------------------------------------
-    // Value-level firing detectors — the observable application sites the
-    // canary calls per cell to decide whether a tolerance fired. Each mirrors
-    // the exact rule its named `ToleratedDivergence` documents, so the
-    // detection cannot drift from the tolerance's witnessed semantics.
-    // ------------------------------------------------------------------
-
-    /// `EmptyTextNormalizedToNull` fires iff projecting `(typ, raw)` through
-    /// `SqlLiteral.ofRaw` collapses a NON-empty-intent value to the IR's NULL
-    /// sentinel — i.e. the source carried an empty raw string (the universal
-    /// NULL sentinel, NM-18) for a length-bearing `Text` / `Binary` column, so
-    /// the round-trip can no longer distinguish it from a genuine NULL. Returns
-    /// the divergence to record, or `None` when the cell round-trips faithfully.
-    let detectEmptyTextNormalization (typ: PrimitiveType) (raw: string) : ToleratedDivergence option =
-        match typ with
-        | Text | Binary when raw = "" -> Some ToleratedDivergence.EmptyTextNormalizedToNull
-        | _                           -> None
-
-    /// Record the empty-text→NULL firing for one cell, if it fired. The canary
-    /// folds this over the cells it compares; a clean cell leaves the collector
-    /// unchanged.
-    let observeCell (typ: PrimitiveType) (raw: string) (collector: Collector) : Collector =
-        match detectEmptyTextNormalization typ raw with
-        | Some d -> record d collector
-        | None   -> collector
+    // WP-3 (F11): the value-level firing detector this module carried —
+    // `detectEmptyTextNormalization` / `observeCell`, the application site
+    // of the retired `EmptyTextNormalizedToNull` tolerance — is GONE with
+    // its tolerance: the option-grain cell carriers keep `''` and NULL
+    // distinct end-to-end, so no cell-level erasure remains to observe.
+    // The collector machinery above stays: the deploy-side canary records
+    // divergences it OBSERVES per comparison (`record` / `recordMany`).

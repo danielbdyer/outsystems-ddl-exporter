@@ -6,7 +6,8 @@ module Projection.Tests.CsvExportTests
 // LIBRARY's own parser (write with CsvHelper, read with CsvHelper — no
 // hand-rolled parsing on either side); the header is the kind's canonical
 // physical writable columns; records terminate CRLF including the last;
-// NULL/"" renders as an empty field; the manifest is deterministic and
+// NULL renders as a bare empty field and '' as a quoted one (F11); the
+// manifest is deterministic and
 // carries provenance; the referenced pull closes transitively, stops at
 // static kinds, dedups by key, and returns exactly closure-minus-declared.
 
@@ -43,7 +44,7 @@ let private customer : Kind =
         References = [ Reference.create (rKey "Customer" "Region") (nm "RegionId") (aKey "Customer" "RegionId") (kKey "Region") ] }
 
 let private row (kind: Kind) (values: (string * string) list) : StaticRow =
-    { Identifier = kind.SsKey; Values = values |> List.map (fun (c, v) -> nm c, v) |> Map.ofList }
+    { Identifier = kind.SsKey; Values = values |> List.map (fun (c, v) -> nm c, Some v) |> Map.ofList }
 
 /// Parse csv text back through THE LIBRARY (never by hand): the cell matrix.
 let private parseBack (text: string) : string list list =
@@ -92,10 +93,33 @@ let ``records terminate CRLF, the final record included — deterministic bytes`
     Assert.Equal<string>(text, CsvExport.tableCsv customer [ row customer [ "Id", "1"; "Email", "a@x"; "Notes", ""; "RegionId", "" ] ])
 
 [<Fact>]
-let ``an absent value and an empty value both render as an empty field — the NULL convention, documented`` () =
-    let withAbsent = { Identifier = customer.SsKey; Values = Map.ofList [ nm "Id", "1" ] }   // Email/Notes/RegionId absent
+let ``an absent value renders as a bare empty field — SQL NULL, the manifest-documented convention`` () =
+    let withAbsent = { Identifier = customer.SsKey; Values = StaticRow.presentValues [ nm "Id", "1" ] }   // Email/Notes/RegionId absent
     let cells = parseBack (CsvExport.tableCsv customer [ withAbsent ])
     Assert.Equal<string list>([ "1"; ""; ""; "" ], cells |> List.item 1)
+
+[<Fact>]
+let ``F11: NULL writes a bare empty field; a genuine empty string writes a QUOTED empty field`` () =
+    // WP-3 — RFC 4180 has no native NULL, so the encoding is deliberate:
+    // `a,,b` is NULL, `a,"",b` is the empty string. Both parse back as
+    // empty cells (parsers that don't care see no difference); the BYTES
+    // carry the distinction for consumers that do.
+    let mixed =
+        { Identifier = customer.SsKey
+          Values =
+            Map.ofList
+                [ nm "Id", Some "1"
+                  nm "Email", Some ""      // genuine empty string
+                  nm "Notes", None         // SQL NULL
+                  nm "RegionId", Some "7" ] }
+    let text = CsvExport.tableCsv customer [ mixed ]
+    let dataLine = (text.Split "\r\n").[1]
+    Assert.Equal<string>("1,\"\",,7", dataLine)
+    // Value-plane round-trip: both read back as empty cells under RFC 4180.
+    Assert.Equal<string list>([ "1"; ""; ""; "7" ], parseBack text |> List.item 1)
+    // And the manifest names the encoding for external consumers.
+    let manifest = CsvExport.manifestJson [ CsvExport.manifestEntry (nm "Sales") customer 1 CsvExport.Provenance.Declared ]
+    Assert.Contains("nullEncoding", manifest)
 
 [<Fact>]
 let ``the file is named by the physical table`` () =

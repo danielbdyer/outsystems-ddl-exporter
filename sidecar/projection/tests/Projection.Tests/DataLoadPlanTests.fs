@@ -65,7 +65,7 @@ let private topo : TopologicalOrder =
 
 let private rowOf (ident: string) (values: (string * string) list) : StaticRow =
     { Identifier = mkKey [ident]
-      Values     = values |> List.map (fun (k, v) -> mkName k, v) |> Map.ofList }
+      Values     = values |> List.map (fun (k, v) -> mkName k, Some v) |> Map.ofList }
 
 let private build (rows: Map<SsKey, StaticRow list>) =
     DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
@@ -176,7 +176,7 @@ let ``DataLoadPlan.DroppedRows: a row whose FK targets an unmatched remap identi
     Assert.Equal(childKey, dropKind)
     Assert.Equal("CUSTID", Name.value uref.Column)
     Assert.Equal("2", SourceKey.value uref.UnresolvedSource)
-    Assert.Equal("2", row.Values.[mkName "ID"])   // the k2 row, whole
+    Assert.Equal(Some "2", row.Values.[mkName "ID"])   // the k2 row, whole
     // The kept row survived, re-pointed to the assigned surrogate.
     Assert.Equal(1, (plan.Loads |> List.find (fun l -> l.Kind = childKey)).Rows.Length)
 

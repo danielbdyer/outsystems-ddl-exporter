@@ -25,8 +25,13 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module CatalogCodec =
 
+    /// Codec version 2 (WP-3, F11): a static-row cell is `string option` —
+    /// SQL NULL serializes as JSON `null`, a genuine empty string as `""`.
+    /// Version-1 snapshots carried the retired universal `""`-as-NULL
+    /// sentinel; the reader is version-gated so a v1 `""` still means NULL
+    /// (faithful replay of the old artifact's intent).
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     let private inv (d: decimal) : string = JsonCodecKernel.inv d
 
@@ -238,7 +243,9 @@ module CatalogCodec =
         for KeyValue (name, value) in r.Values do
             jw.WriteStartObject()
             jw.WriteString("name", Name.value name)
-            jw.WriteString("value", value)
+            match value with
+            | Some v -> jw.WriteString("value", v)
+            | None   -> jw.WriteNull("value")
             jw.WriteEndObject()
         jw.WriteEndArray()
         jw.WriteEndObject()
@@ -640,14 +647,27 @@ module CatalogCodec =
             return! ComputedColumnConfig.create expression isPersisted
         }
 
-    let private readStaticRow (el: JsonElement) : Result<StaticRow> =
+    /// Version-gated cell read (WP-3): JSON `null` → NULL; a string is the
+    /// value — EXCEPT in v1 snapshots, where `""` was the universal NULL
+    /// sentinel and still reads as NULL (a v1 file cannot carry a
+    /// distinguishable empty string; parsing it as one would silently
+    /// change the artifact's replay semantics).
+    let private readStaticRow (codecVer: int) (el: JsonElement) : Result<StaticRow> =
         result {
             let! identifier = field el "identifier" readSsKey
             let! pairs =
                 listField el "values" (fun v ->
                     result {
                         let! name = field v "name" readName
-                        let! value = field v "value" asString
+                        let! value =
+                            match v.TryGetProperty "value" with
+                            | true, ve when ve.ValueKind = JsonValueKind.Null -> Ok None
+                            | true, ve when ve.ValueKind = JsonValueKind.String ->
+                                match ve.GetString() with
+                                | null -> Ok None // unreachable for a String element; read as NULL
+                                | s -> if codecVer < 2 && s = "" then Ok None else Ok (Some s)
+                            | true, _ -> fail "codec.staticRow.value" "field 'value': expected string or null"
+                            | _ -> fail "codec.staticRow.value" "missing field 'value'"
                         return (name, value)
                     })
             return { Identifier = identifier; Values = Map.ofList pairs }
@@ -702,10 +722,10 @@ module CatalogCodec =
             return! Sequence.create ssKey name schema dataType startValue increment minimum maximum isCycleEnabled cacheMode cacheSize
         }
 
-    let private readModalityMark (el: JsonElement) : Result<ModalityMark> =
+    let private readModalityMark (codecVer: int) (el: JsonElement) : Result<ModalityMark> =
         byTag "modalityMark" (fun kind el ->
             match kind with
-            | "Static"        -> listField el "populations" readStaticRow |> Result.map ModalityMark.Static
+            | "Static"        -> listField el "populations" (readStaticRow codecVer) |> Result.map ModalityMark.Static
             | "TenantScoped"  -> Ok ModalityMark.TenantScoped
             | "SoftDeletable" -> Ok ModalityMark.SoftDeletable
             | "SystemOwned"   -> Ok ModalityMark.SystemOwned
@@ -815,12 +835,12 @@ module CatalogCodec =
                     DataSpace = dataSpace }
         }
 
-    let private readKind (el: JsonElement) : Result<Kind> =
+    let private readKind (codecVer: int) (el: JsonElement) : Result<Kind> =
         result {
             let! ssKey = field el "ssKey" readSsKey
             let! name = field el "name" readName
             let! origin = field el "origin" readOrigin
-            let! modality = listField el "modality" readModalityMark
+            let! modality = listField el "modality" (readModalityMark codecVer)
             let! physical = field el "physical" readTableId
             let! attributes = listField el "attributes" readAttribute
             let! references = listField el "references" readReference
@@ -843,11 +863,11 @@ module CatalogCodec =
                     ExtendedProperties = extendedProperties }
         }
 
-    let private readModule (el: JsonElement) : Result<Module> =
+    let private readModule (codecVer: int) (el: JsonElement) : Result<Module> =
         result {
             let! ssKey = field el "ssKey" readSsKey
             let! name = field el "name" readName
-            let! kinds = listField el "kinds" readKind
+            let! kinds = listField el "kinds" (readKind codecVer)
             let! isActive = field el "isActive" asBool
             let! extendedProperties = listField el "extendedProperties" readExtendedProperty
             return! Module.create ssKey name kinds isActive extendedProperties
@@ -869,7 +889,13 @@ module CatalogCodec =
                 fail "codec.root" (sprintf "expected a JSON object at the root, got %A" root.ValueKind)
             else
                 result {
-                    let! modules = listField root "modules" readModule
+                    // Pre-versioned snapshots (and serialized single Kinds)
+                    // carry no `codecVersion` → v1, the `""`-as-NULL era.
+                    let codecVer =
+                        match root.TryGetProperty "codecVersion" with
+                        | true, v when v.ValueKind = JsonValueKind.Number -> v.GetInt32()
+                        | _ -> 1
+                    let! modules = listField root "modules" (readModule codecVer)
                     let! sequences = listField root "sequences" readSequence
                     return! Catalog.create modules sequences
                 })

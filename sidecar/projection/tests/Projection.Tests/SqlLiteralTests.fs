@@ -19,27 +19,42 @@ open Projection.Core
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``SqlLiteral.ofRaw maps empty raw to NullLit (V2 IR NULL sentinel)`` () =
-    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Integer "")
-    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Text "")
-    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Boolean "")
+let ``SqlLiteral.ofRaw maps None to NullLit (WP-3: NULL is out-of-band, not the empty raw)`` () =
+    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Integer None)
+    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Text None)
+    Assert.Equal<SqlLiteral> (NullLit, SqlLiteral.ofRaw Boolean None)
+
+[<Fact>]
+let ``SqlLiteral.ofRaw preserves the empty raw where the type has an empty form (F11)`` () =
+    // A genuine empty string is a VALUE, distinct from NULL: Text renders
+    // `N''`; Binary renders the zero-length `0x`. The retired NM-18
+    // universal sentinel used to collapse both to NULL.
+    Assert.Equal<SqlLiteral> (TextLit "", SqlLiteral.ofRaw Text (Some ""))
+    Assert.Equal<string> ("N''", SqlLiteral.toString (SqlLiteral.ofRaw Text (Some "")))
+    Assert.Equal<SqlLiteral> (BinaryLit "0x", SqlLiteral.ofRaw Binary (Some ""))
+
+[<Fact>]
+let ``SqlLiteral.ofRaw refuses an empty raw on a type with no empty form (named, NM-20 shape)`` () =
+    for typ in [ Integer; Decimal; Boolean; DateTime; Date; Time; Guid ] do
+        let ex = Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw typ (Some "") |> ignore)
+        Assert.Contains(SqlLiteral.EmptyNotEmptyCapableCode, ex.Message)
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Integer to IntegerLit`` () =
-    Assert.Equal<SqlLiteral> (IntegerLit "42", SqlLiteral.ofRaw Integer "42")
-    Assert.Equal<SqlLiteral> (IntegerLit "-1", SqlLiteral.ofRaw Integer "-1")
+    Assert.Equal<SqlLiteral> (IntegerLit "42", SqlLiteral.ofRaw Integer (Some "42"))
+    Assert.Equal<SqlLiteral> (IntegerLit "-1", SqlLiteral.ofRaw Integer (Some "-1"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Decimal to DecimalLit`` () =
-    Assert.Equal<SqlLiteral> (DecimalLit "3.14", SqlLiteral.ofRaw Decimal "3.14")
+    Assert.Equal<SqlLiteral> (DecimalLit "3.14", SqlLiteral.ofRaw Decimal (Some "3.14"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Boolean via RawValueCodec.parseBoolean`` () =
-    Assert.Equal<SqlLiteral> (BooleanLit true,  SqlLiteral.ofRaw Boolean "true")
-    Assert.Equal<SqlLiteral> (BooleanLit false, SqlLiteral.ofRaw Boolean "false")
+    Assert.Equal<SqlLiteral> (BooleanLit true,  SqlLiteral.ofRaw Boolean (Some "true"))
+    Assert.Equal<SqlLiteral> (BooleanLit false, SqlLiteral.ofRaw Boolean (Some "false"))
     // V1-bridge tolerance per RawValueCodec: "1"/"0" also accepted.
-    Assert.Equal<SqlLiteral> (BooleanLit true,  SqlLiteral.ofRaw Boolean "1")
-    Assert.Equal<SqlLiteral> (BooleanLit false, SqlLiteral.ofRaw Boolean "0")
+    Assert.Equal<SqlLiteral> (BooleanLit true,  SqlLiteral.ofRaw Boolean (Some "1"))
+    Assert.Equal<SqlLiteral> (BooleanLit false, SqlLiteral.ofRaw Boolean (Some "0"))
 
 [<Fact>]
 let ``RawValueCodec.parseBoolean raises a named refusal on unrecognized input (NM-20)`` () =
@@ -58,28 +73,28 @@ let ``RawValueCodec.parseBoolean raises a named refusal on unrecognized input (N
 
 [<Fact>]
 let ``SqlLiteral.ofRaw on an unrecognized Boolean raw fails loud, not silent-false (NM-20)`` () =
-    Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw Boolean "2" |> ignore) |> ignore
+    Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw Boolean (Some "2") |> ignore) |> ignore
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps temporal types to TemporalLit`` () =
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10", SqlLiteral.ofRaw Date "2026-05-10")
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime "2026-05-10 12:30:00.0000000")
-    Assert.Equal<SqlLiteral> (TemporalLit "12:30:00", SqlLiteral.ofRaw Time "12:30:00")
+    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10", SqlLiteral.ofRaw Date (Some "2026-05-10"))
+    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime (Some "2026-05-10 12:30:00.0000000"))
+    Assert.Equal<SqlLiteral> (TemporalLit "12:30:00", SqlLiteral.ofRaw Time (Some "12:30:00"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Guid to GuidLit`` () =
-    Assert.Equal<SqlLiteral> (GuidLit "0F0E0D0C-0B0A-0908-0706-050403020100", SqlLiteral.ofRaw Guid "0F0E0D0C-0B0A-0908-0706-050403020100")
+    Assert.Equal<SqlLiteral> (GuidLit "0F0E0D0C-0B0A-0908-0706-050403020100", SqlLiteral.ofRaw Guid (Some "0F0E0D0C-0B0A-0908-0706-050403020100"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Text to TextLit (raw, unescaped)`` () =
-    Assert.Equal<SqlLiteral> (TextLit "Hello", SqlLiteral.ofRaw Text "Hello")
+    Assert.Equal<SqlLiteral> (TextLit "Hello", SqlLiteral.ofRaw Text (Some "Hello"))
     // Escaping happens at toString time, not ofRaw time.
-    Assert.Equal<SqlLiteral> (TextLit "O'Brien", SqlLiteral.ofRaw Text "O'Brien")
+    Assert.Equal<SqlLiteral> (TextLit "O'Brien", SqlLiteral.ofRaw Text (Some "O'Brien"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Binary to BinaryLit (with 0x prefix)`` () =
     let prefixed = RawValueCodec.withHexPrefix "CAFEBABE"
-    Assert.Equal<SqlLiteral> (BinaryLit prefixed, SqlLiteral.ofRaw Binary "CAFEBABE")
+    Assert.Equal<SqlLiteral> (BinaryLit prefixed, SqlLiteral.ofRaw Binary (Some "CAFEBABE"))
 
 [<Fact>]
 let ``SqlLiteral.toString renders NullLit as NULL`` () =
@@ -115,8 +130,8 @@ let ``SqlLiteral.formatRaw equals ofRaw |> toString (consumer-facing convenience
     let typ = Text
     let raw = "Hello, world"
     Assert.Equal<string> (
-        SqlLiteral.ofRaw typ raw |> SqlLiteral.toString,
-        SqlLiteral.formatRaw typ raw)
+        SqlLiteral.ofRaw typ (Some raw) |> SqlLiteral.toString,
+        SqlLiteral.formatRaw typ (Some raw))
 
 // ---------------------------------------------------------------------------
 // AC-D6 (NEITHER→HELD) — representation-only literal differences are tolerated
@@ -143,8 +158,8 @@ let ``SqlLiteral.formatRaw equals ofRaw |> toString (consumer-facing convenience
 
 [<Fact>]
 let ``AC-D6: Decimal "1.0" and "1.00" render to different literal text but denote the same numeric value`` () =
-    let oneDotZero  = SqlLiteral.ofRaw Decimal "1.0"
-    let oneDotZeroZero = SqlLiteral.ofRaw Decimal "1.00"
+    let oneDotZero  = SqlLiteral.ofRaw Decimal (Some "1.0")
+    let oneDotZeroZero = SqlLiteral.ofRaw Decimal (Some "1.00")
     // The literal TEXT differs — `SqlLiteral` is faithful to the raw scale on
     // the INSERT side (it does not canonicalize). This is the representation
     // difference.
@@ -169,8 +184,8 @@ let ``AC-D6: char-typed padded and unpadded raw differ only by trailing blanks t
     // stored value. `SqlLiteral` renders Text faithfully (it does NOT RTRIM —
     // no normalization is needed, the column does it on store), so the
     // rendered literals differ ONLY in the trailing blanks:
-    let padded   = SqlLiteral.ofRaw Text "foo  "
-    let unpadded = SqlLiteral.ofRaw Text "foo"
+    let padded   = SqlLiteral.ofRaw Text (Some "foo  ")
+    let unpadded = SqlLiteral.ofRaw Text (Some "foo")
     let renderedPadded   = SqlLiteral.toString padded
     let renderedUnpadded = SqlLiteral.toString unpadded
     Assert.Equal<string> ("N'foo  '", renderedPadded)
@@ -195,5 +210,5 @@ let ``Closed-DU coverage: every PrimitiveType variant produces a SqlLiteral via 
     let variants : PrimitiveType list =
         [ Integer; Decimal; Boolean; DateTime; Date; Time; Guid; Text; Binary ]
     for v in variants do
-        let lit = SqlLiteral.ofRaw v "0"  // any non-empty raw
+        let lit = SqlLiteral.ofRaw v (Some "0")  // any non-empty raw
         Assert.NotEqual<SqlLiteral> (NullLit, lit)

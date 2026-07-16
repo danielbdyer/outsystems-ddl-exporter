@@ -6,26 +6,33 @@ open Projection.Pipeline
 
 // ---------------------------------------------------------------------------
 // The tolerance-residual canary coupling (closes the NM-32 / NM-33 provenance
-// FLAG). A round-trip that invokes a known tolerance (the empty-text → NULL
-// normalization) records that tolerance in the residual and surfaces it in the
-// Model Fidelity Report's ACCEPTED DIVERGENCES section + the recorded Episode's
-// `Tolerances`; a clean round-trip records none (resolves to `Tolerance
-// .strict`, the strict-comparison report line).
+// FLAG). A round-trip that invokes a known tolerance records that tolerance in
+// the residual and surfaces it in the Model Fidelity Report's ACCEPTED
+// DIVERGENCES section + the recorded Episode's `Tolerances`; a clean
+// round-trip records none (resolves to `Tolerance.strict`, the
+// strict-comparison report line).
 //
 // The collector (`CanaryResidual`) is the seam the canary threads through its
-// per-cell comparison; `Tolerance.matchedResidual` intersects the observed
-// firings with the run's configured tolerance (the accepted-AND-fired residual);
-// `ModelFidelity.withAcceptedDivergences` + `Episode.withProvenance` are the
-// hooks the run boundary feeds. These tests pin the wiring end-to-end at the
-// canary / episode / report layer.
+// per-comparison observation; `Tolerance.matchedResidual` intersects the
+// observed firings with the run's configured tolerance (the accepted-AND-fired
+// residual); `ModelFidelity.withAcceptedDivergences` + `Episode.withProvenance`
+// are the hooks the run boundary feeds. These tests pin the wiring end-to-end
+// at the canary / episode / report layer.
+//
+// WP-3 (F11): the empty-text → NULL erasure these tests originally used as
+// their example divergence is RETIRED (the option-grain cell carriers keep
+// `''` and NULL distinct end-to-end), along with its per-cell detector
+// (`observeCell`). The wiring is exercised through the surviving
+// representational tolerances instead (`CharAnsiPaddingTolerated` /
+// `DecimalScaleTolerated` — AC-D6).
 // ---------------------------------------------------------------------------
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
-// A configured tolerance that accepts the empty-text → NULL erasure (a DEV-tier
-// quotient that admits the data-plane representational erasures).
+// A configured tolerance that accepts the char-padding erasure (a DEV-tier
+// quotient that admits a data-plane representational erasure).
 let private configuredTolerance : Tolerance =
-    Tolerance.ofSet (Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ])
+    Tolerance.ofSet (Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ])
 
 // ---------------------------------------------------------------------------
 // CanaryResidual collector — the observed-divergence accumulator.
@@ -38,39 +45,28 @@ let ``Canary residual: the empty collector is clean and resolves to strict`` () 
     Assert.True(Tolerance.isStrict resolved)
 
 [<Fact>]
-let ``Canary residual: a Text empty-string cell fires EmptyTextNormalizedToNull`` () =
-    // The IR's NULL sentinel — an empty raw Text value round-trips as NULL.
-    Assert.Equal(
-        Some ToleratedDivergence.EmptyTextNormalizedToNull,
-        CanaryResidual.detectEmptyTextNormalization Text "")
-    // A non-empty Text value, and any Integer value, round-trip faithfully.
-    Assert.Equal(None, CanaryResidual.detectEmptyTextNormalization Text "hello")
-    Assert.Equal(None, CanaryResidual.detectEmptyTextNormalization Integer "")
-
-[<Fact>]
-let ``Canary residual: observing an empty-text cell records the divergence; record is idempotent`` () =
+let ``Canary residual: recording an observed divergence is idempotent`` () =
     let collector =
         CanaryResidual.empty
-        |> CanaryResidual.observeCell Text ""       // fires
-        |> CanaryResidual.observeCell Integer "42"  // clean
-        |> CanaryResidual.observeCell Text ""       // fires again (idempotent)
+        |> CanaryResidual.record ToleratedDivergence.CharAnsiPaddingTolerated
+        |> CanaryResidual.record ToleratedDivergence.CharAnsiPaddingTolerated
     Assert.False(CanaryResidual.isClean collector)
     Assert.Equal<Set<ToleratedDivergence>>(
-        Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ],
+        Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ],
         CanaryResidual.observed collector)
 
 [<Fact>]
 let ``Canary residual: a divergence that fired but is NOT configured-tolerated is excluded (it would block)`` () =
-    // The canary observed a char-padding firing, but the configured tolerance
-    // accepts only the empty-text erasure — so the padding divergence is NOT
+    // The canary observed a decimal-scale firing, but the configured tolerance
+    // accepts only the char-padding erasure — so the scale divergence is NOT
     // part of the residual (a real run would FAIL the canary on it).
     let collector =
         CanaryResidual.empty
-        |> CanaryResidual.record ToleratedDivergence.EmptyTextNormalizedToNull
         |> CanaryResidual.record ToleratedDivergence.CharAnsiPaddingTolerated
+        |> CanaryResidual.record ToleratedDivergence.DecimalScaleTolerated
     let residual = CanaryResidual.resolve configuredTolerance collector |> Tolerance.divergences
     Assert.Equal<Set<ToleratedDivergence>>(
-        Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ],
+        Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ],
         residual)
 
 // ---------------------------------------------------------------------------
@@ -79,18 +75,18 @@ let ``Canary residual: a divergence that fired but is NOT configured-tolerated i
 
 [<Fact>]
 let ``Canary residual: a fired tolerance surfaces in the report's accepted-divergences section`` () =
-    let collector = CanaryResidual.empty |> CanaryResidual.observeCell Text ""
+    let collector = CanaryResidual.empty |> CanaryResidual.record ToleratedDivergence.CharAnsiPaddingTolerated
     let residual = CanaryResidual.resolvedDivergences configuredTolerance collector
     let report =
         ModelFidelity.empty "ACME"
         |> ModelFidelity.withAcceptedDivergences residual
     match report.AcceptedDivergences with
-    | [ d ] -> Assert.Equal(ToleratedDivergence.EmptyTextNormalizedToNull, d.Divergence)
+    | [ d ] -> Assert.Equal(ToleratedDivergence.CharAnsiPaddingTolerated, d.Divergence)
     | other -> Assert.Fail(sprintf "expected one accepted divergence, got %A" other)
     // The rendered text names the fired tolerance, not the strict line.
     let lines = ModelFidelity.render report
     Assert.Contains(lines, fun (l: string) -> l.Contains "ACCEPTED DIVERGENCES (tolerances fired this run)")
-    Assert.Contains(lines, fun (l: string) -> l.Contains "EmptyTextNormalizedToNull")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "CharAnsiPaddingTolerated")
 
 [<Fact>]
 let ``Canary residual: a clean round-trip leaves the report's accepted-divergences section empty (strict)`` () =
@@ -116,11 +112,11 @@ let private genesisEpisode () : Episode =
 
 [<Fact>]
 let ``Canary residual: a fired tolerance is carried onto the episode's Tolerances via withProvenance`` () =
-    let collector = CanaryResidual.empty |> CanaryResidual.observeCell Text ""
+    let collector = CanaryResidual.empty |> CanaryResidual.record ToleratedDivergence.CharAnsiPaddingTolerated
     let residual = CanaryResidual.resolve configuredTolerance collector
     let episode = genesisEpisode () |> Episode.withProvenance residual []
     Assert.False(Tolerance.isStrict episode.Tolerances)
-    Assert.True(Tolerance.tolerates ToleratedDivergence.EmptyTextNormalizedToNull episode.Tolerances)
+    Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated episode.Tolerances)
 
 [<Fact>]
 let ``Canary residual: a clean round-trip records Tolerance.strict on the episode (the genesis placeholder is honest)`` () =

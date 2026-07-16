@@ -29,6 +29,13 @@ WHEN MATCHED THEN UPDATE
 WHEN NOT MATCHED THEN INSERT ([Id], [TenantId], [Value]) VALUES ([Source].[Id], [Source].[TenantId], [Source].[Value])
 WHEN NOT MATCHED BY SOURCE AND [Target].[TenantId] = 42 THEN DELETE;
 GO
+MERGE INTO [dbo].[TextFidelity]
+ AS [Target]
+USING (VALUES (1, N''), (2, NULL), (3, NULL), (4, N'hello')) AS [Source]([Id], [Body]) ON [Target].[Id] = [Source].[Id]
+WHEN MATCHED THEN UPDATE 
+    SET [Target].[Body] = [Source].[Body]
+WHEN NOT MATCHED THEN INSERT ([Id], [Body]) VALUES ([Source].[Id], [Source].[Body]);
+GO
 SET IDENTITY_INSERT [dbo].[Tier] ON;
 MERGE INTO [dbo].[Tier]
  AS [Target]

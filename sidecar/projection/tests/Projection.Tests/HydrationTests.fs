@@ -54,7 +54,7 @@ let private mkCatalog (kinds: Kind list) : Catalog =
 let ``WP6 step 4: graftStaticPopulations fills a Static marker by SsKey`` () =
     let stat = staticKind "Country" []
     let catalog = mkCatalog [ stat ]
-    let row : StaticRow = { Identifier = mkKey ["Country"; "Row"; "1"]; Values = Map.ofList [ mkName "Id", "1" ] }
+    let row : StaticRow = { Identifier = mkKey ["Country"; "Row"; "1"]; Values = StaticRow.presentValues [ mkName "Id", "1" ] }
     let hydrated = Hydration.graftStaticPopulations (Map.ofList [ stat.SsKey, [ row ] ]) catalog
     let hStat = Catalog.allKinds hydrated |> List.find (fun k -> k.SsKey = stat.SsKey)
     Assert.Equal (1, List.length (Kind.staticPopulations hStat))
@@ -63,7 +63,7 @@ let ``WP6 step 4: graftStaticPopulations fills a Static marker by SsKey`` () =
 let ``WP6 step 4: graftStaticPopulations never adds a Static marker to a non-static kind`` () =
     let plain = plainKind "Order"
     let catalog = mkCatalog [ plain ]
-    let row : StaticRow = { Identifier = mkKey ["Order"; "Row"; "1"]; Values = Map.ofList [ mkName "Id", "1" ] }
+    let row : StaticRow = { Identifier = mkKey ["Order"; "Row"; "1"]; Values = StaticRow.presentValues [ mkName "Id", "1" ] }
     // Even though the map carries rows for the plain kind, it has no Static
     // marker, so the graft leaves it untouched (no marker minted).
     let hydrated = Hydration.graftStaticPopulations (Map.ofList [ plain.SsKey, [ row ] ]) catalog
@@ -75,7 +75,7 @@ let ``WP6 step 4: graftStaticPopulations preserves kind order and other kinds`` 
     let stat = staticKind "Country" []
     let plain = plainKind "Order"
     let catalog = mkCatalog [ stat; plain ]
-    let row : StaticRow = { Identifier = mkKey ["Country"; "Row"; "1"]; Values = Map.ofList [ mkName "Id", "1" ] }
+    let row : StaticRow = { Identifier = mkKey ["Country"; "Row"; "1"]; Values = StaticRow.presentValues [ mkName "Id", "1" ] }
     let hydrated = Hydration.graftStaticPopulations (Map.ofList [ stat.SsKey, [ row ] ]) catalog
     let keys = Catalog.allKinds hydrated |> List.map (fun k -> k.SsKey)
     Assert.Equal<SsKey list> ([ stat.SsKey; plain.SsKey ], keys)
