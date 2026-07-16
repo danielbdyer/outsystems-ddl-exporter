@@ -1,6 +1,6 @@
 CREATE TABLE [audit].[ChangeLog] (
     [Id]     INT       IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_audit_ChangeLog]
+        CONSTRAINT [PK_ChangeLog_Id]
             PRIMARY KEY CLUSTERED,
     [At]     DATETIME2 NOT NULL,
     [UserId] INT       NOT NULL

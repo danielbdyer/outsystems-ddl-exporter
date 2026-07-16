@@ -118,12 +118,16 @@ surprises; they need a nod, not a debate.
 
 ### A. Identifier & constraint naming
 
-**A1. PK names synthesized — convention aligns to V1** — [HARD] ⚑ **WP-8**
-Current V2: `PK_<Schema>_<Table>` (`SsdtDdlEmitter.fs:213`; `PK_dbo_Customer`). V1's convention
-is `PK_<LogicalTable>_<KeyCol…>` (`src/Osm.Smo/SmoIndexBuilder.cs:42-55`; test pins
-`PK_Customer_Id`), with physical→logical token replacement. Platform names (`OSPRK_*`) are
-machine noise and are correctly never passed through by either pipeline.
+**A1. PK names synthesized — convention aligns to V1** — [HARD] ⚑ **WP-8 ✅ LANDED**
+V2 emitted `PK_<Schema>_<Table>` (`PK_dbo_Customer`); V1's convention is
+`PK_<LogicalTable>_<KeyCol…>` (`src/Osm.Smo/SmoIndexBuilder.cs:42-55`; test pins
+`PK_Customer_Id`). Platform names (`OSPRK_*`) are machine noise and are correctly never passed
+through by either pipeline.
 *Decided (2026-07-15): planned fix — adopt V1's convention (WP-8).*
+*Landed (2026-07-16, WP-8): `IndexNaming.primaryKeyName` builds `PK_<LogicalKind>_<KeyColumn…>`
+from the kind's PK attributes; shared by `pkDef` (constraint) and the PK backing-index name so they
+agree by construction. Goldens re-recorded — `PK_dbo_Customer` → `PK_Customer_Id`, composite
+`PK_dbo_Assignment` → `PK_Assignment_ProjectId_ResourceId`. DECISIONS 2026-07-16.*
 
 **A2. FK names synthesized `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`** — [HARD]
 Expected under the synthesis regime (§1.0). The IR carries `Reference.Name` from source; honoring
@@ -922,9 +926,10 @@ so the §9 estate inventory scopes how much of WP-17 is load-bearing for *this* 
 
 ### Group II — naming & constraint-object fidelity
 
-**WP-8 · PK naming convention (A1).** Adopt V1's `PK_<LogicalTable>_<KeyCol…>` (e.g.
-`PK_Customer_Id`), replacing `PK_<Schema>_<Table>`. One golden re-record; schema embedded in
-names disappears.
+**WP-8 · PK naming convention (A1).** **✅ LANDED (DECISIONS 2026-07-16).** Adopt V1's
+`PK_<LogicalTable>_<KeyCol…>` (e.g. `PK_Customer_Id`), replacing `PK_<Schema>_<Table>`. One golden
+re-record; schema embedded in names disappears. (`IndexNaming.primaryKeyName`, shared by the
+constraint name and the PK backing-index name.)
 
 **WP-9 · DEFAULT/CHECK constraint completeness (A4, A5).** Synthesize deterministic
 `DF_<Table>_<Column>` / `CK_<Table>_<Column…>` names when the source name is absent (both

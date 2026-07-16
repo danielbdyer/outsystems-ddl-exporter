@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[Engagement] (
     [Id]            INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Engagement]
+        CONSTRAINT [PK_Engagement_Id]
             PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
         DEFAULT 0

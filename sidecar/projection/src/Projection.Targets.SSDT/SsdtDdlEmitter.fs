@@ -197,8 +197,9 @@ module SsdtDdlEmitter =
         }
 
     /// Build the primary-key definition from a Kind's attributes.
-    /// V1 convention (per chapter pre-scope §3): `PK_<PhysicalSchema>_
-    /// <PhysicalTable>`; single-column PKs get inlined as column-
+    /// V1 convention (WP-8, DECISIONS 2026-07-16): `PK_<LogicalKind>_
+    /// <KeyColumn…>` (e.g. `PK_Customer_Id`), replacing the earlier
+    /// `PK_<Schema>_<Table>`; single-column PKs get inlined as column-
     /// constraints (handled by `ScriptDomBuild.buildCreateTable`);
     /// composite PKs get emitted as table-constraints (slice 4).
     let private pkDef (k: Kind) : PrimaryKeyDef option =
@@ -210,17 +211,14 @@ module SsdtDdlEmitter =
         else
             Some
                 {
-                    // V1 PK naming: `PK_<Schema>_<Table>`. Per pillar 7
-                    // four-question analysis: no use-case-specific BCL
-                    // primitive for V1-naming-convention PK names;
-                    // String.Concat with explicit underscore separator
-                    // is the typed alternative (segments are typed:
-                    // k.Physical.Schema and k.Physical.Table are the
-                    // canonical SchemaName/TableName strings from the
-                    // Coordinates value object).
-                    // Slice 3b — generated names ride the identifier
-                    // budget (≤128 byte-identical; over ⇒ 115 + hash12).
-                    Name = IdentifierBudget.fit (System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical))  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are pre-unwrapped via TableId.schemaText/tableText (otherwise Concat would call ToString on the typed VOs and emit "SchemaName \"dbo\"")
+                    // WP-8 PK naming: `PK_<LogicalKind>_<KeyColumn…>`. Shared
+                    // with the PK backing-index name via
+                    // `IndexNaming.primaryKeyName` (one derivation over the
+                    // kind's PK attributes, so constraint and backing index
+                    // agree by construction). Slice 3b — the generated name
+                    // rides the identifier budget (≤128 byte-identical; over
+                    // ⇒ 115 + hash12).
+                    Name = IdentifierBudget.fit (IndexNaming.primaryKeyName k)
                     Columns = pkColumns
                 }
 
@@ -463,9 +461,9 @@ module SsdtDdlEmitter =
     ///     `EnforceUnique` decision applies (the same disjunction the
     ///     CREATE INDEX emission uses, so name and constraint agree);
     ///   - PK-marked indexes: the PK constraint-name convention
-    ///     (`PK_<Schema>_<Table>`, `pkDef`'s shape) so an extended
-    ///     property on the PK's backing index follows the emitted
-    ///     constraint name.
+    ///     (`PK_<KindName>_<KeyColumn…>`, WP-8; `pkDef`'s shape via
+    ///     `IndexNaming.primaryKeyName`) so an extended property on the
+    ///     PK's backing index follows the emitted constraint name.
     ///
     /// This is an emitted-NAME policy, not an identity policy — `SsKey`
     /// stays the durable identity; these are presentation identifiers.

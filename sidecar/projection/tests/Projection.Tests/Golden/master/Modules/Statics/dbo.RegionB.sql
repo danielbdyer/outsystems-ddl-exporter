@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[RegionB] (
     [Id]        INT           NOT NULL
-        CONSTRAINT [PK_dbo_RegionB]
+        CONSTRAINT [PK_RegionB_Id]
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL

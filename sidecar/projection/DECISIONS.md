@@ -27705,3 +27705,42 @@ catalog (`corporateShape`) → empty. The emitter / golden pure suites (`SsdtDdl
 
 **Golden note.** No golden re-record: the golden corpus has no table-name collision, so the new pass
 emits zero diagnostics over it and the byte-pinned output is unchanged.
+
+## 2026-07-16 — WP-8: PK naming adopts V1's `PK_<LogicalKind>_<KeyColumn…>` convention
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-8 / register A1. V2 synthesized primary-key
+constraint names as `PK_<Schema>_<Table>` (`PK_dbo_Customer`) — embedding the physical schema in
+the name. V1's convention (`src/Osm.Smo/SmoIndexBuilder.cs:42-55`, pinned to `PK_Customer_Id`) is
+`PK_<LogicalTable>_<KeyColumn…>`: the logical entity name plus the key columns, no schema token.
+Under the exporter's logical-naming regime the schema-qualified form is the odd one out — every
+other synthesized name (`FK_<Owner>_<Target>_<Column>`, `IX_/UIX_<Kind>_<Attrs>`) already reads in
+the logical vocabulary.
+
+**The decision.** Adopt V1's convention. A single derivation — `IndexNaming.primaryKeyName (k: Kind)`
+— builds `PK_<logical kind name>_<logical key-column names, joined by "_">` from the kind's
+PK-marked attributes (in the catalog's deterministic attribute order, so name and the emitted
+`PRIMARY KEY` column clause agree). Both name sites consume it: `SsdtDdlEmitter.pkDef` (the CREATE
+TABLE constraint name) and `IndexNaming.baseNameOf`'s PK-index branch (the backing-index name +
+extended property). Deriving both from ONE function over the kind's PK attributes — not from
+`idx.Columns` for the index branch — means the constraint and its backing index agree by
+construction, closing the composite-PK column-order divergence risk the two-site form carried.
+The name still rides the identifier budget at each call site.
+
+**Witness.** `SsdtDdlEmitterTests`: a new `WP-8: primaryKeyName follows V1's …` unit test pins the
+packet's canonical `PK_Customer_Id` (single column) and `PK_Order_TenantId_OrderNo` (composite, in
+PK-attribute order); the existing composite-emitter test now asserts `PK_Composite_Code_TenantId`
+(the catalog's deterministic PK-column order). The index/read-back suites
+(`IndexNaming`/`IndexRoundtrip`/`SsdtSchemaFidelity`/`PhysicalSchema`, 117 pure cases) stay green —
+`PhysicalSchema.ofCatalogWith` consumes the same `IndexNaming`, so emit↔deploy read-back agrees.
+
+**Golden note.** Golden corpus RE-RECORDED (`GOLDEN_RECORD=1`, blessing protocol). The byte diff is
+exactly the PK-name change on every table + the `stream.sql` references (16 files, 28 lines) — e.g.
+`PK_dbo_Customer` → `PK_Customer_Id`, `PK_audit_ChangeLog` → `PK_ChangeLog_Id`, composite
+`PK_dbo_Assignment` → `PK_Assignment_ProjectId_ResourceId`. No non-PK line changed (verified by
+diff). `GoldenEmissionTests` (master + pruned-platform-auto) re-blessed.
+
+**Test-run note.** Validated on the pure surface (Docker-free `dotnet test` filters — the emitter /
+index / golden / fidelity / physical-schema suites). The Docker publish-equivalence / canary suites,
+which re-derive PK names through the same `IndexNaming` on both emit and read-back sides, were not
+run here (no warm container in this environment) — same posture as WP-1a; a warm-container full
+sweep is the follow-up gate.

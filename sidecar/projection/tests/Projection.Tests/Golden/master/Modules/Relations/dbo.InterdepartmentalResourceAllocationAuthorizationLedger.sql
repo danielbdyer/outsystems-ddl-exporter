@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[InterdepartmentalResourceAllocationAuthorizationLedger] (
     [Id]                                                        INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_InterdepartmentalResourceAllocationAuthorizationLedger]
+        CONSTRAINT [PK_InterdepartmentalResourceAllocationAuthorizationLedger_Id]
             PRIMARY KEY CLUSTERED,
     [PrimaryResponsibleEnterpriseCustomerRelationshipManagerId] INT NOT NULL
         CONSTRAINT [FK_InterdepartmentalResourceAllocationAuthorizationLedger_EnterpriseCustomerRelationshipManagementProfileSnapshot_P_b94286649f49]

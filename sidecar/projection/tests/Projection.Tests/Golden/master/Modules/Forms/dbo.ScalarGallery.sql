@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[ScalarGallery] (
     [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_ScalarGallery]
+        CONSTRAINT [PK_ScalarGallery_Id]
             PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',

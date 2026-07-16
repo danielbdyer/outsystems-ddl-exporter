@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[Tier] (
     [Id]   INT           IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Tier]
+        CONSTRAINT [PK_Tier_Id]
             PRIMARY KEY CLUSTERED,
     [Name] NVARCHAR (40) NOT NULL
 )
