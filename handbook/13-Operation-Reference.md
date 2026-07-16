@@ -390,7 +390,7 @@ SQL Server applies the default to existing rows automatically.
 **Layer 1**
 | Summary | Tier | Mechanism | CDC |
 |---------|------|-----------|-----|
-| Make an existing nullable column required | 2-3 | Pre-Deployment + Declarative | No instance recreation needed |
+| Make an existing nullable column required | 2-3 | Pre-Deployment + Declarative + a logged guard-relaxation (see 17.2, corrected) | No instance recreation needed |
 
 ---
 
@@ -423,8 +423,11 @@ PRINT 'Backfilled ' + CAST(@@ROWCOUNT AS VARCHAR) + ' rows.'
 [Email] NVARCHAR(200) NOT NULL,
 ```
 
-**What SSDT generates:**
+**What SSDT generates** (under `BlockOnPossibleDataLoss=True` — note the guard checks row presence, not NULL content):
 ```sql
+IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer])
+    RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127);
+
 ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(200) NOT NULL;
 ```
 
@@ -440,7 +443,7 @@ SELECT COUNT(*) FROM dbo.Customer WHERE Email IS NULL
 
 | Gotcha | Details |
 |--------|---------|
-| Deploy fails if NULLs exist | SSDT will fail deployment, not build. Pre-validate. |
+| Deploy is blocked while the table has rows | Corrected (proven, sqlpackage 170.4.83): the guard fires on row presence, not NULL content — a zero-NULL populated table is still blocked. The backfill is necessary, not sufficient; pair it with a logged `BlockOnPossibleDataLoss` relaxation for that deployment, or add-new-column → migrate → drop-old. See 17.2 (corrected). |
 | Concurrent inserts | If app is inserting NULLs while you deploy, backfill won't catch them. Consider adding default first. |
 | Index rebuild | May trigger index rebuild if column is in an index. |
 

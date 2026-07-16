@@ -52,7 +52,7 @@ These operations typically require multi-phase treatment:
 | Operation | Why Multi-Phase | See Pattern |
 |-----------|-----------------|-------------|
 | Explicit data type conversion | Data must transform; old and new must coexist | 17.1 |
-| NULL → NOT NULL on populated table | Existing NULLs need values first | 17.2 |
+| NULL → NOT NULL on populated table | Backfill alone cannot clear it: the data-loss guard checks row presence, not NULL content (see 17.2, corrected) | 17.2 |
 | Add/remove IDENTITY | Can't ALTER to add IDENTITY; requires table swap | 17.3 |
 | Add FK with orphan data | Need to clean data or use NOCHECK→trust sequence | 17.4 |
 | Safe column removal | Verify unused before dropping | 17.5 |

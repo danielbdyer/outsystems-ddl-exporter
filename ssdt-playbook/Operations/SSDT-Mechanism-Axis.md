@@ -114,22 +114,23 @@ WHERE FullName IS NULL
 1. Pre-deployment script runs (cleans/prepares data)
 2. SSDT applies schema changes
 
-**Example:** Making a column NOT NULL when NULLs currently exist
+**Example:** Cleaning orphan rows so a foreign key can validate
 
 **Pre-deployment script:**
 ```sql
-UPDATE dbo.Customer
-SET Email = 'unknown@placeholder.com'
-WHERE Email IS NULL
+-- Reassign the orphan order per the recorded business decision
+UPDATE dbo.[Order]
+SET CustomerId = 1
+WHERE CustomerId NOT IN (SELECT Id FROM dbo.Customer)
 ```
 
 **Schema change (declarative):**
 ```sql
-[Email] NVARCHAR(200) NOT NULL,  -- Changed from NULL
+CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]),
 ```
 
 **When to use:**
-- Adding NOT NULL constraint to column with existing NULLs
+- Preparing data so a new constraint validates (orphans before an FK; violators before a CHECK). **Not** the NULL → NOT NULL tightening of an existing column on a populated table — corrected (proven, sqlpackage 170.4.83): the data-loss guard checks row presence, not NULL content, so a same-release backfill cannot clear it; that change needs a logged guard-relaxation or the add-new-column shape (see the Null-to-Not-Null pattern)
 - Adding FK constraint when orphan data must be cleaned first
 - Adding check constraint when existing data might violate
 - Dropping dependencies before a column change

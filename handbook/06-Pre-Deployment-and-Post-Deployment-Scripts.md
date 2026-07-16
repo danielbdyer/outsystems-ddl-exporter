@@ -55,7 +55,7 @@ Pre-deployment scripts run *before* SSDT changes the schema. Use them when:
 
 ### Examples
 
-**Backfill NULLs before adding NOT NULL constraint:**
+**Backfill NULLs before adding NOT NULL constraint** *(corrected: necessary, not sufficient — on a populated table the data-loss guard checks row presence, not NULL content, so the tightening still needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment; see §17.2)*:
 
 ```sql
 -- PreDeployment.sql (or included file)
@@ -357,7 +357,7 @@ Before committing, ask: "If I run this twice, what happens?"
 
 | Scenario | Use | Why |
 |----------|-----|-----|
-| Backfill NULLs before NOT NULL constraint | Pre-deployment | Must happen before schema change |
+| Backfill NULLs before NOT NULL constraint | Pre-deployment | Must happen before schema change — and is not sufficient alone: the tightening stays blocked on a populated table without a logged guard-relaxation (see §17.2, corrected) |
 | Clean orphans before adding FK | Pre-deployment | Must happen before constraint exists |
 | Drop blocking index for column type change | Pre-deployment | Index prevents ALTER |
 | Populate new column from existing data | Post-deployment | New column must exist first |

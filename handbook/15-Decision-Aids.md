@@ -417,7 +417,7 @@ Environment Strategy:
 | Narrow column | 4 | Pre + Declarative | Validate data fits; BlockOnPossibleDataLoss |
 | Change type (implicit) | 2 | Declarative | INT→BIGINT is safe |
 | Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
-| NULL → NOT NULL | 2-3 | Pre + Declarative | Backfill NULLs first |
+| NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2, corrected) |
 | NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
 | Rename column | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
 | Rename table | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
