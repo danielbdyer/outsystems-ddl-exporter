@@ -2984,3 +2984,34 @@ V1 has `tests/Osm.Smo.Tests/PerTableEmission/ConstraintFormatterTests.cs` coveri
 - **Anonymous DEFAULT** (no name on the constraint) is not yet detected by V2's formatter. V2's IR has `Attribute.DefaultName : Name option`; when None, ScriptDom may emit `DEFAULT (value)` directly without the `CONSTRAINT [name]` prefix. The formatter's column-inline detection scans for `" CONSTRAINT ["` which would miss this shape. Defer — no current V2 fixture exercises anonymous DEFAULTs (the realistic source uses named defaults).
 - **CHECK constraints** are out of scope. V1's formatter doesn't handle them either; V2's emission today is column-inline `CHECK (expr)`. If operator preference surfaces for multi-line CHECK formatting, extend `tryFormatLine` with a `CHECK` detection branch.
 - **EXEC sys.sp_addextendedproperty** statements still emit on a single long line (V2 hasn't applied the V1 multi-line shape for extended properties). Visible in the before/after demo. Defer to a follow-up if the operator surfaces the preference; the formatter would need a parallel branch for `EXECUTE ... sp_addextendedproperty`.
+
+## 2026-07-15 — Data-integrity verification design M1.8 (docs/implementation-specs/M1.8-data-integrity-verification.md; src/Osm.Pipeline/Orchestration/BasicDataIntegrityChecker.cs)
+**Status:** admired (placement decided; cash-out at fidelity wave B3)
+
+### What it does (algebraic terms)
+V1's M1.8 designed — and never shipped (status DEFERRED; only count-grain M1.3 landed as
+`BasicDataIntegrityChecker`) — a per-table storage-byte fidelity check: a server-side
+`HASHBYTES('SHA2_256', (SELECT cols FROM t ORDER BY pk FOR XML RAW, BINARY BASE64))` digest per
+table, with the physical→logical name bridge supplied by the model. Its analysis rejects
+`CHECKSUM`/`BINARY_CHECKSUM`/`CHECKSUM_AGG` for integrity (4-byte, collision-prone, NULL-blind)
+— a verdict V2 inherits verbatim.
+
+### V2 placement
+Editorial donor for `Projection.Adapters.Sql/ServerDigest.fs` (fidelity wave B3): the
+server-side HASHBYTES fast-path is a PROJECTION of V2's authoritative client-canonical row
+digest (the `RowDigester` recipe over an SsKey/logical basis), and the two planes' agreement is
+property-tested per SQL type. Not a carbon-copy — the query shape and the CHECKSUM rejection
+are the donation; V2's basis, keying, and ladder are its own (T17). Header citation lands with
+the B3 file.
+
+### Existing test coverage
+None in V1 (the design never shipped; `DataIntegrityVerificationReport.cs` wraps the count-grain
+M1.3 result only). V2's coverage is the B3 docker property — `law: the server HASHBYTES
+projection agrees with the canonical client digest per SQL type` — plus the B2 comparator
+witnesses T17 cites.
+
+### Edges / risks
+`FOR XML RAW, BINARY BASE64` is sensitive to column order and NULL representation — the V2
+query builder derives both from the logical basis so the projection stays aligned with the
+canonical form; a type the server projection cannot carry descends to the canonical plane BY
+NAME (capability-descent discipline), never silently.

@@ -293,15 +293,16 @@ type PhysicalSchemaDiff =
 
 /// The canonical per-row content-hash recipes (both canary paths and
 /// the Q-track hash through here). The streaming sum-mod-2^256
-/// aggregate fold (`State`/`empty`/`add`/`finalize` + the
-/// `PhysicalSchema.RowDigests` axis it fed) was DELETED 2026-06-12
-/// (CONSTELLATION_BACKLOG card F7, plane N10): zero call sites at HEAD
-/// — the intended large-table canary wiring never landed, so the axis
-/// was always empty and every diff/render arm structurally dead (the
-/// dead-algebra precedent, DECISIONS 2026-06-04). If the >100k
-/// data-round-trip canary ever opens, rebuild the fold over quanta via
-/// `hashQuantumBytes` (cheap — git preserves the old fold at this
-/// file's history).
+/// aggregate fold was DELETED 2026-06-12 (CONSTELLATION_BACKLOG card
+/// F7, plane N10; zero call sites — the dead-algebra precedent) with
+/// its rebuild recipe recorded here. **The named trigger fired at the
+/// fidelity chapter open (DECISIONS 2026-07-15; T17 candidate): the
+/// row-fidelity ladder's aggregate rung is the awaited second
+/// consumer, and the fold is REBUILT below as `RowDigestFold` — over
+/// quanta via `hashQuantumBytes`, exactly as the recipe named.** (The
+/// old `PhysicalSchema.RowDigests` axis stays deleted; the fidelity
+/// comparator consumes the fold directly, per-kind, and never
+/// materializes an axis.)
 [<RequireQualifiedAccess>]
 module RowDigester =
 
@@ -349,6 +350,59 @@ module RowDigester =
             first <- false
         let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
         System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
+
+/// The streaming, ORDER-INDEPENDENT aggregate digest of a table's rows —
+/// the 2026-06-12-deleted fold, rebuilt at its named trigger (the fidelity
+/// chapter open, DECISIONS 2026-07-15; T17's ladder rung L1). One digest +
+/// count per table at bounded memory: `addRow`/`addQuantum` fold each row's
+/// canonical SHA256 (`RowDigester`'s one recipe) into a 256-bit unsigned sum
+/// mod 2²⁵⁶, so the fold is COMMUTATIVE with `empty` as identity — two sides
+/// of a comparison need NO ordering agreement at the aggregate rung, and a
+/// mismatch sends the ladder to its ordered per-row drill-down (rung L2).
+/// The quantum path hashes against a `RowBasis`, so a physical-rendition
+/// stream folded under a renamed (logical) basis digests identically to the
+/// logical rendition's own stream — byte-identity stays well-defined across
+/// the physical→logical gap (T17's rows-axis triangle).
+[<RequireQualifiedAccess>]
+module RowDigestFold =
+
+    /// The accumulator: the 256-bit running sum (little-endian, 32 bytes) +
+    /// the row count. Opaque — mint through `empty`, grow through `add*`,
+    /// read through `finalize`.
+    type State = private { Sum : byte[]; Count : int64 }
+
+    /// The identity: a zero sum over zero rows.
+    let empty : State = { Sum = Array.zeroCreate 32; Count = 0L }
+
+    /// Fold one canonical per-row hash into the sum, mod 2²⁵⁶ (byte-wise
+    /// add with carry; the final carry out of byte 31 drops — the modulus).
+    /// Copy-on-fold keeps `State` a value (a shared `empty` is never mutated).
+    let private addHash (state: State) (hash: byte[]) : State =
+        let sum = Array.copy state.Sum
+        let mutable carry = 0
+        for i in 0 .. 31 do
+            let v = int sum.[i] + int hash.[i] + carry
+            sum.[i] <- byte (v &&& 0xFF)
+            carry <- v >>> 8
+        { Sum = sum; Count = state.Count + 1L }
+
+    /// Fold one IR-grain row (the Map carrier).
+    let addRow (state: State) (row: StaticRow) : State =
+        addHash state (RowDigester.hashRowBytes row)
+
+    /// Fold one positional row against its stream's basis (the scale path —
+    /// no per-row sort; the basis's name-sorted permutation reproduces the
+    /// Map-sorted bytes).
+    let addQuantum (basis: RowBasis) (state: State) (q: RowQuantum) : State =
+        addHash state (RowDigester.hashQuantumBytes basis q)
+
+    /// The finalized per-table digest: the aggregate sum (hex) + the count.
+    /// Two tables' row multisets are equal only if their digests AND counts
+    /// agree (the count disambiguates sums that alias at different sizes).
+    type TableDigest = { Aggregate : string; Count : int64 }
+
+    let finalize (state: State) : TableDigest =
+        { Aggregate = System.Convert.ToHexString state.Sum; Count = state.Count }
 
 [<RequireQualifiedAccess>]
 module PhysicalSchema =

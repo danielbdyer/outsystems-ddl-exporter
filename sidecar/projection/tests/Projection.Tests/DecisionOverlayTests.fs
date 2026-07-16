@@ -151,3 +151,44 @@ let ``ofComposeState is total: every EnforceNotNull attribute key appears, and o
     let overlay = DecisionOverlay.ofComposeState state
     let expected = decisions |> List.filter (fun (_, _, e) -> e) |> List.map (fun (k, _, _) -> k) |> Set.ofList
     overlay.EnforceNotNull = expected
+
+// ---------------------------------------------------------------------
+// (e) The keep-nullable projection (DECISIONS 2026-07-15, the estate A6
+// amendment): the operator's EXPLICIT posture — and only it — reaches
+// the loosening set. Evidence-reasoned KeepNullable outcomes stay out.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``KeepNullable projects OperatorOverride outcomes only — evidence never loosens`` () =
+    let kOverride = key "PostureRelaxed"
+    let kSignal   = key "NoSignal"
+    let kEvidence = key "RelaxedUnderEvidence"
+    let state =
+        stateWith
+            [ nullDecision kOverride (NullabilityOutcome.KeepNullable OperatorOverride)
+              nullDecision kSignal   (NullabilityOutcome.KeepNullable NoTighteningSignal)
+              nullDecision kEvidence (NullabilityOutcome.KeepNullable (RelaxedUnderEvidence (5L, 100L, 0.0m))) ]
+            [] []
+    let overlay = DecisionOverlay.ofComposeState state
+    Assert.Equal<Set<SsKey>>(Set.singleton kOverride, overlay.KeepNullable)
+    Assert.Empty(overlay.EnforceNotNull)
+
+[<Fact>]
+let ``KeepNullable: the untracked-by-posture FK decision routes to DropFk like every DoNotEnforce`` () =
+    let kRef = key "UntrackedRef"
+    let state =
+        stateWith [] []
+            [ fkDecision kRef (ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked) ]
+    let overlay = DecisionOverlay.ofComposeState state
+    Assert.Equal<Set<SsKey>>(Set.singleton kRef, overlay.DropFk)
+    Assert.Empty(overlay.NoCheckFk)
+
+[<Fact>]
+let ``KeepNullable: the declared-shape-carried FK decision is identity — neither dropped nor NOCHECK`` () =
+    let kRef = key "CarriedRef"
+    let state =
+        stateWith [] []
+            [ fkDecision kRef (ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried) ]
+    let overlay = DecisionOverlay.ofComposeState state
+    Assert.Empty(overlay.DropFk)
+    Assert.Empty(overlay.NoCheckFk)

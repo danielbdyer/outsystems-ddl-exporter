@@ -637,6 +637,21 @@ type PlanAction =
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
     | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `check estate` — the estate-convergence instrument
+    /// (CHAPTER_ESTATE_OPEN.md; DECISIONS 2026-07-15). The unification target
+    /// (the readiness block's agreed environment by default; the authored
+    /// model under `--against model` — the run states which it used) plus the
+    /// confirm set, each as (label, D9 conn-ref); the runner reads every
+    /// environment via OSSYS (native GUID identity) and rolls an
+    /// `Estate.EstateReport`. Payload reified to a record from birth (the
+    /// CheckGoArgs positional-misordering lesson).
+    | CheckEstate of args: CheckEstateArgs
+    /// `check data --rows --before <env> --after <env> --model <ref>` — the
+    /// row-fidelity proof (T17, wave B2): stream both sides in primary-key
+    /// order, align the physical rendition's column names to the model's
+    /// logical shape, and name every differing row by its key. Payload
+    /// reified to a record from birth.
+    | CheckDataRows of args: CheckDataRowsArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -727,6 +742,67 @@ and CheckGoArgs =
       EmitImpact : bool
       Review     : bool
       Planned    : PlanAction }
+
+/// `check estate`'s coordinates (the `CheckEstate` payload). `TargetLabel` is
+/// the masthead's display name for the unification basis; `Target` is its
+/// resolution source; `Confirm` the (label, D9 conn-ref) environments the
+/// estate verdict needs — every one of them (no partial estate; an unreadable
+/// environment refuses by name at the face).
+and CheckEstateArgs =
+    { TargetLabel : string
+      Target      : EstateTargetSource
+      Confirm     : (string * string) list
+      AsJson      : bool
+      Evidence    : EstateEvidenceMode
+      /// `readiness.estate.repairBand` (wave A6) — `None` rides the
+      /// engine's named default.
+      RepairBand  : int64 option
+      /// `readiness.estate.repairBandByEntity` — per-entity band overrides
+      /// (logical entity name → band). Empty = the default governs all.
+      RepairBandByEntity : Map<string, int64>
+      /// The loaded config's tightening section (wave A6): the face binds
+      /// it against the resolved target catalog to read the ACTIVE interim
+      /// posture — the relaxation keys whose meter lines the board carries.
+      Tightening  : Config.TighteningSection option }
+
+/// The row-fidelity proof's operands (T17, wave B2): the two environments
+/// by label + resolved conn, the model reference whose rename map closes the
+/// physical-to-logical gap, the optional kind/module scope, and the cap on
+/// NAMED differences (the totals stay exact).
+and CheckDataRowsArgs =
+    { BeforeLabel : string
+      BeforeConn  : string
+      AfterLabel  : string
+      AfterConn   : string
+      ModelRef    : string
+      Kind        : string option
+      Module      : string option
+      SampleCap   : int
+      AsJson      : bool
+      /// The intervention ledger's path (`--interventions <journal>`, wave
+      /// B4b) — a transfer journal file, or the `--journal` directory that
+      /// holds exactly one. `None` claims strict byte-identity.
+      Interventions : string option }
+
+/// How `check estate` acquires each environment's data evidence
+/// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).
+and [<RequireQualifiedAccess>] EstateEvidenceMode =
+    /// The default: stored evidence rides when its fingerprints hold; a
+    /// moved kind re-profiles its environment (pay once, stay honest).
+    | FingerprintGated
+    /// `--refresh [env,…]` — force re-profiling: every environment, or the
+    /// named subset.
+    | Refresh of envs: string list option
+    /// `--offline` — reuse stored evidence unprobed; every verdict standing
+    /// on it downgrades to advisory (named, never silent).
+    | Offline
+
+/// The estate target's resolution source: the agreed environment's live OSSYS
+/// conn-ref (the `readiness.schema` default), or the authored model under the
+/// live-OSSYS-primary / file-fallback policy (`ModelResolution`).
+and [<RequireQualifiedAccess>] EstateTargetSource =
+    | AgreedEnv of connRef: string
+    | AuthoredModel of modelOssys: string option * modelFile: string option
 
 /// A planned execution: the unhonored-axis notes (surfaced, never dropped —
 /// fidelity #2) plus the routed action.

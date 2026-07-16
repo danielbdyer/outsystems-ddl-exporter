@@ -255,3 +255,30 @@ let ``H-085: changed is false when policy is the same`` () =
     let vp1 = VersionedPolicy.create testTime Policy.empty None
     let vp2 = VersionedPolicy.create testTime Policy.empty (Some "log line")
     Assert.False(VersionedPolicy.changed vp1 vp2)
+
+// ---------------------------------------------------------------------------
+// The estate A6 amendment's fingerprint coverage (DECISIONS 2026-07-15):
+// direction and the per-reference overrides are policy content — two
+// policies differing only there must digest differently, or a posture
+// edit would be invisible to every digest-keyed cache.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``digest: two nullability configs differing only in direction digest differently`` () =
+    let overrides = [ { AttributeKey = testKey "Attr"; Action = OverrideAction.KeepNullable } ]
+    let evidence =
+        NullabilityTighteningConfig.create 0.0m false overrides |> Result.value
+    let relaxation = NullabilityTighteningConfig.relaxationOnly false overrides
+    let p1 = { Policy.empty with Tightening = { Interventions = [ Nullability ("i", evidence) ] } }
+    let p2 = { Policy.empty with Tightening = { Interventions = [ Nullability ("i", relaxation) ] } }
+    Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
+
+[<Fact>]
+let ``digest: two foreignKey configs differing only in a reference override digest differently`` () =
+    let bare = ForeignKeyTighteningConfig.relaxationOnly []
+    let withOverride =
+        ForeignKeyTighteningConfig.relaxationOnly
+            [ { ReferenceKey = testKey "Ref"; Action = KeepUntracked } ]
+    let p1 = { Policy.empty with Tightening = { Interventions = [ ForeignKey ("i", bare) ] } }
+    let p2 = { Policy.empty with Tightening = { Interventions = [ ForeignKey ("i", withOverride) ] } }
+    Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)

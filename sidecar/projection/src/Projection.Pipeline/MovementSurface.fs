@@ -251,7 +251,16 @@ type SliceFlowSpec =
 /// citizen (rendered, so `parse ∘ render = id`); absent ⇒ `None`.
 type ReadinessSpec =
     { Schema  : string
-      Confirm : string list }
+      Confirm : string list
+      /// The estate knobs (`readiness.estate`, wave A6): the repair band —
+      /// the contradicting-row count past which a prepared repair defers
+      /// to the interim relaxation. `None` = the engine's named default
+      /// (`Estate.repairBandDefault`); consumed by `check estate` in the
+      /// same wave that parses it (A44 — never an inert key).
+      RepairBand : int64 option
+      /// Per-entity repair bands (`readiness.estate.repairBandByEntity`) —
+      /// logical entity name → band, overriding `RepairBand` for that entity.
+      RepairBandByEntity : Map<string, int64> }
 
 type ProjectionConfig =
     {
@@ -459,9 +468,37 @@ module ProjectionConfig =
     let private parseReadiness (defaultSchema: string option) (root: JsonElement) : ReadinessSpec option =
         match root.TryGetProperty "readiness" with
         | true, r when r.ValueKind = JsonValueKind.Object ->
+            // The estate knobs (wave A6): `estate.repairBand`, an int64.
+            let repairBand =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "repairBand" with
+                    | true, v when v.ValueKind = JsonValueKind.Number ->
+                        let mutable n = 0L
+                        if v.TryGetInt64(&n) then Some n
+                        else failwith "readiness.estate.repairBand must be a 64-bit integer."
+                    | true, _ -> failwith "readiness.estate.repairBand must be a 64-bit integer."
+                    | _ -> None
+                | _ -> None
+            // Per-entity bands (`estate.repairBandByEntity`): an object mapping
+            // logical entity name → band. Absent = empty (the default governs).
+            let repairBandByEntity =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "repairBandByEntity" with
+                    | true, m when m.ValueKind = JsonValueKind.Object ->
+                        m.EnumerateObject()
+                        |> Seq.map (fun p ->
+                            let mutable n = 0L
+                            if p.Value.ValueKind = JsonValueKind.Number && p.Value.TryGetInt64(&n) then p.Name, n
+                            else failwith (sprintf "readiness.estate.repairBandByEntity['%s'] must be a 64-bit integer." p.Name))
+                        |> Map.ofSeq
+                    | true, _ -> failwith "readiness.estate.repairBandByEntity must map each entity name to a 64-bit integer."
+                    | _ -> Map.empty
+                | _ -> Map.empty
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm" }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm" }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1384,6 +1421,15 @@ module ProjectionConfig =
                  let a = JsonArray()
                  for c in rs.Confirm do a.Add(JsonValue.Create c)
                  o.["confirm"] <- a)
+             (let e = JsonObject()
+              (match rs.RepairBand with
+               | Some band -> e.["repairBand"] <- JsonValue.Create band
+               | None -> ())
+              if not (Map.isEmpty rs.RepairBandByEntity) then
+                  let m = JsonObject()
+                  for KeyValue(entity, band) in rs.RepairBandByEntity do m.[entity] <- JsonValue.Create band
+                  e.["repairBandByEntity"] <- m
+              if e.Count > 0 then o.["estate"] <- e)
              root.["readiness"] <- o
          | None -> ())
         root
@@ -2084,6 +2130,55 @@ module Command =
                 match valueOf "--model", valueOf "--to" with
                 | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
+            | "data" :: rest when List.contains "--rows" rest ->
+                // THE ROW-FIDELITY PROOF (T17, wave B2) — the manual check:
+                // two connection strings, the authored model as the alignment
+                // basis, every differing row named by its key. The model is
+                // REQUIRED because the two sides carry different renditions
+                // of one estate — without its rename map, physical and
+                // logical column names read as different rows.
+                match valueOf "--before", valueOf "--after" with
+                | Some b, Some a ->
+                    (match connOf b, connOf a with
+                     | Ok bc, Ok ac ->
+                         (match valueOf "--model" with
+                          | None ->
+                              PlanAction.Refused (2, err "cli.check.dataRowsNoModel" "projection check data --rows: needs --model <ref> — the row comparison aligns each side's physical column names to the model's logical shape, and without the model's rename map two renditions of one estate read as different rows.")
+                          | Some modelRef ->
+                              let sampleCap =
+                                  match valueOf "--sample" with
+                                  | None -> Ok 20
+                                  | Some raw ->
+                                      (match System.Int32.TryParse raw with
+                                       | true, n when n > 0 -> Ok n
+                                       | _ -> Error (err "cli.check.dataRowsSample" (sprintf "projection check data --rows: --sample needs a positive whole number; '%s' is not one." raw)))
+                              // `--interventions` names the transfer journal
+                              // (a file, or the --journal directory). The
+                              // `@runId` form waits on the run envelope's
+                              // ledger refs (the journal-promotion wave) —
+                              // refused by name, never a silent guess.
+                              let interventions =
+                                  match valueOf "--interventions" with
+                                  | Some r when r.StartsWith "@" ->
+                                      Error (err "cli.check.dataRowsInterventionsRunRef" (sprintf "projection check data --rows: --interventions %s — a stored run does not yet carry its ledger references; name the journal file itself (the transfer's --journal directory holds transfer-<digest>.ndjson)." r))
+                                  | other -> Ok other
+                              (match sampleCap, interventions with
+                               | Error e, _ -> PlanAction.Refused (2, e)
+                               | _, Error e -> PlanAction.Refused (2, e)
+                               | Ok cap, Ok ledger ->
+                                   PlanAction.CheckDataRows
+                                       { BeforeLabel = b
+                                         BeforeConn  = bc
+                                         AfterLabel  = a
+                                         AfterConn   = ac
+                                         ModelRef    = modelRef
+                                         Kind        = valueOf "--kind"
+                                         Module      = valueOf "--module"
+                                         SampleCap   = cap
+                                         AsJson      = (valueOf "--format" = Some "json")
+                                         Interventions = ledger }))
+                     | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data --rows: requires --before <environment> --after <environment> --model <ref>.")
             | "data" :: _ ->
                 match valueOf "--before", valueOf "--after" with
                 | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
@@ -2205,6 +2300,90 @@ module Command =
                         let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
+            | ("environments" | "estate") :: _ ->
+                // THE ENVIRONMENTS INSTRUMENT (CHAPTER_ESTATE_OPEN.md; DECISIONS
+                // 2026-07-15) — `environments` is the verb; `estate` stays a
+                // back-compat alias (config-primary doctrine: never deprecate a
+                // shipped CLI surface). The zero-flag contract: environments from
+                // `readiness.confirm`, the target from `readiness.schema`
+                // (`--against model` selects the authored model instead; the
+                // run states which basis it used). Every named environment is
+                // required — a non-direct or unknown one is a NAMED refusal.
+                match cfg.Readiness with
+                | None ->
+                    PlanAction.Refused (2, err "cli.check.estateNoBlock" "projection check environments: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs when List.isEmpty rs.Confirm ->
+                    // A check over zero environments verifies nothing; a green
+                    // verdict there would read as "clean". Refuse by name.
+                    PlanAction.Refused (2, err "cli.check.estateNoConfirm" "projection check environments: readiness.confirm is empty — name the environments to compare (e.g. \"confirm\": [\"cloud-dev\", \"cloud-qa\", \"cloud-uat\"]).")
+                | Some rs ->
+                    let refOf (envName: string) : Result<string * string> =
+                        match Map.tryFind envName cfg.Environments with
+                        | Some env ->
+                            match env.Access with
+                            | Access.Direct r -> Result.success (envName, connSpecOf r)
+                            | _ -> Result.failureOf (err "cli.check.estateNotDirect" (sprintf "estate environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
+                        | None -> Result.failureOf (err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." envName))
+                    let target : Result<string * EstateTargetSource> =
+                        if valueOf "--against" = Some "model" then
+                            match (cfg.ModelOssys |> Option.orElse cfg.Shaping.Model.Ossys), cfg.Model with
+                            | None, None ->
+                                Result.failureOf (err "cli.check.estateNoModel" "projection check environments --against model: no authored model is configured (set model.env / model.ossys, or model).")
+                            | ossys, file -> Result.success ("model", EstateTargetSource.AuthoredModel (ossys, file))
+                        else
+                            refOf rs.Schema
+                            |> Result.map (fun (label, conn) -> label, EstateTargetSource.AgreedEnv conn)
+                    let confirmRs = rs.Confirm |> List.map refOf
+                    let confirmError = confirmRs |> List.tryPick (function Error (e :: _) -> Some e | _ -> None)
+                    // The evidence flags (DECISIONS 2026-07-15 entry 4):
+                    // `--refresh [env,…]` forces re-profiling; `--offline`
+                    // reuses stored evidence unprobed. Together they
+                    // contradict — a named refusal, never a silent winner.
+                    let offline = List.contains "--offline" args
+                    let refreshRequested = List.contains "--refresh" args
+                    let refreshEnvs : string list option =
+                        match args |> List.tryFindIndex ((=) "--refresh") with
+                        | Some i when i + 1 < List.length args && not ((List.item (i + 1) args).StartsWith "--") ->
+                            Some
+                                ((List.item (i + 1) args).Split(',')
+                                 |> Array.toList
+                                 |> List.map (fun s -> s.Trim())
+                                 |> List.filter (fun s -> s <> ""))
+                        | _ -> None
+                    let unknownRefreshEnv =
+                        refreshEnvs
+                        |> Option.defaultValue []
+                        |> List.tryFind (fun e -> not (List.contains e rs.Confirm))
+                    let evidence : Result<EstateEvidenceMode> =
+                        match offline, refreshRequested, unknownRefreshEnv with
+                        | true, true, _ ->
+                            Result.failureOf (err "cli.check.estateEvidenceConflict" "projection check environments: --refresh and --offline contradict — refresh probes and re-captures; offline forbids the probe. Choose one.")
+                        | _, true, Some env ->
+                            Result.failureOf (err "cli.check.estateRefreshUnknownEnv" (sprintf "projection check environments: --refresh names '%s', which is not in readiness.confirm." env))
+                        | true, false, _ -> Result.success EstateEvidenceMode.Offline
+                        | false, true, None -> Result.success (EstateEvidenceMode.Refresh refreshEnvs)
+                        | false, false, _ -> Result.success EstateEvidenceMode.FingerprintGated
+                    match target, confirmError, evidence with
+                    // A missing authored model or a contradictory evidence
+                    // flag is a config-shape refusal (2); an unresolvable
+                    // environment is a connection-plane one (6).
+                    | _, _, Error (e :: _) -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _ -> PlanAction.Refused (6, e)
+                    | Error [], _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
+                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
+                    | Ok _, Some e, _ -> PlanAction.Refused (6, e)
+                    | Ok (label, source), None, Ok evidenceMode ->
+                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
+                        PlanAction.CheckEstate
+                            { TargetLabel = label
+                              Target      = source
+                              Confirm     = confirm
+                              AsJson      = (valueOf "--format" = Some "json")
+                              Evidence    = evidenceMode
+                              RepairBand  = rs.RepairBand
+                              RepairBandByEntity = rs.RepairBandByEntity
+                              Tightening  = cfg.Shaping.Policy.Tightening }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

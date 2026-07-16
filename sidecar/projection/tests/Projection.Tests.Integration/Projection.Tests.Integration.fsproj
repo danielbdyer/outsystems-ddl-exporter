@@ -46,6 +46,16 @@
     <Compile Include="GoBoardDockerTests.fs" />
     <Compile Include="TriageWitnessDockerTests.fs" />
     <Compile Include="EvidenceCacheDockerTests.fs" />
+    <!-- EstateFingerprintProbeDockerTests.fs: the estate evidence store's
+         one-batch staleness probe witness (wave A2.5, 2026-07-15). -->
+    <Compile Include="EstateFingerprintProbeDockerTests.fs" />
+    <!-- FidelityRowsDockerTests.fs: T17's live witness (wave B2) — two
+         renditions of one estate prove byte-identical; a flipped cell
+         names its key. -->
+    <Compile Include="FidelityRowsDockerTests.fs" />
+    <!-- ServerDigestDockerTests.fs: the two digest planes' per-type verdict
+         co-variance (wave B3; M1.8 donor). -->
+    <Compile Include="ServerDigestDockerTests.fs" />
     <Compile Include="ActConsentDockerTests.fs" />
     <Compile Include="CsvExportDockerTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />

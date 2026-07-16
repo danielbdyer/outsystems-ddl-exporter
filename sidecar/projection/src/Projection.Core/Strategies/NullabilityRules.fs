@@ -204,7 +204,11 @@ module NullabilityRules =
     // Decider — the per-attribute rule. Pure function of the
     // intervention's config + the IR context.
     //
-    // Order of evaluation matches V1's signal hierarchy:
+    // Order of evaluation matches V1's signal hierarchy, prefixed by the
+    // direction gate (DECISIONS 2026-07-15, the estate A6 amendment):
+    //  0. Direction = RelaxationOnly ⇒ only step 1 runs; every
+    //     non-overridden attribute reads KeepNullable(NoTighteningSignal).
+    //     The hierarchy below is the EvidenceDriven direction.
     //  1. Operator override (absolute; bypasses everything).
     //  2. Primary-key (structural; no profile needed).
     //  3. Physical-NOT-NULL (structural; no profile needed).
@@ -233,8 +237,18 @@ module NullabilityRules =
               Outcome        = outcome
               InterventionId = interventionId }
 
+        // 0. The intervention's direction (DECISIONS 2026-07-15, the estate
+        //    A6 amendment): a RELAXATION-ONLY intervention consults ONLY the
+        //    operator's explicit overrides — no evidence signal proposes
+        //    tightening, so the 2026-06-22 coercion drop stays whole even
+        //    now that `kind:"nullability"` entries bind from config again.
+        if config.Direction = TighteningDirection.RelaxationOnly then
+            if NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
+                mkDecision (NullabilityOutcome.KeepNullable OperatorOverride)
+            else
+                mkDecision (NullabilityOutcome.KeepNullable NoTighteningSignal)
         // 1. Operator override — absolute.
-        if NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
+        elif NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
             mkDecision (NullabilityOutcome.KeepNullable OperatorOverride)
         // 2. Primary key — structural.
         elif attribute.IsPrimaryKey then

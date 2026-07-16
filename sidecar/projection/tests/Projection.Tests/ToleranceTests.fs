@@ -41,6 +41,9 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.DecimalScaleTolerated
                 ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
                 ToleratedDivergence.TriggerBodyUnparsedDropped
+                ToleratedDivergence.BooleanCanonicalizationTolerated
+                ToleratedDivergence.DateTimeTickPrecisionTolerated
+                ToleratedDivergence.IntegerWidthNormalized
             ]
         |> Arb.fromGen
 
@@ -105,7 +108,11 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // re-trusts the sink's FKs by default, so this fires only when the operator
     // sets `WriteOptions.RetrustForeignKeys = false`. AcceptedFaithful, so the
     // Decision axis stays ✅ and the open-gap count stays 3.
-    Assert.Equal (10, Set.count ToleratedDivergence.allKnown)
+    // **T17/B4b (2026-07-15):** 13 — the row-fidelity comparator's three
+    // canonical-form erasures (BooleanCanonicalizationTolerated /
+    // DateTimeTickPrecisionTolerated / IntegerWidthNormalized), all Data
+    // AcceptedFaithful, so the open-gap count stays 3.
+    Assert.Equal (13, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =

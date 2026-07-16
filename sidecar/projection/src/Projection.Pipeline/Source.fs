@@ -102,13 +102,16 @@ module Source =
     let ofJson (json: string) : Source =
         snapshot "json:inline" (CatalogReader.SnapshotJson json)
 
-    /// Resolve a `live:` operand string to a connection string. `env:VAR`
+    /// Resolve a connection operand string to a connection string. `env:VAR`
     /// reads the connection string from the environment (the operator's
-    /// predominant, secret-safe form); anything else is treated as a raw
+    /// predominant, secret-safe form); `file:PATH` reads the file's trimmed
+    /// contents (the D9 out-of-band form); anything else is treated as a raw
     /// connection string. A missing env var falls through to the raw value,
     /// so the connection open fails loudly rather than silently picking a
-    /// wrong target.
-    let private resolveConnString (conn: string) : string =
+    /// wrong target. Public since the estate evidence wave (2026-07-15): the
+    /// fingerprint probe boundary shares this ONE resolution rule rather
+    /// than growing a second `env:`/`file:` parser.
+    let resolveConn (conn: string) : string =
         if conn.StartsWith("env:") then
             match System.Environment.GetEnvironmentVariable(conn.Substring(4)) with
             | null | "" -> conn
@@ -129,7 +132,7 @@ module Source =
     /// connection — the catalog read and the profile pass are independent
     /// operations and neither shares connection state.
     let ofLive (conn: string) : Source =
-        let connStr = resolveConnString conn
+        let connStr = resolveConn conn
         let openConnection () : Task<SqlConnection> =
             task {
                 let c = new SqlConnection(connStr)
@@ -220,7 +223,7 @@ module Source =
             Some (fun catalog ->
                 task {
                     try
-                        use cnn = new SqlConnection(resolveConnString conn)
+                        use cnn = new SqlConnection(resolveConn conn)
                         do! cnn.OpenAsync()
                         let profileCatalog = Catalog.stripStaticPopulations catalog
                         return! LiveProfiler.attach cnn profileCatalog Profile.empty

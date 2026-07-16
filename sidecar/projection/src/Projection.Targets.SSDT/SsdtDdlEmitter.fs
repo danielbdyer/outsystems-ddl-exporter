@@ -106,13 +106,21 @@ module SsdtDdlEmitter =
     /// `Tolerance.IgnoreHeaderComments = true` initially, V2 omits
     /// V1's `/* Source: ... */` per-table header block.
     // Wave-2 slice 2.3 — apply the NOT NULL tightening decision at emission.
-    // **Additive-only** (`field && not enforce`, never `field = decision`):
-    // a column is emitted NOT NULL iff the source already made it NOT NULL
-    // OR a registered Nullability intervention decided `EnforceNotNull` for
-    // it. A non-enforce decision never loosens source truth. A18-amended
-    // holds — the overlay carries the decision (evidence), not Policy.
+    // **Additive-only, as amended** (DECISIONS 2026-07-15, the estate A6
+    // amendment): a column is emitted NOT NULL iff the source already made
+    // it NOT NULL OR a registered Nullability intervention decided
+    // `EnforceNotNull` for it. An EVIDENCE outcome never loosens source
+    // truth — the wave-2 law holds; the one lawful loosening is the
+    // operator's EXPLICIT posture override (`overlay.KeepNullable`, minted
+    // only from `KeepNullable OperatorOverride`), which relaxes the emitted
+    // nullability below the declaration until its reopen probe retires it.
+    // The override is absolute (mirrors the rules' step-1 absolutism), so
+    // it outranks a sibling intervention's EnforceNotNull. A18-amended
+    // holds — the overlay carries the decision (operator intent discharged
+    // into a decision by the pass), not Policy.
     let private columnDef (overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
         let enforceNotNull = Set.contains a.SsKey overlay.EnforceNotNull
+        let keepNullable = Set.contains a.SsKey overlay.KeepNullable
         {
             Name         = ColumnRealization.columnNameText a.Column
             Type         = a.Type
@@ -124,9 +132,11 @@ module SsdtDdlEmitter =
             Length       = a.Length
             Precision    = a.Precision
             Scale        = a.Scale
-            // Additive-only tightening: source NULL ∧ ¬enforce stays NULL;
-            // source NOT NULL stays NOT NULL regardless; enforce ⇒ NOT NULL.
-            Nullable     = a.Column.IsNullable && not enforceNotNull
+            // Additive-only tightening, one lawful loosening: the operator's
+            // explicit keep-nullable posture wins outright; else source
+            // NULL ∧ ¬enforce stays NULL; source NOT NULL stays NOT NULL
+            // regardless; enforce ⇒ NOT NULL.
+            Nullable     = keepNullable || (a.Column.IsNullable && not enforceNotNull)
             IsIdentity   = a.IsIdentity
             IsPrimaryKey = a.IsPrimaryKey
             // Slice 5.13.column-features-emit: DEFAULT clause carriage

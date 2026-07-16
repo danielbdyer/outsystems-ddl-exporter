@@ -239,6 +239,10 @@ table before continuing.
 | **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
 | **Staged-bulk MERGE shape + `chooseMergeShape` selector for emitted seed scripts** | 2026-06-11 (The perf-harness verdicts — the MERGE cliff REFUTED) | Static populations ≳100k rows/kind, where the measured ~2.5k rows/sec single-MERGE execute slope or per-statement memory matters. Demoted from stage-0 correctness to armed-perf by the H1 in-harness refutation (the `MERGE … USING (VALUES …)` derived-table form executes at 10k rows on SQL Server 2022; the 1000-row TVC cap binds `INSERT … VALUES` only — COUNT(*)-verified, replicated on a second host). Any future cut here carries the DeleteScope-correctness witness (`WHEN NOT MATCHED BY SOURCE` cannot be naively chunked) and the before/after via `perf-harness.sh run seed-merge-execute`. | **Cashed out — 2026-06-25.** Shipped as `DataStagingPolicy` (`emission.dataStaging { mode, threshold, indexThreshold }` → Core) threaded to all three data lanes via the composer's `DataEmitOptions`; the generic staged rendering lives in the shared `StagedMerge` module (`Targets.Data`); `DataStagingPolicy.shouldStage` IS the `chooseMergeShape` selector. `indexThreshold = 100000` is MEASURED (clustered `#temp`-PK index wins ~33-37% at 100k/250k/500k, no crossover). DEPLOY-verified (`StagedMergeDeployE2ETests` 5/5). See `2026-06-25 — Staged-\`#temp\` MERGE completed across all 3 data lanes` entry below. |
 | **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
+| **Sub-unanimity consensus thresholds (`check estate`)** | 2026-07-15 (the estate chapter opens) | The operator asks for a per-axis apply threshold below unanimity. Until then: the estate decision is the meet over the evidence join (deciding on `Profile.merge` ≡ unanimous per-env decisions); consensus ratios live in `estate.json` only and never lead a rendered line (the blocking environment is named instead). | deferred (2026-07-15) |
+| **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
+| **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | deferred (2026-07-15) |
+| **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | **Cashed out — 2026-07-15, estate wave A6 (first-in-PR).** The relaxation direction is STRUCTURAL: `TighteningDirection` (`EvidenceDriven \| RelaxationOnly`) on both nullability and FK configs; budget-less `kind:"nullability"` entries bind `relaxationOnly` (budgeted entries stay dropped — coercion unchanged); per-reference `referenceOverrides` (`keepUntracked`) land the previously-inexpressible single-FK untrack; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes only) reaches `SsdtDdlEmitter.columnDef` — the one lawful loosening. A44 enforcement test: `` `overlay: every emitted key binds through TighteningBinding and reaches emission` `` (TighteningBindingTests). See `2026-07-15 — The nullability-binder amendment lands` entry below. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -27379,3 +27383,201 @@ keyed referenced pull + static hold-out + manifest provenance + bare-run
 escape narration) live against a mock estate with an injected FK onto a
 genuine static entity; Release FS3511-clean. Operator surfaces:
 `PARTIAL_TRANSFER_RUNBOOK.md` Step 8, `THE_CONFIG_CONTROL_PLANE.md` §4.
+
+## 2026-07-15 — The estate chapter opens: `check estate`, the ReadOnly boundary named, the estate evidence store, and the presentation contract
+
+**Context.** The cutover-reconciliation ideation (`CUTOVER_RECONCILIATION_IDEATION.md`, PR #668)
+and its execution plan (revision 2, operator-approved 2026-07-15 — the presentation-first
+re-cut after the operator rejected the engine-first draft: *the presentation is the product*).
+Chapter frame + the binding presentation contract: `CHAPTER_ESTATE_OPEN.md`.
+
+**Decisions (operator, 2026-07-15):**
+
+1. **The verb is `check estate`.** The estate-level "is it right?" — sits beside `check shape`
+   (which keeps its star-shaped gate and its `Ready/Paused/Blocked` vocabulary; `check estate`
+   never displays a second verdict word). Exit codes: 0 unified · 5 diverged · 6 unreadable —
+   the `check shape` classes, so the ladder consumes it unchanged. Zero-flag contract:
+   environments from `readiness.confirm`, target from `readiness.schema` (`--against model`
+   selects the authored model; the run states which operand it used). `reconcile` stays
+   off-limits for estate vocabulary (the flow-config re-key field owns it).
+2. **Remediation is artifacts-only** (standing law for the chapter). The mode emits
+   `estate.remediation.<env>.sql` / `estate.overlay.json` / `estate.probes.sql`; a gated
+   `remediate` executor was DECLINED — execution stays with `revert` / transfer / migrate under
+   `--go` + `PROJECTION_ALLOW_EXECUTE`. The check verbs never gain write semantics.
+3. **The ReadOnly register boundary, named** (codification of operated behavior, BEFORE the
+   estate cache extends it). The `Shell.ReadOnly` contract is: (a) never append the run ledger
+   (`runs.jsonl` — the R6 gauge must not be polluted by queries about it); (b) never write an
+   operator database. Local artifact/evidence writes ARE in-register — `readiness.json`,
+   `compare.json`, and the register-blind `RunEnvelope` `run.json` already do this. The estate
+   verb writes its artifacts and its evidence/history store under exactly this boundary; it
+   never moves to Preview to "fix" persistence, and `Run.Artifacts` stays bracket-blind.
+4. **The estate evidence store** (pay-once evidence; wave A2.5). Directory resolution, one rule
+   for every reader: `PROJECTION_ESTATE_DIR` when set; else `<PROJECTION_LEDGER_DIR>/estate`;
+   else the store is disabled, the run is live-only, and the report says so. Layout:
+   `evidence/<env>/profile.json` (the same `ProfileCodec` artifact `profile --out` writes) +
+   `evidence/<env>/fingerprints.json` (sidecar: capturedAtUtc · profileSha256 · per-kind
+   `{ Kind; RowCount; MaxPk; SchemaShapeHash }`) + `estate/<runId>.estate.json` +
+   `estate/latest.json` (the burndown history — estate-owned, never the ledger) +
+   `proofs/<proofKey>/digests.json` (the fidelity incremental cache). Semantics: default =
+   fingerprint-gated reuse; `--refresh` forces; `--offline` reuses unprobed and downgrades every
+   dependent line to advisory. **Refresh replaces, never merges** — `Profile.merge` is a
+   worst-case union, so merging fresh over stale would keep stale maxima forever; per-kind
+   replacement (wave A8) requires a lawful `Profile.replaceKindEvidence` with an FK-adjacency
+   invalidation closure. **Named honesty caveat:** `(RowCount, MaxPk)` is blind to in-place
+   UPDATEs; the fingerprint gates the default, `--refresh` is the override, and evidence age
+   rides every decision line. All store writes are atomic (`*.tmp` + move) and advisory (a
+   failed write warns, never fails the check); an unreadable cached artifact reads as absent,
+   named.
+5. **The presentation contract is law** (`CHAPTER_ESTATE_OPEN.md` Appendix A). One verdict
+   vocabulary (`unified / converging / forked`); disposition lanes primary (DECIDE → REPAIR →
+   RELAX → WATCH), planes secondary; one lever per line; homogeneous lanes; impact-ranked,
+   capped, remainder named; evidence provenance load-bearing; one substrate (`estate.json` ≡
+   the terminal); the empty state is a full surface. Enforcement: the
+   `finding ⇔ presentation` totality test (every finding kind carries its contract row), plus
+   the Voice totality suite over every new entry. Consensus lines name the blocking environment
+   and its count; ratios never lead (they live in `estate.json` only). Odd-one-out attribution
+   only under a strict majority; otherwise the finding names the disagreeing environments
+   symmetrically, with the lag/fork/drift classifier as tiebreaker when the episode record
+   supports it.
+
+**Active deferrals (index entries; each with its re-open trigger):**
+- **Sub-unanimity consensus thresholds** — display-only lens; apply stays unanimity. Trigger:
+  the operator asks for a per-axis apply threshold.
+- **Relaxation expiry** — probe-only retirement at open. Trigger: the operator asks for
+  calendar (T-15 review) or run-count expiry.
+- **S8/O4 physical-residue sweep** (unmanaged tables/columns/triggers/computed columns) —
+  deferred. Trigger: the first unexplained physical residue in a real estate run.
+- **The nullability-binder amendment** — scheduled decision at wave A6: `TighteningBinding`
+  currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which makes
+  the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). Wave A6 either
+  re-opens the class for the relaxation direction only (keepNullable /
+  allowMandatoryRelaxation bind; coercion stays dropped) — the amendment lands first-in-PR with
+  an A44 enforcement test — or, if declined, the overlay scopes to FK/unique/categorical and
+  nullability forks stay DECIDE.
+
+## 2026-07-15 — The fidelity chapter opens: T17 (candidate), prove-implies-journal, the two digest planes, and verb growth
+
+**Context.** The provable-row-fidelity half of the same ideation + plan (ideation §8; plan
+Track B). Axiom candidate T17 lands in `AXIOMS.md` with its `AxiomTests.fs` Skip-stub in the
+same commit (promotion trigger: wave B2's executable comparator witness). A45 (espace
+invariance across the environment lattice) likewise lands as a candidate + stub (promotion:
+wave A1's N-way witness).
+
+**Decisions (operator, 2026-07-15):**
+
+1. **T17, the claim.** `Ingest_rows ∘ Transfer = ι` modulo named row interventions, residual
+   zero, every exception citing its ledger record — the data-plane sibling of the soul
+   adjunction, at row grain. "Excepting and removing" takes the strong reading: intervened rows
+   compare modulo their recorded intervention (predicted target bytes), never mere exclusion;
+   removed rows are checked absent with the removal record cited.
+2. **AssignedBySink: both resolutions, per-run, named.** "Prove implies journal" is the
+   default — a run claiming provable fidelity records the per-row `(source → assigned)`
+   correspondence on EVERY realization path (the capture journal grows beyond the streaming
+   path at wave B4a); `PreferPreservedKeys`/`IDENTITY_INSERT` proof runs are the predictable
+   alternative where the grant exists. Every proof names which resolution it used.
+3. **The two digest planes.** The client-side canonical SHA256 over the codec's canonical row
+   form (the `RowDigester` recipe over an SsKey/logical basis) is AUTHORITATIVE — it rides the
+   one typed codec and is well-defined across the physical→logical rendition gap. The
+   server-side `HASHBYTES('SHA2_256', … FOR XML RAW, BINARY BASE64)` fast-path (V1's unshipped
+   M1.8 design, ADMIRE row opened this date) is a PROJECTION of the same form; the two planes'
+   agreement is property-tested per SQL type (wave B3), and a kind whose types the server
+   projection cannot carry descends to the canonical plane by name — the capability-descent
+   discipline. `CHECKSUM_AGG`/`BINARY_CHECKSUM` remain rejected for fidelity per M1.8's own
+   analysis (4-byte, collision-prone, NULL-blind).
+4. **Verb growth.** `check fidelity` grows the flow form (`check fidelity <flow>` — one
+   fidelity concept, file-source and estate-source; flow-map membership is tested before the
+   `.sql`-path default arm, ambiguity refused by name). `check data` grows `--rows` (the
+   two-connection manual proof; the authored model is a REQUIRED operand — two live reads can
+   never align themselves — refused by name without it; strict mode with no intervention ledger
+   claims strict byte-identity and says so). The parity matrix's reserved `verify-data` token
+   stays retired.
+5. **The comparator substrate.** Never `ReadSide.read` for rows (the 100k cap + Static
+   marking); both sides stream `ORDER BY` PK through the transfer's own substrate. The digest
+   ladder: counts (existing) → per-kind order-independent aggregate fold (the deleted
+   `RowDigests` monoid rebuilt over `hashQuantumBytes` per its own docstring recipe — this
+   chapter is the awaited second consumer) → lockstep merge drill-down on mismatch only,
+   differing rows named by business key. The seed insert-only-missing pre-filter
+   (`filterSeedRows`) is de-silenced at wave B4a (counts and reports; `transfer.seedRowsSkipped`).
+
+**Active deferrals:** the three unnamed byte-affecting normalizations (Boolean
+canonicalization, DateTime tick precision, integer-width normalization) mint as
+`ToleratedDivergence` variants at wave B4b — with their first consumer, the intervention-aware
+comparator — never before (the no-inert-names rule). Trigger already scheduled: B4b opens.
+
+## 2026-07-15 — The nullability-binder amendment lands: the relaxation direction binds and reaches emission (estate wave A6, first-in-PR)
+
+**Context.** The scheduled decision point named at the estate chapter's open (the Active
+deferral "The nullability-binder relaxation-direction amendment"; wave A6 = the posture wave).
+The 2026-06-22 entry dropped the whole `kind:"nullability"` intervention class from
+`TighteningBinding.fromConfig` — config-driven nullable→NOT NULL coercion is the team's
+modeling decision, not the tool's — which left `overrides` (the `keepNullable` table)
+EXPRESSIBLE-BUT-INERT, the exact NM-69 class A44 exists to forbid. The estate overlay
+(`estate.overlay.json`) emits `keepNullable` and per-reference untrack entries as its interim
+posture, so the gap had to close before the overlay's first emission.
+
+**The decision (this amendment, taken at the scheduled point):** re-open the class for the
+RELAXATION direction only — and make the direction STRUCTURAL, not a binder convention.
+
+1. **`TighteningDirection` (Core, closed DU): `EvidenceDriven | RelaxationOnly`** — a new
+   field on BOTH `NullabilityTighteningConfig` and `ForeignKeyTighteningConfig` (the Policy.fs
+   mode note anticipated exactly this: "a real second mode… arrives as a new field").
+   `create` keeps its signature and constructs `EvidenceDriven` (every pre-amendment caller
+   verbatim); the new `relaxationOnly` constructors are the posture's named forms. Under
+   `RelaxationOnly` the rules run ONLY the operator's explicit overrides: `NullabilityRules`
+   reads every non-overridden attribute as `KeepNullable(NoTighteningSignal)` (never the
+   step-2/3/4 enforce arms — the coercion drop stays whole); `ForeignKeyRules` carries every
+   non-overridden reference as the new `EnforceConstraint(DeclaredShapeCarried)` (identity at
+   emission — neither `DropFk` nor `NoCheckFk`).
+2. **Per-reference FK overrides (Core): `ForeignKeyOverride { ReferenceKey; Action }`,
+   `ForeignKeyOverrideAction = KeepUntracked`** — the ideation's "untrack ONE relationship"
+   arm, previously inexpressible (FK configs were intervention-wide). The override is
+   ABSOLUTE in both directions (mirrors the nullability hierarchy's step 1) and outranks the
+   source-backed-constraint carve-out (2026-06-12) deliberately: the interim posture targets
+   relationships the agreed shape carries; its decision reads
+   `DoNotEnforce(OperatorUntracked)` and lands in `DropFk` (the existing emission path; the
+   FK-dropped diff note already speaks it).
+3. **`keepNullable` reaches emission — the one lawful loosening.** `DecisionOverlay` gains
+   `KeepNullable : Set<SsKey>`, minted from `KeepNullable OperatorOverride` outcomes ONLY
+   (evidence-reasoned KeepNullable variants stay out by construction), and
+   `SsdtDdlEmitter.columnDef` consults it: the wave-2 "additive-only" law is AMENDED, not
+   repealed — an EVIDENCE outcome still never loosens source truth; the operator's explicit,
+   named posture override may, absolutely (it also outranks a sibling `EnforceNotNull`), and
+   its reopen probe retires it.
+4. **The binder split (`TighteningBinding.fromConfig`).** A `kind:"nullability"` entry naming
+   a `nullBudget` is the COERCION direction: still dropped, not refused (an existing config
+   never hard-fails; null-density stays a profiling statistic). A budget-less entry binds as
+   `relaxationOnly` — `allowMandatoryRelaxation` binds verbatim onto the config (the policy
+   fingerprint sees it; under RelaxationOnly no budget hierarchy runs to consult it, said
+   here and in the binder's docstring). A `kind:"foreignKey"` entry carrying
+   `referenceOverrides` and NONE of the five V1 toggles binds as the SURGICAL
+   `relaxationOnly` form (the shape the overlay emits); any toggle present keeps
+   `EvidenceDriven` with the overrides still consulted first. New config surface:
+   `referenceOverrides: [{ referenceRef, action: "keepUntracked" }]` — a DISTINCT key from
+   the nullability `overrides` so the two grains never share a shape; `referenceRef` names
+   the relationship by its anchoring attribute (logical or physical form), and an attribute
+   that anchors no relationship refuses by name (`referenceRef.noReference`).
+5. **The A44 enforcement law, executable:** `` `overlay: every emitted key binds through
+   TighteningBinding and reaches emission — no expressible-but-inert key (A44)` ``
+   (TighteningBindingTests) drives both overlay entry shapes config → binder → passes →
+   `DecisionOverlay` → `statementsWith`: the named column loosens to NULL, the named
+   relationship is not created, `EnforceNotNull`/`NoCheckFk` stay empty, and the baseline run
+   proves both edits are the posture's doing. Red if the amendment is skipped.
+6. **`VersionedPolicy.digestOf` fingerprints the new content** (`;dir=` on both variants;
+   `;rov=` + per-override entries on ForeignKey) — a posture edit is policy content and must
+   move every digest-keyed cache.
+7. **Relationship to `tighteningRelaxations` (F7), named:** DIFFERENT machinery, deliberately
+   untouched. That key is the migrate face's §5 data-compat gate blessing — headless honoring
+   of relax-once/relax-always choices when TIGHTENING-work violates live data, applied by
+   `Preflight.relaxTightening` at the face. The overlay's `keepNullable` entries are a
+   STANDING posture bound through the policy and applied at every overlay-threaded emission.
+   Both say "keep nullable"; they differ in lifecycle (gate blessing vs. standing posture)
+   and in plane (face-local catalog edit vs. pass-discharged decision). A future unification
+   is possible once the estate posture subsumes the migrate gate's use cases; it is not this
+   amendment.
+
+**Ripples, contained:** `ForeignKeyPass.opportunityEntry` gains total-match arms for the two
+new cases (both `None` — a chosen posture is not an opportunity, mirroring
+`KeepNullable(OperatorOverride)`); `SummaryFormatter`'s wildcard buckets the untrack decision
+as no-remediation (correct — it IS the remediation); the structured displays gain their tags.
+Every pre-amendment construction site compiles verbatim through the unchanged `create`
+signatures.

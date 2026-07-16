@@ -977,6 +977,211 @@ module Voice =
                 |> Option.filter (fun s -> s <> "")
                 |> Option.map (fun path -> View.Action(sprintf "Review %s — each finding carries a locating query and a commented repair." path)) }
 
+    /// `estate.unified` — the estate verdict, green (`check estate`;
+    /// CHAPTER_ESTATE_OPEN.md Appendix A.4). The clauses name exactly what
+    /// this run proved — the schema and data planes; the posture and fidelity
+    /// clauses join the copy with their waves, so the verdict never claims a
+    /// clause that does not yet run.
+    let private estateUnified : Copy =
+        { Code           = "estate.unified"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "The environments are one shape. %s environment(s) match the target schema and the data fits every declared constraint."
+                        (humane (textOr "envs" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.diverged` — the estate verdict, amber: the per-lane counts
+    /// lead (only the lanes that carry findings are named); the ruling queue
+    /// is called first when one exists; the action routes to the machine
+    /// record. Count-first, humane, constant-size at any estate scale (§12).
+    let private estateDiverged : Copy =
+        { Code           = "estate.diverged"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                let lanes =
+                    [ "decide", "awaiting a ruling"
+                      "repair", "on the repair queue"
+                      "relax",  "under an interim relaxation"
+                      "watch",  "under watch" ]
+                    |> List.choose (fun (key, label) ->
+                        text key p
+                        |> Option.filter (fun n -> n <> "0")
+                        |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
+                let total = humane (textOr "total" "0" p)
+                let envs  = humane (textOr "envs" "0" p)
+                let queueClause =
+                    match text "decide" p with
+                    | Some n when n <> "0" -> " The ruling queue is first below."
+                    | _ -> ""
+                match lanes with
+                | [] ->
+                    View.Hero(View.Warn,
+                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s).%s" total envs queueClause)
+                | ls ->
+                    View.Hero(View.Warn,
+                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s) — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every finding with its lane, key, and evidence, machine-readable." path)) }
+
+    /// `estate.forked` — §3: the estate verdict's strongest amber (wave A6;
+    /// Appendix A.4). Environments have both changed, differently — no
+    /// promotion order explains it, and no single adoption resolves it;
+    /// each forked finding names its environments, and the ruling queue
+    /// leads the board.
+    let private estateForked : Copy =
+        { Code           = "estate.forked"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "The environments are forked in %s place(s): the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
+                        (humane (textOr "forks" "0" p)))
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every finding with its lane, key, and evidence, machine-readable." path)) }
+
+    /// `estate.overlay` — §6: the interim posture's artifact notice (wave
+    /// A6; Appendix A.4). The overlay is a suggestion surface: every entry
+    /// carries the probe that retires it, and the engine never applies the
+    /// edit — the merge is the operator's.
+    let private estateOverlay : Copy =
+        { Code           = "estate.overlay"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Warn,
+                    sprintf "%s interim change(s) in environments.overlay.json — each carries the probe that clears it."
+                        (humane (textOr "relaxations" "0" p)))
+          Substantiation =
+            fun _ -> [ View.Note "The merge is an operator edit; the engine never applies it. environments.probes.sql carries every reopen probe as one runnable batch." ]
+          Action         = fun _ -> None }
+
+    /// `estate.envUnreadable` — §14: a named environment could not be read.
+    /// The comparison needs every named environment (no partial estate —
+    /// DECISIONS 2026-07-15); the cause leads, the lever follows.
+    let private estateEnvUnreadable : Copy =
+        { Code           = "estate.envUnreadable"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "%s could not be read: %s. The comparison needs every named environment."
+                        (textOr "env" "an environment" p) (textOr "reason" "the connection did not open" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some (View.Action "Restore the connection, or narrow readiness.confirm deliberately.") }
+
+    /// `fidelity.rows.matched` — §6: the row-fidelity proof, green (`check
+    /// data --rows`; T17, wave B2). The statement names what this run
+    /// proved; the strict-mode clause rides the substantiation until the
+    /// intervention ledger joins the copy at its wave (never a claim ahead
+    /// of what runs).
+    let private fidelityRowsMatched : Copy =
+        { Code           = "fidelity.rows.matched"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "Every compared row is byte-identical across the physical-to-logical gap: %s row(s) across %s kind(s)."
+                        (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+          Substantiation =
+            fun p ->
+                let ledger =
+                    match text "ledger" p |> Option.filter (fun s -> s <> "") with
+                    | Some path -> View.Note(sprintf "The proof holds modulo the named ledger: %s — every replayed key remap is that journal's record." path)
+                    | None -> View.Note "No intervention ledger was supplied — this proof claims strict byte-identity."
+                let tolerances =
+                    text "tolerances" p
+                    |> Option.filter (fun s -> s <> "")
+                    |> Option.map (fun t -> View.Note(sprintf "Tolerances in force: %s — the canonical row form's named erasures." t))
+                ledger :: (tolerances |> Option.toList)
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "%s carries the full proof record, machine-readable." path)) }
+
+    /// `fidelity.rows.diverged` — §6: differing rows exist and the first
+    /// are named below by their keys; the totals stay exact at any scale.
+    let private fidelityRowsDiverged : Copy =
+        { Code           = "fidelity.rows.diverged"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Bad,
+                    sprintf "The rows differ across the gap: %s difference(s) over %s compared row(s) across %s kind(s). The first differing rows are named below, each by its key."
+                        (humane (textOr "diffs" "0" p)) (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+          Substantiation =
+            fun p ->
+                match text "ledger" p |> Option.filter (fun s -> s <> "") with
+                | Some path -> [ View.Note(sprintf "The named ledger was replayed before comparing: %s — these differences stand OUTSIDE it." path) ]
+                | None -> []
+          Action         =
+            fun p ->
+                text "artifactPath" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every kind's totals and every named difference, machine-readable." path)) }
+
+    /// The humane capture-age clause the three evidence notices share
+    /// ("today" / "N day(s) ago") — mirrors the board masthead's wording so
+    /// the notice and the masthead read as one fact.
+    let private ageClause (age: string) : string =
+        if age = "0" then "today" else sprintf "%s day(s) ago" (humane age)
+
+    /// `estate.evidence.cached` — §5: the run's evidence basis, stated up
+    /// front (RT-7 — pay-once evidence says so when it rides; the second
+    /// run reuses evidence and the operator reads that it did).
+    let private estateEvidenceCached : Copy =
+        { Code           = "estate.evidence.cached"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "Evidence for %s rides the store: captured %s, fingerprints clean across %s kind(s)."
+                        (textOr "env" "an environment" p)
+                        (ageClause (textOr "age" "0" p))
+                        (humane (textOr "kinds" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.evidence.stale` — §5: fingerprints moved; the re-profile is
+    /// the consequence, named as it happens (never a silent re-read).
+    let private estateEvidenceStale : Copy =
+        { Code           = "estate.evidence.stale"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "For %s, %s kind(s) moved since capture — re-profiled this run; the store now carries the fresh evidence."
+                        (textOr "env" "an environment" p)
+                        (humane (textOr "moved" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `estate.evidence.offline` — §14: the operator chose the unprobed
+    /// basis; every dependent verdict is advisory, said before the verdict.
+    let private estateEvidenceOffline : Copy =
+        { Code           = "estate.evidence.offline"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "%s reads from offline evidence, captured %s and unprobed — every verdict standing on it is advisory."
+                        (textOr "env" "an environment" p)
+                        (ageClause (textOr "age" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1041,6 +1246,22 @@ module Voice =
           // §12 — the at-scale rollups (constant-size surfaces over growing counts)
           modelReadNoticeRollup
           fidelityDataViolations
+          // §3 / §6 / §14 — the estate instrument's verdict vocabulary, the
+          // posture notice, and the unreadable-env finding (check estate;
+          // CHAPTER_ESTATE_OPEN.md Appendix A.4)
+          estateUnified
+          estateDiverged
+          estateForked
+          estateOverlay
+          estateEnvUnreadable
+          // §5 / §14 — the estate evidence-provenance notices (pay-once
+          // evidence; DECISIONS 2026-07-15 entry 4)
+          estateEvidenceCached
+          estateEvidenceStale
+          estateEvidenceOffline
+          // §6 — the row-fidelity proof pair (check data --rows; T17, B2)
+          fidelityRowsMatched
+          fidelityRowsDiverged
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing
@@ -1129,6 +1350,7 @@ module Voice =
         | SchemaUnreadable
         | TargetUnreachable
         | PermissionDenied
+        | CheckArgument
         | GenericStop
 
     /// Route an error code's top-prefix onto its `ErrorFrame`. Ordering matters
@@ -1148,6 +1370,9 @@ module Voice =
         elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then ReconcileArgumentInvalid
         elif code.StartsWith "adapter.osm." || code.StartsWith "model." then ModelLoadFailed
         elif code.StartsWith "readside." then SchemaUnreadable
+        // The read-only check verbs' argument/config refusals — a proper
+        // next-move frame, never GenericStop's "stopped before a change".
+        elif code.StartsWith "cli.check." then CheckArgument
         elif code.Contains "connection" then TargetUnreachable
         elif code.Contains "insufficientGrant" || code.Contains "grantProbe" || code.Contains "permission" then PermissionDenied
         else GenericStop
@@ -1202,6 +1427,12 @@ module Voice =
         | PermissionDenied ->
             View.Hero(View.Warn, "A required permission is denied. Grant it, then retry."),
             Some(View.Action "Grant the permission, then retry.")
+        | CheckArgument ->
+            // A read-only check refused because the command or config could not
+            // be used as given — never "stopped before a change" (a check writes
+            // nothing). The specific cause and fix ride the substantiation.
+            View.Hero(View.Warn, "The check cannot run as requested — the cause and the fix are shown below."),
+            Some(View.Action "Adjust the command or config as shown, then re-run.")
         | GenericStop ->
             View.Hero(View.Bad, "Stopped before any change was applied. The cause is shown below."),
             None

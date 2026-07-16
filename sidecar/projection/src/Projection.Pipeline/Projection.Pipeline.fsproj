@@ -41,6 +41,17 @@
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
     <Compile Include="Readiness.fs" />
+    <Compile Include="Estate.fs" />
+    <!-- EstateRemediation.fs: the per-environment remediation blocks for
+         check estate (wave A5) - reads Estate + the OperationalDiagnostics
+         emitter. -->
+    <Compile Include="EstateRemediation.fs" />
+    <!-- EstatePosture.fs: the interim posture's typed carriers (wave A6) -
+         resolves the report's RELAX-lane proposals to Relaxation values
+         (config edit + evidence + reopen probe) and reads the bound
+         tightening policy's active posture. Reads Estate; the overlay
+         emitter (OperationalDiagnostics) consumes the Core carrier. -->
+    <Compile Include="EstatePosture.fs" />
     <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
@@ -82,6 +93,10 @@
          are shared by the board and the execute gate. -->
     <Compile Include="ActEvidence.fs" />
     <Compile Include="TransferRun.fs" />
+    <!-- FidelityCompareRun.fs: the row-fidelity compare run (T17, wave B2) —
+         two PK-ordered streams through the pure comparator core; placed after
+         TransferRun.fs per the chapter plan's compile-order note. -->
+    <Compile Include="FidelityCompareRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
     <Compile Include="EjectRun.fs" />
@@ -104,6 +119,11 @@
          referenced non-static rows (CsvReferencedPull + ClosureOracle), and
          renders through Targets.Data/CsvExport. -->
     <Compile Include="CsvExportRun.fs" />
+    <!-- EstateEvidenceStore.fs: the pay-once evidence store for `check estate`
+         (DECISIONS 2026-07-15, the estate chapter opens, entry 4). Placed after
+         the profile-capture cluster and before MovementSpec.fs so the A2.5β
+         flag threading (refresh/offline) can reach it from the surface. -->
+    <Compile Include="EstateEvidenceStore.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />

@@ -410,6 +410,13 @@ module CatalogCodec =
         use _ = Bench.scope "codec.catalog.serialize"
         JsonWriting.writeToString (fun jw -> wCatalog jw catalog)
 
+    /// One kind's canonical JSON text — the estate evidence store's
+    /// schema-shape fingerprint basis (2026-07-15: hashed for staleness
+    /// gating, never parsed back). Rides the same deterministic writer as
+    /// `serialize`, so equal kinds yield equal bytes by the codec's own law.
+    let serializeKind (kind: Kind) : string =
+        JsonWriting.writeToString (fun jw -> wKind jw kind)
+
     /// The UTF-8 bytes of `serialize` — same writer, same pinned
     /// indented options, so `serializeUtf8 c =
     /// Encoding.UTF8.GetBytes(serialize c)` exactly. PL-6 (S30): the

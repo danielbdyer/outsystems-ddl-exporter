@@ -198,6 +198,18 @@ module ForeignKeyPass =
             None
         | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
             None
+        | ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried ->
+            // A relaxation-only intervention states no opinion for this
+            // reference — the declared shape emits untouched; nothing
+            // observer-relevant happened (DECISIONS 2026-07-15).
+            None
+        | ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked ->
+            // The operator's explicit interim posture — a chosen state,
+            // not an opportunity (mirrors NullabilityPass's
+            // KeepNullable(OperatorOverride) → None). The estate board
+            // carries the posture's meter; the audit chain carries the
+            // decision through its lineage event.
+            None
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck orphanCount) ->
             // Ok-with-caveat: V2's NoCheck-mode workaround.
             Some (mkEntry

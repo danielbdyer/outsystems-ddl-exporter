@@ -14,6 +14,10 @@
     <Compile Include="ActionableDiagnostics.fs" />
     <Compile Include="DecisionLogEmitter.fs" />
     <Compile Include="RemediationEmitter.fs" />
+    <!-- EstateOverlayEmitter.fs: estate.overlay.json + estate.probes.sql
+         (wave A6) - renders the Core Relaxation carriers; consumes Core
+         only, per the hexagonal boundary. -->
+    <Compile Include="EstateOverlayEmitter.fs" />
     <Compile Include="SummaryFormatter.fs" />
     <Compile Include="SuggestConfigEmitter.fs" />
   </ItemGroup>

@@ -27,6 +27,11 @@ type ForeignKeyEvidence =
     /// outcome's "did we make a constraint?" question still has a
     /// binary answer; the evidence variant carries the modifier.
     | ScriptWithNoCheck of orphanCount: int64
+    /// A RELAXATION-ONLY intervention (DECISIONS 2026-07-15, the estate
+    /// A6 amendment) states no opinion for this reference: the declared
+    /// shape emits untouched. Identity at emission — the decision lands
+    /// in neither `DropFk` nor `NoCheckFk`.
+    | DeclaredShapeCarried
 
 
 /// Why an FK constraint stays un-enforced.
@@ -58,6 +63,12 @@ type ForeignKeyKeepReason =
     /// skips; V2 reports the absence explicitly so the audit chain
     /// has a reason for the missing constraint.
     | MissingTarget
+    /// The operator's explicit per-reference posture override
+    /// (DECISIONS 2026-07-15, the estate A6 amendment — the interim
+    /// untrack). Absolute, outranking even the source-backed-constraint
+    /// carve-out: the posture deliberately targets relationships the
+    /// agreed shape carries, and the reopen probe retires it at zero.
+    | OperatorUntracked
 
 
 /// The outcome of a single (reference, intervention) decision.
@@ -134,6 +145,7 @@ module ForeignKeyEvidence =
         | ScriptWithNoCheck orphanCount ->
             StructuredString.create "ScriptWithNoCheck"
                 [ "orphanCount", Inv.int64 orphanCount ]
+        | DeclaredShapeCarried -> StructuredString.tag "DeclaredShapeCarried"
 
     let toDiagnosticString (e: ForeignKeyEvidence) : string =
         toStructured e |> StructuredString.render
@@ -151,6 +163,7 @@ module ForeignKeyKeepReason =
         | ForeignKeyKeepReason.DeleteRuleIgnored -> StructuredString.tag "DeleteRuleIgnored"
         | ForeignKeyKeepReason.EvidenceMissing -> StructuredString.tag "EvidenceMissing"
         | ForeignKeyKeepReason.MissingTarget -> StructuredString.tag "MissingTarget"
+        | ForeignKeyKeepReason.OperatorUntracked -> StructuredString.tag "OperatorUntracked"
 
     let toDiagnosticString (r: ForeignKeyKeepReason) : string =
         toStructured r |> StructuredString.render
@@ -260,6 +273,21 @@ module ForeignKeyRules =
             { ReferenceKey   = reference.SsKey
               Outcome        = outcome
               InterventionId = interventionId }
+
+        // 0. The operator's per-reference override + the intervention's
+        //    direction (DECISIONS 2026-07-15, the estate A6 amendment).
+        //    The override is absolute in BOTH directions — mirroring the
+        //    nullability hierarchy's step 1 — and outranks even the
+        //    source-backed carve-out below: the interim posture
+        //    deliberately untracks relationships the agreed shape
+        //    carries. A RELAXATION-ONLY intervention otherwise carries
+        //    the declared shape untouched (identity at emission); the
+        //    hierarchy below is the EvidenceDriven direction.
+        if ForeignKeyTighteningConfig.shouldKeepUntracked reference.SsKey config then
+            mkDecision (ForeignKeyOutcome.DoNotEnforce OperatorUntracked)
+        elif config.Direction = TighteningDirection.RelaxationOnly then
+            mkDecision (ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried)
+        else
 
         // 1. Target kind must exist in the catalog. Structural
         //    impossibility outranks every gate: a scoped export cannot

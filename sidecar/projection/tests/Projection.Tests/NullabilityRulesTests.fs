@@ -318,3 +318,41 @@ let ``mandatory: requiresApproval helper fires for the conflict outcome`` () =
     let cfg = mkConfig 0.05m false []
     let decision = NullabilityRules.evaluate "test" cfg attr profile
     Assert.True(NullabilityRules.requiresApproval decision)
+
+// ---------------------------------------------------------------------------
+// The direction gate (DECISIONS 2026-07-15, the estate A6 amendment): a
+// RELAXATION-ONLY intervention consults only the operator's explicit
+// overrides — no evidence signal proposes tightening, so the 2026-06-22
+// coercion drop stays whole with `kind:"nullability"` binding again.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``direction: a relaxation-only intervention never tightens — a mandatory column with zero nulls reads NoTighteningSignal`` () =
+    // Under EvidenceDriven this exact shape reads EnforceNotNull
+    // (LogicalMandatoryNoProfile) — the coercion the amendment must not
+    // re-enable. RelaxationOnly reads it as no signal at all.
+    let attr = mkMandatoryAttr "OS_ATTR_RO_Clean" true
+    let cfg = NullabilityTighteningConfig.relaxationOnly false []
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
+
+[<Fact>]
+let ``direction: a relaxation-only intervention acts exactly at its overrides — KeepNullable(OperatorOverride)`` () =
+    let attr = mkMandatoryAttr "OS_ATTR_RO_Override" true
+    let cfg =
+        NullabilityTighteningConfig.relaxationOnly false
+            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable } ]
+    let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
+    Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, decision.Outcome)
+
+[<Fact>]
+let ``direction: relaxation-only never lifts to operator approval, whatever the evidence says`` () =
+    // The same evidence that reads RequireOperatorApproval under
+    // EvidenceDriven (nulls beyond a zero budget, no relaxation allowance)
+    // stays signal-free under RelaxationOnly — the posture direction has
+    // no budget hierarchy to conflict with.
+    let attr = mkMandatoryAttr "OS_ATTR_RO_Evidence" true
+    let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
+    let cfg = NullabilityTighteningConfig.relaxationOnly false []
+    let decision = NullabilityRules.evaluate "test" cfg attr profile
+    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)

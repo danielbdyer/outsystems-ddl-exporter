@@ -58,13 +58,16 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
     let result = Unsupported.compute () |> Set.ofList
     let expected =
         Set.ofList
-            [ "CharAnsiPaddingTolerated"
+            [ "BooleanCanonicalizationTolerated"
+              "CharAnsiPaddingTolerated"
               "CompositePkFkUnreflected"
+              "DateTimeTickPrecisionTolerated"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
               "FkTrustNotRestoredOnBulkLoad"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"
+              "IntegerWidthNormalized"
               "PostDeployForeignKeysSplit"
               "StaticPopulationsUnreflected"
               "TriggerBodyUnparsedDropped" ]

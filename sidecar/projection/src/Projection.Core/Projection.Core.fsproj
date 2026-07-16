@@ -62,6 +62,7 @@
     <Compile Include="CatalogRisk.fs" />
     <Compile Include="Lifecycle.fs" />
     <Compile Include="Tolerance.fs" />
+    <Compile Include="EstateFinding.fs" />
     <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
@@ -126,6 +127,9 @@
       Catalog / Tolerance / CanaryResidual cite it in docstrings only.
     -->
     <Compile Include="PhysicalSchema.fs" />
+    <!-- RowFidelity.fs: the pure row-comparator core (T17, wave B2) — reads
+         RowBasis/RowQuantum/RowDigester/RowDigestFold from PhysicalSchema. -->
+    <Compile Include="RowFidelity.fs" />
     <Compile Include="PolicyExpr.fs" />
     <Compile Include="VersionedPolicy.fs" />
     <Compile Include="ApprovalWorkflow.fs" />

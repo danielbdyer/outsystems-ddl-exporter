@@ -437,3 +437,51 @@ let ``CrossCatalogBlocked is currently unreachable from any V2 IR shape`` () =
         | ForeignKeyOutcome.DoNotEnforce CrossCatalogBlocked ->
             Assert.Fail "CrossCatalogBlocked is not yet reachable; the IR refinement is pending"
         | _ -> ()
+
+// ---------------------------------------------------------------------------
+// Step 0 — the per-reference override + the direction gate (DECISIONS
+// 2026-07-15, the estate A6 amendment). The override is absolute in both
+// directions; a relaxation-only intervention otherwise carries the
+// declared shape untouched.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``override: KeepUntracked outranks even the source-backed carve-out`` () =
+    // A reference with HasDbConstraint = true is otherwise enforced BEFORE
+    // every gate (the 2026-06-12 carve-out); the operator's interim
+    // posture deliberately targets such relationships, so the override
+    // wins outright.
+    let backedRef = orderRef |> Reference.withConstraintState true true
+    let cfg = ForeignKeyTighteningConfig.relaxationOnly
+                [ { ReferenceKey = backedRef.SsKey; Action = KeepUntracked } ]
+    let decision = decide cfg sampleCatalog order backedRef Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked,
+        decision.Outcome)
+
+[<Fact>]
+let ``override: KeepUntracked is absolute under the evidence-driven direction too`` () =
+    let cfg =
+        { mkConfig true true true with
+            Overrides = [ { ReferenceKey = orderRef.SsKey; Action = KeepUntracked } ] }
+    let profile =
+        { Profile.empty with
+            ForeignKeys = [ mkReality orderRef.SsKey false 0L Succeeded ] }
+    let decision = decide cfg sampleCatalog order orderRef profile
+    Assert.Equal(
+        ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked,
+        decision.Outcome)
+
+[<Fact>]
+let ``direction: a relaxation-only intervention carries the declared shape for every non-overridden reference`` () =
+    // No probe, no evidence, no toggles consulted — the surgical form
+    // states no opinion beyond its named references, so emission is
+    // identity there (DeclaredShapeCarried lands in neither DropFk nor
+    // NoCheckFk). Under EvidenceDriven the same evidence-free shape
+    // reads DoNotEnforce(EvidenceMissing).
+    let cfg = ForeignKeyTighteningConfig.relaxationOnly
+                [ { ReferenceKey = ssKey "SomeOtherReference"; Action = KeepUntracked } ]
+    let decision = decide cfg sampleCatalog order orderRef Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried,
+        decision.Outcome)

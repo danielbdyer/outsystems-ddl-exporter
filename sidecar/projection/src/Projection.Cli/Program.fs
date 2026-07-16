@@ -24,6 +24,8 @@ open Projection.Cli.Faces.Operational
 open Projection.Cli.Faces.Explain
 open Projection.Cli.Faces.Inspect
 open Projection.Cli.Faces.Diff
+open Projection.Cli.Faces.Estate
+open Projection.Cli.Faces.Fidelity
 open Projection.Cli.Faces.Slice
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
@@ -44,7 +46,7 @@ let private usageLines : string list =
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready | shape | go <flow>"
-        "                      | plan <flow> )"
+        "                      | environments [--against model] [--refresh] [--offline] | plan <flow> )"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
         "                      go    = THE GO BOARD for a data flow: every open decision +"
@@ -102,8 +104,17 @@ let private usageLines : string list =
         "  in the projection.json `synthetic` block; --seed/--scale override it per run."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
-        "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
-        "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR)."
+        "  silence assertion) · drift (deployed vs model) · data (row/null counts; --rows"
+        "  adds the byte-identity proof — --model <ref> aligns the physical-to-logical"
+        "  gap, differing rows named by key; exits 0 identical / 5 / 6) · ready"
+        "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR) · shape (the"
+        "  cross-environment readiness gate over the readiness block) · environments (the"
+        "  convergence instrument, `estate` is the alias: every divergence as a finding on a"
+        "  disposition lane, the environments from readiness.confirm compared to the target"
+        "  (readiness.schema — Dev by default — or --against model). Evidence rides the pay-once"
+        "  store when fingerprints hold — [--refresh [env,…]] forces the re-capture, [--offline]"
+        "  reuses unprobed and downgrades to advisory; [--format json] → environments.json;"
+        "  exits 0 unified / 5 diverged / 6 an environment could not be read)."
         ""
         "EXPLAIN — understand before shipping.  diff (two refs) · policy (two configs) · node"
         "  (one node's transforms + findings) · suggest (ranked config edits) · migrate"
@@ -126,10 +137,11 @@ let private usageLines : string list =
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
         "    4  Docker unavailable (a docker target; check fidelity)"
-        "    5  fidelity divergence (check canary / check drift; check shape / check go not-ready)"
+        "    5  fidelity/convergence divergence (check canary / drift; check shape / go not-ready;"
+        "       check data --rows byte-proof; check environments converging OR forked)"
         "    6  config error (file missing / unparseable / D9; connection-ref resolve; check shape env unreadable)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
-        "    8  data divergence (check data row / null)"
+        "    8  data-count divergence (check data row / null COUNTS — distinct from the --rows byte-proof at 5)"
         "    9  refused, fail-loud (undeclared drop; inexpressible ALTER; tightening; verify-failed)"
     ]
 
@@ -312,6 +324,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
     | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
     | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
+    | PlanAction.CheckDataRows args -> shellRun "projection check data --rows" Shell.ReadOnly (fun () -> runCheckDataRows args)
     | PlanAction.CheckReady                ->
         // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
         // no-append contract rides the ReadOnly register).
@@ -319,6 +332,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
     | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
+    | PlanAction.CheckEstate args -> shellRun "projection check environments" Shell.ReadOnly (fun () -> runCheckEstate args)
     | PlanAction.CheckGo args -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) args)
     | PlanAction.CheckPlan (flow, plan, asJson) -> shellRun "projection check plan" Shell.ReadOnly (fun () -> runTransferPlan flow plan asJson)
     | PlanAction.RevertScript (script, envLabel, connSpec, go, force) -> shellRun "projection revert" (if go then Shell.Go else Shell.ReadOnly) (fun () -> runRevertScript script envLabel connSpec go force)
@@ -425,7 +439,7 @@ let private runInit () : int =
             "    \"local\":       { \"access\": \"docker\" },\n" +
             "    \"on-prem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/on-prem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\", \"archetype\": \"full-rights\", \"store\": \"./lifecycle/on-prem-dev.json\" }\n" +
             "  },\n" +
-            "  \"readiness\": { \"confirm\": [\"cloud-dev\", \"cloud-qa\"] },\n" +
+            "  \"readiness\": { \"confirm\": [\"cloud-dev\", \"cloud-qa\"], \"estate\": { \"repairBand\": 100000 } },\n" +
             "  \"emission\": { \"ssdt\": true, \"dacpac\": true },\n" +
             "  \"flows\": {\n" +
             "    \"try\":      { \"from\": \"cloud-dev\", \"to\": \"local\" },\n" +
@@ -438,7 +452,8 @@ let private runInit () : int =
         printfn "  Next: put each environment's connection string in ./secrets/<name>.conn (the file's"
         printfn "        contents ARE the connection string; D9, gitignored, never committed) — the model"
         printfn "        is read LIVE from cloud-dev. Then `projection` lists the flows; `projection check"
-        printfn "        shape` confirms the cloud cells resolve to one shape; `projection try` previews"
+        printfn "        shape` confirms the cloud cells resolve to one shape; `projection check environments`"
+        printfn "        reports what still differs across dev/qa before cutover; `projection try` previews"
         printfn "        into a throwaway Docker database; `projection publish` emits the on-prem SSDT"
         printfn "        bundle. For the full six-environment estate + the cloud-insertion producers"
         printfn "        (golden / reverse / synth into a data-only cloud sink) see"

@@ -231,6 +231,47 @@ type ToleratedDivergence =
     /// @ladder TriggerBodyUnparsedDropped Schema OpenGap
     | TriggerBodyUnparsedDropped
 
+    /// T17/B4b — the row-fidelity comparator's canonical cell form renders a
+    /// model `Boolean` attribute as `"true"`/`"false"` REGARDLESS of the
+    /// backing physical type (`bit`, `tinyint`, `int` — every reader path
+    /// widens through `RawValueCodec.formatBoolean`), so two databases whose
+    /// physical boolean representations differ compare EQUAL at the canonical
+    /// row form. Named here so the erasure is *closed* (the proof's report
+    /// declares it in force), not silently assumed. A **representation-only**
+    /// tolerance: it absorbs no truth-value difference — only the physical
+    /// rendering of an otherwise-equal value. Retiring it is not anticipated;
+    /// it is a property of the canonical form's single-source-of-truth
+    /// rendering, not a V2 gap.
+    /// @ladder BooleanCanonicalizationTolerated Data AcceptedFaithful
+    | BooleanCanonicalizationTolerated
+
+    /// T17/B4b — a `datetime` column stores instants at 1/300 s while
+    /// `datetime2` stores 100 ns ticks, so ONE instant published across the
+    /// pair renders to DIFFERENT fractional digits at the canonical cell
+    /// form (`yyyy-MM-dd HH:mm:ss.fffffff`). The row-fidelity comparator,
+    /// with this tolerance in force, canonicalizes `DateTime`-typed cells to
+    /// millisecond precision before hashing — sub-millisecond tick residue
+    /// is absorbed; a genuine value difference (at or above the millisecond)
+    /// still fails. Named here so the erasure is *closed* and the proof's
+    /// report declares it; the edge where `datetime`'s 1/300 s rounding
+    /// crosses a millisecond boundary remains a REAL difference by design.
+    /// Retiring it: publish every temporal column as `datetime2` end-to-end
+    /// and drop the canonicalization.
+    /// @ladder DateTimeTickPrecisionTolerated Data AcceptedFaithful
+    | DateTimeTickPrecisionTolerated
+
+    /// T17/B4b — the canonical cell form renders every integer-family value
+    /// through `Convert.ToInt64(…).ToString(invariant)` (`tinyint`/`smallint`
+    /// /`int`/`bigint` alike), so two databases whose physical integer WIDTHS
+    /// differ for one model attribute compare EQUAL at the canonical row
+    /// form. Named here so the erasure is *closed* (the proof's report
+    /// declares it in force), not silently assumed. A **representation-only**
+    /// tolerance: it absorbs no numeric difference — only the storage width
+    /// of an otherwise-equal value. Retiring it is not anticipated; it is a
+    /// property of the canonical form's widening, not a V2 gap.
+    /// @ladder IntegerWidthNormalized Data AcceptedFaithful
+    | IntegerWidthNormalized
+
     // **CommentMetadataUnreflected — RETIRED at chapter 4.1.A slice 8
     // (2026-05-17).** Column / table / index descriptions and extended
     // properties now emit as `EXEC sys.sp_addextendedproperty` calls
@@ -269,6 +310,9 @@ module ToleratedDivergence =
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad   -> ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
         | ToleratedDivergence.TriggerBodyUnparsedDropped     -> ToleratedDivergence.TriggerBodyUnparsedDropped
+        | ToleratedDivergence.BooleanCanonicalizationTolerated -> ToleratedDivergence.BooleanCanonicalizationTolerated
+        | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ToleratedDivergence.DateTimeTickPrecisionTolerated
+        | ToleratedDivergence.IntegerWidthNormalized         -> ToleratedDivergence.IntegerWidthNormalized
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
     /// The closed-DU coverage test asserts this set has the same
@@ -294,6 +338,9 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.DecimalScaleTolerated
                 coverage ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
                 coverage ToleratedDivergence.TriggerBodyUnparsedDropped
+                coverage ToleratedDivergence.BooleanCanonicalizationTolerated
+                coverage ToleratedDivergence.DateTimeTickPrecisionTolerated
+                coverage ToleratedDivergence.IntegerWidthNormalized
             ]
 
     /// Canonical string name for a divergence — the operator-facing token a
@@ -313,6 +360,9 @@ module ToleratedDivergence =
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> "FkTrustNotRestoredOnBulkLoad"
         | ToleratedDivergence.TriggerBodyUnparsedDropped   -> "TriggerBodyUnparsedDropped"
+        | ToleratedDivergence.BooleanCanonicalizationTolerated -> "BooleanCanonicalizationTolerated"
+        | ToleratedDivergence.DateTimeTickPrecisionTolerated -> "DateTimeTickPrecisionTolerated"
+        | ToleratedDivergence.IntegerWidthNormalized       -> "IntegerWidthNormalized"
 
     /// Parse a config token to its divergence, or `None` for an unrecognized
     /// token. Derived from `name` so the round-trip `name >> tryParse` is the
