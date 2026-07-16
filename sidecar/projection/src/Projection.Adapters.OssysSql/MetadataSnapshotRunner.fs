@@ -1185,6 +1185,61 @@ module MetadataSnapshotRunner =
                                @ sampleMeta) } ]
         identityDivergences @ nullabilitySummary
 
+    /// WP-4b (DECISIONS 2026-07-16; register C1/C2) — NAME every disagreement
+    /// between an ordinary scalar's logical OSSYS type mapping and the deployed
+    /// `#ColumnReality` storage. The engine's posture is stated per column: a
+    /// SAME-category deployed refinement wins the emitted storage (V1's on-disk
+    /// precedence, `resolveAttributeType`); the forced-runtime-mapping family
+    /// (`identifier`/`autonumber`/`longinteger`) keeps its deliberate `BIGINT`
+    /// (C2 — the INT-vs-BIGINT call is an estate decision); a cross-category
+    /// deployed type keeps the logical value (no silent reclassification).
+    /// Reference-shaped `bt*` attributes are excluded — their deployed-storage
+    /// precedence is a separate, always-on channel. Deterministic — ordered by
+    /// attribute id.
+    let columnStorageDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let realityByAttrId =
+            snapshot.ColumnReality |> List.map (fun cr -> cr.AttrId, cr) |> Map.ofList
+        snapshot.Attributes
+        |> List.sortBy (fun a -> a.AttrId)
+        |> List.choose (fun a ->
+            match a.DataType, Map.tryFind a.AttrId realityByAttrId with
+            | Some rawType, Some cr ->
+                let deployedOpt =
+                    cr.SqlType
+                    |> Option.bind (fun t -> SqlStorageType.ofSqlType t cr.MaxLength cr.Precision cr.Scale)
+                let normalized = OssysTranslation.normalizeAttributeType rawType
+                let isBt =
+                    normalized.StartsWith("bt", System.StringComparison.Ordinal)
+                    && normalized.Contains "*"
+                match deployedOpt with
+                | Some deployed when not isBt ->
+                    match OssysTypeMapping.tryParse normalized a.Length a.Precision a.Scale with
+                    | Some (logicalPt, logicalStorage) when logicalStorage <> deployed ->
+                        let isForced =
+                            match normalized with
+                            | "identifier" | "autonumber" | "longinteger" -> true
+                            | _ -> false
+                        let sameCategory = SqlStorageType.toPrimitiveType deployed = logicalPt
+                        let emitsDeployed = (not isForced) && sameCategory
+                        Some
+                            { DiagnosticEntry.create
+                                "adapter:OSSYS" DiagnosticSeverity.Warning
+                                "adapter.ossys.columnReality.storageDivergence"
+                                (sprintf "Column %s (attr %d): the logical OSSYS model maps type '%s' to %A but the deployed schema has %A. The engine emits the %s value."
+                                    a.PhysicalCol a.AttrId rawType logicalStorage deployed
+                                    (if emitsDeployed then "DEPLOYED (on-disk precedence)" else "LOGICAL"))
+                              with Metadata =
+                                    Map.ofList
+                                        [ "attrId", string a.AttrId
+                                          "physicalColumn", a.PhysicalCol
+                                          "logicalType", rawType
+                                          "logicalStorage", sprintf "%A" logicalStorage
+                                          "deployedStorage", sprintf "%A" deployed
+                                          "emits", (if emitsDeployed then "deployed" else "logical") ] }
+                    | _ -> None
+                | _ -> None
+            | _ -> None)
+
     /// NAME the attribute-flag-vs-entity-key primary-key divergences. OSSYS
     /// carries PK identity twice: per-attribute (`Is_Identifier`) and
     /// per-entity (`ossys_Entity.PrimaryKey_SS_Key`). The rowset reader

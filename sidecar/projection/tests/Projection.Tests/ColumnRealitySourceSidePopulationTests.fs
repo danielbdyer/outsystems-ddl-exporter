@@ -238,7 +238,11 @@ let ``deployed storage: an explicit external database type wins over deployed ev
     Assert.Equal(Some (SqlStorageType.VarChar (Bounded 20)), attr.SqlStorage)
 
 [<Fact>]
-let ``deployed storage: ordinary logical types are never widened by deployed storage (rtDate stays DATE)`` () =
+let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATE)`` () =
+    // WP-4b: on-disk precedence is a SAME-category refinement only. A logical
+    // `rtDate` (Date) deployed as `datetime` (DateTime) is a genuine conflict,
+    // not a refinement — the logical value stands (no silent reclassification);
+    // the divergence is named separately by columnStorageDivergences.
     let idAttr = attrRow 100 "Id" "Identifier" false None None
     let birthDate =
         { attrRow 101 "BirthDate" "rtDate" false None None with
@@ -247,6 +251,33 @@ let ``deployed storage: ordinary logical types are never widened by deployed sto
     let attr = findAttribute cat "BirthDate"
     Assert.Equal(Date, attr.Type)
     Assert.Equal(Some SqlStorageType.Date, attr.SqlStorage)
+
+[<Fact>]
+let ``WP-4b: a SAME-category deployed storage wins over the logical mapping for an ordinary scalar`` () =
+    // Logical `text` maps to NVARCHAR; the deployed schema has VARCHAR(250)
+    // (both Text). On-disk precedence: the engine emits the DEPLOYED storage
+    // (register C1) — the category and hydration are unchanged.
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let notes =
+        { attrRow 101 "Notes" "text" false None None with
+            DeployedStorage = Some (SqlStorageType.VarChar (Bounded 250)) }
+    let cat = parseToCatalog (buildBundle [ idAttr; notes ])
+    let attr = findAttribute cat "Notes"
+    Assert.Equal(Text, attr.Type)
+    Assert.Equal(Some (SqlStorageType.VarChar (Bounded 250)), attr.SqlStorage)
+
+[<Fact>]
+let ``WP-4b: the forced-runtime-mapping family keeps its deliberate BIGINT even when deployed as INT (C2)`` () =
+    // A logical `identifier` forces BIGINT; a deployed INT does NOT silently
+    // downgrade it (the INT-vs-BIGINT call is an estate-verification decision).
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let legacyRef =
+        { attrRow 101 "LegacyId" "Identifier" false None None with
+            DeployedStorage = Some SqlStorageType.Int }
+    let cat = parseToCatalog (buildBundle [ idAttr; legacyRef ])
+    let attr = findAttribute cat "LegacyId"
+    Assert.Equal(Integer, attr.Type)
+    Assert.Equal(Some SqlStorageType.BigInt, attr.SqlStorage)
 
 // ---------------------------------------------------------------------------
 // Authored-default lift (rowset path) — the LOGICAL `Default_Value`

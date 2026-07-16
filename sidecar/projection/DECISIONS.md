@@ -27843,3 +27843,44 @@ env-var-gated opt-ins (`comprehensive-canary`, `perf-harness`, `perf-corpus`). T
 WP-8 publish-equivalence / canary read-back validation the earlier notes left open, and corrects the
 record: the Docker suites were simply not run *by those commits' inner loop*, not blocked by a
 missing container.
+
+## 2026-07-16 — WP-4b: on-disk type precedence for ordinary scalars (same-category refinement) + the storage-divergence diagnostic
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-4 remainder / register C1. `resolveAttributeType`
+preferred the deployed `#ColumnReality` storage over the logical type mapping ONLY for reference-shaped
+`bt*` attributes; every ordinary scalar used the logical mapping and ignored deployed reality (C1:
+"V1 was more reality-preferring here — its `TypeMappingPolicy` resolves the on-disk rule first for
+ordinary scalars"). Deployed type drift went undiagnosed (only nullability/identity got warnings).
+
+**The decision.** Restore V1's on-disk precedence for ordinary scalars, bounded by a strict safety
+guard, plus name every gap:
+- **Value precedence (`OssysTranslation.resolveAttributeType`).** An ordinary scalar now prefers the
+  deployed storage over the logical mapping — but ONLY as a SAME-CATEGORY refinement: the deployed
+  storage's `PrimitiveType` must equal the logical one (so the data-plane category and row hydration
+  are unchanged; e.g. a logical `text`→NVARCHAR column deployed as VARCHAR, or a width difference). A
+  CROSS-category deployed type (`rtDate` deployed as `datetime`) is a genuine conflict, not a
+  refinement: the logical value stands — no silent reclassification. The forced-runtime-mapping family
+  (`identifier`/`autonumber`/`longinteger`) is EXEMPT (register C2 — the deliberate `BIGINT` is never
+  silently downgraded to a deployed `INT`; that is an estate-verification decision).
+- **Divergence diagnostic (`MetadataSnapshotRunner.columnStorageDivergences`, wired into
+  `LiveModelRead.surfaceDivergences`).** One `Warning`
+  (`adapter.ossys.columnReality.storageDivergence`) per ordinary scalar whose logical-mapped storage
+  differs from the deployed storage, stating which value the engine emits (DEPLOYED for same-category
+  refinements; LOGICAL for the forced-BIGINT family and cross-category conflicts). `bt*` refs are
+  excluded (their deployed-storage precedence is a separate always-on channel).
+
+**Witness.** `ColumnRealitySourceSidePopulationTests` — the same-category deployed win
+(logical `text`/NVARCHAR + deployed `VARCHAR(250)` → emits VARCHAR(250)), the forced-family exemption
+(`identifier` + deployed `int` → keeps BIGINT), and the cross-category guard (reworded: `rtDate` +
+deployed `datetime` → keeps DATE, no reclassification). `ColumnRealityDivergenceTests` — the four
+`columnStorageDivergences` cases (same-category → emits deployed; forced-family → emits logical;
+cross-category → emits logical; agreement → silent; `bt*` → excluded). 95 pure cases green; the full
+Docker pool passed 314/314 (no live fixture had a same-category drift that changed an asserted type).
+
+**Golden note.** No golden change — the golden corpus is catalog-direct (no `#ColumnReality` deployed
+storage), so `resolveAttributeType`'s deployed arm never fires there. Live/rowset-extraction fidelity
+fix (same posture as WP-4).
+
+**Scope.** This completes the WP-4 remainder split out at the WP-4 commit; register C1's on-disk
+precedence is now landed (same-category) with the divergence named. WP-4 (email/phone → NVARCHAR)
+and WP-4b together close register C3 + the ordinary-scalar half of C1.

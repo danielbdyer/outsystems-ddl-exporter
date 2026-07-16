@@ -229,6 +229,9 @@ ordinary scalars, so a deployed `nvarchar` email column emitted `NVARCHAR` in V1
 the logical mapping. Deployed type drift is undiagnosed (only nullability/identity get
 warnings). WP-4 partially restores on-disk precedence (for the email/phone family first) with
 divergence diagnostics.
+*Landed (2026-07-16, WP-4b): on-disk precedence restored for ordinary scalars as a SAME-category
+refinement + `columnStorageDivergences` names the gap; cross-category conflicts and the C2
+forced-BIGINT family keep the logical value.*
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **C2. Identifier/reference types → `BIGINT`** — [HARD]
@@ -883,7 +886,11 @@ column reality over the logical mapping for ordinary scalars (V1's `onDisk` prec
 a named divergence diagnostic when they disagree — a larger type-resolution change
 (`parseSemanticTypeWithStorage` prefers deployed storage only for `bt*` refs today).
 *Done means:* email/phone map NVARCHAR (**done**); WP-4b — a deployed-NVARCHAR fixture emits NVARCHAR
-even with a VARCHAR logical rule + divergence diagnostic tested.
+even with a VARCHAR logical rule + divergence diagnostic tested. **✅ LANDED (WP-4b, DECISIONS
+2026-07-16):** `resolveAttributeType` prefers deployed storage for ordinary scalars as a
+SAME-category refinement (cross-category conflicts and the forced-BIGINT family C2 keep the logical
+value); `MetadataSnapshotRunner.columnStorageDivergences` names every logical-vs-deployed storage
+gap. No golden change (catalog-direct corpus). Docker pool 314/314.
 
 **WP-5 · Silent object classes (C10).** Capture `is_persisted` (emit `PERSISTED`); produce
 temporal marks in the adapters (emission already supports them); extract sequences on the

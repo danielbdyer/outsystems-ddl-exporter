@@ -148,6 +148,11 @@ module LiveModelRead =
                 // `module.kinds.empty` / `catalog.kinds.duplicateKey`).
                 surfaceDivergences
                     (MetadataSnapshotRunner.columnRealityDivergences snapshot
+                     // WP-4b (DECISIONS 2026-07-16) — name every logical-vs-deployed
+                     // scalar storage-type divergence (the engine follows deployed
+                     // reality for same-category refinements, keeps the logical
+                     // value for the forced-BIGINT family / cross-category conflicts).
+                     @ MetadataSnapshotRunner.columnStorageDivergences snapshot
                      @ MetadataSnapshotRunner.primaryKeyDivergences snapshot
                      // WP-1b (DECISIONS 2026-07-16) — name every reference
                      // whose model delete-rule disagrees with the deployed FK's
