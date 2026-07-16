@@ -1592,6 +1592,12 @@ module Compose =
                         // silent dedupe).
                         @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
                             decisionOverlay fkResolutions
+                        // WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision
+                        // tripwire (schema-qualified CREATE TABLE identity; one
+                        // Error per participating kind, never a silent last-win).
+                        // Threads the already-computed AllKinds (no fourth walk).
+                        @ SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing
+                            fkLookups.AllKinds
                         // NM-70 (WP5) — the named downgrade. When the operator
                         // omits the identity annotations, the `Projection.*`
                         // extended properties are NOT written, so identity

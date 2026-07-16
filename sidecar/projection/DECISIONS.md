@@ -27671,3 +27671,37 @@ WP-1 rides later slices: WP-1(c) the mandatory evidence-gated eject posture and 
 `allowCrossCatalog` / `strictMode`); WP-1(e) the msg-1785 cascade-path pre-analyzer. The reflected
 action only *replaces* the model rule here — it does not yet suppress FK creation for Ignore
 references (that is WP-1(c)).
+
+## 2026-07-16 — WP-16: the table-name collision tripwire (duplicate CREATE TABLE identity is named, never a silent last-win)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-16 / register H7. Every kind emits exactly one
+`CREATE TABLE` at its schema-qualified `(schema, table) = (k.Physical.Schema, k.Physical.Table)`
+(the emitted `ArtifactByKind` keyset ≡ `Catalog.allKinds`). Two kinds resolving to the SAME emitted
+`(schema, table)` — two same-named entities in different modules, or a same-module duplicate —
+produce duplicate `CREATE TABLE`s: across modules a DacFx duplicate-object build failure that only
+surfaces at publish time; within one module a silent last-wins on the shared
+`Modules/<Module>/<Schema>.<Table>.sql` file. The FK-constraint namespace already had a loud
+tripwire (`emit.ssdt.foreignKey.nameCollision`, reconciliation slice 1); the table namespace did
+not — the last conspicuously-unguarded emission-identity collision.
+
+**The decision.** Mirror the FK-name tripwire for table identity.
+`SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing (allKinds: Kind list)` groups the emitted kinds
+by `(schemaText, tableText)` and raises one `Error` (`emit.ssdt.table.nameCollision`, with the
+kind's `SsKey` + schema/table/kind metadata) per participating kind whenever a group has more than
+one member — so every collision site is visible, never a silent last-win. A catalog-taking
+convenience form (`tableNameCollisionDiagnostics catalog`) delegates through `Catalog.allKinds`; the
+publish threads the already-computed `FkEmissionLookups.AllKinds` (no fourth `allKinds` walk, per
+the PL-4 compute-once discipline). Wired into `Pipeline.fs` alongside the FK collision tripwire on
+the diagnostics `@`-chain over `finalState.Catalog`. On a well-formed catalog the pass is silent
+(distinct table names ⇒ zero diagnostics); it guards the invariant, it does not change behavior —
+`Catalog.create` dedupes on Kind `SsKey`, not on `(schema, table)`, so the collision is
+constructable and reaches emission.
+
+**Witness.** `DeployableReferenceTests` (pure, 3 new cases): two distinct kinds at `(dbo, Customer)`
+in different modules → 2 `Error`s (`emit.ssdt.table.nameCollision`, schema=dbo, table=Customer); a
+same-module duplicate → 2 `Error`s (the silent-last-wins case is now named); a distinct-table
+catalog (`corporateShape`) → empty. The emitter / golden pure suites (`SsdtDdlEmitterTests`,
+`GoldenEmissionTests`, 98 cases) stay green.
+
+**Golden note.** No golden re-record: the golden corpus has no table-name collision, so the new pass
+emits zero diagnostics over it and the byte-pinned output is unchanged.

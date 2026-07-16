@@ -294,6 +294,57 @@ let ``FK-name collision tripwire is silent on the post-closure corporate shape (
     Assert.Empty (SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics DecisionOverlay.empty catalog)
 
 // ---------------------------------------------------------------------
+// WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision tripwire. Every
+// kind emits one CREATE TABLE at its schema-qualified (schema, table); two
+// kinds resolving to the same one would emit duplicate CREATE TABLEs (a
+// DacFx build failure across modules, a silent last-wins within one). One
+// Error per participating kind, never a silent last-win. Mirror of the
+// FK-name tripwire above (packet H7).
+// ---------------------------------------------------------------------
+
+/// Two kinds (distinct SsKeys) resolving to the same physical (dbo, Customer),
+/// each in its own module — the cross-module duplicate-entity shape.
+let private twoCustomerModules () : Catalog =
+    let a = Kind.create (kkey "A.Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "A.Customer.Id") "Id" true ]
+    let b = Kind.create (kkey "B.Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "B.Customer.Id") "Id" true ]
+    match Catalog.create
+              [ { SsKey = kkey "ModA"; Name = nm "ModA"; Kinds = [ a ]; IsActive = true; ExtendedProperties = [] }
+                { SsKey = kkey "ModB"; Name = nm "ModB"; Kinds = [ b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+    | Ok cat -> cat
+    | Error e -> failwithf "catalog %A" e
+
+[<Fact>]
+let ``Table-name collision tripwire: two kinds at the same (schema, table) surface one Error per participating kind`` () =
+    let diags = SsdtDdlEmitter.tableNameCollisionDiagnostics (twoCustomerModules ())
+    Assert.Equal(2, List.length diags)
+    Assert.All(diags, fun d ->
+        Assert.Equal<string>("emit.ssdt.table.nameCollision", d.Code)
+        Assert.Equal(DiagnosticSeverity.Error, d.Severity)
+        Assert.Equal<string option>(Some "dbo", Map.tryFind "schema" d.Metadata)
+        Assert.Equal<string option>(Some "Customer", Map.tryFind "table" d.Metadata))
+
+[<Fact>]
+let ``Table-name collision tripwire: a same-module duplicate (silent last-wins today) is named, not swallowed`` () =
+    // Two distinct kinds at (dbo, Customer) inside ONE module — the shared
+    // Modules/<Module>/dbo.Customer.sql file would silently last-win.
+    let a = Kind.create (kkey "Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "Customer.Id") "Id" true ]
+    let b = Kind.create (kkey "CustomerDup") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "CustomerDup.Id") "Id" true ]
+    let catalog =
+        match Catalog.create
+                  [ { SsKey = kkey "Mod"; Name = nm "Mod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+        | Ok cat -> cat
+        | Error e -> failwithf "catalog %A" e
+    Assert.Equal(2, List.length (SsdtDdlEmitter.tableNameCollisionDiagnostics catalog))
+
+[<Fact>]
+let ``Table-name collision tripwire is silent when every kind has a distinct (schema, table)`` () =
+    Assert.Empty (SsdtDdlEmitter.tableNameCollisionDiagnostics (corporateShape true true))
+
+// ---------------------------------------------------------------------
 // Slice 3b (DECISIONS 2026-06-13) — the identifier-length budget for
 // generated constraint names.
 // ---------------------------------------------------------------------

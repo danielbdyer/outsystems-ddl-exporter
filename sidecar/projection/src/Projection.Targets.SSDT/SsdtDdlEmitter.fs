@@ -1239,6 +1239,49 @@ module SsdtDdlEmitter =
             overlay
             (fkResolutionsUsing (FkEmissionLookups.ofCatalog catalog))
 
+    /// WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision TRIPWIRE, the
+    /// `CREATE TABLE` mirror of `foreignKeyNameCollisionDiagnostics`. Every
+    /// kind emits exactly one `CREATE TABLE` at its schema-qualified
+    /// `(schema, table) = (k.Physical.Schema, k.Physical.Table)` (the emitted
+    /// keyset ≡ `Catalog.allKinds`). Two kinds resolving to the SAME emitted
+    /// `(schema, table)` — two same-named entities in different modules, or a
+    /// same-module duplicate — produce duplicate `CREATE TABLE`s: a DacFx
+    /// duplicate-object build failure across modules, a silent last-wins on
+    /// the shared `Modules/<Module>/<Schema>.<Table>.sql` file within a module
+    /// (packet H7). V2 names the wound: one `Error` per participating kind, so
+    /// every collision site is visible, never a silent last-win. On a
+    /// well-formed catalog this is structurally unreachable; the tripwire
+    /// guards the invariant, it does not implement behavior. Pure sibling of
+    /// the emitter port (A18 holds; rides the `Diagnostics` channel).
+    let tableNameCollisionDiagnosticsUsing
+        (allKinds: Kind list)
+        : DiagnosticEntry list =
+        allKinds
+        |> List.groupBy (fun k -> TableId.schemaText k.Physical, TableId.tableText k.Physical)
+        |> List.collect (fun ((schemaText, tableText), members) ->
+            if List.length members <= 1 then []
+            else
+                members
+                |> List.map (fun k ->
+                    { DiagnosticEntry.create
+                        "emitter:ssdtDdlEmitter" DiagnosticSeverity.Error
+                        "emit.ssdt.table.nameCollision"
+                        "Table name collision: two or more emitted kinds resolve to the same schema-qualified table name. Across modules the deployment would fail with duplicate objects; within a module the shared file silently last-wins. Resolve the naming overlap before publishing."
+                      with
+                        SsKey = Some k.SsKey
+                        Metadata =
+                            Map.ofList
+                                [ "schema", schemaText
+                                  "table", tableText
+                                  "kind", Name.value k.Name ] }))
+
+    /// The catalog-taking compute-then-delegate form (standalone callers; the
+    /// publish threads the shared `FkEmissionLookups.AllKinds`).
+    let tableNameCollisionDiagnostics
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        tableNameCollisionDiagnosticsUsing (Catalog.allKinds catalog)
+
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the
     /// OSSYS-adapter precedent (chapter A.4.7 slice δ): the emitter's

@@ -625,11 +625,13 @@ at eject (stripping forfeits future diff/migrate tooling; keeping needs a schema
 exclusion). Audit for legacy `V2.*`-named properties on pre-rename deployments.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**H7. Cross-module table-name collision tripwire — to be added** — [GAP] ⚑ **WP-16**
+**H7. Cross-module table-name collision tripwire** — [GAP → ✅ LANDED] ⚑ **WP-16**
 Two same-named entities in different modules would emit duplicate CREATE TABLEs surfacing only
 at DacFx; same-module duplicates would silently last-win. FK names have a tripwire; table names
-will get one.
-*Locked (2026-07-15): tripwire to be added — WP-16.*
+now do too.
+*Landed (2026-07-16, WP-16): `SsdtDdlEmitter.tableNameCollisionDiagnostics` raises one Error
+(`emit.ssdt.table.nameCollision`) per participating kind, mirroring the FK-name tripwire; wired
+into the publish diagnostics chain. DECISIONS 2026-07-16.*
 
 ---
 
@@ -963,8 +965,10 @@ eject.
 sweep into the streaming and synthetic realizations (materialized-path parity); until then the
 runbook owns it.
 
-**WP-16 · Table-name collision tripwire (H7).** Error (not last-wins) when two kinds resolve to
-the same emitted `(schema, table)`; mirror of the existing FK-name tripwire. Locked in.
+**WP-16 · Table-name collision tripwire (H7).** **✅ LANDED (DECISIONS 2026-07-16).** Error (not
+last-wins) when two kinds resolve to the same emitted `(schema, table)`; mirror of the existing
+FK-name tripwire (`SsdtDdlEmitter.tableNameCollisionDiagnostics` → `emit.ssdt.table.nameCollision`,
+one Error per participating kind; wired into the publish diagnostics chain).
 
 ---
 
