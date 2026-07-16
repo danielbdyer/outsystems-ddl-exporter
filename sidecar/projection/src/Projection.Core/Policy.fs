@@ -491,19 +491,14 @@ type ForeignKeyTighteningConfig = {
     /// May an FK cross schema boundaries?
     /// V1's `ForeignKeyOptions.AllowCrossSchema`.
     AllowCrossSchema               : bool
-    /// May an FK cross catalog (database) boundaries? V2's IR does
-    /// not yet model catalog names (`PhysicalRealization` carries
-    /// `Schema` and `Table` only); this toggle is reachable through
-    /// the DU's keep-reason variant but the rule is unreachable
-    /// today (ADMIRE.md 2026-05-11 — IR refinement deferred).
-    AllowCrossCatalog              : bool
-    /// Treat a missing DeleteRule as if it were "Ignore" (V1's
-    /// `TreatMissingDeleteRuleAsIgnore`). V2's `Reference.OnDelete`
-    /// is a closed DU and cannot be missing; this toggle is preserved
-    /// for V1 parity but currently unreachable from V2's IR (the
-    /// V1↔V2 adapter would resolve missing rules to `OnDelete.NoAction`
-    /// at the boundary, which is what V1 effectively does).
-    TreatMissingDeleteRuleAsIgnore : bool
+    // WP-1d (DECISIONS 2026-07-16): the inert `AllowCrossCatalog` and
+    // `TreatMissingDeleteRuleAsIgnore` toggles were removed — `evaluate`
+    // never read `AllowCrossCatalog` (V2's IR has no catalog field), and
+    // `TreatMissingDeleteRuleAsIgnore` only flowed through `isIgnoreRule`,
+    // which is hardcoded `false` (V2's `OnDelete` DU cannot be missing). A
+    // fail-closed config surface must not carry decorative switches; when
+    // the IR grows a catalog field / a missing-rule representation (WP-1c),
+    // the knobs return as real, consulted values.
     /// May the constraint be created WITH NOCHECK when orphans or
     /// Ignore-rules would otherwise block it? V1's
     /// `AllowNoCheckCreation` plus the (now collapsed) Cautious mode.
@@ -1004,15 +999,11 @@ module ForeignKeyTighteningConfig =
     let create
         (enableCreation: bool)
         (allowCrossSchema: bool)
-        (allowCrossCatalog: bool)
-        (treatMissingDeleteRuleAsIgnore: bool)
         (allowNoCheckCreation: bool)
         : ForeignKeyTighteningConfig =
         use _ = Bench.scope "ir.policy.foreignKey.create"
         { EnableCreation                 = enableCreation
           AllowCrossSchema               = allowCrossSchema
-          AllowCrossCatalog              = allowCrossCatalog
-          TreatMissingDeleteRuleAsIgnore = treatMissingDeleteRuleAsIgnore
           AllowNoCheckCreation           = allowNoCheckCreation
           Overrides                      = []
           Direction                      = TighteningDirection.EvidenceDriven }
@@ -1021,15 +1012,13 @@ module ForeignKeyTighteningConfig =
     /// (DECISIONS 2026-07-15, the estate A6 amendment — the surgical
     /// form the estate overlay emits): only the named `KeepUntracked`
     /// overrides act; every other reference carries the declared shape
-    /// untouched. The five V1 toggles are dormant under this direction
-    /// (the evidence hierarchy never runs); they hold the values that
-    /// would be identity if it did.
+    /// untouched. The V1 toggles are dormant under this direction (the
+    /// evidence hierarchy never runs); they hold the values that would be
+    /// identity if it did.
     let relaxationOnly (overrides: ForeignKeyOverride list) : ForeignKeyTighteningConfig =
         use _ = Bench.scope "ir.policy.foreignKey.relaxationOnly"
         { EnableCreation                 = true
           AllowCrossSchema               = true
-          AllowCrossCatalog              = false
-          TreatMissingDeleteRuleAsIgnore = false
           AllowNoCheckCreation           = false
           Overrides                      = overrides
           Direction                      = TighteningDirection.RelaxationOnly }

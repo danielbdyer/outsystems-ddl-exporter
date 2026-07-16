@@ -95,7 +95,7 @@ let ``structural commitment: a policy with only the other three interventions yi
         |> Result.value
     let uniqCfg = UniqueIndexTighteningConfig.create true true
     let fkCfg =
-        ForeignKeyTighteningConfig.create true true false false true
+        ForeignKeyTighteningConfig.create true true true
     let policy =
         policyWithInterventions
             [ Nullability ("null-1", nullCfg)
@@ -208,7 +208,7 @@ let ``coexistence: CategoricalUniquenessPass ignores the four other variants in 
         |> Result.value
     let uniqCfg = UniqueIndexTighteningConfig.create true true
     let fkCfg =
-        ForeignKeyTighteningConfig.create true true false false true
+        ForeignKeyTighteningConfig.create true true true
     let catUniqCfg = mkConfig 2L
     let policy =
         policyWithInterventions
@@ -252,7 +252,7 @@ let ``coexistence: UniqueIndexPass ignores CategoricalUniqueness interventions``
 [<Fact>]
 let ``coexistence: ForeignKeyPass ignores CategoricalUniqueness interventions`` () =
     let fkCfg =
-        ForeignKeyTighteningConfig.create true true false false true
+        ForeignKeyTighteningConfig.create true true true
     let catUniqCfg = mkConfig 2L
     let policy =
         policyWithInterventions

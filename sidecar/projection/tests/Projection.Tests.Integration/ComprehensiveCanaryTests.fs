@@ -162,7 +162,7 @@ module ComprehensiveCanaryTests =
             NullabilityTighteningConfig.create 0.05m false []
             |> Result.value
         let uqCfg = UniqueIndexTighteningConfig.create true true
-        let fkCfg = ForeignKeyTighteningConfig.create true true true false true
+        let fkCfg = ForeignKeyTighteningConfig.create true true true
         let catCfg =
             CategoricalUniquenessConfig.create 5L
             |> Result.value

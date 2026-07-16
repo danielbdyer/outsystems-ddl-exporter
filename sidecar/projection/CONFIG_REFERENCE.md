@@ -74,7 +74,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | `tableRenames` | array | `[]` | each `{ "from": <source>, "to": { "schema": "dbo", "table": "NEW" } }`. `from` is **either** logical `{ "module": "M", "entity": "E" }` **or** physical `{ "schema": "S", "table": "T" }` (not both — `renameSourceAmbiguous` / `renameSourceMissing` otherwise) |
 | `emissionFolders` | array | `[]` | `{ "ref": { "module": "M", "entity": "E" }, "folder": "Static/Reference" }` — redirect an entity's SSDT `.sql` from `Modules/<M>/` to a custom folder |
 | `allowMissingPrimaryKey` | array | `[]` | `[{ "module": "M", "entity": "E" }, …]` — entities exempt from PK enforcement |
-| `circularDependencies` | object | — | `{ "allowedCycles": [{ "order": [{ "module": "M", "entity": "E", "position": N }, …] }], "strictMode": bool }` — manual cycle ordering keyed by **logical** `{ module, entity }` (espace-safe; resolved to the kind's SsKey, like the other overrides) |
+| `circularDependencies` | object | — | `{ "allowedCycles": [{ "order": [{ "module": "M", "entity": "E", "position": N }, …] }] }` — manual cycle ordering keyed by **logical** `{ module, entity }` (espace-safe; resolved to the kind's SsKey, like the other overrides). *(`strictMode` retired at WP-1d — it was parsed but never consulted.)* |
 | `migrationDependencies` | object | — | `{ "path": "overrides/migration-dependencies.json" }` — the MigrationData lane's operator-curated row inventory: `{ "kinds": [ { "module", "entity", "rows": [ { "id", "values": { <col>: <raw> } } ] } ] }` (logical-keyed; `""` = NULL; the named kinds are excluded from the bootstrap complement so a row never loads twice). Worked example: `examples/migration-dependencies.sample.json`; format owner: `MigrationDependenciesBinding.fs` |
 | `staticData` | object | — | **reserved — parsed but not currently consumed.** The static-seed lane sources its rows from the live model's `Static` populations (`Hydration.graftStaticPopulations`), not a file; prefer omitting this key |
 
@@ -106,7 +106,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 **`tightening.interventions[]`** — each carries `kind` + `id` + kind-specific fields:
 
 - `kind: "uniqueIndex"` — `enforceSingleColumnUnique`, `enforceMultiColumnUnique` (bool)
-- `kind: "foreignKey"` — `enableCreation`, `allowCrossSchema`, `allowCrossCatalog`, `treatMissingDeleteRuleAsIgnore`, `allowNoCheckCreation` (bool)
+- `kind: "foreignKey"` — `enableCreation`, `allowCrossSchema`, `allowNoCheckCreation` (bool). *(`allowCrossCatalog` and `treatMissingDeleteRuleAsIgnore` retired at WP-1d — both were inert; they return as real knobs when the IR grows a catalog field / a missing-rule representation, WP-1c.)*
 - `kind: "categoricalUniqueness"` — `minDistinctCountForUniqueness` (int)
 
 > **`kind: "nullability"` is disabled** (DECISIONS 2026-06-22). Config-driven nullable→NOT NULL coercion is the team's modeling decision, not the tool's — a nullability intervention is *accepted but creates no intervention* (a no-op; the run is not refused). Null-density is still profiled as a **statistic** (informational / synthetics). Declare a column mandatory in the OutSystems model instead.
@@ -161,8 +161,7 @@ A config that exercises every major axis — module + entity scoping, both renam
             { "module": "ServiceCenter", "entity": "Organization", "position": 100 },
             { "module": "ServiceCenter", "entity": "User",         "position": 200 }
         ] }
-      ],
-      "strictMode": false
+      ]
     }
   },
 

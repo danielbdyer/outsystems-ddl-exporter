@@ -300,8 +300,7 @@ let private fullConfigJson = """{
                     { "module": "AppCore", "entity": "Organization", "position": 100 },
                     { "module": "AppCore", "entity": "User",         "position": 200 }
                 ] }
-            ],
-            "strictMode": false
+            ]
         },
         "allowMissingPrimaryKey": [
             { "module": "AppCore", "entity": "LegacyAuditLog" }

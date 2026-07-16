@@ -207,9 +207,11 @@ module Config =
         Order : CircularDependencyEntry list
     }
 
+    // WP-1d (DECISIONS 2026-07-16): the `strictMode` flag was removed — it
+    // was parsed but had zero consumers (`SpecialCircumstancesBinding` reads
+    // only `AllowedCycles`; `allowedCycles` stays annotate-only, WP-13).
     type CircularDependenciesSection = {
         AllowedCycles : CircularDependencyCycle list
-        StrictMode    : bool
     }
 
     type FilePathOverride = {
@@ -421,11 +423,10 @@ module Config =
         // UniqueIndex fields
         EnforceSingleColumnUnique    : bool option
         EnforceMultiColumnUnique     : bool option
-        // ForeignKey fields
+        // ForeignKey fields (WP-1d: `allowCrossCatalog` /
+        // `treatMissingDeleteRuleAsIgnore` retired — inert knobs)
         EnableCreation               : bool option
         AllowCrossSchema             : bool option
-        AllowCrossCatalog            : bool option
-        TreatMissingDeleteRuleAsIgnore : bool option
         AllowNoCheckCreation         : bool option
         ForeignKeyOverrides          : TighteningReferenceOverride list
         // CategoricalUniqueness fields
@@ -1065,8 +1066,9 @@ module Config =
                     | _ ->
                         Result.failureOf (
                             configError "typeMismatch" "circularDependencies.allowedCycles must be an array.")
-                let! strict = getBoolOr element "strictMode" false
-                return Some { AllowedCycles = cycles; StrictMode = strict }
+                // WP-1d: `strictMode` retired (zero consumers); if present in
+                // legacy config JSON it is simply ignored (unknown key).
+                return Some { AllowedCycles = cycles }
             }
 
     /// Parse `overrides.allowMissingPrimaryKey` as a list of typed
@@ -1465,8 +1467,8 @@ module Config =
             let! ensMc = getOptionalBool element "enforceMultiColumnUnique"
             let! enable = getOptionalBool element "enableCreation"
             let! crossSchema = getOptionalBool element "allowCrossSchema"
-            let! crossCatalog = getOptionalBool element "allowCrossCatalog"
-            let! missingDR = getOptionalBool element "treatMissingDeleteRuleAsIgnore"
+            // WP-1d: `allowCrossCatalog` / `treatMissingDeleteRuleAsIgnore`
+            // retired (inert); a legacy key here is ignored (unknown).
             let! nocheck = getOptionalBool element "allowNoCheckCreation"
             let! refOverrides = parseTighteningReferenceOverrides element
             let! minDist = getOptionalInt64 element "minDistinctCountForUniqueness"
@@ -1480,8 +1482,6 @@ module Config =
                 EnforceMultiColumnUnique = ensMc
                 EnableCreation = enable
                 AllowCrossSchema = crossSchema
-                AllowCrossCatalog = crossCatalog
-                TreatMissingDeleteRuleAsIgnore = missingDR
                 AllowNoCheckCreation = nocheck
                 ForeignKeyOverrides = refOverrides
                 MinDistinctCountForUniqueness = minDist

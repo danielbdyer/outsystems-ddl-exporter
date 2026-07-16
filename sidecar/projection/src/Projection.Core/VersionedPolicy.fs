@@ -243,8 +243,8 @@ module VersionedPolicy =
             appendLP sb id
             sb.Append(";ec=")  |> ignore; sb.Append(boolTok cfg.EnableCreation) |> ignore
             sb.Append(";acs=") |> ignore; sb.Append(boolTok cfg.AllowCrossSchema) |> ignore
-            sb.Append(";acc=") |> ignore; sb.Append(boolTok cfg.AllowCrossCatalog) |> ignore
-            sb.Append(";tmd=") |> ignore; sb.Append(boolTok cfg.TreatMissingDeleteRuleAsIgnore) |> ignore
+            // WP-1d: the inert `acc=`/`tmd=` tokens were removed with the
+            // `AllowCrossCatalog` / `TreatMissingDeleteRuleAsIgnore` fields.
             sb.Append(";anc=") |> ignore; sb.Append(boolTok cfg.AllowNoCheckCreation) |> ignore
             sb.Append(";dir=") |> ignore; sb.Append(directionTok cfg.Direction) |> ignore
             sb.Append(";rov=") |> ignore; sb.Append(List.length cfg.Overrides) |> ignore

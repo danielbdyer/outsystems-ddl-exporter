@@ -250,7 +250,7 @@ module ForeignKeyPass =
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.crossCatalogBlocked"
                     (Message.foreignKeyNotCreated
-                        "The reference crosses catalog boundaries and AllowCrossCatalog is disabled.")
+                        "The reference crosses catalog (database) boundaries, which the tool does not materialize as a foreign key.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored ->
             // Currently unreachable from V2 fixtures (see V1↔V2 mapping

@@ -379,8 +379,6 @@ let private fkPolicyAllowingNoCheck : Policy =
         ForeignKeyTighteningConfig.create
             true            // EnableCreation
             true            // AllowCrossSchema
-            false           // AllowCrossCatalog
-            false           // TreatMissingDeleteRuleAsIgnore
             true            // AllowNoCheckCreation
     { Policy.empty with
         Tightening = { Interventions = [ ForeignKey ("v1-style", cfg) ] } }
@@ -422,7 +420,7 @@ let ``end-to-end: ForeignKey + Nullability + UniqueIndex opportunity streams rem
     let nullCfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let uniqCfg = UniqueIndexTighteningConfig.create false true
     let fkCfg =
-        ForeignKeyTighteningConfig.create true true false false true
+        ForeignKeyTighteningConfig.create true true true
     let combinedPolicy : Policy =
         { Policy.empty with
             Tightening =
@@ -522,9 +520,9 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     // produces DataHasOrphans. We test both shapes by running the
     // pass twice with different configs.
     let permissiveCfg =
-        ForeignKeyTighteningConfig.create true true false false true
+        ForeignKeyTighteningConfig.create true true true
     let strictCfg =
-        ForeignKeyTighteningConfig.create true true false false false
+        ForeignKeyTighteningConfig.create true true false
 
     let permissivePolicy : Policy =
         { Policy.empty with

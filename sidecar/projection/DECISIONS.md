@@ -27783,3 +27783,63 @@ the divergence-diagnostic pass and a deliberate "which scalars" decision. It is 
 follow-up (WP-4b). The email/phone ANSI-island deviation (C3) that Danny flagged is fully closed by
 this commit on its own — the logical mapping now equals platform reality, so the specific
 "deployed-NVARCHAR-vs-VARCHAR-logical" conflict no longer arises for email/phone.
+
+## 2026-07-16 — WP-1d: the three placebo FK/cycle config knobs are removed (a fail-closed surface carries no decorative switches)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1d / register E6. Three config toggles were
+parsed and carried but never influenced any decision:
+- **`policy.tightening.foreignKey.allowCrossCatalog`** — `ForeignKeyRules.evaluate` never reads
+  `config.AllowCrossCatalog`; the cross-catalog branch is absent (V2's IR has no catalog field on a
+  reference). Provably inert.
+- **`policy.tightening.foreignKey.treatMissingDeleteRuleAsIgnore`** — flows only through
+  `isIgnoreRule`, which is hardcoded `false` (V2's `OnDelete` DU has no `Ignore` variant and cannot
+  be missing). Provably inert.
+- **`overrides.circularDependencies.strictMode`** — parsed in `Config.fs` and carried on
+  `CircularDependenciesSection`, but `SpecialCircumstancesBinding` reads only `AllowedCycles`. Zero
+  consumers.
+
+A fail-closed config surface must not carry decorative switches (E6): a knob that appears real but
+does nothing is a lie to the operator.
+
+**The decision.** Remove all three (the "or remove it" arm of the packet — "make it real" requires
+IR changes that belong to WP-1c / a future catalog-field refinement). Concretely:
+`ForeignKeyTighteningConfig` loses `AllowCrossCatalog` + `TreatMissingDeleteRuleAsIgnore` (record +
+`create` smart ctor, now 3-arg `enableCreation/allowCrossSchema/allowNoCheckCreation` + the
+`relaxationOnly` literal); `VersionedPolicy` drops the `;acc=`/`;tmd=` fingerprint tokens;
+`Config.fs` drops the DTO fields + JSON parsing (`allowCrossCatalog` /
+`treatMissingDeleteRuleAsIgnore` / `strictMode` become ignored unknown keys — the parser is
+lenient); `TighteningBinding` drops the two `.IsNone`/`defaultArg` pairs; `CircularDependenciesSection`
+loses `StrictMode`; `isIgnoreRule` loses its unused `_config` param. The reserved
+`ForeignKeyOutcome.CrossCatalogBlocked` / `DeleteRuleIgnored` DU variants STAY (they are internal
+outcome variants for pattern-exhaustiveness / the future WP-1c posture, not config switches) — so
+the codec surface is untouched. `CONFIG_REFERENCE.md` records all three retirements.
+
+**Witness.** The affected suites stay green (414 pure cases): `VersionedPolicyTests` (the
+`digestOf Policy.empty` comparisons hold — an empty policy carries no FK config, so no `acc=`/`tmd=`
+token was ever emitted for it; its fingerprint is byte-unchanged), `ConfigTests`,
+`TighteningBindingTests` (the `C.1` binder test now threads the three live flags),
+`SpecialCircumstancesBindingTests`, `ForeignKeyRulesTests` / `ForeignKeyPassTests` (the `create`
+helpers drop the two inert positional args — the live `allowNoCheckCreation` value is preserved),
+`CategoricalUniquenessPassTests`, `DiagnosticsEndToEndTests`, `DeployableReferenceTests`,
+`ApprovalWorkflowTests`, `GoldenEmissionTests` (no golden change — the digest only appears in
+`manifest.json`, which the golden byte-comparison excludes).
+
+**Golden note.** No golden re-record: `Policy.empty` (the golden pipeline's policy) has no FK
+intervention, so its serialized fingerprint is unchanged, and the only surface the fingerprint
+reaches — `manifest.json` — is excluded from the byte-pinned corpus.
+
+---
+
+### Amendment — correcting the "no warm container" caveat in the WP-1a…WP-4 test-run notes
+
+The WP-1b / WP-16 / WP-8 / WP-4 DECISIONS entries (and WP-1a's) carried a test-run caveat asserting
+the Docker suites "were not run" because there was "no warm SQL container in this environment." **That
+reason was wrong and unverified** — it was inherited from the handoff letter's Testcontainers-wedge
+warning and restated without checking; `scripts/test.sh focus` had in fact printed
+`warm: auto-detected container 'projection-mssql-warm' → reusing it`. A warm container was available
+the whole time. On 2026-07-16 the full Docker pool was run against it on the four-WP tree
+(`ff2dda57`): **`scripts/test.sh docker` → 314 passed, 0 failed (803s)**; the only skips are the
+env-var-gated opt-ins (`comprehensive-canary`, `perf-harness`, `perf-corpus`). This closes the
+WP-8 publish-equivalence / canary read-back validation the earlier notes left open, and corrects the
+record: the Docker suites were simply not run *by those commits' inner loop*, not blocked by a
+missing container.

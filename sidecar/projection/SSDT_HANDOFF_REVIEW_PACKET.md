@@ -463,11 +463,14 @@ Derived inverse references never become FKs (pure-target kinds emit zero FKs); c
 loud Errors.
 *Locked (2026-07-15): approved as-is.*
 
-**E6. Placebo knobs** — [KNOB, inert] ⚑ **WP-1**
+**E6. Placebo knobs** — [KNOB, inert] ⚑ **WP-1d ✅ LANDED**
 `treatMissingDeleteRuleAsIgnore` (unreachable), `allowCrossCatalog` (IR lacks catalogs on
-references), `circularDependencies.strictMode` (parsed, zero consumers). Under WP-1 each is
-made real or removed — a fail-closed config surface must not carry decorative switches.
+references), `circularDependencies.strictMode` (parsed, zero consumers). A fail-closed config
+surface must not carry decorative switches.
 *Decided (2026-07-15): planned fix — WP-1.*
+*Landed (2026-07-16, WP-1d): all three REMOVED (the "or remove it" arm — making them real needs the
+WP-1c IR refinement). Record/ctor/serialization/parse/binder/docs updated; the reserved
+`CrossCatalogBlocked`/`DeleteRuleIgnored` DU variants stay. No golden change. DECISIONS 2026-07-16.*
 
 **E7. Composite-PK FK targets: first-leg-only emission** — [GAP, tolerance `CompositePkFkUnreflected`] ⚑ **WP-12**
 Single-column `Reference` IR; an FK to a composite-PK target emits only its first leg — invalid
@@ -842,9 +845,11 @@ disagree. (No golden change — the corpus is catalog-direct, no `#FkReality` ro
 *expected no-FK cases*: never default-emit; materialization happens only through the
 evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated` posture as the
 mandatory eject regime (intervention + live profiler always on).
-(d) Make `treatMissingDeleteRuleAsIgnore` real (missing → Ignore semantics) or remove it;
-implement-or-remove `allowCrossCatalog`; delete dead `strictMode`; revisit `allowCrossSchema`
-default (V1 shipped `false`; V2's binder default `true`).
+(d) **✅ LANDED (WP-1d, DECISIONS 2026-07-16).** `treatMissingDeleteRuleAsIgnore`,
+`allowCrossCatalog`, and dead `strictMode` — all three proven inert and REMOVED (record + ctor +
+VersionedPolicy tokens + config parse + binder + docs; reserved DU variants kept). *Still open:*
+revisit the `allowCrossSchema` default (V1 shipped `false`; V2's binder default `true`) — a posture
+decision that rides with WP-1c.
 (e) **Backlog signal (analysis worth doing):** cascade-path pre-analysis — walk the emitted FK
 graph for multiple-cascade-path shapes (SQL Server msg 1785) and self-referencing cascade
 limits, and report them as pre-emit diagnostics instead of deploy-time failures.

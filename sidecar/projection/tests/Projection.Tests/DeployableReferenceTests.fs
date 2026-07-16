@@ -93,7 +93,7 @@ let private isDerived (key: SsKey) : bool =
     | _ -> false
 
 let private fkPolicy (enableCreation: bool) : Policy =
-    let fkCfg = ForeignKeyTighteningConfig.create enableCreation true true false true
+    let fkCfg = ForeignKeyTighteningConfig.create enableCreation true true
     { Policy.empty with
         Tightening = { Interventions = [ TighteningIntervention.ForeignKey ("dr-fk", fkCfg) ] } }
 

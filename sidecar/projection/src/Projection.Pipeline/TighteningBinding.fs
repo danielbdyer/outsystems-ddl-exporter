@@ -183,8 +183,6 @@ module TighteningBinding =
             let togglesAbsent =
                 entry.EnableCreation.IsNone
                 && entry.AllowCrossSchema.IsNone
-                && entry.AllowCrossCatalog.IsNone
-                && entry.TreatMissingDeleteRuleAsIgnore.IsNone
                 && entry.AllowNoCheckCreation.IsNone
             let config : ForeignKeyTighteningConfig =
                 if togglesAbsent && not (List.isEmpty overrides) then
@@ -192,8 +190,6 @@ module TighteningBinding =
                 else
                     { EnableCreation                 = defaultArg entry.EnableCreation true
                       AllowCrossSchema               = defaultArg entry.AllowCrossSchema true
-                      AllowCrossCatalog              = defaultArg entry.AllowCrossCatalog false
-                      TreatMissingDeleteRuleAsIgnore = defaultArg entry.TreatMissingDeleteRuleAsIgnore false
                       AllowNoCheckCreation           = defaultArg entry.AllowNoCheckCreation false
                       Overrides                      = overrides
                       Direction                      = TighteningDirection.EvidenceDriven }
