@@ -50,6 +50,10 @@ module EstateOverlayEmitter =
              value.["overrides"] <- overrides)
         let entry = JsonObject()
         entry.["findingKey"] <- JsonValue.Create key
+        // The readable face the board's RELAX lever names ("Merge the
+        // relaxation for <subject> (<phrase>)…"), so the operator finds
+        // this entry in plain words; `findingKey` stays the machine token.
+        entry.["subject"] <- JsonValue.Create (FindingKey.readableLabel relaxation.Scope)
         entry.["path"] <- JsonValue.Create "$.policy.tightening.interventions[+]"
         entry.["value"] <- value
         entry.["note"] <-

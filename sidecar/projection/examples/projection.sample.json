@@ -90,7 +90,12 @@
 
   "readiness": {
     "_comment": "The agreed shape defaults to model.env (cloud-dev) — name 'schema' here only to override it. 'confirm' lists the environments checked against that shape.",
-    "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"]
+    "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"],
+    "estate": {
+      "_comment": "The repair band: past this many contradicting rows a fix becomes an interim 'leave it for now' config edit instead of a prepared repair. Default 100000. Set repairBandByEntity to tune it per table (a 200-row lookup and a billion-row fact table want different thresholds).",
+      "repairBand": 100000,
+      "repairBandByEntity": { "OrderLine": 5000000, "Country": 50 }
+    }
   },
 
   "flows": {

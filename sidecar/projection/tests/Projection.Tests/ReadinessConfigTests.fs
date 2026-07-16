@@ -202,6 +202,30 @@ let ``readiness.estate: the repairBand knob parses, rides the estate args, and r
     Assert.Equal<ReadinessSpec option>(cfg.Readiness, round.Readiness)
 
 [<Fact>]
+let ``readiness.estate: the repairBandByEntity map parses, rides the estate args, and round-trips`` () =
+    let json = """
+{
+  "environments": {
+    "cloud-dev": { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
+    "cloud-qa":  { "access": "direct", "conn": "env:CLOUD_QA_CONN" }
+  },
+  "readiness": { "schema": "cloud-dev", "confirm": ["cloud-dev", "cloud-qa"], "estate": { "repairBand": 250000, "repairBandByEntity": { "OrderLine": 1000000, "Country": 10 } } }
+}
+"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    match cfg.Readiness with
+    | Some rs ->
+        Assert.Equal(Some 1_000_000L, Map.tryFind "OrderLine" rs.RepairBandByEntity)
+        Assert.Equal(Some 10L, Map.tryFind "Country" rs.RepairBandByEntity)
+    | None -> Assert.Fail "expected a readiness block"
+    // Consumed in the same wave (A44): it rides the estate verb's args.
+    match (Command.planCheck cfg [ "estate" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(Some 10L, Map.tryFind "Country" args.RepairBandByEntity)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+    let round = ProjectionConfig.parse (ProjectionConfig.render cfg) |> mustOk
+    Assert.Equal<ReadinessSpec option>(cfg.Readiness, round.Readiness)
+
+[<Fact>]
 let ``readiness.estate: an absent estate block leaves the band on the engine default (None), round-tripping to no key`` () =
     let cfg = ProjectionConfig.parse estateJson |> mustOk
     match cfg.Readiness with

@@ -7,7 +7,7 @@ module Projection.Cli.Faces.Estate
 // model under `--against model`) and every confirm environment (OSSYS
 // identity — espace-safe; a profile failure degrades to advisory-silent,
 // never aborts), rolls the `Estate.EstateReport`, renders the verdict through
-// the Voice catalog with the board beneath it, writes `estate.json`, and
+// the Voice catalog with the board beneath it, writes `environments.json`, and
 // exits 0 (unified) / 5 (diverged) / 6 (an environment could not be read —
 // the estate verdict needs every named environment; no partial estate).
 //
@@ -15,7 +15,7 @@ module Projection.Cli.Faces.Estate
 // pay-once store when its fingerprints hold — `--refresh` forces the
 // re-capture, `--offline` reuses unprobed and downgrades to advisory, and
 // every acquisition path lands on the report as `EvidenceProvenance` (the
-// masthead line, the estate.json record, and the pre-verdict notice are one
+// masthead line, the environments.json record, and the pre-verdict notice are one
 // fact). A probe or store failure is a cache miss, never a downgrade: the
 // run profiles live and the cause prints as an advisory.
 
@@ -54,6 +54,15 @@ let private noticeOf (basis: Estate.EnvBasis) : (string * Voice.Payload) option 
     | Estate.EvidenceProvenance.Live
     | Estate.EvidenceProvenance.Absent -> None
 
+/// Write an artifact, translating an I/O failure (a read-only directory, a
+/// full disk, a locked file) into a plain advisory rather than an
+/// unhandled stack trace (THE_VOICE §14 — a thing that would throw is
+/// caught and stated). The verdict stands on the rendered board; the file
+/// is its machine sibling.
+let private tryWriteArtifact (path: string) (content: string) : unit =
+    try IO.File.WriteAllText(path, content)
+    with ex -> eprintfn "  Could not write %s: %s" path ex.Message
+
 let runCheckEstate (args: CheckEstateArgs) : int =
     let nowUtc = DateTimeOffset.UtcNow
     let store = EstateEvidenceStore.storeDir ()
@@ -84,6 +93,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
             |> Result.map (fun bound ->
                 let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
                 ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
+                   RepairBandByEntity = args.RepairBandByEntity
                    RelaxedReferences = relaxedRefs
                    RelaxedAttributes = relaxedAttrs } : Estate.Posture))
         let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []
@@ -220,7 +230,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                                 (connByEnv |> Map.tryFind label |> Option.map Source.resolveConn |> Option.defaultValue "")
                                 nowUtc
                         let file = EstateRemediation.fileNameFor label
-                        IO.File.WriteAllText(file, RemediationEmitter.emitEstate headerLines blocks)
+                        tryWriteArtifact file (RemediationEmitter.emitEstate headerLines blocks)
                         Some (file, List.length blocks))
             // The interim posture's artifacts (wave A6): every RELAX-lane
             // PROPOSED finding resolves to one overlay entry + one reopen
@@ -231,13 +241,13 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 EstatePosture.relaxationsFor (Readiness.toLogicalShape target) computed
             if not (List.isEmpty relaxations) then
                 let note =
-                    sprintf "projection:estate-overlay generated=%s target=%s — suggested config edits; the merge is an operator edit, and the engine never applies it."
+                    sprintf "projection:environments-overlay generated=%s target=%s — suggested config edits; the merge is an operator edit, and the engine never applies it."
                         (nowUtc.ToString "o") args.TargetLabel
-                IO.File.WriteAllText("estate.overlay.json", EstateOverlayEmitter.emitOverlay note relaxations)
-                IO.File.WriteAllText(
-                    "estate.probes.sql",
-                    EstateOverlayEmitter.emitProbes
-                        [ sprintf "-- projection:estate-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
+                tryWriteArtifact "environments.overlay.json" (EstateOverlayEmitter.emitOverlay note relaxations)
+                tryWriteArtifact
+                    "environments.probes.sql"
+                    (EstateOverlayEmitter.emitProbes
+                        [ sprintf "-- projection:environments-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
                         relaxations)
             let report =
                 computed
@@ -276,7 +286,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                           "relax",        box (laneCount EstateLane.Relax)
                           "watch",        box (laneCount EstateLane.Watch)
                           "forks",        box (report.Findings |> List.filter (fun f -> f.Fork) |> List.length)
-                          "artifactPath", box "estate.json" ]
+                          "artifactPath", box "environments.json" ]
                 let verdictCode =
                     match report.Verdict with
                     | Estate.Verdict.Unified -> "estate.unified"
@@ -285,5 +295,5 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
                 Estate.render report |> List.iter (fun line -> printfn "%s" line)
-            IO.File.WriteAllText("estate.json", artifact)
+            tryWriteArtifact "environments.json" artifact
             if Estate.isUnified report then 0 else 5

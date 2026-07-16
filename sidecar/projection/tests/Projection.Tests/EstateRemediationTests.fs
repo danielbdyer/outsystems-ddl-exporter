@@ -19,7 +19,7 @@ open Projection.Tests.Fixtures
 //   - PROVENANCE (RT-12): the header names env, server, and database from
 //     the connection's TYPED fields — never the raw string, never secrets.
 //   - ONE SUBSTRATE: the stamped report renders the artifact index line and
-//     carries the remediation array in estate.json.
+//     carries the remediation array in environments.json.
 // ---------------------------------------------------------------------------
 
 let private agreed : Estate.TargetOperand = Estate.TargetOperand.AgreedEnv "cloud-dev"
@@ -58,7 +58,7 @@ let ``block ⇔ lever: a NOT-NULL repair earns its block (id = the finding's key
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 42L ] }
     let report = reportFor dirty
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
-    Assert.Equal(Some "Review block data.notNull:Customer.Name of estate.remediation.cloud-uat.sql.", finding.Lever)
+    Assert.Equal(Some "Review the block for Customer.Name (NULLs under NOT NULL) in environments.remediation.cloud-uat.sql.", finding.Lever)
     let block = blocksFor dirty report |> List.exactlyOne
     Assert.Equal("data.notNull:Customer.Name", block.BlockId)
     Assert.Equal("SELECT * FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", block.Locate)
@@ -109,9 +109,10 @@ let ``emitEstate: the header leads, the block id and statement ride as comments,
         RemediationEmitter.emitEstate
             (EstateRemediation.header "cloud-uat" "Server=myhost,1433;Initial Catalog=OSDB;User Id=svc;Password=secret" (System.DateTimeOffset(2026, 7, 15, 12, 0, 0, System.TimeSpan.Zero)))
             (blocksFor dirty report)
-    Assert.Contains("-- projection:estate-remediation env=cloud-uat server=myhost,1433 database=OSDB generated=2026-07-15T12:00:00", sql)
+    Assert.Contains("-- projection:environments-remediation env=cloud-uat server=myhost,1433 database=OSDB generated=2026-07-15T12:00:00", sql)
     Assert.DoesNotContain("secret", sql)
-    Assert.Contains("-- block data.notNull:Customer.Name", sql)
+    Assert.Contains("-- Block: Customer.Name (NULLs under NOT NULL)", sql)
+    Assert.Contains("-- key: data.notNull:Customer.Name", sql)
     let lines = sql.Split '\n'
     let selectLines = lines |> Array.filter (fun l -> l.Contains "SELECT * FROM [dbo]")
     Assert.NotEmpty selectLines
@@ -121,14 +122,14 @@ let ``emitEstate: the header leads, the block id and statement ride as comments,
     Assert.All(repairLines, fun l -> Assert.StartsWith("-- ", l.TrimStart()))
 
 [<Fact>]
-let ``one substrate: the stamped report renders the artifact index line and carries the remediation array in estate.json`` () =
+let ``one substrate: the stamped report renders the artifact index line and carries the remediation array in environments.json`` () =
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 42L ] }
-    let report = reportFor dirty |> Estate.withRemediation [ "estate.remediation.cloud-uat.sql", 1 ]
+    let report = reportFor dirty |> Estate.withRemediation [ "environments.remediation.cloud-uat.sql", 1 ]
     let lines = Estate.render report
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "estate.remediation.cloud-uat.sql — 1 prepared repair block(s)")
+        l.Contains "environments.remediation.cloud-uat.sql — 1 prepared repair block(s)")
     let json = Estate.toJsonString report
-    Assert.Contains("\"file\": \"estate.remediation.cloud-uat.sql\"", json)
+    Assert.Contains("\"file\": \"environments.remediation.cloud-uat.sql\"", json)
     Assert.Contains("\"blocks\": 1", json)
 
 [<Fact>]

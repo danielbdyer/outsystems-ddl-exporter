@@ -1,6 +1,6 @@
 namespace Projection.Pipeline
 
-// LINT-ALLOW-FILE: the estate board's rolled-up text renderer + the estate.json
+// LINT-ALLOW-FILE: the estate board's rolled-up text renderer + the environments.json
 //   codec compose operator-facing statements (THE_VOICE twelve-rule register;
 //   the presentation contract, CHAPTER_ESTATE_OPEN.md Appendix A) and structured
 //   JSON at a terminal reporting boundary. The aggregation core (findings from
@@ -31,7 +31,7 @@ open Projection.Core
 ///     length/type overflow — per-environment evidence on one keyed finding.
 ///
 /// Read-only / advisory — a convergence instrument, not a move. Pure over
-/// resolved operands. One substrate: the rendered board and `estate.json` are
+/// resolved operands. One substrate: the rendered board and `environments.json` are
 /// projections of one `EstateReport` value.
 [<RequireQualifiedAccess>]
 module Estate =
@@ -66,7 +66,7 @@ module Estate =
     /// count-evidence (NULL rows, orphan rows, channel-change count) that
     /// ranks the finding and fills its statement. The `Statement` and `Lever`
     /// are minted ONCE here (the presentation contract's row), so the board
-    /// and `estate.json` cannot drift.
+    /// and `environments.json` cannot drift.
     type Finding =
         {
             Key       : FindingKey
@@ -154,10 +154,15 @@ module Estate =
             /// writing, `compute` stays file-blind).
             Remediation : (string * int) list
             /// The interim-posture artifacts this run wrote — the overlay's
-            /// entry count when `estate.overlay.json` + `estate.probes.sql`
+            /// entry count when `environments.overlay.json` + `environments.probes.sql`
             /// exist (wave A6; the face stamps them, `compute` stays
             /// file-blind). `None` = no proposed relaxations this run.
             OverlayEntries : int option
+            /// The SSDT emission-fidelity findings (Phase 1, the #669 audit) —
+            /// properties of the TARGET shape being promoted (would it deploy,
+            /// does it model reality), not cross-environment divergences, so
+            /// they carry their own list and their own board section.
+            EmissionFindings : Finding list
         }
 
     // ----------------------------------------------------------------------
@@ -221,7 +226,14 @@ module Estate =
     /// profile evidence.
     type Posture =
         {
+            /// The default repair band — the fix-vs-relax threshold for any
+            /// entity without its own band.
             RepairBand        : int64
+            /// Per-entity repair bands (`readiness.estate.repairBandByEntity`):
+            /// 100,000 orphans means one thing in a 200-row lookup and another
+            /// in a billion-row fact table, so the threshold is set per entity
+            /// (by logical entity name), falling back to `RepairBand`.
+            RepairBandByEntity : Map<string, int64>
             /// Reference keys the loaded posture keeps untracked
             /// (`referenceOverrides` + `keepUntracked`).
             RelaxedReferences : Set<SsKey>
@@ -235,8 +247,23 @@ module Estate =
         /// No active posture, the default band — `compute`'s basis.
         let defaults : Posture =
             { RepairBand        = repairBandDefault
+              RepairBandByEntity = Map.empty
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
+
+    /// The logical entity a finding's subject names (the part before the
+    /// first `.` in `Entity.Column`, or the whole token for an entity).
+    let private entityOfSubject (subject: string) : string =
+        match subject.IndexOf '.' with
+        | i when i > 0 -> subject.Substring(0, i)
+        | _ -> subject
+
+    /// The repair band that governs one subject — the entity's own band when
+    /// set, else the posture default (per-entity fix-vs-relax thresholds).
+    let bandFor (posture: Posture) (subject: string) : int64 =
+        posture.RepairBandByEntity
+        |> Map.tryFind (entityOfSubject subject)
+        |> Option.defaultValue posture.RepairBand
 
     /// Decide once on the evidence JOIN: fold every environment's profile
     /// through `Profile.merge` (commutative, associative, `Profile.empty`
@@ -294,14 +321,14 @@ module Estate =
             |> List.map (fun key ->
                 let name = kindNameIn envCatalog key
                 contribution EstateFindingKind.SchemaPresence name None
-                    (sprintf "%s exists in %s and is absent from the target shape — deployed-ahead drift; no promotion explains it" name env) 1L)
+                    (sprintf "%s exists in %s but is missing from the target shape — no promotion added it" name env) 1L)
         let presenceInTarget =
             CatalogDiff.removed diff
             |> Set.toList
             |> List.map (fun key ->
                 let name = kindNameIn targetCatalog key
                 contribution EstateFindingKind.SchemaLag name None
-                    (sprintf "the target shape declares %s and %s does not carry it — promotion lag; the ordinary publish resolves it" name env) 1L)
+                    (sprintf "the target shape declares %s and %s has not received it — the ordinary publish promotes it" name env) 1L)
         let renames =
             CatalogDiff.renamed diff
             |> Map.toList
@@ -329,15 +356,32 @@ module Estate =
                     (sprintf "%s's %s differ from the target shape in %s (%s difference(s))"
                         name noun env (humane count))
                     (int64 count))
+        // One finding per differing facet — triggers, check constraints,
+        // modality (static vs regular), and active state are named
+        // distinctly, never lumped (the operator rules each on its own).
         let facets =
             CatalogDiff.kindFacetDiffs diff
             |> Map.toList
-            |> List.map (fun (key, fs) ->
+            |> List.collect (fun (key, fs) ->
                 let name = kindNameIn targetCatalog key
-                contribution EstateFindingKind.SchemaFacets name (Some (sprintf "%A" fs))
-                    (sprintf "%s's own facets differ from the target shape in %s (%s facet(s))"
-                        name env (humane (Set.count fs)))
-                    (int64 (Set.count fs)))
+                fs
+                |> Set.toList
+                |> List.map (fun facet ->
+                    let kind, statement =
+                        match facet with
+                        | KindFacet.Triggers ->
+                            EstateFindingKind.SchemaTrigger,
+                            sprintf "%s's trigger set differs from the target shape in %s" name env
+                        | KindFacet.ColumnChecks ->
+                            EstateFindingKind.SchemaCheck,
+                            sprintf "%s's check constraints differ from the target shape in %s" name env
+                        | KindFacet.Modality ->
+                            EstateFindingKind.SchemaModality,
+                            sprintf "%s's entity kind (static vs regular) differs from the target shape in %s" name env
+                        | KindFacet.IsActive ->
+                            EstateFindingKind.SchemaActivity,
+                            sprintf "%s's active state differs from the target shape in %s" name env
+                    contribution kind name (Some (sprintf "%A" facet)) statement 1L))
         presenceInEnv
         @ presenceInTarget
         @ renames
@@ -384,9 +428,9 @@ module Estate =
             | None -> false
         match v.Kind with
         | ModelFidelity.NotNullButNullsPresent _ when relaxedAttr () -> None
-        | ModelFidelity.NotNullButNullsPresent n when n > posture.RepairBand ->
+        | ModelFidelity.NotNullButNullsPresent n when n > bandFor posture subject ->
             contribution EstateFindingKind.DataNotNullPastBand
-                (sprintf "%s declares NOT NULL; %s contradicting row(s) in %s exceed the repair band — the interim relaxation keeps the column nullable, and the reopen probe retires it at zero"
+                (sprintf "%s is required (NOT NULL); %s NULL row(s) in %s exceed the repair band — leave the column nullable until they are backfilled"
                     subject (humane64 n) env) n
         | ModelFidelity.NotNullButNullsPresent n ->
             let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
@@ -395,10 +439,10 @@ module Estate =
                 then " (the count includes empty text, which normalizes to NULL on publish)"
                 else ""
             contribution EstateFindingKind.DataNotNull
-                (sprintf "%s declares NOT NULL; %s holds %s%s" subject env count emptyTextClause) (max n 1L)
+                (sprintf "%s is required (NOT NULL); %s holds %s%s" subject env count emptyTextClause) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
             contribution EstateFindingKind.DataUnique
-                (sprintf "%s declares unique; %s holds duplicate values" subject env) 1L
+                (sprintf "%s must be unique; %s holds duplicate values" subject env) 1L
         | ModelFidelity.ForeignKeyOrphans _ when relaxedRef () -> None
         | ModelFidelity.ForeignKeyOrphans n ->
             let zeros =
@@ -408,20 +452,20 @@ module Estate =
             // The TRUE orphan count — past the sentinel-zero split (the
             // unset references clear to NULL; they never need the band).
             let trueOrphans = n - zeros
-            if trueOrphans > posture.RepairBand then
+            if trueOrphans > bandFor posture subject then
                 contribution EstateFindingKind.DataOrphansPastBand
-                    (sprintf "%s: %s true orphan row(s) in %s exceed the repair band — the interim relaxation keeps the relationship untracked, and the reopen probe retires it at zero"
+                    (sprintf "%s has %s reference(s) to missing rows in %s, past the repair band — leave the relationship unenforced until they clear"
                         subject (humane64 trueOrphans) env) trueOrphans
             else
                 let sentinelClause =
                     if zeros > 0L then sprintf ", of which %s reference the unset value 0" (humane64 zeros)
                     else ""
                 contribution EstateFindingKind.DataOrphans
-                    (sprintf "%s: %s row(s) in %s reference a record that does not exist%s"
+                    (sprintf "%s has %s reference(s) to rows that do not exist in %s%s"
                         subject (humane64 n) env sentinelClause) (max n 1L)
         | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
             contribution EstateFindingKind.DataOverflow
-                (sprintf "%s holds values to %s against a declared %s in %s"
+                (sprintf "%s holds values that exceed its column length setting — %s against a setting of %s — in %s"
                     subject observed declared env) 1L
 
     // -- The A3 detectors: trust census, rowcount asymmetry, candidacy ------
@@ -519,7 +563,7 @@ module Estate =
                         Reference = None
                         Env = minEnv
                         Fragment =
-                          sprintf "%s holds %s row(s) in %s — verdicts drawn on this evidence are advisory at the asymmetry"
+                          sprintf "%s holds %s row(s) in %s — findings drawn from the smaller sample are advisory"
                               name (humane64 minCount) minEnv
                         Weight = minCount
                         Signature = None } ]
@@ -567,7 +611,7 @@ module Estate =
                           Reference = None
                           Env = env
                           Fragment =
-                            sprintf "%s is distinct in every observed row of %s (%s of %s row(s))"
+                            sprintf "%s has no duplicate in %s — %s of %s row(s) are distinct, so it could serve as a business key for matching"
                                 subject env (humane64 c.DistinctCount) (humane64 total)
                           Weight = total
                           Signature = None })
@@ -611,7 +655,7 @@ module Estate =
                                       Reference = None
                                       Env = env
                                       Fragment =
-                                        sprintf "%s stands at %s of %s in %s — %d%% of the ceiling is consumed"
+                                        sprintf "%s has reached %s of %s in %s — %d%% of the limit is used"
                                             subject (d.Max.ToString("N0", Globalization.CultureInfo.InvariantCulture)) capText env percent
                                       Weight = int64 percent
                                       Signature = None }
@@ -645,7 +689,7 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s holds %s row(s) at 1900-01-01 in %s — the platform's empty-date convention; a NOT NULL reading of the column is satisfied and empty of meaning"
+                                    sprintf "%s holds %s row(s) set to 1900-01-01 in %s — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
                                         subject (humane64 sentinelCount) env
                                   Weight = sentinelCount
                                   Signature = None }
@@ -727,7 +771,7 @@ module Estate =
                       Reference = None
                       Env = env
                       Fragment =
-                        sprintf "%s kind(s) in %s carry a different identity provenance than the target (synthesized against native) — renames across this pair are unstable until the identity anchors"
+                        sprintf "%s kind(s) in %s number their rows differently than the target — the key is generated by the database in one and a fixed value in the other, so renames stay unstable until the identity is anchored"
                             (humane mismatched) env
                       Weight = int64 mismatched
                       Signature = None }
@@ -763,7 +807,7 @@ module Estate =
                           Reference = None
                           Env = env
                           Fragment =
-                            sprintf "CDC tracks %s in %s and not in %s — a cutover write to this kind feeds live consumers in %s alone"
+                            sprintf "Change tracking is on for %s in %s and off in %s — a cutover write feeds live consumers in %s alone"
                                 name env (envListText silent) env
                           Weight = 1L
                           Signature = None }))
@@ -835,13 +879,13 @@ module Estate =
                     let subject = sprintf "%s.%s" kindName attrName
                     meterLines EstateFindingKind.PostureActive subject
                         (fun env count ->
-                            sprintf "the relationship %s → %s is untracked by the interim posture; the reopen probe stands at %s in %s"
+                            sprintf "%s → %s is left unenforced for now; %s reference(s) still point to missing rows in %s"
                                 subject targetName count env)
                         (fun env ->
-                            sprintf "the relationship %s → %s is untracked by the interim posture; the reopen probe is unobserved in %s"
+                            sprintf "%s → %s is left unenforced for now; the count is unobserved in %s"
                                 subject targetName env)
                         (fun env ->
-                            sprintf "%s holds zero orphan row(s) in %s under the active relaxation — the relaxation is retirable; the relationship can track WITH CHECK"
+                            sprintf "%s has zero references to missing rows in %s now — the relationship can be enforced again"
                                 subject env)
                         (fun p -> Profile.tryFindForeignKey refKey p |> Option.map (fun fk -> fk.OrphanCount)))
         let attributeLines =
@@ -859,18 +903,169 @@ module Estate =
                 | Some subject ->
                     meterLines EstateFindingKind.PostureActive subject
                         (fun env count ->
-                            sprintf "%s is kept nullable by the interim posture; the reopen probe stands at %s in %s"
+                            sprintf "%s is left nullable for now; %s row(s) are still NULL in %s"
                                 subject count env)
                         (fun env ->
-                            sprintf "%s is kept nullable by the interim posture; the reopen probe is unobserved in %s"
+                            sprintf "%s is left nullable for now; the count is unobserved in %s"
                                 subject env)
                         (fun env ->
-                            sprintf "%s holds zero NULL row(s) in %s under the active relaxation — the relaxation is retirable; the column can tighten to its declared NOT NULL"
+                            sprintf "%s has zero NULL row(s) in %s now — the column can be required (NOT NULL) again"
                                 subject env)
                         (fun p -> Profile.tryFindColumn attrKey p |> Option.map (fun c -> c.NullCount)))
         referenceLines @ attributeLines
 
     // -- Grouping + the report ----------------------------------------------
+
+    // -- The emission-audit detectors (Phase 1, the #669 audit) — properties
+    //    of the TARGET shape (would it deploy, does it model reality), not
+    //    cross-environment divergences. ------------------------------------
+
+    /// One emission finding — a target-shape property with no per-environment
+    /// evidence; DECIDE-lane, its ruling as the lever.
+    let private emissionFinding (kind: EstateFindingKind) (subject: string) (statement: string) : Finding =
+        { Key       = FindingKey.create kind subject
+          Kind      = kind
+          Lane      = EstateFindingKind.laneOf kind
+          Plane     = EstateFindingKind.planeOf kind
+          Envs      = []
+          Statement = statement
+          Lever     =
+            match EstateFindingKind.leverFormOf kind with
+            | EstateLeverForm.Ruling imperative -> Some imperative
+            | _ -> None
+          Fork      = false }
+
+    /// WP-12: a relationship whose target entity has a COMPOSITE primary key.
+    /// The emitter renders a single-column foreign key that references only
+    /// the target's first key column — SQL Server rejects it at deploy.
+    let private emissionCompositePkFkFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.References
+            |> List.choose (fun r ->
+                match Catalog.tryFindKind r.TargetKind target with
+                | Some targetKind when List.length (Kind.primaryKey targetKind) > 1 ->
+                    let sourceCol =
+                        k.Attributes
+                        |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                        |> Option.map (fun a -> Name.value a.Name)
+                        |> Option.defaultValue "?"
+                    let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol (Name.value targetKind.Name)
+                    Some (emissionFinding EstateFindingKind.EmissionCompositePkFk subject
+                            (sprintf "%s targets a composite primary key (%s columns) — the emitted foreign key would reference only its first column, which SQL Server rejects at deploy."
+                                subject (humane (List.length (Kind.primaryKey targetKind)))))
+                | _ -> None))
+
+    /// WP-16: two entities whose logical names collide across modules — one
+    /// published schema cannot hold two tables of the same name.
+    let private emissionDuplicateNameFindings (target: Catalog) : Finding list =
+        target.Modules
+        |> List.collect (fun m -> m.Kinds |> List.map (fun k -> Name.value k.Name, Name.value m.Name))
+        |> List.groupBy fst
+        |> List.choose (fun (entity, pairs) ->
+            if List.length pairs > 1 then
+                let modules = pairs |> List.map snd |> List.distinct
+                Some (emissionFinding EstateFindingKind.EmissionDuplicateName entity
+                        (sprintf "%s entities are named '%s' (in %s) — they would collide as one emitted table."
+                            (humane (List.length pairs)) entity (envListText modules)))
+            else None)
+
+    /// WP-11: an identifier longer than SQL Server's 128-character limit —
+    /// the deploy rejects it. The authored entity and column names are checked
+    /// (synthesized FK/index names ride their own budget, a later slice).
+    let private emissionLongNameFindings (target: Catalog) : Finding list =
+        let limit = 128
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            let kindName = Name.value k.Name
+            let kindHit =
+                if String.length kindName > limit then
+                    [ emissionFinding EstateFindingKind.EmissionLongName kindName
+                        (sprintf "The entity name '%s' is %s characters — SQL Server rejects identifiers over 128 characters at deploy."
+                            kindName (humane (String.length kindName))) ]
+                else []
+            let attrHits =
+                k.Attributes
+                |> List.choose (fun a ->
+                    let n = Name.value a.Name
+                    if String.length n > limit then
+                        Some (emissionFinding EstateFindingKind.EmissionLongName (sprintf "%s.%s" kindName n)
+                                (sprintf "The column name '%s' on %s is %s characters — SQL Server rejects identifiers over 128 characters at deploy."
+                                    n kindName (humane (String.length n))))
+                    else None)
+            kindHit @ attrHits)
+
+    /// #669 §9 heap audit: an entity with no primary key emits as a heap
+    /// (no clustered key) — advisory; the operator confirms it is intended.
+    let private emissionNoPrimaryKeyFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.filter (fun k -> List.isEmpty (Kind.primaryKey k))
+        |> List.map (fun k ->
+            emissionFinding EstateFindingKind.EmissionNoPrimaryKey (Name.value k.Name)
+                (sprintf "%s has no primary key — it would emit as a heap, with no clustered key for replication or lookups."
+                    (Name.value k.Name)))
+
+    /// #669 WP-17 inventory: columns whose concrete type the data-transfer
+    /// plane carries through a coarser form (float / real / datetimeoffset /
+    /// xml) — surfaced now to scope the exposure; the faithful carriage is
+    /// WP-17 (a separate emission-context slice). WATCH, by design.
+    let private emissionLossyScalarFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Attributes
+            |> List.choose (fun a ->
+                let lossy =
+                    match a.SqlStorage with
+                    | Some SqlStorageType.Float              -> Some ("float", "precision beyond 15 significant digits, and overflow above roughly 7.9E28")
+                    | Some SqlStorageType.Real               -> Some ("real", "IEEE-754 single precision, carried as a decimal string")
+                    | Some (SqlStorageType.DateTimeOffset _) -> Some ("datetimeoffset", "the time-zone offset")
+                    | Some SqlStorageType.Xml                -> Some ("xml", "whitespace and attribute order, since the document is re-serialized")
+                    | _                                      -> None
+                lossy
+                |> Option.map (fun (typeName, what) ->
+                    let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                    emissionFinding EstateFindingKind.EmissionLossyScalar subject
+                        (sprintf "%s is %s — the data-transfer plane can lose %s (WP-17); this scopes how carefully the transfer must handle it."
+                            subject typeName what))))
+
+    /// #669 §9 audit: a relationship carrying a non-default ON UPDATE action
+    /// (cascade / set-null / restrict) — unusual; confirm it is intended.
+    let private emissionNonDefaultOnUpdateFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.References
+            |> List.choose (fun r ->
+                match r.OnUpdate with
+                | Some action when action <> ReferenceAction.NoAction ->
+                    let targetName =
+                        Catalog.tryFindKind r.TargetKind target
+                        |> Option.map (fun t -> Name.value t.Name) |> Option.defaultValue "?"
+                    let sourceCol =
+                        k.Attributes |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                        |> Option.map (fun a -> Name.value a.Name) |> Option.defaultValue "?"
+                    let actionName =
+                        match action with
+                        | ReferenceAction.Cascade  -> "CASCADE"
+                        | ReferenceAction.SetNull  -> "SET NULL"
+                        | ReferenceAction.Restrict -> "NO ACTION (RESTRICT)"
+                        | ReferenceAction.NoAction -> "NO ACTION"
+                    let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol targetName
+                    Some (emissionFinding EstateFindingKind.EmissionNonDefaultOnUpdate subject
+                            (sprintf "%s carries ON UPDATE %s — an unusual rule; confirm it is intended, since most references leave ON UPDATE at the default."
+                                subject actionName))
+                | _ -> None))
+
+    /// Every emission-audit finding over the target shape (Phase 1) — the
+    /// SSDT-fidelity dimension of the readiness report.
+    let emissionFindingsFor (target: Catalog) : Finding list =
+        [ emissionCompositePkFkFindings target
+          emissionDuplicateNameFindings target
+          emissionLongNameFindings target
+          emissionNoPrimaryKeyFindings target
+          emissionLossyScalarFindings target
+          emissionNonDefaultOnUpdateFindings target ]
+        |> List.concat
+        |> List.sortBy (fun f -> FindingKey.text f.Key)
 
     /// Compute the estate report from the resolved target and confirm
     /// operands, under the operator's posture (the repair band + the loaded
@@ -1070,9 +1265,9 @@ module Estate =
                     | EstateLeverForm.Ruling imperative -> Some imperative
                     | EstateLeverForm.ReviewBlock ->
                         let primary = perEnvRows |> List.maxBy (fun c -> c.Weight)
-                        Some (sprintf "Review block %s of estate.remediation.%s.sql." (FindingKey.text key) primary.Env)
+                        Some (sprintf "Review the block for %s in environments.remediation.%s.sql." (FindingKey.readableLabel key) primary.Env)
                     | EstateLeverForm.MergeOverlayEntry ->
-                        Some (sprintf "Merge overlay entry %s of estate.overlay.json." (FindingKey.text key))
+                        Some (sprintf "Merge the config edit for %s in environments.overlay.json." (FindingKey.readableLabel key))
                     | EstateLeverForm.NoLever -> None
                 { Key = key
                   Kind = kind
@@ -1098,7 +1293,8 @@ module Estate =
           Verdict = verdict
           Evidence = EvidenceStoreBasis.Disabled
           Remediation = []
-          OverlayEntries = None }
+          OverlayEntries = None
+          EmissionFindings = emissionFindingsFor logicalTarget }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -1116,7 +1312,7 @@ module Estate =
         { report with Remediation = artifacts }
 
     /// The face's posture stamp (wave A6): the overlay's entry count once
-    /// `estate.overlay.json` + `estate.probes.sql` are written — the
+    /// `environments.overlay.json` + `environments.probes.sql` are written — the
     /// ARTIFACTS index and the JSON read it; `compute` stays file-blind.
     let withOverlay (entries: int) (report: EstateReport) : EstateReport =
         { report with OverlayEntries = Some entries }
@@ -1165,14 +1361,14 @@ module Estate =
         match lane with
         | EstateLane.Decide -> "DECIDE — the ruling queue"
         | EstateLane.Repair -> "REPAIR — prepared repairs"
-        | EstateLane.Relax  -> "RELAX — the interim posture"
+        | EstateLane.Relax  -> "RELAX — interim changes to carry through cutover"
         | EstateLane.Watch  -> "WATCH — advisories"
 
     let private laneEmptyLine (lane: EstateLane) : string =
         match lane with
         | EstateLane.Decide -> "  Nothing awaits a ruling."
         | EstateLane.Repair -> "  Nothing carries a repair."
-        | EstateLane.Relax  -> "  The interim posture is empty."
+        | EstateLane.Relax  -> "  No interim changes are needed."
         | EstateLane.Watch  -> "  Nothing is under watch."
 
     let private planeToken (p: EstatePlane) : string =
@@ -1181,10 +1377,11 @@ module Estate =
         | EstatePlane.Data -> "data"
         | EstatePlane.Identity -> "identity"
         | EstatePlane.Operational -> "operational"
+        | EstatePlane.Emission -> "emission"
 
     /// The per-lane cap — the top consequences are named; the remainder is
     /// counted (THE_VOICE §12: cap the breadth, name the remainder; the full
-    /// list is `estate.json`'s, searchable, never scrollable).
+    /// list is `environments.json`'s, searchable, never scrollable).
     let private laneCap : int = 8
 
     /// The humane capture-age clause ("today" / "N day(s) ago").
@@ -1221,7 +1418,7 @@ module Estate =
     /// through the Voice catalog first, then these lines.
     let render (report: EstateReport) : string list =
         [ // MASTHEAD — the estate and its basis.
-          yield sprintf "ESTATE — %s environment(s) against %s"
+          yield sprintf "ENVIRONMENTS — %s environment(s) against %s"
                     (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
           for basis in report.Bases do
               yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
@@ -1236,6 +1433,10 @@ module Estate =
           // so the clause is not configured — said, never silent, and the
           // verdict formula excludes it.
           yield "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
+          // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
+          // what it inspected): the classes this run does not yet check are
+          // named, so "one shape" cannot read as "everything is clean".
+          yield "  Not inspected this run: static-entity content, user references, grants, computed columns, and emission fidelity (clustering, temporal tables, sequences). A clean verdict covers schema and data convergence only."
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
@@ -1253,8 +1454,24 @@ module Estate =
                       | None -> ()
                   let remainder = List.length fs - List.length shown
                   if remainder > 0 then
-                      yield sprintf "  … and %s more — estate.json carries every finding." (humane remainder)
+                      yield sprintf "  … and %s more — environments.json carries every finding." (humane remainder)
               yield ""
+
+          // EMISSION — the SSDT-fidelity audit over the target shape (Phase 1,
+          // the #669 audit): would the schema deploy, does it model reality.
+          yield "EMISSION — the schema this estate would publish, audited against database reality"
+          for f in report.EmissionFindings |> List.truncate laneCap do
+              yield sprintf "  %s" f.Statement
+              match f.Lever with
+              | Some lever -> yield sprintf "      → %s" lever
+              | None -> ()
+          let emissionExtra = List.length report.EmissionFindings - laneCap
+          if emissionExtra > 0 then
+              yield sprintf "  … and %s more — environments.json carries every finding." (humane emissionExtra)
+          if List.isEmpty report.EmissionFindings then
+              yield "  No emission hazards in the checks that run today."
+          yield "  Checks run today: composite-PK foreign keys, duplicate table names, over-long identifiers, missing primary keys (heaps), lossy-carriage column types, non-default ON UPDATE. Coming (need extraction/emission work): FK trust regime, delete-rule reality, type authority, UNIQUE flattening, clustering, temporal tables, sequences, faithful scalar carriage."
+          yield ""
 
           // MATRIX — environment × plane counts (the drill-down door).
           yield "MATRIX — findings by environment and plane"
@@ -1281,28 +1498,40 @@ module Estate =
 
           // ARTIFACTS — the index: one line per artifact naming its role.
           yield "ARTIFACTS"
-          yield "  estate.json — the full findings record: every board element, machine-readable."
+          yield "  environments.json — the full findings record: every board element, machine-readable."
           for file, blocks in report.Remediation do
               yield sprintf "  %s — %s prepared repair block(s); the locating SELECT is active, every repair is commented." file (humane blocks)
           match report.OverlayEntries with
           | Some entries when entries > 0 ->
-              yield sprintf "  estate.overlay.json — %s interim relaxation(s) as config edits; each carries the probe that retires it. The merge is an operator edit; the engine never applies it." (humane entries)
-              yield "  estate.probes.sql — every reopen probe, runnable as one batch; the posture's retirement meter."
+              yield sprintf "  environments.overlay.json — %s interim change(s) as config edits; each carries the probe that clears it. The merge is an operator edit; the engine never applies it." (humane entries)
+              yield "  environments.probes.sql — every reopen probe, runnable as one batch; the posture's retirement meter."
           | _ -> ()
+          yield ""
+
+          // RUNBOOK — the cutover procedure (source estate → target database)
+          // and the manual gates it still leaves to the operator (#669 §11).
+          // Static context, so nothing about the hand-off is a surprise.
+          yield "RUNBOOK — source estate → target database"
+          yield "  1. Confirm readiness (this check) · 2. Publish the schema bundle · 3. Deploy via sqlpackage"
+          yield "  4. Load the bulk data · 5. Re-trust foreign keys and enable CDC · 6. Verify (drift · rows · CDC-silence)"
+          yield "  Manual gates to own before cutover: the bulk-load step (Data/Bootstrap.sql) is not auto-run;"
+          yield "  enabling CDC on the target has no verb; the streaming and synthetic load legs need a manual"
+          yield "  foreign-key re-trust sweep; the refactorlog is not yet placed in the bundle; a publish rollback"
+          yield "  is not yet proven."
           yield ""
 
           // ACTION — the one next move.
           let action =
               match laneFindings EstateLane.Decide report with
-              | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.text f.Key)
+              | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
               | [] ->
                   match laneFindings EstateLane.Repair report with
-                  | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.text f.Key)
+                  | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
                   | [] -> "Next: the estate holds; re-run on the publish cadence."
           yield action ]
 
     // ----------------------------------------------------------------------
-    // The estate.json codec — the structured sibling of the board (one
+    // The environments.json codec — the structured sibling of the board (one
     // substrate: both project the one report value).
     // ----------------------------------------------------------------------
 
@@ -1319,7 +1548,7 @@ module Estate =
         | EstateLane.Relax -> "relax"
         | EstateLane.Watch -> "watch"
 
-    /// One environment's provenance, projected for `estate.json` (one
+    /// One environment's provenance, projected for `environments.json` (one
     /// substrate: the same facts the masthead line renders).
     let private provenanceJson (p: EvidenceProvenance) : JsonObject =
         let o = JsonObject()
@@ -1375,8 +1604,8 @@ module Estate =
         (match report.OverlayEntries with
          | Some entries ->
              let o = JsonObject()
-             o.["file"] <- JsonValue.Create "estate.overlay.json"
-             o.["probes"] <- JsonValue.Create "estate.probes.sql"
+             o.["file"] <- JsonValue.Create "environments.overlay.json"
+             o.["probes"] <- JsonValue.Create "environments.probes.sql"
              o.["entries"] <- JsonValue.Create entries
              root.["overlay"] <- o
          | None -> ())
@@ -1402,6 +1631,21 @@ module Estate =
             o.["environments"] <- perEnv
             findings.Add o
         root.["findings"] <- findings
+        // The emission-audit dimension (Phase 1): target-shape fidelity, its
+        // own array beside the convergence findings.
+        let emission = JsonArray()
+        for f in report.EmissionFindings do
+            let o = JsonObject()
+            o.["key"] <- JsonValue.Create(FindingKey.text f.Key)
+            o.["kind"] <- JsonValue.Create(EstateFindingKind.token f.Kind)
+            o.["lane"] <- JsonValue.Create(laneToken f.Lane)
+            o.["plane"] <- JsonValue.Create(planeToken f.Plane)
+            o.["statement"] <- JsonValue.Create f.Statement
+            (match f.Lever with
+             | Some lever -> o.["lever"] <- JsonValue.Create lever
+             | None -> ())
+            emission.Add o
+        root.["emission"] <- emission
         root
 
     /// Serialize to a pretty-printed JSON string (the artifact body).
