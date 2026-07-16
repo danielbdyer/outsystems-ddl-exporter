@@ -27884,3 +27884,50 @@ fix (same posture as WP-4).
 **Scope.** This completes the WP-4 remainder split out at the WP-4 commit; register C1's on-disk
 precedence is now landed (same-category) with the divergence named. WP-4 (email/phone → NVARCHAR)
 and WP-4b together close register C3 + the ordinary-scalar half of C1.
+
+## 2026-07-16 — WP-1c(i): the `allowCrossSchema` binder default flips to `false` (V1 parity); the three eject-regime decisions are locked in
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. The operator (Danny) settled
+the three open FK-regime decisions the packet §6 flagged as "decisions to bless":
+1. **Orphan handling — V1-strict WITHHOLD.** When the profiler finds orphan rows, the FK is withheld
+   entirely (`allowNoCheckCreation = false`) — "no tightening without proof"; the operator remediates
+   the data upstream before the FK ships. (Not the NOCHECK-pragmatic alternative.)
+2. **`allowCrossSchema` default — FLIP to `false`** (V1's shipped default + the §6 eject strawman).
+3. **Goldens — RE-RECORD to the gated posture** (accepting the byte diff — logical-only references
+   become withheld/refused; source-backed references keep their FKs).
+
+**The decision (this slice — WP-1c(i)).** The `TighteningBinding` binder default for `allowCrossSchema`
+is now `false` (was `true`): a foreignKey intervention parsed from config that omits `allowCrossSchema`
+withholds cross-schema FKs (named `CrossSchemaBlocked` refusal) instead of silently materializing them.
+Only the config-parsed default moves; explicit `allowCrossSchema` values and the `relaxationOnly`
+identity-carry (dormant under `RelaxationOnly`) are unchanged.
+
+**Witness.** 340 pure cases green (`TighteningBinding` / `ForeignKey*` / `Config` /
+`DeployableReference` / `GoldenEmission` / `EstatePosture` / `DiagnosticsEndToEnd`). No test relied on
+the old `true` default (the cross-schema rules tests set the flag explicitly). No golden change — the
+golden corpus does not register a config-parsed foreignKey intervention, so the binder default does
+not reach it.
+
+**Scope note / the WP-1c(ii) remainder.** The MANDATORY evidence-gated eject posture (decisions 1 + 3
+— logical-only references materialize ONLY through the evidence-gated intervention; without evidence
+they are withheld with a named refusal; source-backed references always re-emit) is NOT in this slice.
+It is a larger emission-pipeline change and rides WP-1c(ii). The analysis, for the next agent:
+- **Approach.** Option B (make the foreignKey intervention MANDATORY for eject/production emissions +
+  register it in the golden pipeline) is preferred over Option A (invert the emitter's emit-unless-
+  `DropFk` default to a gated default via a new `DecisionOverlay.EnforceFk` set): B keeps the wide
+  pure-emitter-test surface (which registers no intervention) unaffected, and reuses the existing
+  `DropFk` machinery — under a registered intervention with no profile, a logical-only ref already
+  resolves `EvidenceMissing → DoNotEnforce → DropFk`, and source-backed refs keep their FK via the
+  `DatabaseConstraintPresent` carve-out.
+- **Golden diff is bounded** (~4 FKs): `GoldenCatalog` refs are a MIX — the `withConstraintState true`
+  ones (Engagement.CreatedBy/UpdatedBy/Parent, Ledger.Manager, ChangeLog.User) are source-backed and
+  KEEP their FKs; the plain-`Reference.create` ones (Engagement.Customer, Engagement.AltCustomer,
+  RegionA.Partner, RegionB.Partner) are logical-only and become WITHHELD under gating.
+- **Two golden emission paths** must both gate: the per-table bundle via `Compose.projectWithConfig`
+  (runs tightening → `DecisionOverlay`) and `stream.sql` via `Compose.applyShapingToCatalog` +
+  `SsdtDdlEmitter.statements` (verify its overlay source). The golden `baseConfig.Policy.Tightening`
+  must carry the mandatory foreignKey intervention for the corpus to show the gated posture.
+- **Named refusal.** Every withheld logical-only ref needs a named refusal on the diagnostics stream
+  (the existing `foreignKeyDecisionDropDiagnostics` `decision.fkNotIntroduced` covers the
+  intervention-present case).
+- Validate with the full Docker pool (the canary/publish-equivalence suites exercise FK emission).

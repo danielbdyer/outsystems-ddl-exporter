@@ -844,10 +844,14 @@ prefers it over the model rule via `OssysTranslation.chooseOnDeleteAction`, and
 `MetadataSnapshotRunner.deleteRuleDivergences` raises a named `Warning`
 (`adapter.ossys.fkReality.deleteActionDivergence`) when model rule code and deployed action
 disagree. (No golden change — the corpus is catalog-direct, no `#FkReality` rows.)
-(c) References with no physical FK (Ignore, missing rule, external-entity, out-of-scope) are
-*expected no-FK cases*: never default-emit; materialization happens only through the
-evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated` posture as the
-mandatory eject regime (intervention + live profiler always on).
+(c) **REGIME DECISIONS LOCKED (operator, 2026-07-16):** orphans → **V1-strict WITHHOLD**
+(`allowNoCheckCreation=false`); `allowCrossSchema` default → **`false`** (V1 parity, **✅ landed
+WP-1c(i)**); goldens → **re-record to gated**. References with no physical FK (Ignore, missing rule,
+external-entity, out-of-scope) are *expected no-FK cases*: never default-emit; materialization
+happens only through the evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated`
+posture as the mandatory eject regime (intervention + live profiler always on). **The mandatory
+gated posture itself = WP-1c(ii), OPEN** (a larger emission-pipeline change; approach + bounded
+~4-FK golden diff analysed in DECISIONS 2026-07-16 WP-1c(i)).
 (d) **✅ LANDED (WP-1d, DECISIONS 2026-07-16).** `treatMissingDeleteRuleAsIgnore`,
 `allowCrossCatalog`, and dead `strictMode` — all three proven inert and REMOVED (record + ctor +
 VersionedPolicy tokens + config parse + binder + docs; reserved DU variants kept). *Still open:*

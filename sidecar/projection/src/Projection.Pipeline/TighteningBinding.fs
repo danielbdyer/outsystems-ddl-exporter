@@ -189,7 +189,13 @@ module TighteningBinding =
                     ForeignKeyTighteningConfig.relaxationOnly overrides
                 else
                     { EnableCreation                 = defaultArg entry.EnableCreation true
-                      AllowCrossSchema               = defaultArg entry.AllowCrossSchema true
+                      // WP-1c (DECISIONS 2026-07-16; operator decision): the
+                      // binder default for `allowCrossSchema` is `false` — V1's
+                      // shipped default and the §6 eject strawman. A cross-schema
+                      // FK is withheld (named `CrossSchemaBlocked` refusal) unless
+                      // the intervention opts in explicitly; V2's prior `true`
+                      // default silently materialized cross-schema FKs.
+                      AllowCrossSchema               = defaultArg entry.AllowCrossSchema false
                       AllowNoCheckCreation           = defaultArg entry.AllowNoCheckCreation false
                       Overrides                      = overrides
                       Direction                      = TighteningDirection.EvidenceDriven }
