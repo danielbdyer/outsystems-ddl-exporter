@@ -5,7 +5,14 @@ description: Use when the developer says "I want full history on this new entity
 
 # Add temporal versioning — new entity (temporal-vs-CDC conflation trap)
 
-> **Default (provisional — the data decides).** Mechanism 1 Pure Declarative, single-phase, Tier 2 — SSDT builds a new system-versioned table cleanly. (Converting an EXISTING populated table is a different op — route to `../temporal-convert/SKILL.md`.)
+> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> review this: turning on system versioning is a design commitment — a paired history table that
+> grows with every update, and a point-in-time-history choice that must not be confused with CDC —
+> even though the table is new and no existing data is touched. Ships as a single schema change,
+> applied in place: unlike CDC, temporal versioning IS expressible declaratively for a new table, so
+> SSDT publishes the system-versioned CREATE — the table, its paired history table, and the two
+> period columns — clean. Prove the clean publish on a disposable copy before classifying.
+> (Converting an EXISTING populated table is a different op — route to `../temporal-convert/SKILL.md`.)
 
 ## OutSystems phrasing
 "I want full history on this new entity", "keep every version of every row (new table)", "point-in-time history from birth".
@@ -14,20 +21,83 @@ description: Use when the developer says "I want full history on this new entity
 `SYSTEM_VERSIONING = ON` with a paired history table and two `GENERATED ALWAYS AS ROW START/END` `datetime2` period columns. SQL Server maintains the history table on every write. Unlike CDC, **temporal IS expressible declaratively for a new table** — SSDT can publish the system-versioned CREATE. Never write ALTER.
 
 ## The named trap
-**Conflating temporal with CDC.** They are different mechanisms — different licensing (temporal is all editions; CDC is Enterprise/Standard) and different shapes (temporal gives point-in-time row history; CDC gives a change feed). Picking the wrong one is a design error the agent must catch at **intake**, before building. If the developer needs a *change feed* (old→new values for an ETL), route to `../enable-cdc/SKILL.md`. See `../../_index/cdc/SKILL.md` for the CDC weight this avoids.
+**Conflating temporal with CDC.** They are different mechanisms — different licensing (temporal is all editions; CDC is Enterprise/Standard) and different shapes (temporal gives point-in-time row history; CDC gives a change feed). Picking the wrong one is a design error to catch at **intake**, before building. If the developer needs a *change feed* (old→new values for an ETL), route to `../enable-cdc/SKILL.md`. See `../../_index/cdc/SKILL.md` for the CDC weight this avoids.
 
 ## How it flips (the specifics only)
-- **new table** (this op) → **M1**, single-phase, Tier 2.
-- existing empty table → **M1**, single-phase.
-- existing **populated** table → NOT this op; route to `../temporal-convert/SKILL.md` (multi-phase).
-- **+ CDC already on the table** → +1 Tier and CDC sequencing (you are stacking two history mechanisms — confirm the developer wants both) — see `../../_index/cdc/SKILL.md`.
-- **+ >1M rows / first-time** → +1 Tier.
+- **new table** (this op) → ships as a single schema change, applied in place: the system-versioned CREATE, its history table, and the period columns publish clean, nothing to transition. A dev lead or an experienced developer should review it — system versioning is a design commitment — but no existing data is touched.
+- existing **empty** table → the same single in-place schema change; with no rows there is nothing to backfill.
+- existing **populated** table → NOT this op; route to `../temporal-convert/SKILL.md`, where the period columns must be backfilled first and the change stages across releases.
+- **+ CDC already on the table** → added scrutiny and CDC sequencing: the table already feeds a change-data-capture stream, so system versioning stacks a second history mechanism on top — confirm the developer wants both, and the capture-instance obligation still applies — see `../../_index/cdc/SKILL.md`.
+- **+ the entity is expected to reach large row counts (> 1M), or this is the first system-versioned table on the estate** → added scrutiny: the paired history table grows with every update, and a first-time temporal build has no prior proof on this estate.
 
 ## Prove it
-Preview the Strict delta and confirm it publishes the system-versioned CREATE clean — the history table and period columns appear, no veto. See `prove-on-dacpac`. On the sample, temporal-new (AUD-01) is a scratch-authored brand-new system-versioned table (greenfield — no authored seed needed).
+Preview the Strict delta and confirm it publishes the system-versioned CREATE clean — the history table and period columns appear, and the publish is not blocked. See `prove-on-dacpac`. On the sample, temporal-new (AUD-01) is a scratch-authored brand-new system-versioned table (greenfield — no authored seed needed).
 
-## Verdict to the developer
-"You want history — there are two kinds. Temporal gives you point-in-time row history with no licensing cost, and for a new entity it publishes clean in one release. (CDC is the other kind — a change feed — and it's a much heavier commitment; tell me which you actually need.)"
+## The verdict (to the developer)
+You asked for full history on a new entity, and there are two kinds of history to be clear about
+first. Temporal versioning gives you point-in-time row history — what a row looked like at any past
+moment — at no licensing cost, and because the entity is brand new it publishes clean in a single
+release: SSDT creates the table, its history table, and the period columns on a disposable copy of
+Dev with nothing blocked. The other kind is CDC, a change feed of old-to-new values for an ETL, and
+it is a much heavier, Enterprise/Standard-licensed commitment. So the one thing to settle before
+this ships: do you want point-in-time history (temporal, this op), or a change feed (CDC)?
 
-## Teach it (the graduation)
-When a developer's word covers two mechanisms with different bills, disambiguate at intake — "track changes" and "keep history" are exactly such words; the fail mode avoided is building CDC's heavy machinery when point-in-time editions were all that was wanted. Full WHY (name your intent): `../../_index/cdc/SKILL.md`.
+## The reasoning (in conversation)
+When one plain word covers two mechanisms with different bills, settle which one at intake before
+building anything. "Keep history" and "track changes" are exactly those words — they can mean
+point-in-time row history (temporal) or a change feed (CDC), and the two differ in licensing and in
+shape. The mistake to avoid is standing up CDC's heavy machinery when point-in-time history was all
+that was wanted. The full reasoning — name what you actually need, then pick the mechanism that
+gives it — is in `../../_index/cdc/SKILL.md`.
+
+## On the record
+Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+
+**Review & release**
+- A dev lead or an experienced developer should review this: turning on system versioning is a
+  design commitment — a paired history table that grows with every update, and a point-in-time
+  history choice that must not be confused with CDC. No existing data is touched: the entity is new.
+- Ships as a single schema change, applied in place: unlike CDC, temporal versioning is expressible
+  declaratively, so SSDT publishes the system-versioned CREATE — the table, its paired history
+  table, and the two `GENERATED ALWAYS AS ROW START/END` period columns — verbatim. No existing data
+  is read or written.
+- Added scrutiny, when it applies: if the table already feeds a change-data-capture stream, system
+  versioning stacks a second history mechanism on it — confirm both are intended and the
+  capture-instance obligation still applies (see `../../_index/cdc/SKILL.md`); if the entity is
+  expected to reach large row counts (> 1M), the paired history table grows with every update; and a
+  first system-versioned table on the estate has no prior proof.
+
+**Verification** — run in each environment after deployment
+```sql
+-- expect 1 row, temporal_type_desc = SYSTEM_VERSIONED_TEMPORAL_TABLE, history_table named
+SELECT t.name, t.temporal_type_desc, h.name AS history_table
+FROM sys.tables t
+LEFT JOIN sys.tables h ON h.object_id = t.history_table_id
+WHERE t.object_id = OBJECT_ID('dbo.<table>');
+
+-- expect 2 rows: the period columns, GENERATED ALWAYS AS ROW START and ROW END
+SELECT c.name, c.generated_always_type_desc
+FROM sys.columns c
+WHERE c.object_id = OBJECT_ID('dbo.<table>') AND c.generated_always_type <> 0;
+```
+
+**Rollback**
+Remove the system-versioned CREATE from the project and republish. A system-versioned table cannot
+be dropped directly: the generated delta sets `SYSTEM_VERSIONING = OFF` first (which unlinks the
+history table), then drops the main table and its history table. Lossless only while both tables are
+unwritten — they are created empty; once the application writes rows, dropping the pair discards the
+current rows and their accumulated history.
+
+**Not verified**
+- Application impact — a new entity nothing yet reads or writes does not change existing behaviour,
+  but the application code that will query the history (`FOR SYSTEM_TIME`) is new and is not
+  exercised by the disposable copy (@app-owner).
+- Design intent — the disposable copy proves the system-versioned table publishes clean; it cannot
+  confirm that point-in-time history, and not a change feed (CDC), is what the use case needs. That
+  is a design confirmation owed at intake, not something the copy can settle.
+- History growth, retention, and production timing — the paired history table grows with every
+  update and has no cleanup unless a retention policy is set; whether a retention policy is
+  configured, and the versioning write overhead at production volumes, is not shown by the small
+  copy.
+- Reversibility — only the forward create is proven; once the application writes rows, dropping the
+  table and its history is lossy (see Rollback).

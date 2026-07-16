@@ -1,14 +1,14 @@
 ---
 name: multi-phase
-description: Cross-cutting KNOWLEDGE shared by split-table, merge-tables, move-attribute, extract-to-lookup, archive-entity, delete-attribute (4-phase), retype-explicit, and temporal-convert. Owns the additive -> cutover -> subtractive shape, the coexistence WHY (a running app cannot switch shapes atomically), and the totality/conservation proofs that MUST pass before any subtractive drop (BEFORE/AFTER hash equal, source+archive == original, total-mapping zero-unmapped, cardinality absorbed == distinct-parents). The BlockOnPossibleDataLoss veto is the licensing gate on the drop phase. Per-op skills POINT here. The publish loop + hash oracle live in prove-on-dacpac / talk-to-local-sql.
+description: Cross-cutting KNOWLEDGE shared by split-table, merge-tables, move-attribute, extract-to-lookup, archive-entity, delete-attribute (4-phase), retype-explicit, and temporal-convert. Owns the additive -> cutover -> subtractive shape, the coexistence WHY (a running app cannot switch shapes atomically), and the totality/conservation proofs that MUST pass before any subtractive drop (BEFORE/AFTER hash equal, source+archive == original, total-mapping zero-unmapped, cardinality absorbed == distinct-parents). BlockOnPossibleDataLoss blocks the drop phase; it is the licensing gate on that drop. Per-op skills POINT here. The publish loop + hash check live in prove-on-dacpac / talk-to-local-sql.
 ---
 
 # Multi-phase — old and new must coexist
 
-> The instant a request *relocates data between shapes* — rather than the schema merely *gaining*
-> shape — you have left the single-release world. The phases exist because a running app cannot
-> switch shapes atomically. Every op that moves data points here so the shape and the proofs are
-> the same, every time.
+> When a request *relocates data between shapes* — rather than the schema merely *gaining* shape —
+> the change can no longer ship in one release. The phases exist because a running app cannot switch
+> shapes atomically. Every op that moves data points here, so the shape and the proofs are the same
+> every time.
 
 You are helping an **OutSystems-native developer** whose change moves data (a split, a merge, a
 field relocation, a text-to-lookup promotion, an archive, a column drop, an explicit retype, a
@@ -26,21 +26,23 @@ what makes these changes **multi-PR**.
 
 ## The three-phase shape (each phase its own PR)
 
-- **Phase 1 — additive (Mechanism 1/2).** Create the new shape (table / column / lookup / archive
-  destination). Post-deploy-copy the existing rows across; dual-write new rows so both shapes stay
-  in agreement. The app still reads the old shape. **Strict publishes clean — it is purely
-  additive.** Tier 2.
-- **Phase 2 — cutover (Mechanism 2).** Repoint app reads (and FKs, views) from the old shape to the
-  new. No schema change to prove beyond confirming both shapes still agree (hash both). Leave a
+- **Phase 1 — additive.** Create the new shape (table / column / lookup / archive destination).
+  Post-deploy-copy the existing rows across; dual-write new rows so both shapes stay in agreement.
+  The app still reads the old shape. **Strict publishes clean — it is purely additive.** It ships
+  as an additive schema change plus a post-deployment copy; because the application gains a
+  dual-write, a dev lead or an experienced developer should review it.
+- **Phase 2 — cutover.** Repoint app reads (and FKs, views) from the old shape to the new. No
+  schema change to prove beyond confirming both shapes still agree (hash both). Leave a
   backward-compat view named for the old shape if any external consumer still references it (see
   `../identity-and-refactorlog/SKILL.md` for the compat-view bridge).
-- **Phase 3 — subtractive (Mechanism 3).** Drop the old shape from the project. **This is the
-  `BlockOnPossibleDataLoss` veto moment** — Strict MUST veto until the conservation proof (below)
-  licenses the drop. Tier 3 (Tier 4 once the removed data is genuinely irrecoverable).
+- **Phase 3 — subtractive.** Drop the old shape from the project. **This is where
+  `BlockOnPossibleDataLoss` blocks the drop** — under Strict the deployment is blocked until the
+  conservation proof (below) licenses it. A dev lead must review the drop, and once the removed
+  data is genuinely irrecoverable, a principal must review it because the removal cannot be undone.
 
-The greenfield collapse: if the source is **empty**, there is no data to move — the whole thing
-collapses to a clean **Mechanism 1** additive create (+ a clean subtractive drop). Prove the source
-is empty first.
+The empty-source case: if the source is **empty**, there is no data to move — the whole staged
+shape collapses to a clean additive create (plus a clean subtractive drop). Prove the source is
+empty first.
 
 ## The conservation proof that licenses the subtractive drop
 
@@ -52,18 +54,19 @@ but always a conservation/totality check:
 - **merge (cardinality leg)** → **absorbed rows == distinct parents.** A merge silently *assumes*
   1:1; on actual 1:many a naive copy keeps one row per parent and drops the rest — and a value-hash
   will **not** catch it, because it only compares the rows that survived. Prove the **row-count**
-  first, before any copy. Unequal counts = STOP; this is a design decision, not a mechanism flip.
+  first, before any copy. Unequal counts = STOP; this is a design decision, not a matter of how the
+  change ships.
 - **archive** → **source-count + archive-count == original total** (no row lost, none duplicated),
   each batch commits (transaction log stays bounded).
 - **extract-to-lookup** → **total mapping, zero unmapped:**
   `SELECT DISTINCT <oldcol> FROM <t> WHERE <oldcol> NOT IN (SELECT Code FROM <lookup>)` returns
-  **zero rows** before the old column drops. One unmapped value silently becomes NULL or vetoes
+  **zero rows** before the old column drops. One unmapped value silently becomes NULL, or blocks
   the FK.
 - **delete-attribute (4-phase)** → prove the column is genuinely dead: stop-writes phase +
   `sys.dm_sql_referencing_entities` shows nothing reads it, before the irreversible drop.
 
-The `BlockOnPossibleDataLoss` veto on the drop phase is **the gate being conservative** — it
-refuses because SSDT cannot know your copy already succeeded. The veto is the *licensing gate*; the
+The `BlockOnPossibleDataLoss` block on the drop phase is **the gate being conservative** — SSDT
+refuses because it cannot know the copy already succeeded. The block is the *licensing gate*; the
 conservation proof is what earns the license.
 
 ## The ops this governs (and their distinguishing proof)
@@ -81,8 +84,8 @@ conservation proof is what earns the license.
 
 ## Prove it (pointer, not a re-scaffold)
 
-For the publish loop that runs each phase and shows the Phase-3 veto, see
-`../../prove-on-dacpac/SKILL.md`. For the order-independent content-hash oracle (the BEFORE/AFTER
+For the publish loop that runs each phase and shows the Phase-3 drop being blocked, see
+`../../prove-on-dacpac/SKILL.md`. For the order-independent content-hash check (the BEFORE/AFTER
 equality that licenses the drop) and the row-count / mapping probes, see
 `../../talk-to-local-sql/SKILL.md`.
 

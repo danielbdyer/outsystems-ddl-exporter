@@ -96,7 +96,7 @@ GO
 ----------------------------------------------------------------------------------------------
 -- dbo.Customer — make-mandatory FLIP seed.
 --   Rows 1,2,4 have Email populated; rows 3 and 5 have Email NULL. The NULLs are what make
---   `Email NOT NULL` veto under Strict (self-test prompt 1). Seed with zero NULLs to prove the
+--   `Email NOT NULL` is blocked under Strict (self-test prompt 1). Seed with zero NULLs to prove the
 --   same edit publishes clean (self-test prompt 2).
 --   ContactPhone is populated so the rename proof has data to lose if the refactorlog is missing.
 ----------------------------------------------------------------------------------------------
@@ -131,12 +131,12 @@ SET IDENTITY_INSERT dbo.Customer OFF;
 GO
 
 ----------------------------------------------------------------------------------------------
--- dbo.Product — Ambitious Narrowing + add-unique FLIP seed.
+-- dbo.Product — narrowing + add-unique FLIP seed.
 --   'STANDARD-SKU-001' is 16 chars > 10 -> narrowing Code to NVARCHAR(10) truncates -> Strict
---     data-loss veto (self-test prompt 5). MAX(LEN(Code)) probe predicts it.
+--     data-loss block (self-test prompt 5). MAX(LEN(Code)) probe predicts it.
 --   The two 'DUPE' rows share Code -> add-unique on Code fails the unique index build on the dupe.
 ----------------------------------------------------------------------------------------------
---   LegacyCode (populated, NOT NULL) is the delete-attribute veto column (COL-09); CategoryId
+--   LegacyCode (populated, NOT NULL) is the column whose data blocks a delete-attribute (COL-09); CategoryId
 --   references dbo.Category (seeded above) and is what makes STA-04N's hard-DELETE orphan real.
 --   Neither column touches Code, so narrow (COL-06) and add-unique (CON-02) are unaffected.
 SET IDENTITY_INSERT dbo.Product ON;
@@ -166,9 +166,9 @@ SET IDENTITY_INSERT dbo.Product OFF;
 GO
 
 ----------------------------------------------------------------------------------------------
--- dbo.[Order] — Forgotten FK Check FLIP seed.
+-- dbo.[Order] — orphan foreign-key FLIP seed.
 --   Orders 1-3 reference real Customers (1,2,4). Order 4 references CustomerId 999 which has NO
---   matching Customer -> ORPHAN. Adding a clean FK Order.CustomerId -> Customer.Id vetoes on
+--   matching Customer -> ORPHAN. Adding a clean FK Order.CustomerId -> Customer.Id is blocked by
 --   this orphan at deploy (self-test prompt 4). All StatusId values reference seeded Status rows.
 ----------------------------------------------------------------------------------------------
 --   StatusText (free text) is the extract-to-lookup SOURCE (STA-03): every value maps to a
@@ -232,7 +232,7 @@ GO
 
 ----------------------------------------------------------------------------------------------
 -- dbo.OrderLine — 2-3 lines per Order (deep FK graph) for define-pk composite (KEY-01) and the
---   Order->OrderLine cascade blast radius (KEY-04). Only real Orders (1..4) get lines. The
+--   Order->OrderLine cascade reach (KEY-04). Only real Orders (1..4) get lines. The
 --   (OrderId, LineNumber) pairs are UNIQUE so the composite-PK claim holds. Seeds AFTER Order.
 ----------------------------------------------------------------------------------------------
 SET IDENTITY_INSERT dbo.OrderLine ON;

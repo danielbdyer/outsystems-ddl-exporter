@@ -8,17 +8,19 @@
   WHAT THIS TABLE EXERCISES
   -------------------------
   - narrow (Ambitious Narrowing): edit `Code NVARCHAR(50)` to `Code NVARCHAR(10)`. The
-    over-length seed row would truncate, so Strict VETOES on possible data loss. A
-    MAX(LEN(Code)) probe PREDICTS the veto before you even build (see talk-to-local-sql).
-    Empty / all-short -> Mechanism 1. Over-length present -> Mechanism 3 or 5 (reconcile first),
-    Tier 3 (data change). (self-test prompt 5.)
+    over-length seed row would truncate, so Strict blocks the deployment on possible data loss.
+    A MAX(LEN(Code)) probe predicts the block before any build (see talk-to-local-sql).
+    Empty or all-short: ships as a single schema change, applied in place. Over-length present:
+    it ships as one release — a pre-deployment script reconciles the over-length values first,
+    then the narrowing lands validated — or staged across releases if the data must be
+    preserved. A dev lead must review this: existing data is modified. (self-test prompt 5.)
 
   - add-unique on Code: add CONSTRAINT UQ_Product_Code UNIQUE (Code) (or a unique index). With a
-    duplicate Code in the seed, the unique index build FAILS on the dupe. The remedy is a
-    pre-deploy dedupe. Dupes present vs absent flips the bucket. See
+    duplicate Code in the seed, the unique index build fails on the duplicate. The remedy is a
+    pre-deployment dedupe. Duplicates present vs. absent flips how the change ships. See
     skills/operations/constraints.md.
 
-  Code is intentionally non-unique below — adding uniqueness is the change you prove.
+  Code is intentionally non-unique below — adding uniqueness is the change being proved.
 */
 
 CREATE TABLE dbo.Product

@@ -18,7 +18,7 @@
    prove the wrong thing. **Fix: each executor edits only its OWN scratch copy.** The authored
    tree is never written.
 2. **Shared DB publish collision.** `sqlpackage /Action:Publish` mutates a whole database. Two
-   executors publishing to one DB would interleave DDL, see each other's veto, and corrupt each
+   executors publishing to one DB would interleave DDL, see each other's block, and corrupt each
    other's BEFORE/AFTER hashes. **Fix: a UNIQUE database name per executor**, passed as
    `/TargetDatabaseName:PG_<testId>_<rand>` on every `sqlpackage` call — this OVERRIDES the
    profile's `Initial Catalog`, so no two executors ever share a DB.
@@ -30,10 +30,12 @@ The warm container itself is shared on purpose (warming it per-executor would be
 trip survival rule 2). Isolation lives at the **database** and **filesystem-copy** grain, not
 the instance grain.
 
-## 0 — The runtime shim (REQUIRED on this machine, every shell)
+## 0 — The runtime environment (REQUIRED, every shell)
 
-`sqlpackage` is a .NET-8 dotnet tool on a .NET-9 box at a non-standard path. Export these in
-**every** shell you call `sqlpackage` from, or it fails to start:
+`sqlpackage` is a .NET-8 dotnet tool and must find a runtime before it starts. The block below is
+**one developer's box** — a .NET-8 tool on a .NET-9 runtime at a non-standard Windows path,
+invoked from Git Bash — kept verbatim as the worked example. Export its equivalents in **every**
+shell you call `sqlpackage` from, or it fails to start:
 
 ```bash
 export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
@@ -51,6 +53,31 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 
 (`MSYS_NO_PATHCONV=1` keeps Git Bash from mangling the `/opt/...` path and the `/Action:` /
 `/SourceFile:` switches.)
+
+**The portable form (any box that is not that one).** Three concerns settle the setup — a runtime
+for the tool, `sqlpackage` on the path, and Git Bash's path rewriting — and each resolves
+differently off Windows. On Linux or macOS:
+
+```bash
+export DOTNET_ROOT=/root/.dotnet        # or wherever the local dotnet root is
+export DOTNET_ROLL_FORWARD=Major        # still needed: a .NET-8 tool on a newer (.NET-9) runtime
+# sqlpackage is expected on PATH — a global `dotnet tool install` puts it there; no absolute .exe path
+# no MSYS_NO_PATHCONV off Git Bash — it only stops Git Bash rewriting /Action: and /opt/... paths, and is inert elsewhere
+```
+
+Stated plainly: point `DOTNET_ROOT` at the real dotnet root, put `sqlpackage` on PATH, and drop
+`MSYS_NO_PATHCONV` on any shell that is not Git Bash. The rest of this protocol — the
+`docker exec ... sqlcmd` line, every `/Action:` switch, every `/TargetDatabaseName:"$DB"` — is
+identical on every box.
+
+**Reading the result of a publish — never trust `$?` alone.** A blocked `sqlpackage` publish does
+not reliably exit non-zero. Piped through `| tail`, or any pipeline, the shell reports the exit
+status of the pipe's last stage, so a blocked publish reads as exit 0 and a naive `$?` check calls
+it a success. The block lives in the **text**, not the exit code: parse the output for `Could not
+deploy package` (and the `Msg` / `BlockOnPossibleDataLoss` lines beneath it), and treat that
+string — never `$?` — as the signal that the deployment was blocked. This matters most at §6 step
+3 (the block check) and at the make-mandatory gate, where the whole finding turns on whether the
+publish was blocked.
 
 ## 1 — Pick your identity (do this first, once)
 
@@ -133,30 +160,33 @@ CDC-enabled), edit `$SCRATCH/Data/Seed.sql` (or run a one-off `docker exec` SQL 
      /OutputPath:"$SCRATCH/bin/delta.sql"
    ```
    Read `$SCRATCH/bin/delta.sql` — your private artifact. Look for DROP+CREATE on a rename
-   (Naked Rename — STOP), a shadow-table rebuild, the table-has-rows `IF EXISTS(...) RAISERROR`
-   guard before an `ALTER COLUMN ... NOT NULL`, drop-by-absence.
-3. **Veto check (Strict)** — publish to `$DB`. Clean = Mechanism 1; veto (`BlockOnPossibleData
-   Loss` / NOT NULL on rows / truncation / orphan FK / duplicate key) = the data flipped the
-   bucket. The veto text + row counts are your proof.
-4. **On veto only**: snapshot the data-hash (see `talk-to-local-sql` — per-row `SHA2_256(FOR
+   (a rename with no refactorlog entry — STOP, that loses the column's data), a shadow-table
+   rebuild, the table-has-rows `IF EXISTS(...) RAISERROR` guard before an `ALTER COLUMN ... NOT
+   NULL`, drop-by-absence.
+3. **Block check (Strict)** — publish to `$DB`. A clean publish means the change ships as a single
+   schema change applied in place — no data is read or written. A blocked publish
+   (`BlockOnPossibleDataLoss` / NOT NULL on rows / truncation / orphan FK / duplicate key) means
+   the data forces a different shape. The block text + row counts are your proof.
+4. **On a block only**: snapshot the data-hash (see `talk-to-local-sql` — per-row `SHA2_256(FOR
    XML RAW)` summed order-independently), publish with `ProvingGround.Permissive.publish.xml`
    (still `/TargetDatabaseName:$DB`), snapshot again, diff — that diff is exactly what
    `GenerateSmartDefaults` stamped / what truncated.
 5. **Author the remedy** in `$SCRATCH` (a `Script.PreDeployment.sql` backfill, a `.refactorlog`
    entry, a staged NOCHECK->reconcile->`WITH CHECK CHECK`, a pre-deploy dedupe), rebuild, re-run
-   the Strict veto check. The clean Strict re-run is the proof you hand the developer.
+   the Strict block check. The clean Strict re-run is the proof you hand the developer.
 
 Every command above names `$SCRATCH` for the file and `/TargetDatabaseName:$DB` for the
 database. There is no path into shared state.
 
 > **The make-mandatory caveat (COL-03 / COL-03C).** The Strict re-run after a backfill does NOT
 > go clean on a populated table — the guard is table-has-rows, not column-has-NULLs. Do not
-> treat the persisting veto as a protocol failure: re-run the NULL probe to prove 0 NULLs
-> remain, confirm the column stayed nullable, and record that the gate still vetoed. THAT pair
-> of facts (0 NULLs AND still-vetoed) is the proof the case demands. Then prove the chosen
-> remedy — a named `BlockOnPossibleDataLoss` relaxation in a script step (Permissive-equivalent
-> scoped to this one change, after the zero-NULL proof) or a multi-phase restructure — actually
-> lands the `NOT NULL`. The empty-table twin (COL-03B) is the only leg that goes clean Mechanism 1.
+> treat the persisting block as a protocol failure: re-run the NULL probe to prove 0 NULLs
+> remain, confirm the column stayed nullable, and record that the deployment is still blocked.
+> THAT pair of facts (0 NULLs AND still-blocked) is the proof the case demands. Then prove the
+> chosen remedy — a named `BlockOnPossibleDataLoss` relaxation in a script step
+> (Permissive-equivalent scoped to this one change, after the zero-NULL proof) or a multi-phase
+> restructure — actually lands the `NOT NULL`. The empty-table case (COL-03B) is the only leg
+> that publishes clean as a single in-place schema change.
 
 ## 7 — ON EXIT (success OR failure) — tear down, idempotently
 

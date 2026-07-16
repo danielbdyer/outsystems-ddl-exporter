@@ -5,7 +5,10 @@ description: Use when the developer says "add an optional attribute", "add a Mid
 
 # Add optional attribute
 
-> **Default (provisional — the data decides).** Mechanism 1 Pure Declarative, single-phase, Tier 1 — purely additive, existing rows just get NULL.
+> **Default (provisional — the data decides).** Any team member can review this: the change is
+> additive and the running application is unaffected. Ships as a single schema change, applied in
+> place — existing rows just get NULL, no data is read or written. Prove it on a disposable copy
+> before classifying.
 
 ## OutSystems phrasing
 "add an optional attribute", "add a MiddleName field, it can be blank".
@@ -17,25 +20,66 @@ the `ALTER` — edit the CREATE.
 
 ## The named trap
 None material at the data layer. The one edge: if `IgnoreColumnOrder=False` a mid-table insert
-can trigger a rebuild — the proving-ground profiles keep `IgnoreColumnOrder=True`, so position is
-a non-issue.
+can trigger a rebuild — the publish profiles keep `IgnoreColumnOrder=True`, so position is a
+non-issue.
 
 ## How it flips (the specifics only)
-- any table state (empty or populated) → **M1, single-phase, Tier 1** (NULL is always a valid existing-row value)
-- table is CDC-enabled and the new column must be tracked → the capture instance does not include it → **M4/M5 + +1 Tier**, recreate the capture instance (see `../../_index/cdc/SKILL.md`)
+- any table state (empty or populated) → ships as a single schema change, applied in place; any team
+  member can review it — the change is additive and the running application is unaffected (NULL is
+  always a valid existing-row value).
+- table is CDC-enabled and the new column must be tracked → the capture instance does not include the
+  new column, so it ships as a scripted change: the capture instance is recreated to include it,
+  which cannot be expressed as a table definition. Added scrutiny: the table feeds a
+  change-data-capture stream, so the capture instance is frozen to the table's current columns and
+  needs handling (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
-Strict publish succeeds clean; the delta is a single `ALTER TABLE ... ADD ... NULL`; no veto
-regardless of row count. That clean run on a populated copy is the whole proof. For the publish
-loop, see `../../prove-on-dacpac/SKILL.md`.
+Strict publish succeeds clean; the delta is a single `ALTER TABLE ... ADD ... NULL`; the deployment
+is never blocked, regardless of row count. That clean run on a populated copy is the whole proof. For
+the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 
-## Verdict to the developer
-"Adding an optional attribute is the safest change there is — existing rows just get NULL. I
-proved it publishes clean on a copy of your populated table. Pure Declarative, single-phase,
-Tier 1."
+## The verdict (to the developer)
+You asked to add an optional attribute — the safest change in the catalog. On a disposable copy of
+your populated data, SSDT just runs `ALTER TABLE ... ADD ... NULL`, and existing rows simply get
+NULL, so nothing already in the table can conflict with it. It published clean and nothing was lost.
+There's nothing to decide here; it's ready to ship.
 
-## Teach it (the graduation)
-An optional add never vetoes because NULL is always a valid existing-row value — the
-discriminator is whether existing rows *can already satisfy the new rule*, which is exactly why
-the *mandatory* sibling is a different animal. Watch only the CDC case (see
-`../../_index/cdc/SKILL.md`). Fail mode avoided: fearing additive columns and mis-locating the risk.
+## The reasoning (in conversation)
+An optional add never gets blocked, because NULL is always a valid value for the rows already in the
+table. What decides whether a change like this flips is whether the existing rows can already satisfy
+the new rule — which is exactly why making a column *mandatory* is the harder sibling: the rows
+already there may not satisfy it. The only case to watch here is CDC (see `../../_index/cdc/SKILL.md`).
+The mistake to avoid is fearing additive columns and putting the risk in the wrong place — for an
+optional add the only real risk is the CDC edge, not the column itself.
+
+## On the record
+Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+
+**Review & release**
+- Any team member can review this: the change is additive and the running application is unaffected.
+- Ships as a single schema change, applied in place. No data is read or written.
+- Added scrutiny: none, unless the table is CDC-tracked — then it feeds a change-data-capture stream,
+  the capture instance is frozen to the table's current columns, and the new column must be added to
+  the capture instance (see `../../_index/cdc/SKILL.md`).
+
+**Verification** — run in each environment after deployment
+```sql
+-- expect 1 row, is_nullable = 1: the optional column landed and accepts NULL
+SELECT name, is_nullable
+FROM sys.columns
+WHERE object_id = OBJECT_ID('dbo.<table>') AND name = '<column>';
+```
+
+**Rollback**
+Remove the column from the `CREATE TABLE` and republish; SSDT emits
+`ALTER TABLE <table> DROP COLUMN <column>;`. Lossless only while the column is unwritten — every row
+holds NULL at deploy; once the application writes values into it, dropping the column discards them.
+
+**Not verified**
+- Application impact — a nullable add does not change existing application behaviour, but any code
+  intended to populate the new column is not exercised by the disposable copy (@app-owner).
+- Production scale and timing — the add is metadata-only on modern SQL Server with
+  `IgnoreColumnOrder=True`; that it stays metadata-only at production row counts and on the target's
+  edition and version is not confirmed by the small copy.
+- Reversibility — the forward add is proven; once values are written into the column, dropping it is
+  lossy (see Rollback).

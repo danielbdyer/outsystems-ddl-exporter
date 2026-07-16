@@ -1,20 +1,20 @@
 ---
 name: confirm-intent
-description: Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that table"). Disambiguates the request into exactly one op-slug (a skills/op/<op-slug>/ directory), surfaces the implicit SSDT destination the developer didn't say out loud, gathers the four data-state variables that decide the mechanism, and pre-flags the governing skills/_index/ concern. Hands a structured change-order naming the op-slug + its per-op skill downstream. Does NOT edit SQL or classify.
+description: Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that table"). Disambiguates the request into exactly one op-slug (a skills/op/<op-slug>/ directory), surfaces the implicit SSDT destination the developer didn't say out loud, gathers the four data-state variables that decide how the change ships and who must review it, and pre-flags the governing skills/_index/ concern. Hands a structured change-order naming the op-slug + its per-op skill downstream. Does NOT edit SQL or classify.
 ---
 
 # Confirm intent
 
 > **Why this (and what it teaches).** Intake comes first because **the wrong operation proven
 > perfectly is still wrong** — intent is the one thing the data can never correct for you. The
-> proving ground can tell you whether a column has NULLs; it cannot tell you that the developer
-> meant *widen* when they said "change the email field." What this teaches: every schema change
-> begins by restating the request in the developer's own words *and* in the table's terms, so a
-> misunderstanding surfaces before any data is touched — the discriminator is "can I say this back
-> in both vocabularies without guessing?" Surface this reasoning to the developer: a developer who
-> learns that intake is disambiguation, not paperwork, starts stating the *destination* they want
-> rather than the *journey* they imagine — that is the graduation from describing migrations to
-> describing destinations.
+> disposable copy of Dev can tell you whether a column has NULLs; it cannot tell you that the
+> developer meant *widen* when they said "change the email field." What this teaches: every schema
+> change begins by restating the request in the developer's own words *and* in the table's terms,
+> so a misunderstanding surfaces before any data is touched — the discriminator is "can I say this
+> back in both vocabularies without guessing?" Surface this reasoning to the developer: a developer
+> who learns that intake is disambiguation, not paperwork, starts stating the *destination* they
+> want rather than the *journey* they imagine — the move from describing migrations to describing
+> destinations.
 
 You are helping an **OutSystems-native developer** make a safe schema change. They think in
 **entities, attributes, references, and static entities** — the Service Studio vocabulary. You
@@ -23,7 +23,7 @@ it is to make sure you and the developer mean the same thing, and to learn the o
 `.sql` text can never tell you: **what the data looks like.**
 
 Nothing downstream is trustworthy if intake is wrong. A misnamed operation classifies the wrong
-way; a missing data-state variable hides a veto you'll only meet at deploy. Slow down here.
+way; a missing data-state variable hides a refusal you'll only meet at deploy. Slow down here.
 
 ## What you produce
 
@@ -35,15 +35,15 @@ A **change-order** — a small structured handoff for `classify-mechanism`:
 - **outSystemsPhrasing**: the developer's own words, verbatim — you'll echo these back later.
 - **target**: the table + column/constraint the destination edit lands on.
 - **destination**: the *implicit* SSDT meaning (what the CREATE will say after the edit).
-- **stateVariables**: the four flips, each `known`/`unknown` (unknown ones get proven, not guessed).
+- **stateVariables**: the four state-variables, each `known`/`unknown` (unknown ones get proven, not guessed).
 - **sharedConcern**: the governing `skills/_index/<concern>/SKILL.md` you pre-flagged (a rename →
   `identity-and-refactorlog`; a tightening → `tightening-class`; anything on a CDC table → `cdc`;
   a constraint → `constraint-is-a-claim`; a coexistence restructure → `multi-phase`; a seed →
   `idempotent-seed`). Optional but valued — it lets the change-author open the right WHY first.
 - **notes**: anything ambiguous you resolved, and how.
 
-You do **not** edit any `.sql` and you do **not** assign a Mechanism or Tier. That is the next
-skill's job.
+You do **not** edit any `.sql`, and you do **not** decide how the change ships or who must review
+it — that is `classify-mechanism`'s job.
 
 ## Step 1 — name exactly one operation
 
@@ -70,18 +70,18 @@ Two disambiguations the table now forces you to make (the op split lives here, n
 | The developer says (OutSystems) | op-slug | the op skill | The implicit SSDT destination |
 |---|---|---|---|
 | "add an attribute" / "new optional field" | `add-optional` | `skills/op/add-optional/SKILL.md` | new **nullable** column on the CREATE |
-| "add a required attribute" | `add-mandatory` | `skills/op/add-mandatory/SKILL.md` | new `NOT NULL` column **+ DEFAULT** (or it vetoes) |
+| "add a required attribute" | `add-mandatory` | `skills/op/add-mandatory/SKILL.md` | new `NOT NULL` column **+ DEFAULT** (or SSDT refuses it) |
 | "tick Mandatory" / "make it required" | `make-mandatory` | `skills/op/make-mandatory/SKILL.md` | existing column `NULL -> NOT NULL` |
 | "untick Mandatory" / "make it optional" | `make-optional` | `skills/op/make-optional/SKILL.md` | existing column `NOT NULL -> NULL` |
 | "make the field bigger" / "allow longer text" | `widen` | `skills/op/widen/SKILL.md` | `NVARCHAR(n) -> NVARCHAR(m)`, m>n |
 | "shorten it" / "limit to N chars" | `narrow` | `skills/op/narrow/SKILL.md` | `NVARCHAR(n) -> NVARCHAR(m)`, m<n (**Ambitious Narrowing**) |
 | "change to a bigger number" / "INT to BIGINT" (widening) | `retype-implicit` | `skills/op/retype-implicit/SKILL.md` | in-place `ALTER COLUMN` (lossless) |
 | "store the text as a date/number now" (reshaping) | `retype-explicit` | `skills/op/retype-explicit/SKILL.md` | add-new -> `TRY_CONVERT` -> drop-old (lossy) |
-| "rename the attribute" | `rename-attribute` | `skills/op/rename-attribute/SKILL.md` | `sp_rename` via refactorlog (**Naked Rename** if missing) |
+| "rename the attribute" | `rename-attribute` | `skills/op/rename-attribute/SKILL.md` | `sp_rename` via refactorlog (without the entry, a data-losing DROP+CREATE) |
 | "remove this attribute" / "delete the field" | `delete-attribute` | `skills/op/delete-attribute/SKILL.md` | drop column (4-phase deprecation) |
 | "new entity" / "create a table" | `create-entity` | `skills/op/create-entity/SKILL.md` | new `CREATE TABLE` |
-| "rename the entity" | `rename-entity` | `skills/op/rename-entity/SKILL.md` | `sp_rename` table via refactorlog (**Naked Rename**) |
-| "delete the entity" / "drop the table" | `delete-entity` | `skills/op/delete-entity/SKILL.md` | `DROP TABLE` (data-loss veto; disable CDC + drop FKs first) |
+| "rename the entity" | `rename-entity` | `skills/op/rename-entity/SKILL.md` | `sp_rename` table via refactorlog (without the entry, a data-losing DROP+CREATE) |
+| "delete the entity" / "drop the table" | `delete-entity` | `skills/op/delete-entity/SKILL.md` | `DROP TABLE` (blocked on data loss; disable CDC + drop FKs first) |
 | "move it to another module/schema" | `move-schema` | `skills/op/move-schema/SKILL.md` | `ALTER SCHEMA TRANSFER` or refactorlog |
 | "archive old rows out" | `archive-entity` | `skills/op/archive-entity/SKILL.md` | batched move to an archive table (multi-phase) |
 | "make this many-to-many" / "a bridge entity" | `junction` | `skills/op/junction/SKILL.md` | bridge table, composite PK over two FKs |
@@ -114,7 +114,7 @@ Two disambiguations the table now forces you to make (the op split lives here, n
 | "full history on a NEW entity" | `temporal-new` | `skills/op/temporal-new/SKILL.md` | `SYSTEM_VERSIONING=ON` from birth (declarative) |
 | "add history to an EXISTING populated entity" | `temporal-convert` | `skills/op/temporal-convert/SKILL.md` | multi-phase: period cols + backfill + enable versioning |
 | "CreatedBy/CreatedOn/ModifiedBy/ModifiedOn" | `audit-columns` | `skills/op/audit-columns/SKILL.md` | nullable = M1; NOT NULL on populated = backfill |
-| "turn on Change Data Capture" / "change feed for ETL" | `enable-cdc` | `skills/op/enable-cdc/SKILL.md` | **Script-Only**, not declarative (**CDC Surprise**, +1 Tier) |
+| "turn on Change Data Capture" / "change feed for ETL" | `enable-cdc` | `skills/op/enable-cdc/SKILL.md` | **Script-Only**, not declarative (**CDC Surprise** — adds review scrutiny) |
 | "CDC isn't picking up my new column" | `recreate-capture-instance` | `skills/op/recreate-capture-instance/SKILL.md` | capture-instance recreate / dual-instance |
 | "just tell me WHICH rows changed" (mobile sync) | `change-tracking` | `skills/op/change-tracking/SKILL.md` | change tracking (lighter than CDC, all editions) |
 
@@ -124,7 +124,7 @@ destination edit may be out of your control; flag it and stop.
 
 **The op skill IS the change-author's entry.** The op-slug you name resolves to
 `skills/op/<op-slug>/SKILL.md` — that per-op skill is the exact file the change-author will open
-for the DEFAULT mechanism, the How-it-flips table, and the verdict; the `_index` skill(s) it points
+for its provisional default, the How-it-flips table, and the verdict; the `_index` skill(s) it points
 to carry the shared WHY. Because each per-op skill's frontmatter `description` is written in the
 developer's own words, matching the phrasing IS the dispatch: if their sentence reads like a
 description trigger, hand that slug with confidence.
@@ -148,12 +148,12 @@ This is the team's doctrine in action: **"Stop writing migrations. Start describ
 > get there. What this teaches: the moment you can name the destination in table terms
 > (`NULL -> NOT NULL`, `NVARCHAR(10)`), you have separated *what the developer wants* from *how the
 > engine will achieve it* — and only the first is yours to confirm. Surface this so the developer
-> hears their checkbox restated as a column shape; that translation is what graduates them from
+> hears their checkbox restated as a column shape; that translation is what moves them from
 > thinking in Service Studio gestures to thinking in durable destinations.
 
 ## Step 3 — gather the four state-variables (the part the text can't tell you)
 
-The **same operation lands in a different mechanism depending on the data.** You must establish
+The **same operation ships a different way depending on the data.** You must establish
 these four before classification. Ask the developer what they know; mark the rest **unknown** —
 `prove-on-dacpac` will determine the unknowns against real-shaped data. Never guess them, and
 never take a remembered row count as proof.
@@ -163,7 +163,7 @@ never take a remembered row count as proof.
    new FK, over-length values for a narrow, duplicates for a unique. This is the variable that
    flips a one-line edit into a backfill.
 3. **Is the table CDC-enabled, and is a no-gap capture required?** (CDC is the team's biggest
-   tripwire — it adds +1 Tier and can force a multi-phase rollout.)
+   tripwire — it adds review scrutiny and can force a multi-phase rollout.)
 4. **Must old and new application code coexist during rollout?** — i.e. is there a window where
    the running OutSystems app and the new schema have to both work? (Forces phasing.)
 
@@ -173,12 +173,12 @@ otherwise `unknown`, to be proven.
 
 > **Why this (and what it teaches).** You gather these four — and honestly mark the unknowns —
 > because **we prove, we don't advise**: the `.sql` text and the developer's recollection both
-> *look* like answers, but only the data on the proving ground casts the deciding vote. What this
+> *look* like answers, but only the data on a disposable copy of Dev settles it. What this
 > teaches: whenever the same edit could behave differently depending on what's already in the
 > table, the row state is a question to *prove*, never a fact to *assume* — `unknown` is the
 > honest default, not a gap. Surface this to the developer: a developer who learns that "I think
-> it's clean" is a hypothesis, not a proof, stops being surprised by deploy-time vetoes — that is
-> the graduation toward judgment.
+> it's clean" is a hypothesis, not a proof, stops being surprised by deploy-time refusals — that
+> is judgment forming.
 
 ## Step 4 — hand off
 
@@ -193,7 +193,7 @@ delivered back in their words, and so the change-author opens the right per-op s
 Intake is where these get caught early (full catalog: handbook file 16 = §19). Each trap is OWNED
 by an `_index` concern — pre-flag the owner, don't re-explain the trap:
 
-- **Naked Rename** — a "rename" with no refactorlog becomes DROP+CREATE = silent data loss.
+- **A rename with no refactorlog entry** becomes DROP+CREATE = silent data loss.
   Flag rename ops now (`_index/identity-and-refactorlog`) so `prove-on-dacpac` reads the delta for it.
 - **Optimistic NOT NULL** — "make it required" with no thought to existing rows. The whole point
   of step 3.2; owned by `_index/tightening-class` (the guard is table-has-rows, not NULL-has-rows).
@@ -212,13 +212,13 @@ you are routing to its owner. The six concerns and their triggers:
 | `make-mandatory`, `narrow`, `delete-attribute`, the NOT-NULL face of `add-mandatory`/`audit-columns` | `skills/_index/tightening-class/SKILL.md` (table-has-rows, data-blind guard) |
 | `rename-entity`, `rename-attribute`, `move-schema`, `move-attribute`, `compat-view` | `skills/_index/identity-and-refactorlog/SKILL.md` (identity ≠ name) |
 | `split-table`, `merge-tables`, `move-attribute`, `extract-to-lookup`, `archive-entity`, `retype-explicit`, `temporal-convert`, `delete-attribute` (4-phase) | `skills/_index/multi-phase/SKILL.md` (old + new coexist; conservation proof) |
-| `enable-cdc`, `recreate-capture-instance`, `change-tracking`, **any op on a CDC-enabled table** | `skills/_index/cdc/SKILL.md` (the +1 tripwire, frozen capture shape) |
+| `enable-cdc`, `recreate-capture-instance`, `change-tracking`, **any op on a CDC-enabled table** | `skills/_index/cdc/SKILL.md` (the added-scrutiny tripwire, frozen capture shape) |
 | `define-pk`, `create-fk-clean`, `create-fk-orphan`, `add-unique`, `add-check`, `toggle-trust`, `modify-index`→unique | `skills/_index/constraint-is-a-claim/SKILL.md` (a constraint is a data claim) |
 | `create-static-seed`, `edit-seed`, `delete-seed-value`, the seed leg of `extract-to-lookup`, the no-op redeploy | `skills/_index/idempotent-seed/SKILL.md` (guarded MERGE, silence is the proof) |
 
 A change on a **CDC-enabled table** always pre-flags `_index/cdc` *in addition to* the op's own
-concern — the +1 rides on top of the base op (that is the whole `TRAP-01N` lesson). Put the flagged
-concern in the change-order's `sharedConcern` field.
+concern — the added scrutiny rides on top of the base op (that is the whole `TRAP-01N` lesson).
+Put the flagged concern in the change-order's `sharedConcern` field.
 
 ## Connector points
 
