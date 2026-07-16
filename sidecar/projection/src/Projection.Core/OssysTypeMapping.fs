@@ -2,8 +2,8 @@ namespace Projection.Core
 
 /// The OutSystems(OSSYS) → V2 type correspondence (recon #10). These are
 /// *decisions*, not translations — the 2000-char `(MAX)` threshold, the
-/// `currency → DECIMAL(37,8)` choice, the IMPOSED V1-parity `email`/`phone`
-/// widths, the `longinteger → BIGINT` / `datetime → DATETIME` (legacy, not
+/// `currency → DECIMAL(37,8)` choice, the platform-native `email`/`phone`
+/// `NVARCHAR(250)/(20)` (WP-4), the `longinteger → BIGINT` / `datetime → DATETIME` (legacy, not
 /// `DATETIME2`) collapses — so they belong in Core next to `SqlTypeCorrespondence`,
 /// where they are property-testable WITHOUT an OSSYS fixture and reusable by a
 /// second source adapter (the rowset reader, a future XML reader). The adapter's
@@ -76,13 +76,20 @@ module OssysTypeMapping =
         | "image"          -> Some (Binary, SqlStorageType.Image)
         | "longtext"       -> Some (Text, SqlStorageType.NVarChar Max)
         | "text"           -> Some (Text, SqlStorageType.NVarChar (textLength length))
-        // IMPOSED V1-parity widths (F11). With no declared length, `email`/`phone`
-        // carry V1's default budgets (250 / 20) rather than `(MAX)` — a faithful
-        // V1-parity inference, NOT a source-declared fact: an explicit declared
-        // length always wins (`boundedOr`).
-        | "email"          -> Some (Text, SqlStorageType.VarChar (boundedOr (Bounded 250) length))
+        // WP-4 (DECISIONS 2026-07-16; register C3). `email`/`phone` map to
+        // NVARCHAR — the PLATFORM-NATIVE storage (modeled `ossys_User.EMAIL` is
+        // on-disk `nvarchar(250)`; the handbook's guidance is "Email, Phone
+        // Number → NVARCHAR(n)"; `notes/note14.md` names "Using VARCHAR for
+        // User Text" an anti-pattern). The prior ANSI `VARCHAR` was an imposed
+        // V1-parity inference that left two ANSI islands in an otherwise
+        // NVARCHAR schema (collation/codepage sensitivity, implicit-conversion
+        // risk, non-Latin truncation) — and V2's text literals already emit as
+        // `N'…'`, so NVARCHAR is also the consistent carrier. The default width
+        // budgets (250 / 20) stay; an explicit declared length always wins
+        // (`boundedOr`).
+        | "email"          -> Some (Text, SqlStorageType.NVarChar (boundedOr (Bounded 250) length))
         | "phonenumber" | "phone" ->
-            Some (Text, SqlStorageType.VarChar (boundedOr (Bounded 20) length))
+            Some (Text, SqlStorageType.NVarChar (boundedOr (Bounded 20) length))
         | "url" | "password" | "username" | "identifiertext" ->
             Some (Text, SqlStorageType.NVarChar (textLength length))
         | "guid" | "uniqueidentifier" -> Some (Guid, SqlStorageType.UniqueIdentifier)

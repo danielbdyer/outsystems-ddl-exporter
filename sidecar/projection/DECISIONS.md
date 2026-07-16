@@ -27744,3 +27744,42 @@ index / golden / fidelity / physical-schema suites). The Docker publish-equivale
 which re-derive PK names through the same `IndexNaming` on both emit and read-back sides, were not
 run here (no warm container in this environment) — same posture as WP-1a; a warm-container full
 sweep is the follow-up gate.
+
+## 2026-07-16 — WP-4: `email`/`phone` map to platform-native NVARCHAR (the ANSI islands close)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-4 / register C3. `OssysTypeMapping.tryParse`
+mapped the OutSystems `email`/`phone` types to ANSI `VARCHAR(250)/(20)` — a width the code itself
+branded "IMPOSED V1-parity … NOT a source-declared fact". But the platform's own storage is
+NVARCHAR (modeled `ossys_User.EMAIL` is on-disk `nvarchar(250)`; the handbook's guidance is "Email,
+Phone Number → NVARCHAR(n)"; `notes/note14.md` names "Using VARCHAR for User Text" an anti-pattern).
+The VARCHAR mapping left two ANSI islands in an otherwise-NVARCHAR schema — collation/codepage
+sensitivity, implicit-conversion risk, and possible non-Latin truncation on round-trip — and V2's
+text literals already emit as `N'…'`, so VARCHAR was also the inconsistent carrier.
+
+**The decision.** `email → NVARCHAR(250)`, `phone`/`phonenumber → NVARCHAR(20)` (the default width
+budgets unchanged; an explicit declared length still wins via `boundedOr`). One-line-per-arm change
+in `OssysTypeMapping.tryParse` (`SqlStorageType.VarChar` → `NVarChar`), the single source for these
+mappings. The `PrimitiveType` stays `Text` (unchanged), so the data plane is untouched; only the
+concrete DDL storage type widens VARCHAR→NVARCHAR (a safe widening, and NVARCHAR matches the `N'…'`
+literal form the codec already emits).
+
+**Witness.** `OssysTypeMappingTests` — the `WP-4: email/phone map to platform-native NVARCHAR …`
+case pins `NVarChar (Bounded 250)` for `email`, `NVarChar (Bounded 20)` for `phone`/`phonenumber`,
+and the declared-length override (`email (Some 50) → NVarChar (Bounded 50)`). The adapter /
+type-mapping / column-reality suites (70 pure cases) stay green.
+
+**Golden note.** No golden change. The golden corpus is catalog-direct (`GoldenCatalog` sets each
+attribute's `SqlStorage` explicitly and builds its `Email` column as a generic `Text` attribute,
+already `NVARCHAR(250)`), so it never exercised `tryParse`'s `email`/`phone` arms. WP-4 is a
+live/rowset-extraction fidelity fix (same posture as WP-1a/WP-1b): an attribute whose OSSYS
+`DataType` is literally `email`/`phone` now extracts as NVARCHAR.
+
+**Scope note / split.** WP-4 as planned had a second half — register C1's **on-disk type precedence
+for ordinary scalars** (prefer the reflected `#ColumnReality` storage over the logical mapping, with
+a named divergence diagnostic when they disagree). That is a larger, separate change to the
+type-resolution architecture: `OssysTranslation.parseSemanticTypeWithStorage` currently prefers
+deployed storage ONLY for `bt*` reference attributes, and generalizing it to ordinary scalars needs
+the divergence-diagnostic pass and a deliberate "which scalars" decision. It is SPLIT OUT as a
+follow-up (WP-4b). The email/phone ANSI-island deviation (C3) that Danny flagged is fully closed by
+this commit on its own — the logical mapping now equals platform reality, so the specific
+"deployed-NVARCHAR-vs-VARCHAR-logical" conflict no longer arises for email/phone.

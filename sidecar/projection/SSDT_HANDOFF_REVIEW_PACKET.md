@@ -250,6 +250,10 @@ brands the widths "IMPOSED V1-parity … NOT a source-declared fact" (`OssysType
 Two ANSI islands in an NVARCHAR schema = collation/codepage sensitivity, implicit-conversion
 risk, and possible non-Latin truncation on round-trip.
 *Decided (2026-07-15): planned fix — NVARCHAR(250)/(20) + on-disk precedence (WP-4).*
+*Landed (2026-07-16, WP-4): `email → NVARCHAR(250)`, `phone → NVARCHAR(20)` in
+`OssysTypeMapping.tryParse` — the ANSI islands close (the logical mapping now equals platform
+reality). The on-disk-precedence half (register C1) is split out as WP-4b (a larger type-resolution
+change). DECISIONS 2026-07-16.*
 
 **C4. `datetime` handling — the type is lane-dependent and V1 *does* cast to datetime2 in data** — [HARD] ⚑ **WP-17**
 *(This row supersedes the earlier "V1, V2 and the platform all agree on legacy DATETIME" — that
@@ -776,7 +780,8 @@ and adopting golden-diff-as-change-review going forward.
 7. `manifest.remediation.sql` build hazard + alphabetical lane order (G5).
 8. No `CREATE SCHEMA` emission (G6).
 9. Unnamed erasures: temporal/sequences/PERSISTED/ROWGUIDCOL/SPARSE/FILESTREAM. ⚑ WP-5.
-10. email/phone VARCHAR vs platform NVARCHAR. ⚑ WP-4.
+10. email/phone VARCHAR vs platform NVARCHAR. **✅ WP-4 landed** (NVARCHAR mapping); on-disk
+    precedence for ordinary scalars (C1) split out as ⚑ WP-4b.
 11. UNIQUE-constraint flattening. ⚑ WP-10. · Unnamed DF/CK anonymity. ⚑ WP-9. · Pass-through
     >128 names. ⚑ WP-11. · Composite-PK FK legs. ⚑ WP-12. · Cycle-fallback stream order. ⚑ WP-13.
     · UserReflow half-wiring. ⚑ WP-14. · Streaming re-trust. ⚑ WP-15. · Table-name collision
@@ -866,11 +871,14 @@ empty-string DEFAULT rendering (`DEFAULT ('')` platform shape vs golden `DEFAULT
 re-blessed.
 
 **WP-4 · Unicode fidelity for email/phone (C3, C1).** Map `email` → `NVARCHAR(250)`, `phone` →
-`NVARCHAR(20)` (platform-native; handbook-aligned); prefer on-disk column reality over the
-logical mapping for ordinary scalars (V1's `onDisk` precedence pattern) with a named divergence
-diagnostic when they disagree.
-*Done means:* goldens show NVARCHAR; a deployed-NVARCHAR fixture emits NVARCHAR even with a
-VARCHAR logical rule; divergence diagnostic tested.
+`NVARCHAR(20)` (platform-native; handbook-aligned) — **✅ LANDED (DECISIONS 2026-07-16)** in
+`OssysTypeMapping.tryParse`; witnessed by `OssysTypeMappingTests`. No golden change (the corpus is
+catalog-direct and already NVARCHAR via generic Text). **WP-4b (split out, open):** prefer on-disk
+column reality over the logical mapping for ordinary scalars (V1's `onDisk` precedence pattern) with
+a named divergence diagnostic when they disagree — a larger type-resolution change
+(`parseSemanticTypeWithStorage` prefers deployed storage only for `bt*` refs today).
+*Done means:* email/phone map NVARCHAR (**done**); WP-4b — a deployed-NVARCHAR fixture emits NVARCHAR
+even with a VARCHAR logical rule + divergence diagnostic tested.
 
 **WP-5 · Silent object classes (C10).** Capture `is_persisted` (emit `PERSISTED`); produce
 temporal marks in the adapters (emission already supports them); extract sequences on the
