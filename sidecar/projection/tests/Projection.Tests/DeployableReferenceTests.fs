@@ -253,6 +253,47 @@ let ``source-backed references decide EnforceConstraint(DatabaseConstraintPresen
             d.Outcome))
 
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// WP-1c(ii) (DECISIONS 2026-07-16) — the mandatory evidence-gated eject
+// posture. Under the foreignKey intervention with NO profile evidence, a
+// logical-only reference resolves EvidenceMissing → DoNotEnforce and is
+// WITHHELD (V1-strict, allowNoCheckCreation=false); a source-backed
+// reference re-emits via the DatabaseConstraintPresent carve-out. The
+// emission is exercised through the chain's real DecisionOverlay (the
+// empty-overlay `emittedFks` cannot witness a drop).
+// ---------------------------------------------------------------------
+
+/// FK defs emitted from a catalog run through the full chain under `policy`
+/// + `profile`, applying the chain's real decision overlay (gating).
+let private gatedFks (policy: Policy) (profile: Profile) (catalog: Catalog) : ForeignKeyDef list =
+    let chain = RegisteredTransforms.allChainStepsFor policy profile
+    let state = LineageDiagnostics.payload (PassChainAdapter.compose chain (ComposeState.initial catalog))
+    let overlay = DecisionOverlay.ofComposeState state
+    SsdtDdlEmitter.statementsWith overlay state.Catalog
+    |> Seq.collect (function
+        | Statement.CreateTable (_, _, _, fks, _, _) -> Seq.ofList fks
+        | _ -> Seq.empty)
+    |> List.ofSeq
+
+/// The V1-strict eject intervention (evidence-gated; orphans withhold).
+let private ejectFkPolicy : Policy =
+    let fkCfg = ForeignKeyTighteningConfig.create true false false  // enable / no cross-schema / no NOCHECK
+    { Policy.empty with
+        Tightening = { Interventions = [ TighteningIntervention.ForeignKey ("eject-fks", fkCfg) ] } }
+
+[<Fact>]
+let ``WP-1c(ii): logical-only references are WITHHELD under the gated intervention with no profile evidence`` () =
+    // corporateShape false _ ⇒ HasDbConstraint=false (logical-only). No profile ⇒
+    // EvidenceMissing ⇒ withheld. No FK reaches the emitted DDL.
+    Assert.Empty (gatedFks ejectFkPolicy Profile.empty (corporateShape false true))
+
+[<Fact>]
+let ``WP-1c(ii): source-backed references re-emit under the gated intervention (DatabaseConstraintPresent carve-out)`` () =
+    // corporateShape true _ ⇒ HasDbConstraint=true (source-backed). The carve-out
+    // enforces BEFORE and REGARDLESS of the evidence gate: both forward FKs emit.
+    let fks = gatedFks ejectFkPolicy Profile.empty (corporateShape true true)
+    Assert.Equal(2, List.length fks)
+
 // WP1 — the FK-name collision tripwire (named, never a silent dedupe).
 // ---------------------------------------------------------------------
 

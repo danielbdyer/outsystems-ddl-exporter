@@ -3,21 +3,13 @@ CREATE TABLE [dbo].[Engagement] (
         CONSTRAINT [PK_Engagement_Id]
             PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
-        DEFAULT 0
-        CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
-            FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE SET NULL
-                ON UPDATE NO ACTION,
+        DEFAULT 0,
     [CreatedBy]     INT            NOT NULL
         CONSTRAINT [FK_Engagement_User_CreatedBy]
             FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
                 ON DELETE NO ACTION
                 ON UPDATE CASCADE,
-    [CustomerId]    INT            NOT NULL
-        CONSTRAINT [FK_Engagement_Customer_CustomerId]
-            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE CASCADE
-                ON UPDATE NO ACTION,
+    [CustomerId]    INT            NOT NULL,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),

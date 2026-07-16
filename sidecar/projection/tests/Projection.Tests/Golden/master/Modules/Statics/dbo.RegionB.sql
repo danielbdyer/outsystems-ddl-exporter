@@ -4,8 +4,6 @@ CREATE TABLE [dbo].[RegionB] (
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL
-        CONSTRAINT [FK_RegionB_RegionA_PartnerId]
-            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionA] ([Id])
 )
 
 GO

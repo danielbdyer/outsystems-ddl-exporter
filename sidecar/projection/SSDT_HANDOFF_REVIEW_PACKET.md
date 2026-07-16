@@ -849,9 +849,11 @@ disagree. (No golden change — the corpus is catalog-direct, no `#FkReality` ro
 WP-1c(i)**); goldens → **re-record to gated**. References with no physical FK (Ignore, missing rule,
 external-entity, out-of-scope) are *expected no-FK cases*: never default-emit; materialization
 happens only through the evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated`
-posture as the mandatory eject regime (intervention + live profiler always on). **The mandatory
-gated posture itself = WP-1c(ii), OPEN** (a larger emission-pipeline change; approach + bounded
-~4-FK golden diff analysed in DECISIONS 2026-07-16 WP-1c(i)).
+posture as the mandatory eject regime (intervention + live profiler always on). **✅ LANDED
+WP-1c(ii) (DECISIONS 2026-07-16):** the golden corpus registers the eject `foreignKey` intervention
+(V1-strict) and both emission paths gate consistently via `Compose.projectWithConfigAndState`; the
+four logical-only FKs are withheld, source-backed FKs re-emit. The "mandatory" is the eject config
+opting in (Option B, not an emitter-default inversion).
 (d) **✅ LANDED (WP-1d, DECISIONS 2026-07-16).** `treatMissingDeleteRuleAsIgnore`,
 `allowCrossCatalog`, and dead `strictMode` — all three proven inert and REMOVED (record + ctor +
 VersionedPolicy tokens + config parse + binder + docs; reserved DU variants kept). *Still open:*
@@ -860,9 +862,11 @@ decision that rides with WP-1c.
 (e) **Backlog signal (analysis worth doing):** cascade-path pre-analysis — walk the emitted FK
 graph for multiple-cascade-path shapes (SQL Server msg 1785) and self-referencing cascade
 limits, and report them as pre-emit diagnostics instead of deploy-time failures.
-*Done means:* live-vs-JSON extraction parity test on `HasDbConstraint`; goldens show reflected
-delete actions; an Ignore-rule fixture emits no FK without an intervention; placebo knobs gone
-or functional; 1785 analyzer ticketed separately.
+*Done means:* live-vs-JSON extraction parity test on `HasDbConstraint` (WP-1a ✅); goldens show
+reflected delete actions (WP-1b ✅); a logical-only/Ignore reference is withheld under the gated
+posture (WP-1c(ii) ✅ — goldens re-recorded, `DeployableReferenceTests` witnesses); placebo knobs
+gone (WP-1d ✅). **All of WP-1 landed except WP-1e (the msg-1785 cascade-path pre-analyzer —
+backlog).**
 
 **WP-2 · Clustering fidelity (D1).** Extract `sys.indexes.type_desc` (+ heap detection) per
 table; carry a clustered flag in the Index IR (and PK clustered/nonclustered); emit

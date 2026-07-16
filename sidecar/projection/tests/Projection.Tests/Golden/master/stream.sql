@@ -280,21 +280,13 @@ CREATE TABLE [dbo].[Engagement] (
         CONSTRAINT [PK_Engagement_Id]
             PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
-        DEFAULT 0
-        CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
-            FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE SET NULL
-                ON UPDATE NO ACTION,
+        DEFAULT 0,
     [CreatedBy]     INT            NOT NULL
         CONSTRAINT [FK_Engagement_User_CreatedBy]
             FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
                 ON DELETE NO ACTION
                 ON UPDATE CASCADE,
-    [CustomerId]    INT            NOT NULL
-        CONSTRAINT [FK_Engagement_Customer_CustomerId]
-            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
-                ON DELETE CASCADE
-                ON UPDATE NO ACTION,
+    [CustomerId]    INT            NOT NULL,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
@@ -538,8 +530,6 @@ CREATE TABLE [dbo].[RegionA] (
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL
-        CONSTRAINT [FK_RegionA_RegionB_PartnerId]
-            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionB] ([Id])
 )
 
 GO
@@ -604,8 +594,6 @@ CREATE TABLE [dbo].[RegionB] (
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
     [PartnerId] INT           NULL
-        CONSTRAINT [FK_RegionB_RegionA_PartnerId]
-            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionA] ([Id])
 )
 
 GO

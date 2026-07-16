@@ -1868,6 +1868,29 @@ module Compose =
                 Result.success outputs
             | Error errors -> Result.failure errors
 
+    /// Sibling of `projectWithConfig` that also returns the post-chain
+    /// `ComposeState`, so a caller can derive BOTH the composed catalog
+    /// (`state.Catalog`) and the emission `DecisionOverlay`
+    /// (`DecisionOverlay.ofComposeState state`) — e.g. to render a flat-stream
+    /// realization (`stream.sql`) that gates FK/decision drops IDENTICALLY to
+    /// the per-table bundle from the same state (the golden corpus's stream
+    /// path). Always runs the full policy-built path (no `defaultConfig`
+    /// short-circuit — the overlay-needing callers are non-default by
+    /// construction, e.g. any config that registers a tightening intervention).
+    let projectWithConfigAndState
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Outputs * ComposeState> =
+        let pins = physicalRenamePins shaping catalog
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match bindShapingTriple shaping renamedCatalog with
+            | Ok (policy, folders, groups) ->
+                Result.success
+                    (projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog)
+            | Error errors -> Result.failure errors
+
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of
     /// `runFromCatalog`: project a caller-supplied catalog through the
     /// shaping overlays and write the bundle to `outputDir`. The flow

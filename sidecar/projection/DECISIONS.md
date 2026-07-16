@@ -27931,3 +27931,49 @@ It is a larger emission-pipeline change and rides WP-1c(ii). The analysis, for t
   (the existing `foreignKeyDecisionDropDiagnostics` `decision.fkNotIntroduced` covers the
   intervention-present case).
 - Validate with the full Docker pool (the canary/publish-equivalence suites exercise FK emission).
+
+## 2026-07-16 — WP-1c(ii): the mandatory evidence-gated eject posture (logical-only references are withheld; the goldens demonstrate it)
+
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. WP-1c(i) landed the operator
+regime decisions (orphans = V1-strict WITHHOLD; `allowCrossSchema` default = `false`; goldens =
+re-record to gated) and the `allowCrossSchema` flip. This slice lands the posture itself: under the
+evidence-gated `foreignKey` intervention, a reference with no physical FK (logical-only —
+`HasDbConstraint = false`: Ignore-rule, external-entity, out-of-scope) and no orphan-free evidence is
+WITHHELD (`EvidenceMissing → DoNotEnforce`, a named `decision.fkNotIntroduced` refusal); a
+source-backed reference re-emits via the `DatabaseConstraintPresent` carve-out. The gate already
+worked when an intervention was registered; the missing piece was making the eject corpus DEMONSTRATE
+it, consistently across both emission paths.
+
+**The decision (Option B — mandatory intervention, not an emitter-default inversion).** The gated
+posture is the packet's "make the intervention mandatory / always on" — reuse the existing `DropFk`
+machinery rather than invert the emitter's emit-unless-dropped default (Option A would have rippled
+through the wide pure-emitter test surface that registers no intervention). Concretely:
+- The golden corpus's `baseConfig` now registers the eject `foreignKey` intervention
+  (`enableCreation = true`, `allowNoCheckCreation = false` — V1-strict; `allowCrossSchema` omitted ⇒
+  the WP-1c(i) `false` default). The golden path derives no profile (`Profile.empty`), so every
+  logical-only reference resolves `EvidenceMissing` and is withheld; source-backed references
+  (`GoldenCatalog`'s `withConstraintState true …`) re-emit.
+- **Both golden emission paths now gate consistently.** The per-table bundle already ran the full
+  tightening (`Compose.projectWithConfig`); the flat `stream.sql` previously used
+  `SsdtDdlEmitter.statements` with an EMPTY overlay and silently kept every FK. New
+  `Compose.projectWithConfigAndState` returns the post-chain `ComposeState`, so `emitScenario` renders
+  the stream from `state.Catalog` under `DecisionOverlay.ofComposeState state` — the same overlay the
+  bundle used. A reference withheld in the per-table files is now withheld in the flat stream too.
+
+**Witness.** Goldens RE-RECORDED (`GOLDEN_RECORD=1`, blessing protocol): the byte diff is exactly the
+four LOGICAL-ONLY FKs withheld — `FK_Engagement_Customer_CustomerId`,
+`FK_Engagement_Customer_AltCustomerId`, `FK_RegionA_RegionB_PartnerId`, `FK_RegionB_RegionA_PartnerId`
+— each dropped from BOTH its per-table file and `stream.sql` (bundle/stream now consistent), with the
+adjacent column/DEFAULT comma reflow; every SOURCE-BACKED FK (Engagement.CreatedBy/UpdatedBy/Parent,
+Ledger.Manager, ChangeLog.User) is unchanged. `DeployableReferenceTests` gains two emission-level
+witnesses: a logical-only corporate shape under the gated intervention + no profile emits ZERO FKs;
+a source-backed corporate shape emits both (the carve-out). 176 pure cases green across
+`GoldenEmission` / `DeployableReference` / `ForeignKey*` / `DecisionOverlay` / `DecisionEmission` /
+`Composition` / `TighteningBinding`.
+
+**Scope note.** The "mandatory" is realized as the eject/production CONFIG registering the intervention
+(the §6 strawman already does; the golden corpus now models it) — not a code-forced injection, so
+dev/test emissions without an intervention keep the permissive default. This is the faithful reading
+of "evidence gate as opt-in → mandatory eject posture": the eject config opts in, always. Together
+with WP-1a/1b/1d/1c(i) this closes register E1/E2/E3/E6; the only WP-1 remainder is WP-1e (the msg-1785
+cascade-path pre-analyzer, backlog).
