@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ProvingGround.Permissive.publish.xml — THE CONSEQUENCE ORACLE.
+  ProvingGround.Permissive.publish.xml — the diagnostic for a blocked change's consequence.
 
-  Identical to the Strict profile EXCEPT it lets the change proceed PAST the veto so you can see
-  WHAT the veto was protecting against. Run this only AFTER Strict has vetoed, and only on the
-  throwaway DB. Snapshot the per-row data hash before and after (see talk-to-local-sql) to see
-  exactly which rows GenerateSmartDefaults silently stamped, or which values truncated. The
-  before/after diff is the proof of consequence.
+  Identical to the Strict profile except it lets the change proceed past the point where SSDT
+  would block it, so what the block was protecting against becomes observable. Run this only
+  after Strict has blocked the change, and only on the disposable copy. Snapshot the per-row data
+  hash before and after (see talk-to-local-sql) to see exactly which rows GenerateSmartDefaults
+  silently stamped, or which values truncated. The before/after diff is the proof of consequence.
 
-    BlockOnPossibleDataLoss = False  -> proceed past the veto (we want to observe the damage).
-    GenerateSmartDefaults   = True   -> let SSDT silently backfill NOT NULL columns, so you can
-                                        SHOW the developer the values it would have stamped on its
-                                        own — usually NOT what they intended. That is the lesson.
+    BlockOnPossibleDataLoss = False  -> proceed past the block, to observe the effect on the data.
+    GenerateSmartDefaults   = True   -> SSDT silently backfills NOT NULL columns; the diff shows
+                                        the developer the values it would have stamped on its own
+                                        — usually not the values they intended.
 
-  This is a DIAGNOSTIC, never the path you ship. The change you hand the developer is the one
-  that passes STRICT clean after a real, confirmed remedy.
+  This is a diagnostic, never a shipping path. The change handed to the developer is the one that
+  passes Strict clean after a real, confirmed remedy.
 -->
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>

@@ -57,7 +57,7 @@ Developer adds NOT NULL column without considering existing data:
 
 Either:
 1. Add with a default: `NOT NULL CONSTRAINT DF_Person_MiddleName DEFAULT ('')`
-2. Add as NULL, backfill in post-deployment, then alter to NOT NULL in next release
+2. Add as NULL, backfill, then tighten to NOT NULL in a later release — knowing the tightening step is itself blocked on a populated table (the data-loss guard checks row presence, not NULL content; see §17.2, corrected) and needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment, after proving zero NULLs remain
 
 **Rule of thumb:** NOT NULL on existing table = think about existing rows first.
 

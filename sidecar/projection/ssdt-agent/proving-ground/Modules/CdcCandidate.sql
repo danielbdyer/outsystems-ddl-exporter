@@ -7,16 +7,19 @@
   sp_cdc_enable_db flips CDC state INSTANCE-WIDE. NEVER enable CDC on the shared warm container
   (`projection-mssql-warm`) or on the shared `ProvingGround` DB. Any CDC proof (AUD-04/05/06,
   AUD-07N, TRAP-01N) runs ONLY inside a UNIQUE, per-executor database
-  (/TargetDatabaseName:PG_<testId>_<rand>) that you create and drop yourself. This mirrors the F#
-  test suite's IsolatedContainerFixture rule (CLAUDE.md survival rule 1) and self-test PROTOCOL §8.
-  A CDC proof on the shared DB corrupts every other executor and the warm container.
+  (/TargetDatabaseName:PG_<testId>_<rand>) created and dropped by that executor. This mirrors
+  the F# test suite's IsolatedContainerFixture rule (CLAUDE.md survival rule 1) and self-test
+  PROTOCOL §8. A CDC proof on the shared DB corrupts every other executor and the warm container.
   ============================================================================================
 
-  CREATE-only schema item. A plain table whose PURPOSE is CDC proving. The point of CDC in this
-  proving ground is to demonstrate that CDC is NOT in the dacpac model — the declarative attempt
-  to "turn on CDC" is SILENTLY IGNORED (prove the empty delta), so CDC is Script-Only, +1 Tier
-  forever, and its failure mode is SILENCE (a missing column in the feed, no error). See
-  skills/_index/cdc/ for the standing tax and skills/op/enable-cdc/ for the op.
+  CREATE-only schema item. A plain table whose PURPOSE is CDC proving. The point of proving CDC
+  here is to demonstrate that CDC is NOT in the dacpac model — the declarative attempt to
+  "turn on CDC" is SILENTLY IGNORED (prove the empty delta). So enabling CDC ships as a scripted
+  change: it cannot be expressed as a table definition. And every change on a CDC-tracked table
+  carries added scrutiny — the capture instance is frozen to the table's current columns and
+  needs handling for as long as CDC is on. Its failure mode is SILENCE (a missing column in the
+  feed, no error). See skills/_index/cdc/ for the standing capture-instance obligation and
+  skills/op/enable-cdc/ for the op.
 
   WHAT THIS TABLE UNLOCKS (all ISOLATED-DB only)
   ----------------------------------------------
@@ -29,8 +32,9 @@
     See skills/op/change-tracking/.
   - drop-CDC-tracked-table (AUD-07N): dropping a CDC-tracked table is a negative — the capture
     instance and cleanup jobs must be torn down first.
-  - nullable-add-to-CDC-table (TRAP-01N): adding even a nullable column to a CDC table is the +1
-    CDC-Surprise face — the feed silently omits the new column until capture is recreated.
+  - nullable-add-to-CDC-table (TRAP-01N): adding even a nullable column to a CDC-tracked table is
+    a CDC Surprise — the feed silently omits the new column until the capture instance is
+    recreated.
 
   Notes NVARCHAR(200) NULL gives AUD-05 / TRAP-01N a place to add a second column too.
 

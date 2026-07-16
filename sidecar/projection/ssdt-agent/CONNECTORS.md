@@ -1,11 +1,11 @@
 # CONNECTORS — the future wiring seams
 
-This tree is **built and self-contained today** for one persona (the OutSystems-native
-developer). It is also deliberately shaped so it can be wired into larger machinery later
-without rewriting the bodies. This file is the single place every such seam is named. Each
-entry states: **what it replaces**, **the contract across the seam**, and **what must be
-verified before you build it**. Nothing here is wired now — these are connector points, not a
-backlog.
+This tree is **built and self-contained today** for both personas — the OutSystems-native
+developer who authors the change, and the lead's reviewer who gates it. It is also deliberately
+shaped so it can be wired into larger machinery later without rewriting the bodies. This file is
+the single place every such seam is named. Each entry states: **what it replaces**, **the
+contract across the seam**, and **what must be verified before it is built**. Nothing here is
+wired now — these are connector points, not a backlog.
 
 ---
 
@@ -47,7 +47,7 @@ syntax:
 |----------------------------|------------------------------------|-----------------------------------|
 | `agents/intake.md`         | intent/triage agent                | read-only (no shell)              |
 | `agents/change-author.md`  | the authoring agent                | shell (docker/dotnet/sqlpackage), file edit under `ssdt-agent/` |
-| `agents/reviewer.md`       | review/gate agent (deferred)       | read-only + PR-comment             |
+| `agents/reviewer.md`       | review/gate agent                  | read-only + PR-comment             |
 
 Do not scaffold the Copilot target until the format is confirmed.
 
@@ -86,9 +86,10 @@ scaffold, they do not orchestrate). The agent runs each `sqlpackage` invocation 
 reads the result.
 
 **Verify first / connector note:** a future build *could* fold the proven command sequence
-into the engine's bundle step (an `SsdtBundle.prove` verb). If that is ever done, it must
-preserve the two-profile discipline (Strict veto detector + Permissive consequence oracle) and
-the data-hash snapshot — those are the proof, not decoration.
+into the engine's bundle step (an `SsdtBundle.prove` verb). If that is ever done, the
+two-profile discipline and the data-hash snapshot must survive intact — the Strict profile that
+detects whether the deployment is blocked, the Permissive profile that surfaces the consequence,
+and the snapshot that proves the data is conserved. These are the proof itself.
 
 ---
 
@@ -96,38 +97,47 @@ the data-hash snapshot — those are the proof, not decoration.
 
 **What it replaces:** the manual handoff from `change-author` to a human reviewer.
 
-**The contract:** `change-author`'s **review packet** — operation, both axes (Mechanism +
-Tier), the real generated delta, the proof (named veto with row counts), the remedy, and the
-named trap — is the natural body of a pull request. `reviewer` (deferred) is the gate.
+**The contract:** `change-author`'s **review packet** — the operation, how it ships and who
+must review (the two plain findings, `THE_RECORD.md` §5), the real generated delta, the proof
+(the blocked deployment and its row counts), the remedy, and the named trap — is the body of
+the pull request `skills/author-pr` composes. `reviewer` is the gate.
 
-**Verify first / sketch only:** an Azure DevOps pipeline wraps the proven delta + the two
+**Verify first / sketch only:** an Azure DevOps pipeline wraps the proven delta and the two
 profiles into a PR and promotes a Strict-clean change. The contract to preserve: the PR body
-is the review packet; a change may only auto-promote if its **Strict re-run is clean** after
+is that review packet; a change may only auto-promote if its **Strict re-run is clean** after
 the remedy. Build nothing here — this is the shape the output is designed to slot into.
 
 ---
 
 ## 6 — `warm-sql.sh` substrate reuse
 
-**What it replaces:** any temptation to author a new orchestration script for the throwaway
+**What it replaces:** any temptation to author a new orchestration script for the disposable
 database.
 
 **The contract:** `skills/talk-to-local-sql` consumes the **existing**
-`scripts/warm-sql.sh` (plain bash, already in the repo, reusable) for the throwaway DB. No new
-orchestration script is introduced.
+`scripts/warm-sql.sh` (plain bash, already in the repo, reusable) for the disposable database.
+No new orchestration script is introduced.
 
-**The hard boundary:** the proving ground is **disposable** and lives **only** on the warm
+**The hard boundary:** the disposable database lives **only** on the warm
 container (`projection-mssql-warm`, `localhost,11433`). Never point a publish profile at
 anything but `ProvingGround` on `localhost,11433`. The Strict profile sets
-`DropObjectsNotInSource=True` precisely because the target is throwaway — aimed anywhere real,
-that flag is a catastrophe.
+`DropObjectsNotInSource=True` precisely because the target is disposable — aimed anywhere real,
+that flag drops every object the target holds that the source does not.
 
 ---
 
-## 7 — The deferred reviewer persona (Persona 2)
+## 7 — The reviewer persona (Persona 2)
 
-**Status:** deferred. `agents/reviewer.md` ships as a **stub** — frontmatter, a one-paragraph
-role statement, the review-packet contract it consumes, and a `DEFERRED` banner pointing back
-here. It is shaped so that wiring it later (connectors 2 and 5) is a fill-in, not a redesign.
-Do not invest in reviewer behaviour until Persona 1 is exercised against the self-test and the
-PR-promotion seam (connector 5) is approved for build.
+**Status:** built. `agents/reviewer.md` is Persona 2, the lead's adversarial reviewer,
+composing `skills/review/{review-change,adversary,dependency-scope,verdict}`. It runs two roles
+on one engine — a backstop that gates the OutSystems developer's authored changes so the lead's
+queue is decisions-only, and a sparring partner that stress-tests the lead's own proposed
+change. It consumes `change-author`'s review packet — the body of the pull request
+`skills/author-pr` composes — reproduces the proof on its own isolated database
+(`self-test/PROTOCOL.md`), maps the dependency scope, and renders one of the four plain
+dispositions: Approved, Approved with a named risk, Returned to the author, or Escalated with
+one question for the lead.
+
+**The connector that remains:** re-homing the built reviewer onto an external review surface —
+a Copilot custom agent (§2) or the Azure DevOps PR gate (§5). Those are fill-ins on a working
+agent, not a redesign. Build them only after the PR-promotion seam (§5) is approved for build.

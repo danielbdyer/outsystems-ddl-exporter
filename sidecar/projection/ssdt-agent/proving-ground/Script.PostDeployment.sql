@@ -1,9 +1,10 @@
 /*
   Script.PostDeployment.sql — the POST-DEPLOY slot. (Build Action = PostDeploy.)
 
-  Runs AFTER SSDT applies the schema delta. This is where static-data seeds and
-  Declarative+Post-Deploy backfills live. A change that needs only this script (no pre-deploy
-  data fix) is Mechanism 2 (Declarative + Post-Deploy), single-PR.
+  Runs AFTER SSDT applies the schema delta. This is where static-data seeds and post-deploy
+  backfills live. A change that needs only this script (no pre-deploy data fix) ships as one
+  release: the declarative schema change plus this post-deployment script that runs after it
+  lands.
 
   Everything here MUST be idempotent — it runs on every publish. The seed uses guarded MERGEs so
   a re-publish with unchanged data is SILENT (captures 0 rows). That CDC-silence property is

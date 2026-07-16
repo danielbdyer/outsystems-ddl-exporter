@@ -1,42 +1,44 @@
 ---
 name: prove-on-dacpac
-description: Use when a data-model change has a PROVISIONAL mechanism from classify-mechanism and must be confirmed (or flipped) against real-shaped data. Builds the .sqlproj to a dacpac, previews the REAL SSDT-generated delta, then publishes to a throwaway DB under a Strict (veto-detector) and Permissive (consequence-oracle) profile to discover whether the data vetoes the change. Invoke whenever classification depends on table state — populated? rule-violating rows? — which is ALWAYS for anything past the purely-additive corner. Scaffolds commands; the developer's agent runs them.
+description: Use when a data-model change has a provisional classification from classify-mechanism and must be confirmed (or flipped) against real-shaped data. Builds the .sqlproj to a dacpac, previews the real SSDT-generated delta, then publishes to a disposable copy of the Dev database under a Strict profile (which surfaces the block) and a Permissive profile (which proceeds past it to reveal the consequence) to discover whether the data blocks the change. Invoke whenever classification depends on table state — populated? rule-violating rows? — which is ALWAYS for anything past the purely-additive corner. Commands are scaffolded here; the developer's agent runs them.
 ---
 
 # Prove on dacpac
 
-> **Why this (and what it teaches).** The veto **is** the classification: SSDT's own publish engine
-> is a more honest oracle than any rule table, because it computes the real delta against the real
-> rows. We prove instead of advise because the `.sql` text cannot tell you the mechanism — only the
-> data on the proving ground can, and the moment SSDT refuses, you have learned the bucket. What
-> this teaches: a green-looking schema diff and a clean data probe are *necessary but not
-> sufficient* — the deciding evidence is what the engine actually does when you publish. The
-> sharpest lesson the proving ground teaches (below) is that a `NULL -> NOT NULL` veto is
-> **table-has-rows, not column-has-NULLs** — so even backfilling every NULL does not clear it.
-> Surface this to the developer: a developer who watches the engine veto a change they were sure
-> was clean graduates from trusting their reading of the SQL to demanding the proof.
+> **Why this.** The block is the classification. SSDT's publish engine computes the real delta
+> against the real rows, so its refusal is more reliable than any rule table read from the `.sql`
+> text alone. Proving replaces advising because the `.sql` text cannot reveal how a change must
+> ship — only the data can, and the moment SSDT refuses, the shipping shape is settled. A
+> green-looking schema diff and a clean data probe are *necessary but not sufficient*; the deciding
+> evidence is what the engine actually does on publish. The sharpest result below: a
+> `NULL -> NOT NULL` block is **table-has-rows, not column-has-NULLs**, so backfilling every NULL
+> does not clear it. This is worth surfacing to the developer, who then relies on the proof rather
+> than on a reading of the SQL.
 
-You are helping an **OutSystems-native developer** land a safe schema change. The classification
-you were handed is **provisional** — a reading of intent. **Proving is classifying.** The data
-decides the mechanism, and the only way to know the data is to publish the change to a copy of it
-and watch what SSDT's publish engine actually does.
+This skill helps an **OutSystems-native developer** land a safe schema change. The classification
+handed over is **provisional** — a reading of intent. **Proving is classifying:** the data decides
+how the change must ship, and the only way to know the data is to publish the change to a disposable
+copy of it and read what SSDT's publish engine actually does.
 
-This is the capability the team's decks never taught: a **proving ground** — a throwaway copy of
-real-shaped data — and `sqlpackage` driving the real dacpac delta against it. You introduce this
+This is the capability the team's decks never taught: a disposable copy of the Dev database —
+real-shaped data — with `sqlpackage` driving the real dacpac delta against it. Introduce this
 vocabulary **gently**, always tied back to a phrase the team already owns:
 **"You describe the destination, SSDT computes the journey."** The dacpac is the described
-destination; `sqlpackage` computes the journey; the proving ground lets you watch the journey
-before it ever runs on production.
+destination; `sqlpackage` computes the journey; the disposable copy shows the journey before it
+ever runs on production.
 
 ## When to use
 
-- `classify-mechanism` handed you a provisional Mechanism + Tier and said **must-prove**.
+- `classify-mechanism` handed over a provisional shipping shape and review need, marked
+  **must-prove**.
 - The verdict depends on any of the four state-variables (populated / violates / CDC-no-gap /
-  coexist). Prove before you tell the developer anything.
-- A named trap is suspected (especially **Naked Rename** — always read the delta).
+  coexist). Prove before telling the developer anything.
+- A named trap is suspected (especially a **rename with no refactorlog entry** — always read the
+  delta).
 
-If `classify-mechanism` said **on-sight** (the purely-additive Tier 1 corner), you still run one
-clean Strict publish to confirm no surprise delta — but no flip is possible.
+If `classify-mechanism` said **on-sight** (the purely-additive corner — additive, application
+unaffected), still run one clean Strict publish to confirm no surprise delta — but no flip is
+possible.
 
 ## Running in parallel — see self-test/PROTOCOL.md
 
@@ -49,20 +51,20 @@ protocol is **`self-test/PROTOCOL.md`** — read it before running any prove loo
 executors. (Single-developer, one-at-a-time use can target `ProvingGround` directly per
 `talk-to-local-sql`.)
 
-## The vocabulary you are teaching (gently)
+## The vocabulary to introduce (gently)
 
 | Term | What it is | Tie it back to |
 |---|---|---|
-| **dacpac** | the compiled "destination" (your edited CREATEs, built) | "describe the destination" |
+| **dacpac** | the compiled "destination" (the edited CREATEs, built) | "describe the destination" |
 | **sqlpackage** | the tool that computes + applies the delta | "SSDT computes the journey" |
 | **publish profile** | the rules SSDT publishes under (a `.publish.xml`) | the team's prod safety settings |
-| **BlockOnPossibleDataLoss** | the **veto** — refuses any step that could lose data | "it stops you before you hurt the data" |
+| **BlockOnPossibleDataLoss** | the **block** — refuses any step that could lose data | "it stops the change before it can hurt the data" |
 | **GenerateSmartDefaults** | the **silent backfill** — stamps a default into NOT-NULL columns | "what it would have done quietly" |
-| **proving ground** | a throwaway copy of real-shaped data to publish against | "a sandbox that looks like prod" |
+| **disposable copy** | a disposable copy of real-shaped data to publish against | "a copy of Dev, safe to throw away" |
 
-## The proving loop (you scaffold; the developer's agent runs each command)
+## The proving loop (scaffolded here; the developer's agent runs each command)
 
-> All commands assume you are at the repo root and the proving ground is warm — see
+> All commands assume the repo root as the working directory and a warm disposable copy — see
 > `talk-to-local-sql` for the container, the connection string, and the **runtime shim** (the
 > `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required on this machine**, because
 > `sqlpackage` targets .NET 8 and the box has .NET 9 at a non-standard path). On Git Bash also
@@ -92,13 +94,13 @@ sqlpackage /Action:Script \
   /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml \
   /OutputPath:ssdt-agent/proving-ground/bin/Release/delta.sql
 
-# 5. VETO CHECK — Strict = the veto detector. Does the data refuse the change?
+# 5. BLOCK CHECK — Strict surfaces the block. Does the data refuse the change?
 sqlpackage /Action:Publish \
   /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
   /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml
 
-# 6. ON VETO ONLY — Permissive = the consequence oracle. Let it proceed past the veto so you can
-#    snapshot WHAT it was protecting against (see the content-hash oracle in talk-to-local-sql).
+# 6. ON A BLOCK ONLY — Permissive proceeds past the block, so what it was protecting against can be
+#    snapshotted (see the content-hash check in talk-to-local-sql).
 sqlpackage /Action:Publish \
   /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
   /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Permissive.publish.xml
@@ -107,36 +109,41 @@ sqlpackage /Action:Publish \
 > For a **parallel** run, every command above also carries `/TargetDatabaseName:PG_<testId>_<rand>`
 > and points at a scratch copy of the tree — see `self-test/PROTOCOL.md`.
 
-## Reading the result -> the classification
+## Reading the result -> how it ships
 
-**Read the generated `delta.sql` AND the Strict publish outcome together.** Map what you see:
+**Read the generated `delta.sql` AND the Strict publish outcome together.** Map what they show:
 
-- **Strict publishes clean, the delta is an in-place `ALTER` (or nothing), no veto**
-  -> **Mechanism 1 Pure Declarative** (single-phase). Confirmed.
-- **Strict vetoes** with `BlockOnPossibleDataLoss` / "rows that would be affected" / NOT NULL on
-  populated data / truncation -> the data **flipped the bucket up**. The remedy that clears the
-  veto is your proof:
-  - backfill before the schema change -> **Mechanism 3 Pre-Deploy+Declarative**, single-PR.
-    (But see the make-mandatory caveat below — for `NULL -> NOT NULL` on a populated table, the
-    backfill alone does **not** clear the veto; that is the corrected finding.)
-  - the fix is a post-deploy seed/reconcile -> **Mechanism 2 Declarative+Post-Deploy**.
+- **Strict publishes clean, the delta is an in-place `ALTER` (or nothing), no block**
+  -> **Ships as a single schema change, applied in place. No data is read or written.** Confirmed.
+- **Strict blocks** with `BlockOnPossibleDataLoss` / "rows that would be affected" / NOT NULL on
+  populated data / truncation -> the data **raised the review need and reshaped how it ships**. The
+  remedy that clears the block is the proof:
+  - backfill before the schema change -> **Ships as one release: a pre-deployment script prepares
+    the data, then the schema change lands validated.** (But see the make-mandatory finding below —
+    for `NULL -> NOT NULL` on a populated table, the backfill alone does **not** clear the block;
+    that is the corrected finding.)
+  - the fix is a post-deploy seed/reconcile -> **Ships as one release: the schema change, then a
+    post-deployment script that runs after it lands.**
   - the change isn't declarative at all (FK `NOCHECK`->`WITH CHECK CHECK`, CDC, IDENTITY swap)
-    -> **Mechanism 4 Script-Only**.
-  - old+new app code must coexist, or a no-gap CDC rollout -> **Mechanism 5 Multi-Phase**, multi-PR.
-- **The delta shows `DROP <col/table>` + `CREATE` on something you asked to RENAME**
-  -> **Naked Rename. STOP.** The refactorlog entry is missing; publishing this loses the data
-  silently. Demand the refactorlog entry (it turns the DROP+CREATE into `sp_rename`), rebuild,
-  re-preview, and confirm the delta is now a rename. This is the single most important read in the
-  set.
+    -> **Ships as a scripted change — reconciling the foreign key / enabling CDC / the identity
+    change cannot be expressed as a table definition.**
+  - old+new app code must coexist, or a no-gap CDC rollout -> **Ships across multiple releases so
+    the running application keeps working while the change is in flight.**
+- **The delta shows `DROP <col/table>` + `CREATE` on an object requested as a RENAME**
+  -> **a rename with no refactorlog entry. STOP.** The refactorlog entry is missing; publishing
+  this drops the column and its data. Demand the refactorlog entry (it turns the DROP+CREATE into
+  `sp_rename`), rebuild, re-preview, and confirm the delta is now a rename. This is the single most
+  important read in the set.
 - **The delta shows a shadow-table rebuild** (CREATE new table -> copy -> drop old -> rename) or
   **drop-by-absence** (an object vanishes because it's no longer in source) -> name it to the
-  developer explicitly; these are expensive and/or destructive and they did not ask for them.
+  developer explicitly; these are expensive or destructive and were not requested.
 
-## The make-mandatory finding: the guard is TABLE-HAS-ROWS, not column-has-NULLs (VERIFIED)
+## The make-mandatory finding: the guard is TABLE-HAS-ROWS, not column-has-NULLs (VERIFIED, sqlpackage 170.4.83)
 
-This is the showcase result the proving ground exists to teach, and it **corrects an earlier,
+This is the central result the disposable copy exists to surface, and it **corrects an earlier,
 wrong recipe.** The old advice said "a pre-deploy backfill clears the NULLs, then the declarative
-NOT NULL lands clean under Strict = Mechanism 3." **That was disproven empirically here.**
+NOT NULL lands clean under Strict, shipping as one pre-deploy-then-schema release." **That was
+disproven empirically here.**
 
 For a `NULL -> NOT NULL` change, `sqlpackage` generates the `BlockOnPossibleDataLoss` guard as:
 
@@ -147,67 +154,102 @@ IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer])
 ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(256) NOT NULL;
 ```
 
+*(As emitted by sqlpackage 170.4.83.3 the guard reads lowercase and carries `WITH NOWAIT`; a
+blocked publish surfaces it as `Error SQL72014` / `Msg 50000, Level 16, State 127`.)*
+
 That guard fires on `IF EXISTS (... FROM Table)` — **the table merely having rows** — and is placed
 **before** the `ALTER COLUMN`. It **does not inspect the `Email` column at all.** Why: **SSDT
 computes the entire deploy script once, up front, from the pre-publish model state, and is
 conservative by design** — it cannot know that a pre-deploy backfill (which runs at deploy time,
 after the script is already generated) will have emptied the NULLs, so it refuses the moment the
-table has any row. The gate cannot know your intent, so it assumes the worst.
+table has any row. The gate cannot know the change's intent, so it assumes the worst.
 
-**Proven on the proving ground:** a pre-deploy backfill cleared **all** NULLs (a fresh
-`SELECT COUNT(*) WHERE Email IS NULL` returned **0**), and Strict **STILL vetoed**, leaving the
-column nullable. **Zero NULLs is necessary but NOT sufficient** to pass the prod-strict gate on a
-populated table.
+**Proven on a disposable copy (sqlpackage 170.4.83):** a pre-deploy backfill cleared **all** NULLs
+(a fresh `SELECT COUNT(*) WHERE Email IS NULL` returned **0**), and Strict **STILL blocked the
+publish**, leaving the column nullable. **Zero NULLs is necessary but NOT sufficient** to pass the
+prod-strict gate on a populated table.
 
 The **honest, corrected recipe:**
 
-- **EMPTY table** -> clean **Mechanism 1, single-phase, Tier 1.** No rows, the `IF EXISTS` is false,
-  the RAISERROR never fires, the `ALTER COLUMN NOT NULL` lands. (Confirm the table is genuinely
-  empty first.)
+- **EMPTY table** -> **ships as a single schema change, applied in place; any team member can review
+  it.** No rows, the `IF EXISTS` is false, the RAISERROR never fires, the `ALTER COLUMN NOT NULL`
+  lands. (Confirm the table is genuinely empty first.)
 - **POPULATED table (NULLs present OR zero NULLs — it makes no difference)** -> the make-mandatory
   change **cannot pass the prod-strict gate by backfill alone.** It needs a **conscious, documented
   decision taken AFTER a verified backfill** (prove `COUNT(*) WHERE col IS NULL = 0` first —
   necessary, not sufficient), then ONE of:
-  - **(a) Targeted gate-relaxation** — operationally **Mechanism 4 / Script-Only with a named
-    relax.** Having proven zero NULLs remain, deliberately disable `BlockOnPossibleDataLoss` for
-    **this one targeted change** (a scoped profile override or a script-only path), so the
-    `ALTER COLUMN NOT NULL` proceeds against the now-clean column. The proof packet must carry
-    **both** the zero-NULL probe AND the explicit record of the relaxation decision.
-  - **(b) Restructure as Mechanism 5 — Multi-Phase, multi-PR** — stage it so the engine never has
-    to relax its guard. Tier 2 baseline; **+1** for CDC / >1M rows / first-time.
+  - **(a) Targeted gate-relaxation** — **ships as a scripted change with a named relaxation,**
+    because relaxing the guard for one column cannot be expressed as a table definition. Having
+    proven zero NULLs remain, deliberately disable `BlockOnPossibleDataLoss` for **this one targeted
+    change** (a scoped profile override or a script-only path), so the `ALTER COLUMN NOT NULL`
+    proceeds against the now-clean column. The proof packet must carry **both** the zero-NULL probe
+    AND the explicit record of the relaxation decision.
+  - **(b) Restructure to stage it across releases** — **ships across multiple releases so the
+    running application keeps working** and the engine never has to relax its guard. A dev lead or
+    an experienced developer must review this: the running application must change to keep working.
+    Added scrutiny where it applies: the table feeds a change-data-capture stream, or holds more
+    than a million rows, or the operation is a first on this estate.
 
 **What the proof must EMPIRICALLY show (do not assert it — discover it):**
 
-1. Edit `Email ... NULL` -> `NOT NULL`, build, Strict publish -> prove the veto fires, and read
+1. Edit `Email ... NULL` -> `NOT NULL`, build, Strict publish -> prove the block fires, and read
    the delta to **SEE** the `IF EXISTS(...) RAISERROR(...,16,127)` guard placed **above** the
    `ALTER COLUMN` (confirming table-has-rows).
 2. Author the pre-deploy backfill, re-run the NULL probe -> prove `0` NULL emails remain.
-3. Re-run Strict -> prove it **STILL vetoes** and the column **stays nullable** — the backfill did
-   not satisfy the gate. **This step is the showcase finding.**
-4. Deliver the corrected verdict and prove the chosen path ((a) named gate-relaxation after
-   proven-zero-NULL, or (b) multi-phase) actually lands the NOT NULL.
+3. Re-run Strict -> prove it **STILL blocks** and the column **stays nullable** — the backfill did
+   not satisfy the gate. **This is the finding the section exists for.**
+4. Deliver the corrected verdict and prove the chosen path — (a) named gate-relaxation after
+   proven-zero-NULL, or (b) staged across releases — actually lands the NOT NULL.
 
-This is the spine proof that the tree's *prove-don't-advise* thesis holds: the agent discovers a
-finding that **contradicts its own earlier skill text** rather than parroting it.
+This is the central proof that the tree's *prove-don't-advise* thesis holds: the finding surfaced
+here **contradicts an earlier, wrong recipe** rather than parroting it.
 
-## Strict vs Permissive — what the diff tells you
+## The FK findings: a blocked publish is non-atomic; a post-deploy seed re-plants the fix (VERIFIED, sqlpackage 170.4.83)
 
-Strict and Permissive aim at the **same throwaway DB** and differ on two settings
+Two live-run findings on the foreign-key path, both proven on a disposable copy of Dev, both easy
+to miss:
+
+- **A blocked FK publish is non-atomic; the constraint can end untrusted.** When an orphan row makes
+  SSDT block the publish (Msg 547 — conflicted with FOREIGN KEY constraint), the publish does not
+  cleanly unwind: the `ADD CONSTRAINT` can land `WITH NOCHECK` while the follow-on
+  `WITH CHECK CHECK` fails on the orphan, leaving the foreign key present but `is_not_trusted = 1`.
+  A blocked publish is therefore not proof the copy is unchanged. **Always re-probe after any
+  blocked publish:**
+
+  ```sql
+  SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_Order_Customer';
+  -- is_not_trusted = 1 means the constraint exists but was never validated.
+  ```
+
+  The trust ladder is the fix, in order: add `WITH NOCHECK`, reconcile the orphan rows, run
+  `ALTER TABLE ... WITH CHECK CHECK CONSTRAINT`, then confirm `is_not_trusted = 0`.
+- **A post-deployment seed re-plants a manually reconciled row.** Reassigning an orphan row on the
+  copy by hand (Order 4, CustomerId 999 -> 1) clears the block once, but the post-deployment seed is
+  an idempotent MERGE that re-inserts the original seeded rows on the next publish — re-planting
+  CustomerId 999 and re-breaking the foreign key. **The reconcile must be durable at source:** fix
+  the seed data (or the pre-deployment remediation script), not just the row on the copy. A reconcile
+  that lives only on the disposable copy is undone by the next deploy.
+
+## Strict vs Permissive — what the diff reveals
+
+Strict and Permissive aim at the **same disposable copy** and differ on two settings
 (`BlockOnPossibleDataLoss` and `GenerateSmartDefaults`). The difference between their outcomes is
 the proof:
 
-- **Strict refused, Permissive proceeded** -> the change *does* touch data. Now snapshot the data
-  **before vs after** the Permissive publish using the content-hash oracle (see
+- **Strict refused, Permissive proceeded** -> the change *does* touch data. Snapshot the data
+  **before vs after** the Permissive publish using the content-hash check (see
   `talk-to-local-sql`). The rows whose hash changed are exactly what `GenerateSmartDefaults`
-  stamped, or what truncated. **That set is the magic line's row count.**
-- **Both proceeded clean** -> no data at risk; the Strict-clean result already proved Mechanism 1.
+  stamped, or what truncated. **That set is the exact row count the change would affect.**
+- **Both proceeded clean** -> no data at risk; the Strict-clean result already proved the change
+  ships as a single schema change, applied in place.
 - A **rename** changes a row's hash **by design** (the column name is part of the row shape) — so a
   hash diff on a rename is *correct*, and confirms the rename touched the right rows. The diff IS
   the proof, not a false alarm.
 
-## The content-hash data oracle (the "did values change" question)
+## The content-hash check (the "did values change" question)
 
-The oracle is a per-row `SHA2_256` over `(SELECT x.* FOR XML RAW)`, summed **order-independently**
+The content-hash check is a per-row `SHA2_256` over `(SELECT x.* FOR XML RAW)`, summed
+**order-independently**
 across the table (so row order doesn't matter), with **NULL kept distinct from `''`**. Snapshot it
 before and after a Permissive publish; an unchanged total means no value moved. The exact SQL lives
 in `talk-to-local-sql` (one query, reusable). Use it to **quantify** a flip — "1,240 rows would be
@@ -218,44 +260,66 @@ stamped" — not merely assert "data might change."
 Two moves the fitness runs invented and proved — use them where they fit, and do **not** fabricate
 them where they cannot fire:
 
-- **CONSEQUENCE ORACLE** — for a Tier-4 *destroying* op (`delete-attribute`, `delete-entity`,
-  `narrow` past the data, drop-table): after Strict vetoes, run Permissive to let the irreversible
-  act happen on the throwaway copy and snapshot the corpse — the exact rows/values lost — so the
-  Tier-4 claim is **observed, not asserted.** (This is the Strict→Permissive pattern above, named.)
-- **VETO-INJECTION LEG** — for a *constraint / tightening* op that has a data veto (`define-pk`,
+- **consequence check** — for a data-removing op that a principal must review because data is
+  removed irreversibly (`delete-attribute`, `delete-entity`, `narrow` past the data, drop-table):
+  after Strict blocks, run Permissive to let the irreversible act happen on the disposable copy and
+  snapshot the exact rows and values that would be lost — so the claim that data is removed is
+  **observed, not asserted.** (This is the Strict->Permissive pattern above, named.)
+- **violating-row probe** — for a *constraint / tightening* op that has a data block (`define-pk`,
   `add-unique`, `add-check`, `create-fk-orphan`, `make-mandatory`): if the seeded data happens to be
-  clean, inject one violating row (a dup, an orphan, an over-length value, a NULL) into your scratch
+  clean, inject one violating row (a dup, an orphan, an over-length value, a NULL) into the scratch
   DB, then publish — to capture the **exact `Msg` number and the offending value** the developer will
   hit. It turns "this could fail on bad data" into "here is the failure, verbatim."
 
-**Scope discipline.** These apply only to op classes that HAVE a data consequence/veto. Ops with
-**no** data veto — `edit-seed` (a MERGE), `enable-cdc` (Script-Only), `create-view` (no rows) —
-must **not** manufacture a veto that structurally cannot fire. Naming the absence is itself the
+**Scope discipline.** These apply only to op classes that HAVE a data consequence or block. Ops with
+**no** data block — `edit-seed` (a MERGE), `enable-cdc` (a scripted change), `create-view` (no rows)
+— must **not** manufacture a block that structurally cannot fire. Naming the absence is itself the
 honest result.
 
-## What you hand back (the verdict + the magic line)
+## What the proof hands back (and what it feeds into the PR)
 
-The **proven** Mechanism + Tier, the real generated delta, the named veto **with row counts from
-the oracle**, and the remedy that makes Strict pass clean — all phrased for the developer. Then
-re-run the Strict publish after applying the remedy: **that clean re-run is the proof.** Deliver
-the magic line:
+The proof hands back a set of findings, each with its evidence, ready for `../author-pr/SKILL.md` to
+assemble into the pull request the reviewer approves by reading:
 
-> "You said *make it mandatory*. I published that to a copy of your data — SSDT **vetoed** it, and
-> when I read the generated script the guard is `IF EXISTS (SELECT TOP 1 1 FROM Customer)
-> RAISERROR(...)` placed *before* the ALTER. That's **table-has-rows, not NULL-has-rows** — SSDT
-> builds the deploy script up front and can't know I'll backfill, so it refuses the moment the
-> table has any rows. I proved it: I backfilled every NULL (0 remain) and Strict **STILL** vetoed
-> and left the column nullable. So on your populated table this isn't a clean backfill-then-NOT-NULL
-> — it needs a conscious call: either I deliberately relax BlockOnPossibleDataLoss for this one
-> change *after* proving zero NULLs (a logged, script-only gate decision), or we stage it
-> multi-phase. Here is the proof for the path you choose — Tier 2 (+1 if CDC). On an EMPTY table it
-> would have been a clean one-liner, Tier 1; the difference is entirely the rows."
+- **How it ships** and **who must review, and why** — the two plain findings
+  (`../../THE_RECORD.md` §5), now proven rather than provisional. These become the PR's
+  **Review & release** section.
+- **The real generated delta** and the Strict outcome — the block (with the verbatim `Msg` and the
+  row counts from the content-hash check) and, after the remedy, the clean re-run. These become
+  **Deployment evidence**; stamp the sqlpackage version, because the guard behaviour is version-bound.
+- **The remedy that makes Strict pass clean**, and its durability at source (for a reconcile, per the
+  FK findings above). This feeds **Data remediation**.
+- **The verification query** that returns an unambiguous expected result in any environment —
+  **Verification**.
+- **What the disposable copy could not prove** — reversibility, application impact, production scale
+  — as standing **Not verified** items.
+
+Re-run the Strict publish after applying the remedy: that clean re-run is the evidence the change
+now lands.
+
+The developer is owed the same finding in conversation — plain, in their terms, with the one
+decision that is genuinely theirs. For the make-mandatory case:
+
+> You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks whether
+> the table has any rows, not whether Email has blanks, so it blocks the change while the table
+> holds data — even after the blanks are filled. On an empty table it would just apply. With data in
+> the table, this needs a deliberate call: relax the data-loss guard for this one change after
+> proving no blanks remain, or stage it over two releases. Which would you prefer?
+
+And the same finding on the record, for the PR body:
+
+> Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with
+> `IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...)`, which fires on row presence, not on
+> blank values — verified on a disposable copy, where a backfill to zero blank Emails was still
+> blocked. A dev lead must review this: existing data is affected. Ships as a scripted change — the
+> data-loss guard is relaxed for this one column after the zero-blank count is proven, or the column
+> is filled and tightened across two releases.
 
 ## The named traps to catch in the delta (handbook file 16 = §19)
 
-Naked Rename, Optimistic NOT NULL, Ambitious Narrowing, Forgotten FK Check, CDC Surprise,
-Refactorlog Cleanup, SELECT * View. **Catch them in the generated delta / Strict veto — not after
-a hypothetical deploy.** That timing is the whole value of the proving ground.
+A rename with no refactorlog entry, Optimistic NOT NULL, Ambitious Narrowing, Forgotten FK Check,
+CDC Surprise, Refactorlog Cleanup, SELECT * View. **Catch them in the generated delta or the Strict
+block — not after a hypothetical deploy.** That timing is the whole value of the disposable copy.
 
 > **SELECT \* View nuance (proven).** SSDT **auto-emits `EXECUTE sp_refreshsqlmodule`** for
 > dependent views on publish, so a `SELECT *` view stays correct through a *normal SSDT* base-column
@@ -263,50 +327,54 @@ a hypothetical deploy.** That timing is the whole value of the proving ground.
 > band** (a raw `ALTER` outside the dacpac). Prove the trap with a non-SSDT column-add, not a
 > through-model one.
 
-## What the proving ground HONESTLY CANNOT prove
+## What the disposable copy honestly cannot prove
 
 Be truthful with the developer about the edges:
 
-- **Reversibility — the proving ground proves the FORWARD publish only.** Every command in the
+- **Reversibility — the disposable copy proves the FORWARD publish only.** Every command in the
   loop runs `/Action:Publish` forward; nothing here exercises a rollback, a down-migration, or
   backing the change out. A clean forward Strict publish says **nothing** about whether the change
-  can be safely reversed. Reversibility is one of the team's **Four Dimensions**, but it stays an
-  *asserted Tier dimension, not a proven one* — when an operation entry calls a change "reversible"
-  (e.g. drop-index "re-add the definition", or a multi-phase add->backfill->cut-over->drop), that is
-  a **claim**, not something this loop demonstrated. Say so: "I proved the forward change is safe for
-  the data; I did not prove you can back it out."
-- **Application impact — the proving ground cannot prove the running app keeps working.** This is
-  state-variable 4 (must old + new app code coexist), and it is the very thing that splits Tier 2
-  SINGLE-PR from Tier 1 SINGLE-PHASE in the cascade. A single-connection publish against a
-  throwaway DB cannot show whether the live OutSystems app — or old and new app code mid-rollout —
-  still compiles and reads correctly against the new shape. That answer comes from the developer
-  and the architecture, **not** from a publish. A clean Strict publish proves the *schema*
-  transition is safe for the *data*; it is silent on the *app*.
-- **Production scale and timing.** The throwaway DB is real-*shaped*, not real-*sized*. It proves
-  *whether* a veto fires and *what* changes; it does **not** prove how long an index build or a
-  table rebuild takes at 50M rows, or whether a lock will block. That stays a Tier escalation
-  (>1M rows, +1), not a proof.
-- **CDC capture-instance behavior over time.** CDC is **Script-Only** and not in the dacpac model;
-  the proving ground cannot demonstrate the downstream capture-instance management burden. Flag
-  **CDC Surprise** as a standing consequence, don't try to publish-prove it away.
+  can be safely reversed. Reversibility is one of the team's **Four Dimensions**, but here it stays
+  an *asserted claim, not a proven one* — when an operation entry calls a change "reversible" (e.g.
+  drop-index "re-add the definition", or a staged add->backfill->cut-over->drop), that is a
+  **claim**, not something this loop demonstrated. State it plainly: the forward change is proven
+  safe for the data; backing it out is not exercised here.
+- **Application impact — the disposable copy cannot prove the running app keeps working.** This is
+  state-variable 4 (must old + new app code coexist), and it is the very thing that separates a
+  change any team member can review from one a dev lead must review because the running application
+  must change to keep working. A single-connection publish against a disposable copy cannot show
+  whether the live OutSystems app — or old and new app code mid-rollout — still compiles and reads
+  correctly against the new shape. That answer comes from the developer and the architecture,
+  **not** from a publish. A clean Strict publish proves the *schema* transition is safe for the
+  *data*; it is silent on the *app*.
+- **Production scale and timing.** The disposable copy is real-*shaped*, not real-*sized*. It proves
+  *whether* a block fires and *what* changes; it does **not** prove how long an index build or a
+  table rebuild takes at 50M rows, or whether a lock will block. That stays added scrutiny — at
+  production row counts the change may block writes or run long, so schedule a window — not a proof.
+- **CDC capture-instance behavior over time.** CDC is a **scripted change** and not in the dacpac
+  model; the disposable copy cannot demonstrate the downstream capture-instance management burden.
+  Flag **CDC Surprise** as a standing consequence — the capture instance is frozen to the table's
+  current columns and needs handling — don't try to publish-prove it away.
 - **Concurrency, blocking, and online-vs-offline.** `ONLINE` index builds (Enterprise) and lock
   behavior under live traffic are not modeled by a single-connection publish.
 - **External Entities and downstream consumers** (ETL, reports, procs in other databases). The
-  proving ground holds one catalog; cross-database / external effects are out of frame and must be
-  named as **Tier 3 dependency scope**, not proven here.
-- **A profile pointed anywhere but the throwaway DB is a foot-gun.** Both profiles target
+  disposable copy holds one catalog; cross-database and external effects are out of frame and must
+  be named as **dependency scope — what else this change touches**, not proven here.
+- **A profile pointed anywhere but the disposable copy is dangerous.** Both profiles target
   `localhost,11433 / ProvingGround` only (or a per-executor `PG_<testId>_<rand>` via
   `/TargetDatabaseName`). Never repoint one at anything else — the whole point is that this DB is
   disposable.
 
-When you hit one of these, say so plainly: *"I can prove the veto and the row count; I cannot prove
-the rebuild duration at production scale — that's why this stays Tier 3."*
+When one of these applies, say so plainly: the block and the row count are proven; the rebuild
+duration at production scale is not — that is why the change carries added scrutiny at production
+row counts.
 
 ## The two publish profiles (fenced examples; the live files are under `proving-ground/profiles/`)
 
-Both aim at the **same throwaway DB**. They differ only in the veto + smart-default settings.
+Both aim at the **same disposable copy**. They differ only in the block + smart-default settings.
 
-**Strict = the VETO DETECTOR** (`proving-ground/profiles/ProvingGround.Strict.publish.xml`):
+**Strict — the profile that surfaces the block**
+(`proving-ground/profiles/ProvingGround.Strict.publish.xml`):
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -324,17 +392,16 @@ Both aim at the **same throwaway DB**. They differ only in the veto + smart-defa
 </Project>
 ```
 
-Why each setting: `BlockOnPossibleDataLoss=True` mirrors prod's refusal — it is the veto you want
-to trip (and, per the finding above, it fires on table-has-rows for a `NULL -> NOT NULL` change,
-not on the column's NULL count). `GenerateSmartDefaults=False` means SSDT will **not** quietly
-paper over a NOT-NULL gap, so the veto surfaces instead of a silent stamp. `DropObjectsNotInSource=
-True` is safe **because the proving ground is disposable** — you *want* to see drop-by-absence here,
-where production never would. `IgnoreColumnOrder=True` keeps cosmetic ordering from masquerading as
-a real change.
+Why each setting: `BlockOnPossibleDataLoss=True` mirrors prod's refusal — it is the block to trip
+(and, per the finding above, it fires on table-has-rows for a `NULL -> NOT NULL` change, not on the
+column's NULL count). `GenerateSmartDefaults=False` means SSDT will **not** quietly paper over a
+NOT-NULL gap, so the block surfaces instead of a silent stamp. `DropObjectsNotInSource=True` is safe
+**because this copy is disposable** — drop-by-absence is visible here, where production never would
+allow it. `IgnoreColumnOrder=True` keeps cosmetic ordering from masquerading as a real change.
 
-**Permissive = the CONSEQUENCE ORACLE**
+**Permissive — the profile that proceeds past the block to reveal the consequence**
 (`proving-ground/profiles/ProvingGround.Permissive.publish.xml`): identical to Strict except the
-two flipped settings, so the change **proceeds past the veto** and you can snapshot what it did:
+two flipped settings, so the change **proceeds past the block** and what it did can be snapshotted:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -352,14 +419,14 @@ two flipped settings, so the change **proceeds past the veto** and you can snaps
 </Project>
 ```
 
-Never run Permissive **first** — you'd destroy the evidence the veto was protecting. Strict
+Never run Permissive **first** — it would erase the evidence the block was protecting. Strict
 proves the refusal; Permissive, only after, shows the consequence.
 
 ## Hard rules
 
-- You **scaffold** commands; you do **not** ship a wrapper script. The developer's agent runs
+- Commands are **scaffolded** here; no wrapper script ships. The developer's agent runs
   `docker` / `dotnet` / `sqlpackage` itself.
-- Everything you touch lives under `ssdt-agent/`.
+- Everything this skill touches lives under `ssdt-agent/`.
 - For parallel/self-test runs, obey `self-test/PROTOCOL.md`: scratch copy + unique DB + teardown.
   Never edit the authored tree and never publish to a shared catalog while others run.
 - The F# Projection engine is an **optional accelerant**, not wired here.

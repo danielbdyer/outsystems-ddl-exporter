@@ -116,7 +116,7 @@
 
 **Resolution:**
 - Add a default constraint, or
-- Make the column nullable initially, backfill, then alter to NOT NULL, or
+- Make the column nullable initially, backfill, then tighten to NOT NULL later — the tightening is still blocked on a populated table (the guard checks row presence; see §17.2, corrected) and needs a logged guard-relaxation after a proven-zero-NULL count, or
 - Backfill in pre-deployment script
 
 ---
