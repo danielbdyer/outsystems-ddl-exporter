@@ -415,6 +415,36 @@ module OssysTranslation =
         | Some "SET_DEFAULT"  -> None
         | Some _              -> None
 
+    /// WP-1b (DECISIONS 2026-07-16) — resolve a reference's emitted
+    /// ON DELETE action. For a physically-backed FK the deployed action
+    /// reflected in `#FkReality.DeleteAction` (SQL-Server vocabulary) IS
+    /// database reality and outranks the OutSystems model's delete-rule
+    /// code: `E1` — "for physically-backed FKs, mirror `sys.foreign_keys`".
+    /// The reflected action wins when it is present AND representable in
+    /// V2's `ReferenceAction` DU; otherwise (logical-only references with no
+    /// reflected FK, or a reflected action V2 cannot carry such as
+    /// `SET_DEFAULT`) the model rule stands. `reflectedDeleteAction` is the
+    /// raw `#FkReality.DeleteAction` string; `modelCode` the
+    /// `reference_deleteRuleCode`.
+    let chooseOnDeleteAction (modelCode: string option) (reflectedDeleteAction: string option) : Result<ReferenceAction> =
+        match parseSqlForeignKeyAction reflectedDeleteAction with
+        | Some reflected -> Result.success reflected
+        | None           -> parseDeleteRule modelCode
+
+    /// WP-1b — the companion to `chooseOnDeleteAction`: `Some (model,
+    /// reflected)` exactly when a physically-backed FK carries a
+    /// representable reflected delete action that DIFFERS from the action
+    /// the model's delete-rule code maps to (so `chooseOnDeleteAction`
+    /// silently preferred the reflected value). Callers surface this as a
+    /// named divergence diagnostic — reality wins the emitted action, but
+    /// the operator is told the model disagreed, never silently overridden.
+    /// `None` when there is no reflected FK, the reflected action is
+    /// unrepresentable, the model code is unmapped, or the two agree.
+    let deleteActionDivergence (modelCode: string option) (reflectedDeleteAction: string option) : (ReferenceAction * ReferenceAction) option =
+        match parseSqlForeignKeyAction reflectedDeleteAction, parseDeleteRule modelCode with
+        | Some reflected, Ok model when reflected <> model -> Some (model, reflected)
+        | _ -> None
+
     // -----------------------------------------------------------------------
     // Translation — V1 attribute → V2 Attribute.
     // -----------------------------------------------------------------------

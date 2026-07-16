@@ -27618,3 +27618,56 @@ true/false respectively, and the sibling FK-reality axes stay intact. The JSON p
 reflected `#FkReality.DeleteAction` for physically-backed FKs, making the evidence-gated posture
 the mandatory eject default, and resolving the placebo knobs `treatMissingDeleteRuleAsIgnore` /
 `allowCrossCatalog` / `strictMode`) rides later slices.
+
+## 2026-07-16 — WP-1b: emit the reflected `#FkReality.DeleteAction` (database reality wins the ON DELETE action for physically-backed FKs)
+
+**Context.** The second slice of the SSDT-handoff FK-reality package
+(`SSDT_HANDOFF_REVIEW_PACKET.md` §10, WP-1(b); register rows E1). The deployed FK's actual delete
+action is extracted into `#FkReality.DeleteAction` (SQL-Server vocabulary — `NO_ACTION` /
+`CASCADE` / `SET_NULL` / `SET_DEFAULT`) but was consumed NOWHERE: `Reference.OnDelete` restated the
+OutSystems *model's* `reference_deleteRuleCode` (Delete→Cascade, Protect/Ignore→NoAction,
+SetNull→SetNull), while only the sibling `ON UPDATE` axis was reflection-sourced (E4). A DBA who
+altered a deployed FK's delete action away from the platform default therefore had that reality
+silently overwritten by the model rule on every emission — the opposite of the packet's governing
+rule (mirror database reality, or name the divergence).
+
+**The decision.** For a physically-backed FK the reflected delete action IS database reality and
+outranks the model rule (E1 — "mirror `sys.foreign_keys`"). Three coordinated moves:
+- **Carry it.** `OssysRowsetTypes.ReferenceRow` gains `ReflectedOnDelete : string option`, mirroring
+  the existing `OnUpdate` field; `MetadataSnapshotRunner.toBundle` populates it from the same
+  `#FkReality` JOIN it already performs (`fkOpt |> Option.bind (fun fk -> fk.DeleteAction)`).
+- **Prefer it.** `OssysTranslation.chooseOnDeleteAction modelCode reflectedDeleteAction` resolves the
+  emitted action: the reflected action when it is present AND representable in V2's
+  `ReferenceAction` DU, else the model rule (so logical-only references with no reflected FK keep
+  their model rule, and an unrepresentable reflected action such as `SET_DEFAULT` falls back rather
+  than dropping the reference). `OssysRowsetReader.parseReferenceRowFor` calls it in place of the
+  bare `parseDeleteRule refRow.DeleteRuleCode`.
+- **Name the disagreement.** `MetadataSnapshotRunner.deleteRuleDivergences` — a pure snapshot pass
+  mirroring the F9 `columnRealityDivergences` / `primaryKeyDivergences` idiom, wired into
+  `LiveModelRead.surfaceDivergences` — emits a `Warning`
+  (`adapter.ossys.fkReality.deleteActionDivergence`) for every physically-backed FK whose model rule
+  maps to a *different* action than the reflected one. Reality wins the value; the operator is told
+  the model diverged, never silently overridden. The `#FkReality` JOIN is factored into one private
+  `fkRealityByParentAttrIdMap` so `toBundle` and the divergence pass cannot drift.
+
+**Witness.** `ReferenceReflectedDeleteActionTests` (pure, 10 cases): `chooseOnDeleteAction` (reflected
+CASCADE beats model Protect; logical-only keeps the model rule; `SET_DEFAULT` falls back);
+`deleteActionDivergence` (disagreement → `Some (model, reflected)`; agreement / logical-only /
+unmapped-model → `None`); the `toBundle` seam (`ReflectedOnDelete` carried on the backed reference,
+`None` on the logical-only one); and `deleteRuleDivergences` (one named `Warning` for the diverging
+backed reference, silent on agreement). The FK-reality / reference sibling suites
+(`FkRealityRowsetRoundTripTests`, `ReferenceHasDbConstraintLivePathTests`, `OsmRowsetReaderTests`,
+`ColumnRealityDivergenceTests`, `ReferenceConstraintStateTests` — 86 cases) stay green.
+
+**Golden note.** No golden re-record: the golden corpus (`GoldenCatalog.fs`) builds domain
+`Reference` values directly (`Reference.create … with OnDelete = …`), never through the OSSYS rowset
+`#FkReality` path, so `ReflectedOnDelete` is always `None` there and the emitted output is unchanged.
+The reflected-action preference is a live-extraction fidelity fix (same posture as WP-1a): the
+`GoldenEmissionTests` / `DataLaneGoldenTests` / `GoldenCodecTests` corpus is byte-unchanged.
+
+**Scope note.** WP-1(b) only — the reflected delete action + its divergence diagnostic. The rest of
+WP-1 rides later slices: WP-1(c) the mandatory evidence-gated eject posture and Ignore/missing-rule
+→ *no FK* semantics; WP-1(d) the placebo knobs (`treatMissingDeleteRuleAsIgnore` /
+`allowCrossCatalog` / `strictMode`); WP-1(e) the msg-1785 cascade-path pre-analyzer. The reflected
+action only *replaces* the model rule here — it does not yet suppress FK creation for Ignore
+references (that is WP-1(c)).

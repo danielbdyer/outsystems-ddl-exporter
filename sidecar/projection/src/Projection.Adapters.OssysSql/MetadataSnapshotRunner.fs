@@ -1040,6 +1040,70 @@ module MetadataSnapshotRunner =
             | _ -> None
         | _ -> None
 
+    /// The `#FkReality` row reflected for each reference attribute, keyed by
+    /// the reference's source `AttrId`. Encapsulates the JOIN chain
+    /// `OssysReferenceRow.AttrId ↔ OssysFkColumnRow.ParentAttrId ↔
+    /// OssysFkColumnRow.FkObjectId ↔ OssysFkRealityRow.FkObjectId` shared by
+    /// `toBundle` (presence ⇒ `HasDbConstraint`, plus `UpdateAction` /
+    /// `IsNoCheck` / `DeleteAction`) and `deleteRuleDivergences` (compares the
+    /// reflected `DeleteAction` against the model rule). One definition site so
+    /// the two consumers cannot drift.
+    let private fkRealityByParentAttrIdMap (snapshot: MetadataSnapshot) : Map<int, OssysFkRealityRow> =
+        let fkRealityById =
+            snapshot.ForeignKeysReality
+            |> List.map (fun fk -> fk.FkObjectId, fk)
+            |> Map.ofList
+        snapshot.ForeignKeyColumns
+        |> List.choose (fun c ->
+            match c.ParentAttrId, Map.tryFind c.FkObjectId fkRealityById with
+            | Some pid, Some fk -> Some (pid, fk)
+            | _ -> None)
+        |> Map.ofList
+
+    /// WP-1b (DECISIONS 2026-07-16) — NAME every disagreement between the
+    /// OutSystems model's delete-rule code and the deployed FK's reflected
+    /// `#FkReality.DeleteAction`, for physically-backed FKs. Database reality
+    /// wins the emitted ON DELETE action (the rowset reader prefers the
+    /// reflected action via `OssysTranslation.chooseOnDeleteAction`); this pure
+    /// pass tells the operator when the model disagreed, so the override is a
+    /// named observation, never silent. Only physically-backed FKs whose
+    /// reflected action is representable and differs from the model's are
+    /// reported. Deterministic — ordered by attribute id.
+    let deleteRuleDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let referenceActionText (a: ReferenceAction) =
+            match a with
+            | ReferenceAction.NoAction -> "NO ACTION"
+            | ReferenceAction.Cascade  -> "CASCADE"
+            | ReferenceAction.SetNull  -> "SET NULL"
+            | ReferenceAction.Restrict -> "RESTRICT"
+        let attributeById =
+            snapshot.Attributes |> List.map (fun a -> a.AttrId, a) |> Map.ofList
+        let fkReality = fkRealityByParentAttrIdMap snapshot
+        snapshot.References
+        |> List.sortBy (fun r -> r.AttrId)
+        |> List.choose (fun r ->
+            match Map.tryFind r.AttrId attributeById, Map.tryFind r.AttrId fkReality with
+            | Some attr, Some fk ->
+                match OssysTranslation.deleteActionDivergence attr.DeleteRule fk.DeleteAction with
+                | Some (modelAction, reflectedAction) ->
+                    Some
+                        { DiagnosticEntry.create
+                            "adapter:OSSYS" DiagnosticSeverity.Warning
+                            "adapter.ossys.fkReality.deleteActionDivergence"
+                            (sprintf "Reference on column %s (attr %d): the OutSystems model's delete rule maps to ON DELETE %s but the deployed FK reflects ON DELETE %s. The engine emits the DEPLOYED (reflected) action; remediate the model or confirm which is authoritative."
+                                attr.PhysicalCol r.AttrId
+                                (referenceActionText modelAction) (referenceActionText reflectedAction))
+                          with Metadata =
+                                Map.ofList
+                                    [ "attrId", string r.AttrId
+                                      "physicalColumn", attr.PhysicalCol
+                                      "modelDeleteRule", (attr.DeleteRule |> Option.defaultValue "<none>")
+                                      "modelAction", referenceActionText modelAction
+                                      "reflectedDeleteAction", (fk.DeleteAction |> Option.defaultValue "<none>")
+                                      "reflectedAction", referenceActionText reflectedAction ] }
+                | None -> None
+            | _ -> None)
+
     /// F9 (audit 2026-06-17) — NAME the logical-vs-deployed divergences instead
     /// of discarding them. The adapter carries the LOGICAL Service-Studio facets
     /// (`IsMandatory` → nullability, `IsAutoNumber` → identity); the SAME snapshot
@@ -1291,17 +1355,7 @@ module MetadataSnapshotRunner =
         // FkReality metadata as a result. Per-FK-constraint axes
         // (UpdateAction + IsNoCheck) are constant across columns;
         // V2's per-attribute Reference IR is the natural carrier.
-        let fkRealityById =
-            snapshot.ForeignKeysReality
-            |> List.map (fun fk -> fk.FkObjectId, fk)
-            |> Map.ofList
-        let fkRealityByParentAttrId =
-            snapshot.ForeignKeyColumns
-            |> List.choose (fun c ->
-                match c.ParentAttrId, Map.tryFind c.FkObjectId fkRealityById with
-                | Some pid, Some fk -> Some (pid, fk)
-                | _ -> None)
-            |> Map.ofList
+        let fkRealityByParentAttrId = fkRealityByParentAttrIdMap snapshot
 
         let references =
             snapshot.References
@@ -1329,6 +1383,12 @@ module MetadataSnapshotRunner =
                     let fkOpt = Map.tryFind r.AttrId fkRealityByParentAttrId
                     let onUpdate =
                         fkOpt |> Option.bind (fun fk -> fk.UpdateAction)
+                    // WP-1b (DECISIONS 2026-07-16) — carry the reflected
+                    // ON DELETE action alongside OnUpdate; the rowset reader
+                    // prefers it over the model rule for physically-backed
+                    // FKs and `deleteRuleDivergences` names the disagreement.
+                    let onDelete =
+                        fkOpt |> Option.bind (fun fk -> fk.DeleteAction)
                     let isTrusted =
                         match fkOpt with
                         | Some fk -> not fk.IsNoCheck
@@ -1341,6 +1401,7 @@ module MetadataSnapshotRunner =
                             DeleteRuleCode      = attr.DeleteRule
                             HasDbConstraint     = Option.isSome fkOpt
                             OnUpdate            = onUpdate
+                            ReflectedOnDelete   = onDelete
                             IsConstraintTrusted = isTrusted
                         } : OssysRowsetTypes.ReferenceRow)
                 | _ -> None)

@@ -222,6 +222,19 @@ module OssysRowsetTypes =
             /// doesn't surface a matching FK constraint (cross-
             /// catalog / JSON-path / non-OSSYS-source).
             OnUpdate        : string option
+            /// WP-1b (DECISIONS 2026-07-16). Optional reflected ON DELETE
+            /// referential action carried from V1's
+            /// `#FkReality.DeleteAction` (SQL-Server vocabulary —
+            /// `NO_ACTION` / `CASCADE` / `SET_NULL` / `SET_DEFAULT`, the same
+            /// domain as `OnUpdate`, distinct from the OutSystems
+            /// `DeleteRuleCode`) via the
+            /// `OssysReferenceRow → OssysFkColumnRow → OssysFkRealityRow`
+            /// JOIN at `toBundle`. `Some` iff the reference is physically
+            /// backed; the rowset reader prefers it over `DeleteRuleCode`
+            /// for the emitted action, and the runner names the divergence
+            /// when they disagree. `None` for logical-only references and on
+            /// the JSON / cross-catalog / non-OSSYS-source paths.
+            ReflectedOnDelete : string option
             /// Slice 5.13.fk-features-emit cash-out (matrix row 59
             /// adapter-wiring residual). `false` when V1's
             /// `#FkReality.IsNoCheck = 1` flows through the same JOIN

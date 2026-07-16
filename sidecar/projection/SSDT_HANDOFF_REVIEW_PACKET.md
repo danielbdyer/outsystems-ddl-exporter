@@ -407,6 +407,10 @@ that only the evidence-gated tightening channel may materialize; make
 cascade-path (1785) pre-analysis to the backlog as a pre-emit diagnostic — SQL Server will
 reject some OutSystems-legal `Delete` topologies at deploy and nothing predicts that today.
 *Decided (2026-07-15): planned fix — WP-1; 1785 analysis signaled to backlog.*
+*Landed (2026-07-16, WP-1b): the reflected `#FkReality.DeleteAction` now wins the emitted
+`ON DELETE` for physically-backed FKs (reader via `OssysTranslation.chooseOnDeleteAction`), with a
+named `Warning` on model↔reality disagreement. Still open (WP-1c): Ignore/missing-rule references
+still default-emit an FK; the evidence-gated no-FK posture is not yet mandatory.*
 
 **E2. Materializing logical-only references as FKs — the mission, and the regime question** — [KNOB via tightening] ⚑ **WP-1**
 Answering the review question "are references *meant* to be logical-only in this estate?":
@@ -760,7 +764,8 @@ and adopting golden-diff-as-change-review going forward.
    the logical-vs-backed distinction; blocks the FK evidence regime. ⚑ WP-1 (first).
 3. Trigger bodies keep physical refs + unparsed-body drop marker. ⚑ WP-6.
 4. Empty-string → NULL universal erasure (V2 regression). ⚑ WP-3.
-5. Delete-rule reality: Ignore→FK-created; reflected `DeleteAction` unused; no 1785 analysis. ⚑ WP-1.
+5. Delete-rule reality: Ignore→FK-created (⚑ WP-1c, open); reflected `DeleteAction` unused
+   (**✅ WP-1b landed** — reader prefers it + named divergence diagnostic); no 1785 analysis (⚑ WP-1e).
 6. Clustering not captured — silent re-clustering of DBA-modified tables. ⚑ WP-2.
 7. `manifest.remediation.sql` build hazard + alphabetical lane order (G5).
 8. No `CREATE SCHEMA` emission (G6).
@@ -813,11 +818,15 @@ about the logical-vs-backed split.
 ### Group I — restore database-reality fidelity
 
 **WP-1 · FK reality & regime (E1, E2, E3, E6)** — the headline package.
-(a) Fix the live-path `HasDbConstraint = true` hardcode (`MetadataSnapshotRunner.fs:1326`) so
-the logical-vs-backed distinction survives live extraction (JSON-path parity: absent → false).
-(b) For physically-backed FKs, emit the **reflected** delete action (`#FkReality.DeleteAction`
-— extracted today, consumed nowhere); when model rule code and deployed action disagree, keep
-the reflected action and raise a named divergence diagnostic.
+(a) **✅ LANDED (WP-1a, DECISIONS 2026-07-16).** Fix the live-path `HasDbConstraint = true`
+hardcode so the logical-vs-backed distinction survives live extraction (JSON-path parity:
+absent → false).
+(b) **✅ LANDED (WP-1b, DECISIONS 2026-07-16).** For physically-backed FKs, emit the **reflected**
+delete action (`#FkReality.DeleteAction` — was extracted, consumed nowhere); the rowset reader now
+prefers it over the model rule via `OssysTranslation.chooseOnDeleteAction`, and
+`MetadataSnapshotRunner.deleteRuleDivergences` raises a named `Warning`
+(`adapter.ossys.fkReality.deleteActionDivergence`) when model rule code and deployed action
+disagree. (No golden change — the corpus is catalog-direct, no `#FkReality` rows.)
 (c) References with no physical FK (Ignore, missing rule, external-entity, out-of-scope) are
 *expected no-FK cases*: never default-emit; materialization happens only through the
 evidence-gated `foreignKey` intervention — restoring V1's `EvidenceGated` posture as the
