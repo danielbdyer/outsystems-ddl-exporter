@@ -2560,6 +2560,15 @@ module ScriptDomBuild =
             stmt.SequenceOptions.Add(cacheOpt)
         stmt
 
+    /// G6 (DECISIONS 2026-07-16) — build a `CREATE SCHEMA [<name>]`
+    /// statement. Bracket-quoted via the shared `bracketed` identifier
+    /// helper; no AUTHORIZATION clause (server-default owner — the
+    /// receiving team's ownership call, not the emission's).
+    let buildCreateSchema (schemaName: string) : CreateSchemaStatement =
+        let stmt = CreateSchemaStatement()
+        stmt.Name <- bracketed schemaName
+        stmt
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -2595,6 +2604,8 @@ module ScriptDomBuild =
             Some (buildAlterTableDisableTrigger table triggerName :> TSqlStatement)
         | CreateSequence seqIR ->
             Some (buildCreateSequence seqIR :> TSqlStatement)
+        | CreateSchema schemaName ->
+            Some (buildCreateSchema schemaName :> TSqlStatement)
         | AlterTableAddColumn (table, column) ->
             Some (buildAlterTableAddColumn table column :> TSqlStatement)
         | AlterTableAlterColumn (table, column) ->

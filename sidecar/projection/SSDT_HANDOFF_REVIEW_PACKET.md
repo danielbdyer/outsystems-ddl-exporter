@@ -614,9 +614,14 @@ findings it would compile as a schema object and break the build; (b) wired post
 order is alphabetical (Migration before Static) against the emitter's documented deploy order.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G6. No `CREATE SCHEMA` objects emitted** — [GAP]
+**G6. No `CREATE SCHEMA` objects emitted** — [GAP → ✅ LANDED]
 Non-dbo estates don't build/publish until schema objects are hand-authored.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+*Landed (2026-07-16, G6): the emission derives every distinct non-dbo schema (kinds +
+sequences; `dbo` never; case-insensitive dedupe) and emits `CREATE SCHEMA` at the head of the
+statement stream, one `Schemas/<name>.sql` per schema in the bundle (SDK default Build glob),
+and the schema objects into the dacpac model. dbo-only estates byte-identical (one golden
+scenario moved, additively). The gated real-SDK build witness compiles a non-dbo bundle to a
+`.dacpac`. DECISIONS 2026-07-16 — G6.*
 
 **G7. Ancillary emitters** — [info]
 `SchemaMigrationEmitter` = ALTER preview/verification lens (never feeds dacpac);
@@ -790,7 +795,8 @@ migrations for mandatory-column tightening.
 Unaddressed anywhere in the repo — pin before first publish: pre-compare noise family
 (`IgnoreWhitespace`/`IgnoreKeywordCasing`/`IgnoreAnsiNulls`/`IgnoreSemicolonBetweenStatements` —
 emitted DDL has no semicolons); `DoNotDropObjectTypes`/`ExcludeObjectTypes` (protect extended
-properties if keeping H6, hand-added schemas from G6); `ScriptDatabaseOptions`,
+properties if keeping H6; schemas are model members since G6 2026-07-16 — no longer a
+hand-added-object drop hazard); `ScriptDatabaseOptions`,
 `VerifyDeployment`, `CommandTimeout`, contributors; committed per-env `.publish.xml` (the
 `.refactorlog` + its project item are now EMITTED on store-threaded runs — ✅ G3 2026-07-16);
 environment prerequisites the tool does not check (server/DB
@@ -815,7 +821,8 @@ and adopting golden-diff-as-change-review going forward.
    (**✅ WP-1b landed** — reader prefers it + named divergence diagnostic); no 1785 analysis (⚑ WP-1e).
 6. Clustering not captured — silent re-clustering of DBA-modified tables. ⚑ WP-2.
 7. `manifest.remediation.sql` build hazard + alphabetical lane order (G5).
-8. No `CREATE SCHEMA` emission (G6).
+8. No `CREATE SCHEMA` emission (G6). **✅ LANDED 2026-07-16** (stream head + `Schemas/*.sql`
+   bundle files + dacpac model members; dbo-only estates byte-identical).
 9. Unnamed erasures: temporal/sequences/PERSISTED/ROWGUIDCOL/SPARSE/FILESTREAM. ⚑ WP-5.
 10. email/phone VARCHAR vs platform NVARCHAR. **✅ WP-4 landed** (NVARCHAR mapping); on-disk
     precedence for ordinary scalars (C1) split out as ⚑ WP-4b.
@@ -1067,7 +1074,7 @@ create against a customer DB.
 | 1 | Estate readiness | M runs / A judges: `projection check shape` | live OSSYS → verdict | SELECT on `ossys_*` | exit 0 (5 divergence, 6 unreadable) |
 | 2 | **Emission** | M runs / A produces: `projection publish --go` (flow→`PublishBundle`) or `full-export <cfg> --lifecycle-store <p>` | live model + hydrated rows → bundle (`Modules/**.sql`, `Data/{StaticSeeds,MigrationData,Bootstrap}.sql`, `.sqlproj`+`Script.PostDeployment.sql` if `sqlproj:true`, `manifest.json`, `fidelity.*`, `catalog.snapshot.json`) | source SELECT | artifact count; read `fidelity.txt`; `diff` vs prior |
 | 3 | Hand-off | M: deliver bundle to Octopus/CI | → CI workspace | — | — |
-| 4 | Target prep | M (receiving team): DB exists, collation = `1033 CI`, compat = SQL2022, logins, `CREATE SCHEMA` for non-dbo, `nuget.config` | → deployable target | dbcreator/DDL | — |
+| 4 | Target prep | M (receiving team): DB exists, collation = `1033 CI`, compat = SQL2022, logins, `nuget.config` (~~`CREATE SCHEMA` for non-dbo~~ — supplied by the bundle since G6, 2026-07-16) | → deployable target | dbcreator/DDL | — |
 | 5 | **Schema + seeds/migration** | M invokes / DacFx executes: `dotnet build ProjectionCatalog.sqlproj` → `sqlpackage /Action:Publish` (profile per §7). Post-deploy (**StaticSeeds + MigrationData only**, inlined at build) runs inside the publish | sqlproj + bundle → schema (logical names) + static/migration rows | DDL; post-deploy needs IDENTITY_INSERT (ownership/ALTER) + `#temp`+TRAN | publish OK; SSDT compare; `check drift` |
 | 6a | **Bulk data — script path** | **M: operator runs `Data/Bootstrap.sql` via `sqlcmd -b`** post-publish — *no verb executes this file* | Bootstrap.sql → remaining rows | as step 5 post-deploy | idempotent rerun; `check data` |
 | 6b | **Bulk data — pipeline path (alt.)** | M invokes / A executes: live `schema+data` sink + `PROJECTION_ALLOW_EXECUTE=1 projection <flow> --go` → `PublishAndLoad` → `executeLeveledSeed` (Phase-1 levels → Phase-2 levels; parallel within level; CDC-measured) | lanes loaded live; episode recorded | DML + IDENTITY_INSERT/`#temp`; two-key gate | `load.completed`; re-run → 0 (CDC-silent) |
@@ -1092,8 +1099,8 @@ create against a customer DB.
 5. ~~Refactorlog not in the bundle (G3)~~ **✅ landed 2026-07-16** (store-threaded bundles carry
    it; the DacFx sp_rename canary proves the incremental publish); **rollback never proven**
    (§4) remains the eject-time must-close the procedure otherwise assumes.
-6. Bundle prerequisites the emission does not supply: `nuget.config` (G2), `CREATE SCHEMA` (G6),
-   and the publish profile itself (§7).
+6. Bundle prerequisites the emission does not supply: `nuget.config` (G2) and the publish
+   profile itself (§7). (~~`CREATE SCHEMA` (G6)~~ — ✅ supplied by the bundle since 2026-07-16.)
 
 The full hop-by-hop trace (both `--load` and transfer variants, per-path rights, and the
 verification verb matrix) lives in the procedure research; this table is the operator-facing

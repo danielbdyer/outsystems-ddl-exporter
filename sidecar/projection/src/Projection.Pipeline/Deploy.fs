@@ -478,6 +478,13 @@ module Deploy =
                     // any stale bulk state before executing.
                     do! flushBulk ()
                     appendDdl s
+                | CreateSchema _ ->
+                    // G6: CREATE SCHEMA is DDL; schemas precede every
+                    // other object in the statement stream (non-dbo
+                    // tables/sequences resolve against them) — same
+                    // realization shape as the other DDL arms.
+                    do! flushBulk ()
+                    appendDdl s
                 | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _
                 | AlterTableDropColumn _ | AlterTableDropConstraint _ | DropIndex _ | DropSequence _ ->
                     // 6.A.12 + C1: minimum-viable-touch migration DDL (ALTER

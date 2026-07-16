@@ -586,7 +586,11 @@ module Compose =
                         ManifestEmitter.buildFull
                             ctx.Profile registry ctx.ComposedState.TopologicalOrder
                             ctx.VersionedPolicy policyConflicts ctx.Trail (Some ctx.ComposedState) ctx.EmittedCatalog
-                    { outputs with SsdtBundle = SsdtBundle.compose rewritten manifest; Manifest = manifest }
+                    // G6 — the non-dbo CREATE SCHEMA files ride the bundle
+                    // beside the Modules/** tables (empty for dbo-only
+                    // estates; the SDK's default Build glob compiles them).
+                    let schemaFiles = SsdtDdlEmitter.schemaFiles ctx.EmittedCatalog
+                    { outputs with SsdtBundle = SsdtBundle.composeWithSchemas schemaFiles rewritten manifest; Manifest = manifest }
                 | Error err ->
                     invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err) }
           { Metadata = JsonEmitter.registeredMetadata

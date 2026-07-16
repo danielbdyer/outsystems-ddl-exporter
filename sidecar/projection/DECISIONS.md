@@ -28152,3 +28152,38 @@ rendering the terminal accumulated document into the eject artifact is the eject
 of P-7. (4) `MigrationRun.preview` keeps the catalog-plane `emit` for its report artifact —
 migrating that surface to deployed vocabulary is its own decision when the migrate path grows
 a DacFx consumer.
+
+## 2026-07-16 — G6: `CREATE SCHEMA` objects emitted — non-dbo estates build and publish
+
+**Decision.** The emission now produces the non-dbo schema objects the estate references, at
+every surface that needed them: `Statement.CreateSchema` (closed-DU expansion; ScriptDom
+`CreateSchemaStatement`, bracket-quoted, no AUTHORIZATION — ownership is the receiving team's
+call) opens the catalog-wide statement stream BEFORE sequences and tables; the bundle gains
+one `Schemas/<name>.sql` per schema beside `Modules/**` (the SDK's default Build glob compiles
+them — `SsdtBundle.composeWithSchemas`, wired at the emit step); the dacpac arm's
+`isSchemaStatement` admits them into the declarative model; the deploy executor treats them as
+the DDL class they are. Derivation (`SsdtDdlEmitter.nonDboSchemas`): every distinct schema
+across kind physical coordinates AND sequences, minus `dbo` in any case (it always exists),
+deduped case-insensitively (SQL Server CI semantics — case-variant spellings are ONE schema;
+the ordinal-sort-first spelling wins deterministically, T1). A dbo-only estate emits nothing —
+the byte-identical default everywhere, which is why exactly ONE golden scenario moved.
+
+**Witness.** `nonDboSchemas` derivation pins (dbo-any-case exclusion, CI dedupe, sequence
+schemas, ordinal order); the dbo-only byte-identical default (no statements, no files, clean
+stream); stream-head ordering (`CREATE SCHEMA` precedes every object); the `Schemas/audit.sql`
+file shape; the dacpac arm accepting a non-dbo catalog; and the gated real-SDK build witness —
+a non-dbo bundle `dotnet build`s to a `.dacpac` (pre-G6 this refuses with unresolved-schema
+SQL71501; the composed bundle, not a hand-assembly, carries `Schemas/audit.sql`). Golden
+re-record: master corpus only, additive-verified by diff — the 4-line `CREATE SCHEMA [audit]`
+stream head + the new `Schemas/audit.sql`; every dbo-only corpus byte-identical.
+
+**Scope notes.** `CREATE SCHEMA` is not idempotent (no `IF NOT EXISTS` guard) — correct for
+the SSDT/DacFx path (the deploy planner diffs the model; it never re-runs a CREATE against an
+existing schema) and for V2's own executor against fresh targets (the canary/docker legs);
+targets that pre-created schemas by hand (runbook §11 step 4's old instruction) will refuse a
+raw re-execution of the stream head loudly rather than silently — the runbook step is now
+"supplied by the bundle". The migrate/ALTER lens (`SchemaMigrationEmitter`) is untouched: a
+schema APPEARING mid-timeline arrives via new kinds whose CREATE TABLEs the bundle already
+carries alongside the new `Schemas/` file; an in-place `migrate` against an estate missing the
+schema still requires the bundle deploy (or hand DDL) first — the named residual, re-opened if
+a real mid-timeline schema-add migration surfaces.

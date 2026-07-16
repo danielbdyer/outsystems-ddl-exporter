@@ -113,6 +113,61 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
         try Directory.Delete(dir, true) with _ -> ()
 
 // ----------------------------------------------------------------------------
+// G6 (DECISIONS 2026-07-16) — a NON-dbo estate builds. The bundle's
+// `Schemas/<name>.sql` CREATE SCHEMA objects ride the SDK's default Build
+// glob beside the `Modules/**` tables; without them SSDT refuses the model
+// (unresolved schema reference, SQL71501) — exactly the hand-authoring gap
+// G6 closes.
+// ----------------------------------------------------------------------------
+
+[<Fact>]
+let ``Sqlproj build: a NON-dbo estate's bundle builds to a .dacpac (Schemas/ objects emitted — G6)`` () =
+    let auditKey = mkKey [ "Ledger"; "ChangeLog" ]
+    let changeLog =
+        { Kind.create auditKey (Name.create "ChangeLog" |> Result.value)
+            (TableId.create "audit" "OSUSR_LDG_CHANGELOG" |> Result.value)
+            [ { Attribute.create (mkKey [ "Ledger"; "ChangeLog"; "Id" ]) (Name.create "Id" |> Result.value) Integer with
+                  Column = col "ID"
+                  IsPrimaryKey = true
+                  IsMandatory = true } ]
+          with References = [] }
+    let catalog : Catalog =
+        { Modules = [ { SsKey = mkKey [ "Ledger" ]; Name = Name.create "Ledger" |> Result.value; Kinds = [ changeLog ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
+    let policy = { Policy.empty with Emission = EmissionPolicy.combined }
+    let outputs = Compose.projectWith policy Profile.empty catalog
+    // The composed bundle carries the schema object (the wire, not a
+    // hand-assembly): Schemas/audit.sql beside Modules/**.
+    Assert.True(outputs.SsdtBundle.ContainsKey "Schemas/audit.sql", "the bundle carries Schemas/audit.sql")
+    let dir = Path.Combine(Path.GetTempPath(), "proj-nondbo-" + Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory dir |> ignore
+    try
+        for KeyValue (rel, body) in outputs.SsdtBundle do
+            if rel.EndsWith ".sql" then writeFile dir rel body
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] false false)
+        writeFile dir "nuget.config" nugetConfig
+        let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
+        psi.WorkingDirectory <- dir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+        let proc =
+            match Process.Start psi with
+            | null -> failwith "could not start `dotnet`"
+            | p -> p
+        let stdout = proc.StandardOutput.ReadToEnd()
+        let stderr = proc.StandardError.ReadToEnd()
+        proc.WaitForExit()
+        let combined = stdout + "\n" + stderr
+        if combined.Contains "Could not resolve SDK" || combined.Contains "Unable to resolve 'Microsoft.Build.Sql" then
+            printfn "SKIP non-dbo .sqlproj build: Microsoft.Build.Sql SDK not restorable in this environment."
+        else
+            Assert.True(proc.ExitCode = 0, sprintf "dotnet build of the non-dbo .sqlproj failed (exit %d):\n%s" proc.ExitCode combined)
+            Assert.True(File.Exists(Path.Combine(dir, "bin", "Debug", "ProjectionCatalog.dacpac")), "the non-dbo bundle built a .dacpac")
+    finally
+        try Directory.Delete(dir, true) with _ -> ()
+
+// ----------------------------------------------------------------------------
 // G3 (DECISIONS 2026-07-16) — the refactorlog PAIRING builds. The bundle carries
 // `ProjectionCatalog.refactorlog` (deployed-vocabulary, accumulated) and the
 // `.sqlproj` its explicit `RefactorLog` item; `dotnet build` must compile the

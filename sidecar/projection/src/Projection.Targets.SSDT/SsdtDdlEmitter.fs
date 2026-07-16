@@ -598,6 +598,37 @@ module SsdtDdlEmitter =
         |> List.sortBy (fun s -> s.SsKey)
         |> List.map Statement.CreateSequence
 
+    /// G6 (DECISIONS 2026-07-16) — every distinct NON-dbo schema the
+    /// emitted estate references (kind physical coordinates + sequence
+    /// schemas). `dbo` always exists on the target and is never emitted.
+    /// Deduped case-insensitively (SQL Server CI collation semantics —
+    /// two case-variant spellings are ONE schema; the lexicographically
+    /// first spelling wins deterministically) and ordinal-sorted (T1).
+    let nonDboSchemas (catalog: Catalog) : string list =
+        let kindSchemas =
+            Catalog.allKinds catalog |> List.map (fun k -> TableId.schemaText k.Physical)
+        let sequenceSchemas =
+            catalog.Sequences |> List.map (fun s -> s.Schema)
+        kindSchemas @ sequenceSchemas
+        |> List.filter (fun s -> not (s.Equals("dbo", System.StringComparison.OrdinalIgnoreCase)))
+        |> List.sortWith (fun a b -> System.String.CompareOrdinal(a, b))
+        |> List.distinctBy (fun s -> s.ToLowerInvariant())
+
+    /// G6 — the `CREATE SCHEMA` statements a non-dbo estate needs before
+    /// any other object. Empty for a dbo-only estate (the byte-identical
+    /// default everywhere).
+    let schemaStatements (catalog: Catalog) : Statement list =
+        nonDboSchemas catalog |> List.map Statement.CreateSchema
+
+    /// G6 — the bundle's per-schema `.sql` files: `Schemas/<name>.sql`,
+    /// one `CREATE SCHEMA` per file, riding the SDK's default Build glob
+    /// exactly like the `Modules/**` tables. Empty for dbo-only estates.
+    let schemaFiles (catalog: Catalog) : (string * string) list =
+        nonDboSchemas catalog
+        |> List.map (fun s ->
+            let relPath = System.String.Concat("Schemas/", s, ".sql")  // LINT-ALLOW: bundle-relative path assembly at the artifact-naming boundary (the Modules/ path-builder precedent); segments are the validated schema name + fixed literals
+            relPath, Render.toText [ Statement.CreateSchema s; BatchSeparator ])
+
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
     /// <Schema>.<Table>.sql`. Forward-slash separators throughout.
@@ -950,6 +981,10 @@ module SsdtDdlEmitter =
                 seq { yield stmt; yield BatchSeparator }
             let yieldAllWithSeparator (stmts: seq<Statement>) =
                 stmts |> Seq.collect yieldWithSeparator
+            // G6: schemas FIRST — non-dbo tables and sequences resolve
+            // against them; dbo-only estates yield nothing here (the
+            // byte-identical default).
+            yield! yieldAllWithSeparator (schemaStatements catalog)
             // H-020: sequences before tables — they may be referenced by
             // DEFAULT constraints in CREATE TABLE statements.
             yield! yieldAllWithSeparator (sequenceStatements catalog)

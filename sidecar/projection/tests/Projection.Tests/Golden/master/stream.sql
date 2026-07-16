@@ -1,3 +1,7 @@
+CREATE SCHEMA [audit]
+
+GO
+
 CREATE TABLE [dbo].[Assignment] (
     [ProjectId]  INT           NOT NULL,
     [ResourceId] INT           NOT NULL,
