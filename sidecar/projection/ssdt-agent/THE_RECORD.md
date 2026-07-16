@@ -207,7 +207,11 @@ Run this over any line before it lands. If it hits, the line is not finished.
   (§5).
 - **The tree's private nicknames:** `magic line`, `the spine`, `the graduation`, `graduate / level
   up`, `the oracle`, `the flip / flip twin`, `the corpse`, `proving ground` (in a record), `blast
-  radius`, `naked` (as in *naked rename* — say `a rename with no refactorlog entry`).
+  radius`, `naked` (as in *naked rename* — say `a rename with no refactorlog entry`). The ban is the
+  **noun nickname**: the plain verb — *how the outcome flips on the data* — is ordinary English and
+  stays. And the handbook's §19 trap names (*Optimistic NOT NULL, Ambitious Narrowing, Forgotten FK
+  Check, CDC Surprise, Refactorlog Cleanup, the SELECT \* view*) are the curriculum's registered
+  terms of art and stay; only *Naked Rename* is retired, for its modifier.
 - **Ceremony verbs as surfaced words:** `BLESS`, `HAND-BACK`, `REFUSE-ESCALATE` in caps as if they
   were commands. Use the plain dispositions (§6).
 - **Drama:** `destroy(s)`, `fatal`, `catastrophe`, `abort`, `blast`, `veto` as a lead noun (prefer

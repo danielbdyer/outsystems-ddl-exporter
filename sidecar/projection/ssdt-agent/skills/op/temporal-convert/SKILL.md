@@ -19,6 +19,12 @@ description: Use when the developer says "add full history to our existing popul
 ## SSDT meaning
 Add the (hidden) `GENERATED ALWAYS AS ROW START/END` period columns with backfilled start times, create the paired history table, then turn `SYSTEM_VERSIONING = ON` against live data. Staged because you cannot swap the shape under a running app atomically. Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 Adding the period columns to a populated table needs **sensible historical defaults for `ROW START`**, or every existing row claims to have begun at conversion time. Also conflating temporal with CDC (see `../temporal-new/SKILL.md`). The coexistence WHY is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
 

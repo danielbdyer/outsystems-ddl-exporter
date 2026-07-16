@@ -25,6 +25,7 @@ The packet `change-author` emits (its **Handoff** section is the producer). Ever
 
 | Packet field | The claim it makes | Becomes the proof obligation |
 |---|---|---|
+| **who authored the change** — developer or lead | "gate this (a developer's change)" or "spar with this (the lead's own)" | selects the mode before anything runs: a developer's change gets the full audit with all four dispositions; the lead's own change is sparred — argued against, counter-designed — and **Returned to the author is unavailable** (no persona-1 to return to; route such findings via the escalation or named-risk paths) |
 | operation(s) + target object | "this is op X on object Y" | the op-slug the adversary and dependency-scope load |
 | **how it ships and who must review** — the two findings (`THE_RECORD.md` §5) | "the shipping shape and the review need are these" | reproduce must yield the same delta/block; any added-scrutiny finding must survive dependency-scope |
 | **generated delta** (`/Action:Script`) | "SSDT would run exactly this" | re-run `/Action:Script` on your DB; the delta must match in kind (sp_rename vs DROP+CREATE, the guard placement) |

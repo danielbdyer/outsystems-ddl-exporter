@@ -182,6 +182,10 @@ sections: its **Review & release** findings, its **Verification** query, its **R
 and its standing **Not verified** items. Assemble the body from those fragments; the operation skill
 owns the specifics, this skill owns the shape and the register.
 
+A complete **captured** example from a live run — every count, error, and digest in it observed on a
+disposable copy — is `../../self-test/golden/make-mandatory-pr.md`, with its developer conversation
+alongside. That pair is the standard to imitate.
+
 ## Hard rules
 
 - **The register is `../../THE_RECORD.md` §2.** Agentless, findings-first, proof beneath, next move

@@ -21,9 +21,9 @@ computes the ALTER.
 | add-mandatory | `../op/add-mandatory/SKILL.md` | New NOT NULL column (the Optimistic NOT NULL trap). A populated table needs a DEFAULT, or the deployment is blocked. |
 | make-mandatory | `../op/make-mandatory/SKILL.md` | NULL→NOT NULL. **The canonical tightening-class change** — an empty table applies in place; a populated table is blocked on row-presence even with zero NULLs. |
 | make-optional | `../op/make-optional/SKILL.md` | NOT NULL→NULL. A loosening is never blocked; the risk is downstream consumers. |
-| widen | `../op/widen/SKILL.md` | Enlarge type. Applies in place; the one coupling is the index-key byte limit. |
+| widen | `../op/widen/SKILL.md` | Enlarge type. Applies in place; a dev lead or an experienced developer should review it; the one coupling is the index-key byte limit. |
 | narrow | `../op/narrow/SKILL.md` | Shrink type (the Ambitious Narrowing trap). Tightening class — a populated table is blocked even when every value fits. |
-| retype-implicit | `../op/retype-implicit/SKILL.md` | Widening/lossless cast (INT→BIGINT). Applies in place; any team member can review it. |
+| retype-implicit | `../op/retype-implicit/SKILL.md` | Widening/lossless cast (INT→BIGINT). Applies in place; a dev lead or an experienced developer should review it. |
 | retype-explicit | `../op/retype-explicit/SKILL.md` | Value-reshaping/lossy cast (Text→Date). Ships across releases (multi-phase); the TRY_CONVERT count drives it. |
 | rename-attribute | `../op/rename-attribute/SKILL.md` | Rename at column grain. A refactorlog entry makes it `sp_rename` (data preserved); a rename with no refactorlog entry becomes DROP COLUMN + ADD and loses the column's data. |
 | delete-attribute | `../op/delete-attribute/SKILL.md` | Drop a column. The 4-phase deprecation; a populated column is blocked on row-presence; a principal must review once data would be lost. |

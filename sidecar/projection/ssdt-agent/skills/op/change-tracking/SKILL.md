@@ -5,8 +5,9 @@ description: Use when the developer says "I just need to know which rows changed
 
 # Enable change tracking (CDC-vs-change-tracking conflation trap)
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
-> additive, no existing data is touched, and the running application is unaffected. Ships as a
+> **Default (provisional — the data decides).** A dev lead or an experienced developer should review
+> this: no existing data is touched, but the sync consumer that reads the change data is new
+> application code shipping alongside the enable. Ships as a
 > scripted change — enabling change tracking cannot be expressed as a table definition — far lighter
 > than CDC: all editions, no capture instances, no per-feed management, and none of CDC's standing
 > capture-instance obligation. Prove it on a disposable copy before classifying.
@@ -30,8 +31,8 @@ here.
 
 ## How it flips (the specifics only)
 - enable change tracking → ships as a scripted change, one release: enabling change tracking cannot be
-  expressed as a table definition. Any team member can review it — the change is additive, no existing
-  data is touched, and the running application is unaffected.
+  expressed as a table definition. A dev lead or an experienced developer should review it — no
+  existing data is touched, but the sync consumer that reads the feed is new application code.
 - retention/cleanup configuration → operational, lives in DB settings; flag it as job-owned.
 - it carries **none** of CDC's standing capture-instance obligation — no capture instance is frozen to
   the table's columns, so future changes to the table take on no added scrutiny from it. That is the
@@ -67,7 +68,8 @@ reasoning — name what you need, then pick the lightest tool that gives it — 
 Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected.
+- A dev lead or an experienced developer should review this: no existing data is touched, but the
+  sync consumer that reads the change data is new application code shipping alongside.
 - Ships as a scripted change — enabling change tracking cannot be expressed as a table definition — in
   a single release.
 - Added scrutiny: none. Change tracking carries no standing capture-instance obligation, so future

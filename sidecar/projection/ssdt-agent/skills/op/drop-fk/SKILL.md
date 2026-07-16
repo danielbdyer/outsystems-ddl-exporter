@@ -39,7 +39,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`. No data is read or written, and the publish never blocks.
 - Added scrutiny: none. The drop reads and writes no data, so row count is not a factor, and a CDC-tracked table's capture instance is unaffected.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: the foreign key no longer exists
 SELECT name FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>';

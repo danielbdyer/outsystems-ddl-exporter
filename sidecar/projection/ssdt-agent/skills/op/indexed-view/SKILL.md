@@ -65,7 +65,7 @@ walk into is a later "trivial" base-column widen turning into a blocking indexed
 nobody scheduled — which is exactly what proving the rebuild in the delta lets you see coming.
 
 ## On the record
-The fragment this operation contributes to the pull request (`author-pr`), in the record register.
+The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`), in the record register.
 
 **Review & release**
 - An experienced developer or a dev lead should review this: it adds a stored object that binds its
@@ -80,7 +80,7 @@ The fragment this operation contributes to the pull request (`author-pr`), in th
   standing write-time cost. Any later change to a bound base column forces SSDT to drop and rebuild
   the indexed view.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect one row: dbo.vOrderSummary carries a UNIQUE CLUSTERED index (the result is materialized)
 SELECT v.name AS view_name, i.name AS index_name, i.type_desc, i.is_unique

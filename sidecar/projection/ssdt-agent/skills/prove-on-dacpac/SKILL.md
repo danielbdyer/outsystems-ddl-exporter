@@ -154,6 +154,9 @@ IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer])
 ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(256) NOT NULL;
 ```
 
+*(As emitted by sqlpackage 170.4.83.3 the guard reads lowercase and carries `WITH NOWAIT`; a
+blocked publish surfaces it as `Error SQL72014` / `Msg 50000, Level 16, State 127`.)*
+
 That guard fires on `IF EXISTS (... FROM Table)` — **the table merely having rows** — and is placed
 **before** the `ALTER COLUMN`. It **does not inspect the `Email` column at all.** Why: **SSDT
 computes the entire deploy script once, up front, from the pre-publish model state, and is

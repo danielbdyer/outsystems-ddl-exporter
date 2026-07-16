@@ -21,6 +21,12 @@ Remove the column from the `CREATE`. SSDT emits `ALTER TABLE ... DROP COLUMN [Co
 that holds data, `BlockOnPossibleDataLoss=True` blocks the publish; the values are irrecoverable
 without a backup. Edit the CREATE; never write `ALTER`.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 Dropping a column still referenced by a view/proc/computed-column/index (those break or block the
 drop); and dropping before the app has genuinely stopped reading it. A populated column is blocked
@@ -68,7 +74,7 @@ it's truly dead.
 ## On the record
 The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
 
-**Review & release.**
+**Review & release**
 - A principal must review this: data is removed and the removal cannot be undone. (An empty,
   provably-unused column loses no data, but a drop is structurally irreversible — a dev lead
   reviews at minimum.)
@@ -92,7 +98,7 @@ no view, procedure, computed column, or index still references it.
 values are gone once dropped and are recoverable only from a backup taken before the drop; an
 empty, provably-unused column re-adds losslessly. The drop is not auto-reversed.
 
-**Not verified.**
+**Not verified**
 - Application impact — whether application code outside the database still writes or reads the
   column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; @app-owner
   confirms the app has stopped.

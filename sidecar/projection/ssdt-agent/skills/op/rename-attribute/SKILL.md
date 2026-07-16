@@ -64,7 +64,7 @@ costs nothing to fix, instead of in production, where it costs the column.
 ## On the record
 The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
 
-**Review & release.**
+**Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to
   keep working, because every caller of the old column name (views, procedures, ORM mappings,
   reports, ETL) must move to the new name.
@@ -87,7 +87,7 @@ Before each promotion the generated delta must read as `sp_rename ... 'COLUMN'`,
 refactorlog entry — `sp_rename` preserves the data in both directions. The callers updated for the
 new name must be reverted with it. Not auto-reversed.
 
-**Not verified.**
+**Not verified**
 - Application impact — consumers of the old column name outside the project (reports, ETL,
   integrations not in the dacpac) break silently until they move to the new name; @app-owner and the
   consumer owners confirm the callers are updated.

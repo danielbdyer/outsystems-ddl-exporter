@@ -43,6 +43,11 @@ IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer])
 ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(256) NOT NULL;
 ```
 
+*(As emitted by sqlpackage 170.4.83.3 the guard reads lowercase — `select top 1 1 from
+[dbo].[Customer]` — and carries `WITH NOWAIT`; a blocked publish surfaces it as `Error SQL72014` /
+`Msg 50000, Level 16, State 127`. The shape above is normalized for reading; the behavior is
+identical.)*
+
 What the guard is: it fires on `IF EXISTS (SELECT TOP 1 1 FROM <table>)` — **the table merely having
 a row** — and it is placed **before** the `ALTER`. **It never inspects the column at all.** It does
 not count NULLs. It does not measure `MAX(LEN)`. It is **data-blind**: row-presence, not
@@ -61,6 +66,12 @@ The empirical proof: a pre-deploy backfill cleared **every** NULL
 leaving the column nullable. The narrow case confirmed it: `MAX(LEN)` fitting the new size did
 **not** clear the block either. **Zero violations is necessary but NOT sufficient** on a populated
 table.
+
+And the remedy must be **durable at source**: a post-deployment script that still writes violations
+into the tightened column fails *after* the `ALTER` lands (`Msg 515` — the publish is not atomic
+across the schema transaction and the post-deployment script), so the corrected seed or script is
+part of the change set, not an afterthought. Proven live; the captured run is
+`../../../self-test/golden/make-mandatory-pr.md`.
 
 ## The ladder (empty = clean; populated = a conscious call)
 

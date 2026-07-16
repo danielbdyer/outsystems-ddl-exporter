@@ -9,7 +9,7 @@ description: Cross-cutting KNOWLEDGE — the tripwire that adds scrutiny to ever
 > change, and before touching ANY change on a table that is already CDC-tracked.** ⚠️
 >
 > Change Data Capture is **not expressible in the declarative dacpac model.** Every rule the rest
-> of the tree relies on — "edit the CREATE, never write ALTER"; "SSDT computes the migration path" —
+> of the tree relies on — "edit the CREATE, never write ALTER"; "SSDT computes the journey" —
 > **breaks** the moment a table is CDC-enabled. Every op that touches CDC, or touches a CDC-tracked
 > table, points here so the obligation is named the same way, every time.
 

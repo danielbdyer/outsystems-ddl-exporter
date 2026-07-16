@@ -47,7 +47,7 @@ That is why the safe move preserves the row and just marks it inactive. The full
 `../../_index/idempotent-seed/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`author-pr`).
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the value leaves the set the running
@@ -58,7 +58,7 @@ The fragment this op contributes to the pull request (`author-pr`).
 - Added scrutiny: if the table feeds a change-data-capture stream, the guarded `WHEN MATCHED` is
   mandatory so only the deactivation is captured. Otherwise none.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect IsActive = 0: the value is retired in place, not deleted
 SELECT IsActive FROM <lookupTable> WHERE <id> = <valueId>;

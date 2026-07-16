@@ -49,7 +49,7 @@ One thing worth pinning down: which consumers still read the old name? That list
 The refactorlog's reach stops at the model boundary. So a rename's real dependency scope is everything outside the model — the SSIS packages, the Power BI reports, the hand-written procedures that still ask for the old name. The refactorlog protects the consumers SSDT can see and does nothing for the ones it can't. The compat view covers that gap, and it is debt with a sunset date, not a permanent fixture: leaving it forever brings back the name ambiguity the rename resolved. The failure it avoids is renaming a table out from under an SSIS or Power BI consumer that still asks for the old name. For the full why — identity versus name — see `../../_index/identity-and-refactorlog/SKILL.md`.
 
 ## On the record
-The fragment this change contributes to the pull request (`author-pr`):
+The fragment this change contributes to the pull request (`../../author-pr/SKILL.md`):
 
 **Review & release**
 - A dev lead or an experienced developer should review this: external consumers outside the SSDT
@@ -59,7 +59,7 @@ The fragment this change contributes to the pull request (`author-pr`):
 - Added scrutiny: the dependency scope reaches outside the dacpac — SSIS, Power BI, hand-written
   procedures, and the SSAS feed read the old name and are not in the model.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 1 row: the old name now resolves to a view, not a table
 SELECT name, type_desc FROM sys.objects WHERE name = 'Customer' AND type = 'V';

@@ -65,6 +65,12 @@ reproduce failed? ─── yes ──> is it a design fork / irreversible step?
 disposition available for the change. A caught defect can lower it, but nothing raises it above the
 ceiling — an Approved above an un-enumerated cascade or external consumer is invalid.
 
+**Sparring mode narrows the tree.** The packet names its author; when the change is the lead's own,
+Returned to the author does not exist — there is no persona-1 to return to. A fixable defect on the
+lead's own change is argued as the counter-finding in the sparring exchange, and if the lead elects
+to proceed anyway it rides as Approved with a named risk carrying that finding. The other three
+dispositions stand unchanged.
+
 ## The four dispositions (and their routes)
 
 - **Approved** — every proof obligation discharged, reproduced clean or blocked exactly as claimed,

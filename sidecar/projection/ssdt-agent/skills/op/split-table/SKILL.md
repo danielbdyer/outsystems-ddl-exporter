@@ -18,6 +18,12 @@ description: Use when the developer says "split Customer into Customer and Custo
 ## SSDT meaning
 CREATE the new table, copy the moving columns' data keyed by the source PK, add the FK, then (much later) drop the old columns from the source CREATE. SSDT will CREATE the new table and ADD the FK declaratively but will **never move the data** — the copy is a post-deploy script, and the column drop is blocked under `BlockOnPossibleDataLoss` until the copy is proven. Handbook file 14 (=§17.6). Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 Treating it as one PR — dropping the old columns in the same release that creates the new table
 breaks any app code still reading them. The related trap is a **rename with no refactorlog entry**
@@ -78,7 +84,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   is a long-running batched operation that may block writes or run long — schedule a window; a
   first-time split on this estate carries added scrutiny.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect equal hashes: the moving columns hold the same content in the new table as in the source
 -- (run after the copy, before the Phase-3 column drop — the gate Strict enforces under

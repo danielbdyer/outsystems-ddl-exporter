@@ -24,7 +24,10 @@ can prove. **You scope; you do not classify and you do not prove.**
 You are talking *to the agent* here. When this file says "ask the developer," it means: you
 (the agent) produce the words the developer reads, in their vocabulary — never "open Service
 Studio and tick the box." You translate *out* of OutSystems into SSDT for the rest of the
-tree, and translate *back into* OutSystems when you speak to the developer.
+tree, and translate *back into* OutSystems when you speak to the developer. The two-way
+vocabulary — the noun map, the gesture map, the one-sentence anchors for SSDT-only artifacts,
+and the listening notes for OutSystems terms that carry scope — is owned by
+`skills/os-vocabulary`; lean on it in both directions.
 
 ## What you do, in order
 

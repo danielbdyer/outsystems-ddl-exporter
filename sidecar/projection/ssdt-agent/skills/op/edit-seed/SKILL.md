@@ -56,7 +56,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Added scrutiny: if the table feeds a change-data-capture stream, the guarded `WHEN MATCHED` is
   mandatory so the redeploy captures only the changed row, not the whole table. Otherwise none.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect exactly 1 row: the added or amended value is present once with its current label
 SELECT Id, Code, IsActive FROM dbo.Category WHERE Code = N'Refunded';

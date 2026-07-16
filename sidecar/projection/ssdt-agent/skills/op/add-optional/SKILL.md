@@ -28,10 +28,12 @@ non-issue.
   member can review it — the change is additive and the running application is unaffected (NULL is
   always a valid existing-row value).
 - table is CDC-enabled and the new column must be tracked → the capture instance does not include the
-  new column, so it ships as a scripted change: the capture instance is recreated to include it,
-  which cannot be expressed as a table definition. Added scrutiny: the table feeds a
-  change-data-capture stream, so the capture instance is frozen to the table's current columns and
-  needs handling (see `../../_index/cdc/SKILL.md`).
+  new column, and recreating it cannot be expressed as a table definition. When a capture gap is
+  tolerable it ships as a scripted change (drop and recreate the instance, one release); when the
+  downstream consumer requires no gap it ships across releases, with two capture instances running
+  side by side until the cutover. Added scrutiny either way: the table feeds a change-data-capture
+  stream, so the capture instance is frozen to the table's current columns and needs handling (see
+  `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Strict publish succeeds clean; the delta is a single `ALTER TABLE ... ADD ... NULL`; the deployment

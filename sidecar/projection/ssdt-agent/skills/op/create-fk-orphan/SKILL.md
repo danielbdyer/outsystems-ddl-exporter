@@ -39,7 +39,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Ships as a scripted change in a single release — the foreign key is added `WITH NOCHECK`, the orphans are reconciled, then re-validated `WITH CHECK CHECK` to end trusted; this reconcile cannot be expressed as a table definition. If orphans are still being created by the running application, it ships across releases instead.
 - Added scrutiny: none for a small table; at >1M rows the `WITH CHECK CHECK` re-validation scans the table and may block writes or run long (schedule a window); a CDC-tracked table freezes its capture instance to the current columns and needs handling (see `../../_index/cdc/SKILL.md`).
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: every child points at a parent that exists
 SELECT c.<fk> FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE p.<pk> IS NULL;

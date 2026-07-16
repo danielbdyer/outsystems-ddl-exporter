@@ -22,6 +22,12 @@ Change the column's data type in a value-reshaping direction (`VARCHAR`→`DATE`
 be a safe single `ALTER COLUMN`. Edit the CREATE toward the destination; the staging is owned
 manually — never write a bare `ALTER`.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 SSDT may *attempt* a single-step `ALTER COLUMN` on an explicit conversion that then fails (or
 truncates) mid-deploy — the multi-phase shape must be owned manually; the engine will not.

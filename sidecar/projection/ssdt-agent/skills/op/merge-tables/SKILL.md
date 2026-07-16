@@ -20,6 +20,12 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 ## SSDT meaning
 The inverse of a split. ADD the absorbing columns to the surviving table's CREATE, copy data from the entity being absorbed, repoint every FK and view that referenced the absorbed entity, then drop the absorbed table. SSDT ADDs the columns and (if nullable) publishes clean; it will **not** copy the data, and it **blocks** the final `DROP TABLE` under `BlockOnPossibleDataLoss`. Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 **Collision and cardinality.** A merge silently assumes the absorbed entity is **1:1 or 1:0..1** with the survivor. If it is actually 1:many, a naive copy keeps one row per parent and **silently drops the rest** — and a value-hash will NOT flag it (the hash only compares surviving rows). Treat any merge as suspected 1:many until proven otherwise. Companion trap: a *SELECT \* View* (see `../create-view/SKILL.md`) over the absorbed entity left unenumerated through the merge. The coexistence and subtractive-licensing why is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
 
@@ -85,7 +91,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   scans the table and may block writes or run long — schedule a window; a first-time merge on this
   estate carries added scrutiny (see `../../_index/cdc/SKILL.md`).
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect absorbed_rows = distinct_parents: the absorbed side is 1:1 with the survivor, so the
 -- copy carries every row (unequal = 1:many; stop, the merge is unsafe as stated)

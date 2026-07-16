@@ -17,6 +17,12 @@ description: Use when the developer says "move the Region attribute from Custome
 ## SSDT meaning
 A one-column split. ADD the column to the destination CREATE, copy the values keyed by whatever relationship links the two entities, repoint readers, then drop the column from the source CREATE. SSDT ADDs the column declaratively and (if nullable) publishes clean; the copy runs post-deploy; it **blocks** the source-column drop under `BlockOnPossibleDataLoss` until the values are proven to have moved. Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 **Relationship ambiguity.** The copy needs a join key, and if the relationship is not 1:1 the value is ambiguous — which Customer's Region wins for an Account with many Customers? Same collision shape as `../merge-tables/SKILL.md`. Second trap: treating "move" as a rename and letting SSDT DROP+CREATE. A **cross-table move has NO refactorlog identity mapping**, so a rename with no refactorlog entry drops the column and loses its data; it must be copy-then-drop, never a rename. See `../../_index/identity-and-refactorlog/SKILL.md`. The coexistence why is `../../_index/multi-phase/SKILL.md`; do not re-derive either.
 
@@ -70,7 +76,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   or run long — schedule a window; a first-time move on this estate carries added scrutiny (see
   `../../_index/cdc/SKILL.md`).
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: the relationship is 1:1, so no moved value is ambiguous (a returned row is a parent
 -- with more than one child — stop, the move is unsafe as stated)

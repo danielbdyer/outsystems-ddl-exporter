@@ -77,7 +77,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   `../../_index/cdc/SKILL.md`); a first-time move on this estate or a large table carries added
   scrutiny — schedule a window.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect one row, under the target schema only: the table moved intact, it was not dropped and
 -- recreated (a drop+create would lose the rows and mint a new object_id)

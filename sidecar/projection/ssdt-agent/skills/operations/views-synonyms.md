@@ -1,7 +1,7 @@
 # Operations — Views & synonyms (FAMILY INDEX)
 
 > **This file is now an INDEX.** The op specifics live in the per-op skills under `../op/`; the
-> shared reasoning lives in `../_index/`. Nothing here restates a guard or a flip mechanism.
+> shared reasoning lives in `../_index/`. Nothing here restates a guard or the deploy-time specifics.
 > The AUTHORED-HERE backward-compat-view recipe (§17.8) has moved its full body into
 > `../op/compat-view/SKILL.md` with the AUTHORED-HERE notice preserved verbatim.
 
@@ -17,7 +17,7 @@ stands in for (an OutSystems "External Entity" / "Advanced Query" is often a vie
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
 | create-view | `../op/create-view/SKILL.md` | a saved SELECT; ships in place, no data touched, any team member can review; **enumerate columns** — `SELECT *` is a latent defect (the SELECT-* trap) |
-| compat-view | `../op/compat-view/SKILL.md` | a view bearing the OLD name after a rename/split; ships in place, but as one step of a multi-PR program a dev lead should review it because the running application must change; temporary, enumerated *(AUTHORED-HERE §17.8)* |
+| compat-view | `../op/compat-view/SKILL.md` | a view bearing the OLD name after a rename/split; ships in place, but as one step of a multi-PR program a dev lead or an experienced developer should review it — the dependency scope reaches outside the dacpac, to consumers the model cannot see still using the old name; temporary, enumerated *(AUTHORED-HERE §17.8)* |
 | synonym | `../op/synonym/SKILL.md` | a runtime-resolved alias to an external object; ships in place, any team member can review one inside the project — a dev lead when it points outside it; target NOT validated at publish |
 | indexed-view | `../op/indexed-view/SKILL.md` | SCHEMABINDING + unique clustered index; stores data, binds base columns; flips to a staged, multi-release change as the base grows |
 

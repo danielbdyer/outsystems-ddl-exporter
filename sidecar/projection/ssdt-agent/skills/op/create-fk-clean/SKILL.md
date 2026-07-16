@@ -39,7 +39,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Ships as a single schema change, applied in place — one `ADD CONSTRAINT` that validates every existing child row against the parent; no data is modified.
 - Added scrutiny: none for a small parent; at >1M parent rows the validation scan may block writes or run long — schedule a window.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: every child points at a real parent
 SELECT c.<fk> FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE p.<pk> IS NULL;

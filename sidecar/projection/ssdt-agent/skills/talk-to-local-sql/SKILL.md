@@ -109,8 +109,8 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 (`-C` = trust the server certificate; quote the password for the shell; remember
 `MSYS_NO_PATHCONV=1` on Git Bash for the `/opt/...` path.)
 
-The probes that predict a flip **before** the dacpac is even built (wrap each in the same
-`docker exec ... -Q "<sql>"` form):
+The probes that predict whether the change is blocked **before** the dacpac is even built (wrap each
+in the same `docker exec ... -Q "<sql>"` form):
 
 ```sql
 -- make-mandatory: how many rows hold a NULL Email under the new NOT NULL rule?
@@ -144,7 +144,7 @@ what to look for, then let the blocked publish confirm it.
 
 ## Create / reset / drop the disposable database (via docker exec)
 
-Reset between scenarios so each flip starts from the known seed. This database is disposable —
+Reset between scenarios so each case starts from the known seed. This database is disposable —
 dropping and recreating is the normal path, not a last resort.
 
 ```bash
@@ -160,7 +160,7 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 ```
 
 After a reset, re-establish the BEFORE state (deploy the current CREATEs + post-deploy seed) per
-`proving-ground/README.md` — that seed is the "real-shaped data" every flip is measured against.
+`proving-ground/README.md` — that seed is the "real-shaped data" every case is measured against.
 
 > **Parallel runs:** when many executors prove cases at once, each owns a **unique** DB
 > (`PG_<testId>_<rand>`) created and dropped exactly the same `docker exec` way, and never touches
@@ -181,17 +181,17 @@ it through the same `docker exec ... -Q` form.)
 -- (SELECT x.* FOR XML RAW) serializes the full row shape (column names included),
 -- so a rename changes the hash BY DESIGN — that is correct, the diff is the proof.
 -- NULL stays distinct from '' because FOR XML RAW omits NULL attributes entirely.
+-- CORRECTED (proven live, SQL Server 2022): the per-row hash must be hoisted through
+-- CROSS APPLY — a subquery placed directly inside SUM fails with Msg 130.
 SELECT
   COUNT(*)                                            AS RowCount,
   CONVERT(VARBINARY(8000),
     SUM(CONVERT(BIGINT,
-      CONVERT(INT, SUBSTRING(
-        HASHBYTES('SHA2_256',
-          (SELECT x.* FOR XML RAW)
-        ), 1, 4))                                      -- 32-bit slice, summed order-independently
+      CONVERT(INT, SUBSTRING(h.hb, 1, 4))              -- 32-bit slice, summed order-independently
     ))
   )                                                   AS ContentDigest
-FROM dbo.Customer AS x;
+FROM dbo.Customer AS x
+CROSS APPLY (SELECT HASHBYTES('SHA2_256', (SELECT x.* FOR XML RAW)) AS hb) AS h;
 ```
 
 Run it once before the Permissive publish, once after, and compare `RowCount` + `ContentDigest`:

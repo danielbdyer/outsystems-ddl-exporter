@@ -71,7 +71,7 @@
 
 /*
   ----------------------------------------------------------------------------------------------
-  WORKED EXAMPLE — narrowing (Product.Code NVARCHAR(50) -> NVARCHAR(10))
+  WORKED EXAMPLE — Ambitious Narrowing (Product.Code NVARCHAR(50) -> NVARCHAR(10))
   ----------------------------------------------------------------------------------------------
   Scenario: you edited Product.sql to `Code NVARCHAR(10)`. The seed has an over-length Code, so
   Strict blocks the change on data loss. Reconcile the over-length rows here before the delta.

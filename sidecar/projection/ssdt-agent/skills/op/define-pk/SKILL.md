@@ -86,7 +86,7 @@ What this operation contributes to the pull request (`../../author-pr/SKILL.md`)
   table and runs long, so schedule a window; and if the table feeds a change-data-capture stream,
   the capture instance must be handled (`../../_index/cdc/SKILL.md`).
 
-**Verification — run in each environment after deployment.**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: the key is unique, no value repeats
 SELECT <keycols>, COUNT(*) FROM <table> GROUP BY <keycols> HAVING COUNT(*) > 1;
@@ -104,7 +104,7 @@ PK_<table>;` drops the constraint and its clustered index without changing any r
 pre-deployment script deduped or assigned keys to make the key hold, that remediation is not
 auto-reversed — record the original values for a manual restore.
 
-**Not verified.**
+**Not verified**
 - Application impact. Any insert path that writes a duplicate or NULL key will now fail with a
   primary-key violation; the application's insert code is not confirmed here.
 - Other environments. Test, UAT, and Prod may hold duplicate or NULL keys this copy does not — run

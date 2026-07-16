@@ -44,6 +44,31 @@ The empty-source case: if the source is **empty**, there is no data to move — 
 shape collapses to a clean additive create (plus a clean subtractive drop). Prove the source is
 empty first.
 
+## The application-side cutover (the OutSystems half of Phase 2)
+
+The schema side of every phase is provable on a disposable copy; the application side is not — no
+copy can republish an OutSystems module. It is still part of the change, in a fixed order, and the
+pull request names it rather than assuming it:
+
+1. **The schema release deploys first.** OutSystems cannot consume what does not exist yet.
+2. **Integration Studio:** refresh the External Entity definitions so the extension sees the new
+   shape, then publish the extension.
+3. **Service Studio:** refresh the extension reference in each consuming module and republish —
+   "Outdated References" clears as each module picks up the new shape. The fan-out is real: modules
+   referencing a changed entity republish, and modules referencing *those* may follow.
+4. **Smoke test** the screens and flows that read the changed entity before calling the cutover done.
+
+Two sequencing rules the phases depend on:
+
+- The app release that **starts reading the new shape** (and dual-writing it, per Phase 1) follows
+  the schema release that created it — never the same deploy.
+- The app release that **stops writing the old shape** must be live before Phase 3's subtractive
+  drop ships; otherwise the drop breaks a writer that still exists.
+
+None of this is provable on the disposable copy, so the pull request carries it under **Not
+verified**: the republish scope (which modules), the owner who confirms it, and the smoke test that
+closes it. A cutover whose application half is unnamed is not a plan; it is a hope.
+
 ## The conservation proof that licenses the subtractive drop
 
 **No subtractive drop ships until its proof passes.** The proof is op-specific in *what* it counts,

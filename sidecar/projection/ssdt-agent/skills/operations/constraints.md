@@ -7,7 +7,7 @@
 > *trust* — is **OPERATIONAL, not declarative**.
 
 **This file is now an INDEX.** The op specifics live in the per-op skills; the shared reasoning
-lives in `_index/`. Nothing here restates a guard or the flip specifics.
+lives in `_index/`. Nothing here restates a guard or the deploy-time specifics.
 
 ## The ops (table of contents)
 

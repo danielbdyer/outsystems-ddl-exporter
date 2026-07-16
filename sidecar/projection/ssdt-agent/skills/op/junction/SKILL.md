@@ -72,7 +72,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Added scrutiny: none for small parents; at >1M rows in either parent the foreign-key validation
   scans both and may block writes or run long — schedule a window.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows from each: every bridge pair points at a real parent on both sides
 SELECT b.<fkA> FROM dbo.<bridge> b

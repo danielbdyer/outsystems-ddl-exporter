@@ -21,6 +21,12 @@ created declaratively; the row move is scripted in a post-deployment step, typic
 `DELETE ... OUTPUT DELETED.* INTO archive.X` to spare the transaction log. SSDT describes *shapes*,
 not *data motion*.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 Unbatched moves bloat the transaction log; child rows with FKs must move (or their FKs be disabled)
 **before** parents; cross-database archives lose FK enforcement. The coexistence obligation (live +
@@ -52,7 +58,8 @@ added first, then a batched post-deployment script moves the rows across, then t
 reconciled. On a disposable copy of Dev I proved the counts reconcile exactly — every row ends up
 either still live or in the archive, none dropped and none duplicated — and each batch commits, so
 the transaction log stays bounded. Because it's over a million rows, the move needs a maintenance
-window on the real table, and a dev lead should review it since it relocates existing data. One
+window on the real table, and a principal should review it — the volume is large and existing data
+is relocated (a dev lead reviews the smaller case). One
 thing to settle: once these rows are in the archive, does anything still need to read them as if
 they were live — a report, a screen, an export?
 

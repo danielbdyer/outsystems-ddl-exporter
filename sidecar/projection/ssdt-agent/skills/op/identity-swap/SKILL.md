@@ -27,6 +27,12 @@ IDENTITY property, copy all data with `SET IDENTITY_INSERT ON` to preserve key v
 IDENTITY to `MAX(Id)+1`, recreate every FK that pointed at the table, drop the old table, rename the
 shadow into place. Handbook file 14 (=§17.3). Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 **The silent rebuild** — the .sql edit (adding `IDENTITY(1,1)` to the CREATE) looks trivial but
 SSDT's generated delta is a full shadow-table swap that drops and recreates the table. If FKs aren't
@@ -98,7 +104,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   re-enabled (see `../../_index/cdc/SKILL.md`); a table above ~1M rows, where the data copy may block
   writes or run long and needs a scheduled window.
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect is_identity = 1: the Id column is now database-generated (IDENTITY);
 -- for a removal, expect is_identity = 0

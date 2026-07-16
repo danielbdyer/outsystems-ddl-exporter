@@ -96,8 +96,8 @@ GO
 ----------------------------------------------------------------------------------------------
 -- dbo.Customer — make-mandatory FLIP seed.
 --   Rows 1,2,4 have Email populated; rows 3 and 5 have Email NULL. The NULLs are what make
---   `Email NOT NULL` is blocked under Strict (self-test prompt 1). Seed with zero NULLs to prove the
---   same edit publishes clean (self-test prompt 2).
+--   `Email NOT NULL` is blocked under Strict (self-test prompt 1). Re-seeding with ZERO NULLs still
+--   blocks — the guard fires on row presence (COL-03C); only an EMPTY table publishes clean (COL-03B).
 --   ContactPhone is populated so the rename proof has data to lose if the refactorlog is missing.
 ----------------------------------------------------------------------------------------------
 --   Region (populated) is the move-attribute SOURCE (STR-03); AccountId links 1:1 to dbo.Account
@@ -131,7 +131,7 @@ SET IDENTITY_INSERT dbo.Customer OFF;
 GO
 
 ----------------------------------------------------------------------------------------------
--- dbo.Product — narrowing + add-unique FLIP seed.
+-- dbo.Product — Ambitious Narrowing + add-unique FLIP seed.
 --   'STANDARD-SKU-001' is 16 chars > 10 -> narrowing Code to NVARCHAR(10) truncates -> Strict
 --     data-loss block (self-test prompt 5). MAX(LEN(Code)) probe predicts it.
 --   The two 'DUPE' rows share Code -> add-unique on Code fails the unique index build on the dupe.
@@ -166,7 +166,7 @@ SET IDENTITY_INSERT dbo.Product OFF;
 GO
 
 ----------------------------------------------------------------------------------------------
--- dbo.[Order] — orphan foreign-key FLIP seed.
+-- dbo.[Order] — Forgotten FK Check FLIP seed.
 --   Orders 1-3 reference real Customers (1,2,4). Order 4 references CustomerId 999 which has NO
 --   matching Customer -> ORPHAN. Adding a clean FK Order.CustomerId -> Customer.Id is blocked by
 --   this orphan at deploy (self-test prompt 4). All StatusId values reference seeded Status rows.

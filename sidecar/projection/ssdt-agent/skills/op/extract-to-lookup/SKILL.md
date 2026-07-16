@@ -18,6 +18,12 @@ description: Use when the developer says "turn this text Status column into a pr
 ## SSDT meaning
 A multi-step transform: **create** the lookup table, **seed** it with the distinct existing values, **add** a new FK column to the source, **backfill** by joining text → lookup key, then **drop** the old free-text column. Data is read, reshaped, and moved; old and new representations coexist during the transition. Never write ALTER.
 
+> **The application-side cutover is part of this change.** The Integration Studio / Service Studio
+> republish order, the two sequencing rules (the app reads the new shape only after the schema
+> release; the old shape drops only after the app stops writing it), and what the pull request
+> names under Not verified are owned by `../../_index/multi-phase/SKILL.md` — plan no phase
+> without it.
+
 ## The named trap
 Doing it in one publish and silently losing the unmapped values — any source text with no seeded lookup row becomes NULL, or blocks the FK from validating. This is the **Forgotten-FK-Check** face (handbook 16 = §19.3) *and* a coexistence move. The staging/coexistence why is `../../_index/multi-phase/SKILL.md`; the seed leg's guarded MERGE + explicit IDs are `../../_index/idempotent-seed/SKILL.md`. Do not re-derive either here.
 
@@ -66,7 +72,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   the current columns and needs handling; at >1M rows the backfill scans the table and may block
   writes or run long — schedule a window (see `../../_index/cdc/SKILL.md`).
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: every source value maps to a seeded lookup row (the mapping is total)
 SELECT DISTINCT <oldcol> FROM <t> WHERE <oldcol> NOT IN (SELECT Code FROM <lookup>);

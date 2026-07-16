@@ -72,7 +72,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   holds more than a million reference rows (at production row counts the seed may block writes or run
   long — schedule a window).
 
-**Verification — run in each environment after deployment**
+**Verification** — run in each environment after deployment
 ```sql
 -- expect the lookup's model rows, unchanged, by explicit Id (e.g. dbo.Category)
 SELECT Id FROM dbo.<lookup> ORDER BY Id;

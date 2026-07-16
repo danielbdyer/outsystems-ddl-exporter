@@ -38,7 +38,11 @@ and Strict still blocked the change.
   `COUNT(*) WHERE Col IS NULL = 0` (necessary, not sufficient), choose ONE:
     - **(a) a named gate relaxation** — ships as a scripted change: disable
       `BlockOnPossibleDataLoss` for this one targeted change, logged, with the proof packet
-      carrying **both** the zero-NULL probe and the relaxation decision.
+      carrying **both** the zero-NULL probe and the relaxation decision. **The remediation must be
+      durable at source:** a post-deployment seed that still writes NULLs into the tightened column
+      fails after the ALTER lands (`Msg 515` — the publish is not atomic across the schema
+      transaction and the post-deployment script), so the corrected seed rows are part of the
+      change set. Proven live; the captured run is `../../../self-test/golden/make-mandatory-pr.md`.
     - **(b) restructure so the change ships across releases** and the engine never has to relax
       its guard (see `../../_index/multi-phase/SKILL.md`).
   Either way, a dev lead must review this because existing data is affected; add scrutiny if the
@@ -54,7 +58,9 @@ and Strict still blocked the change.
 3. Re-run Strict → prove it is **STILL blocked** and the column **stays nullable**. This step is
    the key finding.
 4. Deliver the corrected verdict: (a) a named gate relaxation after proven-zero-NULL, or (b) the
-   multi-phase path — and prove the chosen path lands the `NOT NULL`.
+   multi-phase path — and prove the chosen path lands the `NOT NULL`, including that no
+   post-deployment script re-writes NULLs into the column afterward (a seed still declaring them
+   fails with `Msg 515` once the column is tightened — fix the seed in the same change set).
 
 The `COL-03C` twin (zero NULLs from the start) is still blocked; the `COL-03B` twin (EMPTY)
 publishes clean and ships as a single in-place schema change. For the publish loop, see
