@@ -1,0 +1,582 @@
+[
+ {
+  "axis": "temporal / system-versioning (convert one physical table to SYSTEM_VERSIONED; check whether each engine emits the temporal shape or a plain table)",
+  "provisioned": "Database ParityAxis_temporal. Loaded the base OSSYS edge-case seed (3 ossys_* metamodel tables + 14 OSUSR_* physical tables), then converted the City entity's physical table OSUSR_DEF_CITY into a SYSTEM_VERSIONED temporal table: ALTER TABLE ... ADD [SYSSTART] DATETIME2(7) GENERATED ALWAYS AS ROW START HIDDEN NOT NULL DEFAULT SYSUTCDATETIME(), [SYSEND] DATETIME2(7) GENERATED ALWAYS AS ROW END HIDDEN NOT NULL DEFAULT '9999-12-31...', PERIOD FOR SYSTEM_TIME([SYSSTART],[SYSEND]); then SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE=[dbo].[OSUSR_DEF_CITY_HISTORY])). No ossys_Entity_Attr rows added for the period columns on purpose \u2014 SQL Server period columns are physical-only, not OutSystems attributes, mirroring real estates. SOURCE TRUTH via sys-catalog: OSUSR_DEF_CITY temporal_type=2 (SYSTEM_VERSIONED_TEMPORAL_TABLE), OSUSR_DEF_CITY_HISTORY temporal_type=1 (HISTORY_TABLE); sys.periods = SYSTEM_TIME(SYSSTART,SYSEND); SYSSTART=AS_ROW_START/hidden, SYSEND=AS_ROW_END/hidden. Both CLIs exited 0 (v1 full-export exit 0; v2 publish exit 0, 12 stages \"succeeded\"). Deploy targets ParityAxis_temporal_V1 / _V2. All three databases dropped at end (verified none remain).",
+  "v1Result": "v1 full-export --profiler-provider sql, exit 0. The extracted model.json contains ZERO temporal metadata (0 \"temporal\" keys; no OSUSR_DEF_CITY_HISTORY; no SYSSTART/SYSEND) \u2014 the V1 SQL extraction (outsystems_model_export.sql / outsystems_metadata_rowsets.sql) reads no temporal_type / sys.periods. Emitted Modules/AppCore/dbo.City.sql is a PLAIN table: `CREATE TABLE [dbo].[City] ([Id] BIGINT IDENTITY (1,1) NOT NULL CONSTRAINT [PK_City_Id] PRIMARY KEY CLUSTERED, [Name] NVARCHAR (200) NOT NULL, [IsActive] BIT NOT NULL CONSTRAINT [DF_OSUSR_DEF_CITY_ISACTIVE] DEFAULT 1)` \u2014 no PERIOD FOR SYSTEM_TIME, no SYSTEM_VERSIONING, no GENERATED ALWAYS columns, no history table. DEPLOY to ParityAxis_temporal_V1: sqlcmd exit 0; sys.tables City temporal_type=0 (NON_TEMPORAL_TABLE), 0 periods. No temporal diagnostic emitted. (V1 owns a TemporalTableMetadata domain model + TemporalMetadataMapper JSON deserializer + a HasTemporalHistory coverage predicate, but those consume model-JSON input only; the SSDT table writers \u2014 TablePlanWriter/SsdtEmitter/TableEmissionPlan/TableHeaderFactory \u2014 contain no temporal/PERIOD/SYSTEM_VERSIONING/GENERATED-ALWAYS emit code, so there is no path from a live temporal source to temporal DDL.)",
+  "v2Result": "v2 publish (profiler live), exit 0. catalog.snapshot.json: City kind modality=[] and the string \"Temporal\" is absent from the entire catalog (no SYSSTART, no OSUSR_DEF_CITY_HISTORY). Emitted Modules/AppCore/dbo.City.sql is a PLAIN table with the same CREATE TABLE shape as V1 plus 8 sp_addextendedproperty (Projection.LogicalName / Projection.SsKey) statements \u2014 no PERIOD, no SYSTEM_VERSIONING, no GENERATED ALWAYS columns, no history table. DEPLOY to ParityAxis_temporal_V2: sqlcmd exit 0; sys.tables City temporal_type=0 (NON_TEMPORAL_TABLE), 0 periods. No temporal diagnostic (the only 2 \"temporal\" hits in the run log were my database name in a file path). KEY: V2 DOES carry a complete temporal emit path \u2014 ScriptDomBuild.fs:768-794 emits `PERIOD FOR SYSTEM_TIME` + `WITH (SYSTEM_VERSIONING = ON ...)` + HISTORY_RETENTION_PERIOD whenever a Kind carries ModalityMark.Temporal; SsdtDdlEmitter.fs:385-389 threads TemporalConfig into Statement.CreateTable; CatalogCodec + ManifestEmitter handle it. But the sole data-constructor of ModalityMark.Temporal is the catalog-snapshot JSON reader (CatalogCodec.fs:754, a self round-trip). Neither live-model adapter marks it: OssysRowsetReader.fs:651-655 yields only `Static []`/`SystemOwned`, OssysJsonReader.fs:617 yields only `Static []`; KindRow (MetadataSnapshotRunner.fs:1311-1336) has no temporal field; the OssysSql extraction rowset SQL reads no temporal_type/sys.periods. The emit machinery is therefore unreachable from any real OutSystems estate.",
+  "findings": [
+   {
+    "id": "T1",
+    "topic": "Emitted table shape for a SYSTEM_VERSIONED source (does the engine emit PERIOD + SYSTEM_VERSIONING + GENERATED ALWAYS, or a plain table?)",
+    "v1": "Plain CREATE TABLE [dbo].[City] \u2014 no PERIOD FOR SYSTEM_TIME, no SYSTEM_VERSIONING, no GENERATED ALWAYS period cols, no history table; deployed temporal_type=0.",
+    "v2": "Plain CREATE TABLE [dbo].[City] (+8 logical-name extended props) \u2014 no PERIOD/SYSTEM_VERSIONING/GENERATED ALWAYS, no history table; deployed temporal_type=0.",
+    "difference": "NONE \u2014 perfect parity, and both are wrong the same way: a source table with temporal_type=2 is emitted by both engines as a plain temporal_type=0 table. Both silently drop the two GENERATED ALWAYS ROW START/END hidden columns (SYSSTART/SYSEND), the PERIOD FOR SYSTEM_TIME, the SYSTEM_VERSIONING option, and the OSUSR_DEF_CITY_HISTORY history table. Neither engine emits any warning/diagnostic about the loss.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "major",
+    "proof": "SOURCE sys.tables: OSUSR_DEF_CITY temporal_type=2 (SYSTEM_VERSIONED_TEMPORAL_TABLE), OSUSR_DEF_CITY_HISTORY=1 (HISTORY_TABLE); sys.periods SYSTEM_TIME(SYSSTART,SYSEND). V1 & V2 dbo.City.sql both = `CREATE TABLE [dbo].[City] ([Id] BIGINT IDENTITY (1,1) NOT NULL CONSTRAINT [PK_City_Id] PRIMARY KEY CLUSTERED, [Name] NVARCHAR (200) NOT NULL, [IsActive] BIT NOT NULL CONSTRAINT [DF_OSUSR_DEF_CITY_ISACTIVE] DEFAULT 1)`. Deployed reality: ParityAxis_temporal_V1 City temporal_type=0 / 0 periods; ParityAxis_temporal_V2 City temporal_type=0 / 0 periods; both sqlcmd deploys exit 0.",
+    "confidence": "high"
+   },
+   {
+    "id": "T2",
+    "topic": "C10 claim \u2014 V2 has temporal emit support but no adapter marks it, so it emits a plain table silently",
+    "v1": "No temporal emit path at all: extraction reads no temporal (model.json has 0 temporal keys) and the SSDT table writers contain zero temporal-emit code. Temporal exists only as a model-JSON-input domain model + a HasTemporalHistory coverage predicate.",
+    "v2": "A COMPLETE temporal emit path exists (ScriptDomBuild.fs:768-794 emits PERIOD FOR SYSTEM_TIME + WITH(SYSTEM_VERSIONING=ON) + HISTORY_RETENTION_PERIOD) but is dead code on the live path \u2014 no adapter ever constructs ModalityMark.Temporal from an estate.",
+    "difference": "C10 CONFIRMED empirically. V2 is architecturally capable of emitting the temporal shape, but the only data-constructor of ModalityMark.Temporal is the catalog-snapshot JSON reader (CatalogCodec.fs:754, i.e. re-reading V2's own emitted catalog). Both live-model adapters yield only Static/SystemOwned marks, and KindRow/extraction-SQL carry no temporal field. Net realized output is byte-for-byte the same plain table as V1 \u2014 the divergence is latent capability, not output: V2's temporal support is unreachable, V1's is absent.",
+    "classification": "capability-gap",
+    "direction": "v2-better",
+    "severity": "minor",
+    "proof": "Empirical: v2 catalog.snapshot.json City modality=[]; substring 'Temporal' absent from whole catalog; emitted City.sql plain; deployed temporal_type=0. Code trace: emit present at ScriptDomBuild.fs:768-794 & SsdtDdlEmitter.fs:385-389 (`ModalityMark.Temporal tc -> Some tc`); sole data-constructor at CatalogCodec.fs:754 (`\"Temporal\" -> ... ModalityMark.Temporal`); live adapters at OssysRowsetReader.fs:653-654 (`if kindRow.IsStatic then yield Static []; if kindRow.IsSystemEntity then yield SystemOwned`) and OssysJsonReader.fs:617 (`if isStatic then [ Static [] ] else []`) \u2014 neither yields Temporal; KindRow at MetadataSnapshotRunner.fs:1311-1336 has no temporal field.",
+    "confidence": "high"
+   },
+   {
+    "id": "T3",
+    "topic": "Incidental (off-axis) difference observed on the same plain table: extended-property emission",
+    "v1": "Emits the bare CREATE TABLE only (8-line file), no extended properties.",
+    "v2": "Emits the same CREATE TABLE plus 8 EXECUTE sp_addextendedproperty calls (Projection.LogicalName + Projection.SsKey, at table and column grain).",
+    "difference": "Not temporal-specific \u2014 a pre-existing general v1/v2 emission difference that happens to appear in the City table used for this axis. Both deploy cleanly (exit 0) and both are temporal_type=0, so it does not affect the temporal verdict.",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "info",
+    "proof": "V2 dbo.City.sql lines 12-63 contain 8 `EXECUTE [sys].[sp_addextendedproperty]` statements; V1 dbo.City.sql is 8 lines total with none. Both deployed to temporal_type=0.",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "computed columns + PERSISTED",
+  "provisioned": "DB ParityAxis_computedpersisted: created + loaded base OSSYS seed (15 entities / 7 modules), then ALTER TABLE dbo.OSUSR_INV_STOCKITEM ADD [TOTALVALUE] AS ([WAREHOUSEQTY]*[AVGCOST]) PERSISTED, [LABEL] AS (CONVERT(NVARCHAR(20),[REORDERLEVEL])) [non-persisted]; plus a physical-only probe [SHADOWCALC] AS ([REORDERLEVEL]*2) PERSISTED with NO ossys_Entity_Attr row; and matching ossys_Entity_Attr rows 60008 (TotalValue, Float) + 60009 (Label, Text). Source truth verified via sys.computed_columns on OSUSR_INV_STOCKITEM: TOTALVALUE is_persisted=1 def=([WAREHOUSEQTY]*[AVGCOST]); LABEL is_persisted=0 def=(CONVERT([nvarchar](20),[REORDERLEVEL])); SHADOWCALC is_persisted=1. Seed baseline OSUSR_SAL_PRODUCT.DISPLAYLABEL is_persisted=1 def=(concat([SKU],N'-',CONVERT([nvarchar](20),[PRICE]))). Server/default collation SQL_Latin1_General_CP1_CI_AS. BOTH CLIs exited 0: v1 full-export rc=0; v2 publish 12/12 stages \"succeeded\". Deploy targets _V1 / _V2 (CI collation) + an extra _CS (SQL_Latin1_General_CP1_CS_AS) for the case-sensitivity hazard test. All four DBs dropped at end.",
+  "v1Result": "v1 full-export (extract->model.json->build SSDT) surfaced and emitted BOTH attr-backed computed columns, REWRITING the expression identifiers physical->logical to match its renamed columns: Modules/Inventory/dbo.StockItem.sql -> \"[TotalValue] AS ([WarehouseQty] * [AvgCost])\" and \"[Label] AS (CONVERT (NVARCHAR (20), [ReorderLevel]))\"; Modules/Sales/dbo.Product.sql -> \"[DisplayLabel] AS (concat([Sku], N'-', CONVERT (NVARCHAR (20), [Price])))\". NO PERSISTED keyword on any (SMO model has no persisted concept; model.json onDisk carries isComputed:true + computedDefinition but no persisted field). SHADOWCALC (no attr row) NOT emitted. Deploy: _V1 (CI) exit 0; deployed sys.computed_columns -> TotalValue is_persisted=0 def=([WarehouseQty]*[AvgCost]), Label is_persisted=0, DisplayLabel is_persisted=0. Extra CS-collation deploy of v1 StockItem.sql: exit 0 (identifiers match columns).",
+  "v2Result": "v2 publish (model.ossys live) surfaced and emitted BOTH attr-backed computed columns but emitted the expression VERBATIM from sys.computed_columns.definition (uppercase physical, NO identifier rewrite): dist/onprem/Modules/Inventory/dbo.StockItem.sql -> \"[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])\" and \"[Label] AS (CONVERT (NVARCHAR (20), [REORDERLEVEL]))\"; dist/onprem/Modules/Sales/dbo.Product.sql -> \"[DisplayLabel] AS (concat([SKU], N'-', CONVERT (NVARCHAR (20), [PRICE])))\". NO PERSISTED (catalog.snapshot.json isPersisted:false; OssysRowsetReader.fs:139 hardcodes ComputedColumnConfig.create expr false with a code comment naming the gap; ScriptDomBuild.fs:441 would emit PERSISTED only if IsPersisted, which is always false). Columns themselves renamed to logical mixed-case ([WarehouseQty] etc.) just like v1. SHADOWCALC NOT emitted. Deploy: _V2 (CI) exit 0; deployed sys.computed_columns -> TotalValue is_persisted=0 def=([WAREHOUSEQTY]*[AVGCOST]), Label is_persisted=0, DisplayLabel is_persisted=0 (SQL Server preserved the as-written uppercase casing). Extra CS-collation deploy of v2 StockItem.sql: FAILED Msg 207 Level 16 \"Invalid column name 'WAREHOUSEQTY'\" + \"'AVGCOST'\"; table not created.",
+  "findings": [
+   {
+    "id": "F1",
+    "topic": "Attr-backed computed column emission",
+    "v1": "Emits TotalValue, Label, and baseline DisplayLabel as AS-expressions; deploys on CI collation",
+    "v2": "Emits TotalValue, Label, and baseline DisplayLabel as AS-expressions; deploys on CI collation",
+    "difference": "No difference in WHETHER the computed column is surfaced/emitted. Any physical computed column that has a matching ossys_Entity_Attr row is emitted by both engines as a computed (AS ...) column with no explicit datatype.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Both output trees contain '[TotalValue] AS (...)', '[Label] AS (...)', '[DisplayLabel] AS (...)'; both deployed to _V1/_V2 (CI collation) exit 0 with all three present in sys.computed_columns.",
+    "confidence": "high"
+   },
+   {
+    "id": "F2",
+    "topic": "PERSISTED flag preservation",
+    "v1": "Drops PERSISTED: emits no PERSISTED keyword; SMO model (SmoModel.cs:55) has only IsComputed/ComputedExpression, no persisted field",
+    "v2": "Drops PERSISTED: IR has ComputedColumnConfig.IsPersisted but OssysRowsetReader.fs:139 hardcodes it false (comment: 'V1 SQL doesn't surface sys.computed_columns.is_persisted')",
+    "difference": "Both engines LOSE the PERSISTED attribute. Source TOTALVALUE and DISPLAYLABEL are is_persisted=1; both engines emit them non-persisted. Source LABEL (is_persisted=0) is correctly non-persisted in both, so the loss is specifically the persisted->non-persisted downgrade. Root cause is shared: neither outsystems_metadata_rowsets.sql selects sys.computed_columns.is_persisted (verified identical column-reality section in both files).",
+    "classification": "capability-gap",
+    "direction": "parity-confirmed",
+    "severity": "major",
+    "proof": "Deployed sys.computed_columns.is_persisted=0 for TotalValue AND DisplayLabel in BOTH _V1 and _V2; source truth is_persisted=1 for both. Source LABEL is_persisted=0 -> both deployed is_persisted=0 (parity, correct). v1 model.json TotalValue.onDisk has no persisted key; v2 catalog.snapshot.json shows isPersisted:false.",
+    "confidence": "high"
+   },
+   {
+    "id": "F3",
+    "topic": "Computed-expression column-identifier rewrite (physical->logical)",
+    "v1": "REWRITES identifiers to the logical column names: emits ([WarehouseQty] * [AvgCost]), (CONVERT(NVARCHAR(20),[ReorderLevel])), (concat([Sku],...[Price])) via CreateTableStatementBuilder RewriteColumnReferences over columnNameMap",
+    "v2": "Does NOT rewrite: emits the raw sys.computed_columns.definition verbatim ([WAREHOUSEQTY] * [AVGCOST]), (...[REORDERLEVEL]), (concat([SKU],...[PRICE])) via ScriptDomBuild.fs:440 parseComputedExpression",
+    "difference": "Both rename the TABLE columns to logical mixed-case ([WarehouseQty], [AvgCost], [ReorderLevel], [Sku], [Price]), but only v1 rewrites the computed-EXPRESSION identifiers to match. v2 leaves the uppercase physical identifiers, producing an emitted table whose computed expression references columns by a different case than the columns are declared. The divergence persists post-deploy: SQL Server stores the definition with the as-written casing (it does not re-normalize).",
+    "classification": "functional-output",
+    "direction": "v2-worse",
+    "severity": "major",
+    "proof": "v1 emit '[TotalValue] AS ([WarehouseQty] * [AvgCost])' vs v2 emit '[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])'. Deployed sys.computed_columns.definition: _V1=([WarehouseQty]*[AvgCost]) ; _V2=([WAREHOUSEQTY]*[AVGCOST]). Same divergence on Label ([ReorderLevel] vs [REORDERLEVEL]) and DisplayLabel ([Sku]/[Price] vs [SKU]/[PRICE]).",
+    "confidence": "high"
+   },
+   {
+    "id": "F4",
+    "topic": "v2 computed DDL is not deployable on a case-sensitive collation",
+    "v1": "v1 StockItem.sql deploys into a CS-collation DB successfully (exit 0) because its expression identifiers match the declared logical columns exactly",
+    "v2": "v2 StockItem.sql FAILS to deploy into a CS-collation DB: the un-rewritten [WAREHOUSEQTY]/[AVGCOST] do not bind to columns [WarehouseQty]/[AvgCost]",
+    "difference": "Direct functional consequence of F3. On the default case-insensitive server collation (SQL_Latin1_General_CP1_CI_AS) both engines deploy fine, so on this estate it is latent. On any case-sensitive database/column collation, v2's output is a hard deploy failure (blocker) while v1's is robust. This is the strongest empirical signal separating the two engines on this axis.",
+    "classification": "functional-output",
+    "direction": "v2-worse",
+    "severity": "major",
+    "proof": "Deploying v2 dbo.StockItem.sql into DB collated SQL_Latin1_General_CP1_CS_AS returned 'Msg 207, Level 16, State 1 ... Invalid column name WAREHOUSEQTY.' and 'Invalid column name AVGCOST.'; OBJECT_ID('dbo.StockItem') was NULL afterward (table not created). v1 dbo.StockItem.sql into the same CS DB returned exit 0.",
+    "confidence": "high"
+   },
+   {
+    "id": "F5",
+    "topic": "Physical-only computed column with no metamodel row (extractor blind spot)",
+    "v1": "Does not surface SHADOWCALC (no ossys_Entity_Attr row): extraction JOINs #Attr to sys.columns by name",
+    "v2": "Does not surface SHADOWCALC (no ossys_Entity_Attr row): same #Attr-driven column-reality JOIN",
+    "difference": "A physical computed column that lacks a matching ossys_Entity_Attr row is invisible to BOTH engines. Both are metamodel-driven (the column-reality rowset is anchored on the OSSYS attribute set), so a DB-only computed column is never emitted. Parity, and by-design for an OutSystems-metamodel exporter.",
+    "classification": "capability-gap",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Source sys.columns shows SHADOWCALC with IsComputed=1 (is_persisted=1) but no ossys_Entity_Attr row; grep for SHADOWCALC across both full output trees (v1/out and v2/dist) returns zero matches.",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "empty-string vs NULL on the data plane (packet F11) \u2014 static-seed data lane",
+  "provisioned": "DB: ParityAxis_emptystringnull (seeded from ossys-edge-case.seed.sql; +_V1/_V2 as deploy targets). Added a NULLABLE text column [NICKNAME] NVARCHAR(50) NULL to the static entity Country (OSUSR_REF_COUNTRY) plus a matching ossys_Entity_Attr row (Id=70004, Entity_Id=7000, Data_Type='Text', Length=50, Is_Mandatory=0, Is_Active=1, Physical_Column_Name='NICKNAME'). Inserted 6 rows (IDENTITY_INSERT) exercising the full matrix \u2014 1/USA NICKNAME='' (empty on NULLABLE text); 2/GBR NAME='' (empty on NOT NULL text); 3/FRA NICKNAME=NULL (SQL NULL on nullable); 4/DEU NICKNAME=' ' (single space on nullable \u2014 sentinel candidate); 5/JPN NAME=' ' (single space on NOT NULL/mandatory); 6/ITA genuine control. Source truth confirmed via DATALENGTH/IS NULL sys-catalog SELECT (e.g. USA NICKNAME DATALENGTH=0 not-null; GBR NAME DATALENGTH=0 not-null; DEU NICKNAME DATALENGTH=2 not-null). Both CLIs exited 0: v1 full-export exit 0, v2 publish exit 0 (emit+store succeeded).",
+  "v1Result": "v1 full-export emitted Seeds/RefData/StaticEntities.seed.sql (SqlStaticEntityDataProvider live read, StaticEntitySeedColumn.NormalizeValue + SqlLiteralFormatter). Exact VALUES: `MERGE INTO [dbo].[Country] AS Target USING ( VALUES (1, N'USA', N'United States', N''), (2, N'GBR', N'', N'Britain'), (3, N'FRA', N'France', NULL), (4, N'DEU', N'Germany', NULL), (5, N'JPN', N' ', N'Japan'), (6, N'ITA', N'Italy', N'Italia') ) AS Source ([Id], [Code], [Name], [Nickname])`. Empty string '' preserved as N'' on BOTH the nullable NICKNAME (row 1) and the NOT NULL NAME (row 2); NULL preserved (row 3); single-space ' ' on nullable NICKNAME normalized to NULL (row 4); single-space ' ' on mandatory NAME preserved as N' ' (row 5). Deploy: CREATE TABLE [dbo].[Country] + seed against ParityAxis_emptystringnull_V1 \u2192 DDL exit 0, seed exit 0, no Msg errors; the NOT NULL NAME='' inserted cleanly.",
+  "v2Result": "v2 publish emitted Data/StaticSeeds.sql (StaticSeedsEmitter \u2192 KindColumns.outSystemsSpaceSentinel + SqlLiteral.ofRaw). Exact VALUES: `MERGE INTO [dbo].[Country] AS [Target] USING (VALUES (1, N'USA', N'United States', N''), (2, N'GBR', N'', N'Britain'), (3, N'FRA', N'France', NULL), (4, N'DEU', N'Germany', NULL), (5, N'JPN', N' ', N'Japan'), (6, N'ITA', N'Italy', N'Italia')) AS [Source]([Id], [Code], [Name], [Nickname])`. Per-cell literal sequence is BYTE-IDENTICAL to v1 (normalized diff: empty/no differences). Empty '' \u2192 N'' on nullable (row 1) AND NOT NULL (row 2) \u2014 the hypothesized universal ''-as-NULL sentinel is NOT applied; NULL \u2192 NULL (row 3); single-space ' ' on nullable \u2192 NULL (row 4, sentinel); single-space on mandatory \u2192 N' ' (row 5). Deploy: CREATE TABLE [dbo].[Country] + seed against ParityAxis_emptystringnull_V2 \u2192 DDL exit 0, seed exit 0 (6 rows affected), no Msg errors; NOT NULL NAME='' inserted cleanly.",
+  "findings": [
+   {
+    "id": "F11-1",
+    "topic": "Empty string '' on text columns \u2014 universal ''-as-NULL sentinel",
+    "v1": "'' emitted as N'' on both nullable NICKNAME (row 1/USA) and NOT NULL NAME (row 2/GBR)",
+    "v2": "'' emitted as N'' on both nullable NICKNAME (row 1/USA) and NOT NULL NAME (row 2/GBR) \u2014 identical",
+    "difference": "None. The axis hypothesis (that v2 collapses '' to NULL via an F11 universal sentinel) is empirically REFUTED. v2 preserves the genuine empty string exactly as v1 does. The old NM-18 universal ''-as-NULL sentinel was deliberately retired (WP-3); NULL is now carried out-of-band as None, and Some \"\" is a faithful Text value rendered N''.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Both engines' VALUES tuples 1 and 2 are byte-identical: `(1, N'USA', N'United States', N'')` and `(2, N'GBR', N'', N'Britain')`. Code: v2 SqlLiteral.ofRaw Text (Some \"\") -> TextLit \"\" -> N'' (SqlLiteral.fs:145,184-198); read side maps IsDBNull->ValueNone and preserves '' as ValueSome \"\" (ReadSide.fs:909-915); Catalog.fs:78-79 documents 'the retired universal \"\"-as-NULL sentinel'. v1 SqlLiteralFormatter.FormatValue(\"\")=>N'' (SqlLiteralFormatter.cs:18). Deployed readback: USA NICKNAME DATALENGTH=0 not-null and GBR NAME DATALENGTH=0 not-null on BOTH V1 and V2.",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-2",
+    "topic": "NOT NULL text column carrying '' \u2014 does the data load fail?",
+    "v1": "NAME='' (NOT NULL) loads successfully; stored DATALENGTH=0, not null",
+    "v2": "NAME='' (NOT NULL) loads successfully; stored DATALENGTH=0, not null",
+    "difference": "None. Neither engine's load fails on a NOT NULL text column carrying ''. An empty string is a valid non-NULL value, so it satisfies the NOT NULL constraint; the axis's failure hypothesis does not materialize on either side.",
+    "classification": "operational",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Row 2 (GBR, NAME='') MERGE deployed against fresh DBs: v1 seed exit 0, v2 seed exit 0 (6 rows affected), zero Msg 515/NULL-insert errors on either target. Readback: Country.Id=2 Name DATALENGTH=0, Name IS NULL=0 on both V1 and V2 (matches source OSUSR_REF_COUNTRY GBR NAME DATALENGTH=0 not-null).",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-3",
+    "topic": "OutSystems single-space (' ') sentinel on NULLABLE text",
+    "v1": "NICKNAME=' ' (nullable) normalized to NULL (row 4/DEU emits NULL)",
+    "v2": "NICKNAME=' ' (nullable) normalized to NULL (row 4/DEU emits NULL) \u2014 identical",
+    "difference": "None. Both engines apply the OutSystems single-space -> NULL sentinel identically, gated to nullable text columns. This is the ONE deliberate transformation on the axis and it is at exact parity (v1 StaticEntitySeedColumn.NormalizeValue vs v2 KindColumns.outSystemsSpaceSentinel).",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Source DEU NICKNAME DATALENGTH=2 (single NCHAR space), not null. Both emit tuple 4 as `(4, N'DEU', N'Germany', NULL)`. Deployed readback: Country.Id=4 Nickname IS NULL=1 on BOTH V1 and V2 (the only row that diverges from source, and it diverges identically). Code: v1 NormalizeValue nullable+len-1-space=>null (StaticEntitySeedScriptGenerator.cs:236-244); v2 Some \" \" when Text && not IsMandatory=>None (KindColumns.fs:113-116).",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-4",
+    "topic": "Single-space (' ') on MANDATORY / NOT NULL text (sentinel gating)",
+    "v1": "NAME=' ' (mandatory) preserved as N' ' (row 5/JPN)",
+    "v2": "NAME=' ' (mandatory) preserved as N' ' (row 5/JPN) \u2014 identical",
+    "difference": "None. Both correctly gate the space sentinel on nullability: a single space in a NOT NULL/mandatory text column is NOT collapsed to NULL and round-trips as N' '.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Both emit tuple 5 as `(5, N'JPN', N' ', N'Japan')`. Deployed readback: Country.Id=5 Name DATALENGTH=2, Name IS NULL=0 on both V1 and V2 (matches source JPN NAME DATALENGTH=2 not-null). v1 gates on IsNullable; v2 gates on `not a.IsMandatory`.",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-5",
+    "topic": "SQL NULL preservation on nullable text",
+    "v1": "NICKNAME=NULL emitted as NULL (row 3/FRA)",
+    "v2": "NICKNAME=NULL emitted as NULL (row 3/FRA) \u2014 identical",
+    "difference": "None. A genuine SQL NULL round-trips as NULL on both engines and stays distinct from the empty string '' (which stays N'').",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Both emit tuple 3 as `(3, N'FRA', N'France', NULL)`. Readback: Country.Id=3 Nickname IS NULL=1 on both V1 and V2. The distinction NULL(row3) vs ''(row1) is preserved end-to-end: row1 Nickname DATALENGTH=0/not-null, row3 Nickname IS NULL=1 \u2014 on both engines.",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-6",
+    "topic": "Deployed stored reality \u2014 full round-trip byte comparison (DATALENGTH + IS NULL)",
+    "v1": "6/6 rows round-trip; deployed Country identical to source except the intentional single-space->NULL (row 4)",
+    "v2": "6/6 rows round-trip; deployed Country identical to source except the intentional single-space->NULL (row 4) \u2014 identical to V1",
+    "difference": "None. The DATALENGTH + IS NULL of every cell in the deployed Country table is identical between ParityAxis_emptystringnull_V1 and _V2 across all 6 rows and 2 test columns. The two engines produce the same stored data-plane reality.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "V1 and V2 readback tables are line-for-line equal: (1: NAME 26/nn, NICK 0/nn), (2: NAME 0/nn, NICK 14/nn), (3: NAME 12/nn, NICK NULL), (4: NAME 14/nn, NICK NULL), (5: NAME 2/nn, NICK 10/nn), (6: NAME 10/nn, NICK 12/nn). Normalized per-tuple literal diff of the two emitted MERGE VALUES clauses returned zero differences ('>>> IDENTICAL VALUES-cell literal sequence <<<').",
+    "confidence": "high"
+   },
+   {
+    "id": "F11-7",
+    "topic": "MERGE envelope formatting around identical VALUES (OFF-AXIS observation)",
+    "v1": "Multi-line USING( \\n VALUES \\n (tuple), \\n (tuple) ...) with newline+8-space separators; `AS Target`; `AS Source (...)` with spaces",
+    "v2": "Single-line `USING (VALUES (tuple), (tuple), ...)` with `, ` inline separators; `AS [Target]`; `AS [Source](...)` bracketed",
+    "difference": "The MERGE wrapper whitespace/bracketing differs, but every VALUES-cell literal token is byte-identical. This is a MERGE-formatting / emission-aesthetic difference that belongs to a DIFFERENT axis (statement layout, identifier bracketing, extended-property emission in the DDL) \u2014 it has zero effect on the empty-string/NULL data-plane semantics and both deploy to identical stored state. Flagged only so the orchestrator does not double-count it against the F11 axis.",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "cosmetic",
+    "proof": "v1 tuples separated by ',\\n        ' (newline+indent); v2 by ', ' inline. Both deploy exit 0 to byte-identical readback. Also off-axis: v2's Country DDL adds Projection.LogicalName/SsKey extended properties absent in v1 (both tables have identical column shape: Id BIGINT IDENTITY PK, Code NVARCHAR(3) NOT NULL, Name NVARCHAR(100) NOT NULL, Nickname NVARCHAR(50) NULL).",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "sequences (CREATE SEQUENCE object + sequence-backed DEFAULT NEXT VALUE FOR)",
+  "provisioned": "DB=ParityAxis_sequences: base ossys-edge-case seed (15 entities/7 modules) + my axis feature: (1) CREATE SEQUENCE [dbo].[TestSeq] AS BIGINT START 1000 INCREMENT 5 MINVALUE 1 MAXVALUE 9999999 CYCLE CACHE 50; (2) entity Ticket (ossys_Entity Id=7002, module RefData=700, physical OSUSR_SEQ_TICKET) with attrs Id/TicketNo/Label registered in ossys_Entity_Attr; (3) physical table OSUSR_SEQ_TICKET with [TICKETNO] BIGINT NOT NULL CONSTRAINT DF_OSUSR_SEQ_TICKET_TICKETNO DEFAULT (NEXT VALUE FOR [dbo].[TestSeq]). Source truth verified via sys.sequences (1 row) + sys.default_constraints (definition=(NEXT VALUE FOR [dbo].[TestSeq])). Deploy targets: _V1/_V2 (as-emitted + isolation), _V1b/_V2b (realistic metamodel-Default_Value=NULL variant). Both CLIs exited 0: v1 full-export exit 0; v2 publish outcome \"succeeded\". All 5 databases dropped at end.",
+  "v1Result": "v1 full-export (--profiler-provider sql): model.json has NO `sequences` key at all (top-level keys = [exportedAtUtc, modules]); root cause src/Osm.Pipeline/SqlExtraction/ModelDeserializerFacade.cs:72 hardcodes ImmutableArray<SequenceModel>.Empty (there is NO sequence result-set processor in SqlExtraction/). Build output: NO \"CREATE SEQUENCE\" anywhere. Emits Modules/RefData/dbo.Ticket.sql line 6: `CONSTRAINT [DF_OSUSR_SEQ_TICKET_TICKETNO] DEFAULT  NEXT VALUE FOR [dbo].[TestSeq],`. The default is sourced from BOTH ossys Default_Value AND physical sys.default_constraints (ColumnRealityResultSetProcessor.DefaultDefinition col 11) \u2014 it STILL emits when metamodel Default_Value=NULL (v1b). Deploy dbo.Ticket.sql to fresh DB -> Msg 208, Level 16 \"Invalid object name 'dbo.TestSeq'\" (exit 1) \u2014 CREATE TABLE fails whole. Isolation (pre-create dbo.TestSeq): deploys exit 0, table object_id 917578307, default readback = (NEXT VALUE FOR [dbo].[TestSeq]).",
+  "v2Result": "v2 publish (from:model, ossys live rowset lane): catalog.snapshot.json has explicit `sequences: []`; root cause Projection.Adapters.Osm/OssysRowsetReader.fs:951 (and OssysJsonReader.fs:756) call `Catalog.create modules []`, comment \"V1's osm_model.json projection does not surface sequences at the catalog boundary today.\" Bundle: NO \"CREATE SEQUENCE\" in dist/onprem. Emits Modules/RefData/dbo.Ticket.sql line 6: `CONSTRAINT [DF_OSUSR_SEQ_TICKET_TICKETNO] DEFAULT NEXT VALUE FOR dbo.TestSeq,` \u2014 but ONLY when ossys Default_Value carries the expr (snapshot tags it \"kind\":\"IntegerLit\",\"value\":\"NEXT VALUE FOR dbo.TestSeq\"). With metamodel Default_Value=NULL (v2b) v2 DROPS the default: `[TicketNo] BIGINT NOT NULL,` (no DEFAULT). Deploy as-emitted (with default) -> Msg 208 \"Invalid object name 'dbo.TestSeq'\" (exit 1). Realistic v2b (no default) -> exit 0, table created (object_id 901578250), ticketno_default=NONE, seq_count=0. Isolation (pre-create seq): with-default variant deploys exit 0, default readback = (NEXT VALUE FOR [dbo].[TestSeq]). NOTE: v2 HAS a full CREATE SEQUENCE emitter (ScriptDomBuild.buildCreateSequence -> CreateSequenceStatement, wired line 2717) fed by ReadSide.readSequences(sys.sequences) \u2014 reachable only via the physical-reflection lane, NOT from:model.",
+  "findings": [
+   {
+    "id": "SEQ-01",
+    "topic": "CREATE SEQUENCE object emission from the model-sourced lane",
+    "v1": "No CREATE SEQUENCE emitted; model.json omits the `sequences` key entirely. Root cause ModelDeserializerFacade.cs:72 hardcodes empty Sequences (no sequence processor in SqlExtraction/).",
+    "v2": "No CREATE SEQUENCE emitted; catalog.snapshot.json has `sequences: []`. Root cause OssysRowsetReader.fs:951 / OssysJsonReader.fs:756 `Catalog.create modules []`.",
+    "difference": "Parity: BOTH model-sourced lanes silently omit the CREATE SEQUENCE object for dbo.TestSeq. Directly confirms packet C10 ('sequences silently absent from model-sourced runs'). The source estate's dbo.TestSeq (bigint/1000/5/1/9999999/cycle/cache50) is nowhere in either output.",
+    "classification": "capability-gap",
+    "direction": "parity-confirmed",
+    "severity": "major",
+    "proof": "grep -rin 'CREATE SEQUENCE' returned zero hits in both v1/out and v2/dist. v1 model.json top-level keys = [exportedAtUtc, modules] (no sequences). v2 catalog.snapshot.json top keys include 'sequences' = []. sys.sequences source truth had 1 row (dbo.TestSeq).",
+    "confidence": "high"
+   },
+   {
+    "id": "SEQ-02",
+    "topic": "Sequence-backed DEFAULT in the realistic OutSystems shape (metamodel Default_Value empty)",
+    "v1": "Re-emits `DEFAULT  NEXT VALUE FOR [dbo].[TestSeq]` sourced from physical sys.default_constraints (persists with metamodel Default_Value=NULL). Deploy -> Msg 208 Invalid object name 'dbo.TestSeq' (exit 1): NON-DEPLOYABLE dangling reference.",
+    "v2": "Drops the default entirely: `[TicketNo] BIGINT NOT NULL,` (from:model reads defaults only from ossys Default_Value). Deploy -> exit 0, table created, ticketno_default=NONE: DEPLOYABLE but silently loses the sequence-backed default behavior.",
+    "difference": "Genuine DIVERGENCE. OutSystems does not model sequence defaults, so a DBA-added sequence default is invisible to the metamodel. v1 OVER-emits from physical reality and produces a bundle that fails to deploy (Msg 208); v2 UNDER-emits from the metamodel and produces a clean-but-lossy bundle (TICKETNO loses its auto-populate default; runtime inserts omitting TICKETNO would then hit NOT NULL). Both are wrong, in opposite directions.",
+    "classification": "functional-output",
+    "direction": "neutral",
+    "severity": "major",
+    "proof": "v1b Ticket.sql:6 emits DEFAULT NEXT VALUE FOR [dbo].[TestSeq] with ossys Default_Value=NULL -> deploy Msg 208 (exit 1). v2b Ticket.sql:5 `[TicketNo] BIGINT NOT NULL,` (no default) -> deploy exit 0, sys.default_constraints readback NONE, seq_count=0.",
+    "confidence": "high"
+   },
+   {
+    "id": "SEQ-03",
+    "topic": "Sequence-backed DEFAULT when the metamodel Default_Value carries the expression",
+    "v1": "Emits `CONSTRAINT [DF_OSUSR_SEQ_TICKET_TICKETNO] DEFAULT  NEXT VALUE FOR [dbo].[TestSeq]`. Deploy as-emitted -> Msg 208 (exit 1).",
+    "v2": "Emits `CONSTRAINT [DF_OSUSR_SEQ_TICKET_TICKETNO] DEFAULT NEXT VALUE FOR dbo.TestSeq`. Deploy as-emitted -> Msg 208 (exit 1).",
+    "difference": "Parity: when the ossys metamodel carries the sequence expression, BOTH engines emit the sequence-backed DEFAULT but NEITHER emits the sequence -> BOTH bundles are non-deployable with the identical Msg 208. Isolation proof: after pre-creating dbo.TestSeq in the target, BOTH deploy cleanly (exit 0), same table object_id 917578307, and both defaults resolve to the identical normalized (NEXT VALUE FOR [dbo].[TestSeq]). The ONLY missing artifact in both bundles is the CREATE SEQUENCE.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "major",
+    "proof": "a-variant: both v1 and v2 dbo.Ticket.sql deploy -> Msg 208 'Invalid object name dbo.TestSeq' (exit 1). Isolation: CREATE SEQUENCE dbo.TestSeq then re-deploy -> both exit 0; readback ticket_default=(NEXT VALUE FOR [dbo].[TestSeq]) for both, seq_count=1.",
+    "confidence": "high"
+   },
+   {
+    "id": "SEQ-04",
+    "topic": "Latent CREATE SEQUENCE emit capability (lane reachability)",
+    "v1": "No CREATE SEQUENCE emitter exists anywhere in v1 source. SequenceModel is populated only from JSON model input (ModelDocumentPipeline/ModuleFilter) and is never rendered to DDL by any emitter.",
+    "v2": "Full emit path present and wired: ScriptDomBuild.buildCreateSequence (fs:2631) builds a real CreateSequenceStatement, Statement.CreateSequence arm wired at ScriptDomBuild.fs:2717, Deploy.fs:475 handles it, fed by ReadSide.readSequences (sys.sequences). Exercised by the physical-reflection lane, not by from:model.",
+    "difference": "v2 could surface CREATE SEQUENCE via a different source lane (physical estate reflection); v1 cannot emit CREATE SEQUENCE at all under any lane without new code. So the parity in SEQ-01 masks an underlying capability asymmetry favouring v2.",
+    "classification": "capability-gap",
+    "direction": "v2-better",
+    "severity": "minor",
+    "proof": "grep -rin 'CREATE SEQUENCE' over v1 src (excl bin/obj/test) = zero. v2 ScriptDomBuild.fs:2626-2718 buildCreateSequence + CreateSequence match arm; ReadSide.fs:398 readSequences 'FROM sys.sequences s' -> 1885 Sequences = recoveredSequences.",
+    "confidence": "high"
+   },
+   {
+    "id": "SEQ-05",
+    "topic": "Default-expression kind classification in the IR/snapshot",
+    "v1": "model.json stores the default as a plain string: attribute `.default` = 'NEXT VALUE FOR dbo.TestSeq' plus `.onDisk.defaultDefinition` = '(NEXT VALUE FOR [dbo].[TestSeq])' (no typed classification).",
+    "v2": "catalog.snapshot.json tags it `\"defaultValue\": {\"kind\": \"IntegerLit\", \"value\": \"NEXT VALUE FOR dbo.TestSeq\"}` \u2014 mis-classified as an integer literal (it is a sequence expression). Value string is preserved and emitted verbatim, so no effect on the SQL text.",
+    "difference": "v2's typed default IR mislabels a sequence-valued default as IntegerLit. Cosmetic/internal only for this axis (emission unaffected), but a wrong expression-kind could mis-route other default handling.",
+    "classification": "emission-aesthetic",
+    "direction": "v2-worse",
+    "severity": "cosmetic",
+    "proof": "v2 catalog.snapshot.json:2765 `\"kind\": \"IntegerLit\", \"value\": \"NEXT VALUE FOR dbo.TestSeq\"`; emitted SQL still `DEFAULT NEXT VALUE FOR dbo.TestSeq` and deploys correctly.",
+    "confidence": "high"
+   },
+   {
+    "id": "SEQ-06",
+    "topic": "Emitted DEFAULT text format (sequence qualification/whitespace)",
+    "v1": "`DEFAULT  NEXT VALUE FOR [dbo].[TestSeq]` \u2014 bracket-qualified schema.object, double space after DEFAULT.",
+    "v2": "`DEFAULT NEXT VALUE FOR dbo.TestSeq` \u2014 unbracketed schema.object, single space.",
+    "difference": "Purely cosmetic text-formatting difference in the sequence reference. Both SQL Server-normalize on deploy to the identical stored definition (NEXT VALUE FOR [dbo].[TestSeq]); no behavioral difference.",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "cosmetic",
+    "proof": "v1 Ticket.sql:6 vs v2 Ticket.sql:6 differ only in brackets/spacing; sys.default_constraints readback identical for both after isolation deploy: (NEXT VALUE FOR [dbo].[TestSeq]).",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "deployed NOT NULL where the model says nullable (audit M-3 second half): a column marked Is_Mandatory=0 in the ossys model whose physical column is ALTERed to NOT NULL in the deployed DB \u2014 does v2 loosen to NULL (drop the deployed constraint) while v1 preserves NOT NULL via the physical-evidence path?",
+  "provisioned": "DB [ParityAxis_deployednotnullmodelnullable] created + base OSSYS edge-case seed loaded (15 entities / 7 modules / 40 attrs). Axis feature: picked StockItem.AvgCost (ossys_Entity_Attr Id=60007; Is_Mandatory=0 \u2192 model-nullable; Is_Active=1; Data_Type=Float; no default/FK/computed) and ran `ALTER TABLE [dbo].[OSUSR_INV_STOCKITEM] ALTER COLUMN [AVGCOST] FLOAT NOT NULL`. Source truth confirmed via sys.columns: AVGCOST is_nullable flipped 1\u21920 (drift applied), table has 0 rows; model Is_Mandatory stays 0. Both CLIs ran clean: v1 full-export exit=0, v2 publish exit=0. All 3 databases (base + _V1 + _V2) dropped at end (confirmed gone).",
+  "v1Result": "v1 full-export (default-tightening.json, EvidenceGated) emitted `[AvgCost]      FLOAT            NOT NULL` at line 10 of v1/out/Modules/Inventory/dbo.StockItem.sql. policy-decisions.json records the column decision {Schema:dbo, Table:OSUSR_INV_STOCKITEM, Column:AVGCOST, MakeNotNull:true, RequiresRemediation:false, Rationales:[\"PHYSICAL_NOT_NULL\"]}; run.log summary: \"2 attributes across 2 entities inherited NOT NULL status from the physical database schema\". Deploy of that file to fresh DB _V1 succeeded (sqlcmd exit 0, no Msg errors); readback sys.columns.is_nullable=0 (NOT NULL). v1 PRESERVES the deployed constraint via its evidence path (PhysicalNotNullSignal S2_DB_NOT_NULL reads profiler ColumnProfile.IsNullablePhysical=false from the live schema).",
+  "v2Result": "v2 publish (profiler live, default publish flow) emitted `[AvgCost]      FLOAT              NULL` at line 10 of v2/dist/onprem/Modules/Inventory/dbo.StockItem.sql. catalog.snapshot.json records the column as {\"column\":{\"columnName\":\"AvgCost\",\"isNullable\":true},\"isMandatory\":false} \u2014 nullability is model-derived, physical drift invisible. Deploy of that file to fresh DB _V2 succeeded (sqlcmd exit 0, no Msg errors); readback sys.columns.is_nullable=1 (NULL). v2 LOOSENS: it drops the deployed NOT NULL and emits a nullable column, following the model's Is_Mandatory=0. No nullability diagnostic emitted for the column (NullabilityPass outcome is the no-signal keep-nullable path).",
+  "findings": [
+   {
+    "id": "DNN-1",
+    "topic": "Deployed NOT NULL on a model-nullable column: v1 preserves, v2 loosens (emitted DDL + deployed reality)",
+    "v1": "[AvgCost] FLOAT NOT NULL; deployed sys.columns.is_nullable=0",
+    "v2": "[AvgCost] FLOAT NULL; deployed sys.columns.is_nullable=1",
+    "difference": "For a column the ossys model marks Is_Mandatory=0 but whose physical column was ALTERed to NOT NULL, v1 keeps the deployed NOT NULL (decision rationale PHYSICAL_NOT_NULL) while v2 silently emits NULL, dropping the deployed constraint and following the logical model. The two engines produce opposite target states for the exact same column; on an incremental apply against the drifted DB, v2 would drive the column back to NULL, weakening a production NOT NULL invariant with no diagnostic.",
+    "classification": "functional-output",
+    "direction": "v2-worse",
+    "severity": "major",
+    "proof": "Source: sys.columns AVGCOST is_nullable=0 after ALTER. v1 dbo.StockItem.sql line10 `[AvgCost] FLOAT NOT NULL` + policy-decisions.json {MakeNotNull:true,Rationales:[PHYSICAL_NOT_NULL]}; deployed _V1 is_nullable=0. v2 dbo.StockItem.sql line10 `[AvgCost] FLOAT NULL`; deployed _V2 is_nullable=1. Both deploys sqlcmd exit 0, no Msg errors.",
+    "confidence": "high"
+   },
+   {
+    "id": "DNN-2",
+    "topic": "Root cause / capability-gap: v2 catalog nullability is model-derived, so its PhysicallyNotNull rule is blind to deployed drift",
+    "v1": "PhysicalNotNullSignal.cs:11 evaluates `context.ColumnProfile is { IsNullablePhysical: false }` \u2014 read from the live schema by the profiler, fires independently of model mandatoriness (rationale PHYSICAL_NOT_NULL).",
+    "v2": "OssysRowsetReader.fs:79 seeds Column.IsNullable = `not row.IsMandatory` (model only); NullabilityRules.fs:257 step 3 `elif not attribute.Column.IsNullable -> EnforceNotNull PhysicallyNotNull` reads that model-derived flag, never sys.columns.is_nullable.",
+    "difference": "v2 owns a nullability rule literally named PhysicallyNotNull, but because the catalog's Column.IsNullable comes from the model's Is_Mandatory rather than the physical schema, the rule can only fire when the model already says not-nullable \u2014 it is structurally incapable of observing a deployed NOT NULL on a model-nullable column. Consequently v2 cannot preserve the deployed constraint under ANY tightening direction/config: step 3 sees Column.IsNullable=true, step 4 (IsMandatory) is false, so it falls to step 5 KeepNullable(NoTighteningSignal) and keeps the model nullability. This is the mechanism behind DNN-1.",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "major",
+    "proof": "catalog.snapshot.json AvgCost {isNullable:true,isMandatory:false}. OssysRowsetReader.fs:79 `IsNullable = not row.IsMandatory`. NullabilityRules.fs:256-258 physical-not-null branch keys on `not attribute.Column.IsNullable`. Contrast v1 PhysicalNotNullSignal.cs:9-12 keys on profiler IsNullablePhysical. (v2 outcome-invariance to tightening config verified statically from the rule hierarchy; empirical run used the default publish flow.)",
+    "confidence": "high"
+   },
+   {
+    "id": "DNN-3",
+    "topic": "Controlled parity: every non-drifted column in the same table agrees on nullability",
+    "v1": "Id NOT NULL (PK), ReorderLevel/WarehouseQty NOT NULL, PublicGuid/LastSyncedAt/OpenTime NULL",
+    "v2": "identical nullability on all six columns",
+    "difference": "Within the same StockItem table, the only nullability divergence is AvgCost \u2014 the column I drifted. Model-mandatory columns (ReorderLevel, WarehouseQty, Id) emit NOT NULL on both; model-nullable/physically-null columns (PublicGuid, LastSyncedAt, OpenTime) emit NULL on both. This isolates the causal factor: the divergence is produced solely by the deployed-NOT-NULL vs model-nullable drift, with no other confounder.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Side-by-side CREATE TABLE (v1 vs v2): Id/ReorderLevel/WarehouseQty = NOT NULL on both; PublicGuid/LastSyncedAt/OpenTime = NULL on both; AvgCost = NOT NULL (v1) vs NULL (v2).",
+    "confidence": "high"
+   },
+   {
+    "id": "DNN-4",
+    "topic": "Boundary of the divergence class: a natural physically-NOT-NULL/model-nullable column (DISPLAYLABEL) is masked because both engines emit it computed",
+    "v1": "policy-decisions.json flags OSUSR_SAL_PRODUCT.DISPLAYLABEL with Rationales=[PHYSICAL_NOT_NULL] (computed PERSISTED, model non-mandatory, physically NOT NULL) \u2014 the 2nd of the 2 physical-schema-inherited NOT NULLs.",
+    "v2": "n/a \u2014 emitted as a computed column, no declared nullability",
+    "difference": "The base seed already contained a second physically-NOT-NULL/model-nullable column (DISPLAYLABEL), so this divergence class is not unique to my synthetic drift. But both engines emit DISPLAYLABEL as a computed column (`[DisplayLabel] AS (concat([Sku],N'-',CONVERT(NVARCHAR(20),[Price])))`) with no NULL/NOT NULL token, so it yields no emitted nullability divergence. The v1-preserves/v2-loosens split therefore materializes only for non-computed scalar columns \u2014 AvgCost is the clean scalar witness.",
+    "classification": "functional-output",
+    "direction": "neutral",
+    "severity": "minor",
+    "proof": "v1 run.log 'inherited NOT NULL from physical schema' count=2 = {AVGCOST, DISPLAYLABEL}. Product.sql line12 on BOTH sides: `[DisplayLabel] AS (concat(...))` computed, no nullability token.",
+    "confidence": "high"
+   },
+   {
+    "id": "DNN-5",
+    "topic": "Incidental off-axis diff observed in same table: temporal-type scale emission",
+    "v1": "[LastSyncedAt] DATETIMEOFFSET NULL, [OpenTime] TIME NULL (bare, no scale token)",
+    "v2": "[LastSyncedAt] DATETIMEOFFSET (7) NULL, [OpenTime] TIME (7) NULL (explicit scale 7)",
+    "difference": "Not a nullability difference (both NULL, parity on my axis) \u2014 noted only because it appeared in the same emitted table. v2 emits explicit scale (7) on DATETIMEOFFSET/TIME; v1 emits bare. Both deploy to effective scale 7 (SQL Server default), so the deployed schemas match, but the emitted text differs and would still break a byte-parity canary. Belongs to the temporal-precision axis, flagged for that owner.",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "cosmetic",
+    "proof": "v2 StockItem.sql lines 8-9 `DATETIMEOFFSET (7)`/`TIME (7)`; v1 lines 8-9 bare `DATETIMEOFFSET`/`TIME`. Deploy readback: both types report scale=7 in sys.columns.",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "E7 \u2014 FK to a composite-PK target. OrderLine (entity 5003 / OSUSR_SAL_ORDERLINE) has composite PK (ORDERID, LINENO). New tables reference it via a single-column OutSystems reference attribute; test whether each engine emits the full composite FK or only the first leg (invalid SQL).",
+  "provisioned": "DB ParityAxis_compositepkfk = base ossys-edge-case seed (15 entities/7 modules) + 2 new Sales entities referencing composite-PK OrderLine: (A) LineComment (5004/OSUSR_SAL_LINECOMMENT) \u2014 reference attr OrderLineId\u2192OrderLine (bt-code bt4444\u2026*bbbb\u2026013, Protect) + plain LineNo(Integer) + Comment, backed by a PHYSICAL COMPOSITE FK FK_OSUSR_SAL_LINECOMMENT_ORDERLINE (ORDERLINEID,LINENO)\u2192OSUSR_SAL_ORDERLINE(ORDERID,LINENO); (B) LineTag (5005/OSUSR_SAL_LINETAG) \u2014 reference attr OrderLineId\u2192OrderLine (Protect) with NO physical FK (a single-col FK to OrderLine is un-seedable, ORDERID has no standalone unique index). Source truth confirmed via sys.foreign_key_columns: LineComment FK = 2 legs (ORDERLINEID\u2192ORDERID ord1, LINENO\u2192LINENO ord2); LineTag = 0 FKs. Both CLIs exited 0 (v1 full-export exit 0; v2 publish exit 0, 28 artifacts). Deploy targets ParityAxis_compositepkfk_V1 / _V2 each seeded with a matching [dbo].[OrderLine] (OrderId BIGINT, LineNo INT, PK(OrderId,LineNo)). All 3 DBs dropped at end.",
+  "v1Result": "v1 (Osm.Cli full-export --profiler-provider sql) captured the physical composite FK in model.json (LineComment relationship\u2192OrderLine, hasDbConstraint=1, actualConstraints=1 with 2 legs ordinals 1&2; LineTag hasDbConstraint=0, 0 actualConstraints). EMITTED DDL \u2014 LineComment (evidence path): table-level `CONSTRAINT [FK_LineComment_OrderLine_OrderLineId_LineNo] FOREIGN KEY ([OrderLineId], [LineNo]) REFERENCES [dbo].[OrderLine] ([OrderId], [LineNo])` = FULL COMPOSITE FK. LineTag (fallback path, no evidence): column-inline `CONSTRAINT [FK_LineTag_OrderLine_OrderLineId] FOREIGN KEY ([OrderLineId]) REFERENCES [dbo].[OrderLine] ([OrderId])` = SINGLE FIRST LEG. DEPLOY into _V1: LineComment.sql deployed CLEAN (sys.foreign_keys shows FK_LineComment_OrderLine_OrderLineId_LineNo with 2 legs persisted; table present); LineTag.sql FAILED \u2014 Msg 1776 \"There are no primary or candidate keys in the referenced table 'dbo.OrderLine' that match the referencing column list in the foreign key 'FK_LineTag_OrderLine_OrderLineId'.\" + Msg 1750 \"Could not create constraint or index\" (table not created).",
+  "v2Result": "v2 (projection.dll publish --json, profiler live) recorded the reference as a single-column IR node \u2014 catalog.snapshot.json Reference = { sourceAttribute: O32:\u2026OrderLineId, targetKind: O32:\u2026OrderLine, hasDbConstraint:true (LineComment) / false (LineTag) } with NO referenced-column list and NO second leg; the composite reality is structurally absent from v2's model. EMITTED DDL \u2014 BOTH LineComment AND LineTag identical: column-inline `CONSTRAINT [FK_<T>_OrderLine_OrderLineId] FOREIGN KEY ([OrderLineId]) REFERENCES [dbo].[OrderLine] ([OrderId])` = SINGLE FIRST LEG in both, including the case where the source had a valid composite FK. No warning/refusal/remediation about the dropped leg anywhere (run.log, fidelity.txt, manifest.remediation.sql). DEPLOY into _V2: BOTH LineComment.sql and LineTag.sql FAILED \u2014 each Msg 1776 (\u2026no primary or candidate keys in 'dbo.OrderLine' that match \u2026 foreign key 'FK_LineComment_OrderLine_OrderLineId' / 'FK_LineTag_OrderLine_OrderLineId') + Msg 1750; neither table created (only OrderLine present in _V2, zero FKs).",
+  "findings": [
+   {
+    "id": "E7-composite-fk-truncated-to-first-leg",
+    "topic": "Source has a physical COMPOSITE FK to composite-PK OrderLine (LineComment): v2 emits only the first leg \u2192 undeployable; v1 emits the full composite FK \u2192 deploys",
+    "v1": "Full composite FK: FOREIGN KEY ([OrderLineId],[LineNo]) REFERENCES [dbo].[OrderLine]([OrderId],[LineNo]); deploys clean, 2-leg FK persisted in _V1.",
+    "v2": "Single first leg only: FOREIGN KEY ([OrderLineId]) REFERENCES [dbo].[OrderLine]([OrderId]); deploy fails Msg 1776 + Msg 1750; LineComment table not created.",
+    "difference": "v1's model.json carries the physical FK as a 2-leg actualConstraint and the ForeignKeyEvidenceResolver emits both legs (referenced side = OrderLine's real PK (OrderId,LineNo)). v2's Reference IR is single sourceAttribute\u2192targetKind with no referenced-column list, so despite recording hasDbConstraint=true it drops the LineNo leg and collapses the referenced side to OrderLine's FIRST PK column (OrderId) \u2014 which is not a standalone key, so the FK is invalid.",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "blocker",
+    "proof": "v2 _V2 deploy: Msg 1776 'There are no primary or candidate keys in the referenced table dbo.OrderLine that match the referencing column list in the foreign key FK_LineComment_OrderLine_OrderLineId' + Msg 1750; v1 _V1 readback: FK_LineComment_OrderLine_OrderLineId_LineNo present with legs (OrderLineId\u2192OrderId ord1, LineNo\u2192LineNo ord2). v1 model.json LineComment actualConstraints=1 with 2 legs; v2 catalog.snapshot Reference has only sourceAttribute+targetKind.",
+    "confidence": "high"
+   },
+   {
+    "id": "E7-logical-only-ref-both-emit-invalid-single-leg",
+    "topic": "Source has NO physical FK, only a logical single-column reference to composite-PK OrderLine (LineTag): both engines synthesize an invalid single-leg FK",
+    "v1": "FOREIGN KEY ([OrderLineId]) REFERENCES [dbo].[OrderLine]([OrderId]) (fallback = GetPreferredIdentifier, single col); Msg 1776 + 1750 on deploy; table not created.",
+    "v2": "Byte-identical single-leg FK FOREIGN KEY ([OrderLineId]) REFERENCES [dbo].[OrderLine]([OrderId]); Msg 1776 + 1750 on deploy; table not created.",
+    "difference": "With no physical-FK evidence, both engines fabricate an FK from the single-column OutSystems reference against the target's first PK column and neither checks that OrderLine's PK is composite. Both produce undeployable SQL \u2014 this is a SHARED correctness defect, not a v2 regression (v1's fallback path == v2's only path).",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "major",
+    "proof": "Both _V1 (LineTag.sql) and _V2 (LineTag.sql) deploys emit Msg 1776 for FK_LineTag_OrderLine_OrderLineId + Msg 1750; LineTag absent from both target DBs. Emitted FK text identical across engines.",
+    "confidence": "high"
+   },
+   {
+    "id": "E7-v2-silent-fk-leg-loss",
+    "topic": "v2 reduces a composite FK to a single leg with no diagnostic (violates downgrades-never-silent)",
+    "v1": "n/a for LineComment (v1 emits the composite FK correctly); for the LineTag single-leg case v1 likewise emits with no remediation note.",
+    "v2": "Recorded hasDbConstraint=true for LineComment yet emitted a 1-leg FK; zero warn/refusal/remediation about the lost LineNo leg in run.log, fidelity.txt, manifest.remediation.sql (only unrelated nullability/type + JobRun-cycle warnings present).",
+    "difference": "The truncation of a valid 2-leg physical FK to an invalid 1-leg FK is lossy and silent in v2 \u2014 no operator signal that emitted SQL will fail to deploy.",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "major",
+    "proof": "grep of v2 run.log/fidelity/remediation for FK/composite/OrderLine/1776/refus/degrade found no truncation diagnostic; v2 publish exited 0 while emitting undeployable DDL.",
+    "confidence": "high"
+   },
+   {
+    "id": "E7-fk-name-and-placement-corollary",
+    "topic": "Constraint naming + placement differ as a side effect of leg count",
+    "v1": "Composite case names the FK with both columns and places it table-level: CONSTRAINT [FK_LineComment_OrderLine_OrderLineId_LineNo] on its own line.",
+    "v2": "Always single-column name, column-inline: CONSTRAINT [FK_LineComment_OrderLine_OrderLineId] attached under [OrderLineId].",
+    "difference": "Direct consequence of v1 emitting 2 legs vs v2 emitting 1; not an independent defect but a visible naming/format divergence when a composite FK is involved. For the single-leg LineTag case the names/placement match between engines.",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "cosmetic",
+    "proof": "v1 LineComment: table-level 'CONSTRAINT [FK_LineComment_OrderLine_OrderLineId_LineNo] FOREIGN KEY ([OrderLineId], [LineNo])'; v2 LineComment: inline 'CONSTRAINT [FK_LineComment_OrderLine_OrderLineId] FOREIGN KEY ([OrderLineId])'.",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": ">1000-row static entity data lane: v2 data-staging #temp escalation (F7, threshold 1000) vs v1 >1000-row Authoritative batch-boundary row-loss claim. Bulk-inserted 1500 rows into static entity OSUSR_REF_COUNTRY (entity 7000 'Country', Data_Kind=staticEntity); ran both data lanes; deployed each emitted seed script to a fresh DB and COUNTed loaded rows vs 1500.",
+  "provisioned": "DB ParityAxis_datastaging1000 = base ossys-edge-case seed (15 entities/7 modules) + 1500 bulk rows into dbo.OSUSR_REF_COUNTRY (Id IDENTITY 1..1500, Code=RIGHT('000'+n%1000,3) NVARCHAR(3), Name='Country_'+n). Source truth verified via sys-catalog: SELECT COUNT(*)=1500, MIN(ID)=1, MAX(ID)=1500; ossys_Entity row 7000 confirms Physical_Table_Name=OSUSR_REF_COUNTRY, Data_Kind=staticEntity. Both CLIs exited 0: v1 full-export (NonDestructive default) exit 0; v1 full-export (Authoritative variant, tightening emission.staticSeeds.mode=Authoritative) exit 0; v2 publish --json exit 0. Deploy targets created/dropped: _V1, _V1AUTH, _V2. All 4 databases dropped best-effort at end (verified none remain).",
+  "v1Result": "v1 emits Seeds/RefData/StaticEntities.seed.sql. StaticSeedSqlBuilder.cs: DefaultBatchSize=1000, requiresBatching = rows.Length > 1000 -> 1500 rows PARTITIONED into 2 batches (1000+500), each a SEPARATE inline `MERGE INTO [dbo].[Country] AS Target USING (VALUES ...) AS Source ([Id],[Code],[Name]) ON Target.[Id]=Source.[Id]`, GO-separated, NOT wrapped in any transaction. Header: '-- Note: Large table with 1500 rows will be processed in batches of 1000'; per-batch PRINT 'Applying batch 1/2 ... (1000 rows)' / 'Applying batch 2/2 ... (500 rows)'. Target is the LOGICAL name [dbo].[Country] (not physical OSUSR_REF_COUNTRY); table DDL Id BIGINT IDENTITY PK, Code NVARCHAR(3), Name NVARCHAR(100); bracketed by SET IDENTITY_INSERT ON/OFF. MODE-DEPENDENT tail: NonDestructive (default) each MERGE ends `;` (0 delete arms); Authoritative each MERGE ends `WHEN NOT MATCHED BY SOURCE THEN DELETE;` (2 delete arms, seed lines 1037 & 1554). DEPLOY (ddl exit 0 / seed exit 0, 0 Msg both): NonDestructive -> dbo.Country COUNT=1500 MIN=1 MAX=1500 (exact). Authoritative -> dbo.Country COUNT=500 MIN=1001 MAX=1500 -- SILENT loss of 1000 rows (deploy stdout was ONLY the two PRINT lines, no Msg/error): batch-1's 1000 rows (Id 1-1000) inserted, then batch-2's MERGE WHEN NOT MATCHED BY SOURCE THEN DELETE deleted them because Id 1-1000 are absent from batch-2's 500-row VALUES source; only batch-2 rows (Id 1001-1500) survive.",
+  "v2Result": "v2 publish emits ONE data file Data/StaticSeeds.sql (Country only; empty CurrencyCode contributes nothing). shouldStage(auto,1500) = 1500 > Threshold(1000) = true -> ESCALATED to staged #temp form (StagedMerge.renderStagedPhase1). Structure (1530 lines, single GO-terminated batch): line1 `SET XACT_ABORT ON;`, `BEGIN TRY`, `BEGIN TRANSACTION;`, `DROP TABLE IF EXISTS [#seed_Country];`, `CREATE TABLE [#seed_Country] ([Id] BIGINT NULL,[Code] NVARCHAR(3) NULL,[Name] NVARCHAR(100) NULL);` (all-nullable staging), then TWO temp-INSERT batches (INSERT [#seed_Country] ... VALUES at line 11 with 1000 rows + line 1012 with 500 rows = all 1500 accumulate in ONE temp), then ONE `SET IDENTITY_INSERT [dbo].[Country] ON; MERGE INTO [dbo].[Country] AS [Target] USING [#seed_Country] AS [Source] ON [Target].[Id]=[Source].[Id] WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT ...;` (upsert-only, no delete arm by default), `SET IDENTITY_INSERT OFF; DROP TABLE [#seed_Country]; COMMIT TRANSACTION; END TRY BEGIN CATCH ... ROLLBACK; THROW; END CATCH; GO`. Target logical name [dbo].[Country], Id BIGINT IDENTITY PK (same as v1) + v2-only provenance extended properties (Projection.LogicalName/SsKey). DEPLOY (ddl exit 0 / seed exit 0, 0 Msg): dbo.Country COUNT=1500 MIN=1 MAX=1500 (exact). The single MERGE over the fully-staged 1500-row #temp has NO batch boundary in the MERGE step, so it is structurally immune to v1's Authoritative loss even were a delete arm configured (the source would hold all 1500 rows).",
+  "findings": [
+   {
+    "id": "F1-authoritative-batch-boundary-rowloss",
+    "topic": "Batch-boundary row survival for a >1000-row static entity under destructive (Authoritative / WHEN-NOT-MATCHED-BY-SOURCE-DELETE) sync",
+    "v1": "Authoritative mode: 2 independent inline MERGEs (1000+500 rows), EACH carrying its own WHEN NOT MATCHED BY SOURCE THEN DELETE;. Batch-2's delete arm deletes batch-1's rows. Deployed dbo.Country COUNT=500, MIN=1001, MAX=1500 -- 1000 of 1500 rows silently lost (deploy exit 0, 0 Msg, only PRINT lines).",
+    "v2": "Single staged MERGE over one #seed_Country temp holding all 1500 rows. Deployed COUNT=1500, MIN=1, MAX=1500. Architecturally immune: the one MERGE always sees the full row set, so a WHEN-NOT-MATCHED-BY-SOURCE arm could never delete rows that belong.",
+    "difference": "v1's per-batch MERGE partitioning makes destructive sync (Authoritative) a silent data-corruption bug on any static entity above 1000 rows: each batch's delete arm nukes prior batches, leaving only the final batch (here 500/1500 = 67% loss). v2's stage-all-then-one-MERGE design cannot exhibit this.",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "major",
+    "proof": "Deployed row counts: v1-Authoritative dbo.Country COUNT=500 MIN=1001 MAX=1500 (exactly batch-2's Id range) vs source 1500 and v2 1500. Seed source: StaticSeedSqlBuilder.cs:95 requiresBatching=rows>1000, :169 PartitionRows(1000), :261-263 appends WHEN NOT MATCHED BY SOURCE THEN DELETE; per batch; emitted arm confirmed at seed lines 1037 & 1554. Loss is silent: v1auth seed deploy stdout = only 'Applying batch 1/2 (1000 rows)' + 'Applying batch 2/2 (500 rows)'.",
+    "confidence": "high"
+   },
+   {
+    "id": "F2-v2-temp-escalation-threshold-1000",
+    "topic": "v2 data-staging #temp escalation (F7) at row threshold 1000",
+    "v1": "No staging concept: emits N inline MERGE ... USING (VALUES ...) batches (batch size 1000) directly against the live target; no #temp, no transaction envelope.",
+    "v2": "1500 > DataStagingPolicy.auto.Threshold(1000) -> escalates to a #seed_Country #temp (rows bulk-loaded via <=1000-row INSERT batches) followed by a SINGLE MERGE INTO [dbo].[Country] USING [#seed_Country], the whole unit inside SET XACT_ABORT ON + BEGIN TRY/BEGIN TRANSACTION ... COMMIT / BEGIN CATCH ROLLBACK; THROW.",
+    "difference": "The F7 escalation claim is EMPIRICALLY CONFIRMED for v2: threshold is exactly 1000 (rowCount>1000), it stages through #temp, and the MERGE runs inside an atomic XACT_ABORT TRY/TRAN. v1 has no equivalent escalation.",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "info",
+    "proof": "Policy.fs:164 auto={Auto;Threshold=1000;IndexThreshold=100000}; :173 Auto->rowCount>Threshold. Emitted StaticSeeds.sql line1 SET XACT_ABORT ON;, line3-4 BEGIN TRY/BEGIN TRANSACTION, line5-6 DROP/CREATE [#seed_Country], lines 11 & 1012 two INSERT batches into the temp, line1514 single MERGE INTO [dbo].[Country] ... USING [#seed_Country], line1523 COMMIT, line1525-1528 CATCH/ROLLBACK/THROW. 1500 value tuples staged (1498 tuple-lines + 2 VALUES-header rows).",
+    "confidence": "high"
+   },
+   {
+    "id": "F3-atomicity-transaction-wrapper",
+    "topic": "All-or-nothing atomicity of the data load",
+    "v1": "Batches are GO-separated and NOT wrapped in a transaction. A mid-load failure (e.g. batch 2 fails) leaves batch 1 already committed -> partial/torn apply. IDENTITY_INSERT ON/OFF also straddle multiple GO batches.",
+    "v2": "Entire load (temp create + inserts + MERGE + drop) is one SET XACT_ABORT ON TRY/TRAN unit committed once; any error hits BEGIN CATCH -> ROLLBACK + THROW, and the #temp is transactional so it is never leaked.",
+    "difference": "v2 gives transactional all-or-nothing semantics; v1's non-transactional GO-batched MERGEs can leave a static table half-loaded on failure. Independent of the F1 delete-arm bug -- this is a plain atomicity gap.",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "proof": "v1 seed: SET IDENTITY_INSERT [dbo].[Country] ON;\\nGO then per-batch MERGE ...;\\nGO (no BEGIN TRAN anywhere in the file). v2 seed: single BEGIN TRANSACTION ... COMMIT TRANSACTION wrapped by BEGIN TRY/BEGIN CATCH ROLLBACK;THROW (lines 3-4, 1523, 1525-1528).",
+    "confidence": "high"
+   },
+   {
+    "id": "F4-default-lane-parity-1500",
+    "topic": "Default (non-destructive) static-seed lane row fidelity",
+    "v1": "NonDestructive (the config default, StaticSeedSynchronizationMode enum value 0): 2 upsert-only MERGE batches, 0 delete arms -> deployed COUNT=1500 MIN=1 MAX=1500.",
+    "v2": "Default publish (upsert-only staged MERGE, no delete arm) -> deployed COUNT=1500 MIN=1 MAX=1500.",
+    "difference": "On the DEFAULT posture both lanes load all 1500 rows correctly -- full parity. The divergence (F1) surfaces only when the operator selects v1's Authoritative destructive mode; v1's default is safe.",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Deployed counts: v1-NonDestructive dbo.Country COUNT=1500 MIN=1 MAX=1500; v2 dbo.Country COUNT=1500 MIN=1 MAX=1500; source OSUSR_REF_COUNTRY=1500. default-tightening.json emission.staticSeeds.mode='NonDestructive'; TighteningOptions.cs:388 StaticSeedOptions.Default = NonDestructive.",
+    "confidence": "high"
+   },
+   {
+    "id": "F5-escalation-threshold-value-parity",
+    "topic": "The row-count at which each engine changes strategy",
+    "v1": "StaticSeedSqlBuilder DefaultBatchSize=1000; switches to multi-batch when rows > 1000 (to stay under SQL Server's 1000-row VALUES table-constructor ceiling).",
+    "v2": "DataStagingPolicy.auto.Threshold=1000; switches to #temp staging when rowCount > 1000 (to avoid the MERGE error-8623 plan-complexity wall).",
+    "difference": "Both engines pivot at the SAME numeric threshold (1000, strictly greater) so 1500 triggers both -- but for DIFFERENT reasons (v1: VALUES ceiling; v2: 8623 wall) and via different mechanisms (v1 splits the MERGE; v2 stages the rows). Threshold value is at parity; the mechanism is not.",
+    "classification": "operational",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "v1 StaticSeedSqlBuilder.cs:14 DefaultBatchSize=1000, :95 rows.Length>_batchSize. v2 Policy.fs:164 Threshold=1000, :173 rowCount>Threshold. Both fired at 1500 (v1 emitted 'batches of 1000'; v2 emitted #seed_Country stage).",
+    "confidence": "high"
+   },
+   {
+    "id": "F6-target-name-type-parity-plus-v2-provenance",
+    "topic": "Deploy target identity, key type, and provenance annotations",
+    "v1": "Emits table + seed against LOGICAL name [dbo].[Country] (not physical OSUSR_REF_COUNTRY); Id mapped to BIGINT IDENTITY(1,1) PK; no extended properties beyond MS_Description.",
+    "v2": "Same logical target [dbo].[Country], same Id BIGINT IDENTITY(1,1) PK; ADDITIONALLY emits Projection.LogicalName + Projection.SsKey extended properties on the table and every column (e.g. SsKey O32:bbbbbbbb...040).",
+    "difference": "Target table name and key type are at full parity (both retarget to the logical Country/BIGINT). v2 additionally carries provenance extended-properties the v1 output lacks -- off the data-lane axis but present in the deployed schema; both deployed with 0 Msg.",
+    "classification": "emission-aesthetic",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "v1 dbo.Country.sql and v2 dbo.Country.sql both: [Id] BIGINT IDENTITY (1, 1) NOT NULL CONSTRAINT [PK_Country_Id] PRIMARY KEY CLUSTERED, [Code] NVARCHAR(3) NOT NULL, [Name] NVARCHAR(100) NOT NULL. v2 adds sp_addextendedproperty Projection.LogicalName/Projection.SsKey per table+column. Both DDL deploys exit 0, 0 Msg.",
+    "confidence": "high"
+   }
+  ]
+ },
+ {
+  "axis": "scalar type-facet round-trip",
+  "provisioned": "DB ParityAxis_scalarfacets = base ossys-edge-case seed (15 entities / 7 modules / 2 static kinds) + 1 added entity ScalarFacet (module RefData, physical dbo.OSUSR_REF_SCALARFACET) whose 7 attrs deliberately probe NON-DEFAULT temporal scales + precision so an emitted facet can be distinguished from a hardcoded default: Id (Identifier; physical INT IDENTITY), Dt2Lo (datetime2, ossys Scale=3; physical DATETIME2(3)), TimeLo (time, Scale=2; physical TIME(2)), DtoLo (datetimeoffset, Scale=4; physical DATETIMEOFFSET(4)), DecOdd (Decimal, Precision=28 Scale=10; physical DECIMAL(28,10)), LegacyDt (DateTime; physical genuine DATETIME), Cur (Currency; physical DECIMAL(37,8)). ossys_Entity_Attr rows mirror the seed's second-block column shape. Source truth confirmed via sys.columns before running. Both CLIs exited 0: v1 full-export (--profiler-provider sql) exit 0; v2 publish (profiler live) reported 12/12 stages succeeded, 0 error-level events. Deploy targets ParityAxis_scalarfacets_V1 / _V2 each created 16 tables. All three DBs dropped at end (confirmed none remain).",
+  "v1Result": "v1 full-export emitted per-table DDL under Modules/. TEMPORAL types emitted WITHOUT any scale token: `[Dt2Lo] DATETIME2 NOT NULL`, `[TimeLo] TIME NULL`, `[DtoLo] DATETIMEOFFSET NULL`, `[LastSyncedAt] DATETIMEOFFSET`, `[OpenTime] TIME`, `[PlacedAt] DATETIME2`, `[MovedAt] DATETIME2`, `[CreatedOn] DATETIME2`. xml \u2192 `[RawXml] NVARCHAR (MAX)`. Email \u2192 `[Email] NVARCHAR (255) NOT NULL` (no COLLATE). Identifier/PK/FK \u2192 `BIGINT IDENTITY (1, 1)`. Currency \u2192 `DECIMAL (37, 8)`. Decimal \u2192 `DECIMAL (28, 10)` and `DECIMAL (18, 2)`. Date \u2192 `DATE`. Float \u2192 `FLOAT`. guid \u2192 `UNIQUEIDENTIFIER`. BinaryData \u2192 `VARBINARY (MAX)`. Text(n) \u2192 `NVARCHAR (40/100/255/\u2026)`. Legacy datetime \u2192 `DATETIME`. Deploy to ParityAxis_scalarfacets_V1: exit 0, clean, 16 tables. Crucial: v1's extract-out model.json DID capture the scales correctly (Dt2Lo dataType.scale=3 & onDisk.scale=3; TimeLo=2; DtoLo=4) \u2014 the scale is dropped at the DDL text-rendering layer, not at extraction (decimal precision/scale IS rendered, e.g. DECIMAL(28,10)).",
+  "v2Result": "v2 publish emitted per-table DDL under dist/onprem/Modules/. TEMPORAL types emitted WITH explicit scale: `[Dt2Lo] DATETIME2 (3)`, `[TimeLo] TIME (2)`, `[DtoLo] DATETIMEOFFSET (4)`, `[LastSyncedAt] DATETIMEOFFSET (7)`, `[OpenTime] TIME (7)`, `[PlacedAt] DATETIME2 (7)`, `[MovedAt] DATETIME2 (7)`, `[CreatedOn] DATETIME2 (7)`. xml \u2192 `[RawXml] XML`. Email \u2192 `[Email] NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL`. Identifier/PK/FK \u2192 `BIGINT IDENTITY (1, 1)`. Currency \u2192 `DECIMAL (37, 8)`. Decimal \u2192 `DECIMAL (28, 10)` / `DECIMAL (18, 2)`. Date \u2192 `DATE`. Float \u2192 `FLOAT`. guid \u2192 `UNIQUEIDENTIFIER`. BinaryData \u2192 `VARBINARY (MAX)`. Text(n) \u2192 `NVARCHAR (n)`. Legacy datetime \u2192 `DATETIME`. Deploy to ParityAxis_scalarfacets_V2: exit 0; the ONLY errors were trigger objects (Msg 8197 + Msg 4920 on TR_OSUSR_INV_MOVEMENT_INS/UPD and TR_OSUSR_XYZ_JOBRUN_AUDIT) \u2014 trigger axis, not type-facet; all 16 tables created. Off-axis observation: v2 rendered JobRun's getutcdate() default as `CAST ('getutcdate()' AS DATETIME2 (7))` (default-expression axis, not scored here).",
+  "findings": [
+   {
+    "id": "SF-1",
+    "topic": "Temporal scale facet (datetime2 / time / datetimeoffset) round-trip",
+    "v1": "Emits the base type WITHOUT a scale token (`DATETIME2`, `TIME`, `DATETIMEOFFSET`) -> SQL Server applies default scale 7 on deploy, regardless of source scale",
+    "v2": "Emits the explicit on-disk scale (`DATETIME2 (3)`, `TIME (2)`, `DATETIMEOFFSET (4)`, `... (7)`) -> deploys at exact source scale",
+    "difference": "V1 drops the scale facet for temporal types at the DDL-rendering layer; V2 preserves it. When source scale = 7 (the OutSystems platform default) the two are deploy-equivalent (bare == 7), which hides the defect on ordinary estates. For ANY non-default temporal scale V1 silently widens the deployed column to scale 7 (schema-type + storage-byte drift vs source), while V2 round-trips faithfully. Failure scenario: an estate with TIME(3)/DATETIME2(3) audit timestamps -> V1 redeploys them as scale 7, a silent schema divergence a schema-compare / idempotent redeploy would flag.",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "major",
+    "proof": "ScalarFacet probe, source vs deployed sys.columns.scale -- Dt2Lo: source datetime2 scale=3 -> V1 deployed scale=7 (maxlen 8), V2 deployed scale=3 (maxlen 7). TimeLo: source time scale=2 -> V1 scale=7, V2 scale=2. DtoLo: source datetimeoffset scale=4 -> V1 scale=7, V2 scale=4. v1/model.json carried onDisk.scale=3/2/4 (extraction correct) yet emitted bare `DATETIME2`/`TIME`/`DATETIMEOFFSET`. Base-estate scale-7 cols (LastSyncedAt/OpenTime/PlacedAt/MovedAt/CreatedOn) deployed scale=7 on BOTH.",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-2",
+    "topic": "xml scalar type round-trip",
+    "v1": "`[RawXml] NVARCHAR (MAX)` -> deploys as nvarchar(max)",
+    "v2": "`[RawXml] XML` -> deploys as xml",
+    "difference": "Source column is native `xml`; v2's config maps xml->xml AND the on-disk reflection confirms it, so V2 preserves the XML type. V1 downgrades it to NVARCHAR(MAX), losing the XML type contract (typed storage, .value()/.query()/.nodes() methods, XML indexes). Data text is preserved but the semantic type is lost. Failure scenario: an Integration/external entity xml column -> code using XML methods or XML indexes breaks against V1's deployed schema.",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "major",
+    "proof": "SyncLog.RawXml -- source sys.types=xml; V1 deployed ty=nvarchar maxlen=-1; V2 deployed ty=xml maxlen=-1. v1 emitted `[RawXml] NVARCHAR (MAX)`, v2 emitted `[RawXml] XML`.",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-3",
+    "topic": "Collation facet on NVARCHAR columns",
+    "v1": "Omits the COLLATE clause -> column falls to database default collation (SQL_Latin1_General_CP1_CI_AS)",
+    "v2": "Emits `COLLATE Latin1_General_CI_AI` -> preserves the source collation",
+    "difference": "Customer.Email source is nvarchar(255) COLLATE Latin1_General_CI_AI (accent-INsensitive). V2 preserves it; V1 drops it, so the deployed column uses the DB-default accent-SENSITIVE collation, changing equality/sort/uniqueness semantics. Adjacent to the scalar-type axis (collation is a char-type facet). Failure scenario: a deliberately accent/case-insensitive key column silently becomes case/accent-sensitive under V1.",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "minor",
+    "proof": "Customer.Email deployed sys.columns.collation_name: V1=SQL_Latin1_General_CP1_CI_AS (DB default), V2=Latin1_General_CI_AI (matches source). v1 emitted `[Email] NVARCHAR (255) NOT NULL`; v2 emitted `[Email] NVARCHAR (255) COLLATE Latin1_General_CI_AI NOT NULL`.",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-4",
+    "topic": "DateTime logical attr backed by physical datetime2(7): emitted-text diff, deploy-equivalent",
+    "v1": "`DATETIME2` (bare) -> deploys datetime2(7)",
+    "v2": "`DATETIME2 (7)` -> deploys datetime2(7)",
+    "difference": "Both engines prefer the on-disk/deployed datetime2 over the `datetime` logical mapping (on-disk precedence), so the DEPLOYED reality is identical (scale 7 = source). Only the emitted DDL TEXT differs -- V1 omits the default-7 token. This is the latent, deploy-equivalent form of SF-1; it becomes a functional divergence only when the physical scale is non-default.",
+    "classification": "emission-aesthetic",
+    "direction": "parity-confirmed",
+    "severity": "cosmetic",
+    "proof": "SalesOrder.PlacedAt / StockMovement.MovedAt / JobRun.CreatedOn -- v1 emitted bare `DATETIME2`, v2 emitted `DATETIME2 (7)`; both deployed datetime2 scale=7, equal to source datetime2(7).",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-5",
+    "topic": "Identifier / autonumber / reference -> BIGINT vs physical INT",
+    "v1": "`BIGINT IDENTITY (1, 1)` -- overrides physical INT (ShouldPreferRuntimeMapping)",
+    "v2": "`BIGINT IDENTITY (1, 1)` -- overrides physical INT (WP-4b register C2: forced-runtime family exempt from deployed-storage refinement)",
+    "difference": "Both engines force identifier/autonumber/longinteger/reference columns to BIGINT (OutSystems runtime convention), deliberately NOT following the physical INT. Engine-to-engine PARITY; both intentionally diverge from source-physical (a widening INT->BIGINT redefinition every identity + FK column undergoes on deploy).",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Every PK Id + FK column -- source sys.columns ty=int precision=10; V1 deployed=bigint precision=19; V2 deployed=bigint precision=19 (e.g. Product.Id, Customer.CityId, SalesOrder.CustomerId/CategoryId, StockMovement.StockItemId, JobRun.TriggeredByUserId). Both emitted BIGINT IDENTITY(1,1).",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-6",
+    "topic": "Currency -> DECIMAL(37,8) and legacy DateTime -> DATETIME",
+    "v1": "Currency=`DECIMAL (37, 8)`; genuine legacy datetime=`DATETIME`",
+    "v2": "Currency=`DECIMAL (37, 8)`; genuine legacy datetime=`DATETIME`",
+    "difference": "Two axis-focus questions answered with PARITY: (a) Currency maps to DECIMAL(37,8) on both; (b) a column whose physical type is genuinely legacy `datetime` stays DATETIME on both -- neither engine silently upgrades legacy datetime to datetime2 (v2's WP-17(d) retired that silent upgrade; v1 maps datetime->datetime).",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Currency: Product.Cost / SalesOrder.OrderTotal / ScalarFacet.Cur -- both emitted `DECIMAL (37, 8)`, both deployed precision=37 scale=8. Legacy datetime: ScalarFacet.LegacyDt source=datetime -> both emitted `DATETIME`, both deployed ty=datetime.",
+    "confidence": "high"
+   },
+   {
+    "id": "SF-7",
+    "topic": "Non-temporal scalar mapping parity (int / bigint / bit / decimal(p,s) / date / float / guid / varbinary(max) / nvarchar(n|max))",
+    "v1": "INT / BIGINT / BIT / DECIMAL(p,s) / DATE / FLOAT / UNIQUEIDENTIFIER / VARBINARY(MAX) / NVARCHAR(n|MAX)",
+    "v2": "byte-identical to v1",
+    "difference": "Every non-temporal, non-xml scalar type maps identically and deploys identically on both engines: Integer->INT, LongInteger->BIGINT, Boolean->BIT, Decimal(18,2)->DECIMAL(18,2), Decimal(28,10)->DECIMAL(28,10), Date->DATE, Float->FLOAT, guid->UNIQUEIDENTIFIER, BinaryData->VARBINARY(MAX) (length always MAX -- OutSystems BinaryData has no bounded form), Text(n)->NVARCHAR(n), Text(no length)->NVARCHAR(MAX).",
+    "classification": "functional-output",
+    "direction": "parity-confirmed",
+    "severity": "info",
+    "proof": "Deployed sys.columns identical on both DBs -- StockItem.ReorderLevel int, WarehouseQty bigint, AvgCost float(53), PublicGuid uniqueidentifier; Product.Price decimal(18,2), LaunchDate date, Photo varbinary(-1), Notes nvarchar(-1), Sku nvarchar(80=40 chars); ScalarFacet.DecOdd decimal(28,10); SyncLog.Payload nvarchar(-1); City.IsActive bit DEFAULT 1.",
+    "confidence": "high"
+   }
+  ]
+ }
+]

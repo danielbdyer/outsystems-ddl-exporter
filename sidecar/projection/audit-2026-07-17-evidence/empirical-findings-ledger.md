@@ -157,3 +157,60 @@ EF-16 V1 INDEX-NAME COLLISION (deploy failure): source has IDX_STOCKITEM_REORDER
 
 Combined: on a single estate with a compressed index + a same-leading-column index (both common), v1 FAILS TO
 DEPLOY (Msg 1913) while v2 DEPLOYS BUT DECOMPRESSES. Neither yields a correct database — the audit's core thesis.
+
+## Round 4 — empirical fan-out (8 axes, each on its own DB; deployed-database-proven)
+
+EF-17 COMPOSITE-PK FK TRUNCATION (blocker, v2-worse): source LineComment has a physical 2-leg FK to
+      OrderLine's composite PK (OrderId,LineNo). v1 emits both legs (deploys; FK present with 2 legs).
+      v2's Reference IR is single sourceAttribute→targetKind (no referenced-column list) → emits ONLY the
+      first leg vs OrderLine's first PK column → Msg 1776 "no primary or candidate keys ... match" + Msg 1750,
+      table not created. Silent (v2 publish exit 0, no truncation diagnostic — violates its own
+      downgrades-never-silent law). NEW blocker; conditional on the estate having a composite-PK-targeted FK.
+      (Sibling: a LOGICAL single-col ref to a composite-PK target → BOTH engines emit an invalid single-leg FK
+      → shared defect, not a v2-only regression.)
+
+EF-18 DEPLOYED NOT NULL LOOSENED (major, v2-worse; proves audit M-3 second half): column Is_Mandatory=0 in
+      model but physically ALTERed to NOT NULL. v1 emits NOT NULL (policy-decisions.json rationale
+      PHYSICAL_NOT_NULL) → deployed is_nullable=0. v2 emits NULL → deployed is_nullable=1 (drops the constraint).
+      Root cause: v2 catalog Column.IsNullable comes from model Is_Mandatory, not physical schema; v2 owns a rule
+      literally named PhysicallyNotNull but it's inert (no physical-nullability input). On incremental apply v2
+      drives the column back to NULL, weakening a prod invariant, no diagnostic.
+
+EF-19 COMPUTED-EXPRESSION IDENTIFIERS NOT REWRITTEN (major, v2-worse): both rename table columns to logical
+      mixed-case, but only v1 rewrites the computed-column EXPRESSION identifiers. v2 emits
+      `[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])` (physical uppercase) vs v1 `([WarehouseQty] * [AvgCost])`.
+      Latent on default CI collation; on a case-sensitive collation v2's table FAILS to deploy: Msg 207 "Invalid
+      column name WAREHOUSEQTY", OBJECT_ID NULL after. v1 deploys clean on CS. blocker-on-CS-collation.
+
+EF-20 TEMPORAL / SYSTEM-VERSIONING (major, parity — BOTH wrong): source OSUSR_DEF_CITY temporal_type=2 +
+      history table + PERIOD. BOTH engines emit a plain table (temporal_type=0), dropping GENERATED ALWAYS
+      SYSSTART/SYSEND, PERIOD, SYSTEM_VERSIONING, and the history table — no warning either side. SHARED gap
+      (not a switchover blocker; neither engine does it — operator must hand-author regardless).
+
+EF-21 PERSISTED COMPUTED COLUMNS (major, parity — BOTH wrong): source TotalValue/DisplayLabel is_persisted=1;
+      BOTH emit non-persisted (deployed is_persisted=0). Shared root cause: outsystems_metadata_rowsets.sql
+      (byte-identical both sides) never selects sys.computed_columns.is_persisted. SHARED gap.
+
+EF-22 SEQUENCES (major, parity — BOTH wrong): source dbo.TestSeq nowhere in either output; BOTH model-sourced
+      lanes omit CREATE SEQUENCE (v1 model.json has no sequences key; v2 catalog.snapshot sequences=[]).
+      Confirms packet C10. SHARED gap. (When a sequence-backed DEFAULT is in the metamodel, both emit the
+      default but neither emits the sequence → both non-deployable.)
+
+EF-23 V1 >1000-ROW AUTHORITATIVE DATA LOSS (major, v2-better; 5th v1 bug): destructive (Authoritative) sync of
+      a static entity >1000 rows. v1 partitions into 1000-row batches, EACH carrying WHEN NOT MATCHED BY SOURCE
+      THEN DELETE → each batch deletes the prior batch's rows. 1500-row source → deployed COUNT=500 (only batch 2,
+      Id 1001-1500; 67% silent loss). PROVEN: StaticSeedSqlBuilder.cs:95/169/261-263. v2 stages-all-then-one-MERGE
+      → cannot exhibit it (v2 deployed 1500). Default mode is non-destructive so only opt-in Authoritative configs
+      are exposed, but the loss is silent when they are.
+
+EF-24 TEMPORAL SCALE FACET (major, v2-better): v1 drops the scale facet for datetime2/time/datetimeoffset at the
+      DDL layer → deployed widened to scale 7. Source scale 3/2/4 → v1 deployed all scale 7; v2 round-trips 3/2/4.
+      v1's model.json carried onDisk.scale correctly (extraction fine) yet emitted bare DATETIME2/TIME. Latent at
+      the scale-7 platform default (both bare==7); bites any non-default temporal scale (storage + schema-compare drift).
+
+EF-25 EMPTY-STRING / SINGLE-SPACE DATA PLANE (parity): '' and the OutSystems single-space (' ') sentinel handling,
+      NULL preservation, NOT NULL-carrying-'' load behavior — all byte/behavior-identical across engines on this axis.
+
+EF-26 SCALAR TYPE MAP (parity): identifier/autonumber/reference→BIGINT, currency→DECIMAL(37,8), legacy datetime→
+      DATETIME, int/bigint/bit/decimal — all identical v1↔v2 (deployed facets match). XML + collation: v2-better
+      (v1 downgrades XML→NVARCHAR(MAX), drops NVARCHAR collation) — corroborates EF-5/EF-6.

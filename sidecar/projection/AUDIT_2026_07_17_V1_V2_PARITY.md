@@ -57,11 +57,22 @@ verified), and the area IDs (from a 14-dimension static comparison) are cross-re
 
 **V2 is a net fidelity improvement over V1 and is the right long-term driver — but it is not
 yet a drop-in replacement.** On the identical estate, V2's *loaded database* is closer to the
-deployed OutSystems source reality than V1's on **six** independent axes (delete/update rules,
-untrusted-FK trust state, collation, XML typing, `CREATE SCHEMA`, refactorlog), and V2 fixes
-**three** latent V1 correctness bugs. But V2 carries **two blocker-class regressions** and a
-cluster of **conditional majors** that must be closed or consciously accepted before a
+deployed OutSystems source reality than V1's on **eight** independent axes (delete/update rules,
+untrusted-FK trust state, collation, XML typing, `CREATE SCHEMA`, refactorlog, temporal scale
+facets, deployed `DATA_COMPRESSION`), and V2 fixes **five** latent V1 correctness bugs. But V2
+carries **three blocker-class regressions** (two universal, one conditional on composite-PK-target
+FKs) and a cluster of **conditional majors** that must be closed or consciously accepted before a
 production cutover of a real (300-table) estate.
+
+> **A second empirical round (2026-07-17) fanned out across eight axes the base estate didn't
+> exercise — computed/PERSISTED columns, temporal tables, sequences, empty-string→NULL,
+> composite-PK FK targets, deployed-NOT-NULL drift, the scalar-facet matrix, and >1000-row data
+> staging — each on its own database, deployed and diffed. It is written up in §7; its findings
+> are folded into the registers and scorecard below.** The headline additions: a third
+> (conditional) blocker (composite-PK FK truncation), a fifth V1 bug (>1000-row destructive-sync
+> data loss), the deployed-NOT-NULL loosening now proven, and **three shared gaps where *both*
+> engines are wrong the same way** (temporal system-versioning, `PERSISTED`, sequences) — which
+> matter for scoping but do **not** block a v1→v2 switch, since neither engine handles them.
 
 **The single most important sentence in this audit:** *the two engines do not produce the same
 loaded database from the same source* — and in the current tree, **each side has at least one
@@ -69,9 +80,10 @@ way to produce a database that is wrong or that fails to deploy.** This is not a
 there, ship it" story; it is a "v2 is architecturally ahead and closes real v1 bugs, but has
 its own new sharp edges" story. Both are true at once, exactly as you anticipated.
 
-**Recommended posture:** keep the R6 dual-track. Gate V2-driver on closing the two blockers
-(topological ordering of the data lanes; the authored-default expression rendering) plus the
-FK-cascade and trigger items below. Everything else is a documented, blessable divergence.
+**Recommended posture:** keep the R6 dual-track. Gate V2-driver on closing the two universal
+blockers (topological ordering of the data lanes; the authored-default expression rendering), the
+conditional composite-PK-FK blocker, plus the FK-cascade and trigger items below. Everything else
+is a documented, blessable divergence.
 
 ### Scorecard (this estate, deployed-database view)
 
@@ -85,6 +97,12 @@ FK-cascade and trigger items below. Everything else is a documented, blessable d
 | RefactorLog in bundle | none | wired (`#671`) | **V2** |
 | Index `DATA_COMPRESSION` | preserved (PAGE/ROW) | **dropped → decompresses on deploy** | **V1** |
 | Same-leading-column index names | **collide → deploy fails (Msg 1913)** | deduped (`_1`/`_2`), deploys | **V2** |
+| FK to a composite-PK target | full 2-leg FK (deploys) | **first leg only → Msg 1776, undeployable** | **V1** |
+| Deployed NOT NULL, model nullable | preserved (`PHYSICAL_NOT_NULL`) | **loosened to NULL** | **V1** |
+| Computed-column expression identifiers | rewritten to logical | **left physical → fails on CS collation** | **V1** |
+| Temporal scale facet (`datetime2(3)`/`time(2)`) | **dropped → widened to scale 7** | preserved | **V2** |
+| >1000-row destructive (Authoritative) sync | **67% row loss (batch-boundary delete)** | immune (stage-all-then-MERGE) | **V2** |
+| Temporal tables / `PERSISTED` / sequences | dropped | dropped | neither (shared gap) |
 | Authored `''` / `getutcdate()` default | faithful | **mis-rendered → insert bomb** | **V1** |
 | Data-lane executable order | (its own bootstrap is broken) | **alphabetical fallback on any cycle → FK 547** | neither |
 | Trigger emission | 1-batch bug → runtime bomb | physical-name target → **deploy bomb** | neither |
@@ -275,7 +293,14 @@ specific decision-provenance questions V1's reports answer by default.
 
 These are the reasons to switch. Several are **correctness fixes**, not aesthetics.
 
-### V2 fixes four latent V1 correctness bugs
+### V2 fixes five latent V1 correctness bugs
+- **V1 loses >1000 rows on a destructive static-entity sync** *(empirical EF-23)*. Under
+  Authoritative (destructive) synchronization, V1 partitions a static entity into 1000-row batches
+  and appends `WHEN NOT MATCHED BY SOURCE THEN DELETE` to **each** batch — so batch 2's delete arm
+  nukes batch 1's rows. A 1500-row source deploys **500 rows** (67% silent loss; proven — deployed
+  `COUNT=500, MIN=1001, MAX=1500`, exactly batch 2). `StaticSeedSqlBuilder.cs:95/169/261-263`. The
+  default mode is non-destructive so only opt-in Authoritative configs are exposed, but the loss is
+  silent when they are. V2's stage-all-then-one-MERGE design cannot exhibit it (deployed 1500).
 - **V1 emits colliding index names → deploy failure** *(empirical EF-16)*. Two source indexes that
   share a leading column (e.g. `IDX_STOCKITEM_REORDER` on `(ReorderLevel, WarehouseQty)` and a
   second index on `(ReorderLevel)`) both synthesize to `IX_StockItem_ReorderLevel` — V1 has **no
@@ -402,22 +427,38 @@ switchover decision must be scoped to the estate's actually-used features, not V
    linearly deployable)*
 2. **M-1** Authored default expressions — discriminate expression-vs-value at the OSSYS lift so
    `getutcdate()`/`newid()`/`''` render faithfully. *(highest-value single fix)*
-3. **EF-7** Trigger emission — rewrite trigger `ON`-target + body to logical names (or refuse
+3. **B-3 (EF-17)** Composite-PK FK — carry the referenced-column list in the `Reference` IR so a
+   multi-leg FK emits all legs, or refuse loudly. *(silent → undeployable today; inventory
+   composite-PK-target FKs first)*
+4. **M-8 (EF-19)** Rewrite computed-column **expression** identifiers to logical names (V1 does;
+   V2 doesn't → fails on case-sensitive collation).
+5. **EF-7** Trigger emission — rewrite trigger `ON`-target + body to logical names (or refuse
    loudly with a named diagnostic). Shared with V1; both are broken.
-4. **M-5** The two `.sqlproj` hazards — `Build`-Remove `manifest.remediation.sql`; order the
+6. **M-5** The two `.sqlproj` hazards — `Build`-Remove `manifest.remediation.sql`; order the
    post-deploy lanes static-first.
 
 **Bless as deliberate divergences (write the DECISIONS note + operator sign-off):**
-5. **M-3** Nullability stance (V2 refuses coercion; mandatory-but-dirty fails the load by design).
-6. **M-4** Platform-user seeding — decide bulk-seed (V1) vs `transfer --reconcile` (V2) and wire it.
-7. **M-6** FK-name honouring (WP-7) — accept the one-time schema-compare churn or close WP-7.
-8. Platform-auto index default (V2 keeps, V1 prunes) and the extended-property vendor residue.
+7. **M-3** Nullability stance — V2 refuses coercion (mandatory-but-dirty fails the load by design)
+   *and* loosens a deployed `NOT NULL` on a model-nullable column (EF-18). Default posture is also
+   inverted: V1 tightens by default (opt-out), V2 is opt-in.
+8. **M-4** Platform-user seeding — decide bulk-seed (V1) vs `transfer --reconcile` (V2) and wire it.
+9. **M-6** FK-name honouring (WP-7) — accept the one-time schema-compare churn or close WP-7.
+10. Platform-auto index default (V2 keeps, V1 prunes) and the extended-property vendor residue.
+
+**Hand-author regardless of engine (shared gaps — neither emits them):**
+11. **Temporal / system-versioning, `PERSISTED` computed columns, sequences** (EF-20/21/22) — both
+    engines drop these. If the estate uses them, they need hand-authored SSDT objects either way.
 
 **Confirm on a targeted fixture before trusting/dismissing (lane-specific, not exercised here):**
-9. **M-2** `DATA_COMPRESSION` on the live lane + disabled-index/`IGNORE_DUP_KEY` on the JSON lane —
-   deploy a compressed + disabled-index estate through both lanes and diff.
-10. **B-2 / C2** If you need V2 to read V1 model.json, widen the OSM adapter *and* lift IDENTITY
+12. **M-2** disabled-index/`IGNORE_DUP_KEY` on the **JSON** lane (the live-lane `DATA_COMPRESSION`
+    drop is now proven, EF-15). Deploy a disabled-index estate through the JSON lane and diff.
+13. **B-2 / C2** If you need V2 to read V1 model.json, widen the OSM adapter *and* lift IDENTITY
     (else the loud refusal becomes a silent IDENTITY drop).
+
+**Estate pre-audit adds:** composite-PK tables that are FK targets (B-3), computed columns
+(expression case + `PERSISTED`), temporal tables, sequences, static entities >1000 rows synced
+destructively (EF-23), non-default temporal scales (EF-24), and the target database collation
+(case-sensitive ⇒ M-8 is a blocker).
 
 **Already good — lean on these:** delete/update-rule fidelity, untrusted-FK trust, collation, XML
 typing, `CREATE SCHEMA`, refactorlog, byte-determinism, the buildable SDK project, fail-loud
@@ -430,16 +471,85 @@ tables with mandatory `CreatedBy`/`UpdatedBy` FKs, and self-referencing/cyclic e
 
 ---
 
-## 7 — Bottom line
+## 7 — Second-round empirical findings (deployed-database-proven delta, 2026-07-17)
+
+A fan-out across **eight axes the base estate never exercised**, each provisioned on its own
+database, run through both engines, deployed, and diffed at the `sys`-catalog level. Every row
+below is proven by a deployed value or a verbatim `Msg`. IDs are `EF-17…EF-26` in the evidence
+ledger.
+
+### New regressions (V2-worse)
+- **B-3 (conditional blocker) — composite-PK FK truncated to one leg → undeployable** *(EF-17)*.
+  Source `LineComment` has a physical 2-leg FK to `OrderLine`'s composite PK `(OrderId, LineNo)`.
+  V1 emits both legs and deploys; V2's `Reference` IR is a single `sourceAttribute → targetKind`
+  with no referenced-column list, so it drops the `LineNo` leg and points the FK at `OrderLine`'s
+  *first* PK column — which is not a standalone key → **`Msg 1776` "no primary or candidate keys …
+  match"**, table not created. V2 publish exits 0 with **no truncation diagnostic** (violating its
+  own *downgrades-never-silent* law). Conditional on the estate having an FK that targets a
+  composite-PK table; **inventory for these before cutover.** *(Sibling, EF-17b: a purely logical
+  single-column ref to a composite-PK target produces an invalid single-leg FK on **both** engines
+  — a shared defect, since V1's evidence-less fallback is V2's only path.)*
+- **M-3 confirmed — deployed NOT NULL loosened to NULL** *(EF-18)*. A column the model marks
+  `Is_Mandatory=0` but physically `ALTER`ed to `NOT NULL`: V1 preserves `NOT NULL`
+  (`policy-decisions.json` rationale `PHYSICAL_NOT_NULL`, deployed `is_nullable=0`); V2 emits `NULL`
+  (deployed `is_nullable=1`), silently dropping the constraint. Root cause: V2's catalog
+  `Column.IsNullable` reads the model's `Is_Mandatory`, not the physical schema — so its own rule
+  named `PhysicallyNotNull` is inert. On an incremental apply V2 would drive the column back to
+  `NULL`. This is the second half of audit M-3, now empirically proven.
+- **M-8 (new) — computed-column expressions keep physical identifiers** *(EF-19)*. Both engines
+  rename table columns to logical mixed-case, but only V1 rewrites the **computed-expression**
+  identifiers. V2 emits `[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])` (physical uppercase). Latent
+  on the default case-insensitive collation; on a **case-sensitive** database collation V2's table
+  is a hard deploy failure (**`Msg 207` "Invalid column name WAREHOUSEQTY"**, table not created)
+  where V1 deploys clean. Blocker *if the target collation is case-sensitive.*
+
+### New improvements (V2-better) — beyond the fifth V1 bug (EF-23, in §3)
+- **Temporal scale facets preserved** *(EF-24)*. V1 drops the scale on `datetime2`/`time`/
+  `datetimeoffset` at the DDL layer → deployed columns widened to scale 7 (`datetime2(3)` source →
+  V1 deployed scale 7; V2 deployed scale 3). Latent at the OutSystems platform default of 7 (bare
+  == 7); bites any non-default temporal scale (storage + schema-compare drift). V1's extraction was
+  *correct* (`onDisk.scale=3` in its own model.json) — the loss is purely at emission.
+
+### Shared gaps — **both engines wrong the same way** (do NOT block a v1→v2 switch)
+These matter for *scoping* the ejected estate (the receiving team must hand-author them regardless
+of engine), not for the switchover decision — neither engine is a regression relative to the other.
+- **Temporal / system-versioning** *(EF-20)*: a `SYSTEM_VERSIONED` source table (`temporal_type=2`
+  + history table + `PERIOD`) is emitted by **both** as a plain table (`temporal_type=0`), silently
+  dropping the `GENERATED ALWAYS` period columns, `SYSTEM_VERSIONING`, and the history table.
+- **`PERSISTED` computed columns** *(EF-21)*: source `is_persisted=1` → **both** emit
+  non-persisted. Shared root cause: `outsystems_metadata_rowsets.sql` (byte-identical both sides)
+  never selects `sys.computed_columns.is_persisted`.
+- **Sequences** *(EF-22)*: `CREATE SEQUENCE` objects are absent from **both** model-sourced runs
+  (V1 model.json has no `sequences`; V2 `catalog.snapshot.json` `sequences=[]`). Confirms packet C10.
+
+### Confirmed parity (both correct)
+- **Empty-string / single-space data plane** *(EF-25)*: `''` handling, the OutSystems single-space
+  sentinel, NULL preservation, and NOT-NULL-carrying-`''` load behaviour are behaviour-identical.
+- **Scalar type map** *(EF-26)*: `identifier`/`autonumber`/reference→`BIGINT`, `currency`→
+  `DECIMAL(37,8)`, legacy `datetime`→`DATETIME`, `int`/`bigint`/`bit`/`decimal` — all identical,
+  deployed facets match. (`XML` typing + `NVARCHAR` collation remain V2-better per EF-5/EF-6.)
+
+---
+
+## 8 — Bottom line
 
 V2 is the better engine and the correct destination: it is more faithful to deployed reality on
-six axes, fixes three real V1 bugs, and is byte-deterministic and operationally far ahead. It is
-**not** a silent drop-in: two blocker-class regressions (data-lane ordering, authored-default
-rendering) can produce a database that fails to deploy or fails at insert, and a handful of
-conditional majors change behaviour in ways an operator must consciously accept. Close items 1–4,
-bless items 5–8, confirm items 9–10 on targeted fixtures, and V2 clears the bar for
-environment-by-environment cutover with V1 held warm as the fallback — exactly the R6 ladder the
-project already commits to.
+**eight** axes, fixes **five** real V1 bugs (including a silent >1000-row destructive-sync data
+loss), and is byte-deterministic and operationally far ahead. It is **not** a silent drop-in:
+**three** blocker-class regressions — data-lane ordering and authored-default rendering
+(universal), and composite-PK FK truncation (conditional) — can produce a database that fails to
+deploy or fails at insert, and a cluster of conditional majors change behaviour in ways an
+operator must consciously accept. And **three axes are shared gaps** (temporal, `PERSISTED`,
+sequences) that *neither* engine handles — real work for the receiving team, but not a reason to
+prefer one engine over the other.
+
+The shape of the decision is unchanged by the second round, only sharpened: close the blockers
+(§6 items 1–6), bless the deliberate divergences (7–10), hand-author the shared gaps (11), confirm
+the JSON-lane items (12–13), and V2 clears the bar for environment-by-environment cutover with V1
+held warm as the fallback — exactly the R6 ladder the project already commits to. The through-line
+holds: **the two engines do not produce the same loaded database, and on the current tree each has
+at least one way to produce one that is wrong or won't deploy** — V2's are fewer, more often
+loud, and closing; V1's are silent and structural.
 
 ---
 

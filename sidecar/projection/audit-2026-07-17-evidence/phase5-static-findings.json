@@ -1,0 +1,370 @@
+[
+ {
+  "area": "cli-config",
+  "findings": [
+   {
+    "id": "CC-01",
+    "topic": "Exit-code taxonomy (the cutover CI contract)",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "Flat model. src/Osm.Cli/Commands/PipelineCommandFactory.cs:29 `GetFailureExitCode => 1` and :78 apply it, so full-export is strictly 0 (success) / 1 (ANY failure: config-missing, SQL-rejected, connection, validation, parse). A few verbs hand-roll one-off codes (DmmCompareCommandFactory.cs:109 `return 2` on diff; VerifyDataCommandFactory.cs:137 `Passed ? 0 : 1`) but there is NO unified vocabulary \u2014 the cutover verb (full-export) cannot signal WHY it failed.",
+    "v2": "Unified 0-9 taxonomy published in Program.fs:134-145 and enforced by two total classifiers: Preflight.fs:719-733 `exitOf` (gate axes: 6 connection, 7 grant, 9 destructive/CDC/tightening, 5 shape, 2 arg, 3 default) and CliExit.fs:43-73 (artifact/read-only verbs). Exit 1 argv, 2 parse, 3 execution, 4 docker, 5 fidelity, 6 config/D9, 7 gate refusal, 8 data-count, 9 fail-loud.",
+    "difference": "V1's full-export exposes no failure-class signal to automation (0/1 only); V2 gives a documented, total, greppable 0-9 exit API that lets a cutover pipeline branch on connection vs config vs gate vs fidelity failures. Net win for CI integration."
+   },
+   {
+    "id": "CC-02",
+    "topic": "Config auto-discovery trap (verifies audit \u00a73)",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "src/Osm.Pipeline/Configuration/CliConfigurationService.cs:64-105 `ResolveConfigPath` walks UP from both `Directory.GetCurrentDirectory()` and `AppContext.BaseDirectory` through every parent, matching the first of pipeline.yaml/pipeline.yml/pipeline.json/config.json/appsettings.json. A repo-root pipeline.json (present at /pipeline.json) is silently picked up from anywhere in the tree.",
+    "v2": "Program.fs:463-470 `discoverConfig` reads PROJECTION_CONFIG env or falls back to `projection.json` in CWD \u2014 NO parent walk, no alternate filenames.",
+    "difference": "The audit \u00a73 claim ('explicit per-cwd projection.json vs V1's silent root-pipeline.json auto-discovery trap; --config mandatory for deterministic V1 runs') is accurate and verified. V2 closes a real determinism footgun."
+   },
+   {
+    "id": "CC-03",
+    "topic": "No `--config` override flag in V2",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "Global `--config <path>` flag (CliGlobalOptions.cs:9) plus OSM_CLI_CONFIG_PATH env (CliConfigurationService.cs:22) plus auto-discovery \u2014 three ways to point at a config.",
+    "v2": "No `--config` flag exists anywhere in dispatch (grep of src: zero `--config` tokens). The only non-cwd override is the PROJECTION_CONFIG env var (Program.fs:467). Positional `<config>` args exist only for `explain node/suggest/policy`, not the daily flows.",
+    "difference": "V2 traded the auto-discovery trap (CC-02) for rigid discovery: an operator running multiple estates/configs from one shell must export PROJECTION_CONFIG rather than pass a path per-invocation. Minor ergonomic regression partially offsetting the trap fix."
+   },
+   {
+    "id": "CC-04",
+    "topic": "Load harness (--run-load-harness) has no V2 CLI equivalent",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "src/Osm.Cli/Commands/Options/FullExportLoadHarnessExtension.cs:10-13 wires 4 flags (--run-load-harness, --load-harness-connection-string, --load-harness-report-out, --load-harness-command-timeout). FullExportCommandFactory.cs:166-273 replays the generated safe/remediation/static-seed/dynamic scripts against a staging DB and captures per-script wait-stats deltas, lock summaries, and index-fragmentation telemetry into a JSON report \u2014 a one-shot performance-validation lane.",
+    "v2": "No CLI load-harness/telemetry-replay verb. The perf harness (PerfHarnessScenarios.fs) is test-only, gated on PROJECTION_RUN_PERF_HARNESS=1, not an operator surface.",
+    "difference": "V1's in-band 'replay-and-measure against staging' capability (wait stats / locks / fragmentation) has no V2 operator equivalent. Niche but real for validating a large estate's data-load cost during cutover."
+   },
+   {
+    "id": "CC-05",
+    "topic": "--open-report (HTML report + browser open) absent in V2",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "OpenReportVerbExtension.cs:9 wires `--open-report` on both build-ssdt and full-export; PipelineReportLauncher.cs:24-111 renders a rich report.html (overview, policy decisions, SQL validation, pipeline insights, module coverage, tightening-toggle provenance) and :113-153 `TryOpen` launches it via cmd/open/xdg-open.",
+    "v2": "No `--open-report` and no browser-open path in source (Process.Start appears only in DockerDaemon.fs for docker commands). V2 CAN emit go-board/<flow>.impact.html via `check go --impact` (THE_CONFIG_CONTROL_PLANE.md:258-261) but never opens it, and the default `publish` produces no HTML report.",
+    "difference": "The 'generate + auto-open an operator report' convenience is gone. V2's HTML is opt-in (impact only) and manual-open; the default publish has no HTML surface at all."
+   },
+   {
+    "id": "CC-06",
+    "topic": "UAT-users remap surface (cross-ref audit M-4)",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "major",
+    "confidence": "high",
+    "v1": "UatUsersOptionBinder.cs:16-38 exposes a 12-flag lane (--enable-uat-users, --user-schema/-table/-id-column, --include-columns, --user-map, --uat-user-inventory, --qa-user-inventory, --snapshot, --user-entity-id, --uat-users-idempotent-emission, --concurrency), build-gated on OSM_ENABLE_REMAP_USERS (Program.cs:45-52, default ON). Plus includeUsers defaults true (BuildSsdtRequestAssembler.cs:213) so a default full-export seeds dbo.User rows.",
+    "v2": "No equivalent verb/flags. User handling is `transfer --reconcile <UserTable>:<col>` (FK-value remap across envs), and per audit M-4 the matching-strategy config was removed \u2192 near-inert; a default `publish` emits NO platform-user rows.",
+    "difference": "V1's 12-flag bulk user-seed + remap CLI has no V2 analog; the OSM_ENABLE_REMAP_USERS toggle is gone. Confirms M-4: mandatory CreatedBy/UpdatedBy FKs dangle under a default V2 publish. Operator must consciously wire a user path."
+   },
+   {
+    "id": "CC-07",
+    "topic": "Apply-gating: V1 direct schema-apply vs V2 emit-but-don't-ship",
+    "classification": "operational",
+    "direction": "neutral",
+    "severity": "major",
+    "confidence": "high",
+    "v1": "SchemaApplyOptionBinder.cs:16-27 wires a 10-flag direct-apply lane (--apply, --apply-connection-string/-command-timeout/-sql-authentication/-trust-server-certificate/-application-name/-access-token, --apply-safe-script, --apply-static-seeds, --apply-static-seed-mode). `full-export --apply` pushes schema + safe scripts + seeds straight into a target DB in one run.",
+    "v2": "By R6 design, production schema ships as an SSDT/Octopus bundle, NOT direct-connect. Live writes need `--go` + PROJECTION_ALLOW_EXECUTE=1 and are scoped to LOCAL full-access / docker targets only (Program.fs usage :96-99: '--atomic ... LOCAL full-access DBs only \u2014 production schema ships via the SSDT/Octopus pipeline'). Gate refusal = exit 7 (Program.fs:143).",
+    "difference": "The V1 'one-shot full-export --apply to provision a database' workflow is intentionally NOT reproduced for production in V2. Direction is neutral (deliberate R6 posture) but operationally major: any operator/runbook that relied on --apply must switch to the bundle\u2192Octopus deploy path."
+   },
+   {
+    "id": "CC-08",
+    "topic": "Profiler sampling not operator-exposed in V2",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "SqlOptionBinder.cs:18-19 exposes --sampling-threshold and --sampling-size for the SQL profiler; both flow through config/env.",
+    "v2": "The V2 shaping Config has only Model/Profile/Profiler/Overrides/Emission/Policy/Output (Config.fs:467-475); ProfilerSection is just Provider + MaxConcurrency (Config.fs:153-164). SamplingPolicy defaults to full-scan (LiveProfiler.fs:47-51) and is referenced only internally (Pipeline.fs:2204) \u2014 never parsed from projection.json (grep: no `sampling` key).",
+    "difference": "V2 gives operators no knob to cap profiling sample size. Full-scan is the correct/safe default, but on a large (300-table) estate the inability to bound profiling I/O is a lost control vs V1."
+   },
+   {
+    "id": "CC-09",
+    "topic": "Evidence-cache config not in projection.json",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "CacheOptionBinder.cs:14-15 (--cache-root, --refresh-cache) plus OSM_CLI_CACHE_ROOT / OSM_CLI_REFRESH_CACHE (CliConfigurationService.cs:26-27) \u2014 first-class operator control of the evidence cache location and refresh.",
+    "v2": "No Cache section in the Config schema (Config.fs:467-475). Caching is env-directory-driven (PROJECTION_ESTATE_DIR / PROJECTION_LEDGER_DIR, EstateEvidenceStore.fs:72-73) with a `check environments --refresh` (Faces/Estate.fs:15) scoped to the estate-convergence pay-once store, not the profiling evidence cache.",
+    "difference": "V1's explicit cache-root + refresh-cache configuration surface has no direct projection.json equivalent; V2 exposes only env-dir placement plus a narrower estate-refresh flag."
+   },
+   {
+    "id": "CC-10",
+    "topic": "SQL auth knobs folded into D9 conn-ref; AAD access-token path lost",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "medium",
+    "v1": "SqlOptionBinder.cs:20-41 exposes --sql-authentication, --sql-trust-server-certificate, --sql-application-name, --sql-access-token, --command-timeout as discrete knobs (+ OSM_CLI_SQL_* envs, CliConfigurationService.cs:31-35). --sql-access-token sets SqlConnection.AccessToken (an AAD bearer token that is NOT a connection-string keyword).",
+    "v2": "D9: the whole secret is one ConnectionRef (env:/file:/raw) resolved to a connection string and handed verbatim to `new SqlConnection(connectionString)` (ConnectionResolver.fs:27-45); command timeout only via PROJECTION_COMMAND_TIMEOUT_SEC (SqlPolicy.fs:19). AccessToken is never set.",
+    "difference": "TrustServerCertificate / Authentication / Application Name survive as connection-string keywords, so most auth is expressible. But V1's explicit AAD access-token injection (SqlConnection.AccessToken) has no V2 path \u2014 a gap for Azure-SQL/cloud-OutSystems targets that authenticate with a bearer token rather than a keyword."
+   },
+   {
+    "id": "CC-11",
+    "topic": "Dynamic-insert output mode (per-entity vs single-file) absent",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "VerbOptionRegistry.cs:30-33 wires --dynamic-insert-mode (DynamicInsertOutputMode.PerEntity default | SingleFile) + OSM_CLI_DYNAMIC_INSERT_MODE (CliConfigurationService.cs:37) controlling per-entity vs single-file dynamic INSERT emission.",
+    "v2": "No PerEntity/SingleFile knob (grep: no DynamicInsert/InsertMode/PerEntity tokens). V2 emits fixed single-file data lanes (Data/Bootstrap.sql, Data/StaticSeeds.sql, Data/MigrationData.sql per audit \u00a74).",
+    "difference": "V1's per-entity dynamic-insert layout option has no V2 equivalent; V2 is single-file-only. Layout-only, deploy-equivalent, but a lost knob."
+   },
+   {
+    "id": "CC-12",
+    "topic": "V2 exit-code contract has two internal overloads",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "N/A (V1 has no rich exit contract to be inconsistent with).",
+    "v2": "Published table (Program.fs:135-144) says exit 1 = 'argv error' and exit 2 = 'parse error'. But CliExit.fs:53 maps `.writeFailed`/`.emitFailed` \u2192 exit 1 (artifact write failure, an IO error, not argv), and Preflight.fs:723 maps ReconciliationMismatch \u2192 exit 2 (a gate refusal, not a parse error).",
+    "difference": "Exit 1 and exit 2 each carry two distinct meanings vs the documented contract, so a cutover pipeline branching on the published table can misclassify a synth-load write failure as an argv error, or a reconcile mismatch as a parse error. A minor caveat on the otherwise-superior exit API (CC-01)."
+   },
+   {
+    "id": "CC-13",
+    "topic": "`--atomic` advertised but never parsed (help/code drift)",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "N/A.",
+    "v2": "Usage advertises `--atomic` as a daily-flow flag (Program.fs:45 synopsis and :96-99 prose). The flow parser reads only `--no-atomic` (MovementSurface.fs:2536 `NoAtomic = List.contains \"--no-atomic\"`); the literal `--atomic` token is parsed nowhere in src (grep: 0 hits). Reconcile/rekey are likewise config-only on flows (not in the flow opts record :2529-2542) despite the help implying `--reconcile` is a per-run override.",
+    "difference": "`projection <flow> --atomic` silently no-ops (atomic is default-on for flows, disabled only by --no-atomic, which the help never mentions). Minor operator-facing help-vs-behavior drift on the daily surface."
+   },
+   {
+    "id": "CC-14",
+    "topic": "Options/decision-provenance reporting by default (cross-ref audit M-7)",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "major",
+    "confidence": "high",
+    "v1": "A default full-export ships policy-decisions.json / opportunities.json / validations.json (writers under src/Osm.Pipeline/Orchestration/) plus report.html echoing the effective tightening toggles WITH their source/provenance (PipelineReportLauncher.cs:73-76 builds ToggleEntry(Key,Value,Source); :356-360 renders the Toggle/Value/Source table; :337 execution-context profiler+snapshot).",
+    "v2": "Per audit M-7: default publish reports tightening decisions as all-zeros in manifest.summary.txt (the decision-producing interventions aren't run unless configured) and moves the operator surface to fidelity.json/.txt (a different question set), and does not echo effective config/options provenance into artifacts the way V1's manifest does.",
+    "difference": "The specific 'which toggle was in effect and from where / why is this column NOT NULL' provenance V1 emits by default is not a drop-in in V2's default publish. V2's diagnostics are richer and machine-parseable (NDJSON, exit API, episode ledger) but answer different questions \u2014 an operator relying on V1's decision-provenance artifacts must reconfigure or accept the change."
+   },
+   {
+    "id": "CC-15",
+    "topic": "Environment-variable namespace remap (OSM_CLI_* \u2192 PROJECTION_*)",
+    "classification": "operational",
+    "direction": "neutral",
+    "severity": "info",
+    "confidence": "high",
+    "v1": "16 vars: OSM_CLI_CONFIG_PATH/MODEL_PATH/PROFILE_PATH/DMM_PATH/CACHE_ROOT/REFRESH_CACHE/PROFILER_PROVIDER/PROFILER_MOCK_FOLDER/CONNECTION_STRING/SQL_COMMAND_TIMEOUT/SQL_AUTHENTICATION/SQL_ACCESS_TOKEN/SQL_TRUST_SERVER_CERTIFICATE/SQL_APPLICATION_NAME/PROFILING_CONNECTION_STRINGS/DYNAMIC_INSERT_MODE (CliConfigurationService.cs:22-37) + OSM_ENABLE_REMAP_USERS (Program.cs:45).",
+    "v2": "Disjoint PROJECTION_* set with different semantics: PROJECTION_CONFIG (config path), PROJECTION_ALLOW_EXECUTE (the live-write gate \u2014 no V1 analog), PROJECTION_MSSQL_CONN_STR (single source/warm conn, Config.fs:172), PROJECTION_COMMAND_TIMEOUT_SEC, PROJECTION_LEDGER_DIR/RUNS_DIR/BENCH_DIR/ESTATE_DIR, PROJECTION_DEPLOY_PARALLELISM, PROJECTION_DB_NAME, PROJECTION_WATCH_DWELL_MS/STALL_MS, plus NO_COLOR/CLICOLOR_FORCE.",
+    "difference": "No 1:1 env mapping. Only PROJECTION_CONFIG\u2194OSM_CLI_CONFIG_PATH and the conn-string vars roughly correspond; most V1 OSM_CLI_* knobs (cache, sampling, sql-auth, dynamic-insert, dmm, profile paths) have no PROJECTION_* twin, and PROJECTION_ALLOW_EXECUTE is a new gate concept. Cutover runbooks/CI env blocks need a full rewrite, not a rename."
+   },
+   {
+    "id": "CC-16",
+    "topic": "Multi-environment profiling / cross-env readiness",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "medium",
+    "v1": "SqlOptionBinder.cs:42-46 --profiling-connection-string (ZeroOrMore, 'Name::' labels) profiles secondary environments in one run; results roll into the profile.",
+    "v2": "Reframed as a config-declared estate: readiness.confirm[] environments (THE_CONFIG_CONTROL_PLANE.md:119) with `check environments`/`check shape` (the convergence instrument \u2014 every divergence a finding on a disposition lane, exits 0 unified / 5 diverged / 6 unreadable; Program.fs:111-117) plus a pay-once evidence store and `--refresh`/`--offline`.",
+    "difference": "V1's ad-hoc multi-conn profiling is subsumed by a richer, declarative cross-environment convergence gate in V2 \u2014 different mechanism, broader capability. Slight v2 edge; not a like-for-like flag."
+   }
+  ],
+  "parityConfirmed": [
+   "Flag-count claim verified: full-export carries ~72 distinct flags (2 global + 7 module-filter + 2 cache + 9 sql + 7 tightening + 10 schema-apply + 12 uat-users + 18 verb-specific + 4 load-harness + 1 open-report), consistent with the '~70 flags' framing. Registry at VerbOptionRegistry.cs:163-195 assembles them.",
+   "Config-file control-plane concept is genuine on both sides: V1 pipeline.json/yaml (CliConfigurationService.cs:64-71 candidate list) vs V2 projection.json unified movement+shaping document (THE_CONFIG_CONTROL_PLANE.md \u00a74; Program.fs:433-449 init scaffold). The thesis '~70 flags \u2192 projection.json control plane' is accurate; most (not all) V1 flags have config equivalents.",
+   "Module filter is at parity via config: V1 --modules/--module + include/exclude-system + include-inactive/only-active + --allow-missing-primary-key/-schema (ModuleFilterOptionBinder.cs:16-24) maps to V2 model.modules + Overrides.AllowMissingPrimaryKey (Config.fs:580,507), applied at the single shared seam per THE_CONFIG_CONTROL_PLANE.md \u00a76 (S3, the explicitly-tested riskiest seam).",
+   "Audit M-4 mechanism verified: V1 includeUsers defaults true at BuildSsdtRequestAssembler.cs:213 (and PipelineRequestContextBuilder.cs:135), confirming the default-full-export-seeds-users behavior the audit attributes to V1.",
+   "Audit \u00a73 auto-discovery-trap claim verified accurate against code (CliConfigurationService.cs:64-105 parent-walk vs Program.fs:463-470 cwd/env-only).",
+   "D9 connection-ref model verified: env:/file:/raw resolution centralized in ConnectionResolver.fs:27-45, failures surfaced as ValidationError \u2192 exit 6 (config/connection axis), matching the published contract (Program.fs:142).",
+   "None of the cli-config gaps are addressed by PR #668/#669/#670/#671 \u2014 those close emission/schema items (PK shape, deployed-storage precedence, HasDbConstraint, G3 refactorlog, G6 CREATE SCHEMA per audit \u00a75); the CLI/config surface deltas above are all still open on ea21b13."
+  ]
+ },
+ {
+  "area": "profiling-policy",
+  "findings": [
+   {
+    "id": "PP-1",
+    "topic": "Evidence-gated nullability tightening (NULL -> NOT NULL) is unreachable from V2 config",
+    "classification": "functional-output",
+    "direction": "v2-worse",
+    "severity": "major",
+    "confidence": "high",
+    "v1": "config/default-tightening.json ships mode=EvidenceGated, nullBudget=0.0. NullabilityEvaluator (src/Osm.Validation/Tightening/NullabilityEvaluator.cs:117-161) tightens a logically-Mandatory, physically-nullable column to NOT NULL when profiling shows nulls within budget; the default estate publish therefore emits NOT NULL beyond the source physical shape.",
+    "v2": "TighteningBinding.fromConfig FILTERS OUT every kind:\"nullability\" entry that carries a nullBudget (src/Projection.Pipeline/TighteningBinding.fs:260-261) and binds the survivors RelaxationOnly (TighteningBinding.fs:102-114). EvidenceDriven is documented 'Unreachable from operator config for nullability since 2026-06-22' (src/Projection.Core/Policy.fs:359-366); under RelaxationOnly the rule only ever emits KeepNullable overrides, never EnforceNotNull (src/Projection.Core/Strategies/NullabilityRules.fs:245-249). Emission is Nullable = keepNullable || (a.Column.IsNullable && not enforceNotNull) with the enforceNotNull set always empty on a config-driven run (src/Projection.Targets.SSDT/SsdtDdlEmitter.fs:121-139). The evaluate hierarchy and its V1 parity remain fully implemented and unit-tested, just config-unreachable.",
+    "difference": "Same operator config yields NOT NULL in V1 and NULL in V2 for the OutSystems-common logically-mandatory-but-physically-nullable column. V2 cannot reproduce V1's nullability tightening from any config surface (only via the direct NullabilityTighteningConfig.create API the tests use). This is SANCTIONED, not a bug: DECISIONS 2026-06-22 (DECISIONS.md:25193-25222) records the operator's explicit call ('NULL columns should never be coerced ... the team's modeling call, not the tool's'), and the 2026-07-15 estate A6 amendment re-opened only the RELAXATION arm (keepNullable), keeping coercion dropped. Still the single largest emitted-DDL divergence a cutover operator will see; null-density survives as a profiling statistic only."
+   },
+   {
+    "id": "PP-2",
+    "topic": "Default tightening posture inverted: V1 tightens-by-default, V2 inert-by-default across the whole axis",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "major",
+    "confidence": "high",
+    "v1": "default-tightening.json ships an opinionated default: EvidenceGated nullability + foreignKeys.enableCreation=true + uniqueness.enforceSingleColumnUnique/enforceMultiColumnUnique=true. Running the default config tightens all three axes unless told otherwise.",
+    "v2": "TighteningPolicy.empty = zero interventions = zero decisions produced; 'V2 introduces no alterations to the system unless an intervention is explicitly registered' (Policy.fs:333-342, 1057-1064). A projection.json whose policy.tightening is absent or empty emits the raw declared schema with no FK/unique/categorical/nullability tightening.",
+    "difference": "The opt-out (V1) vs opt-in (V2) inversion is a cutover trap: an operator must explicitly author foreignKey/uniqueIndex/categoricalUniqueness interventions to get any tightening, and (per PP-1) cannot get nullability tightening at all. Forgetting the tightening section silently (well, named-but-inert) yields a materially less-constrained schema than V1's default. V2 names the no-op; it does not warn that V1 would have tightened."
+   },
+   {
+    "id": "PP-3",
+    "topic": "CDC awareness / CDC-silence as the data-change norm (the vice-versa capability)",
+    "classification": "capability-gap",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "Zero CDC awareness anywhere in src/Osm.* (grep for cdc|ChangeDataCapture|sp_cdc|CaptureInstance over src/**/*.cs returns nothing). V1 has no mechanism to measure whether a redeploy/transfer actually changed data.",
+    "v2": "CDC capture count is the declared 'data norm': an idempotent redeploy must be CDC-silent (canary.cdcSilent). The measure is projected into structured canary events and gates the fidelity verdict (src/Projection.Pipeline/EventProjection.fs:259-262, LogSink.fs:792-793, MigrationRun.fs:465,731; a dedicated CdcSilence test family in tests/Projection.Tests.Integration). CDC-as-norm is a first-class axiom (T15 isometry per CLAUDE.md).",
+    "difference": "V2 can empirically prove a redeploy/reverse-leg is loss-free and idempotent (silence = strongest guarantee); V1 cannot observe silent data mutation. This is a verification/fidelity capability rather than a profiling probe, but it is the evidence-gated decision the task names as V2-only and it materially de-risks cutover."
+   },
+   {
+    "id": "PP-4",
+    "topic": "FK/unique enforcement on MISSING or ambiguous evidence: V2 declines, V1 optimistically creates (incl. FK-to-static blind spot)",
+    "classification": "functional-output",
+    "direction": "v2-worse",
+    "severity": "major",
+    "confidence": "medium",
+    "v1": "ForeignKeyEvaluator uses hasOrphan = fkReality?.HasOrphan ?? false (src/Osm.Validation/Tightening/ForeignKeyEvaluator.cs:118); with EnableCreation and no cross-schema block it CREATES the constraint even when no orphan evidence exists (cs:137-141). V1's SqlDataProfiler profiles all entities incl. static targets via server-side LEFT JOIN orphan counts, so evidence is rarely absent.",
+    "v2": "ForeignKeyRules: an absent or unreliable probe => DoNotEnforce EvidenceMissing ('V2 collapsed-mode strict default: do not enforce on missing evidence', src/Projection.Core/Strategies/ForeignKeyRules.fs:347-356). Critically, FKs to STATIC/reference entities have NO orphan evidence: LiveProfiler excludes static kinds from capture (src/Projection.Adapters.Sql/LiveProfiler.fs:206-211,411-413), so the target PK set is None -> ForeignKeyReality is ambiguous (ProfileDerivation.fs:570-595) -> isReliable=false -> EvidenceMissing. UniqueIndexRules mirrors this: no profiled candidate => DoNotEnforce NoCandidateProfiled (Strategies/UniqueIndexRules.fs:230-252).",
+    "difference": "V2's evidence-driven FK intervention will NOT create NEW foreign keys pointing at static/reference entities (pervasive in OutSystems) that V1's default would create, and declines any reference whose orphan probe did not run cleanly. Mitigation: a reference already backed by a live DB constraint is enforced regardless via the source-backed carve-out (ForeignKeyRules.fs:300-308), so the divergence is confined to NEW, non-DB-backed constraints. Same-config FK sets can differ between V1 and V2; arguably V2-safer, but a real reproduction gap."
+   },
+   {
+    "id": "PP-5",
+    "topic": "Richer distribution-aware evidence + CategoricalUniqueness (V2-only) + length-overflow detection",
+    "classification": "capability-gap",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "SqlDataProfiler.CaptureAsync collects only column null/rowcount + single/composite unique-duplicate + FK orphan evidence (src/Osm.Pipeline/Profiling/SqlDataProfiler.cs:156-366). No numeric/categorical distributions, no cardinalities, no max-observed-length. Policy.fs:439-455 records 'V1 has no analog; V1 collects no Categorical distribution evidence.'",
+    "v2": "ProfileDerivation derives, purely from the single-scan cache, numeric distributions (moments/percentiles), categorical distributions, FK cardinalities/selectivities/multi-FK joint distributions, and MaxObservedLength (src/Projection.Core/ProfileDerivation.fs:172-996). CategoricalUniquenessConfig/Pass is a V2-native distribution-driven uniqueness suggester (Policy.fs:448-455; feeds fidelity.json SuggestUnique). MaxObservedLength powers a LengthOrTypeOverflow fidelity violation V1 cannot detect (src/Projection.Pipeline/ModelFidelity.fs:65,273-297).",
+    "difference": "V2 gates additional (advisory) decisions on evidence V1 never captures: categorical-uniqueness suggestions and value-length-overflow findings. These are the fourth intervention (categoricalUniqueness) and the fidelity/synthetic-data foundation; pure capability gain, no cutover risk."
+   },
+   {
+    "id": "PP-6",
+    "topic": "Remediation artifact shape: V1 safe-to-apply.sql + needs-remediation.sql vs V2 manifest.remediation.sql + fidelity data-reality",
+    "classification": "emission-aesthetic",
+    "direction": "neutral",
+    "severity": "minor",
+    "confidence": "high",
+    "v1": "OpportunityLogWriter emits TWO scripts: safe-to-apply.sql (Disposition=ReadyToApply \u2014 apply-ready NEW-constraint DDL) and needs-remediation.sql (Disposition=NeedsRemediation) (src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs:78-97). RemediationQueryBuilder writes UPDATE/DELETE/SELECT for nulls as live (uncommented) options (src/Osm.Validation/Tightening/RemediationQueryBuilder.cs:20-52).",
+    "v2": "RemediationEmitter emits ONE manifest.remediation.sql with an operator-safety contract: only the SELECT is active, UPDATE+DELETE ship commented-out (src/Projection.Targets.OperationalDiagnostics/RemediationEmitter.fs:24-30,156-162). It covers nullability/FK/unique decision findings PLUS fidelity.json 'data-reality' findings the tightening decisions never reach \u2014 nulls in already-declared-NOT-NULL columns, duplicates, orphans, and LENGTH OVERFLOW (RemediationEmitter.fs:279-374,502-527). Plus per-environment EstateBlock artifacts (#668, emitEstate).",
+    "difference": "V2 adds load-blocking data-reality + overflow remediation and destructive-statement safety (commented UPDATE/DELETE) that V1 lacks, but drops V1's standalone apply-ready safe-to-apply.sql (V2 folds the safe tightening straight into the SSDT bundle). A cutover operator scripting against V1's safe-to-apply.sql filename/format will not find an equivalent."
+   },
+   {
+    "id": "PP-7",
+    "topic": "Multi-environment constraint consensus: V1 tunable threshold + per-constraint ratio vs V2 union-merge",
+    "classification": "capability-gap",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "medium",
+    "v1": "MultiEnvironmentConstraintConsensus computes a per-constraint ConsensusRatio across dev/qa/uat/prod for NotNull/Unique/CompositeUnique/ForeignKey, with a TUNABLE minimumConsensusThreshold (default 1.0), explicit 'missing in environments' detection, and per-constraint recommendations (src/Osm.Pipeline/Profiling/MultiEnvironmentConstraintConsensus.cs:39-79,140-217,376-466).",
+    "v2": "Multi-env is Profile.merge (union): 'a violation appears exactly when at least one environment has it' (src/Projection.Pipeline/Estate.fs:269-277; Profile.fs:1210-1246). That equals V1's unanimous (threshold=1.0) verdict but exposes no tunable partial-consensus threshold and no per-constraint consensus-ratio surface \u2014 replaced by the estate board/posture (#668).",
+    "difference": "On the default unanimous threshold the safety verdict is equivalent. V1 additionally supports partial-consensus thresholds (e.g., 'safe if 80% of envs agree') and reports which environments carry the issue / which are missing the column \u2014 reporting granularity V2's union-merge estate consensus does not reproduce."
+   },
+   {
+    "id": "PP-8",
+    "topic": "FK constraint-trust evidence source: V1 live sys-catalog probe vs V2 ingested catalog flag",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "medium",
+    "v1": "SqlDataProfiler live-probes the deployed DB's sys catalog for ForeignKeyIsNoCheck + ForeignKeyTrustedConstraints, promoting a TrustedConstraint probe outcome at profile time (src/Osm.Pipeline/Profiling/SqlDataProfiler.cs:322-332).",
+    "v2": "Constraint trust is read from the ingested catalog Reference: IsNoCheck = not (Reference.isConstraintTrusted reference) (ProfileDerivation.fs:590-594); the live TrustedConstraint re-probe 'had no producer anywhere (dead in production) and is retired' (ForeignKeyRules.fs:229-239).",
+    "difference": "If the live target DB's FK trust state (is_not_trusted / WITH NOCHECK) diverges from the ingested model, V1 observes the live truth at profile time while V2 trusts the model's Reference flags. Subtle; only bites when live constraint trust differs from what was ingested."
+   }
+  ],
+  "parityConfirmed": [
+   "Nullability DECISION HIERARCHY is behaviorally at parity V1<->V2 when the EvidenceDriven direction is used: operator-override (absolute) -> PrimaryKey -> PhysicallyNotNull -> LogicalMandatory+budget (NoProfile/NoNulls/WithinBudget/relax-or-require-approval). Proven case-for-case by V1NullabilityParityTests #1-#8 (tests/Projection.Tests/V1NullabilityParityTests.fs:103-333) against NullabilityEvaluator.cs. Only the config REACHABILITY differs (PP-1), not the algorithm.",
+   "FK decision logic mirrors ForeignKeyEvaluator.cs line-for-line: source-backed DB constraint enforced regardless of gates (carve-out), enforce-on-clean-evidence, WITH NOCHECK fallback on orphans/ignore-rule when AllowNoCheckCreation (V1 Cautious+EnableCreation), cross-schema block. Strategies/ForeignKeyRules.fs:218-356 cites ForeignKeyEvaluator.cs:124-145,231 directly. V2 adds explicit MissingTarget/EvidenceMissing/OperatorUntracked variants as audit dividends over V1's silent skips.",
+   "Unique-index decision logic at parity: already-unique-in-catalog => enforce (structural/trusted); single/multi-column toggles gate promotion; profiled duplicates => DoNotEnforce (Strategies/UniqueIndexRules.fs:215-252). The two booleans map to uniqueness.enforceSingleColumnUnique / enforceMultiColumnUnique from default-tightening.json.",
+   "Single-scan derived evidence equals the aggregate-query evidence 'by construction over an unchanged table' and is the more consistent single read (one scan cannot observe a concurrent write between two scans) - LiveProfiler.fs:323-333. V2's derived exact RowCount + per-attribute NullCount + orphan/duplicate verdicts match V1's server-side aggregates on a quiescent table.",
+   "FK orphan-sample and null-row-sample remediation diagnostics preserved: both cap TOP-N sample rows for operator inspection (V1 orphanSample/nullRowSample on ForeignKeyReality/ColumnProfile; V2 deriveForeignKeyOrphanSamples with cacheOrphanSampleLimit=5, ProfileDerivation.fs:623-712).",
+   "ProbeStatus/probe-reliability concept preserved on both sides: V1 ProfilingProbeStatus (Succeeded/TrustedConstraint gate 'safe'); V2 ProbeStatus.isReliable gates FK/unique enforcement (Profile.fs:53-90). Both refuse to enforce on an unreliable probe rather than guessing."
+  ]
+ },
+ {
+  "area": "determinism",
+  "findings": [
+   {
+    "id": "F-DET-01",
+    "topic": "Wall-clock timestamps embedded directly in emitted artifacts (run-to-run byte drift)",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "major",
+    "confidence": "high",
+    "difference": "V1 reads the wall clock via UNSEAM'D DateTime.UtcNow/DateTimeOffset.UtcNow and writes it straight into ~8-10 export artifacts, so a re-export of an unchanged model produces byte-different files. This is the empirical 'v1 10 files drift'. The clock reads: bootstrap snapshot SQL header (`-- Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC`) src/Osm.Pipeline/Orchestration/BuildSsdtBootstrapSnapshotStep.cs:240 and :284; post-deployment template header src/Osm.Pipeline/Orchestration/BuildSsdtPostDeploymentTemplateStep.cs:85; the opportunities/validations report stamp `generatedAt = DateTimeOffset.UtcNow` src/Osm.Validation/Tightening/Opportunities/TighteningOpportunitiesAnalyzer.cs:753 which flows into opportunities.json + validations.json + the two suggestion SQL headers (`-- Generated: {report.GeneratedAtUtc...}`) src/Osm.Pipeline/Orchestration/OpportunityLogWriter.cs:115; the DMM diff log `GeneratedAtUtc = DateTimeOffset.UtcNow` src/Osm.Pipeline/Orchestration/DmmDiffLogWriter.cs:44; and the full-export run manifest `GeneratedAtUtc` src/Osm.Pipeline/Runtime/FullExportRunManifest.cs:119 (plus per-stage elapsed Durations, see F-DET-03). V2's emission artifacts are clock-free by construction: Projection.Core forbids clocks (F-DET-08), the manifest deliberately excludes its `At` stamp (sidecar/projection/src/Projection.Targets.SSDT/ManifestEmitter.fs:922-930, keeping only digest+SemVer), and every wall-clock read in V2 is confined to LINT-ALLOW boundary telemetry/run-ledger/log sinks (LogSink.fs, BenchSink.fs, Run.fs:337, RunEnvelope.fs:87, Shell.fs:139, CLI Approve/Estate/Export/Migrate faces) that are NOT part of the publish set. Empirically corroborated: V2 committed golden corpus is byte-stable and guarded by a T1 repeated-emission test (GoldenEmissionTests.fs:303-308) plus a RemediationEmitter byte-identity test (RemediationEmitterTests.fs:170).",
+    "v1": "5 unseam'd UtcNow reads (BuildSsdtBootstrapSnapshotStep.cs:240,284; BuildSsdtPostDeploymentTemplateStep.cs:85; TighteningOpportunitiesAnalyzer.cs:753; DmmDiffLogWriter.cs:44) fan out to ~10 drifting files; run manifest uses a TimeProvider seam but tests pass TimeProvider.System (real clock)",
+    "v2": "ManifestEmitter.fs:924 '`At` is intentionally excluded ... would break T1 byte-determinism'; clock reads only at LINT-ALLOW boundary sinks; Core clock-free"
+   },
+   {
+    "id": "F-DET-02",
+    "topic": "pipeline-telemetry.zip embeds per-entry filesystem mtimes (archive drifts every run)",
+    "classification": "functional-output",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "difference": "V1 packages a telemetry archive with ZipArchive.CreateEntryFromFile (src/Osm.Pipeline/Orchestration/BuildSsdtTelemetryPackagingStep.cs:71). CreateEntryFromFile stamps each zip entry with the source file's last-write-time read from disk; every run writes fresh files with fresh mtimes, so the .zip bytes differ run-to-run even when the packed contents are identical \u2014 and the packed manifest/opportunities/decision-log contents themselves also drift via F-DET-01. There is no deterministic-timestamp normalization (no fixed DateTimeOffset on the entries). V2's publish path emits no mtime-bearing archive of text artifacts; the analogous outputs are plain File.WriteAllText files (Pipeline.fs:973,2029).",
+    "v1": "BuildSsdtTelemetryPackagingStep.cs:71 CreateEntryFromFile(..., CompressionLevel.Optimal) \u2014 entry LastWriteTime taken from live file mtime",
+    "v2": "no telemetry zip in publish; deterministic per-file writes"
+   },
+   {
+    "id": "F-DET-03",
+    "topic": "Run manifest embeds machine-absolute paths and elapsed-time durations",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "difference": "Beyond GeneratedAtUtc, V1's FullExportRunManifest bakes in two more nondeterminism classes: (1) elapsed-time Durations and Started/CompletedAtUtc derived from live PipelineExecutionLog entry timestamps (src/Osm.Pipeline/Runtime/FullExportRunManifest.cs:265-267, 340-342, 446-448) \u2014 durations measure real wall-time and therefore ALWAYS differ; (2) machine-absolute filesystem paths via Path.GetFullPath for modelJson/payload/profile/outputDirectory/etc. (lines 221,227,255,260,288,410) plus Environment.CurrentDirectory fallback (Verbs/FullExportVerb.cs:373) \u2014 environment-dependent, non-portable across machines/working-dirs. V2's manifest uses logical SsKey names (SsKey.rootOriginal) with no absolute paths and no durations (ManifestEmitter.fs), so it is both byte-stable and relocatable.",
+    "v1": "FullExportRunManifest.cs: Duration/Started/CompletedAtUtc from execution log (elapsed real time) + Path.GetFullPath absolute paths",
+    "v2": "ManifestEmitter emits SsKey names, no paths, no durations, no At"
+   },
+   {
+    "id": "F-DET-04",
+    "topic": "Newlines: V1 uses OS-dependent Environment.NewLine (and mixes it with literal \\n); V2 pins LF",
+    "classification": "emission-aesthetic",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "difference": "V1 newlines are OS-dependent: StringBuilder.AppendLine and string.Concat(header, Environment.NewLine, Environment.NewLine, script) in Osm.Smo/PerTableWriter.cs:176 (+ header builder 256-262), and the trailing-newline append in Osm.Emission/TablePlanWriter.cs:85-87, all emit Environment.NewLine (CRLF on Windows, LF on Linux). Worse, OpportunityLogWriter mixes hardcoded literal '\\n' inside its category/type description constants (OpportunityLogWriter.cs:332-433) with AppendLine's Environment.NewLine, so on Windows the suggestion SQL files carry MIXED line endings within one file. This makes byte output depend on the emitting OS and hurts cross-machine diffability (SSDT is a Windows-centric workflow, so CRLF is the likely production case). V2 pins LF at every seam \u2014 JsonOptions.NewLine='\\n' and XmlSettings.NewLineChars='\\n' with NewLineHandling.Replace (PinnedWriting.fs:32,43,154-155) and Render.toText \u2014 and the golden negative-invariant asserts DoesNotContain('\\r\\n') on every artifact (GoldenEmissionTests.fs:212). Empirically corroborated: the committed golden corpus is LF-only (zero CRLF across all scanned files).",
+    "v1": "PerTableWriter.cs:176 Environment.NewLine; OpportunityLogWriter.cs mixes literal \\n (desc constants) with AppendLine",
+    "v2": "PinnedWriting.fs LF pinned on JSON+XML; golden asserts no CRLF; corpus verified LF-only"
+   },
+   {
+    "id": "F-DET-08",
+    "topic": "Structural determinism enforcement: V2 analyzer + golden/T1 harness vs V1 single partial seam",
+    "classification": "operational",
+    "direction": "v2-better",
+    "severity": "minor",
+    "confidence": "high",
+    "difference": "Root-cause asymmetry. V2 makes determinism a compile-time law: NoUnsafeTimeInCoreAnalyzer walks the typed tree and bans, by resolved full name, DateTime.{Now,UtcNow,Today} / DateTimeOffset.{Now,UtcNow} / Guid.NewGuid / Random / Stopwatch / Task/Async / System.IO inside Projection.Core, allowlisting only Bench and PinnedWriting (sidecar/projection/src/Projection.Analyzers/NoUnsafeTimeInCoreAnalyzer.fs:25-35). This is backed by a byte-for-byte golden corpus, a T1 repeated-emission equality test, and PinnedWriting as the single sanctioned home for writer options. V1 has a TimeProvider seam on EXACTLY ONE writer (FullExportRunManifest.Create) \u2014 and its tests inject TimeProvider.System, the real clock (tests/Osm.Pipeline.Tests/Runtime/FullExportRunManifestTests.cs:201,389,503; FullExportPipelineTests.cs:648) \u2014 so nothing pins time; every other timestamped writer bypasses the seam with a direct DateTime.UtcNow. V1 has no golden/byte-determinism harness, which is precisely why the ~10-file drift is unguarded.",
+    "v1": "one TimeProvider seam (FullExportRunManifest only); tests use TimeProvider.System; no golden byte-harness",
+    "v2": "analyzer bans clocks in Core by full-name; golden corpus + T1 face + PinnedWriting single-home"
+   },
+   {
+    "id": "F-DET-10",
+    "topic": "V2 manifest.json is byte-deterministic in code but sits OUTSIDE V2's golden/T1 guard",
+    "classification": "operational",
+    "direction": "v2-worse",
+    "severity": "minor",
+    "confidence": "high",
+    "difference": "A small chink in V2's otherwise strong story: the golden harness filters the compared set to '.sql' only (GoldenEmissionTests.fs:122 `Map.filter (fun path _ -> path.EndsWith \".sql\")`), and the same emitScenario feeds the T1 repeated-emission test, so manifest.json is covered by NEITHER the byte-golden NOR the T1 face. The stated reason (line 101,104: 'its VersionedPolicy stamp carries a wall clock') is now contradicted by the code \u2014 ManifestEmitter.fs:922-930 deliberately excludes `At`, and a full-file scan of ManifestEmitter finds no UtcNow/DateTime/Guid/Stopwatch \u2014 so manifest.json IS byte-deterministic today. The determinism of the published manifest therefore rests solely on ManifestEmitter's At-exclusion, not on any automated byte-pin; a future regression that re-leaked a clock (or absolute path) into the manifest would pass the golden suite. Low operator impact today (manifest is in fact stable), but the guard has a documented gap.",
+    "v1": "n/a (V1 per-table SsdtManifest.cs has no timestamp; V1's drift is the separate full-export.manifest.json, F-DET-01/03)",
+    "v2": "manifest.json excluded from both golden compare and T1 face; determinism un-pinned by tests"
+   }
+  ],
+  "parityConfirmed": [
+   "Encoding/BOM: both write UTF-8 WITHOUT BOM. V1 explicitly constructs UTF8Encoding(encoderShouldEmitUTF8Identifier:false) in SsdtEmitter.cs:18, TablePlanWriter.cs:12, OpportunityLogWriter.cs:36; V2 uses File.WriteAllText default (UTF8-no-BOM) at Pipeline.fs:973/2029, UTF8Encoding(false) in CsvExportRun.fs:149/154, and XmlSettings.indentedUtf8NoBom (PinnedWriting.fs:151). Empirically corroborated: golden corpus first bytes are content (CRE/MER/SET), no EF BB BF. Minor inconsistency (not a defect): V1 PolicyDecisionLogWriter.cs:97-99 uses the encoding-less File.WriteAllTextAsync overload \u2014 still no-BOM by framework default, but relies on the default rather than an explicit encoding like its siblings.",
+   "Trailing newline: both terminate every artifact with a newline. V1 TablePlanWriter.cs:85-87 appends Environment.NewLine if absent; V2 Render.toText yields trailing '\\n' and GoldenEmissionTests.fs:211 asserts EndsWith('\\n'). Empirically corroborated: every golden corpus file's last byte is 0x0a. (The CRLF-vs-LF axis of this newline is the divergence captured in F-DET-04.)",
+   "GUID / random nondeterminism in artifacts: neither side injects Guid.NewGuid or Random into emitted output. V1 has zero Guid.NewGuid anywhere in src. V2's only Guid.NewGuid uses are DatabaseNameGenerator.fs (test-DB isolation, never emitted) and Pipeline.fs:992 (transient staging-dir suffix that is renamed to the deterministic outputDir, so it never appears in any artifact). Artifact GUID-freedom is at parity.",
+   "Deterministic ordering: both construct stable ordering rather than relying on hash/enumeration order. V1 sorts emitted index/FK name lists OrdinalIgnoreCase (PerTableWriter.cs:163-169) and sorts validation findings (OpportunityLogWriter.cs:449-505); V2 sorts by SsKey throughout and the manifest's appliedTransforms is 'already sorted by (SsKey, OverlayAxis option)' (ManifestEmitter.fs:966). No ordering-driven drift observed on either side."
+  ]
+ }
+]
