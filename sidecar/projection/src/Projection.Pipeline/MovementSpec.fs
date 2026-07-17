@@ -820,7 +820,11 @@ and CheckFidelityFlowArgs =
       /// `--sample N` — the cap on NAMED differences per kind (the totals
       /// stay exact); the `check data --rows` default.
       SampleCap  : int
-      AsJson     : bool }
+      AsJson     : bool
+      /// `--refresh` — force a full re-prove, ignoring and clearing this flow's
+      /// cached proof (wave B6). The cache otherwise skips the expensive
+      /// container proof when the model + source fingerprints are unchanged.
+      Refresh    : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

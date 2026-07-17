@@ -555,7 +555,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false }
+                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false }
                     try
                         // GREEN — the machinery is faithful: every minted key
                         // and every FK cell translates through the journal;
@@ -580,6 +580,55 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         try
                             if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true)
                         with _ -> ()
+                }))
+
+    [<Fact>]
+    member _.``B6 proof cache: the first green proof caches; an unchanged estate hits the cache and skips the container (no new transfer journal)`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "B6Cache") then () else
+        let model = ReverseLegFixtures.authoredModel
+        let physicalContract = CatalogRendition.physical model
+        let flow = "b6-cache"
+        let flowDir = System.IO.Path.Combine("fidelity-proof", flow)
+        let storeRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "b6-store-" + System.Guid.NewGuid().ToString "N")
+        let prior = System.Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"
+        System.Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", storeRoot)
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "B6CacheSrc" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
+                    let run () =
+                        Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false }
+                    try
+                        // RUN 1 — a green proof runs the container AND caches its
+                        // result (the source's fingerprints were probed live, the
+                        // proof agreed): the cache file is written under the store.
+                        Assert.Equal(0, run ())
+                        Assert.True(FidelityProofCache.tryRead storeRoot flow |> Option.isSome,
+                                    "the first green proof writes the cache (probeLive read the source, the proof agreed)")
+                        Assert.True(System.IO.Directory.Exists flowDir, "the first proof runs the transfer (its journal is written)")
+                        // Remove the flow's journal dir — a HIT leaves it absent
+                        // (no transfer runs), a re-prove recreates it.
+                        System.IO.Directory.Delete(flowDir, true)
+                        // RUN 2 — the estate is unchanged (same model, same source
+                        // fingerprints), so the proof HITS the cache: exit 0, and
+                        // the container (scaffold + transfer + journal) is skipped.
+                        Assert.Equal(0, run ())
+                        Assert.False(System.IO.Directory.Exists flowDir,
+                                     "an unchanged estate hits the cache — no container, no transfer, no new journal")
+                        // --refresh clears the entry and forces a full re-prove
+                        // (the container runs again, recreating the journal).
+                        let refreshed () =
+                            Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true }
+                        Assert.Equal(0, refreshed ())
+                        Assert.True(System.IO.Directory.Exists flowDir, "--refresh forces the container to run again")
+                    finally
+                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                        try if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true) with _ -> ()
+                        try if System.IO.Directory.Exists storeRoot then System.IO.Directory.Delete(storeRoot, true) with _ -> ()
+                        System.Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", prior)
                 }))
 
     [<Fact>]

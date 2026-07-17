@@ -124,6 +124,13 @@
          the profile-capture cluster and before MovementSpec.fs so the A2.5β
          flag threading (refresh/offline) can reach it from the surface. -->
     <Compile Include="EstateEvidenceStore.fs" />
+    <!-- FidelityProofCache.fs: the incremental proof cache (wave B6) - an
+         unchanged estate skips the expensive container proof. Reuses
+         EstateEvidenceStore's storeDir / KindFingerprint / staleKinds /
+         shapeHashOf / probeLive, so it compiles after it; keyed per-flow so it
+         is clearable by flow name (the refresh flag) or wholesale (remove the
+         proofs directory). -->
+    <Compile Include="FidelityProofCache.fs" />
     <!-- EstateHistory.fs: the estate's recorded readings (wave A7 - the
          burndown's memory under the evidence store; movement + streak
          derivations pure, atomic save / fail-closed load at the boundary).

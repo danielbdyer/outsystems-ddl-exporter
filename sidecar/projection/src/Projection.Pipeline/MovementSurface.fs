@@ -2462,7 +2462,8 @@ module Command =
                                           FromLabel  = envName
                                           SourceConn = conn
                                           SampleCap  = cap
-                                          AsJson     = (valueOf "--format" = Some "json") })
+                                          AsJson     = (valueOf "--format" = Some "json")
+                                          Refresh    = List.contains "--refresh" rest })
                                | Error es, _ -> PlanAction.Refused (6, List.head es)
                                | _, Error es -> PlanAction.Refused (2, List.head es))
                           | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
