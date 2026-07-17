@@ -46,7 +46,12 @@ let private usageLines : string list =
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready | shape | go <flow>"
-        "                      | environments [--against model] [--refresh] [--offline] [--since @runId] | plan <flow> )"
+        "                      | environments [--against model] [--refresh] [--offline] [--since @runId]"
+        "                      | fidelity <flow> [--sample N] [--format json] | plan <flow> )"
+        "                      fidelity <flow> = THE CONTAINER PROOF: stand the model up on a"
+        "                      per-run container database, load it through the flow's transfer"
+        "                      machinery (journaled), prove every row byte-identical against the"
+        "                      flow's live source modulo the journal's recorded interventions"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
         "                      go    = THE GO BOARD for a data flow: every open decision +"
@@ -325,6 +330,13 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
     | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
     | PlanAction.CheckDataRows args -> shellRun "projection check data --rows" Shell.ReadOnly (fun () -> runCheckDataRows args)
+    | PlanAction.CheckFidelityFlow (model, modelOssys, args) ->
+        // THE CONTAINER PROOF (wave B5) — the model rides the shared
+        // `needCatalog` seam; the write target is the verb's OWN reaped
+        // scratch, so the run keeps the ReadOnly register (the check
+        // family's no-ledger-append contract holds).
+        needCatalog modelOssys model (fun cat ->
+            shellRun "projection check fidelity" Shell.ReadOnly (fun () -> runCheckFidelityFlow cat args))
     | PlanAction.CheckReady                ->
         // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
         // no-append contract rides the ReadOnly register).

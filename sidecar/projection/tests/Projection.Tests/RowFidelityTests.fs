@@ -395,6 +395,81 @@ let ``check data --rows: --interventions rides the args record — the path form
     | PlanAction.CheckDataRows args -> Assert.Equal(Some "@01HXYZ", args.Interventions)
     | other -> Assert.Fail(sprintf "expected CheckDataRows with the run reference; got %A" other)
 
+// ---------------------------------------------------------------------------
+// Wave B5 — `check fidelity <flow>` routing (DECISIONS 2026-07-15 decision 4:
+// one fidelity concept, file-source and estate-source; flow-map membership is
+// tested BEFORE the `.sql`-path default arm, and every other reading refuses
+// by name).
+// ---------------------------------------------------------------------------
+
+let private fidelityFlowJson = """
+{
+  "model": "model.json",
+  "environments": {
+    "cloud-dev": { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
+    "cloud-qa":  { "access": "direct", "conn": "env:CLOUD_QA_CONN" }
+  },
+  "flows": {
+    "load-qa": { "from": "cloud-dev", "to": "cloud-qa" },
+    "publish": { "from": "model", "to": "cloud-qa" }
+  }
+}
+"""
+
+[<Fact>]
+let ``check fidelity flow: a flow from a live environment plans the container proof with the model and the twenty-row default cap`` () =
+    let cfg = ProjectionConfig.parse fidelityFlowJson |> mustOk
+    match (Command.planCheck cfg [ "fidelity"; "load-qa" ]).Action with
+    | PlanAction.CheckFidelityFlow (model, _, args) ->
+        Assert.Equal(ModelSource.ModelFile "model.json", model)
+        Assert.Equal("load-qa", args.Flow)
+        Assert.Equal("cloud-dev", args.FromLabel)
+        Assert.Equal(20, args.SampleCap)
+        Assert.False args.AsJson
+    | other -> Assert.Fail(sprintf "expected CheckFidelityFlow; got %A" other)
+    match (Command.planCheck cfg [ "fidelity"; "load-qa"; "--sample"; "5"; "--format"; "json" ]).Action with
+    | PlanAction.CheckFidelityFlow (_, _, args) ->
+        Assert.Equal(5, args.SampleCap)
+        Assert.True args.AsJson
+    | other -> Assert.Fail(sprintf "expected CheckFidelityFlow; got %A" other)
+
+[<Fact>]
+let ``check fidelity flow: every other reading refuses by name — model-sourced flow, unknown token, bare form, bad sample; a sql path keeps the canary`` () =
+    let cfg = ProjectionConfig.parse fidelityFlowJson |> mustOk
+    let codeOf (action: PlanAction) =
+        match action with
+        | PlanAction.Refused (exit, e) -> Some (exit, e.Code)
+        | _ -> None
+    // a flow that does not draw from a live environment
+    Assert.Equal(Some (2, "cli.check.fidelityFlowSource"), codeOf (Command.planCheck cfg [ "fidelity"; "publish" ]).Action)
+    // neither a flow nor a .sql path
+    Assert.Equal(Some (2, "cli.check.fidelityUnknownFlow"), codeOf (Command.planCheck cfg [ "fidelity"; "nope" ]).Action)
+    // the bare form names both readings
+    Assert.Equal(Some (2, "cli.check.fidelityArgs"), codeOf (Command.planCheck cfg [ "fidelity" ]).Action)
+    // a malformed sample cap
+    Assert.Equal(Some (2, "cli.check.fidelitySample"), codeOf (Command.planCheck cfg [ "fidelity"; "load-qa"; "--sample"; "many" ]).Action)
+    // the DDL round-trip canary's historical spelling is byte-identical
+    match (Command.planCheck cfg [ "fidelity"; "legacy.sql" ]).Action with
+    | PlanAction.CheckCanary ("legacy.sql", false) -> ()
+    | other -> Assert.Fail(sprintf "expected CheckCanary; got %A" other)
+    // and so is the bare `check <source.sql>` default arm
+    match (Command.planCheck cfg [ "source.sql" ]).Action with
+    | PlanAction.CheckCanary ("source.sql", false) -> ()
+    | other -> Assert.Fail(sprintf "expected CheckCanary; got %A" other)
+
+[<Fact>]
+let ``check fidelity flow: a config with no model refuses by name — the proof stands the model up`` () =
+    let cfg = ProjectionConfig.parse """
+{
+  "environments": { "cloud-dev": { "access": "direct", "conn": "env:CLOUD_DEV_CONN" }, "cloud-qa": { "access": "direct", "conn": "env:CLOUD_QA_CONN" } },
+  "flows": { "load-qa": { "from": "cloud-dev", "to": "cloud-qa" } }
+}
+"""
+              |> mustOk
+    match (Command.planCheck cfg [ "fidelity"; "load-qa" ]).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.check.fidelityNoModel", e.Code)
+    | other -> Assert.Fail(sprintf "expected the no-model refusal; got %A" other)
+
 [<Fact>]
 let ``the three canonical-form erasures are minted, named, and declared in force on the rows proof`` () =
     for t in FidelityCompareRun.tolerancesInForce do

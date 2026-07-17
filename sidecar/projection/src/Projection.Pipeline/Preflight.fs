@@ -611,12 +611,22 @@ module Preflight =
     /// refusal (fail-loud). The mandatory gate on every `--execute`: a caller
     /// assembles exactly the gates it has inputs for (connection + permission +
     /// tightening) and threads the result before any mutation.
-    let rec all (gates: Task<Result<unit>> list) : Task<Result<unit>> =
+    ///
+    /// The gates arrive as THUNKS (2026-07-17 — the B5 container-proof witness's
+    /// catch): the F# `task { }` CE is HOT, so a `Task<Result<unit>>` list
+    /// started every gate at CONSTRUCTION and two gates sharing one
+    /// `SqlConnection` raced it (the CDC probe against the connection
+    /// pre-flight's `SUSER_SNAME()` — a live sink read "endpoint is not
+    /// reachable" whenever the overlap landed; every prior Execute witness
+    /// passed `allowCdc=true`, which left the CDC gate inert and the race
+    /// unobserved). A thunk starts only after its predecessor completes —
+    /// "in order" is structural now, not a comment.
+    let rec all (gates: (unit -> Task<Result<unit>>) list) : Task<Result<unit>> =
         task {
             match gates with
             | [] -> return Ok ()
             | gate :: rest ->
-                match! gate with
+                match! gate () with
                 | Ok () -> return! all rest
                 | Error e -> return Error e
         }
@@ -835,12 +845,12 @@ module Preflight =
     /// composition collapses to ONE entry point while PRESERVING the per-gate
     /// exit codes. `all` is preserved unchanged for callers that only need the
     /// `Result<unit>`.
-    let rec allReporting (gates: Task<Result<unit>> list) : Task<Result<unit, GateRefusal>> =
+    let rec allReporting (gates: (unit -> Task<Result<unit>>) list) : Task<Result<unit, GateRefusal>> =
         task {
             match gates with
             | [] -> return Ok ()
             | gate :: rest ->
-                match! gate with
+                match! gate () with
                 | Ok () -> return! allReporting rest
                 | Error errors -> return Error (refusalOf errors)
         }

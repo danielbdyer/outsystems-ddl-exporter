@@ -1387,7 +1387,10 @@ module Transfer =
             // cannot join this pre-plan list, but they refuse through the same
             // `ValidationError` / `Preflight.refusalOf` seam. Only an Execute run
             // mutates the sink; DryRun previews without writing, so both gates skip.
-            let cdcGate : Task<Result<unit>> =
+            // The gates are THUNKS (2026-07-17, the Preflight.all amendment):
+            // a hot task list started both gates at construction and they
+            // raced the shared sink connection (CDC probe vs SUSER_SNAME).
+            let cdcGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
                         // NM-54 — an unverifiable CDC state is UNSAFE: a probe
@@ -1418,7 +1421,7 @@ module Transfer =
             // evaluation). The go board builds the SAME value.
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             let scope = TransferScope.create catalog writeOpts.LoadSet reconciledKinds
-            let spanningGate : Task<Result<unit>> =
+            let spanningGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute then
                         return! spanningPreflight source sink (plannedTransferWrites scope writeOpts.Emission catalog)
@@ -1874,6 +1877,14 @@ module Transfer =
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
+                    // WP-15 (2026-07-17, materialized parity) — the synthetic
+                    // leg's bulk load strips FK trust exactly as the ingested
+                    // one's does; snapshot before, restore after (Option C).
+                    let! preTrustedFks =
+                        task {
+                            if mode = Execute then return! TransferFkTrust.trustedFksOnLoadedTables sink catalog plan
+                            else return []
+                        }
                     let! writeOutcome =
                         task {
                             if mode <> Execute then return [], [], []
@@ -1887,6 +1898,8 @@ module Transfer =
                                     return! writePlan sink None catalog Set.empty plan false None
                         }
                     let writeSkips, laneDescents, _ = writeOutcome
+                    if mode = Execute then
+                        do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                     return
                         Result.success
                             { Mode                = mode
@@ -2663,7 +2676,10 @@ module Transfer =
         task {
             let diff = CatalogDiff.between sourceContract sinkContract
             let renamesByKind = RenameProjection.renames diff |> RenameProjection.renameMapByKind
-            let cdcGate : Task<Result<unit>> =
+            // The gates are THUNKS (2026-07-17, the Preflight.all amendment):
+            // a hot task list started both gates at construction and they
+            // raced the shared sink connection (CDC probe vs SUSER_SNAME).
+            let cdcGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
                         // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
@@ -2689,7 +2705,7 @@ module Transfer =
             // streaming arm never wipes, so Incremental verbs.
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             let scope = TransferScope.create sinkContract None reconciledKinds
-            let spanningGate : Task<Result<unit>> =
+            let spanningGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute then
                         return! spanningPreflight source sink (plannedTransferWrites scope EmissionMode.Incremental sinkContract)
@@ -2864,6 +2880,14 @@ module Transfer =
                         // that run only skipped/replayed journaled chunks and wrote
                         // nothing new, so deleting by captured key would destroy
                         // PRIOR-run committed rows — the one thing the undo must never do.
+                        // WP-15 (2026-07-17, materialized parity) — snapshot the
+                        // AS-DEPLOYED FK trust BEFORE the stream, exactly as the
+                        // materialized Option C does: the post-load restore
+                        // re-validates only the FKs the bulk load strips, so a
+                        // NoCheckFk decision (untrusted as-deployed) stays
+                        // preserved. Always on (the materialized default); the
+                        // throughput opt-out lever arrives with its first caller.
+                        let! preTrustedFks = TransferFkTrust.trustedFksOnLoadedTables sink sinkContract plan
                         let! streamed =
                             task {
                                 try
@@ -2877,6 +2901,13 @@ module Transfer =
                         match streamed with
                         | Error es -> return Result.failure es
                         | Ok (totals, skips, descents) ->
+                            // WP-15 — restore the trust the bulk load stripped
+                            // (`WITH CHECK CHECK CONSTRAINT`, one semi-join per
+                            // FK); a failed re-validation is a LOUD integrity
+                            // signal, never silent. The streaming realization no
+                            // longer exhibits `FkTrustNotRestoredOnBulkLoad`
+                            // unconditionally.
+                            do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                             let kinds =
                                 plan.Loads
                                 |> List.map (fun l ->

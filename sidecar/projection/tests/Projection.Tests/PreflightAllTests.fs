@@ -18,80 +18,44 @@ open Projection.Pipeline
 [<RequireQualifiedAccess>]
 module private Gate =
 
-    // The verbs hand `Preflight.all`/`allReporting` a list of `Task<Result<unit>>`
-    // — already-started (hot) tasks. The composition's guarantee is therefore
-    // about which gates it AWAITS (short-circuit = does not await the rest) and
-    // WHICH refusal it returns (the first). A hot `task { trace.Add … }` records
-    // its side effect at CONSTRUCTION, before the composition awaits anything, so
-    // a trace over hot tasks cannot witness short-circuit. To witness "did not
-    // await gate N" faithfully, the side effect that proves an await must live in
-    // a CONTINUATION gated on a trigger the harness releases in order — a
-    // `TaskCompletionSource` whose completion records into the trace. A gate the
-    // composition never awaits is never released, so its name never lands in the
-    // trace even though the task object exists.
+    // 2026-07-17 — `Preflight.all`/`allReporting` take THUNKS now (the B5
+    // container-proof witness caught the hot-task contract racing two gates
+    // on one `SqlConnection`; "in order" is structural since the amendment).
+    // The harness simplifies with it: a thunk's trace entry records at
+    // INVOCATION — the moment the composition runs the gate — so the trace
+    // directly witnesses exactly the gates the composition ran, in order,
+    // and a short-circuited gate's name never lands in it. The
+    // `TaskCompletionSource` release machinery the hot-task contract forced
+    // (a hot `task { trace.Add … }` recorded at CONSTRUCTION, so a plain
+    // trace could not witness short-circuit) is gone with the hazard.
 
-    /// A cold gate paired with a release trigger. `Task` is what the composition
-    /// awaits; `Release` completes it (recording into the trace) and is only
-    /// invoked by the harness when the composition reaches that gate.
-    type Pending =
-        {
-            Task    : Task<Result<unit>>
-            Release : unit -> unit
-        }
+    /// A cold gate: nothing runs, and nothing lands in the trace, until the
+    /// composition invokes it.
+    type Pending = unit -> Task<Result<unit>>
 
-    let private pending
-        (trace: System.Collections.Generic.List<string>)
-        (name: string)
-        (outcome: Result<unit>)
-        : Pending =
-        let tcs = System.Threading.Tasks.TaskCompletionSource<Result<unit>>()
-        { Task = tcs.Task
-          Release = fun () ->
-              trace.Add name
-              tcs.SetResult outcome }
-
-    /// A gate that passes — completes `Ok ()` when released.
+    /// A gate that passes — records its name when the composition runs it.
     let pass (trace: System.Collections.Generic.List<string>) (name: string) : Pending =
-        pending trace name (Ok ())
+        fun () ->
+            trace.Add name
+            Task.FromResult (Ok ())
 
-    /// A gate that refuses with the given `ValidationError.Code` when released.
+    /// A gate that refuses with the given `ValidationError.Code` when run.
     let refuse
         (trace: System.Collections.Generic.List<string>)
         (name: string)
         (code: string)
         : Pending =
-        pending trace name (Result.failureOf (ValidationError.create code (sprintf "%s refused" name)))
-
-    /// Run the composition over the pending gates, releasing each gate just
-    /// before the composition would await it. Because a never-awaited gate is
-    /// never released, the trace records EXACTLY the gates the composition
-    /// awaited, in order. Returns the composition's result.
-    let private driveWith
-        (compose: Task<Result<unit>> list -> Task<'r>)
-        (gates: Pending list)
-        : 'r =
-        let composed = compose (gates |> List.map (fun g -> g.Task))
-        let rec pump (remaining: Pending list) =
-            if composed.IsCompleted then ()    // short-circuited: stop releasing.
-            else
-                match remaining with
-                | [] -> ()
-                | g :: rest ->
-                    g.Release()
-                    // Let the awaiting continuation advance before deciding
-                    // whether the composition has short-circuited.
-                    composed.Wait(1000) |> ignore
-                    pump rest
-        pump gates
-        composed.GetAwaiter().GetResult()
+        fun () ->
+            trace.Add name
+            Task.FromResult (Result.failureOf (ValidationError.create code (sprintf "%s refused" name)))
 
     /// Drive `Preflight.allReporting` over pending gates.
     let driveReporting (gates: Pending list) : Result<unit, Preflight.GateRefusal> =
-        driveWith Preflight.allReporting gates
+        (Preflight.allReporting gates).GetAwaiter().GetResult()
 
     /// Drive `Preflight.all` over pending gates.
     let driveAll (gates: Pending list) : Result<unit> =
-        driveWith Preflight.all gates
+        (Preflight.all gates).GetAwaiter().GetResult()
 
 // -- Composition: ordering + short-circuit (G0 — `all` runs in order) ---------
 

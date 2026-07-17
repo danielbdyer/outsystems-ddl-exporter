@@ -235,6 +235,27 @@ module internal ReverseLegFixtures =
                 IsActive = true; ExtendedProperties = [] } ] []
         |> Result.value
 
+    /// The PHYSICAL-rendition seed (OSUSR_L3_*) — the container proof's live
+    /// source (wave B5): the same rows as `seedClean`, the same colliding
+    /// key spaces (every ID from 1000, so a compare that ignored the
+    /// journal's remap would mismatch every key and every FK cell).
+    let physicalSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_CUSTOMER] ON; " +
+        "INSERT INTO [dbo].[OSUSR_L3_CUSTOMER] ([ID],[EMAIL]) VALUES (1000,N'alice@x'),(1001,N'bob@x'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_CUSTOMER] OFF; " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_ACCOUNT] ON; " +
+        "INSERT INTO [dbo].[OSUSR_L3_ACCOUNT] ([ID],[CUSTOMER_ID],[ACCNAME]) VALUES " +
+        "(1000,1000,N'acc-a1'),(1001,1000,N'acc-a2'),(1002,1001,N'acc-b1'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_ACCOUNT] OFF; " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_INVOICE] ON; " +
+        "INSERT INTO [dbo].[OSUSR_L3_INVOICE] ([ID],[ACCOUNT_ID],[CUSTOMER_ID],[REF]) VALUES " +
+        "(1000,1000,1000,N'inv-1'),(1001,1001,NULL,N'inv-2'),(1002,1002,1001,N'inv-3'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_INVOICE] OFF; " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] ON; " +
+        "INSERT INTO [dbo].[OSUSR_L3_PAYMENT] ([ID],[INVOICE_ID],[ACCOUNT_ID],[PAYREF]) VALUES " +
+        "(1000,1000,1000,N'pay-1'),(1001,1001,1001,N'pay-2'),(1002,1002,1002,N'pay-3'),(1003,1000,1000,N'pay-4'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] OFF;"
+
     /// VP's manager (CEO, 1002) lands AFTER VP in PK order — a forward
     /// reference only Phase 2 can satisfy; Ghost's manager (9999) does not
     /// exist — the named phase-2 erasure (the row stands, the reference is
@@ -509,6 +530,57 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         try System.IO.File.Delete sinkFile with _ -> ()
                         try if System.IO.Directory.Exists journalDir then System.IO.Directory.Delete(journalDir, true) with _ -> ()
                 })
+
+    // ------------------------------------------------------------------
+    // Wave B5 — THE CONTAINER PROOF: `check fidelity <flow>`'s whole walk
+    // (T17 executable at the face). Scaffold a per-run stand-in, load it
+    // through the journaled transfer, prove the load row-faithful modulo
+    // the recorded interventions, reap. The estate is the LE-3 shape —
+    // every PK sink-minted, an FK chain + diamond, colliding key spaces —
+    // so a green verdict PROVES the ledger-modulated replay end to end
+    // (an un-replayed compare would mismatch every key and FK cell).
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member _.``B5 container proof: the fidelity flow's engine walk — green on the faithful machine; an FK-orphan source row reads exit 5 with the row named missing`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "B5Proof") then () else
+        let model = ReverseLegFixtures.authoredModel
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "B5ProofSrc" (fun src srcConnStr ->
+                task {
+                    // The proof's live source: the model's PHYSICAL shape,
+                    // seeded with the colliding-key-space rows.
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
+                    let run () =
+                        Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false }
+                    try
+                        // GREEN — the machinery is faithful: every minted key
+                        // and every FK cell translates through the journal;
+                        // every row reads byte-identical.
+                        Assert.Equal(0, run ())
+                        Assert.True(System.IO.File.Exists "fidelity.rows.json", "the proof writes its artifact")
+                        let journals =
+                            System.IO.Directory.GetFiles(System.IO.Path.Combine("fidelity-proof", "b5-proof"), "transfer-*.ndjson")
+                        Assert.True(journals.Length = 1, "the proof records exactly one intervention ledger")
+                        // RESIDUAL — an FK-orphan source row is a NAMED erasure:
+                        // the load drops it (skip-and-diagnose), the compare
+                        // names it missing in the stand-in, and the verdict is
+                        // exit 5 — never a silent pass.
+                        do! Deploy.executeBatch src
+                                ("ALTER TABLE [dbo].[OSUSR_L3_PAYMENT] NOCHECK CONSTRAINT ALL; " +
+                                 "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] ON; " +
+                                 "INSERT INTO [dbo].[OSUSR_L3_PAYMENT] ([ID],[INVOICE_ID],[ACCOUNT_ID],[PAYREF]) VALUES (1099,9999,1000,N'pay-orphan'); " +
+                                 "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] OFF;")
+                        Assert.Equal(5, run ())
+                    finally
+                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                        try
+                            if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true)
+                        with _ -> ()
+                }))
 
     [<Fact>]
     member _.``6.A.2 lifted on the reverse leg: a self-FK IDENTITY kind loads B->A — the forward manager reference resolves in phase 2 and the orphan manager is a NAMED erasure`` () =

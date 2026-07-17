@@ -28418,3 +28418,93 @@ the Run codec round-trip with the path field. Docker: the LE-3 apparatus canary 
 WipeAndLoad leg JOURNALED — every kind's pairs recorded (the no-FK-target kind included, the
 fast-lane stand-down), `loadReplayMaps` folds them, and the re-run's truncated journal carries
 only the second run's fresh mints (counts hold, assigned-key sets disjoint).
+
+## 2026-07-17 — B5 lands: `check fidelity <flow>`, the container proof — T17 executable at the operator's fingertips
+
+**Context.** Phase 2 of the loop-closing program closes. The original request's second half —
+"the entire data migration will be provable … every row in the target database after applying
+the FKs [is] byte-identical, excepting and removing for where it's a known row intervention" —
+now has its one-command vehicle beside the manual two-connection check (`check data --rows`).
+
+**Decisions:**
+
+1. **The verb.** `projection check fidelity <flow>` — flow-map membership tested BEFORE the
+   `.sql`-path default arm (the 2026-07-15 decision-4 law): a flow runs the proof; a `.sql`
+   path keeps the DDL round-trip canary byte-identically; anything else refuses naming both
+   readings (`cli.check.fidelityUnknownFlow`). A flow not drawing from a live environment
+   refuses (`cli.check.fidelityFlowSource`); a model-less config refuses
+   (`cli.check.fidelityNoModel`); `--sample N` / `--format json` ride as on the manual check.
+   Exits: 0 proof green · 5 differing rows, named · 6 unreadable/refused scaffold · 4 Docker
+   absent (the deploy face's gate, `docker.unavailable`).
+2. **The walk.** `Deploy.withScratchDatabase` (NEW — the per-run scratch handed as a
+   CONNECTION STRING; `withBootstrappedDatabase`'s creation and reap, one teardown definition
+   `reapDatabase` under both): stand the TARGET's shape up on the scratch — the model's
+   LOGICAL rendition, what the cutover would deploy (the comparator's after-side contract) →
+   load it through the transfer machinery — journaled WipeAndLoad ACROSS the rendition gap
+   (source contract = the physical rendition, sink contract = the logical; the rename-aware
+   leg the LE-3 canaries prove, mirrored), FKs re-trusted ("after applying the FKs") →
+   `FidelityCompareRun.run` source-vs-stand-in, aligned by the model, modulo the journal's
+   recorded interventions → reap. Model-rendered contracts on BOTH sides are the proof's
+   precondition: the journal's SsKeys are the model's own (rendition-invariant), so the
+   replay translates; a live-read contract would synthesize keys the replay could never
+   match.
+3. **The register.** The proof writes only to its OWN reaped scratch and its artifacts
+   (`fidelity.rows.json`; the journal under `fidelity-proof/<flow>/`), so it rides ReadOnly —
+   the check family's no-ledger-append contract holds — and calls the transfer ENGINE
+   directly with the verb's own Replace greenlight (the operator gate guards operator
+   substrates; a stand-in the verb creates and drops is not one). The run aggregate records
+   the proof's `JournalRef` (B4a), so `--interventions @runId` can replay the exact proof.
+4. **Named simplifications (v1), each with its trigger.** (a) The stand-in carries the
+   model's DECLARED physical shape — config shaping (renames / policy overlay) is not
+   projected onto it; the trigger is the first estate whose flow-target shape diverges from
+   the declared rendition. (b) The leveled-seed leg does not run: the proof's wipe-and-load
+   replaces every seeded row with the source's, so the seed's state contribution is void
+   here; the seed-executes-cleanly proof belongs to the publish rehearsal (deploy-docker /
+   migrate), and `executeLeveledSeed` joins when the proof grows the flow's merge posture.
+   (c) The flow's reconcile/subset posture is not exercised — the proof runs the full
+   straight load; reconcile re-keys prove against the LIVE sink via `check data --rows`.
+5. **WP-15 lands (materialized parity).** The streaming and synthetic realizations now
+   snapshot-and-restore FK trust exactly as the materialized Option C does — the
+   `FkTrustNotRestoredOnBulkLoad` tolerance is no longer exhibited unconditionally on those
+   paths. Always on (the materialized default); the throughput opt-out lever arrives with its
+   first caller.
+6. **WP-12 and WP-13 defer BACK to the SSDT campaign's handoff, by evidence.** Both sit on
+   the emission plane and both fail LOUD today on the proof's path, so the proof cannot lie:
+   an unresolved dependency cycle refuses the load by name (`transfer.loadOrderUnproven`)
+   and fails the scaffold's linear apply with the server's own missing-referent error (the
+   emitted stream is topo-ordered with inline FKs; under the alphabetical fallback the
+   in-cycle members forward-reference — the WP-13 fix needs BOTH the SCC-condensation order
+   and the in-cycle FK split into trailing ALTERs); a composite-PK FK target is named
+   (`CompositePkFkUnreflected` + the estate's `emission.compositePkFk` finding) before any
+   silent first-leg emission matters to a proof run. Trigger: the terminus operator walk on
+   the fixture estate — if the walk trips either, it lands then; otherwise they stay
+   sequenced on SSDT_REMEDIATION_HANDOFF Tier 4 where they originated.
+
+**Witnesses.** Pure: the routing facts (flow → proof with model + default cap; model-sourced
+flow / unknown token / bare form / bad sample each refused by name; `.sql` keeps the canary on
+both spellings). Docker: the B5 engine walk on the LE-3 estate (every PK sink-minted, an FK
+chain + diamond, colliding key spaces — a compare that ignored the journal would mismatch
+every key and FK cell): GREEN end to end, the artifact written, exactly one intervention
+ledger recorded; then an FK-orphan source row reads exit 5 with the dropped row named missing
+— never a silent pass.
+
+## 2026-07-17 — Preflight.all takes thunks: the hot-gate race the container proof caught
+
+**Context.** The B5 witness ran the first Execute in the suite's history with
+`allowCdc = false` against a live sink — and deterministically read "endpoint is not
+reachable" on a database it had just written schema into. The cause is the F# `task { }` CE
+being HOT: `Preflight.all` took `Task<Result<unit>> list`, so every gate STARTED at
+construction, and `runCore`'s CDC gate raced its spanning gate on the one shared sink
+`SqlConnection` (SqlClient forbids concurrent commands). Every prior Execute witness passed
+`allowCdc = true`, which left the CDC gate inert and the race unobserved; the migrate face had
+even hand-sequenced around the same hazard ("the permission gate sequences on the connection
+gate's task … so the two probes never run concurrently").
+
+**The decision.** `Preflight.all` and `allReporting` take `(unit -> Task<Result<unit>>) list`
+— gate N starts only after gate N−1 completes; "runs them in order" is structural now, not a
+comment. The three call sites (runCore, the streaming realization, the migrate face) convert
+their gates to thunks; the migrate face's hand-sequencing is deleted (the contract carries
+it). The G0 law tests simplify with it: a thunk's trace entry records at INVOCATION, so the
+short-circuit witness no longer needs the TaskCompletionSource release harness the hot-task
+contract forced. Composition semantics (in-order, first-refusal short-circuit, the
+`code → (exit, label)` reporting) are byte-identical.

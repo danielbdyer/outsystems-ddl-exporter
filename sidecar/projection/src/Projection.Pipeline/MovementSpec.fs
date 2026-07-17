@@ -655,6 +655,15 @@ type PlanAction =
     /// logical shape, and name every differing row by its key. Payload
     /// reified to a record from birth.
     | CheckDataRows of args: CheckDataRowsArgs
+    /// `check fidelity <flow>` — THE CONTAINER PROOF (T17, wave B5): scaffold
+    /// a per-run database on the local container, stand the model's physical
+    /// shape up on it, load it through the flow's transfer machinery
+    /// (journaled wipe-and-load, FKs re-trusted), prove the load row-faithful
+    /// against the flow's live source modulo the journal's recorded
+    /// interventions, and reap the stand-in. The model rides the
+    /// `needCatalog` seam (live-OSSYS primary, file fallback) like every
+    /// model-bearing action.
+    | CheckFidelityFlow of model: ModelSource * modelOssys: string option * args: CheckFidelityFlowArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -788,8 +797,23 @@ and CheckDataRowsArgs =
       AsJson      : bool
       /// The intervention ledger's path (`--interventions <journal>`, wave
       /// B4b) — a transfer journal file, or the `--journal` directory that
-      /// holds exactly one. `None` claims strict byte-identity.
+      /// holds exactly one; `@runId` resolves through the run store's
+      /// recorded `JournalRef` (wave B4a). `None` claims strict byte-identity.
       Interventions : string option }
+
+/// The container proof's operands (`check fidelity <flow>`, wave B5): the
+/// flow, its live source (the estate being proven), the named-difference cap,
+/// and the output form. The model arrives separately on the `PlanAction`
+/// (the `needCatalog` seam).
+and CheckFidelityFlowArgs =
+    { Flow       : string
+      /// The flow's `from` environment — the proof's source of truth.
+      FromLabel  : string
+      SourceConn : string
+      /// `--sample N` — the cap on NAMED differences per kind (the totals
+      /// stay exact); the `check data --rows` default.
+      SampleCap  : int
+      AsJson     : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

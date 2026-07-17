@@ -2395,8 +2395,66 @@ module Command =
                               RepairBandByEntity = rs.RepairBandByEntity
                               Since       = sinceRun
                               Tightening  = cfg.Shaping.Policy.Tightening }
+            | "fidelity" :: rest ->
+                // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15
+                // decision 4 — one fidelity concept, file-source and
+                // estate-source): flow-map membership is tested BEFORE the
+                // `.sql`-path default arm. A positional naming a flow runs the
+                // proof; a `.sql` path keeps the DDL round-trip canary
+                // byte-identically; anything else refuses naming both readings.
+                let positionals =
+                    let rec walk (a: string list) =
+                        match a with
+                        | [] -> []
+                        | f :: _ :: tl when f = "--format" || f = "--sample" -> walk tl
+                        | f :: tl when f.StartsWith "--" -> walk tl
+                        | f :: tl -> f :: walk tl
+                    walk rest
+                let sampleCap : Result<int> =
+                    match valueOf "--sample" with
+                    | None -> Result.success 20
+                    | Some raw ->
+                        (match System.Int32.TryParse raw with
+                         | true, n when n > 0 -> Result.success n
+                         | _ -> Result.failureOf (err "cli.check.fidelitySample" (sprintf "projection check fidelity: --sample needs a positive whole number; '%s' is not one." raw)))
+                (match positionals with
+                 | [ sub ] when Map.containsKey sub cfg.Flows ->
+                     let flow = Map.find sub cfg.Flows
+                     let modelOssys = cfg.Shaping.Model.Ossys
+                     let modelSource =
+                         match cfg.Shaping.Model.Path with
+                         | Some m -> ModelSource.ModelFile m
+                         | None   -> ModelSource.Unspecified
+                     if modelSource = ModelSource.Unspecified && Option.isNone modelOssys then
+                         PlanAction.Refused (2, err "cli.check.fidelityNoModel" "projection check fidelity: no model is configured (set `model` or `model.ossys` in projection.json) — the proof stands the authored model up as the container stand-in.")
+                     else
+                         (match flow.From with
+                          | FlowSource.Env envName ->
+                              (match resolveLiveConn cfg envName, sampleCap with
+                               | Ok conn, Ok cap ->
+                                   PlanAction.CheckFidelityFlow
+                                       (modelSource, modelOssys,
+                                        { Flow       = sub
+                                          FromLabel  = envName
+                                          SourceConn = conn
+                                          SampleCap  = cap
+                                          AsJson     = (valueOf "--format" = Some "json") })
+                               | Error es, _ -> PlanAction.Refused (6, List.head es)
+                               | _, Error es -> PlanAction.Refused (2, List.head es))
+                          | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
+                              PlanAction.Refused (2, err "cli.check.fidelityFlowSource" (sprintf "projection check fidelity: flow '%s' does not draw from a live environment — the proof loads the flow's live source into the container stand-in. Name a flow whose `from` is an environment." sub)))
+                 | [ sub ] when sub.EndsWith ".sql" ->
+                     // the DDL round-trip canary's historical spelling
+                     // (`check fidelity <source.sql>`) — byte-identical routing.
+                     PlanAction.CheckCanary (sub, List.contains "--cdc-silence" rest)
+                 | [ sub ] ->
+                     PlanAction.Refused (2, err "cli.check.fidelityUnknownFlow" (sprintf "projection check fidelity: '%s' is neither a flow in projection.json nor a .sql source path." sub))
+                 | [] ->
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
+                 | _ ->
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--format json])."))
             | _ ->
-                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
                 | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
         { Notes = []; Action = action }
