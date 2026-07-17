@@ -177,6 +177,7 @@ module CatalogCodec =
          // category-blind "TemporalLit" still READS (classified by the
          // canonical raw shape — see rSqlLiteral).
          | SqlLiteral.DateTimeLit r   -> jw.WriteString("kind", "DateTimeLit"); jw.WriteString("value", r)
+         | SqlLiteral.DateTimeOffsetLit r -> jw.WriteString("kind", "DateTimeOffsetLit"); jw.WriteString("value", r)
          | SqlLiteral.DateLit r       -> jw.WriteString("kind", "DateLit");     jw.WriteString("value", r)
          | SqlLiteral.TimeLit r       -> jw.WriteString("kind", "TimeLit");     jw.WriteString("value", r)
          | SqlLiteral.GuidLit r       -> jw.WriteString("kind", "GuidLit");     jw.WriteString("value", r)
@@ -588,6 +589,7 @@ module CatalogCodec =
             | "TextLit"     -> field el "value" asString |> Result.map SqlLiteral.TextLit
             // WP-17(d) — the category-bearing temporal kinds.
             | "DateTimeLit" -> field el "value" asString |> Result.map SqlLiteral.DateTimeLit
+            | "DateTimeOffsetLit" -> field el "value" asString |> Result.map SqlLiteral.DateTimeOffsetLit
             | "DateLit"     -> field el "value" asString |> Result.map SqlLiteral.DateLit
             | "TimeLit"     -> field el "value" asString |> Result.map SqlLiteral.TimeLit
             // Pre-WP-17 artifacts wrote one category-blind "TemporalLit";

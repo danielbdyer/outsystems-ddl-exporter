@@ -64,6 +64,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             CdcAware = false
             DeleteScope = None
             RowSource = MergeRowSource.InlineValues
+            CastCompareColumns = Map.empty
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -112,6 +113,7 @@ let private mergeArgs (deleteScope: DeleteScope option) : MergeBuildArgs =
         CdcAware    = false
         DeleteScope = deleteScope
         RowSource   = MergeRowSource.InlineValues
+        CastCompareColumns = Map.empty
     }
 
 // ---------------------------------------------------------------------------
@@ -364,3 +366,34 @@ let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
     Assert.Contains(
         "WHEN NOT MATCHED BY SOURCE AND [Target].[Tenant] = 7 AND [Target].[Name] = N'a' THEN DELETE",
         normalized)
+
+// ---------------------------------------------------------------------------
+// WP-17(c) (DECISIONS 2026-07-16) — an `xml` column has no `<>` operator; its
+// change-detect compare CASTs both sides to NVARCHAR(MAX) (content-level).
+// Without the guard, a CDC-enabled xml-bearing kind emitted an uncompilable
+// `Target.[c] <> Source.[c]` — the S5 latent MERGE error.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17c: a cast-compare column's change-detect arm CASTs both sides; plain columns stay bare`` () =
+    let args : MergeBuildArgs =
+        {
+            Target      = mkTable "dbo" "Doc"
+            AllColumns  = [ "Id"; "Payload"; "Name" ]
+            PkColumns   = [ "Id" ]
+            UpdColumns  = [ "Payload"; "Name" ]
+            Rows        =
+                [ [ SqlLiteral.ofRaw Integer (Some "1")
+                    SqlLiteral.ofRaw Text (Some "<a/>")
+                    SqlLiteral.ofRaw Text (Some "x") ] ]
+            CdcAware    = true
+            DeleteScope = None
+            RowSource   = MergeRowSource.InlineValues
+            CastCompareColumns = Map.ofList [ ("Payload", CastToNVarCharMax) ]
+        }
+    let sql = renderMerge args
+    Assert.Contains("CAST ([Target].[Payload] AS NVARCHAR (MAX)) <> CAST ([Source].[Payload] AS NVARCHAR (MAX))", sql)
+    Assert.Contains("[Target].[Name] <> [Source].[Name]", sql)
+    Assert.DoesNotContain("[Target].[Payload] <> [Source].[Payload]", sql)
+    // The null arms stay bare (IS NULL is legal on xml).
+    Assert.Contains("[Target].[Payload] IS NULL", sql)

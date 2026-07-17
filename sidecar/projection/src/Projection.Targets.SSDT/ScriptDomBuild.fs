@@ -343,6 +343,8 @@ module ScriptDomBuild =
         // CDC-silence is unchanged (audit §5c).
         | DateTimeLit raw ->
             temporalCast raw SqlDataTypeOption.DateTime2 (Some 7)
+        | DateTimeOffsetLit raw ->
+            temporalCast raw SqlDataTypeOption.DateTimeOffset (Some 7)
         | DateLit raw ->
             temporalCast raw SqlDataTypeOption.Date None
         | TimeLit raw ->
@@ -901,6 +903,36 @@ module ScriptDomBuild =
         cmp.SecondExpression <- qualifiedColumnRef sourceAlias col :> ScalarExpression
         cmp
 
+    /// WP-17(c) — the cast-compare value-mismatch arm for columns whose
+    /// type has no `<>` operator (`xml` + the legacy LOBs `image`/`text`/
+    /// `ntext`): both sides cast to the type's legal MAX target before
+    /// the compare (content-level equality — the server re-serializes
+    /// xml on storage, so byte identity is not a server-preserved
+    /// property to begin with; the LOBs never supported comparison).
+    let private columnInequalityCastCompare (target: ChangeCompareCast) (sourceAlias: string) (col: string) : BooleanComparisonExpression =
+        let option =
+            match target with
+            | CastToNVarCharMax  -> SqlDataTypeOption.NVarChar
+            | CastToVarCharMax   -> SqlDataTypeOption.VarChar
+            | CastToVarBinaryMax -> SqlDataTypeOption.VarBinary
+        let castSide (alias: string) : ScalarExpression =
+            let dt = SqlDataTypeReference()
+            dt.SqlDataTypeOption <- option
+            dt.Name <- SchemaObjectName()
+            dt.Name.Identifiers.Add(bracketed (string option))
+            let mx = MaxLiteral()
+            mx.Value <- "MAX"
+            dt.Parameters.Add(mx)
+            let cast = CastCall()
+            cast.DataType <- dt
+            cast.Parameter <- qualifiedColumnRef alias col :> ScalarExpression
+            cast :> ScalarExpression
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
+        cmp.FirstExpression <- castSide "Target"
+        cmp.SecondExpression <- castSide sourceAlias
+        cmp
+
     /// Build a `<expr> IS [NOT] NULL` boolean expression.
     let private isNullCheck (alias: string) (col: string) (negate: bool) : BooleanIsNullExpression =
         let n = BooleanIsNullExpression()
@@ -938,8 +970,16 @@ module ScriptDomBuild =
     /// Per chapter 4.1.B slice β + pre-scope §6: nullable-aware, since
     /// `NULL <> NULL` is `UNKNOWN` in SQL. The three OR-branches cover
     /// value-mismatch + null-asymmetry both ways.
-    let private perColumnChangeDetection (sourceAlias: string) (col: string) : BooleanExpression =
-        let valueDiff = columnInequality sourceAlias col :> BooleanExpression
+    let private perColumnChangeDetection (castCompare: Map<string, ChangeCompareCast>) (sourceAlias: string) (col: string) : BooleanExpression =
+        // WP-17(c) — the value-mismatch arm dispatches on comparability:
+        // a cast-compare column (`xml`/`image`/`text`/`ntext`) compares
+        // via its legal MAX-cast target; the null arms below are
+        // type-agnostic (`IS NULL` is legal on all of them) and stay
+        // shared.
+        let valueDiff =
+            match Map.tryFind col castCompare with
+            | Some target -> columnInequalityCastCompare target sourceAlias col :> BooleanExpression
+            | None -> columnInequality sourceAlias col :> BooleanExpression
         let targetNullSourceNot =
             boolBinary
                 BooleanBinaryExpressionType.And
@@ -962,9 +1002,9 @@ module ScriptDomBuild =
     /// `WHERE (...)` (set-based UPDATE) is well-grouped under ScriptDom's
     /// emission rules. `sourceAlias` selects the joined source (`Source`
     /// for the MERGE, `src` for the `UPDATE … FROM #temp`).
-    let private changeDetectionPredicate (sourceAlias: string) (updColumns: string list) : BooleanExpression =
+    let private changeDetectionPredicate (castCompare: Map<string, ChangeCompareCast>) (sourceAlias: string) (updColumns: string list) : BooleanExpression =
         updColumns
-        |> List.map (perColumnChangeDetection sourceAlias)
+        |> List.map (perColumnChangeDetection castCompare sourceAlias)
         |> foldBool BooleanBinaryExpressionType.Or
         |> boolParen
 
@@ -1042,7 +1082,7 @@ module ScriptDomBuild =
             let matchedClause = MergeActionClause()
             matchedClause.Condition <- MergeCondition.Matched
             if args.CdcAware then
-                matchedClause.SearchCondition <- changeDetectionPredicate "Source" args.UpdColumns
+                matchedClause.SearchCondition <- changeDetectionPredicate args.CastCompareColumns "Source" args.UpdColumns
             matchedClause.Action <- updateAction
             spec.ActionClauses.Add(matchedClause)
 
@@ -1351,7 +1391,10 @@ module ScriptDomBuild =
         // not cdcAware or there are no SET columns (the unconditional re-point).
         if cdcAware && not (List.isEmpty setCols) then
             let where = WhereClause()
-            where.SearchCondition <- changeDetectionPredicate "src" setCols
+            // The Phase-2 re-point UPDATE sets FK columns only (never a
+            // comparison-less LOB/xml) — no cast-compare columns here
+            // (WP-17(c)).
+            where.SearchCondition <- changeDetectionPredicate Map.empty "src" setCols
             spec.WhereClause <- where
         let stmt = UpdateStatement()
         stmt.UpdateSpecification <- spec

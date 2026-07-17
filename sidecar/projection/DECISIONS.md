@@ -28254,3 +28254,59 @@ Text cell renders `CHAR(13)/CHAR(10)/CHAR(9)` with NO raw control bytes in the r
 **Scope notes.** Exactly V1's escape set (CR/LF/TAB) — other C0 controls pass through inside
 runs, as V1. The round-trip fixture for control-char text (deploy → read back → value equality)
 belongs to WP-17(f)'s fixture backlog with the other unwitnessed types.
+
+## 2026-07-16 — WP-17(a–c) + (f): faithful carriage for the collapsing scalars — value-driven, no new carrier — and the gallery canary that widened S5
+
+**Decision (packet C11; audit S1/S2/S5; the §9-mandated design constraint honored: the
+raw-string / CDC-silent codec stays).** The four unfaithful collapses become faithful WITHOUT
+object-carriage or a tenth `PrimitiveType`: the RAW STRING carries the concrete value, and the
+boundaries dispatch on the raw's SHAPE — the 9-way semantic category stands everywhere.
+
+- **(a) `float`/`real`.** READ: `ReadSide.formatRawValue`'s Decimal arm type-switches on the
+  boxed runtime value — `double → G17`, `single → G9` (V1's exact round-trip formats) — before
+  the old `Convert.ToDecimal` (which truncated to ~15 digits and OVERFLOWED above ≈7.9E28).
+  WRITE: `Bulk.parseRaw`'s Decimal arm dispatches on scientific notation — an exponent-bearing
+  raw parses as the exact IEEE `double` (SqlBulkCopy converts to the float/real column
+  faithfully); plain digit runs keep the exact `decimal` parse (decimal-family columns; a
+  G17 form without an exponent carries ≤17 significant digits, which decimal holds exactly and
+  the column's nearest-double conversion recovers). The seed literal needed nothing: `DecimalLit`
+  is raw pass-through and `NumericLiteral` accepts E-notation (a legal T-SQL float literal).
+- **(b) `datetimeoffset`.** A new canonical raw form (`RawValueCodec.DateTimeOffsetFormat` =
+  `yyyy-MM-dd HH:mm:ss.fffffff zzz`; `formatDateTimeOffset`/`parseDateTimeOffset`; the offset
+  is PRESERVED, never UTC-normalized) + the shape detector `hasUtcOffset` (a `±HH:mm` suffix —
+  disjoint from every offset-less canonical form by construction). READ: the DateTime arm
+  type-switches on a boxed `DateTimeOffset` — retiring the S2 READBACK THROW
+  (`Convert.ToDateTime` refuses `DateTimeOffset`). LITERAL: `SqlLiteral.DateTimeOffsetLit`
+  (`ofRaw` dispatches on the shape) renders `CAST('… ±HH:mm' AS datetimeoffset(7))` on both
+  planes — an offset-bearing string cast to `datetime2` refuses on SQL Server, so the shape
+  MUST own its CAST target. WRITE: `Bulk.parseRaw` boxes the exact `DateTimeOffset`. Codec
+  writes/reads the new kind (old artifacts cannot carry offsets — the collapse dropped them,
+  so no legacy classifier change).
+- **(c) the comparison-less types — and the canary's discovery.** `xml` has no `<>` operator,
+  so a CDC-enabled xml kind's change-detect predicate was an UNCOMPILABLE MERGE (S5). The
+  first run of the (f) gallery canary then widened the class LIVE: **`image` (and by the same
+  SQL rule `text`/`ntext`) refuse `<>` identically** ("The data types image and varbinary are
+  incompatible in the not equal to operator"). The guard: `MergeBuildArgs.CastCompareColumns :
+  Map<string, ChangeCompareCast>` (closed DU — `xml`/`ntext` → NVARCHAR(MAX), legacy `text` →
+  VARCHAR(MAX), `image` → VARBINARY(MAX): the cast target is per-type because `image` cannot
+  cast to nvarchar) — computed at `MergeRender` from the attributes' storage evidence; only the
+  value-mismatch arm casts (`IS NULL` is legal on all of them); kinds without such columns emit
+  byte-identical predicates. Xml carriage itself: faithful TEXT content (V1 parity, `N'…'`
+  implicit-converts on insert); the server's re-serialization is SERVER behavior — content
+  equality is the deliberate semantic, named here.
+- **(f) the fixture backlog.** `ScalarCarriageRoundTripTests` (Docker): ONE gallery kind
+  carrying every contested column (float w/ `Double.MaxValue`, real, `datetimeoffset(7)` w/
+  `-03:00`, xml, money, smalldatetime, image, control-char text), CDC-ENABLED so the S5
+  predicate is in the executed SQL — DacFx-publishes the storage-lane DDL, executes the
+  composed seed MERGE TWICE (compile + idempotence), and server-side compares every value
+  (offset verbatim via style 121; xml via `.value()` content probes; the CHAR() splice equals
+  the raw-control-char literal). The audit §8 UNWITNESSED rows (Float/Real/DateTimeOffset/
+  Xml/Money/SmallDateTime/Image + control-char text) are now Docker-proven.
+
+**Named residuals.** The evidence plane (`CachedValue`) refuses loud on the new raw shapes if
+they ever reach profiling (float/dtoffset columns are DBA/External; static-kind overlap is nil
+— re-open if a real estate profiles one). The migrate/ALTER lens and the reverse-leg readers
+did not change (the READ formatter fix covers the shared `ReadSide` row path; `typedCellFormatter`'s
+fast paths fall back to the fixed generic arm for the exotic field types). `SmallDateTime`
+carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
+DECISIONS 2026-07-16 — WP-17(a–c,f).

@@ -64,6 +64,16 @@ type SqlLiteral =
     /// Time literal — the raw TimeSpan `c` form per `RawValueCodec
     /// .TimeFormat`. Rendered as `CAST('<raw>' AS time(7))` (V1 parity).
     | TimeLit of raw: string
+    /// WP-17(b) (DECISIONS 2026-07-16) — OFFSET-BEARING datetime literal
+    /// for `datetimeoffset` columns (DBA/External only). The raw carries
+    /// the signed offset (`RawValueCodec.DateTimeOffsetFormat`);
+    /// rendered as `CAST('<raw>' AS datetimeoffset(7))` (V1's
+    /// test-witnessed form) — casting an offset-bearing string to
+    /// `datetime2` refuses on SQL Server, so the offset shape MUST own
+    /// its CAST target. `ofRaw` dispatches on the raw shape
+    /// (`RawValueCodec.hasUtcOffset`): the semantic category stays the
+    /// 9-way `DateTime`; only the literal realization is offset-aware.
+    | DateTimeOffsetLit of raw: string
     /// Guid literal — the raw `D` form per `RawValueCodec.GuidFormat`
     /// (8-4-4-4-12 hyphenated). Rendered as `'<raw>'`. Maps to
     /// ScriptDom `StringLiteral` with `IsNational=false`.
@@ -141,6 +151,10 @@ module SqlLiteral =
             | Integer -> IntegerLit raw
             | Decimal -> DecimalLit raw
             | Boolean -> BooleanLit (RawValueCodec.parseBoolean raw)
+            // WP-17(b) — an offset-bearing raw (a `datetimeoffset`
+            // column's faithful carriage) owns its own CAST target;
+            // the offset-less canonical form stays `datetime2(7)`.
+            | DateTime when RawValueCodec.hasUtcOffset raw -> DateTimeOffsetLit raw
             | DateTime -> DateTimeLit raw
             | Date -> DateLit raw
             | Time -> TimeLit raw
@@ -163,6 +177,7 @@ module SqlLiteral =
         // precision-explicit, language-independent. The raw carries no escapable
         // characters (RawValueCodec canonical forms).
         | DateTimeLit raw    -> System.String.Concat("CAST('", raw, "' AS datetime2(7))")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateTimeFormat` (typed canonical form, no escapable characters); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
+        | DateTimeOffsetLit raw -> System.String.Concat("CAST('", raw, "' AS datetimeoffset(7))")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateTimeOffsetFormat`; same boundary as above
         | DateLit raw        -> System.String.Concat("CAST('", raw, "' AS date)")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.DateFormat`; same boundary as above
         | TimeLit raw        -> System.String.Concat("CAST('", raw, "' AS time(7))")  // LINT-ALLOW: terminal SQL temporal-literal text formatting; raw is from `RawValueCodec.TimeFormat`; same boundary as above
         | GuidLit raw        -> System.String.Concat("'", raw, "'")  // LINT-ALLOW: terminal SQL Guid-literal text formatting; raw is from `RawValueCodec.GuidFormat` (canonical D form, no escapable characters); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary

@@ -46,6 +46,18 @@ module RawValueCodec =
     [<Literal>]
     let DateFormat : string = "yyyy-MM-dd"
 
+    /// WP-17(b) (DECISIONS 2026-07-16) — the OFFSET-BEARING datetime raw
+    /// form for `datetimeoffset` columns (DBA/External-Entity only; no
+    /// OutSystems native type produces them). `zzz` renders the signed
+    /// offset (`+03:00`); the space-separated shape matches V1's
+    /// test-witnessed `CAST('… -03:00' AS datetimeoffset(7))` literal
+    /// input and SQL Server's datetimeoffset string parsing. DISJOINT
+    /// from `DateTimeFormat` by construction (that form never carries an
+    /// offset suffix) — `hasUtcOffset` is the shape detector the parse /
+    /// literal planes dispatch on.
+    [<Literal>]
+    let DateTimeOffsetFormat : string = "yyyy-MM-dd HH:mm:ss.fffffff zzz"
+
     /// `Time` raw form: BCL's canonical `TimeSpan` "constant" format
     /// (`"c"`) — round-trippable via `TimeSpan.Parse`.
     [<Literal>]
@@ -153,6 +165,28 @@ module RawValueCodec =
     /// Format a DateTime as the canonical V2 raw form.
     let formatDateTime (value: DateTime) : string =
         value.ToString(DateTimeFormat, CultureInfo.InvariantCulture)
+
+    /// WP-17(b) — format a DateTimeOffset as the canonical OFFSET-BEARING
+    /// raw form (`DateTimeOffsetFormat`; the offset is PRESERVED, never
+    /// normalized to UTC — faithful carriage of what the column stores).
+    let formatDateTimeOffset (value: DateTimeOffset) : string =
+        value.ToString(DateTimeOffsetFormat, CultureInfo.InvariantCulture)
+
+    /// WP-17(b) — the offset-shape detector the parse / literal planes
+    /// dispatch on: an offset-bearing raw ends `±HH:mm` (the `zzz`
+    /// rendering — exactly six chars, sign + two digits + colon + two
+    /// digits). `DateTimeFormat` raws end in fractional-second digits,
+    /// so the two shapes are disjoint by construction.
+    let hasUtcOffset (raw: string) : bool =
+        raw.Length > 6
+        && (let sign = raw.[raw.Length - 6]
+            (sign = '+' || sign = '-') && raw.[raw.Length - 3] = ':')
+
+    /// WP-17(b) — parse the canonical offset-bearing raw back to a
+    /// `DateTimeOffset` (the exact inverse of `formatDateTimeOffset`).
+    /// Fails loud on malformed input (the NM-20 sibling-parser shape).
+    let parseDateTimeOffset (raw: string) : DateTimeOffset =
+        DateTimeOffset.ParseExact(raw, DateTimeOffsetFormat, CultureInfo.InvariantCulture)
 
     /// Format a Date-only DateTime as the canonical V2 raw form.
     let formatDate (value: DateTime) : string =

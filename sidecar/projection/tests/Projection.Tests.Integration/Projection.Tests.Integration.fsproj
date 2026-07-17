@@ -68,6 +68,7 @@
     <Compile Include="SsdtArtifactDeployE2ETests.fs" />
     <Compile Include="IndexPhysicalMetadataDeployE2ETests.fs" />
     <Compile Include="SsdtDataBehaviorE2ETests.fs" />
+    <Compile Include="ScalarCarriageRoundTripTests.fs" />
     <Compile Include="StagedMergeDeployE2ETests.fs" />
     <Compile Include="MergeScaleMeasurement.fs" />
     <Compile Include="ReadConcurrencyMeasurementTests.fs" />

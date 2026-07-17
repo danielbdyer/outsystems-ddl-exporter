@@ -254,3 +254,40 @@ let ``WP-17e: textLiteralSegments — the shared segmentation both planes ride``
     Assert.Equal<TextLiteralSegment list>(
         [ TextRun "a"; ControlChar 13; TextRun ""; ControlChar 10; TextRun "b" ],
         SqlLiteral.textLiteralSegments "a\r\nb")
+
+// ---------------------------------------------------------------------------
+// WP-17(a/b) (DECISIONS 2026-07-16) — faithful carriage for the collapsing
+// concrete types. The raw STRING carries the concrete value (G17/G9 for
+// float/real; the offset-bearing form for datetimeoffset); the boundaries
+// dispatch on the raw shape — no new carrier, the 9-way category stands.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17b: RawValueCodec round-trips a DateTimeOffset with its offset preserved`` () =
+    let value = System.DateTimeOffset(2026, 7, 16, 12, 30, 0, System.TimeSpan.FromHours -3.0)
+    let raw = RawValueCodec.formatDateTimeOffset value
+    Assert.Equal<string> ("2026-07-16 12:30:00.0000000 -03:00", raw)
+    Assert.True(RawValueCodec.hasUtcOffset raw)
+    let back = RawValueCodec.parseDateTimeOffset raw
+    Assert.Equal(value, back)
+    Assert.Equal(System.TimeSpan.FromHours -3.0, back.Offset)
+
+[<Fact>]
+let ``WP-17b: hasUtcOffset is disjoint from every offset-less canonical raw shape`` () =
+    Assert.True(RawValueCodec.hasUtcOffset "2026-07-16 12:30:00.0000000 +03:00")
+    Assert.False(RawValueCodec.hasUtcOffset "2026-07-16 12:30:00.0000000")
+    Assert.False(RawValueCodec.hasUtcOffset "2026-07-16")
+    Assert.False(RawValueCodec.hasUtcOffset "08:30:00")
+    Assert.False(RawValueCodec.hasUtcOffset "-00:30:00")
+
+[<Fact>]
+let ``WP-17b: an offset-bearing DateTime raw owns its CAST target (datetimeoffset(7))`` () =
+    let offsetRaw = "2026-07-16 12:30:00.0000000 -03:00"
+    Assert.Equal<SqlLiteral> (DateTimeOffsetLit offsetRaw, SqlLiteral.ofRaw DateTime (Some offsetRaw))
+    Assert.Equal<string> (
+        "CAST('2026-07-16 12:30:00.0000000 -03:00' AS datetimeoffset(7))",
+        SqlLiteral.toString (DateTimeOffsetLit offsetRaw))
+    // The offset-less canonical form keeps datetime2(7) — the shapes are disjoint.
+    Assert.Equal<SqlLiteral> (
+        DateTimeLit "2026-07-16 12:30:00.0000000",
+        SqlLiteral.ofRaw DateTime (Some "2026-07-16 12:30:00.0000000"))

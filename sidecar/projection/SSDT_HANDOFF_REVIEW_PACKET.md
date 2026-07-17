@@ -837,11 +837,14 @@ and adopting golden-diff-as-change-review going forward.
     · UserReflow half-wiring. ⚑ WP-14. · Streaming re-trust. ⚑ WP-15. · Table-name collision
     tripwire. ⚑ WP-16. · Inactive-attribute disposition. ⚑ WP-7. · PK convention. ⚑ WP-8.
 12. **Data-plane scalar collapse** (C11, `SCALAR_REPRESENTATION_AUDIT.md`) — `Float`/`Real`
-    precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
-    re-serialize + CDC `<>` compile error, ~~temporal bare-literal vs V1's CAST, and the
-    fallback-lane `DateTime → DATETIME2` upgrade~~ (**✅ WP-17(d) landed 2026-07-16** — CAST
-    literals + legacy-`DATETIME` fallback; **✅ WP-17(e)** control-char `CHAR()` splice).
-    ⚑ WP-17(a–c,f) remain (bite on DBA/External columns — size via the §9 estate inventory).
+    ~~precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
+    re-serialize + CDC `<>` compile error, temporal bare-literal vs V1's CAST, and the
+    fallback-lane `DateTime → DATETIME2` upgrade~~ — **✅ WP-17 COMPLETE 2026-07-16**:
+    (d) CAST literals + legacy-`DATETIME` fallback; (e) control-char `CHAR()` splice;
+    (a) float/real G17/G9 faithful carriage; (b) datetimeoffset offset-bearing raw + CAST,
+    readback throw retired; (c) per-type cast-compare guard (the gallery canary widened the
+    `<>`-refusal class to `image`/`text`/`ntext`); (f) the Docker gallery witness — the
+    audit's UNWITNESSED table is empty. DECISIONS 2026-07-16 (three entries).
 
 **Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
 (index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
@@ -989,11 +992,17 @@ round-trip. So the fix is **not** to revert to object-carriage — it must **add
 Scope:
 (a) **`Float`/`Real`** — give the data plane a faithful carrier (a `Float` primitive/raw form at
 G17/G9, or refuse `float`/`real` in a data lane with a named code) instead of silently routing
-through `Decimal` (truncation + overflow).
+through `Decimal` (truncation + overflow). **✅ LANDED 2026-07-16** (G17/G9 raws; shape-driven
+parse; no new carrier — DECISIONS WP-17(a–c,f)).
 (b) **`DateTimeOffset`** — carry the offset (a raw form with `K`, V1's `datetimeoffset(7)` shape)
 or refuse; fix the `ReadSide` arm that throws on a boxed `DateTimeOffset` (`ReadSide.fs:628-629`).
+**✅ LANDED 2026-07-16** (offset-bearing raw + `DateTimeOffsetLit` CAST; the readback throw
+retired).
 (c) **`Xml`** — decide faithful text carriage vs refusal; guard the CDC change-detect predicate
-so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c]`.
+so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c]`. **✅ LANDED
+2026-07-16** — faithful text-content carriage; the guard casts per-type, and the gallery canary
+WIDENED the class live: `image`/`text`/`ntext` refuse `<>` identically
+(`CastCompareColumns : Map<col, ChangeCompareCast>`).
 (d) **Temporal literals** — adopt V1's explicit `CAST(… AS datetime2(7))` / `AS date` / `AS
 time(7)` seed-literal form (language-independent, precision-explicit), replacing the bare quoted
 string; and fix the fallback DDL lane so `DateTime` without storage evidence defaults to legacy
@@ -1004,7 +1013,10 @@ embedding raw control bytes in `N'…'`. **✅ LANDED 2026-07-16 (DECISIONS — 
 `SqlLiteral.textLiteralSegments` shared segmentation; both terminal planes compose from it.**
 (f) **Fixture backlog** — a round-trip witness for every concrete type that has none today
 (`Float`/`Real`/`DateTimeOffset`/`Xml`/`Image`/`SmallDateTime`/`Money`), so the audit's §4
-verdicts become test-proven, not code-derived.
+verdicts become test-proven, not code-derived. **✅ LANDED 2026-07-16** —
+`ScalarCarriageRoundTripTests` (Docker): the CDC-enabled gallery kind DacFx-publishes and
+seed-MERGEs twice; every contested value server-side-compared (incl. `Double.MaxValue` and the
+verbatim `-03:00` offset).
 *Done means:* the four unfaithful collapses each round-trip or refuse with a named code; temporal
 goldens carry the CAST form and a legacy-`DATETIME` fallback; the scalar-audit witness table has
 no UNWITNESSED rows. Note the audience caveat: (a)–(c) bite only on DBA/External-Entity columns,

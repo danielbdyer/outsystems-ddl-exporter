@@ -288,6 +288,7 @@ let private allLiterals : SqlLiteral list =
       SqlLiteral.TextLit "'hello'"
       // WP-17(d) — the three category-bearing temporal variants.
       SqlLiteral.DateTimeLit "2026-01-01 08:30:00.0000000"
+      SqlLiteral.DateTimeOffsetLit "2026-01-01 08:30:00.0000000 -03:00"
       SqlLiteral.DateLit "2026-01-01"
       SqlLiteral.TimeLit "08:30:00"
       SqlLiteral.GuidLit "'00000000-0000-0000-0000-000000000000'"
