@@ -171,6 +171,24 @@ type EstateFindingKind =
     /// A relationship carrying a non-default ON UPDATE action — unusual, worth
     /// confirming (#669 §9 audit; most references leave it at the default).
     | EmissionNonDefaultOnUpdate
+    /// A static entity whose rows in an environment differ from the model's
+    /// declared seed — missing rows, extra rows, or label drift, matched by
+    /// business key (D10, wave A4β; the alignment MERGE is the prepared repair).
+    | DataStaticContent
+    /// An AutoNumber static entity whose surrogate keys number the SAME
+    /// business rows differently across environments — every inbound
+    /// reference means something different per environment (D11, wave A4β;
+    /// the original ask's third named divergence).
+    | DataStaticIdentity
+    /// The estate config names a fidelity flow and no proof artifact exists —
+    /// the row-fidelity clause cannot stand on evidence (RT-10, wave A4β).
+    | ProofMissing
+    /// The fidelity proof exists but predates this run's freshest evidence —
+    /// the estate has seen the world move since the proof did (RT-10).
+    | ProofStale
+    /// The fidelity proof reports differing rows — the load is not yet
+    /// byte-faithful; the verdict cannot read Unified over a red proof (RT-10).
+    | ProofDiverged
 
 [<RequireQualifiedAccess>]
 module EstateFindingKind =
@@ -210,7 +228,12 @@ module EstateFindingKind =
           EstateFindingKind.EmissionLongName
           EstateFindingKind.EmissionNoPrimaryKey
           EstateFindingKind.EmissionLossyScalar
-          EstateFindingKind.EmissionNonDefaultOnUpdate ]
+          EstateFindingKind.EmissionNonDefaultOnUpdate
+          EstateFindingKind.DataStaticContent
+          EstateFindingKind.DataStaticIdentity
+          EstateFindingKind.ProofMissing
+          EstateFindingKind.ProofStale
+          EstateFindingKind.ProofDiverged ]
 
     /// The stable machine token (the `FindingKey` prefix and the
     /// `estate.json` discriminator). Never operator-facing on its own.
@@ -248,6 +271,11 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionNoPrimaryKey     -> "emission.noPrimaryKey"
         | EstateFindingKind.EmissionLossyScalar      -> "emission.lossyScalar"
         | EstateFindingKind.EmissionNonDefaultOnUpdate -> "emission.nonDefaultOnUpdate"
+        | EstateFindingKind.DataStaticContent        -> "data.staticContent"
+        | EstateFindingKind.DataStaticIdentity       -> "data.staticIdentity"
+        | EstateFindingKind.ProofMissing             -> "proof.missing"
+        | EstateFindingKind.ProofStale               -> "proof.stale"
+        | EstateFindingKind.ProofDiverged            -> "proof.diverged"
 
     /// The machine token's inverse — the kind a stored `token` names, or
     /// `None` for an unknown token. Derived from `all`, so it cannot drift
@@ -296,6 +324,11 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionNoPrimaryKey     -> "no primary key — emits as a heap"
         | EstateFindingKind.EmissionLossyScalar      -> "a type the data plane carries coarsely"
         | EstateFindingKind.EmissionNonDefaultOnUpdate -> "a non-default ON UPDATE"
+        | EstateFindingKind.DataStaticContent        -> "reference rows differ from the seed"
+        | EstateFindingKind.DataStaticIdentity       -> "reference keys numbered differently per environment"
+        | EstateFindingKind.ProofMissing             -> "the fidelity proof has not run"
+        | EstateFindingKind.ProofStale               -> "the fidelity proof predates the evidence"
+        | EstateFindingKind.ProofDiverged            -> "the fidelity proof found differing rows"
 
     /// The disposition lane a kind presents in (Appendix A). The direction
     /// classifier (wave A3) splits presence: a kind an environment carries
@@ -343,6 +376,14 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionCompositePkFk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName        -> EstateLane.Decide
+        // D10 — the alignment MERGE is a prepared repair; D11 needs the seed
+        // RULED (pin explicit keys) before any repair can run; the proof
+        // findings each end on the one imperative that resolves them.
+        | EstateFindingKind.DataStaticContent       -> EstateLane.Repair
+        | EstateFindingKind.DataStaticIdentity
+        | EstateFindingKind.ProofMissing
+        | EstateFindingKind.ProofStale
+        | EstateFindingKind.ProofDiverged           -> EstateLane.Decide
 
     /// The plane a kind lives on.
     let planeOf (kind: EstateFindingKind) : EstatePlane =
@@ -379,6 +420,14 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionNoPrimaryKey
         | EstateFindingKind.EmissionLossyScalar
         | EstateFindingKind.EmissionNonDefaultOnUpdate -> EstatePlane.Emission
+        // D10 is a data-content fact; D11 is a key-minting fact (the identity
+        // plane — inbound references mean differently per environment); the
+        // proof findings are the run's operational evidence basis.
+        | EstateFindingKind.DataStaticContent       -> EstatePlane.Data
+        | EstateFindingKind.DataStaticIdentity      -> EstatePlane.Identity
+        | EstateFindingKind.ProofMissing
+        | EstateFindingKind.ProofStale
+        | EstateFindingKind.ProofDiverged           -> EstatePlane.Operational
 
     /// The presentation contract's lever form per kind (Appendix A, wave
     /// A6 — the contract table held to the code). The board mints the
@@ -419,11 +468,18 @@ module EstateFindingKind =
             EstateLeverForm.Ruling "Rule the collision: rename or remap one entity so the emitted table names are distinct."
         | EstateFindingKind.EmissionLongName ->
             EstateLeverForm.Ruling "Rule the name: shorten it to 128 characters or fewer before publishing."
+        | EstateFindingKind.DataStaticIdentity ->
+            EstateLeverForm.Ruling "Rule the seed: pin explicit key values in the model — the alignment repair follows the ruling."
+        | EstateFindingKind.ProofMissing
+        | EstateFindingKind.ProofStale
+        | EstateFindingKind.ProofDiverged ->
+            EstateLeverForm.Ruling "Run the configured fidelity flow (projection check fidelity), then re-run the board."
         | EstateFindingKind.SchemaTrust
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
         | EstateFindingKind.DataOrphans
         | EstateFindingKind.DataCollationCollision
+        | EstateFindingKind.DataStaticContent
         | EstateFindingKind.PostureRetirable ->
             EstateLeverForm.ReviewBlock
         | EstateFindingKind.DataOrphansPastBand
@@ -514,6 +570,16 @@ module EstateFindingKind =
             "Order.Amount is float — the data-transfer plane carries it through a coarser form that can lose precision (WP-17); this scopes how carefully the transfer must handle it."
         | EstateFindingKind.EmissionNonDefaultOnUpdate ->
             "Order.CustomerId → Customer carries ON UPDATE CASCADE — an unusual rule; confirm it is intended, since most references leave ON UPDATE at the default."
+        | EstateFindingKind.DataStaticContent ->
+            "Country's rows in cloud-uat differ from the model's seed: 2 row(s) missing, 1 extra, 3 value difference(s) — matched by business key."
+        | EstateFindingKind.DataStaticIdentity ->
+            "Status assigns different key numbers to the same rows per environment — 'Approved' is 3 in cloud-dev and 7 in cloud-qa — so every reference to it means something different per environment."
+        | EstateFindingKind.ProofMissing ->
+            "The fidelity proof for flow 'uat-load' has not run against the current estate."
+        | EstateFindingKind.ProofStale ->
+            "The fidelity proof for flow 'uat-load' is 9 day(s) old and the estate's evidence has moved since — the proof predates what this run can see."
+        | EstateFindingKind.ProofDiverged ->
+            "The fidelity proof for flow 'uat-load' reports 3 differing row(s) — the load is not yet byte-faithful."
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

@@ -87,7 +87,13 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.False(lowered.Contains b, sprintf "%s's specimen breaks the banned list (THE_VOICE.md §2.2): contains '%s'" token b)
         match EstateFindingKind.leverFormOf kind, EstateFindingKind.laneOf kind with
         | EstateLeverForm.Ruling imperative, EstateLane.Decide ->
-            Assert.True(imperative.StartsWith "Rule ", sprintf "%s's ruling does not lead with the ruling: %s" token imperative)
+            // A DECIDE lever leads with the ruling ("Rule …") — or, for the
+            // proof family (RT-10, wave A4β), with the one run that resolves
+            // it ("Run …"): the §3 contract's own row gives ProofMissing/
+            // ProofStale the lever "Run: projection check fidelity <flow>".
+            Assert.True(
+                imperative.StartsWith "Rule " || imperative.StartsWith "Run ",
+                sprintf "%s's ruling does not lead with the ruling or the run imperative: %s" token imperative)
             Assert.True(imperative.EndsWith ".", sprintf "%s's ruling is a fragment: %s" token imperative)
         | EstateLeverForm.ReviewBlock, EstateLane.Repair -> ()
         | EstateLeverForm.MergeOverlayEntry, EstateLane.Relax -> ()
