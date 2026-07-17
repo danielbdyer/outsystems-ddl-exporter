@@ -139,3 +139,21 @@ EF-14 V2 manifest.json carries a far richer analytics surface than v1 (emitter/v
       predicateCoverage/deploymentBatches/policy/centrality/boundedContexts/schemaComplexity/queryHints — 20 sections)
       but DROPS v1's per-run decision accounting (policy-decisions.json, opportunities.json, validations.json).
       Different question-answering surfaces; not a strict superset either way. neutral (see report §Diagnostics).
+
+## Round 3 — compressed-index fixture (closes audit M-2; adds a v1 deploy bug)
+
+EF-15 DATA_COMPRESSION (live lane): source IX_STOCKITEM_REORDER_PAGECOMP=PAGE, IX_SUPPLIER_NAME_ROWCOMP=ROW.
+      v1 PRESERVES: `WITH (DATA_COMPRESSION = PAGE ON PARTITIONS (1))` / `ROW ON PARTITIONS (1)`.
+      v2 DROPS: bare `CREATE INDEX` (no WITH clause). Both read the same extraction SQL (data_compression IS
+      selected). Deployed proof: V2CompTest StockItem indexes all data_compression_desc=NONE (decompressed).
+      → CONFIRMED v2-worse, major functional regression on the live lane (was flagged "not verified" in the
+      audit; now empirically proven). Deploying the ejected v2 project silently decompresses every compressed index.
+
+EF-16 V1 INDEX-NAME COLLISION (deploy failure): source has IDX_STOCKITEM_REORDER on (REORDERLEVEL,WAREHOUSEQTY)
+      AND IX_STOCKITEM_REORDER_PAGECOMP on (REORDERLEVEL). v1 synthesizes BOTH as [IX_StockItem_ReorderLevel]
+      (no collision dedup) → deploying v1's dbo.StockItem.sql FAILS Msg 1913 "index ... already exists" (PROVEN
+      on V1CollisionTest). v2 dedups to IX_StockItem_ReorderLevel_1 / _2 (SsKey-ordinal) and deploys clean.
+      → v1-worse (v2's ordinal dedup fixes it), major. Confirms the naming-index-synthesis static finding empirically.
+
+Combined: on a single estate with a compressed index + a same-leading-column index (both common), v1 FAILS TO
+DEPLOY (Msg 1913) while v2 DEPLOYS BUT DECOMPRESSES. Neither yields a correct database — the audit's core thesis.

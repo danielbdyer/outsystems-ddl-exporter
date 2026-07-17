@@ -83,6 +83,8 @@ FK-cascade and trigger items below. Everything else is a documented, blessable d
 | XML / deployed-storage typing | `NVARCHAR(MAX)` | `XML` (faithful) | **V2** |
 | `CREATE SCHEMA` for non-dbo | not emitted (fresh build fails) | `Schemas/<s>.sql` | **V2** |
 | RefactorLog in bundle | none | wired (`#671`) | **V2** |
+| Index `DATA_COMPRESSION` | preserved (PAGE/ROW) | **dropped → decompresses on deploy** | **V1** |
+| Same-leading-column index names | **collide → deploy fails (Msg 1913)** | deduped (`_1`/`_2`), deploys | **V2** |
 | Authored `''` / `getutcdate()` default | faithful | **mis-rendered → insert bomb** | **V1** |
 | Data-lane executable order | (its own bootstrap is broken) | **alphabetical fallback on any cycle → FK 547** | neither |
 | Trigger emission | 1-batch bug → runtime bomb | physical-name target → **deploy bomb** | neither |
@@ -165,20 +167,25 @@ V1's faithful `DEFAULT ('')`.
   One fix closes both the `''` and `getutcdate()` cases. **This is the highest-value single fix
   in the register.**
 
-### M-2 — Index options silently lost on non-live lanes and (per static analysis) DATA_COMPRESSION on the live lane
-*(`idx-json-path-options-dropped`, `idx-datacompression-live-parse-bug`, `idx-platform-auto-live-flag-dead` — static analysis; not exercised on my estate's compression axis)*
+### M-2 — `DATA_COMPRESSION` silently dropped on the live lane (now empirically proven)
+*(empirical EF-15 — deployed-database proof; `idx-datacompression-live-parse-bug`, `idx-json-path-options-dropped`, `idx-platform-auto-live-flag-dead`)*
 
-Three related claims from the static comparison, **not independently re-verified empirically**
-(my estate had no compressed index and I ran only the live lane): (a) through V2's model-JSON
-source lane a disabled index deploys **enabled** (its `ALTER INDEX … DISABLE` is lost) and
-`IGNORE_DUP_KEY`/other `WITH` options drop; (b) on the live lane a uniform `DATA_COMPRESSION`
-facet is claimed to never parse (rowset key mismatch), silently **decompressing** the index on
-deploy; (c) `emission.includePlatformAutoIndexes=false` is claimed to be a no-op on the live
-lane (nothing is tagged platform-auto, so nothing prunes). **On my live run the index options
-I did exercise were faithful** (filtered `UIX … WHERE … IS NOT NULL`, `FILLFACTOR=85`,
-`STATISTICS_NORECOMPUTE=ON`, `ALTER INDEX … DISABLE` all byte-identical to V1 — EP-5), so (a)/(b)
-are lane-specific and should be **confirmed on a compressed-index fixture** before trusting or
-dismissing. If true, (b) is a major functional regression (storage/IO profile change post-eject).
+**Confirmed at the deployed-database level.** I added a PAGE-compressed and a ROW-compressed
+index to the source estate and re-ran both engines. **V1 preserves compression**
+(`… WITH (DATA_COMPRESSION = PAGE ON PARTITIONS (1))` / `ROW …`); **V2 emits the indexes bare**
+(`CREATE INDEX … ON …([Col])`, no `WITH` clause). Deploying V2's project and reading back the
+catalog proves it: every StockItem index reads `data_compression_desc = NONE`. Both engines read
+the *same* extraction SQL (which does `SELECT` `data_compression`), so this is a **genuine V2
+live-lane regression, not shared behaviour** — deploying the ejected V2 project silently
+**decompresses** every compressed index (a real storage-size and IO-profile change post-eject).
+
+Still lane-specific and **not** re-verified here: (a) through V2's model-JSON source lane a
+disabled index is claimed to deploy **enabled** and `IGNORE_DUP_KEY`/other `WITH` options to drop;
+(c) `emission.includePlatformAutoIndexes=false` claimed to be a no-op on the live lane. The index
+options I *did* exercise on the live lane were faithful (filtered `UIX … WHERE … IS NOT NULL`,
+`FILLFACTOR=85`, `STATISTICS_NORECOMPUTE=ON`, `ALTER INDEX … DISABLE` — byte-identical to V1,
+EP-5), so the remaining claims are the JSON lane's (a) and the prune-flag's (c). **Fix:** carry
+the `data_compression` facet the rowsets already return through the IR into ScriptDom index emission.
 
 ### M-3 — Nullability: V2 never tightens (and can drop a deployed NOT NULL); V1 does both
 *(empirical EF-3; `types-nullability-*`)*
@@ -268,7 +275,14 @@ specific decision-provenance questions V1's reports answer by default.
 
 These are the reasons to switch. Several are **correctness fixes**, not aesthetics.
 
-### V2 fixes three latent V1 correctness bugs
+### V2 fixes four latent V1 correctness bugs
+- **V1 emits colliding index names → deploy failure** *(empirical EF-16)*. Two source indexes that
+  share a leading column (e.g. `IDX_STOCKITEM_REORDER` on `(ReorderLevel, WarehouseQty)` and a
+  second index on `(ReorderLevel)`) both synthesize to `IX_StockItem_ReorderLevel` — V1 has **no
+  collision dedup**, so deploying its `dbo.StockItem.sql` fails **Msg 1913** ("index … already
+  exists"), proven on a fresh DB. V2 deduplicates with SsKey ordinals (`…_1`/`…_2`) and deploys
+  clean. Same-leading-column indexes are common on real estates. *(Note the pairing with M-2: on
+  this exact estate V1 fails to deploy while V2 deploys but decompresses — neither is correct.)*
 - **V1 drops every physically-backed FK's delete/update rule** *(personally verified V-2;
   empirical EF-1)*. `ForeignKeyEvidenceResolver.cs:141-143` feeds the sys-catalog action
   (`"CASCADE"`/`"SET_NULL"`) into `MapDeleteRule` (`SmoEntityEmitter.cs:177-185`), whose switch
