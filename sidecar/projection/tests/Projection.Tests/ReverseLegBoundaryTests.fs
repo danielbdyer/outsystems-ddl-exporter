@@ -151,10 +151,19 @@ let ``Slice C2: the resume chooser reads the sink archetype — a FullRights sin
     | other -> Assert.Fail(sprintf "expected Materialized (sink-resident resume admitted), got %A" other)
 
 [<Fact>]
-let ``selector: --journal on an inadmissible request refuses by name — the ledger belongs to the streaming realization`` () =
+let ``selector: --journal rides the materialized path too — prove implies journal on every realization (B4a)`` () =
+    // The pre-B4a selector refused --journal off the streaming path
+    // ("transfer.reverseLeg.journalRequiresStreaming"). DECISIONS 2026-07-15
+    // decision 2 lifts that: the journal is the provenance ledger on EVERY
+    // realization — a table subset, a wipe, or --resumable no longer costs
+    // the run its intervention record. The directory threads through
+    // `WriteOptions.Journal`; the selector's job is only the realization.
     match choose EmissionMode.Incremental false [ "Customer" ] false (Some "/j") with
-    | Error es -> Assert.Equal("transfer.reverseLeg.journalRequiresStreaming", (List.head es).Code)
-    | Ok other -> Assert.Fail(sprintf "expected the journal refusal, got %A" other)
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized with the journal admitted, got %A" other)
+    match choose EmissionMode.WipeAndLoad false [] false (Some "/j") with
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized (wipe) with the journal admitted, got %A" other)
 
 // -- Phase 3: the duplicate-hazard gate + the journal-address-drift guard ------
 

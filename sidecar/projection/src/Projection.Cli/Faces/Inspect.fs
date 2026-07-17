@@ -63,7 +63,8 @@ let buildInspectView (r: Run.Run) : View.View =
                   (ls
                    |> List.map (fun l ->
                        match l with
-                       | Run.JournalRef d -> View.Field ("journal", d, View.Neutral)
+                       | Run.JournalRef (d, "") -> View.Field ("journal", d, View.Neutral)
+                       | Run.JournalRef (d, path) -> View.Field ("journal", sprintf "%s at %s" d path, View.Neutral)
                        | Run.EpisodeRef (t, o) -> View.Field ("episode", sprintf "%s ordinal %d" t o, View.Neutral)))) ]
     let bench =
         match r.Bench with

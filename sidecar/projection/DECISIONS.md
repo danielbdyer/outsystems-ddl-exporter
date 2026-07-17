@@ -28359,3 +28359,62 @@ original request** — the daily convergence loop and the provable row fidelity.
    verdict, lane counts, forks, closed/opened/remaining, streak — so CI branches on the
    estate without parsing the board. History writes are atomic + advisory; reads
    fail-closed.
+
+## 2026-07-17 — B4a lands: prove-implies-journal on the materialized path, the seed pre-filter de-silenced, and `--interventions @runId` resolves
+
+**Context.** Phase 2 of the loop-closing program opens with wave B4a (the 2026-07-15 fidelity
+entry's decision 2, "prove implies journal", cashed out). Before this entry the capture
+journal existed only on the streaming realization (its chunk-resume ledger); the materialized
+path computed the identical `(source → assigned)` pairs and discarded them with the in-memory
+remap at run end — a transfer whose fidelity could never be proven after the fact.
+
+**Decisions:**
+
+1. **The journal is lawful on EVERY realization — the selector refusal is RETIRED.**
+   `transfer.reverseLeg.journalRequiresStreaming` ("--journal is the streaming realization's
+   chunk-resume ledger") no longer exists: a table subset, a wipe, or `--resumable` no longer
+   costs the run its intervention record. On the streaming path the journal remains the
+   chunk-resume ledger (write-ahead INTENT + COMPLETE, at-least-once); on the materialized
+   path it is PROVENANCE — COMPLETE records only, one per captured chunk, threading
+   `WriteOptions.Journal` → `runCore` → `writePlan` → the capture ladder. The deliberate
+   asymmetry is named in `captureChunks`' docstring: the materialized path never resumes from
+   this journal (the G10 envelope owns resume), so the INTENT protocol would imply semantics
+   it does not have.
+2. **The truncation law (`CaptureJournal.startFresh`).** Every materialized Execute loads
+   into a cleared/empty subset (WipeAndLoad wipes; G10 clears FK-first before reloading;
+   plain Incremental refuses a populated sink — T1.8), so the sink's state after the run is
+   THIS run's writes alone — and the journal must describe exactly that run, or a prior
+   attempt's stale pairs would win the replay fold's keep-first dedupe and poison the proof.
+   `writePlan` starts the file fresh at every real load; the G10 NO-OP replay arm leaves it
+   untouched (the state-producing run's record still describes the sink). The rest state is
+   an EMPTY FILE, never a deleted one: "the ledger was kept and nothing was minted" is a
+   provable claim; a missing file says only that no one was keeping records.
+3. **The minted-bulk fast lane stands down under a journal.** An `AssignedBySink` kind no FK
+   targets normally skips capture (its minted surrogates have no consumer). Under a journal
+   the capture lane runs anyway: "prove implies journal" means every minted key is recorded —
+   an unrecorded mint would be a row the fidelity replay cannot translate. The lane choice is
+   the journal's presence, structural, never a silent config.
+4. **`Run.LedgerRef.JournalRef` carries digest AND path.** The LedgerRef's stated purpose is
+   WHERE the ledger lives; a digest names the file (RI-7) but not the directory. The codec
+   writes both; a pre-B4a record loads with an empty path and REFUSES BY NAME at resolution
+   (never guessed). `TransferReport` gains `JournalPath` (the streaming digest never left
+   `writePlanStreaming` before) and the contract-pair face records the `JournalRef` through
+   the shell's per-invocation side-channel (`Shell.recordLedgerRef` — the NM-34b
+   `captureInputs` seam realized once for every shell-bracketed verb).
+5. **`--interventions @runId` resolves.** The CLI-seam refusal
+   (`cli.check.dataRowsInterventionsRunRef`) is retired; the ENGINE resolves the run
+   reference (`FidelityCompareRun.resolveRunJournal`): run store via `Run.storeDir()`, every
+   miss a named refusal — `fidelity.rows.runStoreMissing` / `runNotFound` / `runNoJournal` /
+   `journalMissing` (moved file, or a pathless pre-B4a record) / `journalAmbiguous` (a run
+   recording several journals).
+6. **The seed pre-filter is de-silenced (`transfer.seedRowsSkipped`).** `TransferReport`
+   gains `SeedRowsSkipped : (SsKey * int) list` (the rows insert-only-missing left untouched,
+   per kind); the face voices it (`Voice` entry, §3 register — a working-as-designed fact,
+   not a warning) with the per-table counts beneath. A DryRun and a no-seed run stay empty.
+
+**Witnesses.** Pure: the selector's new law (journal admitted on Materialized, wipe included);
+`digestOfFile`/`startFresh`; the run-reference resolution's happy path + four named refusals;
+the Run codec round-trip with the path field. Docker: the LE-3 apparatus canary now runs its
+WipeAndLoad leg JOURNALED — every kind's pairs recorded (the no-FK-target kind included, the
+fast-lane stand-down), `loadReplayMaps` folds them, and the re-run's truncated journal carries
+only the second run's fresh mints (counts hold, assigned-key sets disjoint).

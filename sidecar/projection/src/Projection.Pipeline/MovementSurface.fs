@@ -2152,16 +2152,12 @@ module Command =
                                       (match System.Int32.TryParse raw with
                                        | true, n when n > 0 -> Ok n
                                        | _ -> Error (err "cli.check.dataRowsSample" (sprintf "projection check data --rows: --sample needs a positive whole number; '%s' is not one." raw)))
-                              // `--interventions` names the transfer journal
-                              // (a file, or the --journal directory). The
-                              // `@runId` form waits on the run envelope's
-                              // ledger refs (the journal-promotion wave) —
-                              // refused by name, never a silent guess.
-                              let interventions =
-                                  match valueOf "--interventions" with
-                                  | Some r when r.StartsWith "@" ->
-                                      Error (err "cli.check.dataRowsInterventionsRunRef" (sprintf "projection check data --rows: --interventions %s — a stored run does not yet carry its ledger references; name the journal file itself (the transfer's --journal directory holds transfer-<digest>.ndjson)." r))
-                                  | other -> Ok other
+                              // `--interventions` names the transfer journal:
+                              // a file, the --journal directory, or `@runId`
+                              // (wave B4a — the run store's recorded
+                              // `JournalRef` resolves it; every miss is a
+                              // named engine refusal, never a silent guess).
+                              let interventions = Ok (valueOf "--interventions")
                               (match sampleCap, interventions with
                                | Error e, _ -> PlanAction.Refused (2, e)
                                | _, Error e -> PlanAction.Refused (2, e)

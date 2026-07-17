@@ -200,7 +200,10 @@ type MovementSpec =
         Resumable   : bool
         /// The streaming realization flag (reverse leg only; `--streaming`).
         Streaming   : bool
-        /// The chunk-resume journal directory (streaming only; `--journal`).
+        /// The journal directory (`--journal`): the streaming realization's
+        /// chunk-resume ledger, and — wave B4a, "prove implies journal" — the
+        /// materialized realization's provenance record of every captured
+        /// `(source → assigned)` pair (the fidelity proof's intervention ledger).
         Journal     : string option
         /// M22 — the RESOLVED atomic schema-deploy disposition (derived: ON for a
         /// direct full-access sink; env `atomicDeploy` + `--no-atomic` override).

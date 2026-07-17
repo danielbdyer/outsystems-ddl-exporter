@@ -403,7 +403,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                 })
 
     [<Fact>]
-    member this.``LE-3 apparatus: the same full-shape leg through runReverseLegThroughConnections, and a WipeAndLoad re-run leaves no duplicates`` () =
+    member this.``LE-3 apparatus: the same full-shape leg through runReverseLegThroughConnections, a WipeAndLoad re-run leaves no duplicates, and the journal records each run's minted pairs (B4a)`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "L3Apparatus") then () else
         this.WithReverseLegEstates "L3Apparatus" ReverseLegFixtures.seedClean
             (fun _ srcConnStr sink sinkConnStr logicalContract physicalContract ->
@@ -412,6 +412,9 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     let sinkFile = System.IO.Path.GetTempFileName()
                     System.IO.File.WriteAllText(srcFile, srcConnStr)
                     System.IO.File.WriteAllText(sinkFile, sinkConnStr)
+                    // B4a ("prove implies journal") — the materialized WipeAndLoad
+                    // records every (source → assigned) pair here.
+                    let journalDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "l3-journal-" + System.Guid.NewGuid().ToString "N")
                     try
                         let srcSub : Substrate =
                             { Environment = Projection.Core.Environment.Dev
@@ -433,7 +436,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                             Transfer.runReverseLegThroughConnectionsWith
                                 IdentityPolicy.Structural Transfer.Execute EmissionMode.WipeAndLoad false true false []
                                 connections logicalContract physicalContract Map.empty Set.empty Set.empty Set.empty
-                                [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None
+                                [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None (Some journalDir)
 
                         let! firstR = runLeg ()
                         let first = ReverseLegFixtures.value firstR
@@ -443,10 +446,35 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         let! paymentsAfterFirst = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_PAYMENT]"
                         Assert.Equal(4, paymentsAfterFirst)
 
+                        // B4a — the report names the journal; the file carries its
+                        // digest (RI-7) and every kind's minted pairs.
+                        let journalPath =
+                            match first.JournalPath with
+                            | Some p -> p
+                            | None -> failwith "a journaled Execute must report its journal path"
+                        Assert.True(System.IO.File.Exists journalPath)
+                        Assert.True((CaptureJournal.digestOfFile journalPath).IsSome, "the journal file name must carry its digest")
+                        let mapsOf () =
+                            match FidelityCompareRun.loadReplayMaps journalPath with
+                            | Ok m -> m
+                            | Error es -> failwithf "the journal must load as replay maps: %A" es
+                        let firstMaps = mapsOf ()
+                        let pairCounts (maps: Map<string, Map<string, string>>) =
+                            maps |> Map.toList |> List.map (fun (k, m) -> k, m.Count) |> List.sortBy fst
+                        // Every AssignedBySink kind's rows are recorded — including
+                        // Payment, which no FK targets (the minted-bulk fast lane
+                        // stands down under a journal; an unrecorded mint would be
+                        // a row the fidelity replay cannot translate). The keys are
+                        // the kinds' `SsKey.rootOriginal` — the same roots the
+                        // replay matches against the model.
+                        Assert.Equal<(string * int) list>(
+                            [ "L3_KIND_Account", 3; "L3_KIND_Customer", 2; "L3_KIND_Invoice", 3; "L3_KIND_Payment", 4 ],
+                            pairCounts firstMaps)
+
                         // D10 — the WipeAndLoad re-run is the DML-legal refresh:
                         // child-first DELETE then reload; counts hold, no dupes.
                         let! secondR = runLeg ()
-                        let _ = ReverseLegFixtures.value secondR
+                        let second = ReverseLegFixtures.value secondR
                         let! customers = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"
                         let! payments  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_PAYMENT]"
                         Assert.Equal(2, customers)
@@ -456,12 +484,30 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         let! preserved = ReverseLegFixtures.preservedKeyCount sink
                         Assert.Equal(0, preserved)
 
+                        // B4a — the journal describes THE state-producing run
+                        // alone (`startFresh`): same plan marker, same file, and
+                        // the second run's record REPLACES the first's — per-kind
+                        // counts hold at the row counts (never doubled), while the
+                        // assigned keys are the re-run's fresh mints (DELETE does
+                        // not reseed IDENTITY, so the two runs' keys are disjoint).
+                        Assert.Equal(second.JournalPath, Some journalPath)
+                        let secondMaps = mapsOf ()
+                        Assert.Equal<(string * int) list>(
+                            [ "L3_KIND_Account", 3; "L3_KIND_Customer", 2; "L3_KIND_Invoice", 3; "L3_KIND_Payment", 4 ],
+                            pairCounts secondMaps)
+                        let assignedOf (maps: Map<string, Map<string, string>>) (kind: string) =
+                            maps.[kind] |> Map.toList |> List.map snd |> Set.ofList
+                        Assert.True(
+                            Set.isEmpty (Set.intersect (assignedOf firstMaps "L3_KIND_Customer") (assignedOf secondMaps "L3_KIND_Customer")),
+                            "the truncated journal must carry the SECOND run's fresh mints, not the first's stale pairs")
+
                         let! (aAccCust, _, _, _, _) = ReverseLegFixtures.sinkEdgeJoins sink
                         Assert.Equal<(string * string option) list>(
                             [ ("acc-a1", Some "alice@x"); ("acc-a2", Some "alice@x"); ("acc-b1", Some "bob@x") ], aAccCust)
                     finally
                         try System.IO.File.Delete srcFile with _ -> ()
                         try System.IO.File.Delete sinkFile with _ -> ()
+                        try if System.IO.Directory.Exists journalDir then System.IO.Directory.Delete(journalDir, true) with _ -> ()
                 })
 
     [<Fact>]

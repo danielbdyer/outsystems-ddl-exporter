@@ -58,6 +58,8 @@ let private inScopeCodes : Set<string> =
           // migration recon #11): preview / applied / drop refusal, and the
           // migrate execute-leg applied / verification-failed verdicts
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          // the seed pre-filter's de-silenced count (wave B4a)
+          "transfer.seedRowsSkipped"
           "migrate.applied"; "migrate.verificationFailed"
           // the §12 at-scale rollup — the model read's divergence notices
           // condensed to one Warn envelope (LiveModelRead.surfaceDivergences)
@@ -136,6 +138,9 @@ let private knownEmittableCodes : Set<string> =
           "verifyData.matched"; "verifyData.diverged"
           // the §4 transfer / migrate move verdicts (recon #11)
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          // the seed pre-filter's de-silenced count (wave B4a — voiced by
+          // narrateTransferReportWithScope from the report field)
+          "transfer.seedRowsSkipped"
           "migrate.applied"; "migrate.verificationFailed"
           // the model read's notice rollup (LiveModelRead.surfaceDivergences —
           // one Warn envelope condensing the divergence notices; §12 at-scale law)
@@ -229,7 +234,10 @@ let private samplePayload : Voice.Payload =
           "tolerances",    box "BooleanCanonicalizationTolerated, DateTimeTickPrecisionTolerated, IntegerWidthNormalized"
           // the estate posture wave's filled branches (wave A6)
           "forks",         box 2
-          "relaxations",   box 4 ]
+          "relaxations",   box 4
+          // the seed pre-filter's de-silenced count (wave B4a)
+          "skippedCount",  box 42
+          "detail",        box "Country: 38; OrderStatus: 4" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
@@ -302,6 +310,7 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"
           "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "transfer.seedRowsSkipped"
           "migrate.applied"; "migrate.verificationFailed" ]
 
 [<Fact>]
