@@ -368,6 +368,13 @@ type Statement =
     /// IR record; `ScriptDomBuild.buildStatement` delegates to
     /// `buildCreateSequence`. H-020 (Cluster A — Close the loops).
     | CreateSequence of seq: Sequence
+    /// G6 (DECISIONS 2026-07-16) — `CREATE SCHEMA [<name>]`. Emitted
+    /// FIRST in the catalog-wide statement stream for every distinct
+    /// non-dbo schema the emitted estate references (kinds + sequences),
+    /// so a non-dbo estate builds (`.sqlproj`/dacpac) and deploys
+    /// without hand-authored schema objects. `dbo` always exists and is
+    /// never emitted. ScriptDom builds via `CreateSchemaStatement`.
+    | CreateSchema of schemaName: string
     /// 6.A.12 — `ALTER TABLE <table> ADD <column>`. The additive
     /// minimum-viable-touch for a new attribute on an existing kind
     /// (`CatalogDiff.AttributeDiffs[k].Added`). ScriptDom builds via

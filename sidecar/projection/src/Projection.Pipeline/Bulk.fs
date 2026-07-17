@@ -56,11 +56,33 @@ module Bulk =
             | Integer ->
                 box (Int64.Parse(raw, inv))
             | Decimal ->
-                box (Decimal.Parse(raw, inv))
+                // WP-17(a) — a `float`/`real` column's G17/G9 raw can
+                // carry an exponent beyond decimal's range (|x| ≳
+                // 7.9E28 → `Decimal.Parse` OVERFLOWS, the S1 write
+                // loss) or E-notation decimal cannot parse. Dispatch on
+                // the shape: scientific notation parses as the exact
+                // IEEE double (SqlBulkCopy converts to the float/real
+                // column faithfully); plain digit runs keep the exact
+                // decimal parse (decimal-family columns, and G17 forms
+                // without exponent — decimal carries ≤28 significant
+                // digits exactly, and the nearest-double conversion at
+                // the column recovers the original IEEE value).
+                if raw.IndexOfAny [| 'E'; 'e' |] >= 0 then
+                    box (Double.Parse(raw, NumberStyles.Float, inv))
+                else
+                    box (Decimal.Parse(raw, inv))
             | Boolean ->
                 box (RawValueCodec.parseBoolean raw)
             | DateTime ->
-                box (DateTime.ParseExact(raw, RawValueCodec.DateTimeFormat, inv))
+                // WP-17(b) — an offset-bearing raw (a `datetimeoffset`
+                // column's faithful carriage) parses back to the exact
+                // `DateTimeOffset`; SqlBulkCopy writes it to the
+                // `datetimeoffset` column offset-intact. The offset-less
+                // canonical form keeps its exact parse.
+                if RawValueCodec.hasUtcOffset raw then
+                    box (RawValueCodec.parseDateTimeOffset raw)
+                else
+                    box (DateTime.ParseExact(raw, RawValueCodec.DateTimeFormat, inv))
             | Date ->
                 box (DateTime.ParseExact(raw, RawValueCodec.DateFormat, inv))
             | Time ->

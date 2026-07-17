@@ -1,3 +1,7 @@
+CREATE SCHEMA [audit]
+
+GO
+
 CREATE TABLE [dbo].[Assignment] (
     [ProjectId]  INT           NOT NULL,
     [ResourceId] INT           NOT NULL,
@@ -63,11 +67,11 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 GO
 
 CREATE TABLE [audit].[ChangeLog] (
-    [Id]     INT       IDENTITY (1, 1) NOT NULL
+    [Id]     INT      IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_ChangeLog_Id]
             PRIMARY KEY CLUSTERED,
-    [At]     DATETIME2 NOT NULL,
-    [UserId] INT       NOT NULL
+    [At]     DATETIME NOT NULL,
+    [UserId] INT      NOT NULL
         CONSTRAINT [FK_ChangeLog_User_UserId]
             FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id])
 )
@@ -427,7 +431,7 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 GO
 
 CREATE TABLE [dbo].[Heap] (
-    [LoggedAt] DATETIME2      NOT NULL,
+    [LoggedAt] DATETIME       NOT NULL,
     [Message]  NVARCHAR (500) NULL
 )
 
@@ -657,14 +661,14 @@ CREATE TABLE [dbo].[ScalarGallery] (
         CONSTRAINT [PK_ScalarGallery_Id]
             PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
-        DEFAULT '08:30:00',
+        DEFAULT CAST ('08:30:00' AS TIME (7)),
     [Amount]      DECIMAL (18, 4)  NULL
         DEFAULT 3.1400
         CHECK (([Amount] <= (1000000.0000))),
     [Code]        NVARCHAR (20)    NOT NULL
         CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
     [DueDate]     DATE             NULL
-        DEFAULT '2020-01-01',
+        DEFAULT CAST ('2020-01-01' AS DATE),
     [ExternalKey] UNIQUEIDENTIFIER NULL
         DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
@@ -672,8 +676,8 @@ CREATE TABLE [dbo].[ScalarGallery] (
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
         DEFAULT N'',
-    [OccurredOn]  DATETIME2        NULL
-        DEFAULT '2020-01-01 00:00:00',
+    [OccurredOn]  DATETIME         NULL
+        DEFAULT CAST ('2020-01-01 00:00:00' AS DATETIME2 (7)),
     [Payload]     VARBINARY (512)  NULL
         DEFAULT 0x00,
     [Tally]       INT              NULL

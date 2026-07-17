@@ -1321,3 +1321,123 @@ let ``emitted index names: the identifier budget caps an over-long generated nam
         Assert.True(name.Length <= 128, sprintf "expected budget-capped name; got %d chars" name.Length)
         Assert.StartsWith("IX_Long_", name)
     | other -> failwithf "expected one index, got %A" other
+
+// ---------------------------------------------------------------------------
+// G6 (DECISIONS 2026-07-16) — CREATE SCHEMA emission for non-dbo estates.
+// Every distinct non-dbo schema the emitted estate references (kinds +
+// sequences) yields one `CREATE SCHEMA` at the HEAD of the statement stream
+// and one `Schemas/<name>.sql` bundle file; dbo-only estates emit nothing
+// (the byte-identical default). Case-variant spellings dedupe to one schema
+// (SQL Server CI semantics); `dbo` never emits regardless of case.
+// ---------------------------------------------------------------------------
+
+let private nonDboKind (schema: string) (label: string) : Kind =
+    { Kind.create (kindKey [ label ]) (mkName label) (mkTableId schema ("OSUSR_G6_" + label.ToUpperInvariant()))
+        [ { Attribute.create (attrKey [ label; "Id" ]) (mkName "Id") Integer with
+              Column = ColumnRealization.create "ID" false |> Result.value
+              IsPrimaryKey = true
+              IsMandatory = true } ]
+      with References = [] }
+
+[<Fact>]
+let ``G6: nonDboSchemas excludes dbo (any case), dedupes case-variants, includes sequence schemas, sorts ordinally`` () =
+    let seqIR : Sequence =
+        { SsKey = testKey "Seq_Billing"
+          Name = mkName "InvoiceSeq"
+          Schema = "billing"
+          DataType = "INT"
+          StartValue = None; Increment = None; Minimum = None; Maximum = None
+          IsCycleEnabled = false; CacheMode = SequenceCacheMode.Unspecified; CacheSize = None }
+    let catalog : Catalog =
+        { Modules =
+            [ IRBuilders.mkModule (modKey "G6") (mkName "G6")
+                [ nonDboKind "audit" "ChangeLog"
+                  nonDboKind "AUDIT" "ChangeLogTwin"   // case-variant of audit — ONE schema
+                  nonDboKind "DBO" "PlainTwin"         // dbo in caps — never emitted
+                  nonDboKind "dbo" "Plain" ] ]
+          Sequences = [ seqIR ] }
+    Assert.Equal<string list>([ "AUDIT"; "billing" ] |> List.sort, SsdtDdlEmitter.nonDboSchemas catalog |> List.sort)
+    // Deterministic: the ordinal sort puts "AUDIT" (uppercase) first and the
+    // case-insensitive dedupe keeps that first spelling.
+    Assert.Equal<string list>([ "AUDIT"; "billing" ], SsdtDdlEmitter.nonDboSchemas catalog)
+
+[<Fact>]
+let ``G6: a dbo-only catalog emits NO schema statements and NO schema files (byte-identical default)`` () =
+    Assert.Empty(SsdtDdlEmitter.schemaStatements sampleCatalog)
+    Assert.Empty(SsdtDdlEmitter.schemaFiles sampleCatalog)
+    // And the flat stream carries no CreateSchema.
+    let stream = SsdtDdlEmitter.statements (enrich sampleCatalog)
+    Assert.Empty(stream |> Seq.filter (function Statement.CreateSchema _ -> true | _ -> false))
+
+[<Fact>]
+let ``G6: the statement stream opens with CREATE SCHEMA before every other object`` () =
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "G6") (mkName "G6") [ nonDboKind "audit" "ChangeLog" ] ]
+          Sequences = [] }
+    let stream = SsdtDdlEmitter.statements (enrich catalog) |> List.ofSeq
+    match stream with
+    | Statement.CreateSchema "audit" :: _ -> ()
+    | other -> failwithf "expected the stream to open with CreateSchema \"audit\"; got head %A" (List.tryHead other)
+    // And exactly one schema statement for the one non-dbo schema.
+    Assert.Equal(1, stream |> List.filter (function Statement.CreateSchema _ -> true | _ -> false) |> List.length)
+
+[<Fact>]
+let ``G6: schemaFiles emit Schemas/<name>.sql with the ScriptDom-rendered CREATE SCHEMA body`` () =
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "G6") (mkName "G6") [ nonDboKind "audit" "ChangeLog" ] ]
+          Sequences = [] }
+    match SsdtDdlEmitter.schemaFiles catalog with
+    | [ (relPath, body) ] ->
+        Assert.Equal("Schemas/audit.sql", relPath)
+        Assert.Contains("CREATE SCHEMA [audit]", body)
+        Assert.Contains("GO", body)
+    | other -> failwithf "expected exactly one schema file; got %A" (List.map fst other)
+
+[<Fact>]
+let ``G6: the dacpac arm accepts a non-dbo catalog (schema objects join the declarative model)`` () =
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "G6") (mkName "G6") [ nonDboKind "audit" "ChangeLog" ] ]
+          Sequences = [] }
+    match DacpacEmitter.emit (enrich catalog) with
+    | FsResult.Ok bytes -> Assert.True(bytes.Length > 0, "dacpac bytes present")
+    | FsResult.Error e -> failwithf "expected the non-dbo dacpac to build; got %A" e
+
+// ---------------------------------------------------------------------------
+// WP-17(d) (DECISIONS 2026-07-16) — the DATA-plane temporal literal carries
+// V1's explicit CAST form through the ScriptDom boundary (the golden
+// ScalarGallery DEFAULTs pin the DDL-plane form; this pins the row-value
+// plane the MERGE/INSERT lanes ride).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17d: an InsertRow temporal cell renders as the explicit CAST form (ScriptDom plane)`` () =
+    let table = mkTableId "dbo" "OSUSR_T_EVENT"
+    let cells : CellValue list =
+        [ { Column = "ID";          Type = Integer;  Raw = Some "1" }
+          { Column = "OCCURRED_ON"; Type = DateTime; Raw = Some "2026-05-10 12:30:00.0000000" }
+          { Column = "DUE_ON";      Type = Date;     Raw = Some "2026-05-10" }
+          { Column = "ALARM_AT";    Type = Time;     Raw = Some "08:30:00" } ]
+    let sql = Render.toText [ Statement.InsertRow (table, cells) ]
+    Assert.Contains("CAST ('2026-05-10 12:30:00.0000000' AS DATETIME2 (7))", sql)
+    Assert.Contains("CAST ('2026-05-10' AS DATE)", sql)
+    Assert.Contains("CAST ('08:30:00' AS TIME (7))", sql)
+    // And never the pre-WP-17 bare quoted forms.
+    Assert.DoesNotContain("'2026-05-10 12:30:00.0000000',", sql)
+
+[<Fact>]
+let ``WP-17e: an InsertRow Text cell with control chars renders CHAR() concatenation — no raw control bytes in the SQL`` () =
+    let table = mkTableId "dbo" "OSUSR_T_NOTE"
+    let cells : CellValue list =
+        [ { Column = "ID";   Type = Integer; Raw = Some "1" }
+          { Column = "BODY"; Type = Text;    Raw = Some "line1\r\nline2\tend" } ]
+    let sql = Render.toText [ Statement.InsertRow (table, cells) ]
+    Assert.Contains("CHAR(13)", sql)
+    Assert.Contains("CHAR(10)", sql)
+    Assert.Contains("CHAR(9)", sql)
+    Assert.Contains("N'line1'", sql)
+    // The seed text carries NO raw control bytes inside the literal —
+    // the exact property WP-17(e) exists for (diff review,
+    // byte-determinism, single-line literals).
+    Assert.DoesNotContain("line1\r", sql)
+    Assert.DoesNotContain("\nline2", sql)
+    Assert.DoesNotContain("line2\t", sql)

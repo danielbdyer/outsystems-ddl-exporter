@@ -183,3 +183,18 @@ module RefactorLogRender =
         (artifact: ArtifactByKind<RefactorLogEntry list>)
         : string =
         toRefactorLogXmlAt pinnedChangeDateTime artifact
+
+    /// The ACCUMULATED (cross-episode) document — the flat entry-list
+    /// form `RefactorLogEmitter.accumulate` produces. G3 (DECISIONS
+    /// 2026-07-16): the bundle's `<project>.refactorlog` renders the
+    /// timeline's whole accumulated log, not a single episode's per-kind
+    /// artifact, so the flat form is the production input. Same
+    /// byte-determinism core as the artifact overloads (entries sorted
+    /// by `OperationKey`; pinned writer settings; `at` is an input —
+    /// the episode's boundary-supplied instant — never a clock read).
+    let ofEntriesAt
+        (at: DateTimeOffset)
+        (entries: RefactorLogEntry list)
+        : string =
+        use _ = Bench.scope "render.refactorLog.ofEntries"
+        renderEntries at entries

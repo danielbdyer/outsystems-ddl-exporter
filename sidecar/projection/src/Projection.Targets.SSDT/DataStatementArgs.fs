@@ -65,6 +65,17 @@ type MergeRowSource =
     | InlineValues
     | Staged of tempName: string
 
+/// WP-17(c) — the change-detect CAST target for a column whose storage
+/// type has no `<>` operator. Closed DU: the members are exactly the
+/// SQL Server comparison-less types' legal cast targets (`xml`/`ntext`
+/// → NVARCHAR(MAX); legacy `text` → VARCHAR(MAX); `image` →
+/// VARBINARY(MAX) — an image→nvarchar cast is itself illegal, which is
+/// why the target is per-type, not universal).
+type ChangeCompareCast =
+    | CastToNVarCharMax
+    | CastToVarCharMax
+    | CastToVarBinaryMax
+
 /// MERGE construction args. Decoupled from `Catalog`/`Kind`/`Attribute` (carry
 /// `TableId` + name lists + typed `SqlLiteral` rows) so the builder is testable
 /// in isolation and shared across every MERGE-emitting lane.
@@ -81,6 +92,17 @@ type MergeBuildArgs =
         /// pre-staged `#temp` (the error-8623-safe form for large kinds). See
         /// `MergeRowSource`.
         RowSource   : MergeRowSource
+        /// WP-17(c) (DECISIONS 2026-07-16) — updatable columns whose
+        /// change-detect compare must CAST both sides (the types with NO
+        /// `<>` operator: `xml`, and the legacy LOBs `image`/`text`/
+        /// `ntext` — the WP-17(f) gallery canary discovered the LOB
+        /// members live: "The data types image and varbinary are
+        /// incompatible in the not equal to operator"). The cast target
+        /// is per-type (`image` casts to VARBINARY(MAX); `xml`/`ntext`
+        /// to NVARCHAR(MAX); legacy `text` to VARCHAR(MAX)) — content-
+        /// level compare is the deliberate semantic. Empty for kinds
+        /// without such columns — the emitted predicate is byte-identical.
+        CastCompareColumns : Map<string, ChangeCompareCast>
     }
 
 /// UPDATE construction args. Decoupled from `Catalog`/`Kind`/`Attribute`

@@ -69,9 +69,12 @@ let ``ofPrimitiveType mirrors the legacy SqlTypeCorrespondence defaults`` () =
     // Integer → INT (semantic fallback keeps the v2 default; only the
     // OSSYS adapter's longinteger evidence narrows to BIGINT).
     Assert.Equal (SqlStorageType.Int, SqlStorageType.ofPrimitiveType Integer)
-    // DateTime → DATETIME2 (the existing fallback; the OSSYS adapter's
-    // `datetime` evidence narrows to DATETIME).
-    Assert.Equal (SqlStorageType.DateTime2 None, SqlStorageType.ofPrimitiveType DateTime)
+    // DateTime → DATETIME (WP-17(d), DECISIONS 2026-07-16: the
+    // evidence-less fallback carries the PLATFORM legacy default,
+    // aligned with the storage lane — the silent DATETIME2 upgrade is
+    // retired; a datetime2 SOURCE still narrows to DATETIME2 via its
+    // storage evidence).
+    Assert.Equal (SqlStorageType.DateTime, SqlStorageType.ofPrimitiveType DateTime)
     Assert.Equal (SqlStorageType.NVarChar Max, SqlStorageType.ofPrimitiveType Text)
 
 // ---------------------------------------------------------------------------

@@ -28066,3 +28066,247 @@ reflected-default literal parsing carries quotes through `normalizeDefault` (`('
 docs-only: the constraint plane always rendered `DEFAULT N''`; the two stale "renders DEFAULT NULL"
 claims (GoldenCatalog comment, THE_GOLDEN_EMISSION) are corrected. WP-17's Float/Real/DateTimeOffset/
 Xml faithful-or-refuse work now rides an option-grain carrier that can express what it needs.
+
+## 2026-07-16 — G3: the accumulated refactorlog reaches the bundle + `.sqlproj` — in DEPLOYED vocabulary, DacFx-proven
+
+**Decision.** The store-threaded publish now writes `ProjectionCatalog.refactorlog` — the
+timeline's ACCUMULATED rename document (prior chain ⊕ this run's displacement, deduped by
+`OperationKey`, rendered at the episode's `At`) — inside the ATOMIC bundle, and (under
+`emission.sqlproj: true`) the project carries the matching explicit `<RefactorLog>` item, so
+`dotnet build` embeds `refactor.xml` into the `.dacpac` and DacFx's incremental publish
+converts a rename into `sp_rename` instead of DROP+CREATE. Presence contract: file (and item)
+exist ⟺ the run is store-threaded — the store IS the rename evidence; a store-less run is
+genesis and stays byte-identical to the pre-G3 bundle. Covers `full-export --lifecycle-store`,
+the flow path (`publish` → `PublishBundle` with an env `store`), and the `--load` combined verb.
+
+**The plane finding (why this was the highest-stakes gap, not a plumbing job).** The existing
+`RefactorLogEmitter.emit` speaks the CATALOG plane: `ElementName` renders the kind's OSSYS
+physical table (`[dbo].[OSUSR_S1S_CUSTOMER]`, pinned by its own render test). The deployed
+estate speaks LOGICAL names (`LogicalTableEmission`/`LogicalColumnEmission`, default-on, no
+config off-switch — H1), and DacFx matches refactor operations against the DEPLOYED model's
+element names — so wiring `emit`'s output into the bundle would have shipped operations that
+match nothing, get silently skipped, and DROP+CREATE anyway: G3 "closed" but wrong. What
+landed instead is `RefactorLogEmitter.emitDeployed`, the deployed-vocabulary sibling:
+
+- Old/new names project through the SAME name-decision rules the emission passes apply —
+  validity by construction (`TableName.create`/`ColumnName.create` embed the exact blank/>128
+  fallback), the OLD side through the SOURCE kind's plane, the NEW through the target's.
+- `physicalNamedKinds` (new `Compose.operatorRenamedKinds`) suppresses operations for kinds an
+  operator `tableRenames` override targets in EITHER form — the operator rename is the chain's
+  LAST `Kind.Physical` writer, so those kinds deploy under the authored physical name and a
+  model-side logical rename on one changes no deployed element. A rename whose old and new
+  deployed names coincide emits nothing.
+- The FK channel is NAMED-ABSENT: deployed FK names are synthesized
+  (`FK_<Owner>_<Target>_<Col>`; honoring `Reference.Name` is WP-7's open remainder), so a
+  logical FK rename changes no deployed constraint and its operation could never match.
+  Re-opens with WP-7.
+- `OperationKey` derivations are UNCHANGED (keys are over the logical rename triple), so
+  accumulation dedup, cross-run identity, and the target DB's `__RefactorLog` ledger are
+  unaffected by the vocabulary fix; `emit` itself is untouched (its migrate-preview consumer
+  keeps the catalog plane).
+
+**Sequencing (the atomic-bundle constraint).** The bundle write is atomic-replace, so the
+document must ride `Outputs` (`Outputs.RefactorLog`, `ArtifactPath.refactorLog`, the staging
+writer's optional-text arm) — which forces the store READ phase ahead of the emission. The
+store leg split accordingly: `loadStorePrior` (ONE durable load + `priorSchemaOfChain` + the
+per-edge deployed-vocabulary fold, hoisted BEFORE `runWithConfigAcquiringWithPrior`; S51's
+one-load-per-leg and S53's fold-once both hold across the split) → the core computes this
+run's displacement over the RENAMED catalog and renders `accumulate(priorEntries, current)`
+into the bundle → `runStoreLegOnPrior` records the episode AFTER the bundle lands, reusing the
+loaded chain. Consequences, named: (1) a MALFORMED store now refuses BEFORE the bundle (its
+content depends on the store; emitting without it would ship a wrong document) — record-phase
+failures still surface after the bundle, as before; (2) the load-leg (`--load`) record re-reads
+the store at record time (a data load may run long; the fresh read narrows the lost-update
+window ahead of the monotone append); (3) the bundle derives over renamed(HYDRATED) while the
+episode plane stays renamed(READ) — the hydration graft adds static rows only, so the rename
+channels agree, and the file⇔leg agreement is pinned by test; (4) historical edges fold with
+NO pins (pins are a this-run config fact; a today-pin-suppressed old operation is a DacFx
+no-match no-op either way), and the accumulated document re-derives from the chain under
+today's rules each run — rendered names on old entries can drift with config, keys cannot.
+
+**Witness.** `emitDeployed` unit pins (logical ElementName; pin suppression; compound
+table+column rename speaks ONE pre-publish vocabulary; FK channel absent; key equality with
+`emit`; T11 keyset); the store-wire witnesses (file present + reported ⟺ store-threaded; the
+empty genesis document; the hand-seeded-prior rename lands in the file in deployed vocabulary
+agreeing with the leg; the CUMULATIVE document survives a no-change run; the `.sqlproj` item
+pairs with the file); the real-SDK build witness (`RefactorLog` item + file build clean under
+Microsoft.Build.Sql/2.2.0 — no default-glob duplicate — and the built `.dacpac` embeds
+`refactor.xml`); and **the DacFx-grade canary** (`RefactorLogPublishCanaryTests`, Docker):
+full-export A → `dotnet build` → `DacServices.Deploy` → live rows under `[dbo].[User]` →
+store-threaded full-export B (rename to `Client`) → build → INCREMENTAL publish with the
+default `BlockOnPossibleDataLoss = true` armed → the publish succeeds, the rows survive under
+`[dbo].[Client]` with IDENTITY values intact, and `[dbo].[User]` is gone — `sp_rename`, not
+DROP+CREATE, end-to-end through the operator's real path.
+
+**Named residuals.** (1) Operator `tableRenames` rewrite `Kind.Physical` and never touch
+`Kind.Name`, so they produce NO `RenameRecord` — the deployed rename they cause (logical name →
+authored physical, or pin→pin) is INVISIBLE to `CatalogDiff`'s Name-keyed rename channel and
+therefore absent from the refactorlog; H3's "renames feed the refactorlog channel" holds only
+for identity-stable MODEL-side renames (a Service-Studio entity/attribute rename over a
+GUID-keyed source, or any rename the store's persisted SsKeys thread). Re-open trigger: a
+`Physical`-change rename channel on `CatalogDiff`. (2) File-sourced models synthesize SsKeys
+from names, so they cannot thread rename identity at all (the standing 6.A.7 limitation — the
+witnesses seed the store to simulate an identity-stable source). (3) The eject package
+(`EjectRun`) still carries `RefactorLogRefs` (the reference chain), not the rendered document;
+rendering the terminal accumulated document into the eject artifact is the eject verb's slice
+of P-7. (4) `MigrationRun.preview` keeps the catalog-plane `emit` for its report artifact —
+migrating that surface to deployed vocabulary is its own decision when the migrate path grows
+a DacFx consumer.
+
+## 2026-07-16 — G6: `CREATE SCHEMA` objects emitted — non-dbo estates build and publish
+
+**Decision.** The emission now produces the non-dbo schema objects the estate references, at
+every surface that needed them: `Statement.CreateSchema` (closed-DU expansion; ScriptDom
+`CreateSchemaStatement`, bracket-quoted, no AUTHORIZATION — ownership is the receiving team's
+call) opens the catalog-wide statement stream BEFORE sequences and tables; the bundle gains
+one `Schemas/<name>.sql` per schema beside `Modules/**` (the SDK's default Build glob compiles
+them — `SsdtBundle.composeWithSchemas`, wired at the emit step); the dacpac arm's
+`isSchemaStatement` admits them into the declarative model; the deploy executor treats them as
+the DDL class they are. Derivation (`SsdtDdlEmitter.nonDboSchemas`): every distinct schema
+across kind physical coordinates AND sequences, minus `dbo` in any case (it always exists),
+deduped case-insensitively (SQL Server CI semantics — case-variant spellings are ONE schema;
+the ordinal-sort-first spelling wins deterministically, T1). A dbo-only estate emits nothing —
+the byte-identical default everywhere, which is why exactly ONE golden scenario moved.
+
+**Witness.** `nonDboSchemas` derivation pins (dbo-any-case exclusion, CI dedupe, sequence
+schemas, ordinal order); the dbo-only byte-identical default (no statements, no files, clean
+stream); stream-head ordering (`CREATE SCHEMA` precedes every object); the `Schemas/audit.sql`
+file shape; the dacpac arm accepting a non-dbo catalog; and the gated real-SDK build witness —
+a non-dbo bundle `dotnet build`s to a `.dacpac` (pre-G6 this refuses with unresolved-schema
+SQL71501; the composed bundle, not a hand-assembly, carries `Schemas/audit.sql`). Golden
+re-record: master corpus only, additive-verified by diff — the 4-line `CREATE SCHEMA [audit]`
+stream head + the new `Schemas/audit.sql`; every dbo-only corpus byte-identical.
+
+**Scope notes.** `CREATE SCHEMA` is not idempotent (no `IF NOT EXISTS` guard) — correct for
+the SSDT/DacFx path (the deploy planner diffs the model; it never re-runs a CREATE against an
+existing schema) and for V2's own executor against fresh targets (the canary/docker legs);
+targets that pre-created schemas by hand (runbook §11 step 4's old instruction) will refuse a
+raw re-execution of the stream head loudly rather than silently — the runbook step is now
+"supplied by the bundle". The migrate/ALTER lens (`SchemaMigrationEmitter`) is untouched: a
+schema APPEARING mid-timeline arrives via new kinds whose CREATE TABLEs the bundle already
+carries alongside the new `Schemas/` file; an in-place `migrate` against an estate missing the
+schema still requires the bundle deploy (or hand DDL) first — the named residual, re-opened if
+a real mid-timeline schema-add migration surfaces.
+
+## 2026-07-16 — WP-17(d): the temporal contract — the fallback lane carries legacy `DATETIME`; seed literals carry V1's explicit CAST
+
+**Decision (packet C4, adopted 2026-07-15; audit §5).** Two coupled temporal fixes, one commit:
+
+- **The evidence-less DDL fallback is the platform legacy `DATETIME`.** Pre-WP-17, the same
+  logical `DateTime` attribute emitted `DATETIME` from a live export (storage evidence) and
+  `DATETIME2` from the fallback lane (catalog-direct goldens, ReadSide-derived catalogs, JSON
+  without `SqlStorage`) — the goldens misrepresented what a live export deploys. Three mirror
+  sites flipped together: `ScriptDomBuild.sqlDataTypeOption`, `SqlStorageType.ofPrimitiveType`,
+  `SqlTypeCorrespondence.baseName`. A `datetime2` SOURCE still emits `DATETIME2` via its
+  storage evidence — only the no-evidence default moved.
+- **Temporal literals render as V1's explicit CAST** (`SqlLiteralFormatter.cs:90` parity):
+  `CAST('…' AS datetime2(7))` / `AS date` / `AS time(7)` — precision-explicit and
+  language-independent (`datetime2` parses the ISO form identically under any
+  `SET DATEFORMAT`/`LANGUAGE`; the bare quoted string relied on implicit conversion whose
+  space-separated no-`T` form is a parsing boundary case against legacy `DATETIME`). The
+  category-blind `SqlLiteral.TemporalLit` split into `DateTimeLit`/`DateLit`/`TimeLit` — each
+  variant owns its CAST target (the compiler enumerated every site). ScriptDom plane renders
+  via a `CastCall` (`temporalCast`); the text plane via `toString`. CDC-silence is unchanged:
+  the typed `#temp`/column reconciles the storage type on INSERT exactly as the bare literal
+  did (audit §5c); the Docker pool's CDC-silence canaries are the executable witness.
+- **Codec compatibility, replay preserved:** the codec writes the three new kinds; a pre-WP-17
+  artifact's category-blind `"TemporalLit"` still READS, classified by the canonical raw shape
+  (`RawValueCodec` forms are disjoint: space ⇒ DateTime, colon ⇒ Time, else Date) — witnessed.
+  No version refusal, no re-record of old artifacts.
+
+**Witness.** The `ofRaw` per-category mapping; the three `toString` CAST forms; the ScriptDom
+row-value CAST pin (`InsertRow` temporal cells render `CAST ('…' AS DATETIME2 (7))`/`DATE`/
+`TIME (7)`); the legacy-`TemporalLit` codec read; `ofPrimitiveType`/`baseName` mirror pins
+updated with the rationale; the golden re-record (both corpora commands; only master moved):
+`DATETIME2 → DATETIME` on the fallback-lane columns + the ScalarGallery temporal DEFAULTs now
+carrying the CAST forms — the diff is exactly the two decided changes and their alignment
+whitespace, nothing else.
+
+**Scope notes.** The storage-evidence lane is untouched (`DATETIME` already; `datetime2`
+sources keep `DATETIME2(s)`). The audit's S3 hazard row closes; S1/S2/S4/S5 (Float/Real,
+DateTimeOffset, control chars, Xml) remain WP-17(a–c,e,f) — the option-grain carrier and this
+CAST machinery are their substrate. V1's byte-form (`CAST('…' AS datetime2(7))`, lowercase,
+no space) vs V2's ScriptDom house form (`CAST ('…' AS DATETIME2 (7))`) differ in rendering,
+deliberately: the DECISION adopts the explicit-CAST semantics; each terminal boundary keeps
+its own pinned generator style.
+
+## 2026-07-16 — WP-17(e): text control characters splice into `CHAR()` concatenation — no raw control bytes in emitted SQL
+
+**Decision (packet C11(e); audit S4).** A Text literal whose raw value carries CR/LF/TAB now
+renders as V1's concatenation form (`SqlLiteralFormatter.EscapeUnicodeString` parity):
+`N'line1' + CHAR(13) + N'' + CHAR(10) + N'line2'` — the emitted seed SQL contains no raw
+control bytes (they broke diff review, byte-determinism assumptions, and any downstream that
+assumes single-line literals). One shared segmentation owns the split
+(`SqlLiteral.textLiteralSegments` — `TextRun`/`ControlChar` over exactly V1's escape set
+13/10/9, blind-splice semantics: adjacent/edge control chars keep their empty `N''` runs);
+both terminal planes compose from it so they cannot drift — `toString` joins with ` + `,
+`ScriptDomBuild.buildSqlLiteral` builds the `BinaryExpression(Add)` chain over national
+`StringLiteral`s and `CHAR(n)` `FunctionCall`s. A control-char-free raw renders byte-identically
+to the pre-WP-17 form on both planes (the default everywhere — goldens untouched). The
+concatenation evaluates to the identical string value, so CDC-silence and the WP-3
+empty-string contract (`N''`) are unchanged.
+
+**Witness.** The shared-segmentation pins (single-run default; the `a\r\nb` five-segment
+shape); the three per-char splice forms + CRLF adjacency + leading/trailing edge runs +
+quote-doubling-inside-runs on the text plane; the ScriptDom row-value pin (an `InsertRow`
+Text cell renders `CHAR(13)/CHAR(10)/CHAR(9)` with NO raw control bytes in the rendered SQL).
+
+**Scope notes.** Exactly V1's escape set (CR/LF/TAB) — other C0 controls pass through inside
+runs, as V1. The round-trip fixture for control-char text (deploy → read back → value equality)
+belongs to WP-17(f)'s fixture backlog with the other unwitnessed types.
+
+## 2026-07-16 — WP-17(a–c) + (f): faithful carriage for the collapsing scalars — value-driven, no new carrier — and the gallery canary that widened S5
+
+**Decision (packet C11; audit S1/S2/S5; the §9-mandated design constraint honored: the
+raw-string / CDC-silent codec stays).** The four unfaithful collapses become faithful WITHOUT
+object-carriage or a tenth `PrimitiveType`: the RAW STRING carries the concrete value, and the
+boundaries dispatch on the raw's SHAPE — the 9-way semantic category stands everywhere.
+
+- **(a) `float`/`real`.** READ: `ReadSide.formatRawValue`'s Decimal arm type-switches on the
+  boxed runtime value — `double → G17`, `single → G9` (V1's exact round-trip formats) — before
+  the old `Convert.ToDecimal` (which truncated to ~15 digits and OVERFLOWED above ≈7.9E28).
+  WRITE: `Bulk.parseRaw`'s Decimal arm dispatches on scientific notation — an exponent-bearing
+  raw parses as the exact IEEE `double` (SqlBulkCopy converts to the float/real column
+  faithfully); plain digit runs keep the exact `decimal` parse (decimal-family columns; a
+  G17 form without an exponent carries ≤17 significant digits, which decimal holds exactly and
+  the column's nearest-double conversion recovers). The seed literal needed nothing: `DecimalLit`
+  is raw pass-through and `NumericLiteral` accepts E-notation (a legal T-SQL float literal).
+- **(b) `datetimeoffset`.** A new canonical raw form (`RawValueCodec.DateTimeOffsetFormat` =
+  `yyyy-MM-dd HH:mm:ss.fffffff zzz`; `formatDateTimeOffset`/`parseDateTimeOffset`; the offset
+  is PRESERVED, never UTC-normalized) + the shape detector `hasUtcOffset` (a `±HH:mm` suffix —
+  disjoint from every offset-less canonical form by construction). READ: the DateTime arm
+  type-switches on a boxed `DateTimeOffset` — retiring the S2 READBACK THROW
+  (`Convert.ToDateTime` refuses `DateTimeOffset`). LITERAL: `SqlLiteral.DateTimeOffsetLit`
+  (`ofRaw` dispatches on the shape) renders `CAST('… ±HH:mm' AS datetimeoffset(7))` on both
+  planes — an offset-bearing string cast to `datetime2` refuses on SQL Server, so the shape
+  MUST own its CAST target. WRITE: `Bulk.parseRaw` boxes the exact `DateTimeOffset`. Codec
+  writes/reads the new kind (old artifacts cannot carry offsets — the collapse dropped them,
+  so no legacy classifier change).
+- **(c) the comparison-less types — and the canary's discovery.** `xml` has no `<>` operator,
+  so a CDC-enabled xml kind's change-detect predicate was an UNCOMPILABLE MERGE (S5). The
+  first run of the (f) gallery canary then widened the class LIVE: **`image` (and by the same
+  SQL rule `text`/`ntext`) refuse `<>` identically** ("The data types image and varbinary are
+  incompatible in the not equal to operator"). The guard: `MergeBuildArgs.CastCompareColumns :
+  Map<string, ChangeCompareCast>` (closed DU — `xml`/`ntext` → NVARCHAR(MAX), legacy `text` →
+  VARCHAR(MAX), `image` → VARBINARY(MAX): the cast target is per-type because `image` cannot
+  cast to nvarchar) — computed at `MergeRender` from the attributes' storage evidence; only the
+  value-mismatch arm casts (`IS NULL` is legal on all of them); kinds without such columns emit
+  byte-identical predicates. Xml carriage itself: faithful TEXT content (V1 parity, `N'…'`
+  implicit-converts on insert); the server's re-serialization is SERVER behavior — content
+  equality is the deliberate semantic, named here.
+- **(f) the fixture backlog.** `ScalarCarriageRoundTripTests` (Docker): ONE gallery kind
+  carrying every contested column (float w/ `Double.MaxValue`, real, `datetimeoffset(7)` w/
+  `-03:00`, xml, money, smalldatetime, image, control-char text), CDC-ENABLED so the S5
+  predicate is in the executed SQL — DacFx-publishes the storage-lane DDL, executes the
+  composed seed MERGE TWICE (compile + idempotence), and server-side compares every value
+  (offset verbatim via style 121; xml via `.value()` content probes; the CHAR() splice equals
+  the raw-control-char literal). The audit §8 UNWITNESSED rows (Float/Real/DateTimeOffset/
+  Xml/Money/SmallDateTime/Image + control-char text) are now Docker-proven.
+
+**Named residuals.** The evidence plane (`CachedValue`) refuses loud on the new raw shapes if
+they ever reach profiling (float/dtoffset columns are DBA/External; static-kind overlap is nil
+— re-open if a real estate profiles one). The migrate/ALTER lens and the reverse-leg readers
+did not change (the READ formatter fix covers the shared `ReadSide` row path; `typedCellFormatter`'s
+fast paths fall back to the fixed generic arm for the exotic field types). `SmallDateTime`
+carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
+DECISIONS 2026-07-16 — WP-17(a–c,f).

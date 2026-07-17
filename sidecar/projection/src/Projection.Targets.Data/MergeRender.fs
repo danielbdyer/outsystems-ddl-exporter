@@ -87,6 +87,21 @@ module MergeRender =
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 RowSource   = MergeRowSource.InlineValues
+                // WP-17(c) — the comparison-less storage types (`xml` +
+                // the legacy LOBs `image`/`text`/`ntext`) have no `<>`
+                // operator; their change-detect compare CASTs both sides
+                // to the type's legal MAX target (content-level). Empty
+                // for kinds without them — the predicate is byte-identical.
+                CastCompareColumns =
+                    k.Attributes
+                    |> List.choose (fun a ->
+                        match a.SqlStorage with
+                        | Some SqlStorageType.Xml
+                        | Some SqlStorageType.NText -> Some (ColumnRealization.columnNameText a.Column, CastToNVarCharMax)
+                        | Some SqlStorageType.Text  -> Some (ColumnRealization.columnNameText a.Column, CastToVarCharMax)
+                        | Some SqlStorageType.Image -> Some (ColumnRealization.columnNameText a.Column, CastToVarBinaryMax)
+                        | _ -> None)
+                    |> Map.ofList
             }
         if DataStagingPolicy.shouldStage staging rowCount then
             Bench.recordSample (System.String.Concat(bench, ".staged")) 1L  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive

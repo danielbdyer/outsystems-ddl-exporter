@@ -3,14 +3,14 @@ CREATE TABLE [dbo].[ScalarGallery] (
         CONSTRAINT [PK_ScalarGallery_Id]
             PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
-        DEFAULT '08:30:00',
+        DEFAULT CAST ('08:30:00' AS TIME (7)),
     [Amount]      DECIMAL (18, 4)  NULL
         DEFAULT 3.1400
         CHECK (([Amount] <= (1000000.0000))),
     [Code]        NVARCHAR (20)    NOT NULL
         CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
     [DueDate]     DATE             NULL
-        DEFAULT '2020-01-01',
+        DEFAULT CAST ('2020-01-01' AS DATE),
     [ExternalKey] UNIQUEIDENTIFIER NULL
         DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
@@ -18,8 +18,8 @@ CREATE TABLE [dbo].[ScalarGallery] (
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
         DEFAULT N'',
-    [OccurredOn]  DATETIME2        NULL
-        DEFAULT '2020-01-01 00:00:00',
+    [OccurredOn]  DATETIME         NULL
+        DEFAULT CAST ('2020-01-01 00:00:00' AS DATETIME2 (7)),
     [Payload]     VARBINARY (512)  NULL
         DEFAULT 0x00,
     [Tally]       INT              NULL

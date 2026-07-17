@@ -67,13 +67,13 @@ let ``PostDeploy: renderInlined concatenates lane SQL under banners and skips em
 
 [<Fact>]
 let ``Sqlproj: emit is well-formed XML pinning the Microsoft.Build.Sql SDK`` () =
-    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true)
+    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true false)
     Assert.Equal("Project", root.Name.LocalName)
     Assert.Equal("Microsoft.Build.Sql/" + SqlprojEmitter.sdkVersion, attrVal root "Sdk")
 
 [<Fact>]
 let ``Sqlproj: data lanes are None + removed from the Build glob; post-deploy is PostDeploy; schema .sql not enumerated`` () =
-    let xml = SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true
+    let xml = SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true false
     let root = rootOf xml
     // post-deploy script is the conventional PostDeploy item
     Assert.Equal<string list>([ PostDeployEmitter.fileName ], includeValues root "PostDeploy" "Include")
@@ -93,5 +93,21 @@ let ``Sqlproj: data lanes are None + removed from the Build glob; post-deploy is
 
 [<Fact>]
 let ``Sqlproj: emit without a post-deploy omits the PostDeploy item`` () =
-    let root = rootOf (SqlprojEmitter.emit [] false)
+    let root = rootOf (SqlprojEmitter.emit [] false false)
     Assert.Empty(root.Descendants(XName.Get "PostDeploy"))
+
+// G3 (DECISIONS 2026-07-16) — the store-threaded run's `.sqlproj` carries the
+// `RefactorLog` item naming the bundle's accumulated document; a store-less
+// project carries none (byte-identical to the pre-G3 shape).
+
+[<Fact>]
+let ``Sqlproj: with a refactorlog the project carries the RefactorLog item (G3)`` () =
+    let root = rootOf (SqlprojEmitter.emit [] false true)
+    Assert.Equal<string list>(
+        [ SqlprojEmitter.refactorLogFileName ],
+        includeValues root "RefactorLog" "Include")
+
+[<Fact>]
+let ``Sqlproj: without a refactorlog the project carries NO RefactorLog item`` () =
+    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql" ] true false)
+    Assert.Empty(root.Descendants(XName.Get "RefactorLog"))

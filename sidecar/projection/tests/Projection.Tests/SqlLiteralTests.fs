@@ -76,10 +76,10 @@ let ``SqlLiteral.ofRaw on an unrecognized Boolean raw fails loud, not silent-fal
     Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw Boolean (Some "2") |> ignore) |> ignore
 
 [<Fact>]
-let ``SqlLiteral.ofRaw maps temporal types to TemporalLit`` () =
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10", SqlLiteral.ofRaw Date (Some "2026-05-10"))
-    Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime (Some "2026-05-10 12:30:00.0000000"))
-    Assert.Equal<SqlLiteral> (TemporalLit "12:30:00", SqlLiteral.ofRaw Time (Some "12:30:00"))
+let ``SqlLiteral.ofRaw maps each temporal category to its own variant (WP-17d)`` () =
+    Assert.Equal<SqlLiteral> (DateLit "2026-05-10", SqlLiteral.ofRaw Date (Some "2026-05-10"))
+    Assert.Equal<SqlLiteral> (DateTimeLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime (Some "2026-05-10 12:30:00.0000000"))
+    Assert.Equal<SqlLiteral> (TimeLit "12:30:00", SqlLiteral.ofRaw Time (Some "12:30:00"))
 
 [<Fact>]
 let ``SqlLiteral.ofRaw maps Guid to GuidLit`` () =
@@ -116,8 +116,15 @@ let ``SqlLiteral.toString renders TextLit with N prefix and single-quote doublin
     Assert.Equal<string> ("N'O''Brien'", SqlLiteral.toString (TextLit "O'Brien"))
 
 [<Fact>]
-let ``SqlLiteral.toString renders TemporalLit and GuidLit with single-quote wrapping`` () =
-    Assert.Equal<string> ("'2026-05-10'", SqlLiteral.toString (TemporalLit "2026-05-10"))
+let ``SqlLiteral.toString renders the V1 explicit-CAST temporal forms (WP-17d)`` () =
+    // V1 `SqlLiteralFormatter.cs:90` parity: precision-explicit,
+    // language-independent — never a bare quoted string.
+    Assert.Equal<string> ("CAST('2026-05-10' AS date)", SqlLiteral.toString (DateLit "2026-05-10"))
+    Assert.Equal<string> ("CAST('2026-05-10 12:30:00.0000000' AS datetime2(7))", SqlLiteral.toString (DateTimeLit "2026-05-10 12:30:00.0000000"))
+    Assert.Equal<string> ("CAST('08:30:00' AS time(7))", SqlLiteral.toString (TimeLit "08:30:00"))
+
+[<Fact>]
+let ``SqlLiteral.toString renders GuidLit with single-quote wrapping`` () =
     Assert.Equal<string> ("'0F0E0D0C-0B0A-0908-0706-050403020100'", SqlLiteral.toString (GuidLit "0F0E0D0C-0B0A-0908-0706-050403020100"))
 
 [<Fact>]
@@ -212,3 +219,75 @@ let ``Closed-DU coverage: every PrimitiveType variant produces a SqlLiteral via 
     for v in variants do
         let lit = SqlLiteral.ofRaw v (Some "0")  // any non-empty raw
         Assert.NotEqual<SqlLiteral> (NullLit, lit)
+
+// ---------------------------------------------------------------------------
+// WP-17(e) (DECISIONS 2026-07-16) — CR/LF/TAB splice into CHAR() concatenation
+// (V1 `EscapeUnicodeString` parity); the emitted SQL carries no raw control
+// bytes. A control-char-free raw renders byte-identically to the pre-WP-17
+// form (the default everywhere).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17e: toString splices CR LF TAB into CHAR() concatenation (V1 parity)`` () =
+    Assert.Equal<string> ("N'a' + CHAR(13) + N'b'", SqlLiteral.toString (TextLit "a\rb"))
+    Assert.Equal<string> ("N'a' + CHAR(10) + N'b'", SqlLiteral.toString (TextLit "a\nb"))
+    Assert.Equal<string> ("N'a' + CHAR(9) + N'b'",  SqlLiteral.toString (TextLit "a\tb"))
+    // CRLF = two adjacent control chars — the V1-parity blind splice keeps
+    // the empty run between them.
+    Assert.Equal<string> ("N'a' + CHAR(13) + N'' + CHAR(10) + N'b'", SqlLiteral.toString (TextLit "a\r\nb"))
+    // Leading/trailing control chars yield empty edge runs (V1 parity).
+    Assert.Equal<string> ("N'' + CHAR(10) + N'x'", SqlLiteral.toString (TextLit "\nx"))
+    Assert.Equal<string> ("N'x' + CHAR(9) + N''",  SqlLiteral.toString (TextLit "x\t"))
+
+[<Fact>]
+let ``WP-17e: quote-doubling still applies inside spliced runs`` () =
+    Assert.Equal<string> ("N'O''Brien' + CHAR(10) + N'line2'", SqlLiteral.toString (TextLit "O'Brien\nline2"))
+
+[<Fact>]
+let ``WP-17e: a control-char-free Text raw renders byte-identically (no splice)`` () =
+    Assert.Equal<string> ("N'Hello'", SqlLiteral.toString (TextLit "Hello"))
+    Assert.Equal<string> ("N''", SqlLiteral.toString (TextLit ""))
+
+[<Fact>]
+let ``WP-17e: textLiteralSegments — the shared segmentation both planes ride`` () =
+    Assert.Equal<TextLiteralSegment list>([ TextRun "plain" ], SqlLiteral.textLiteralSegments "plain")
+    Assert.Equal<TextLiteralSegment list>(
+        [ TextRun "a"; ControlChar 13; TextRun ""; ControlChar 10; TextRun "b" ],
+        SqlLiteral.textLiteralSegments "a\r\nb")
+
+// ---------------------------------------------------------------------------
+// WP-17(a/b) (DECISIONS 2026-07-16) — faithful carriage for the collapsing
+// concrete types. The raw STRING carries the concrete value (G17/G9 for
+// float/real; the offset-bearing form for datetimeoffset); the boundaries
+// dispatch on the raw shape — no new carrier, the 9-way category stands.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17b: RawValueCodec round-trips a DateTimeOffset with its offset preserved`` () =
+    let value = System.DateTimeOffset(2026, 7, 16, 12, 30, 0, System.TimeSpan.FromHours -3.0)
+    let raw = RawValueCodec.formatDateTimeOffset value
+    Assert.Equal<string> ("2026-07-16 12:30:00.0000000 -03:00", raw)
+    Assert.True(RawValueCodec.hasUtcOffset raw)
+    let back = RawValueCodec.parseDateTimeOffset raw
+    Assert.Equal(value, back)
+    Assert.Equal(System.TimeSpan.FromHours -3.0, back.Offset)
+
+[<Fact>]
+let ``WP-17b: hasUtcOffset is disjoint from every offset-less canonical raw shape`` () =
+    Assert.True(RawValueCodec.hasUtcOffset "2026-07-16 12:30:00.0000000 +03:00")
+    Assert.False(RawValueCodec.hasUtcOffset "2026-07-16 12:30:00.0000000")
+    Assert.False(RawValueCodec.hasUtcOffset "2026-07-16")
+    Assert.False(RawValueCodec.hasUtcOffset "08:30:00")
+    Assert.False(RawValueCodec.hasUtcOffset "-00:30:00")
+
+[<Fact>]
+let ``WP-17b: an offset-bearing DateTime raw owns its CAST target (datetimeoffset(7))`` () =
+    let offsetRaw = "2026-07-16 12:30:00.0000000 -03:00"
+    Assert.Equal<SqlLiteral> (DateTimeOffsetLit offsetRaw, SqlLiteral.ofRaw DateTime (Some offsetRaw))
+    Assert.Equal<string> (
+        "CAST('2026-07-16 12:30:00.0000000 -03:00' AS datetimeoffset(7))",
+        SqlLiteral.toString (DateTimeOffsetLit offsetRaw))
+    // The offset-less canonical form keeps datetime2(7) — the shapes are disjoint.
+    Assert.Equal<SqlLiteral> (
+        DateTimeLit "2026-07-16 12:30:00.0000000",
+        SqlLiteral.ofRaw DateTime (Some "2026-07-16 12:30:00.0000000"))

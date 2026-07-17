@@ -626,7 +626,16 @@ module ReadSide =
             | Boolean ->
                 RawValueCodec.formatBoolean (System.Convert.ToBoolean v)
             | DateTime ->
-                RawValueCodec.formatDateTime (System.Convert.ToDateTime v)
+                // WP-17(b) (DECISIONS 2026-07-16) — a `datetimeoffset`
+                // column surfaces a boxed `DateTimeOffset`, which
+                // `Convert.ToDateTime` REFUSES (`DateTimeOffset` is not
+                // IConvertible-to-DateTime — the S2 readback throw).
+                // Faithful carriage: format the offset-bearing raw
+                // (offset preserved, never normalized); everything else
+                // keeps the offset-less canonical form.
+                match v with
+                | :? System.DateTimeOffset as dto -> RawValueCodec.formatDateTimeOffset dto
+                | _ -> RawValueCodec.formatDateTime (System.Convert.ToDateTime v)
             | Date ->
                 RawValueCodec.formatDate (System.Convert.ToDateTime v)
             | Time ->
@@ -653,7 +662,18 @@ module ReadSide =
                             (sprintf "ReadSide.Guid: unexpected runtime type %s" (other.GetType().FullName))
                 RawValueCodec.formatGuid guid
             | Decimal ->
-                System.Convert.ToDecimal(v).ToString(inv)
+                // WP-17(a) (DECISIONS 2026-07-16) — `float`/`real`
+                // columns surface boxed `double`/`single`;
+                // `Convert.ToDecimal` truncated to ~15 significant
+                // digits and OVERFLOWED above ≈7.9E28 (the S1 read
+                // loss). Faithful carriage: the IEEE round-trip forms
+                // (`G17`/`G9` — V1's exact formats) into the raw
+                // string; genuine decimal-family columns keep the
+                // decimal conversion.
+                match v with
+                | :? double as d -> d.ToString("G17", inv)
+                | :? single as s -> s.ToString("G9", inv)
+                | _ -> System.Convert.ToDecimal(v).ToString(inv)
             | Text ->
                 match v.ToString() with
                 | null -> ""

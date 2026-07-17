@@ -126,7 +126,14 @@ module ScriptDomBuild =
         | Decimal  -> SqlDataTypeOption.Decimal
         | Text     -> SqlDataTypeOption.NVarChar
         | Boolean  -> SqlDataTypeOption.Bit
-        | DateTime -> SqlDataTypeOption.DateTime2
+        // WP-17(d) (DECISIONS 2026-07-16; audit §5a; packet C4): the
+        // evidence-less fallback carries the PLATFORM legacy default —
+        // `DATETIME` — matching the storage-evidence lane, so a
+        // catalog-direct emission (goldens, ReadSide-derived, JSON
+        // without SqlStorage) no longer silently upgrades to DATETIME2
+        // and misrepresents what a live export deploys. A datetime2
+        // SOURCE still emits DATETIME2 via its storage evidence.
+        | DateTime -> SqlDataTypeOption.DateTime
         | Date     -> SqlDataTypeOption.Date
         | Time     -> SqlDataTypeOption.Time
         | Binary   -> SqlDataTypeOption.VarBinary
@@ -276,10 +283,35 @@ module ScriptDomBuild =
             | _ -> ()
             r :> DataTypeReference
 
+    /// WP-17(d) — build the `CAST('<raw>' AS <temporal-type>)` expression
+    /// the three temporal `SqlLiteral` variants render to. The parameter
+    /// is a non-national string literal (SQL temporal strings); the
+    /// target type carries its scale when the type takes one
+    /// (`datetime2(7)` / `time(7)`; `date` is scale-less).
+    let private temporalCast (raw: string) (option: SqlDataTypeOption) (scale: int option) : ScalarExpression =
+        let dt = SqlDataTypeReference()
+        dt.SqlDataTypeOption <- option
+        dt.Name <- SchemaObjectName()
+        dt.Name.Identifiers.Add(bracketed (string option))
+        scale
+        |> Option.iter (fun s ->
+            let lit = IntegerLiteral()
+            lit.Value <- string s
+            dt.Parameters.Add(lit))
+        let param = StringLiteral()
+        param.Value <- raw
+        param.IsNational <- false
+        let cast = CastCall()
+        cast.DataType <- dt
+        cast.Parameter <- param
+        cast :> ScalarExpression
+
     /// Map a typed `SqlLiteral` value to a ScriptDom `ScalarExpression`
     /// (specifically a `Literal` subclass projected to its supertype
-    /// for use in `RowValue.ColumnValues` + DEFAULT clauses). Per the
-    /// Tier-1 #4 transition (RawTextEmitter retirement arc): the
+    /// for use in `RowValue.ColumnValues` + DEFAULT clauses; the WP-17(d)
+    /// temporal variants project to `CastCall` — still a
+    /// `ScalarExpression`, so every consumer below is shape-unchanged).
+    /// Per the Tier-1 #4 transition (RawTextEmitter retirement arc): the
     /// IR→typed-literal projection lives in
     /// `Projection.Core.SqlLiteral`; this is the SSDT-resident
     /// `SqlLiteral` → ScriptDom-`Literal` mapping. Used by
@@ -303,21 +335,60 @@ module ScriptDomBuild =
             let l = IntegerLiteral()
             l.Value <- if b then "1" else "0"
             l :> ScalarExpression
-        | TemporalLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- false
-            l :> ScalarExpression
+        // WP-17(d) (DECISIONS 2026-07-16) — V1's explicit-CAST temporal
+        // forms (`SqlLiteralFormatter.cs:90`): `CAST('<raw>' AS
+        // datetime2(7) / date / time(7))`. Precision-explicit and
+        // language-independent; the typed `#temp`/column reconciles the
+        // storage type on INSERT exactly as the bare literal did, so
+        // CDC-silence is unchanged (audit §5c).
+        | DateTimeLit raw ->
+            temporalCast raw SqlDataTypeOption.DateTime2 (Some 7)
+        | DateTimeOffsetLit raw ->
+            temporalCast raw SqlDataTypeOption.DateTimeOffset (Some 7)
+        | DateLit raw ->
+            temporalCast raw SqlDataTypeOption.Date None
+        | TimeLit raw ->
+            temporalCast raw SqlDataTypeOption.Time (Some 7)
         | GuidLit raw ->
             let l = StringLiteral()
             l.Value <- raw
             l.IsNational <- false
             l :> ScalarExpression
         | TextLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- true
-            l :> ScalarExpression
+            // WP-17(e) (DECISIONS 2026-07-16) — CR/LF/TAB splice into a
+            // `CHAR()` concatenation chain (V1 `EscapeUnicodeString`
+            // parity; the shared `SqlLiteral.textLiteralSegments` owns
+            // the segmentation so the two terminal planes cannot
+            // drift). The emitted SQL carries no raw control bytes;
+            // value-identical on evaluation, so CDC-silence holds. A
+            // control-char-free raw stays the plain national
+            // StringLiteral (the byte-identical default).
+            let nationalLit (run: string) : ScalarExpression =
+                let l = StringLiteral()
+                l.Value <- run
+                l.IsNational <- true
+                l :> ScalarExpression
+            match SqlLiteral.textLiteralSegments raw with
+            | [ TextRun only ] -> nationalLit only
+            | segments ->
+                let charCall (code: int) : ScalarExpression =
+                    let f = FunctionCall()
+                    f.FunctionName <- Identifier(Value = "CHAR")
+                    let arg = IntegerLiteral()
+                    arg.Value <- string code
+                    f.Parameters.Add(arg)
+                    f :> ScalarExpression
+                segments
+                |> List.map (fun segment ->
+                    match segment with
+                    | TextRun run -> nationalLit run
+                    | ControlChar code -> charCall code)
+                |> List.reduce (fun acc next ->
+                    let add = BinaryExpression()
+                    add.BinaryExpressionType <- BinaryExpressionType.Add
+                    add.FirstExpression <- acc
+                    add.SecondExpression <- next
+                    add :> ScalarExpression)
         | BinaryLit prefixed ->
             let l = BinaryLiteral()
             // ScriptDom's `BinaryLiteral.Value` carries the value
@@ -832,6 +903,36 @@ module ScriptDomBuild =
         cmp.SecondExpression <- qualifiedColumnRef sourceAlias col :> ScalarExpression
         cmp
 
+    /// WP-17(c) — the cast-compare value-mismatch arm for columns whose
+    /// type has no `<>` operator (`xml` + the legacy LOBs `image`/`text`/
+    /// `ntext`): both sides cast to the type's legal MAX target before
+    /// the compare (content-level equality — the server re-serializes
+    /// xml on storage, so byte identity is not a server-preserved
+    /// property to begin with; the LOBs never supported comparison).
+    let private columnInequalityCastCompare (target: ChangeCompareCast) (sourceAlias: string) (col: string) : BooleanComparisonExpression =
+        let option =
+            match target with
+            | CastToNVarCharMax  -> SqlDataTypeOption.NVarChar
+            | CastToVarCharMax   -> SqlDataTypeOption.VarChar
+            | CastToVarBinaryMax -> SqlDataTypeOption.VarBinary
+        let castSide (alias: string) : ScalarExpression =
+            let dt = SqlDataTypeReference()
+            dt.SqlDataTypeOption <- option
+            dt.Name <- SchemaObjectName()
+            dt.Name.Identifiers.Add(bracketed (string option))
+            let mx = MaxLiteral()
+            mx.Value <- "MAX"
+            dt.Parameters.Add(mx)
+            let cast = CastCall()
+            cast.DataType <- dt
+            cast.Parameter <- qualifiedColumnRef alias col :> ScalarExpression
+            cast :> ScalarExpression
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
+        cmp.FirstExpression <- castSide "Target"
+        cmp.SecondExpression <- castSide sourceAlias
+        cmp
+
     /// Build a `<expr> IS [NOT] NULL` boolean expression.
     let private isNullCheck (alias: string) (col: string) (negate: bool) : BooleanIsNullExpression =
         let n = BooleanIsNullExpression()
@@ -869,8 +970,16 @@ module ScriptDomBuild =
     /// Per chapter 4.1.B slice β + pre-scope §6: nullable-aware, since
     /// `NULL <> NULL` is `UNKNOWN` in SQL. The three OR-branches cover
     /// value-mismatch + null-asymmetry both ways.
-    let private perColumnChangeDetection (sourceAlias: string) (col: string) : BooleanExpression =
-        let valueDiff = columnInequality sourceAlias col :> BooleanExpression
+    let private perColumnChangeDetection (castCompare: Map<string, ChangeCompareCast>) (sourceAlias: string) (col: string) : BooleanExpression =
+        // WP-17(c) — the value-mismatch arm dispatches on comparability:
+        // a cast-compare column (`xml`/`image`/`text`/`ntext`) compares
+        // via its legal MAX-cast target; the null arms below are
+        // type-agnostic (`IS NULL` is legal on all of them) and stay
+        // shared.
+        let valueDiff =
+            match Map.tryFind col castCompare with
+            | Some target -> columnInequalityCastCompare target sourceAlias col :> BooleanExpression
+            | None -> columnInequality sourceAlias col :> BooleanExpression
         let targetNullSourceNot =
             boolBinary
                 BooleanBinaryExpressionType.And
@@ -893,9 +1002,9 @@ module ScriptDomBuild =
     /// `WHERE (...)` (set-based UPDATE) is well-grouped under ScriptDom's
     /// emission rules. `sourceAlias` selects the joined source (`Source`
     /// for the MERGE, `src` for the `UPDATE … FROM #temp`).
-    let private changeDetectionPredicate (sourceAlias: string) (updColumns: string list) : BooleanExpression =
+    let private changeDetectionPredicate (castCompare: Map<string, ChangeCompareCast>) (sourceAlias: string) (updColumns: string list) : BooleanExpression =
         updColumns
-        |> List.map (perColumnChangeDetection sourceAlias)
+        |> List.map (perColumnChangeDetection castCompare sourceAlias)
         |> foldBool BooleanBinaryExpressionType.Or
         |> boolParen
 
@@ -973,7 +1082,7 @@ module ScriptDomBuild =
             let matchedClause = MergeActionClause()
             matchedClause.Condition <- MergeCondition.Matched
             if args.CdcAware then
-                matchedClause.SearchCondition <- changeDetectionPredicate "Source" args.UpdColumns
+                matchedClause.SearchCondition <- changeDetectionPredicate args.CastCompareColumns "Source" args.UpdColumns
             matchedClause.Action <- updateAction
             spec.ActionClauses.Add(matchedClause)
 
@@ -1282,7 +1391,10 @@ module ScriptDomBuild =
         // not cdcAware or there are no SET columns (the unconditional re-point).
         if cdcAware && not (List.isEmpty setCols) then
             let where = WhereClause()
-            where.SearchCondition <- changeDetectionPredicate "src" setCols
+            // The Phase-2 re-point UPDATE sets FK columns only (never a
+            // comparison-less LOB/xml) — no cast-compare columns here
+            // (WP-17(c)).
+            where.SearchCondition <- changeDetectionPredicate Map.empty "src" setCols
             spec.WhereClause <- where
         let stmt = UpdateStatement()
         stmt.UpdateSpecification <- spec
@@ -2560,6 +2672,15 @@ module ScriptDomBuild =
             stmt.SequenceOptions.Add(cacheOpt)
         stmt
 
+    /// G6 (DECISIONS 2026-07-16) — build a `CREATE SCHEMA [<name>]`
+    /// statement. Bracket-quoted via the shared `bracketed` identifier
+    /// helper; no AUTHORIZATION clause (server-default owner — the
+    /// receiving team's ownership call, not the emission's).
+    let buildCreateSchema (schemaName: string) : CreateSchemaStatement =
+        let stmt = CreateSchemaStatement()
+        stmt.Name <- bracketed schemaName
+        stmt
+
     /// Returns `None` for non-SQL variants (`Comment`, `Blank`) so
     /// the realization layer can splice them through the text
     /// stream directly. Closed-DU dispatch — adding a new variant
@@ -2595,6 +2716,8 @@ module ScriptDomBuild =
             Some (buildAlterTableDisableTrigger table triggerName :> TSqlStatement)
         | CreateSequence seqIR ->
             Some (buildCreateSequence seqIR :> TSqlStatement)
+        | CreateSchema schemaName ->
+            Some (buildCreateSchema schemaName :> TSqlStatement)
         | AlterTableAddColumn (table, column) ->
             Some (buildAlterTableAddColumn table column :> TSqlStatement)
         | AlterTableAlterColumn (table, column) ->

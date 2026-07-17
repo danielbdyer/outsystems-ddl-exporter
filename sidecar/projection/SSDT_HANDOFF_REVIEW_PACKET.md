@@ -289,6 +289,12 @@ DECIMAL(37,8)`; bare decimal clamps `(18,0)`; `text ≥ 2000` → `NVARCHAR(MAX)
 V1-identical).
 *Decided (2026-07-15): planned fix — WP-17 (fallback-lane datetime default + explicit-CAST seed
 literals), with the broader scalar-fidelity gaps it belongs to.*
+*Landed (2026-07-16, WP-17(d)): the evidence-less fallback now carries legacy `DATETIME`
+(three mirror sites: `sqlDataTypeOption`/`ofPrimitiveType`/`baseName` — the goldens now show
+what a live export deploys), and temporal literals render V1's explicit CAST
+(`SqlLiteral.DateTimeLit/DateLit/TimeLit` → `CAST(… AS datetime2(7)/date/time(7))`, both
+planes); pre-WP-17 codec artifacts' category-blind `TemporalLit` still reads (raw-shape
+classification, witnessed). DECISIONS 2026-07-16 — WP-17(d).*
 
 **C5. Identity: `Is_AutoNumber` → `IDENTITY (1, 1)` fixed** — [HARD]
 No reader consults `sys.identity_columns`; no `DBCC CHECKIDENT` emitted. Matters for fresh
@@ -587,12 +593,23 @@ profiles, warnings-as-errors, code analysis, `DacVersion`, PreDeploy, RefactorLo
 the eject handoff `sqlproj: true` is the obvious setting; hardening is the J-list.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G3. The refactorlog never reaches the bundle — highest-stakes wiring gap** — [GAP]
+**G3. The refactorlog never reaches the bundle — highest-stakes wiring gap** — [GAP → ✅ LANDED]
 Rename detection, stable-UUIDv5 accumulation, and the XML renderer all exist and are tested —
 but no production path writes `<project>.refactorlog` or the `.sqlproj` item. Incremental
 publish of the ejected project DROP+CREATEs on any rename. The eject contract (P-7) promises
 the complete accumulated refactorlog in the terminal package — close before eject.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+*Landed (2026-07-16, G3): a store-threaded publish writes `ProjectionCatalog.refactorlog`
+(the ACCUMULATED document, prior chain ⊕ run displacement, deduped by OperationKey) inside the
+atomic bundle, and `emission.sqlproj: true` adds the explicit `RefactorLog` item — presence ⟺
+store-threaded. The wiring shipped with a PLANE FIX: the pre-existing emitter spoke the
+catalog plane (OSSYS physical names), which a logically-emitted deployed estate can never
+match; `RefactorLogEmitter.emitDeployed` projects old/new names through the emission passes'
+own name rules (operator-renamed kinds suppress; FK channel named-absent until WP-7; keys
+unchanged). DacFx-proven end-to-end: the Docker canary publishes A, seeds rows, publishes the
+renamed B incrementally with `BlockOnPossibleDataLoss` armed — sp_rename, rows survive.
+Residuals named in DECISIONS 2026-07-16: operator `tableRenames` (Physical-rewrites) remain
+invisible to the Name-keyed rename channel; the eject package still carries refs, not the
+rendered terminal document. DECISIONS 2026-07-16 — G3.*
 
 **G4. `emission.dacpac` (default `false`): dev-tooling, schema-only, content-equality determinism** — [KNOB]
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
@@ -603,9 +620,14 @@ findings it would compile as a schema object and break the build; (b) wired post
 order is alphabetical (Migration before Static) against the emitter's documented deploy order.
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
-**G6. No `CREATE SCHEMA` objects emitted** — [GAP]
+**G6. No `CREATE SCHEMA` objects emitted** — [GAP → ✅ LANDED]
 Non-dbo estates don't build/publish until schema objects are hand-authored.
-*Verdict:* ☐ Approve ☐ Modify ☐ Discuss
+*Landed (2026-07-16, G6): the emission derives every distinct non-dbo schema (kinds +
+sequences; `dbo` never; case-insensitive dedupe) and emits `CREATE SCHEMA` at the head of the
+statement stream, one `Schemas/<name>.sql` per schema in the bundle (SDK default Build glob),
+and the schema objects into the dacpac model. dbo-only estates byte-identical (one golden
+scenario moved, additively). The gated real-SDK build witness compiles a non-dbo bundle to a
+`.dacpac`. DECISIONS 2026-07-16 — G6.*
 
 **G7. Ancillary emitters** — [info]
 `SchemaMigrationEmitter` = ALTER preview/verification lens (never feeds dacpac);
@@ -630,7 +652,13 @@ are not operator-configurable (no `columnRenames` axis).
 bodies; refusal parity with the dacpac path for unparseable bodies).*
 
 **H3. `tableRenames`: dual-form, fail-closed; physical form pins** — [KNOB]
-Renames feed the refactorlog channel (see G3) and SsKeys are preserved.
+SsKeys are preserved. *Correction (2026-07-16, G3 profiling): the prior "renames feed the
+refactorlog channel" claim was too broad — operator `tableRenames` rewrite `Kind.Physical`
+(never `Kind.Name`), so they produce no `CatalogDiff` rename record and are ABSENT from the
+refactorlog; the channel carries identity-stable MODEL-side renames (Service-Studio renames
+over a GUID-keyed source, or any rename the store's persisted SsKeys thread). The deployed
+rename an operator override causes needs a `Physical`-change diff channel — the named G3
+residual, DECISIONS 2026-07-16.*
 *Verdict:* ☐ Approve ☐ Modify ☐ Discuss
 
 **H4. Schema pass-through; modules ≠ schemas** — [HARD]
@@ -698,8 +726,10 @@ rollback never proven.
 
 ## 5 — The eject bill of materials
 
-Terminal package (P-7): frozen SSDT bundle + complete accumulated refactorlog (G3 wiring gap
-must close first) + full episode chain (`LifecycleStore`) + terminal ChangeManifest (eject-time
+Terminal package (P-7): frozen SSDT bundle + complete accumulated refactorlog (✅ G3 landed
+2026-07-16 — every store-threaded bundle now carries `ProjectionCatalog.refactorlog`; the
+eject verb's own rendering of the terminal document from the chain remains its P-7 slice)
++ full episode chain (`LifecycleStore`) + terminal ChangeManifest (eject-time
 drops declared — WP-7's inactive-attribute dispositions land here) + operator-owned provenance
 declaration. `projection eject --store` self-verifies by reconstruction. Until then, R6
 dual-track: per-pair cutover gates on N=10 consecutive green canaries + operator sign-off.
@@ -721,7 +751,7 @@ whose semantics change under §10.
     "onlyActiveAttributes": true         // C7 ⚑ WP-7: dispositions become explicit in the ChangeManifest
   },
   "overrides": {
-    "tableRenames": [ /* curated; refactorlog channel — G3 must be wired */ ],
+    "tableRenames": [ /* curated; NOTE (G3, 2026-07-16): operator renames rewrite Physical and do NOT reach the refactorlog — see H3 correction */ ],
     "allowMissingPrimaryKey": [ /* audited heap list */ ]
   },
   "emission": {
@@ -771,9 +801,11 @@ migrations for mandatory-column tightening.
 Unaddressed anywhere in the repo — pin before first publish: pre-compare noise family
 (`IgnoreWhitespace`/`IgnoreKeywordCasing`/`IgnoreAnsiNulls`/`IgnoreSemicolonBetweenStatements` —
 emitted DDL has no semicolons); `DoNotDropObjectTypes`/`ExcludeObjectTypes` (protect extended
-properties if keeping H6, hand-added schemas from G6); `ScriptDatabaseOptions`,
-`VerifyDeployment`, `CommandTimeout`, contributors; committed per-env `.publish.xml` +
-`.refactorlog` project item (G3); environment prerequisites the tool does not check (server/DB
+properties if keeping H6; schemas are model members since G6 2026-07-16 — no longer a
+hand-added-object drop hazard); `ScriptDatabaseOptions`,
+`VerifyDeployment`, `CommandTimeout`, contributors; committed per-env `.publish.xml` (the
+`.refactorlog` + its project item are now EMITTED on store-threaded runs — ✅ G3 2026-07-16);
+environment prerequisites the tool does not check (server/DB
 collation vs `ModelCollation 1033, CI`; compat level vs the Sql160 pin; editions; `CREATE
 SCHEMA`; cross-env user reconciliation); post-publish Bootstrap step (F8); post-load FK trust
 sweep (E10 until WP-15); single-writer deploy windows (F2); rollback strategy (never proven);
@@ -784,7 +816,9 @@ and adopting golden-diff-as-change-review going forward.
 ## 8 — Gaps and stale docs (with plan pointers)
 
 **Functional gaps, ranked** (⚑ = in the §10 plan):
-1. Refactorlog not wired into bundle/.sqlproj (G3) — close before eject.
+1. Refactorlog not wired into bundle/.sqlproj (G3). **✅ LANDED 2026-07-16** (deployed-vocabulary
+   `emitDeployed` + store-threaded bundle artifact + `.sqlproj` item + DacFx sp_rename canary;
+   operator physical-rename channel + eject-package rendering remain named residuals).
 2. **Live-path `HasDbConstraint = true` hardcode** (`MetadataSnapshotRunner.fs:1326`) — erases
    the logical-vs-backed distinction; blocks the FK evidence regime. ⚑ WP-1 (first).
 3. Trigger bodies keep physical refs + unparsed-body drop marker. ⚑ WP-6.
@@ -793,7 +827,8 @@ and adopting golden-diff-as-change-review going forward.
    (**✅ WP-1b landed** — reader prefers it + named divergence diagnostic); no 1785 analysis (⚑ WP-1e).
 6. Clustering not captured — silent re-clustering of DBA-modified tables. ⚑ WP-2.
 7. `manifest.remediation.sql` build hazard + alphabetical lane order (G5).
-8. No `CREATE SCHEMA` emission (G6).
+8. No `CREATE SCHEMA` emission (G6). **✅ LANDED 2026-07-16** (stream head + `Schemas/*.sql`
+   bundle files + dacpac model members; dbo-only estates byte-identical).
 9. Unnamed erasures: temporal/sequences/PERSISTED/ROWGUIDCOL/SPARSE/FILESTREAM. ⚑ WP-5.
 10. email/phone VARCHAR vs platform NVARCHAR. **✅ WP-4 landed** (NVARCHAR mapping); on-disk
     precedence for ordinary scalars (C1) split out as ⚑ WP-4b.
@@ -802,10 +837,14 @@ and adopting golden-diff-as-change-review going forward.
     · UserReflow half-wiring. ⚑ WP-14. · Streaming re-trust. ⚑ WP-15. · Table-name collision
     tripwire. ⚑ WP-16. · Inactive-attribute disposition. ⚑ WP-7. · PK convention. ⚑ WP-8.
 12. **Data-plane scalar collapse** (C11, `SCALAR_REPRESENTATION_AUDIT.md`) — `Float`/`Real`
-    precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
+    ~~precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
     re-serialize + CDC `<>` compile error, temporal bare-literal vs V1's CAST, and the
-    fallback-lane `DateTime → DATETIME2` upgrade. ⚑ WP-17 (bites on DBA/External columns —
-    size via the §9 estate inventory).
+    fallback-lane `DateTime → DATETIME2` upgrade~~ — **✅ WP-17 COMPLETE 2026-07-16**:
+    (d) CAST literals + legacy-`DATETIME` fallback; (e) control-char `CHAR()` splice;
+    (a) float/real G17/G9 faithful carriage; (b) datetimeoffset offset-bearing raw + CAST,
+    readback throw retired; (c) per-type cast-compare guard (the gallery canary widened the
+    `<>`-refusal class to `image`/`text`/`ntext`); (f) the Docker gallery witness — the
+    audit's UNWITNESSED table is empty. DECISIONS 2026-07-16 (three entries).
 
 **Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
 (index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
@@ -953,20 +992,31 @@ round-trip. So the fix is **not** to revert to object-carriage — it must **add
 Scope:
 (a) **`Float`/`Real`** — give the data plane a faithful carrier (a `Float` primitive/raw form at
 G17/G9, or refuse `float`/`real` in a data lane with a named code) instead of silently routing
-through `Decimal` (truncation + overflow).
+through `Decimal` (truncation + overflow). **✅ LANDED 2026-07-16** (G17/G9 raws; shape-driven
+parse; no new carrier — DECISIONS WP-17(a–c,f)).
 (b) **`DateTimeOffset`** — carry the offset (a raw form with `K`, V1's `datetimeoffset(7)` shape)
 or refuse; fix the `ReadSide` arm that throws on a boxed `DateTimeOffset` (`ReadSide.fs:628-629`).
+**✅ LANDED 2026-07-16** (offset-bearing raw + `DateTimeOffsetLit` CAST; the readback throw
+retired).
 (c) **`Xml`** — decide faithful text carriage vs refusal; guard the CDC change-detect predicate
-so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c]`.
+so an `xml` column (no `<>` operator) cannot emit an uncompilable `T.[c] <> S.[c]`. **✅ LANDED
+2026-07-16** — faithful text-content carriage; the guard casts per-type, and the gallery canary
+WIDENED the class live: `image`/`text`/`ntext` refuse `<>` identically
+(`CastCompareColumns : Map<col, ChangeCompareCast>`).
 (d) **Temporal literals** — adopt V1's explicit `CAST(… AS datetime2(7))` / `AS date` / `AS
 time(7)` seed-literal form (language-independent, precision-explicit), replacing the bare quoted
 string; and fix the fallback DDL lane so `DateTime` without storage evidence defaults to legacy
-`DATETIME` rather than `DATETIME2` (aligns the goldens with a live export).
+`DATETIME` rather than `DATETIME2` (aligns the goldens with a live export). **✅ LANDED
+2026-07-16 (DECISIONS — WP-17(d)).**
 (e) **Text control characters** — escape CR/LF/TAB (V1's `CHAR()` concatenation) rather than
-embedding raw control bytes in `N'…'`.
+embedding raw control bytes in `N'…'`. **✅ LANDED 2026-07-16 (DECISIONS — WP-17(e)):
+`SqlLiteral.textLiteralSegments` shared segmentation; both terminal planes compose from it.**
 (f) **Fixture backlog** — a round-trip witness for every concrete type that has none today
 (`Float`/`Real`/`DateTimeOffset`/`Xml`/`Image`/`SmallDateTime`/`Money`), so the audit's §4
-verdicts become test-proven, not code-derived.
+verdicts become test-proven, not code-derived. **✅ LANDED 2026-07-16** —
+`ScalarCarriageRoundTripTests` (Docker): the CDC-enabled gallery kind DacFx-publishes and
+seed-MERGEs twice; every contested value server-side-compared (incl. `Double.MaxValue` and the
+verbatim `-03:00` offset).
 *Done means:* the four unfaithful collapses each round-trip or refuse with a named code; temporal
 goldens carry the CAST form and a legacy-`DATETIME` fallback; the scalar-audit witness table has
 no UNWITNESSED rows. Note the audience caveat: (a)–(c) bite only on DBA/External-Entity columns,
@@ -1045,7 +1095,7 @@ create against a customer DB.
 | 1 | Estate readiness | M runs / A judges: `projection check shape` | live OSSYS → verdict | SELECT on `ossys_*` | exit 0 (5 divergence, 6 unreadable) |
 | 2 | **Emission** | M runs / A produces: `projection publish --go` (flow→`PublishBundle`) or `full-export <cfg> --lifecycle-store <p>` | live model + hydrated rows → bundle (`Modules/**.sql`, `Data/{StaticSeeds,MigrationData,Bootstrap}.sql`, `.sqlproj`+`Script.PostDeployment.sql` if `sqlproj:true`, `manifest.json`, `fidelity.*`, `catalog.snapshot.json`) | source SELECT | artifact count; read `fidelity.txt`; `diff` vs prior |
 | 3 | Hand-off | M: deliver bundle to Octopus/CI | → CI workspace | — | — |
-| 4 | Target prep | M (receiving team): DB exists, collation = `1033 CI`, compat = SQL2022, logins, `CREATE SCHEMA` for non-dbo, `nuget.config` | → deployable target | dbcreator/DDL | — |
+| 4 | Target prep | M (receiving team): DB exists, collation = `1033 CI`, compat = SQL2022, logins, `nuget.config` (~~`CREATE SCHEMA` for non-dbo~~ — supplied by the bundle since G6, 2026-07-16) | → deployable target | dbcreator/DDL | — |
 | 5 | **Schema + seeds/migration** | M invokes / DacFx executes: `dotnet build ProjectionCatalog.sqlproj` → `sqlpackage /Action:Publish` (profile per §7). Post-deploy (**StaticSeeds + MigrationData only**, inlined at build) runs inside the publish | sqlproj + bundle → schema (logical names) + static/migration rows | DDL; post-deploy needs IDENTITY_INSERT (ownership/ALTER) + `#temp`+TRAN | publish OK; SSDT compare; `check drift` |
 | 6a | **Bulk data — script path** | **M: operator runs `Data/Bootstrap.sql` via `sqlcmd -b`** post-publish — *no verb executes this file* | Bootstrap.sql → remaining rows | as step 5 post-deploy | idempotent rerun; `check data` |
 | 6b | **Bulk data — pipeline path (alt.)** | M invokes / A executes: live `schema+data` sink + `PROJECTION_ALLOW_EXECUTE=1 projection <flow> --go` → `PublishAndLoad` → `executeLeveledSeed` (Phase-1 levels → Phase-2 levels; parallel within level; CDC-measured) | lanes loaded live; episode recorded | DML + IDENTITY_INSERT/`#temp`; two-key gate | `load.completed`; re-run → 0 (CDC-silent) |
@@ -1067,10 +1117,11 @@ create against a customer DB.
    sweep is the operator's until WP-15.
 4. **No statistics or `DBCC CHECKIDENT` step anywhere** — receiving DBA hygiene (C5 confirms no
    reseed is emitted; IDENTITY_INSERT preserves values).
-5. **Refactorlog not in the bundle** (G3) and **rollback never proven** (§4) — the two eject-time
-   must-close items the procedure otherwise assumes.
-6. Bundle prerequisites the emission does not supply: `nuget.config` (G2), `CREATE SCHEMA` (G6),
-   and the publish profile itself (§7).
+5. ~~Refactorlog not in the bundle (G3)~~ **✅ landed 2026-07-16** (store-threaded bundles carry
+   it; the DacFx sp_rename canary proves the incremental publish); **rollback never proven**
+   (§4) remains the eject-time must-close the procedure otherwise assumes.
+6. Bundle prerequisites the emission does not supply: `nuget.config` (G2) and the publish
+   profile itself (§7). (~~`CREATE SCHEMA` (G6)~~ — ✅ supplied by the bundle since 2026-07-16.)
 
 The full hop-by-hop trace (both `--load` and transfer variants, per-path rights, and the
 verification verb matrix) lives in the procedure research; this table is the operator-facing
