@@ -260,7 +260,16 @@ type ReadinessSpec =
       RepairBand : int64 option
       /// Per-entity repair bands (`readiness.estate.repairBandByEntity`) —
       /// logical entity name → band, overriding `RepairBand` for that entity.
-      RepairBandByEntity : Map<string, int64> }
+      RepairBandByEntity : Map<string, int64>
+      /// The fidelity flow (`readiness.estate.fidelityFlow`, wave A4β/RT-10):
+      /// names the flow whose row-fidelity proof (`fidelity.rows.json`, from
+      /// `projection check fidelity <flow>`) the estate board folds into its
+      /// verdict. Configured ⇒ a missing / stale / diverged proof is an
+      /// ordinary DECIDE finding; absent ⇒ the masthead states the clause is
+      /// not configured and the verdict excludes it (RT-10 — a never-run proof
+      /// never holds the verdict hostage). Consumed in the same wave that
+      /// parses it (A44 — never an inert key).
+      FidelityFlow : string option }
 
 type ProjectionConfig =
     {
@@ -496,9 +505,20 @@ module ProjectionConfig =
                     | true, _ -> failwith "readiness.estate.repairBandByEntity must map each entity name to a 64-bit integer."
                     | _ -> Map.empty
                 | _ -> Map.empty
+            // The fidelity flow (`estate.fidelityFlow`, RT-10): a string naming
+            // the flow whose proof the board reads. Absent = None (the clause
+            // is not configured; the verdict excludes it).
+            let fidelityFlow =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "fidelityFlow" with
+                    | true, v when v.ValueKind = JsonValueKind.String -> getString e "fidelityFlow"
+                    | true, _ -> failwith "readiness.estate.fidelityFlow must be a flow name (a string)."
+                    | _ -> None
+                | _ -> None
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1429,6 +1449,9 @@ module ProjectionConfig =
                   let m = JsonObject()
                   for KeyValue(entity, band) in rs.RepairBandByEntity do m.[entity] <- JsonValue.Create band
                   e.["repairBandByEntity"] <- m
+              (match rs.FidelityFlow with
+               | Some flow -> e.["fidelityFlow"] <- JsonValue.Create flow
+               | None -> ())
               if e.Count > 0 then o.["estate"] <- e)
              root.["readiness"] <- o
          | None -> ())
@@ -2394,6 +2417,7 @@ module Command =
                               RepairBand  = rs.RepairBand
                               RepairBandByEntity = rs.RepairBandByEntity
                               Since       = sinceRun
+                              FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }
             | "fidelity" :: rest ->
                 // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15

@@ -691,3 +691,53 @@ module FidelityCompareRun =
     let toJsonString (report: RowFidelityReport) : string =
         let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         (toJson report).ToJsonString(opts)
+
+    // ------------------------------------------------------------------
+    // The proof reader (RT-10, wave A4β) — the estate board reads back a
+    // `fidelity.rows.json` artifact to fold its verdict into the estate's.
+    // The proof carries no timestamp of its own, so its AGE comes from the
+    // file's last-write time (the boundary supplies the clock). Fail-closed:
+    // an absent or torn artifact reads as `None`, never a half-truth — the
+    // board then treats the proof as missing. The read shape is the codec's
+    // top-level `agrees` / `differenceTotal` / `rowsCompared` (the digests
+    // and per-kind detail are not needed for the clause).
+    // ------------------------------------------------------------------
+
+    /// The read-back summary of one proof artifact — what the estate's
+    /// fidelity clause reads.
+    type ProofSummary =
+        { Agrees          : bool
+          RowsCompared    : int64
+          DifferenceTotal : int64
+          WrittenAtUtc    : DateTimeOffset }
+
+    /// Read a `fidelity.rows.json` artifact at `path`, or `None` when it is
+    /// absent or unreadable (fail-closed — a torn proof is no proof). The
+    /// write time is the artifact file's `LastWriteTimeUtc` (the proof's age
+    /// basis; the codec writes no timestamp).
+    let tryReadProof (path: string) : ProofSummary option =
+        if not (IO.File.Exists path) then None
+        else
+            try
+                use doc = System.Text.Json.JsonDocument.Parse(IO.File.ReadAllText path)
+                let root = doc.RootElement
+                let boolOf (name: string) =
+                    let mutable v = Unchecked.defaultof<System.Text.Json.JsonElement>
+                    if root.TryGetProperty(name, &v) && (v.ValueKind = System.Text.Json.JsonValueKind.True || v.ValueKind = System.Text.Json.JsonValueKind.False)
+                    then Some (v.GetBoolean()) else None
+                let i64Of (name: string) =
+                    let mutable v = Unchecked.defaultof<System.Text.Json.JsonElement>
+                    if root.TryGetProperty(name, &v) && v.ValueKind = System.Text.Json.JsonValueKind.Number
+                    then let mutable n = 0L in (if v.TryGetInt64(&n) then Some n else None)
+                    else None
+                // `agrees` and `differenceTotal` are the load-bearing fields; a
+                // proof missing either is torn (fail-closed).
+                match boolOf "agrees", i64Of "differenceTotal" with
+                | Some agrees, Some diffs ->
+                    Some
+                        { Agrees          = agrees
+                          RowsCompared    = i64Of "rowsCompared" |> Option.defaultValue 0L
+                          DifferenceTotal = diffs
+                          WrittenAtUtc    = DateTimeOffset(IO.File.GetLastWriteTimeUtc path, TimeSpan.Zero) }
+                | _ -> None
+            with _ -> None

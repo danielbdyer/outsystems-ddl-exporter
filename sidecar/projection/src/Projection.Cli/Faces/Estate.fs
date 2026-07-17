@@ -272,12 +272,46 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     (EstateOverlayEmitter.emitProbes
                         [ sprintf "-- projection:environments-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
                         relaxations)
-            let stamped =
+            let stampedArtifacts =
                 computed
                 |> Estate.withRemediation remediationArtifacts
                 |> (fun r ->
                     if List.isEmpty relaxations then r
                     else Estate.withOverlay (List.length relaxations) r)
+            // The fidelity clause (RT-10, wave A4β): when the config names a
+            // flow, read THAT flow's proof — the flow-scoped copy the
+            // container proof writes beside its journal
+            // (`fidelity-proof/<flow>/fidelity.rows.json`) — and fold its
+            // verdict into the estate's. The clause is computed at the
+            // boundary (the proof is a file; its age is the file's mtime),
+            // then stamped onto the pure report. A proof is STALE when the
+            // estate's evidence was captured-and-stored (or re-fingerprinted)
+            // AFTER the proof was written — a bare live re-read is not
+            // evidence the estate moved, so it never staleness-trips a proof.
+            let fidelityClause : Estate.FidelityClause =
+                match args.FidelityFlow with
+                | None -> Estate.FidelityClause.NotConfigured
+                | Some flow ->
+                    let proofPath = System.IO.Path.Combine("fidelity-proof", flow, "fidelity.rows.json")
+                    match FidelityCompareRun.tryReadProof proofPath with
+                    | None -> Estate.FidelityClause.Missing flow
+                    | Some proof ->
+                        let ageDays = max 0 (int (nowUtc - proof.WrittenAtUtc).TotalDays)
+                        let estateMovedAfterProof =
+                            provenanceByEnv
+                            |> Map.exists (fun _ p ->
+                                match p with
+                                | Estate.EvidenceProvenance.Refreshed _ -> true
+                                | Estate.EvidenceProvenance.Cached (captured, _, _) -> captured > proof.WrittenAtUtc
+                                | Estate.EvidenceProvenance.Offline (captured, _) -> captured > proof.WrittenAtUtc
+                                | Estate.EvidenceProvenance.Live
+                                | Estate.EvidenceProvenance.Absent -> false)
+                        // A stale proof's verdict is untrustworthy either way —
+                        // staleness outranks the (old) agrees/diverged reading.
+                        if estateMovedAfterProof then Estate.FidelityClause.Stale (flow, ageDays)
+                        elif not proof.Agrees then Estate.FidelityClause.Diverged (flow, proof.DifferenceTotal)
+                        else Estate.FidelityClause.Green (flow, ageDays)
+            let stamped = stampedArtifacts |> Estate.withFidelity fidelityClause
             // The burndown (wave A7): this run's reading chains from the
             // LATEST recorded one (first-seen carry + the streak), while the
             // displayed movement diffs against the operator's baseline — the
@@ -322,7 +356,13 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                       "closed",   box (report.Burndown |> Option.map (fun b -> b.Closed) |> Option.defaultValue 0)
                       "opened",   box (report.Burndown |> Option.map (fun b -> b.Opened) |> Option.defaultValue 0)
                       "remaining", box (report.Burndown |> Option.map (fun b -> b.Remaining) |> Option.defaultValue (List.length report.Findings))
-                      "streak",   box report.Streak ]
+                      "streak",   box report.Streak
+                      "fidelity", box (match report.Fidelity with
+                                       | Estate.FidelityClause.NotConfigured -> "notConfigured"
+                                       | Estate.FidelityClause.Green _ -> "green"
+                                       | Estate.FidelityClause.Missing _ -> "missing"
+                                       | Estate.FidelityClause.Stale _ -> "stale"
+                                       | Estate.FidelityClause.Diverged _ -> "diverged") ]
             LogSink.emit
                 { LogSink.envelope LogSink.Info LogSink.Summary "summary.environments" envelopePayload with
                     Phase = LogSink.End }

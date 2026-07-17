@@ -140,6 +140,26 @@ module Estate =
         | Converging
         | Forked
 
+    /// The row-fidelity clause's state on this run (RT-10, wave A4β). The
+    /// estate config's `fidelityFlow` decides whether the clause is part of
+    /// the verdict at all: unconfigured, it is named and excluded (a never-run
+    /// proof never holds the verdict hostage); configured, a green proof rides
+    /// the masthead and the three non-green states each mint a DECIDE finding.
+    /// The face computes it (reading `fidelity.rows.json` + its mtime); the
+    /// engine folds it (`withFidelity`).
+    [<RequireQualifiedAccess>]
+    type FidelityClause =
+        /// No `readiness.estate.fidelityFlow` — the clause is out of the verdict.
+        | NotConfigured
+        /// A proof exists, agrees, and is no older than this run's evidence.
+        | Green of flow: string * ageDays: int
+        /// The config names a flow but no proof artifact was found.
+        | Missing of flow: string
+        /// The proof predates this run's freshest evidence — the world moved.
+        | Stale of flow: string * ageDays: int
+        /// The proof reports differing rows — the load is not byte-faithful.
+        | Diverged of flow: string * differingRows: int64
+
     /// The assembled estate report — the one value the board, the JSON, and
     /// the exit code project.
     type EstateReport =
@@ -171,6 +191,11 @@ module Estate =
             /// Consecutive UNIFIED runs, this one included (0 while the
             /// estate diverges) — the gate streak. Stamped with the burndown.
             Streak : int
+            /// The row-fidelity clause's state (RT-10, wave A4β) — the face
+            /// stamps it from `fidelity.rows.json` + the configured flow;
+            /// `compute` stays proof-blind (I/O lives at the boundary).
+            /// `NotConfigured` until stamped.
+            Fidelity : FidelityClause
         }
 
     /// The movement between a recorded baseline reading and this run —
@@ -1325,7 +1350,8 @@ module Estate =
           OverlayEntries = None
           EmissionFindings = emissionFindingsFor logicalTarget
           Burndown = None
-          Streak = 0 }
+          Streak = 0
+          Fidelity = FidelityClause.NotConfigured }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -1354,6 +1380,50 @@ module Estate =
     /// directories.
     let withHistory (burndown: Burndown option) (streak: int) (report: EstateReport) : EstateReport =
         { report with Burndown = burndown; Streak = streak }
+
+    /// The face's fidelity stamp (RT-10, wave A4β): fold the row-fidelity
+    /// clause into the report. A configured-but-non-green proof mints its
+    /// DECIDE finding (ProofMissing / ProofStale / ProofDiverged, keyed on the
+    /// flow) and RE-COMPUTES the verdict over the widened finding set — so a
+    /// missing or stale proof turns Unified to Converging (the verdict formula
+    /// includes the configured proof, RT-10's whole point). `NotConfigured`
+    /// and `Green` add no finding: the clause rides the masthead only, and the
+    /// verdict stands on the schema/data findings alone. Apply BEFORE
+    /// `withHistory` so the proof finding participates in the burndown and the
+    /// streak reset (a run whose proof is missing is not a unified run).
+    let withFidelity (clause: FidelityClause) (report: EstateReport) : EstateReport =
+        let proofFinding (kind: EstateFindingKind) (flow: string) (statement: string) : Finding =
+            { Key = FindingKey.create kind flow
+              Kind = kind
+              Lane = EstateFindingKind.laneOf kind
+              Plane = EstateFindingKind.planeOf kind
+              // Estate-wide (a property of the proof artifact, not a
+              // per-environment divergence) — no per-env weight rows.
+              Envs = []
+              Statement = statement
+              // The one lever names the flow to run — the §3 contract's row
+              // (the registry's generic Ruling is the form; the flow rides here).
+              Lever = Some (sprintf "Run: projection check fidelity %s." flow)
+              Fork = false }
+        let extra =
+            match clause with
+            | FidelityClause.NotConfigured
+            | FidelityClause.Green _ -> []
+            | FidelityClause.Missing flow ->
+                [ proofFinding EstateFindingKind.ProofMissing flow
+                    (sprintf "The fidelity proof for flow '%s' has not run against the current estate." flow) ]
+            | FidelityClause.Stale (flow, ageDays) ->
+                [ proofFinding EstateFindingKind.ProofStale flow
+                    (sprintf "The fidelity proof for flow '%s' is %s day(s) old and the estate's evidence has moved since — the proof predates what this run can see." flow (humane ageDays)) ]
+            | FidelityClause.Diverged (flow, diffs) ->
+                [ proofFinding EstateFindingKind.ProofDiverged flow
+                    (sprintf "The fidelity proof for flow '%s' reports %s differing row(s) — the load is not yet byte-faithful." flow (humane64 diffs)) ]
+        let findings = report.Findings @ extra
+        let verdict =
+            if List.isEmpty findings then Verdict.Unified
+            elif findings |> List.exists (fun f -> f.Fork) then Verdict.Forked
+            else Verdict.Converging
+        { report with Findings = findings; Verdict = verdict; Fidelity = clause }
 
     /// The face's evidence stamp: the resolved store basis and each
     /// environment's actual acquisition path, applied onto a computed report
@@ -1466,15 +1536,33 @@ module Estate =
                    sprintf "  Evidence store: %s." dir
                | EvidenceStoreBasis.Disabled ->
                    "  Evidence reads live this run — no store is configured (PROJECTION_ESTATE_DIR, or the ledger directory's estate child, enables pay-once evidence).")
-          // The fidelity clause, named (RT-10): the estate config cannot
-          // name a fidelity flow yet (the container-proof wave brings it),
-          // so the clause is not configured — said, never silent, and the
-          // verdict formula excludes it.
-          yield "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
+          // The fidelity clause, named (RT-10, wave A4β): the estate config's
+          // `fidelityFlow` decides whether the row-fidelity proof is part of
+          // the verdict. Unconfigured, it is named and excluded (a never-run
+          // proof never holds the verdict hostage); configured, a green proof
+          // rides here and each non-green state is a DECIDE finding below.
+          yield
+              (match report.Fidelity with
+               | FidelityClause.NotConfigured ->
+                   "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
+               | FidelityClause.Green (flow, ageDays) ->
+                   let age = if ageDays <= 0 then "captured today" else sprintf "%s day(s) old" (humane ageDays)
+                   sprintf "  The fidelity proof for flow '%s' is green — every row byte-identical (%s)." flow age
+               | FidelityClause.Missing flow ->
+                   sprintf "  The fidelity proof for flow '%s' has not run — it stands as a ruling below." flow
+               | FidelityClause.Stale (flow, ageDays) ->
+                   sprintf "  The fidelity proof for flow '%s' is %s day(s) old and predates this run's evidence — it stands as a ruling below." flow (humane ageDays)
+               | FidelityClause.Diverged (flow, diffs) ->
+                   sprintf "  The fidelity proof for flow '%s' reports %s differing row(s) — it stands as a ruling below." flow (humane64 diffs))
           // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
           // what it inspected): the classes this run does not yet check are
-          // named, so "one shape" cannot read as "everything is clean".
-          yield "  Not inspected this run: static-entity content, user references, grants, computed columns, and emission fidelity (clustering, temporal tables, sequences). A clean verdict covers schema and data convergence only."
+          // named, so "one shape" cannot read as "everything is clean". The
+          // row-fidelity proof joins the covered set exactly when it is configured.
+          let coveredTail =
+              match report.Fidelity with
+              | FidelityClause.NotConfigured -> "A clean verdict covers schema and data convergence only."
+              | _ -> "A clean verdict covers schema convergence, data convergence, and the row-fidelity proof."
+          yield sprintf "  Not inspected this run: static-entity content, user references, grants, computed columns, and emission fidelity (clustering, temporal tables, sequences). %s" coveredTail
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
@@ -1668,7 +1756,28 @@ module Estate =
              o.["entries"] <- JsonValue.Create entries
              root.["overlay"] <- o
          | None -> ())
-        root.["fidelityClause"] <- JsonValue.Create "notConfigured"
+        // The fidelity clause (RT-10) — the state token plus its coordinates,
+        // so a CI reader branches on the proof without parsing the board.
+        (let fc = JsonObject()
+         (match report.Fidelity with
+          | FidelityClause.NotConfigured ->
+              fc.["state"] <- JsonValue.Create "notConfigured"
+          | FidelityClause.Green (flow, ageDays) ->
+              fc.["state"] <- JsonValue.Create "green"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["ageDays"] <- JsonValue.Create ageDays
+          | FidelityClause.Missing flow ->
+              fc.["state"] <- JsonValue.Create "missing"
+              fc.["flow"] <- JsonValue.Create flow
+          | FidelityClause.Stale (flow, ageDays) ->
+              fc.["state"] <- JsonValue.Create "stale"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["ageDays"] <- JsonValue.Create ageDays
+          | FidelityClause.Diverged (flow, diffs) ->
+              fc.["state"] <- JsonValue.Create "diverged"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["differingRows"] <- JsonValue.Create diffs)
+         root.["fidelityClause"] <- fc)
         (match report.Burndown with
          | Some b ->
              let o = JsonObject()

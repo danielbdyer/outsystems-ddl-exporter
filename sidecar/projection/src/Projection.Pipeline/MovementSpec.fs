@@ -776,6 +776,13 @@ and CheckEstateArgs =
       /// recorded reading in the evidence store's history (never the run
       /// ledger). `None` = the latest recorded reading.
       Since       : string option
+      /// `readiness.estate.fidelityFlow` (wave A4β/RT-10): the flow whose
+      /// row-fidelity proof the board folds into its verdict. `Some flow` ⇒
+      /// the face reads `fidelity.rows.json`, mints `ProofMissing`/
+      /// `ProofStale`/`ProofDiverged` as needed, and the masthead states the
+      /// clause; `None` ⇒ the clause is not configured and the verdict
+      /// excludes it (RT-10).
+      FidelityFlow : string option
       /// The loaded config's tightening section (wave A6): the face binds
       /// it against the resolved target catalog to read the ACTIVE interim
       /// posture — the relaxation keys whose meter lines the board carries.

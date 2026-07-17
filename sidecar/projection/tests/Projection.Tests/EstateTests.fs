@@ -1109,7 +1109,9 @@ let ``the masthead names the unconfigured fidelity clause — never silent (RT-1
     Assert.Contains(
         Estate.render report,
         fun (l: string) -> l.Contains "The fidelity clause is not configured")
-    Assert.Contains("\"fidelityClause\": \"notConfigured\"", Estate.toJsonString report)
+    // The clause is a state object now (RT-10) — a CI reader branches on its
+    // token; an unstamped report defaults to the unconfigured state.
+    Assert.Contains("\"state\": \"notConfigured\"", Estate.toJsonString report)
 
 [<Fact>]
 let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` () =
@@ -1174,3 +1176,91 @@ let ``check environments: a --since value outside the run-reference form is refu
         Assert.Equal(2, exit)
         Assert.Equal("cli.check.estateSinceForm", e.Code)
     | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+// ---------------------------------------------------------------------------
+// The fidelity clause (RT-10, wave A4β — the verdict closes). The laws:
+//   - The clause folds through `withFidelity`: NotConfigured / Green add no
+//     finding (the masthead only); Missing / Stale / Diverged each mint one
+//     DECIDE finding keyed on the flow AND turn Unified to Converging (the
+//     verdict formula includes the configured proof — RT-10's whole point).
+//   - The masthead line and the JSON `fidelityClause` render each state.
+//   - The proof reader is fail-closed: absent / torn reads as no proof.
+// ---------------------------------------------------------------------------
+
+let private unifiedBase () : Estate.EstateReport =
+    // sampleCatalog against itself with no divergences → Unified.
+    Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+
+[<Fact>]
+let ``withFidelity: NotConfigured and Green add no finding — a unified estate stays unified, the clause rides the masthead only`` () =
+    let baseR = unifiedBase ()
+    Assert.Equal(Estate.Verdict.Unified, baseR.Verdict)
+    let notConfigured = baseR |> Estate.withFidelity Estate.FidelityClause.NotConfigured
+    Assert.Equal(Estate.Verdict.Unified, notConfigured.Verdict)
+    Assert.Equal(baseR.Findings.Length, notConfigured.Findings.Length)
+    let green = baseR |> Estate.withFidelity (Estate.FidelityClause.Green ("uat-load", 2))
+    Assert.Equal(Estate.Verdict.Unified, green.Verdict)
+    Assert.Equal(baseR.Findings.Length, green.Findings.Length)
+    // The masthead names the green proof and its age.
+    Assert.Contains(
+        Estate.render green,
+        fun (l: string) -> l.Contains "flow 'uat-load' is green" && l.Contains "2 day(s) old")
+
+[<Fact>]
+let ``withFidelity: Missing turns a unified estate to converging with one ProofMissing DECIDE finding, keyed on the flow, levered to the run`` () =
+    let baseR = unifiedBase ()
+    let missing = baseR |> Estate.withFidelity (Estate.FidelityClause.Missing "uat-load")
+    Assert.Equal(Estate.Verdict.Converging, missing.Verdict)
+    let proof =
+        missing.Findings
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.ProofMissing)
+    Assert.Equal(1, List.length proof)
+    let f = List.head proof
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Operational, f.Plane)
+    Assert.Equal(Some "Run: projection check fidelity uat-load.", f.Lever)
+    Assert.Contains("uat-load", f.Statement)
+
+[<Fact>]
+let ``withFidelity: Stale and Diverged each mint their DECIDE finding and turn the verdict converging`` () =
+    let baseR = unifiedBase ()
+    let stale = baseR |> Estate.withFidelity (Estate.FidelityClause.Stale ("uat-load", 9))
+    Assert.Equal(Estate.Verdict.Converging, stale.Verdict)
+    Assert.Contains(stale.Findings, fun f -> f.Kind = EstateFindingKind.ProofStale)
+    Assert.Contains(Estate.render stale, fun (l: string) -> l.Contains "9 day(s) old and predates")
+    let diverged = baseR |> Estate.withFidelity (Estate.FidelityClause.Diverged ("uat-load", 3L))
+    Assert.Equal(Estate.Verdict.Converging, diverged.Verdict)
+    Assert.Contains(diverged.Findings, fun f -> f.Kind = EstateFindingKind.ProofDiverged)
+    Assert.Contains(Estate.render diverged, fun (l: string) -> l.Contains "3 differing row(s)")
+
+[<Fact>]
+let ``withFidelity: the JSON carries the clause state and its coordinates (the one-substrate law)`` () =
+    let baseR = unifiedBase ()
+    Assert.Contains("\"state\": \"notConfigured\"", Estate.toJsonString (baseR |> Estate.withFidelity Estate.FidelityClause.NotConfigured))
+    let greenJson = Estate.toJsonString (baseR |> Estate.withFidelity (Estate.FidelityClause.Green ("uat-load", 2)))
+    Assert.Contains("\"state\": \"green\"", greenJson)
+    Assert.Contains("\"flow\": \"uat-load\"", greenJson)
+    Assert.Contains("\"state\": \"diverged\"", Estate.toJsonString (baseR |> Estate.withFidelity (Estate.FidelityClause.Diverged ("uat-load", 3L))))
+
+[<Fact>]
+let ``tryReadProof: an absent or torn proof reads as no proof (fail-closed); a valid one carries agrees, differenceTotal, and its write time`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-proof-" + System.Guid.NewGuid().ToString "N")
+    try
+        System.IO.Directory.CreateDirectory dir |> ignore
+        // absent
+        Assert.Equal(None, FidelityCompareRun.tryReadProof (System.IO.Path.Combine(dir, "none.json")))
+        // torn (missing the load-bearing fields)
+        let torn = System.IO.Path.Combine(dir, "torn.json")
+        System.IO.File.WriteAllText(torn, "{ \"before\": \"a\" }")
+        Assert.Equal(None, FidelityCompareRun.tryReadProof torn)
+        // valid — a diverged proof with three differences
+        let ok = System.IO.Path.Combine(dir, "fidelity.rows.json")
+        System.IO.File.WriteAllText(ok, "{ \"agrees\": false, \"rowsCompared\": 100, \"differenceTotal\": 3 }")
+        match FidelityCompareRun.tryReadProof ok with
+        | Some s ->
+            Assert.False s.Agrees
+            Assert.Equal(100L, s.RowsCompared)
+            Assert.Equal(3L, s.DifferenceTotal)
+        | None -> Assert.Fail "expected the valid proof to read"
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)

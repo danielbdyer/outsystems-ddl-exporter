@@ -177,4 +177,10 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                 printfn "  The load dropped %d row(s) (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (List.length transferReport.SkippedReferences)
             FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
         tryWriteArtifact "fidelity.rows.json" artifact
+        // RT-10 — a FLOW-SCOPED copy beside the journal, so the estate board
+        // (readiness.estate.fidelityFlow) reads THIS flow's proof
+        // unambiguously (the cwd copy is overwritten by whichever flow last
+        // ran; the scoped copy is this flow's, and its mtime is its age).
+        (try IO.Directory.CreateDirectory journalDir |> ignore with _ -> ())
+        tryWriteArtifact (IO.Path.Combine(journalDir, "fidelity.rows.json")) artifact
         if RowFidelityReport.agrees report then 0 else 5
