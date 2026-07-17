@@ -1,3 +1,60 @@
+# Handoff addendum — 2026-07-17 (later still), THE LOOP-CLOSING PROGRAM Phase 3 opens: RT-10 (the fidelity clause) SHIPS — `check environments` reads the container proof and folds it into the verdict. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+
+To the next agent.
+
+**The loop's provable half is now CLOSED at the board.** Phase 2 gave the operator a way to
+PROVE a load (`check fidelity <flow>`); Phase 3 slice 3b makes the daily instrument READ that
+proof. `readiness.estate.fidelityFlow` names a flow; the estate reads its flow-scoped proof
+(`fidelity-proof/<flow>/fidelity.rows.json`, written beside the journal) and folds the verdict
+in: a missing/stale/diverged proof is a DECIDE finding that turns Unified to Converging (the
+verdict formula now includes the configured proof — RT-10's whole point); a green proof rides
+the masthead; unconfigured, the clause is named and excluded (a never-run proof never holds the
+verdict hostage). Staleness is honest: a proof is stale only when the estate's evidence was
+captured-and-stored (or re-fingerprinted) AFTER it — a bare live re-read never staleness-trips
+a proof. `FidelityCompareRun.tryReadProof` is fail-closed (a torn proof is no proof; age from
+file mtime). Shipped in `d07cb86` (the five finding kinds join the registries) + `88492fc`
+(the clause). Estate + config + fidelity + voice suites 168/168; lint at the 66 baseline.
+
+**WHAT REMAINS to fully close the original request — slice 3a (D10/D11 static content), then
+Phase 4 + the terminus:**
+
+- **Slice 3a (D10/D11) — the original ask's THIRD named divergence ("no AutoNumber static
+  entities"), designed in full in the DECISIONS 2026-07-17 Phase-3 entry.** The five finding
+  kinds are ALREADY registered (slice 3b's foundation); the three proof kinds are live, but
+  `DataStaticContent`/`DataStaticIdentity` are registered-but-unminted — the contract is the
+  spec, the detector is your slice, and the A44 discipline requires the live feed BEFORE the
+  next commit (no inert detector). The crux the map found: the OSSYS read marks a static
+  entity `Modality.Static` but its ROW CONTENT rides a SKIPPED result set
+  (`MetadataSnapshotRunner` parses the first 5 of 22), so `Kind.staticPopulations` on an env
+  catalog is EMPTY — you need a bounded per-env, per-static-kind row read
+  (`ReadSide.readRows`, ReadSide.fs:1030; static tables are small). Thread the static content
+  (`{ Seed; ByEnv }`) as a new `computeWith` parameter (`compute` passes empty — byte-
+  identical); D10 via `Reconciliation.staticLookupIdentity` (REPAIR, ReviewBlock — the
+  alignment MERGE via `MergeRender.renderMerge` into the existing
+  `environments.remediation.<env>.sql`, matched by business key, never the surrogate); D11 via
+  the AutoNumber label→surrogate map compared across envs (DECIDE, Ruling). Business key = the
+  first mandatory non-key TEXT attribute (the Label convention); no such attr ⇒ a NAMED skip.
+  **Interim coverage (why this is a follow-on, not a gap): the container proof ALREADY catches
+  D11's failure mode** — an AutoNumber entity numbering rows differently surfaces as a
+  row-fidelity difference in `check fidelity` (modulo the journal's key remaps). D10/D11 are
+  the ergonomic PRE-cutover surfacing; the detection is already live via the proof + RT-10.
+- **Phase 4 (A8 + B6) — the ease tail.** The live Spectre board (GoBoardView donor); the
+  incremental proof cache (`proofs/<proofKey>/digests.json` — re-prove on moved fingerprint /
+  changed ledger / non-green); `Profile.replaceKindEvidence` + FK-adjacency closure; the
+  `runInit` stanza; the `ApplyRunbookEmitter`.
+- **The terminus.** The ideation §12 operator walk end-to-end on the fixture estate (this is
+  also WP-12/13's trigger); A45/T17 promotion finalized; the DECISIONS eight-item chapter
+  close; CLAUDE.md currency; matrix regeneration; the final HANDOFF letter.
+
+**New traps this phase:** the JSON `fidelityClause` is now a state OBJECT (`{ state, flow,
+ageDays|differingRows }`), not the old flat string — a pre-RT-10 test asserting the string
+shape will fail (one did; fixed). The five estate finding kinds fan out through all SEVEN
+`EstateFinding.fs` registries + the totality/coherence tests — the lever⇔lane law now accepts
+a "Run …" imperative for the proof family (not just "Rule …"). FS1104 bit a THIRD time this
+program (no `@` in backticked test names — the run-reference form).
+
+---
+
 # Handoff addendum — 2026-07-17 (later), THE LOOP-CLOSING PROGRAM Phase 2 ships: B4a (prove-implies-journal everywhere) + B5 (`check fidelity <flow>`, the container proof — T17 executable at the face) + WP-15. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
 
 To the next agent.

@@ -28508,3 +28508,82 @@ it). The G0 law tests simplify with it: a thunk's trace entry records at INVOCAT
 short-circuit witness no longer needs the TaskCompletionSource release harness the hot-task
 contract forced. Composition semantics (in-order, first-refusal short-circuit, the
 `code → (exit, label)` reporting) are byte-identical.
+
+## 2026-07-17 — Phase 3 (A4β/RT-10) opens: the fidelity clause closes the verdict; the five static/proof finding kinds join the registries
+
+**Context.** Phase 3 of the loop-closing program — "the verdict closes." The estate board
+(`check environments`) learns to read the container proof (`check fidelity <flow>`, Phase 2),
+and the original ask's third named divergence (AutoNumber static entities) gets its finding
+kinds. Two slices: 3b (RT-10, the fidelity clause) SHIPPED this entry; 3a (D10/D11 static
+content) is the named next slice, its design recorded below.
+
+**Slice 3b — RT-10, the fidelity clause (SHIPPED):**
+
+1. **Five new `EstateFindingKind`s join every registry** (the foundation): `DataStaticContent`
+   (D10, REPAIR/Data/ReviewBlock), `DataStaticIdentity` (D11, DECIDE/Identity/Ruling),
+   `ProofMissing`/`ProofStale`/`ProofDiverged` (RT-10, DECIDE/Operational/Ruling). All join
+   the DU + the seven total registries (all/token/phrase/laneOf/planeOf/leverFormOf/
+   specimenOf). The lever⇔lane coherence law gains the run-imperative arm for the proof family
+   ("Run: projection check fidelity <flow>" — the §3 contract's own row; the law predated it).
+2. **`readiness.estate.fidelityFlow`** — the config key naming the flow whose proof the board
+   reads (the repairBand chain: parse + ReadinessSpec + render round-trip + CheckEstateArgs;
+   A44 — consumed in the same wave). `None` ⇒ the clause is not configured and the verdict
+   excludes it (a never-run proof never holds the verdict hostage — RT-10's whole point).
+3. **`Estate.FidelityClause`** (NotConfigured | Green | Missing | Stale | Diverged) + the
+   `Fidelity` field + `Estate.withFidelity`: Missing/Stale/Diverged each mint ONE DECIDE
+   finding keyed on the flow and RE-COMPUTE the verdict, so a non-green proof turns Unified to
+   Converging. NotConfigured/Green add no finding (masthead only). Stamped BEFORE `withHistory`
+   so a missing proof resets the streak and the proof finding rides the burndown.
+4. **`FidelityCompareRun.tryReadProof`** — a fail-closed reader of `fidelity.rows.json`
+   (`agrees`/`differenceTotal`/`rowsCompared` + file mtime for age; a torn or absent proof is
+   no proof). The B5 face writes a FLOW-SCOPED copy (`fidelity-proof/<flow>/fidelity.rows.json`
+   beside the journal) so the board reads THIS flow's proof unambiguously (the cwd copy is
+   clobbered by whichever flow last ran).
+5. **Staleness is honest, not trivial.** The face computes the clause at the boundary; a proof
+   is STALE only when the estate's evidence was captured-and-stored (or re-fingerprinted)
+   AFTER the proof — a bare live re-read (no store, or a first capture) is not evidence the
+   estate moved, so it never staleness-trips a proof. Staleness outranks the (untrustworthy)
+   old agrees/diverged reading. The masthead clause goes live (five states) + the JSON
+   `fidelityClause` becomes a state object + the `summary.environments` envelope carries the
+   token + the coverage-honesty tail joins the row-fidelity proof to the covered set when
+   configured.
+
+**Slice 3a — D10/D11 static content (the NAMED next slice; its A44 obligation spelled out).**
+The finding kinds are already registered (slice 3b), so the discipline now REQUIRES their live
+feed before the next commit — an inert detector is the NM-69 class A44 forbids. The design:
+
+- **The probe (new I/O).** The OSSYS read marks a static entity `Modality.Static` but its
+  ROW CONTENT rides a skipped result set (`MetadataSnapshotRunner` parses the first 5 of 22),
+  so `Kind.staticPopulations` on an env catalog is empty. D10/D11 need a BOUNDED per-env,
+  per-static-kind row read (`ReadSide.readRows (cnn) (k) (maxRows)`, ReadSide.fs:1030 — static
+  tables are small reference data). The estate face reads them for the reference basis (the
+  target's declared seed — `Kind.staticPopulations targetCatalog` when the target is the
+  authored model, else the agreed env's read) and for each confirm env; `--offline` skips the
+  probe (the coverage line stays honest).
+- **The detector (pure, inside Estate.fs beside the other cross-env detectors).** A new
+  `computeWith` parameter carries the static content (`{ Seed; ByEnv }`); `compute` passes the
+  empty content (byte-identical). D10 (`DataStaticContent`): each env's rows vs the seed via
+  `Reconciliation.staticLookupIdentity` (Reconciliation.fs:384 — bidirectional column drift +
+  membership by business key), producing REPAIR-lane `EnvContribution` rows through the
+  standard grouping/lever mint (so D10 gets its ReviewBlock lever). D11 (`DataStaticIdentity`):
+  for AutoNumber static kinds (PK `IsIdentity` ⇒ `IdentityDisposition.ofKind = AssignedBySink`,
+  SurrogateRemap.fs:118), the business-key→surrogate map compared ACROSS envs — the same label
+  numbered differently is a DECIDE-lane fork (staticLookupIdentity excludes the surrogate, so
+  D11 is its own comparison). Business key = the first mandatory non-key TEXT attribute (the
+  Label convention); a kind with none is a NAMED skip (coverage honesty).
+- **The remediation (Targets.Data via Pipeline).** `EstateRemediation` gains a D10 arm
+  rendering the alignment MERGE via `MergeRender.renderMerge` (MergeRender.fs:28 — the UPDATE
+  arm already excludes surrogate PKs; matched by business key, never the AutoNumber key) into
+  the existing `environments.remediation.<env>.sql` (§3's D10 lever IS "Review block N", no new
+  artifact). OperationalDiagnostics stays Core-only; the MERGE renders in Pipeline (which
+  references Targets.Data) and lands as a block string.
+- **Witnesses.** Pure: the detector over hand-built `StaticRow` sets (seed vs env: missing/
+  extra/drift → D10; AutoNumber label→key divergence across envs → D11); the business-key
+  heuristic + the no-business-key skip; the remediation MERGE matches by business key and never
+  the surrogate. Docker: the estate face's live static-row probe over a seeded reference-data
+  fixture.
+- **Interim coverage (why 3a is a follow-on, not a gap).** The container proof (Phase 2)
+  ALREADY catches D11's failure mode: an AutoNumber static entity numbering rows differently
+  surfaces as a row-fidelity difference in `check fidelity <flow>` (every row byte-compared
+  modulo the journal's recorded key remaps). The dedicated D10/D11 estate findings are the
+  more ergonomic PRE-cutover surfacing; the underlying detection is live via the proof + RT-10.
