@@ -1,4 +1,60 @@
-# Handoff addendum — 2026-07-17 (latest), THE LOOP IS CLOSED: Phase 3 slice 3a (D10/D11) SHIPS — the third named divergence lands. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+# Handoff addendum — 2026-07-17 (latest), THE EASE TAIL + THE CHAPTER CLOSE: D10 goes executable, the live board lands, A45/T17 become law. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+
+To the next agent.
+
+**The loop is closed and the chapter is closing.** The previous letter closed the loop on the
+original request (three named divergences + provable fidelity + the board reading the proof). This
+letter shipped the ease tail (Phase 4 A8) and walked the chapter close. What landed:
+
+- **D10 is now executable.** The named follow-on is discharged: `MergeRender.renderAlignmentMerge`
+  (Targets.Data) renders a REAL business-key alignment MERGE, and `EstateRemediation.blocksFor`
+  threads the seed (`StaticContent.Seed`) to it. The surrogate PK is never written (matched on the
+  business key, INSERT lets the sink mint its own key); there is no delete-by-source (removing rows
+  the seed omits is a separate ruling — they may be referenced). Watch the trap I hit:
+  `RemediationEmitter.emitEstate` COMMENTS EVERY LINE of a repair now (split on `\n`) — a
+  multi-statement MERGE through a single-line comment loop would have emitted uncommented
+  destructive SQL, breaking the operator-safety contract.
+- **The live board (A8).** `EstateBoardView.ofReport : EstateReport → View` (CLI) is the rich lens
+  beside the plain `Estate.render` (which STAYS — it is the reference projection the board tests
+  pin, and heavily tested). The face renders the View through `GoBoardView.writeView` (color on a
+  TTY, plain on a redirected sink — no drift). One-substrate holds (`View.toJson`). If you extend
+  the board, reuse the exposed `Estate.provenanceText`/`laneTitle`/`laneEmptyLine`/`planeToken`/
+  `coverageLine` — do NOT re-phrase the finding statements/levers (they ride the `Finding`, Voice-
+  owned). The interactive dig (`Navigator.present` over the View) is a small unbuilt follow-on now
+  that the `EstateReport → View` seam exists — that was the biggest blocker, and it is gone.
+- **A45 + T17 are LAW.** Their promotion triggers had fired (A45's N-way witness in `EstateTests`;
+  T17's comparator/digest/container witnesses in `RowFidelityTests` + `FidelityRowsDockerTests`).
+  AXIOMS status is flipped in place; the `AxiomTests.fs` entries stay POINTER-skips to those live
+  facts (renamed — do NOT convert them to empty live `[<Fact>]` bodies; the verifiability gate
+  forbids a phantom Bucket-A). The matrix counts are unchanged by construction.
+
+**WHAT REMAINS — the next program (none blocks the closed loop):**
+
+- **The operator-walk end-to-end fixture test.** The ideation §12 walk on a LIVE multi-env estate,
+  every artifact produced and cross-referenced. The existing `PeerEstateHarness` (Integration)
+  stands up two live OSSYS cells but is transfer-oriented — this needs an estate-board assertion
+  over it. Largest remaining item; also WP-12/13's trigger (both still fail loud on the proof path).
+- **The incremental proof cache (B6).** `proofs/<proofKey>/digests.json` — needs a net-new proofKey
+  digest of (flow, model, fingerprints); the fidelity face re-proves unconditionally today.
+- **`ApplyRunbookEmitter` (B6).** A numbered, ordered apply manifest (schema → seeds → deps → post,
+  with preconditions) — donors are `RemediationEmitter.emitEstate` (Core-only) + the `SsdtBundle`
+  deploy order (SSDT); it straddles the layers, so compose it at Pipeline.
+- **`Profile.replaceKindEvidence` + FK-adjacency closure.** Per-kind evidence replacement atop the
+  SsKey-flat `Profile` (today `--refresh` re-reads the WHOLE profile) — needs an `SsKey → owning-
+  kind` partition and an FK-adjacency invalidation closure (`ForeignKeyReality` edges are the donor).
+
+**Traps this session (cumulative — add to the standing list):** `RemediationEmitter.emitEstate`
+comments per-line now; `EstateBoardView` opens `View` LAST so its `Status` cases win over
+`ApprovalState.Pending`; `System.Text.Json` escapes `'` to `'` (assert on apostrophe-free
+spans in a `toJson` test); the `[fsharp-string-concat]` lint counts EVERY `String.concat` (the
+baseline includes the sibling render modules' — extract shared copy into one Pipeline helper rather
+than add a CLI site); `Estate.staticBusinessKey`/`staticPk` are now exposed (the block resolver and
+the detector share one key definition); the A45/T17 promotion is matrix-NEUTRAL (pointer-skips stay
+skips) — regen the matrix but expect no count change.
+
+---
+
+# Handoff addendum — 2026-07-17, THE LOOP IS CLOSED: Phase 3 slice 3a (D10/D11) SHIPS — the third named divergence lands. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
 
 To the next agent.
 

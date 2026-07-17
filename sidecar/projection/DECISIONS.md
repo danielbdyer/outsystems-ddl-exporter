@@ -28639,3 +28639,75 @@ static entities = `DataStaticIdentity`), provable row fidelity (`check fidelity 
 container proof), and the board reading the proof into its verdict (RT-10) — all live. Phase 4
 (the ease tail: live board, proof cache, runbook) and the terminus (the operator walk, the
 chapter close) are enhancements beyond the original ask.
+
+## 2026-07-17 — Phase 4 (A8) + the terminus: the D10 alignment MERGE goes executable, the live board lands, A45/T17 promote to law, the chapter closes
+
+**Context.** The loop was closed at the entry above; this is the ease tail and the chapter close.
+Two named follow-ons discharged (the executable D10 MERGE; the live board), two candidate axioms
+promoted (their triggers had fired), and the eight-item close ritual walked.
+
+**What shipped:**
+
+1. **D10 goes executable (`MergeRender.renderAlignmentMerge`, Targets.Data).** The D10 remediation
+   block no longer comments a MERGE stub — it renders a REAL business-key alignment MERGE through
+   the shared ScriptDom engine (`ScriptDomGenerate.renderDataBatch [Statement.Merge …]`). The
+   surrogate PK is excluded from `AllColumns`/`PkColumns`/`UpdColumns` (the ON matches the business
+   key; a WHEN-NOT-MATCHED INSERT lets the sink mint its own identity — D11's ruling, never
+   rewritten); there is deliberately NO delete-by-source (the `DeleteScope` smart constructor
+   rightly refuses an unscoped table-wide delete, and removing rows the seed omits is a separate
+   operator ruling because they may be referenced). `EstateRemediation.blocksFor` now threads the
+   seed (`StaticContent.Seed`, a `Map<SsKey, StaticRow list>`); `Estate.staticBusinessKey`/`staticPk`
+   are exposed so the block resolves the SAME business key the detector keyed on (one definition,
+   no drift). `RemediationEmitter.emitEstate` now comments EVERY line of a multi-line repair
+   (split on `\n`, `TrimEnd '\r'`) — the operator-safety contract held for a multi-statement MERGE
+   (a single-line-only comment loop would have emitted uncommented destructive SQL). The D10 test
+   proves the MERGE matches `[LABEL]` and never writes `[ID]`.
+2. **The live estate board (A8 — `EstateBoardView.ofReport : EstateReport → View`, CLI).** The
+   estate report gains a RICH lens beside the plain `Estate.render` (which stays the reference
+   projection the board tests pin): a bordered masthead Panel, the four disposition lanes as
+   disclosures (each finding opening to its one lever at the calm default depth), the environment ×
+   plane matrix as a responsive `View.Table`, the burndown, the artifacts index, a compact runbook,
+   the one next move. Rendered through the proven report-View renderer (`GoBoardView.writeView` —
+   color on a TTY, plain NoColors on a redirected sink, so the two terminal forms never drift). The
+   face renders it in place of the string lines; the verdict stays voiced separately (the Voice owns
+   that copy). One-substrate holds: `View.toJson` (a `--query` walks it) carries the same finding
+   statements the human reads. Both lenses read the SAME load-bearing copy — the exposed
+   `Estate.provenanceText`/`laneTitle`/`laneEmptyLine`/`planeToken`/`coverageLine` and the finding
+   statements/levers that ride the `Finding` itself. Six pure tests (masthead, lane statement +
+   lever, matrix, fidelity + artifact, the full empty-state surface, one-substrate).
+3. **A45 + T17 promote to LAW (AXIOMS.md + AxiomTests.fs pointers).** Both candidates' promotion
+   triggers had fired: A45's N-way espace-invariance witness is live (`EstateTests`), and T17's
+   comparator/digest/container witnesses are live (`RowFidelityTests` + `FidelityRowsDockerTests`,
+   with B3's digest-plane agreement and B4b's ledger-modulated form). The AXIOMS status flips
+   candidate → LAW in place; the `AxiomTests.fs` entries stay axiom-file POINTERS to those live
+   facts (renamed, "candidate" dropped) — deliberately NOT converted to empty live `[<Fact>]`
+   bodies (that would be a phantom Bucket-A the verifiability gate forbids). The matrix's
+   live/Bucket-C/Bucket-D counts are unchanged by construction (a pointer-skip stays a skip). The
+   physical relocation of the two entries from the amendment-scaffolding section into the main
+   axiom body is deferred as cosmetic doc-hygiene — the per-entry `Status: LAW` is authoritative.
+
+**The eight-item chapter-close ritual (2026-05-14; amended to eight):**
+1. *Active-deferrals index scan* — the fired triggers this chapter: A45 (wave A1 witness), T17
+   (B2/B3/B4b/B5 witnesses) — both promoted here. Still deferred and named below.
+2. *Contract-vs-implementation walk* — the §3 presentation contract's rows all have live detectors
+   or a named deferral; the D10 lever now backs a real MERGE (was a stub).
+3. *CLAUDE.md staleness check* — §4 gains a survival entry for the estate/fidelity traps (the
+   fingerprint `(RowCount, MaxPk)` blindness to in-place UPDATE; the `''`↔NULL hash caveat).
+4. *README staleness check* — `tests/README.md` unchanged (the assembly split still holds; the new
+   `EstateBoardViewTests` is a pure test in `Projection.Tests`).
+5. *HANDOFF scope* — the top letter is rewritten as a forward-looking letter naming the next program.
+6. *Fresh-eye walk* — the board's rich lens was read against the storyboard's ten regions; the
+   masthead-verdict-lanes-matrix-burndown-artifacts-action order holds.
+7. *Operating-disciplines currency* — the "verbs extract at the second consumer" discipline drove
+   `renderAlignmentMerge` (a genuinely different MERGE shape) and the `coverageLine` extraction
+   (one copy source for two lenses); no new discipline.
+8. *V1-input-envelope walk* — not a V1-input chapter (the estate reads OSSYS, not V1 artifacts);
+   conditional item, skipped by class.
+
+**What remains (the next program — named, not silent):** the operator-walk end-to-end fixture test
+(a live multi-env estate harness — the existing `PeerEstateHarness` is transfer-oriented; this is
+the largest remaining terminus item and WP-12/13's trigger); the incremental proof cache
+(`proofs/<proofKey>/digests.json` — needs a net-new proofKey digest of (flow, model, fingerprints));
+`ApplyRunbookEmitter` (numbered ordered apply manifest); `Profile.replaceKindEvidence` + the
+FK-adjacency closure (per-kind evidence replacement atop the SsKey-flat profile). None blocks the
+closed loop.
