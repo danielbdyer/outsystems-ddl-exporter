@@ -1155,13 +1155,17 @@ module Estate =
     /// mandatory, non-key, TEXT attribute (a Country's Name, a Status's
     /// Label). `None` when the kind has none; the detectors then skip the kind
     /// by name (coverage honesty), never guessing a key.
-    let private staticBusinessKey (k: Kind) : Attribute option =
+    /// Exposed (not `private`) so `EstateRemediation`'s D10 block resolves the
+    /// SAME business key the detector keyed on — one definition, no drift
+    /// between the finding and its alignment MERGE's ON clause.
+    let staticBusinessKey (k: Kind) : Attribute option =
         k.Attributes
         |> List.tryFind (fun a -> a.IsMandatory && not a.IsPrimaryKey && a.Type = Text)
 
     /// The static entity's primary-key attribute (the surrogate whose minting
-    /// D11 watches).
-    let private staticPk (k: Kind) : Attribute option =
+    /// D11 watches). Exposed alongside `staticBusinessKey` so the remediation
+    /// excludes exactly the surrogate the detector ignored.
+    let staticPk (k: Kind) : Attribute option =
         k.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey)
 
     /// D10 (`DataStaticContent`): each environment's static rows compared
@@ -1627,21 +1631,25 @@ module Estate =
     // projects (one substrate).
     // ----------------------------------------------------------------------
 
-    let private laneTitle (lane: EstateLane) : string =
+    // The lane/plane/provenance formatters are exposed (not `private`) so the
+    // rich board lens (`EstateBoardView.ofReport`, the CLI's live board) presents
+    // the SAME load-bearing copy the plain lens does — one report value, two
+    // lenses, no drift on the words the operator reads.
+    let laneTitle (lane: EstateLane) : string =
         match lane with
         | EstateLane.Decide -> "DECIDE — the ruling queue"
         | EstateLane.Repair -> "REPAIR — prepared repairs"
         | EstateLane.Relax  -> "RELAX — interim changes to carry through cutover"
         | EstateLane.Watch  -> "WATCH — advisories"
 
-    let private laneEmptyLine (lane: EstateLane) : string =
+    let laneEmptyLine (lane: EstateLane) : string =
         match lane with
         | EstateLane.Decide -> "  Nothing awaits a ruling."
         | EstateLane.Repair -> "  Nothing carries a repair."
         | EstateLane.Relax  -> "  No interim changes are needed."
         | EstateLane.Watch  -> "  Nothing is under watch."
 
-    let private planeToken (p: EstatePlane) : string =
+    let planeToken (p: EstatePlane) : string =
         match p with
         | EstatePlane.Schema -> "schema"
         | EstatePlane.Data -> "data"
@@ -1652,7 +1660,7 @@ module Estate =
     /// The per-lane cap — the top consequences are named; the remainder is
     /// counted (THE_VOICE §12: cap the breadth, name the remainder; the full
     /// list is `environments.json`'s, searchable, never scrollable).
-    let private laneCap : int = 8
+    let laneCap : int = 8
 
     /// The humane capture-age clause ("today" / "N day(s) ago").
     let private ageText (ageDays: int) : string =
@@ -1669,7 +1677,7 @@ module Estate =
 
     /// One environment's masthead evidence clause — the provenance made
     /// legible (RT-7: capture age and fingerprint status ride the masthead).
-    let private provenanceText (basis: EnvBasis) : string =
+    let provenanceText (basis: EnvBasis) : string =
         match basis.Provenance with
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
@@ -1682,6 +1690,23 @@ module Estate =
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
             "no data evidence this run — the data plane is advisory-silent"
+
+    /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
+    /// yet check, so "one shape" never reads as "everything is clean". The
+    /// row-fidelity proof joins the covered set exactly when it is configured;
+    /// the static-content probe (D10/D11) drops from the not-inspected list
+    /// exactly when it ran. Exposed (not inlined in `render`) so the rich board
+    /// lens presents the SAME coverage sentence — one source, no drift.
+    let coverageLine (report: EstateReport) : string =
+        let coveredTail =
+            match report.Fidelity with
+            | FidelityClause.NotConfigured -> "A clean verdict covers schema and data convergence only."
+            | _ -> "A clean verdict covers schema convergence, data convergence, and the row-fidelity proof."
+        let notInspected =
+            [ if not report.StaticInspected then "static-entity content"
+              "user references"; "grants"; "computed columns"
+              "emission fidelity (clustering, temporal tables, sequences)" ]
+        sprintf "Not inspected this run: %s. %s" (String.concat ", " notInspected) coveredTail
 
     /// Render the board regions BELOW the verdict (the masthead through the
     /// action), from the one report value. The face renders the verdict Hero
@@ -1717,20 +1742,9 @@ module Estate =
                | FidelityClause.Diverged (flow, diffs) ->
                    sprintf "  The fidelity proof for flow '%s' reports %s differing row(s) — it stands as a ruling below." flow (humane64 diffs))
           // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
-          // what it inspected): the classes this run does not yet check are
-          // named, so "one shape" cannot read as "everything is clean". The
-          // row-fidelity proof joins the covered set exactly when it is configured.
-          let coveredTail =
-              match report.Fidelity with
-              | FidelityClause.NotConfigured -> "A clean verdict covers schema and data convergence only."
-              | _ -> "A clean verdict covers schema convergence, data convergence, and the row-fidelity proof."
-          // The static-content probe (D10/D11) joins the covered set exactly
-          // when it ran this run — dropped from the not-inspected list then.
-          let notInspected =
-              [ if not report.StaticInspected then "static-entity content"
-                "user references"; "grants"; "computed columns"
-                "emission fidelity (clustering, temporal tables, sequences)" ]
-          yield sprintf "  Not inspected this run: %s. %s" (String.concat ", " notInspected) coveredTail
+          // what it inspected), the one source `coverageLine` (the rich board
+          // lens reads the same sentence).
+          yield sprintf "  %s" (coverageLine report)
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.

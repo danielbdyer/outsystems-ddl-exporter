@@ -285,7 +285,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     let blocks =
                         EstateRemediation.blocksFor label
                             (Readiness.toLogicalShape operandValue.Catalog)
-                            operandValue.Profile computed
+                            operandValue.Profile staticContent.Seed computed
                     if List.isEmpty blocks then None
                     else
                         let headerLines =
@@ -445,6 +445,13 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     | Estate.Verdict.Forked -> "estate.forked"
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
-                Estate.render report |> List.iter (fun line -> printfn "%s" line)
+                // The board renders through the rich `View` lens (wave A8) — a
+                // Spectre-backed, terminal-responsive projection on a TTY, the plain
+                // NoColors lens on a redirected sink (`EstateBoardView.write` routes
+                // both through the shared report-View renderer). The verdict above is
+                // voiced separately (the Voice owns that copy); this is the regions
+                // beneath it. The plain `Estate.render` stays the reference projection
+                // the board tests pin.
+                EstateBoardView.write Console.Out report
             tryWriteArtifact "environments.json" artifact
             if Estate.isUnified report then 0 else 5

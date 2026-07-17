@@ -47,6 +47,7 @@
     <Compile Include="NavigatorTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="GoBoardViewTests.fs" />
+    <Compile Include="EstateBoardViewTests.fs" />
     <Compile Include="ProgressRendererTests.fs" />
     <Compile Include="TransferPlanTests.fs" />
     <Compile Include="TransferPlanViewTests.fs" />

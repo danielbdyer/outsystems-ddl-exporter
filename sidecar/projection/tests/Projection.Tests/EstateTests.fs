@@ -1352,11 +1352,22 @@ let ``D10: an environment's static rows missing a seed row is a REPAIR finding w
     // The REPAIR lever is backed by a real block matched by the business key,
     // never rewriting the surrogate.
     let blocks =
-        EstateRemediation.blocksFor "cloud-qa" statusCatalog None report
+        EstateRemediation.blocksFor "cloud-qa" statusCatalog None content.Seed report
     Assert.Contains(blocks, fun (b: RemediationEmitter.EstateBlock) -> b.BlockId.StartsWith "data.staticContent:")
     let block = blocks |> List.find (fun b -> b.BlockId.StartsWith "data.staticContent:")
     Assert.Contains("[LABEL]", block.Locate)
     Assert.Contains(block.Repairs, fun (r: string) -> r.Contains "business key")
+    // The block carries a REAL executable alignment MERGE (not a comment stub):
+    // it matches on the business-key column and — the D10/D11 law — never writes
+    // the surrogate PK (the sink mints its own key on INSERT).
+    let merge = block.Repairs |> List.tryFind (fun (r: string) -> r.Contains "MERGE")
+    Assert.True(Option.isSome merge, "the D10 block carries an executable alignment MERGE")
+    let mergeText = Option.get merge
+    Assert.Contains("[LABEL]", mergeText)
+    Assert.DoesNotContain("[ID]", mergeText)
+    // The MERGE inserts the missing seed row (MX) — the seed's business key is in
+    // the USING source.
+    Assert.Contains("MX", mergeText)
 
 [<Fact>]
 let ``static content: compute (empty static content) mints no D10/D11 and leaves static content not-inspected`` () =

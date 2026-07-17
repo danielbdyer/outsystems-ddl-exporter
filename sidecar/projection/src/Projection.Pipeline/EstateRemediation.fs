@@ -9,6 +9,7 @@ namespace Projection.Pipeline
 
 open System
 open Projection.Core
+open Projection.Targets.Data
 open Projection.Targets.OperationalDiagnostics
 
 /// The per-environment remediation blocks for `check estate` (wave A5):
@@ -58,6 +59,7 @@ module EstateRemediation =
     let private blockFor
         (catalog: Catalog)
         (profile: Profile option)
+        (seed: Map<SsKey, StaticRow list>)
         (finding: Estate.Finding)
         : RemediationEmitter.EstateBlock option =
         let keyText = FindingKey.text finding.Key
@@ -143,22 +145,29 @@ module EstateRemediation =
             // content to the model's declared seed, MATCHED BY BUSINESS KEY,
             // never rewriting the surrogate (that is D11's ruling). The
             // located SELECT shows the environment's current reference data;
-            // the alignment MERGE is the commented repair (the surrogate PK
-            // stays out of the ON / INSERT — the sink mints its own keys).
+            // the alignment MERGE — a REAL executable batch, rendered through
+            // the shared MERGE engine and commented line-by-line by the emitter
+            // — is the prepared repair: the surrogate PK stays out of the ON /
+            // INSERT (the sink mints its own key), and there is no
+            // delete-by-source (removing rows the seed omits is a separate
+            // ruling, because they may be referenced).
             findKind catalog subject
             |> Option.bind (fun k ->
-                let bk =
-                    k.Attributes
-                    |> List.tryFind (fun a -> a.IsMandatory && not a.IsPrimaryKey && a.Type = Text)
-                match bk with
-                | Some bkAttr ->
+                match Estate.staticBusinessKey k, Estate.staticPk k, Map.tryFind k.SsKey seed with
+                | Some bkAttr, Some pkAttr, Some seedRows when not (List.isEmpty seedRows) ->
                     let t = tableOf k
                     let bkCol = columnOf bkAttr
-                    blockOf
-                        (sprintf "SELECT * FROM %s ORDER BY %s;" t bkCol)
-                        [ sprintf "-- align %s to the model's declared static seed, matched by %s (the business key); the surrogate primary key is never rewritten." t bkCol
-                          sprintf "-- MERGE %s AS [t] USING (<the model's seed rows>) AS [s] ON [t].%s = [s].%s WHEN NOT MATCHED BY TARGET THEN INSERT (...) WHEN MATCHED THEN UPDATE SET ... WHEN NOT MATCHED BY SOURCE THEN DELETE; -- projection's seed emitter renders the typed VALUES" t bkCol bkCol ]
-                | None -> None)
+                    let merge =
+                        MergeRender.renderAlignmentMerge
+                            "emit.estateAlignment" bkAttr.Name pkAttr.Name k seedRows
+                    if merge = "" then None
+                    else
+                        blockOf
+                            (sprintf "SELECT * FROM %s ORDER BY %s;" t bkCol)
+                            [ sprintf "align %s to the model's declared static seed, matched by %s (the business key); the surrogate primary key is never rewritten — the sink mints its own." t bkCol
+                              merge
+                              sprintf "rows present in %s but absent from the seed are visible in the SELECT above; removing them is a separate ruling — confirm no inbound references first." t ]
+                | _ -> None)
         | EstateFindingKind.PostureRetirable ->
             // The retirement repair (wave A6): the reopen probe reads zero
             // in every evidenced environment. An FK-anchored subject earns
@@ -184,17 +193,21 @@ module EstateRemediation =
 
     /// One environment's blocks: every REPAIR-lane finding naming the
     /// environment, resolved against ITS catalog (physical realizations
-    /// retained through the logical normalization).
+    /// retained through the logical normalization). `seed` carries the model's
+    /// declared static rows per kind (`StaticContent.Seed`) so the D10 block
+    /// renders a real alignment MERGE; `Map.empty` (offline / no static probe)
+    /// simply mints no D10 block.
     let blocksFor
         (env: string)
         (logicalEnvCatalog: Catalog)
         (profile: Profile option)
+        (seed: Map<SsKey, StaticRow list>)
         (report: Estate.EstateReport)
         : RemediationEmitter.EstateBlock list =
         report.Findings
         |> List.filter (fun f ->
             f.Lane = EstateLane.Repair && f.Envs |> List.exists (fun (e, _) -> e = env))
-        |> List.choose (blockFor logicalEnvCatalog profile)
+        |> List.choose (blockFor logicalEnvCatalog profile seed)
 
     /// The artifact file name — one convention, minted here and read by the
     /// lever copy and the board index alike.
