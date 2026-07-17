@@ -1,9 +1,9 @@
 CREATE TABLE [audit].[ChangeLog] (
-    [Id]     INT       IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_audit_ChangeLog]
+    [Id]     INT      IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_ChangeLog_Id]
             PRIMARY KEY CLUSTERED,
-    [At]     DATETIME2 NOT NULL,
-    [UserId] INT       NOT NULL
+    [At]     DATETIME NOT NULL,
+    [UserId] INT      NOT NULL
         CONSTRAINT [FK_ChangeLog_User_UserId]
             FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id])
 )

@@ -73,33 +73,36 @@ module MigrationDependenciesBinding =
     /// distinct in the operator's diagnostics.
     type private RawRow =
         { Id     : string
-          Values : Map<Name, string> }
+          Values : Map<Name, string option> }
 
     type private RawKind =
         { Module : string
           Entity : string
           Rows   : RawRow list }
 
-    /// Project one JSON value cell to its raw invariant-culture string.
+    /// Project one JSON value cell to its raw invariant-culture cell.
     /// Strings pass through; numbers / booleans render via `GetRawText`
-    /// (invariant by `System.Text.Json` contract); `null` is the NULL
-    /// convention (`""`, per `StaticRow.Values`). Objects / arrays are a
-    /// named error — a migration cell is a scalar.
-    let private cellValue (column: string) (v: JsonElement) : Result<string> =
+    /// (invariant by `System.Text.Json` contract); JSON `null` — and, per
+    /// this file's DOCUMENTED convention, the empty string `""` — is SQL
+    /// NULL (`None`). A genuine empty-string cell is not expressible in
+    /// this file; the convention predates WP-3 and operator files rely on
+    /// it. Objects / arrays are a named error — a migration cell is a
+    /// scalar.
+    let private cellValue (column: string) (v: JsonElement) : Result<string option> =
         match v.ValueKind with
         | JsonValueKind.String                       ->
             match v.GetString() with
-            | null -> Result.success ""
-            | s    -> Result.success s
-        | JsonValueKind.Number                       -> Result.success (v.GetRawText())
-        | JsonValueKind.True | JsonValueKind.False   -> Result.success (v.GetRawText())
-        | JsonValueKind.Null                         -> Result.success ""
+            | null | "" -> Result.success None
+            | s         -> Result.success (Some s)
+        | JsonValueKind.Number                       -> Result.success (Some (v.GetRawText()))
+        | JsonValueKind.True | JsonValueKind.False   -> Result.success (Some (v.GetRawText()))
+        | JsonValueKind.Null                         -> Result.success None
         | _ ->
             Result.failureOf (
                 bindError "cellNotScalar"
                     (sprintf "migration values cell '%s' must be a string, number, boolean, or null." column))
 
-    let private parseValues (rowLabel: string) (element: JsonElement) : Result<Map<Name, string>> =
+    let private parseValues (rowLabel: string) (element: JsonElement) : Result<Map<Name, string option>> =
         match element.TryGetProperty("values") with
         | false, _ -> Result.success Map.empty
         | true, v ->

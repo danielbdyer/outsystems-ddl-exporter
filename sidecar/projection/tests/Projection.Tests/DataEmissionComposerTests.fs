@@ -47,7 +47,7 @@ let private mkCountryKind () : Kind =
     let row code label =
         { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
           Values =
-              Map.ofList
+              StaticRow.presentValues
                   [ mkName "Id",    code
                     mkName "Code",  code
                     mkName "Label", label ] }
@@ -174,7 +174,7 @@ let ``compose AllData WITH a bootstrap row source: Bootstrap covers the static k
         Map.ofList
             [ country.SsKey,
               [ { Identifier = mkKey ["TestModule"; "Country"; "Row"; "1"]
-                  Values = country.Attributes |> List.map (fun a -> a.Name, "1") |> Map.ofList } ] ]
+                  Values = country.Attributes |> List.map (fun a -> a.Name, "1") |> StaticRow.presentValues } ] ]
     let bundle =
         DataEmissionComposer.composeRenderedBundleWithBootstrap
             (policyWith AllData) catalog Profile.empty
@@ -307,7 +307,7 @@ let ``Slice θ: partition fails (OverlappingEmitterCoverage) when a kind is popu
         { Rows =
             [ { KindKey = country.SsKey
                 Identifier = mkKey ["TestModule"; "Country"; "Mig"; "Other"]
-                Values = Map.ofList [ mkName "Id", "9"; mkName "Code", "ZZ"; mkName "Label", "Other" ] } ] }
+                Values = StaticRow.presentValues [ mkName "Id", "9"; mkName "Code", "ZZ"; mkName "Label", "Other" ] } ] }
     let result =
         DataEmissionComposer.composeFull
             (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
@@ -327,7 +327,7 @@ let ``Slice θ: partition holds under AllExceptStatic (Static skipped, Migration
         { Rows =
             [ { KindKey = country.SsKey
                 Identifier = mkKey ["TestModule"; "Country"; "Mig"; "1"]
-                Values = Map.ofList [ mkName "Id", "1"; mkName "Code", "US"; mkName "Label", "United States" ] } ] }
+                Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Code", "US"; mkName "Label", "United States" ] } ] }
     // AllExceptStatic skips Static, so Migration alone owns the kind.
     let result =
         DataEmissionComposer.composeFull
@@ -376,7 +376,7 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
         let row =
             { Identifier = mkKey ["TestModule"; name; "Row"; rowId]
               Values =
-                  Map.ofList
+                  StaticRow.presentValues
                       [ mkName "Id",       rowId
                         mkName "ParentId", rowId ] }
         {
@@ -542,7 +542,7 @@ let ``5.13.data-emission-registry: composeRenderedFull global-Phase1-then-Phase2
             [ { KindKey = legacy.SsKey
                 Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
                 Values =
-                    Map.ofList
+                    StaticRow.presentValues
                         [ mkName "Id",       "1"
                           mkName "ParentId", "1" ] } ] }
     let text =
@@ -588,7 +588,7 @@ let ``5.13.data-emission-registry: cross-emitter coverage holds the partition in
             [ { KindKey = legacy.SsKey
                 Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
                 Values =
-                    Map.ofList
+                    StaticRow.presentValues
                         [ mkName "Id",       "1"
                           mkName "ParentId", "1" ] } ] }
     let result =
@@ -626,7 +626,7 @@ let ``WP6 step 3: composeRenderedBundle splits the lanes (StaticSeeds vs Migrati
         { Rows =
             [ { KindKey = legacy.SsKey
                 Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
-                Values = Map.ofList [ mkName "Id", "1"; mkName "ParentId", "1" ] } ] }
+                Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "ParentId", "1" ] } ] }
     let bundle =
         DataEmissionComposer.composeRenderedBundleFull
             (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
@@ -707,7 +707,7 @@ let private mkStaticLevelKind (name: string) (table: string) (target: Kind optio
             | Some _ -> (mkName "TargetId", rid) :: baseValues
             | None   -> baseValues
         { Identifier = mkKey ["TestModule"; name; "Row"; rid]
-          Values = Map.ofList values }
+          Values = StaticRow.presentValues values }
     let fkAttrs =
         match target with
         | Some _ ->
@@ -748,7 +748,7 @@ let private mkStaticSelfCycleKind (name: string) (table: string) : Kind =
     let parentKey = mkKey ["TestModule"; name; "ParentId"]
     let row =
         { Identifier = mkKey ["TestModule"; name; "Row"; "1"]
-          Values = Map.ofList [ mkName "Id", "1"; mkName "ParentId", "1" ] }
+          Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "ParentId", "1" ] }
     {
         SsKey    = kindKey
         Name     = mkName name
@@ -794,7 +794,7 @@ let private mkStaticMutualCycleKind (name: string) (table: string) (otherName: s
     let peerKey = mkKey ["TestModule"; name; "PeerId"]
     let row =
         { Identifier = mkKey ["TestModule"; name; "Row"; "1"]
-          Values = Map.ofList [ mkName "Id", "1"; mkName "PeerId", "1" ] }
+          Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "PeerId", "1" ] }
     {
         SsKey    = kindKey
         Name     = mkName name
@@ -1029,7 +1029,7 @@ let ``BootstrapLane: Prerendered drain-time scripts compose the SAME bundle as t
         Map.ofList
             [ customer.SsKey,
               [ { Identifier = mkKey ["TestModule"; "Customer"; "Row"; "1"]
-                  Values = customer.Attributes |> List.map (fun a -> a.Name, "1") |> Map.ofList } ] ]
+                  Values = customer.Attributes |> List.map (fun a -> a.Name, "1") |> StaticRow.presentValues } ] ]
     // The drain-time projection: the same `DataLoadPlan.loadFor` core the
     // batch build folds + the same `renderLoad`, under the bootstrap
     // lane's delete-scope-suppressed posture (what

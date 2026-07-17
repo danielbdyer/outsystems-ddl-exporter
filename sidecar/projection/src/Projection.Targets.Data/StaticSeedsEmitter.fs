@@ -208,6 +208,20 @@ module StaticSeedsEmitter =
     /// `AssignedBySink` both render MERGE over the supplied rows with the
     /// IDENTITY PK kept (the MERGE's `ON` joins on it); NM-26 brackets
     /// IDENTITY-bearing kinds regardless of disposition (see the core).
+    /// Apply the OutSystems single-space sentinel to one row's cells,
+    /// staged per kind (the attribute lookup binds once, not per cell).
+    /// Static-seed lane ONLY — see `KindColumns.outSystemsSpaceSentinel`.
+    let private applySpaceSentinel (kind: Kind) : StaticRow -> StaticRow =
+        let attrByName = kind.Attributes |> List.map (fun a -> a.Name, a) |> Map.ofList
+        fun row ->
+            { row with
+                Values =
+                    row.Values
+                    |> Map.map (fun name cell ->
+                        match Map.tryFind name attrByName with
+                        | Some a -> KindColumns.outSystemsSpaceSentinel a cell
+                        | None -> cell) }
+
     let private kindToScript
         (opts: DataEmitOptions)
         (cdc: CdcAwareness)
@@ -217,9 +231,11 @@ module StaticSeedsEmitter =
         if List.isEmpty load.Rows then emptyScript
         else
             let typeLookup = KindColumns.columnTypeLookup kind
+            let sentinel = applySpaceSentinel kind
             let typedRows =
                 load.Rows
                 |> List.map (fun row ->
+                    let row = sentinel row
                     row.Identifier,
                     KindColumns.rowToTypedValues typeLookup kind.Attributes row)
             scriptOfTyped opts cdc kind load.DeferredFkColumns typedRows
@@ -250,11 +266,22 @@ module StaticSeedsEmitter =
             let typeLookup = KindColumns.columnTypeLookup kind
             let schemaText = TableId.schemaText kind.Physical
             let tableText  = TableId.tableText kind.Physical
+            // The single-space sentinel at the quantum grain: cells are
+            // positional against the kind's attribute order.
+            let attrArr = List.toArray kind.Attributes
+            let sentinelQuantum (q: RowQuantum) : RowQuantum =
+                { Cells =
+                    q.Cells
+                    |> Array.mapi (fun i c ->
+                        if i < attrArr.Length then
+                            KindColumns.outSystemsSpaceSentinel attrArr.[i] (ValueOption.toOption c)
+                            |> Option.toValueOption
+                        else c) }
             let typedRows =
                 quanta
                 |> List.mapi (fun idx q ->
                     StaticRow.readsideIdentity schemaText tableText idx,
-                    KindColumns.quantumToTypedValues typeLookup kind.Attributes q)
+                    KindColumns.quantumToTypedValues typeLookup kind.Attributes (sentinelQuantum q))
             scriptOfTyped opts cdc kind deferred typedRows
 
     /// Π_StaticSeeds emit (composer-facing). Per A18 amended

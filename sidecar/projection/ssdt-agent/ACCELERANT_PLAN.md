@@ -1,7 +1,7 @@
 # ACCELERANT PLAN — wiring the F# Projection engine behind the tree
 
 > **Status: PLAN (nothing wired yet).** This is the detailed "how" for `CONNECTORS.md` §3 (engine
-> generates the proving ground) plus a new **evidence tier** (Profile / CatalogDiff / canary). It is
+> generates the proving ground) plus a new **evidence layer** (Profile / CatalogDiff / canary). It is
 > the staged, verify-first path to making the engine an **optional accelerant** — a fast-path the
 > tree uses when present, falling back to generic SSDT/SQL when absent.
 
@@ -12,7 +12,7 @@ the F# assembly (`CONNECTORS.md` §3). The tree keeps working with the hand-auth
 + raw SQL probes when the engine is absent. The engine is a *fast-path behind one probe*, never a
 dependency.
 
-## What the engine gives us — three artifact-only surfaces
+## What the engine provides — three artifact-only surfaces
 
 ### A. Real proving-ground schema (the core accelerant — CONNECTORS §3)
 - **Generate:** `projection <flow>` with an environment `access: bundle` + `emission.sqlproj: true`,
@@ -27,24 +27,26 @@ dependency.
 - **Emitters:** `SqlprojEmitter.emit`, `PostDeployEmitter.renderIncludes`, `DacpacEmitter.emit`
   (`src/Projection.Targets.SSDT/`); pipeline entry `Compose.runFromCatalogWith` (`Pipeline.fs`).
 
-### B. The Data Oracle — predict the veto (`projection profile`)
+### B. The data profile — predict the block (`projection profile`)
 - **Capture:** `projection profile <conn> --out profile.json`.
 - **Exposes per column/FK:** `ColumnProfile.NullCount / RowCount / MaxObservedLength`;
   `AttributeReality.HasNulls / HasDuplicates / HasOrphans / IsNullableInDatabase`;
   `ForeignKeyReality.HasOrphan / OrphanCount / IsNoCheck`; distributions; and **`CdcAwareness`
   (CdcEnabled + CdcInstance)**.
-- **Turns "prove the veto" into "predict then prove":** `NullCount>0` → tightening veto;
-  `MaxObservedLength>declared` → narrow veto; `HasOrphan` → FK veto; `HasDuplicates` → unique veto;
-  `CdcAwareness` makes the **+1 CDC tripwire a fact, not a guess**. The tree's `talk-to-local-sql`
-  probes (COUNT NULL, MAX(LEN), orphan LEFT JOIN, dup GROUP BY) become *reads of `profile.json`*.
+- **Turns "prove the block" into "predict, then prove":** `NullCount>0` → SSDT blocks the
+  tightening; `MaxObservedLength>declared` → blocks the narrowing; `HasOrphan` → blocks the
+  foreign key; `HasDuplicates` → blocks the unique index; and `CdcAwareness` reports the CDC state,
+  so the change-data-capture added-scrutiny finding is known from the profile before publishing.
+  The tree's `talk-to-local-sql` probes (COUNT NULL, MAX(LEN), orphan LEFT JOIN, dup GROUP BY)
+  become *reads of `profile.json`*.
 - **Source:** `Profile.fs`, `LiveProfiler.captureEvidenceCache` (Adapters.Sql), CLI
   `Faces/Synthetic.fs runCaptureProfile`.
 
-### C. Blast-radius + corroborating proofs (the reviewer's tools)
-- **Blast-radius:** `projection diff a b --format json` (or `explain diff`) → `Renamed/Added/Removed`
+### C. Dependency scope + corroborating proofs (the reviewer's tools)
+- **Dependency scope:** `projection diff a b --format json` (or `explain diff`) → `Renamed/Added/Removed`
   + per-channel `Reshaped` **facets** (DataType/Nullability/Length/... , OnDelete, Uniqueness, ...) +
   **`synthesizedRenameWarnings`** (rename-as-drop+add detection) + `isEmpty` (idempotency). Feeds
-  `skills/review/blast-radius`. `CatalogDiff.fs`, `Faces/Diff.fs`.
+  `skills/review/dependency-scope`. `CatalogDiff.fs`, `Faces/Diff.fs`.
 - **Independent proofs a reviewer can marshal alongside the sqlpackage verdict:**
   - `projection check [--cdc-silence]` — round-trip structural equivalence + CDC-silence (exit 5 on
     divergence).
@@ -57,16 +59,16 @@ dependency.
 |---|---|---|
 | `proving-ground/SampleCatalog` (hand-authored) | `projection <flow>` bundle | prove against **real** schema |
 | `talk-to-local-sql` data probes | `projection profile → profile.json` | exact real-data evidence, one artifact, + CDC awareness |
-| `classify-mechanism` (must-prove) | `profile.json` predicts the veto class *before* publishing | fewer blind publishes; confirm not discover |
-| `skills/review/blast-radius` | `projection diff --format json` | deterministic facet-granular blast map + naked-rename warning |
+| `classify-mechanism` (must-prove) | `profile.json` predicts which change SSDT will block *before* publishing | fewer blind publishes; the block is predicted, then confirmed |
+| `skills/review/dependency-scope` | `projection diff --format json` | deterministic facet-granular dependency map + rename-as-drop+add warning |
 | `skills/review/adversary` + `prove-on-dacpac` | `projection check` / `check data` / `compare` | independent corroboration of the sqlpackage verdict |
 
 ## The stable seam: one `accelerator-probe`
 
 A thin skill (or a section in `talk-to-local-sql`) that **detects** the `projection` CLI + a
-`projection.json`. Present → route the Data-Oracle to `projection profile`, blast-radius to
-`projection diff`, the proving ground to `projection <flow>` output. Absent → generic SQL + the
-hand-authored sample. The rest of the tree never knows which ran.
+`projection.json`. Present → the data profile comes from `projection profile`, the dependency
+map from `projection diff`, and the proving-ground schema from `projection <flow>` output.
+Absent → generic SQL + the hand-authored sample. The rest of the tree never knows which ran.
 
 ## Staged, verify-first
 
@@ -78,9 +80,9 @@ hand-authored sample. The rest of the tree never knows which ran.
 - **Stage 1 — schema accelerant.** A `use-engine-bundle` skill + the config recipe; point
   `prove-on-dacpac` at the engine's `out/` when present. Keep `SampleCatalog` as the fallback + the
   self-test fixture (do NOT delete it — it is the deterministic test bed).
-- **Stage 2 — evidence accelerant.** The `accelerator-probe`; wire the Data-Oracle to
-  `projection profile` (parse `profile.json` → predicted veto classes) and `skills/review/blast-radius`
-  to `projection diff`.
+- **Stage 2 — evidence accelerant.** The `accelerator-probe`; wire the data profile to
+  `projection profile` (parse `profile.json` → the predicted block classes) and
+  `skills/review/dependency-scope` to `projection diff`.
 - **Stage 3 — corroborating proofs.** The reviewer marshals `projection check` / `check data` /
   `compare` as *independent* evidence beside the sqlpackage verdict.
 
@@ -88,18 +90,18 @@ hand-authored sample. The rest of the tree never knows which ran.
 
 - **Do NOT** import the F# assembly from skills — consume CLI + JSON only (`CONNECTORS.md` §3).
 - **Do NOT** fold sqlpackage-driving into the engine yet (`CONNECTORS.md` §4) — the two-profile
-  discipline (Strict veto-detector + Permissive consequence-oracle) + the content-hash proof stay
-  skill-owned.
+  discipline (Strict surfaces whether the deployment is blocked, Permissive shows the consequence)
+  plus the content-hash proof stay skill-owned.
 - **Do NOT** require the engine — it is optional; the generic path (hand-authored sample + SQL
   probes) must keep passing the self-test.
-- The optional `projection explain oracle` verb (voicing the three predicted vetoes) is a **code
+- An optional CLI verb that reports the three predicted blocks in plain words is a **code
   change — defer it**; `profile --out json` is sufficient. Only add if parsing `profile.json` proves
   unwieldy.
 
 ## Open questions / risks
 
-- **Which DB does the Data-Oracle profile?** The **real source/target** (to *predict*), not the
-  throwaway (where you *prove*). Make this explicit in the `accelerator-probe` skill.
+- **Which DB does the data profile read?** The **real source/target** (to *predict*), not the
+  disposable copy (where the change is *proven*). Make this explicit in the `accelerator-probe` skill.
 - **Bundle generation needs a catalog source** — document both `osm_model.json` (test) and live OSSYS
   (real).
 - **CLI runtime** — the engine CLI must be runnable in-env (pinned .NET 9 SDK). Document

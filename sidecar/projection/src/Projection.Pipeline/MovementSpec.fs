@@ -757,6 +757,9 @@ and CheckEstateArgs =
       /// `readiness.estate.repairBand` (wave A6) — `None` rides the
       /// engine's named default.
       RepairBand  : int64 option
+      /// `readiness.estate.repairBandByEntity` — per-entity band overrides
+      /// (logical entity name → band). Empty = the default governs all.
+      RepairBandByEntity : Map<string, int64>
       /// The loaded config's tightening section (wave A6): the face binds
       /// it against the resolved target catalog to read the ACTIVE interim
       /// posture — the relaxation keys whose meter lines the board carries.

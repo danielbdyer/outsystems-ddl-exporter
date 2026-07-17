@@ -31,7 +31,7 @@ let private buildCatalog () : Catalog =
     let country =
         let row idVal code label =
             { Identifier = mkKey [ "Sales"; "Country"; "Row"; code ]
-              Values = Map.ofList [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
+              Values = StaticRow.presentValues [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
         { SsKey = countryKey; Name = mkName "Country"; Origin = Native
           Modality = [ Static [ row "1" "US" "United States"; row "2" "CA" "Canada" ] ]
           Physical = mkTableId "dbo" "OSUSR_BLD_COUNTRY"
@@ -51,7 +51,7 @@ let private buildCatalog () : Catalog =
       Sequences = [] }
 
 let private migrationCtx () : MigrationDependencyContext =
-    { Rows = [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Label", "Administrator" ] } ] }
+    { Rows = [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ]; Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Label", "Administrator" ] } ] }
 
 let private writeFile (dir: string) (rel: string) (body: string) : unit =
     let path = Path.Combine(dir, rel)
@@ -86,7 +86,7 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
         for (rel, body) in dataLanes do writeFile dir rel body
         let laneRelPaths = dataLanes |> List.map fst
         writeFile dir PostDeployEmitter.fileName (PostDeployEmitter.renderIncludes laneRelPaths)
-        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit laneRelPaths true)
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit laneRelPaths true false)
         writeFile dir "nuget.config" nugetConfig
         // dotnet build the emitted .sqlproj → a .dacpac
         let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
@@ -109,6 +109,135 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
             Assert.True(proc.ExitCode = 0, sprintf "dotnet build of the emitted .sqlproj failed (exit %d):\n%s" proc.ExitCode combined)
             let dacpac = Path.Combine(dir, "bin", "Debug", "ProjectionCatalog.dacpac")
             Assert.True(File.Exists dacpac, sprintf "expected a built .dacpac at %s\nbuild output:\n%s" dacpac combined)
+    finally
+        try Directory.Delete(dir, true) with _ -> ()
+
+// ----------------------------------------------------------------------------
+// G6 (DECISIONS 2026-07-16) — a NON-dbo estate builds. The bundle's
+// `Schemas/<name>.sql` CREATE SCHEMA objects ride the SDK's default Build
+// glob beside the `Modules/**` tables; without them SSDT refuses the model
+// (unresolved schema reference, SQL71501) — exactly the hand-authoring gap
+// G6 closes.
+// ----------------------------------------------------------------------------
+
+[<Fact>]
+let ``Sqlproj build: a NON-dbo estate's bundle builds to a .dacpac (Schemas/ objects emitted — G6)`` () =
+    let auditKey = mkKey [ "Ledger"; "ChangeLog" ]
+    let changeLog =
+        { Kind.create auditKey (Name.create "ChangeLog" |> Result.value)
+            (TableId.create "audit" "OSUSR_LDG_CHANGELOG" |> Result.value)
+            [ { Attribute.create (mkKey [ "Ledger"; "ChangeLog"; "Id" ]) (Name.create "Id" |> Result.value) Integer with
+                  Column = col "ID"
+                  IsPrimaryKey = true
+                  IsMandatory = true } ]
+          with References = [] }
+    let catalog : Catalog =
+        { Modules = [ { SsKey = mkKey [ "Ledger" ]; Name = Name.create "Ledger" |> Result.value; Kinds = [ changeLog ]; IsActive = true; ExtendedProperties = [] } ]
+          Sequences = [] }
+    let policy = { Policy.empty with Emission = EmissionPolicy.combined }
+    let outputs = Compose.projectWith policy Profile.empty catalog
+    // The composed bundle carries the schema object (the wire, not a
+    // hand-assembly): Schemas/audit.sql beside Modules/**.
+    Assert.True(outputs.SsdtBundle.ContainsKey "Schemas/audit.sql", "the bundle carries Schemas/audit.sql")
+    let dir = Path.Combine(Path.GetTempPath(), "proj-nondbo-" + Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory dir |> ignore
+    try
+        for KeyValue (rel, body) in outputs.SsdtBundle do
+            if rel.EndsWith ".sql" then writeFile dir rel body
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] false false)
+        writeFile dir "nuget.config" nugetConfig
+        let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
+        psi.WorkingDirectory <- dir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+        let proc =
+            match Process.Start psi with
+            | null -> failwith "could not start `dotnet`"
+            | p -> p
+        let stdout = proc.StandardOutput.ReadToEnd()
+        let stderr = proc.StandardError.ReadToEnd()
+        proc.WaitForExit()
+        let combined = stdout + "\n" + stderr
+        if combined.Contains "Could not resolve SDK" || combined.Contains "Unable to resolve 'Microsoft.Build.Sql" then
+            printfn "SKIP non-dbo .sqlproj build: Microsoft.Build.Sql SDK not restorable in this environment."
+        else
+            Assert.True(proc.ExitCode = 0, sprintf "dotnet build of the non-dbo .sqlproj failed (exit %d):\n%s" proc.ExitCode combined)
+            Assert.True(File.Exists(Path.Combine(dir, "bin", "Debug", "ProjectionCatalog.dacpac")), "the non-dbo bundle built a .dacpac")
+    finally
+        try Directory.Delete(dir, true) with _ -> ()
+
+// ----------------------------------------------------------------------------
+// G3 (DECISIONS 2026-07-16) — the refactorlog PAIRING builds. The bundle carries
+// `ProjectionCatalog.refactorlog` (deployed-vocabulary, accumulated) and the
+// `.sqlproj` its explicit `RefactorLog` item; `dotnet build` must compile the
+// pairing (this is the duplicate-item empiric: an SDK default glob colliding
+// with the explicit item would fail HERE) and embed the document into the
+// `.dacpac` as `refactor.xml` — the artifact DacFx's deploy planner reads to
+// turn a rename into `sp_rename` instead of DROP+CREATE.
+// ----------------------------------------------------------------------------
+
+[<Fact>]
+let ``Sqlproj build: a bundle with a refactorlog builds and the .dacpac embeds refactor.xml (G3)`` () =
+    // The rename this refactorlog records: the deployed estate knew Country as
+    // `Nation`; THIS model calls it `Country` (same SsKey — identity threaded).
+    // The operation's NewName targets an element that exists in the built model.
+    let current = buildCatalog ()
+    let prior =
+        { current with
+            Modules =
+                current.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = countryKey then { k with Name = Name.create "Nation" |> Result.value } else k) }) }
+    let diff = CatalogDiff.between prior current
+    let entries =
+        match RefactorLogEmitter.emitDeployed Set.empty diff with
+        | Microsoft.FSharp.Core.Result.Ok artifact -> RefactorLogEmitter.accumulateArtifact [] artifact
+        | Microsoft.FSharp.Core.Result.Error e -> failwithf "emitDeployed failed: %A" e
+    Assert.NotEmpty entries
+    let refactorXml =
+        RefactorLogRender.ofEntriesAt (DateTimeOffset(2026, 7, 16, 0, 0, 0, TimeSpan.Zero)) entries
+    let policy = { Policy.empty with Emission = EmissionPolicy.combined }
+    let outputs = Compose.projectWith policy Profile.empty current
+    let dir = Path.Combine(Path.GetTempPath(), "proj-refactor-" + Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory dir |> ignore
+    try
+        for KeyValue (rel, body) in outputs.SsdtBundle do
+            if rel.EndsWith ".sql" then writeFile dir rel body
+        writeFile dir SqlprojEmitter.refactorLogFileName refactorXml
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] false true)
+        writeFile dir "nuget.config" nugetConfig
+        let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
+        psi.WorkingDirectory <- dir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+        let proc =
+            match Process.Start psi with
+            | null -> failwith "could not start `dotnet`"
+            | p -> p
+        let stdout = proc.StandardOutput.ReadToEnd()
+        let stderr = proc.StandardError.ReadToEnd()
+        proc.WaitForExit()
+        let combined = stdout + "\n" + stderr
+        if combined.Contains "Could not resolve SDK" || combined.Contains "Unable to resolve 'Microsoft.Build.Sql" then
+            printfn "SKIP refactorlog .sqlproj build: Microsoft.Build.Sql SDK not restorable in this environment."
+        else
+            Assert.True(proc.ExitCode = 0, sprintf "dotnet build of the refactorlog-bearing .sqlproj failed (exit %d):\n%s" proc.ExitCode combined)
+            let dacpac = Path.Combine(dir, "bin", "Debug", "ProjectionCatalog.dacpac")
+            Assert.True(File.Exists dacpac, sprintf "expected a built .dacpac at %s\nbuild output:\n%s" dacpac combined)
+            // The .dacpac is a zip; the refactorlog must be embedded as
+            // refactor.xml — the deploy-planner input that converts a rename
+            // into sp_rename. Absence = the item silently didn't pair (the
+            // exact failure mode this witness exists to catch).
+            use zip = System.IO.Compression.ZipFile.OpenRead dacpac
+            let hasRefactor =
+                zip.Entries |> Seq.exists (fun e -> e.Name.Equals("refactor.xml", StringComparison.OrdinalIgnoreCase))
+            Assert.True(hasRefactor, sprintf "the built .dacpac carries no refactor.xml — the RefactorLog item did not pair.\nEntries: %s\nBuild output:\n%s" (zip.Entries |> Seq.map (fun e -> e.FullName) |> String.concat ", ") combined)
     finally
         try Directory.Delete(dir, true) with _ -> ()
 

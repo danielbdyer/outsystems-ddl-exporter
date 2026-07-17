@@ -39,7 +39,7 @@ let private mkConfig
     (allowCrossSchema: bool)
     (allowNoCheckCreation: bool) : ForeignKeyTighteningConfig =
     ForeignKeyTighteningConfig.create
-        enableCreation allowCrossSchema true false allowNoCheckCreation
+        enableCreation allowCrossSchema allowNoCheckCreation
 
 let private mkProbe (rowCount: int64) (outcome: ProbeOutcome) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount outcome

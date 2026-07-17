@@ -59,7 +59,12 @@ module SqlTypeCorrespondence =
         | Decimal  -> "DECIMAL"
         | Text     -> "NVARCHAR"
         | Boolean  -> "BIT"
-        | DateTime -> "DATETIME2"
+        // WP-17(d) (DECISIONS 2026-07-16; audit §5a): the evidence-less
+        // fallback is the platform legacy DATETIME, aligned with the
+        // storage-evidence lane — a catalog-direct emission no longer
+        // misrepresents what a live export deploys. A datetime2 SOURCE
+        // still emits DATETIME2 via its storage evidence.
+        | DateTime -> "DATETIME"
         | Date     -> "DATE"
         | Time     -> "TIME"
         | Binary   -> "VARBINARY"

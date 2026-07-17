@@ -1326,7 +1326,11 @@ let runCheckGo
                 let rowText (row: StaticRow) : string =
                     row.Values
                     |> Map.toList
-                    |> List.map (fun (c, v) -> sprintf "%s=%s" (Name.value c) (if v = "" then "(blank)" else v))
+                    // NULL and `""` both render "(blank)" — the pre-WP-3
+                    // display register (a distinct NULL rendering is a
+                    // Voice decision, not a carrier one).
+                    |> List.map (fun (c, v) ->
+                        sprintf "%s=%s" (Name.value c) (match v with Some "" | None -> "(blank)" | Some s -> s))
                     |> String.concat ", "
                 let wipeSet =
                     match report.Plan with
@@ -1537,7 +1541,9 @@ let runCheckGo
                                             k.Attributes
                                             |> List.choose (fun a ->
                                                 match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
-                                                | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                                                // WP-3 (F11): NULL reads as `None`,
+                                                // a genuine empty string as `Some ""`.
+                                                | Some i -> Some (a.Name, (if r.IsDBNull i then None else Some (string (r.GetValue i))))
                                                 | None -> None)
                                             |> Map.ofList
                                         acc.Add { Identifier = k.SsKey; Values = values }

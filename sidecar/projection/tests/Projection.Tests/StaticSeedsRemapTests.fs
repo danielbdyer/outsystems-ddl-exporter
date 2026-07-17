@@ -63,7 +63,7 @@ let private orderUserRef =
 
 let private mkOrderRow (rowKey: string) (id: string) (userId: string) : StaticRow =
     { Identifier = mkKey ["Order"; "Row"; rowKey]
-      Values     = Map.ofList [ mkName "ID", id; mkName "USER_ID", userId ] }
+      Values     = StaticRow.presentValues [ mkName "ID", id; mkName "USER_ID", userId ] }
 
 let private mkOrderKind (rows: StaticRow list) : Kind =
     {

@@ -138,15 +138,17 @@ module EvidenceCache =
                 let matched =
                     srcRows
                     |> List.choose (fun r ->
-                        match Map.tryFind pkName r.Values with
+                        match StaticRow.value pkName r with
                         | Some pk ->
                             SurrogateRemapContext.tryFindAssigned target (SourceKey.ofString pk) outcome.Remap
                             |> Option.map (fun assigned ->
-                                (r.Values |> Map.tryFind col |> Option.defaultValue ""), AssignedKey.value assigned)
+                                // Blessing-stable flatten (NULL → "") — these
+                                // pairs feed the consent fingerprints.
+                                StaticRow.valueOrEmpty col r, AssignedKey.value assigned)
                         | None -> None)
                 let unmatched =
                     outcome.UnmatchedRows
-                    |> List.map (fun (_, r) -> r.Values |> Map.tryFind col |> Option.defaultValue "")
+                    |> List.map (fun (_, r) -> StaticRow.valueOrEmpty col r)
                 let unique =
                     cache.Uniqueness
                     |> Map.tryFind (target, col)
@@ -335,7 +337,9 @@ module EvidenceCache =
                         kind.Attributes
                         |> List.choose (fun a ->
                             match Map.tryFind (ColumnRealization.columnNameText a.Column) ord with
-                            | Some i -> Some (a.Name, (if r.IsDBNull i then "" else string (r.GetValue i)))
+                            // WP-3 (F11): SQL NULL reads as `None`; a genuine
+                            // empty string as `Some ""` — distinct end-to-end.
+                            | Some i -> Some (a.Name, (if r.IsDBNull i then None else Some (string (r.GetValue i))))
                             | None -> None)
                         |> Map.ofList
                     acc.Add { Identifier = kind.SsKey; Values = values }

@@ -46,14 +46,18 @@ type ForeignKeyKeepReason =
     /// `AllowCrossSchema = false` and the FK crosses schema
     /// boundaries (source kind's schema ≠ target kind's schema).
     | CrossSchemaBlocked
-    /// `AllowCrossCatalog = false` and the FK crosses catalog
-    /// (database) boundaries. **Currently unreachable** — V2's
-    /// IR does not model catalog names; reserved as a DU variant
-    /// pending the IR refinement (ADMIRE.md 2026-05-11).
+    /// The FK crosses catalog (database) boundaries. **Currently
+    /// unreachable** — V2's IR does not model catalog names; reserved
+    /// as a DU variant pending the IR refinement (ADMIRE.md 2026-05-11).
+    /// The inert `AllowCrossCatalog` config toggle was removed at WP-1d
+    /// (DECISIONS 2026-07-16); when the IR grows a catalog field the gate
+    /// — and its config knob — return as real, consulted values.
     | CrossCatalogBlocked
-    /// Delete rule = `Ignore` (or missing + `TreatMissingDeleteRuleAsIgnore`
-    /// would be true, but V2's `Reference.OnDelete` cannot be
-    /// missing). V1 does not enforce these by default.
+    /// Delete rule resolves to `Ignore`. **Currently unreachable** —
+    /// V2's `Reference.OnDelete` is a closed DU with no `Ignore` variant
+    /// and cannot be missing (`isIgnoreRule` is hardcoded `false`). The
+    /// inert `TreatMissingDeleteRuleAsIgnore` config toggle was removed at
+    /// WP-1d; the no-FK-for-Ignore semantics land with WP-1c.
     | DeleteRuleIgnored
     /// Profile probe did not succeed (FallbackTimeout / Cancelled /
     /// AmbiguousMapping); evidence is missing. V2's collapsed-mode
@@ -190,20 +194,15 @@ module ForeignKeyRules =
     /// are registered.
     let emptyDecisionSet : ForeignKeyDecisionSet = { Decisions = [] }
 
-    /// V1's `IsIgnoreRule` predicate, in V2 form. V2's
-    /// `Reference.OnDelete` is a closed DU and cannot be missing;
-    /// V1's `TreatMissingDeleteRuleAsIgnore` toggle is preserved on
-    /// the config for V1 parity but currently unreachable from V2's
-    /// IR. The predicate fires only on explicit `OnDelete` values
-    /// V1 treats as "Ignore"; V2's `OnDelete` DU has no `Ignore`
-    /// variant (V1's "Ignore" is V2's `NoAction` semantically — the
-    /// DB does nothing; the application enforces). When the V1↔V2
-    /// adapter lands, V1's "Ignore" maps to a synthetic IR field;
-    /// for now the rule is unreachable from synthetic catalogs.
-    ///
-    /// Returns `false` for every variant of V2's current `OnDelete`
-    /// DU; documented for completeness so the V1 parity is visible.
-    let private isIgnoreRule (_action: ReferenceAction) (_config: ForeignKeyTighteningConfig) : bool =
+    /// V1's `IsIgnoreRule` predicate, in V2 form. V2's `OnDelete` DU has
+    /// no `Ignore` variant (V1's "Ignore" is V2's `NoAction` semantically —
+    /// the DB does nothing; the application enforces) and cannot be missing,
+    /// so this predicate is unreachable from synthetic catalogs. The inert
+    /// `TreatMissingDeleteRuleAsIgnore` config toggle it once consulted was
+    /// removed at WP-1d (DECISIONS 2026-07-16); the no-FK-for-Ignore
+    /// semantics arrive with the WP-1c posture. Returns `false` for every
+    /// variant of V2's current `OnDelete` DU; kept as the named seam.
+    let private isIgnoreRule (_action: ReferenceAction) : bool =
         false
 
     /// True iff the FK crosses schema boundaries. Reads the source
@@ -334,11 +333,11 @@ module ForeignKeyRules =
                         if not config.AllowCrossSchema && crossesSchema sourceKind targetKind then
                             mkDecision
                                 (ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked)
-                        // Cross-catalog rule is unreachable today —
-                        // V2's IR has no catalog field. The DU
-                        // variant is reserved; pattern-match
-                        // exhaustiveness keeps the shape ready.
-                        elif isIgnoreRule reference.OnDelete config then
+                        // Cross-catalog rule is unreachable today — V2's IR
+                        // has no catalog field (its inert `AllowCrossCatalog`
+                        // config knob was removed at WP-1d; the reserved
+                        // `CrossCatalogBlocked` DU variant stays).
+                        elif isIgnoreRule reference.OnDelete then
                             mkDecision
                                 (ForeignKeyOutcome.DoNotEnforce DeleteRuleIgnored)
                         else

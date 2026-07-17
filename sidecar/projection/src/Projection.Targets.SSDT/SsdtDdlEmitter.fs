@@ -197,8 +197,9 @@ module SsdtDdlEmitter =
         }
 
     /// Build the primary-key definition from a Kind's attributes.
-    /// V1 convention (per chapter pre-scope §3): `PK_<PhysicalSchema>_
-    /// <PhysicalTable>`; single-column PKs get inlined as column-
+    /// V1 convention (WP-8, DECISIONS 2026-07-16): `PK_<LogicalKind>_
+    /// <KeyColumn…>` (e.g. `PK_Customer_Id`), replacing the earlier
+    /// `PK_<Schema>_<Table>`; single-column PKs get inlined as column-
     /// constraints (handled by `ScriptDomBuild.buildCreateTable`);
     /// composite PKs get emitted as table-constraints (slice 4).
     let private pkDef (k: Kind) : PrimaryKeyDef option =
@@ -210,17 +211,14 @@ module SsdtDdlEmitter =
         else
             Some
                 {
-                    // V1 PK naming: `PK_<Schema>_<Table>`. Per pillar 7
-                    // four-question analysis: no use-case-specific BCL
-                    // primitive for V1-naming-convention PK names;
-                    // String.Concat with explicit underscore separator
-                    // is the typed alternative (segments are typed:
-                    // k.Physical.Schema and k.Physical.Table are the
-                    // canonical SchemaName/TableName strings from the
-                    // Coordinates value object).
-                    // Slice 3b — generated names ride the identifier
-                    // budget (≤128 byte-identical; over ⇒ 115 + hash12).
-                    Name = IdentifierBudget.fit (System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical))  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are pre-unwrapped via TableId.schemaText/tableText (otherwise Concat would call ToString on the typed VOs and emit "SchemaName \"dbo\"")
+                    // WP-8 PK naming: `PK_<LogicalKind>_<KeyColumn…>`. Shared
+                    // with the PK backing-index name via
+                    // `IndexNaming.primaryKeyName` (one derivation over the
+                    // kind's PK attributes, so constraint and backing index
+                    // agree by construction). Slice 3b — the generated name
+                    // rides the identifier budget (≤128 byte-identical; over
+                    // ⇒ 115 + hash12).
+                    Name = IdentifierBudget.fit (IndexNaming.primaryKeyName k)
                     Columns = pkColumns
                 }
 
@@ -463,9 +461,9 @@ module SsdtDdlEmitter =
     ///     `EnforceUnique` decision applies (the same disjunction the
     ///     CREATE INDEX emission uses, so name and constraint agree);
     ///   - PK-marked indexes: the PK constraint-name convention
-    ///     (`PK_<Schema>_<Table>`, `pkDef`'s shape) so an extended
-    ///     property on the PK's backing index follows the emitted
-    ///     constraint name.
+    ///     (`PK_<KindName>_<KeyColumn…>`, WP-8; `pkDef`'s shape via
+    ///     `IndexNaming.primaryKeyName`) so an extended property on the
+    ///     PK's backing index follows the emitted constraint name.
     ///
     /// This is an emitted-NAME policy, not an identity policy — `SsKey`
     /// stays the durable identity; these are presentation identifiers.
@@ -599,6 +597,37 @@ module SsdtDdlEmitter =
         catalog.Sequences
         |> List.sortBy (fun s -> s.SsKey)
         |> List.map Statement.CreateSequence
+
+    /// G6 (DECISIONS 2026-07-16) — every distinct NON-dbo schema the
+    /// emitted estate references (kind physical coordinates + sequence
+    /// schemas). `dbo` always exists on the target and is never emitted.
+    /// Deduped case-insensitively (SQL Server CI collation semantics —
+    /// two case-variant spellings are ONE schema; the lexicographically
+    /// first spelling wins deterministically) and ordinal-sorted (T1).
+    let nonDboSchemas (catalog: Catalog) : string list =
+        let kindSchemas =
+            Catalog.allKinds catalog |> List.map (fun k -> TableId.schemaText k.Physical)
+        let sequenceSchemas =
+            catalog.Sequences |> List.map (fun s -> s.Schema)
+        kindSchemas @ sequenceSchemas
+        |> List.filter (fun s -> not (s.Equals("dbo", System.StringComparison.OrdinalIgnoreCase)))
+        |> List.sortWith (fun a b -> System.String.CompareOrdinal(a, b))
+        |> List.distinctBy (fun s -> s.ToLowerInvariant())
+
+    /// G6 — the `CREATE SCHEMA` statements a non-dbo estate needs before
+    /// any other object. Empty for a dbo-only estate (the byte-identical
+    /// default everywhere).
+    let schemaStatements (catalog: Catalog) : Statement list =
+        nonDboSchemas catalog |> List.map Statement.CreateSchema
+
+    /// G6 — the bundle's per-schema `.sql` files: `Schemas/<name>.sql`,
+    /// one `CREATE SCHEMA` per file, riding the SDK's default Build glob
+    /// exactly like the `Modules/**` tables. Empty for dbo-only estates.
+    let schemaFiles (catalog: Catalog) : (string * string) list =
+        nonDboSchemas catalog
+        |> List.map (fun s ->
+            let relPath = System.String.Concat("Schemas/", s, ".sql")  // LINT-ALLOW: bundle-relative path assembly at the artifact-naming boundary (the Modules/ path-builder precedent); segments are the validated schema name + fixed literals
+            relPath, Render.toText [ Statement.CreateSchema s; BatchSeparator ])
 
     /// Build the cross-platform-deterministic relative path for a
     /// kind's SSDT DDL file. V1 convention: `Modules/<ModuleName>/
@@ -952,6 +981,10 @@ module SsdtDdlEmitter =
                 seq { yield stmt; yield BatchSeparator }
             let yieldAllWithSeparator (stmts: seq<Statement>) =
                 stmts |> Seq.collect yieldWithSeparator
+            // G6: schemas FIRST — non-dbo tables and sequences resolve
+            // against them; dbo-only estates yield nothing here (the
+            // byte-identical default).
+            yield! yieldAllWithSeparator (schemaStatements catalog)
             // H-020: sequences before tables — they may be referenced by
             // DEFAULT constraints in CREATE TABLE statements.
             yield! yieldAllWithSeparator (sequenceStatements catalog)
@@ -1238,6 +1271,49 @@ module SsdtDdlEmitter =
         foreignKeyNameCollisionDiagnosticsUsing
             overlay
             (fkResolutionsUsing (FkEmissionLookups.ofCatalog catalog))
+
+    /// WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision TRIPWIRE, the
+    /// `CREATE TABLE` mirror of `foreignKeyNameCollisionDiagnostics`. Every
+    /// kind emits exactly one `CREATE TABLE` at its schema-qualified
+    /// `(schema, table) = (k.Physical.Schema, k.Physical.Table)` (the emitted
+    /// keyset ≡ `Catalog.allKinds`). Two kinds resolving to the SAME emitted
+    /// `(schema, table)` — two same-named entities in different modules, or a
+    /// same-module duplicate — produce duplicate `CREATE TABLE`s: a DacFx
+    /// duplicate-object build failure across modules, a silent last-wins on
+    /// the shared `Modules/<Module>/<Schema>.<Table>.sql` file within a module
+    /// (packet H7). V2 names the wound: one `Error` per participating kind, so
+    /// every collision site is visible, never a silent last-win. On a
+    /// well-formed catalog this is structurally unreachable; the tripwire
+    /// guards the invariant, it does not implement behavior. Pure sibling of
+    /// the emitter port (A18 holds; rides the `Diagnostics` channel).
+    let tableNameCollisionDiagnosticsUsing
+        (allKinds: Kind list)
+        : DiagnosticEntry list =
+        allKinds
+        |> List.groupBy (fun k -> TableId.schemaText k.Physical, TableId.tableText k.Physical)
+        |> List.collect (fun ((schemaText, tableText), members) ->
+            if List.length members <= 1 then []
+            else
+                members
+                |> List.map (fun k ->
+                    { DiagnosticEntry.create
+                        "emitter:ssdtDdlEmitter" DiagnosticSeverity.Error
+                        "emit.ssdt.table.nameCollision"
+                        "Table name collision: two or more emitted kinds resolve to the same schema-qualified table name. Across modules the deployment would fail with duplicate objects; within a module the shared file silently last-wins. Resolve the naming overlap before publishing."
+                      with
+                        SsKey = Some k.SsKey
+                        Metadata =
+                            Map.ofList
+                                [ "schema", schemaText
+                                  "table", tableText
+                                  "kind", Name.value k.Name ] }))
+
+    /// The catalog-taking compute-then-delegate form (standalone callers; the
+    /// publish threads the shared `FkEmissionLookups.AllKinds`).
+    let tableNameCollisionDiagnostics
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        tableNameCollisionDiagnosticsUsing (Catalog.allKinds catalog)
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the

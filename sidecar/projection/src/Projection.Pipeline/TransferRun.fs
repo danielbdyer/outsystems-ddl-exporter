@@ -314,7 +314,7 @@ module Transfer =
             return!
                 captureChunksOn
                     (SurrogateCapture.captureChunkDescendingStaged sink kind kindKey
-                        (fun (a: Attribute) -> StaticRow.valueOrEmpty a.Name)
+                        (fun (a: Attribute) -> StaticRow.value a.Name)
                         identityAttr deferred
                         (SurrogateCapture.stageKind kind identityAttr))
                     kindKey remap lane descents chunks
@@ -370,7 +370,7 @@ module Transfer =
             match Kind.primaryKey kind with
             | pk :: _ ->
                 let! existing = existingPkValues sink kind pk
-                return rows |> List.filter (fun r -> match Map.tryFind pk.Name r.Values with Some v -> not (existing.Contains v) | None -> true)
+                return rows |> List.filter (fun r -> match StaticRow.value pk.Name r with Some v -> not (existing.Contains v) | None -> true)
             | [] -> return rows
         }
 
@@ -551,11 +551,11 @@ module Transfer =
                                 | IdentityDisposition.AssignedBySink, Some idAttr ->
                                     remapped2.Rows
                                     |> List.choose (fun row ->
-                                        match Map.tryFind idAttr.Name row.Values with
+                                        match StaticRow.value idAttr.Name row with
                                         | Some srcVal when srcVal <> "" ->
                                             PackedSurrogateRemap.tryFind remap load.Kind srcVal
                                             |> Option.map (fun assigned ->
-                                                { row with Values = Map.add idAttr.Name assigned row.Values })
+                                                { row with Values = Map.add idAttr.Name (Some assigned) row.Values })
                                         | _ -> None)
                                 | _ -> remapped2.Rows
                             // PL-9 (S17): the staged renderer — the kind's
@@ -2328,7 +2328,9 @@ module Transfer =
                         // arm's `ingestKind` success is exactly the map's
                         // membership condition.
                         let basis = Map.find load.Kind basisByKind
-                        let pkOf = RowQuantum.cellGetter basis pkName
+                        // Chunk-boundary PK text for the capture journal —
+                        // flattened (PKs are non-null; journal bytes stable).
+                        let pkOf = RowQuantum.cellGetter basis pkName >> ValueOption.defaultValue ""
                         // PL-9 (S15/S16): the kind's chunk-invariant write
                         // machinery stages ONCE before the chunk loop.
                         let wl =
@@ -2341,7 +2343,7 @@ module Transfer =
                                 |> Option.map (fun idAttr ->
                                     idAttr,
                                     SurrogateCapture.captureChunkDescendingStaged sink kind load.Kind
-                                        (fun (a: Attribute) -> RowQuantum.cellGetter basis a.Name)
+                                        (fun (a: Attribute) -> RowQuantum.cellGetter basis a.Name >> ValueOption.toOption)
                                         idAttr load.DeferredFkColumns
                                         (SurrogateCapture.stageKind kind idAttr)) }
                         let stream = Ingestion.streamKind source ingestKind
@@ -2465,12 +2467,12 @@ module Transfer =
                                             rows
                                             |> List.choose (fun q ->
                                                 match q.Cells.[idIx] with
-                                                | "" -> None
-                                                | srcVal ->
+                                                | ValueNone | ValueSome "" -> None
+                                                | ValueSome srcVal ->
                                                     PackedSurrogateRemap.tryFind remap load.Kind srcVal
                                                     |> Option.map (fun assigned ->
                                                         let cells = Array.copy q.Cells
-                                                        cells.[idIx] <- assigned
+                                                        cells.[idIx] <- ValueSome assigned
                                                         { Cells = cells }))
                                 | _ -> id
                             let stream = Ingestion.streamKind source projectedIngest

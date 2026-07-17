@@ -109,7 +109,18 @@ module OssysJsonReader =
                             | JsonValueKind.True  -> Some "true"
                             | JsonValueKind.False -> Some "false"
                             | _ -> None
-                        rawOpt |> Option.map (SqlLiteral.ofRaw p)
+                        rawOpt
+                        |> Option.map (fun r ->
+                            // WP-3 (F11): a V1-JSON `"default": ""` on a Text
+                            // attribute is the platform's empty-string default
+                            // — `TextLit ""` (`DEFAULT N''`), no longer NullLit.
+                            // On a non-text type an empty default keeps its
+                            // pre-WP-3 `DEFAULT NULL` rendering (ambiguous V1
+                            // authoring; refusing would fail whole-model ingest).
+                            match p, r with
+                            | (PrimitiveType.Text | PrimitiveType.Binary), _ -> SqlLiteral.ofRaw p (Some r)
+                            | _, "" -> SqlLiteral.NullLit
+                            | _ -> SqlLiteral.ofRaw p (Some r))
                     | _ -> None
             let columnNameDU = ColumnName.create physicalName
             match nameDU, key, typeEvidence, columnNameDU with

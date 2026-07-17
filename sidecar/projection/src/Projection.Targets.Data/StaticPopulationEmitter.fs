@@ -63,11 +63,11 @@ module StaticPopulationEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Project one (`Attribute`, raw) pair to a typed `CellValue`. The
-    /// realization layer (`Render.toSql` / `Bulk.copyRows` →
-    /// `formatRawValue`) interprets the raw string per the column's
-    /// `PrimitiveType`.
-    let private cellValue (a: Attribute) (raw: string) : CellValue =
+    /// Project one (`Attribute`, raw cell) pair to a typed `CellValue`.
+    /// The realization layer (`Render.toSql` / `Bulk.copyRows`)
+    /// interprets the raw cell per the column's `PrimitiveType`
+    /// (`None` = explicit NULL, WP-3).
+    let private cellValue (a: Attribute) (raw: string option) : CellValue =
         { Column = ColumnRealization.columnNameText a.Column
           Type   = a.Type
           Raw    = raw }
@@ -77,13 +77,18 @@ module StaticPopulationEmitter =
     /// discipline (session-33): when a fixture row omits a column's
     /// value (Map.tryFind = None), that column is excluded from the
     /// emitted `INSERT (cols...) VALUES (vals...)` rather than
-    /// emitting an explicit NULL. SqlBulkCopy with `KeepNulls`
-    /// honors per-column omission identically.
+    /// emitting an explicit NULL — while a PRESENT `None` cell emits
+    /// an explicit NULL (WP-3: the three states are distinct).
+    /// SqlBulkCopy with `KeepNulls` honors per-column omission
+    /// identically.
     let private rowToCellValues (k: Kind) (row: StaticRow) : CellValue list =
         k.Attributes
         |> List.choose (fun a ->
             Map.tryFind a.Name row.Values
-            |> Option.map (cellValue a))
+            // Static-seed lane: the OutSystems single-space sentinel
+            // applies (V1 parity — `" "` on a nullable Text attribute
+            // seeds as NULL; see `KindColumns.outSystemsSpaceSentinel`).
+            |> Option.map (fun cell -> cellValue a (KindColumns.outSystemsSpaceSentinel a cell)))
 
     /// True when the kind requires `SET IDENTITY_INSERT` bracketing.
     /// NM-26 — single-sourced through `IdentityDisposition

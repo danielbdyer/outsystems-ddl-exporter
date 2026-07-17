@@ -1,49 +1,70 @@
 # ssdt-agent — the classify-by-proving skill tree
 
 You are reading the entry surface for an **agent-facing skill tree**. Its job: help an
-**OutSystems-native developer** make a **safe SSDT data-model change**. They think in
-entities, attributes, and the Mandatory checkbox. You think in `CREATE TABLE` destinations
-and what SSDT's publish engine actually does to real data. You translate, you prove, you
-report — in their words.
+**OutSystems-native developer** make a **safe SSDT data-model change**, and hand the reviewer a
+**pull request they can approve by reading**. The developer thinks in entities, attributes, and
+the Mandatory checkbox; you think in `CREATE TABLE` destinations and what SSDT's publish engine
+does to real data. You translate, you prove against a disposable copy, and you report — to the
+developer in their words, and to the reviewer as a record.
 
 ## The thesis: proving is classifying
 
-The same operation lands in a different SSDT **mechanism** depending on the **data**. "Make
-this attribute mandatory" is a one-line `NOT NULL` edit — but whether it is a harmless
-single-phase change or a multi-release backfill depends entirely on whether rows are empty
-right now. **You cannot classify from the `.sql` text alone.** You must publish the change to
-a copy of real-shaped data and watch what SSDT's publish engine does. The veto *is* the
-classification.
+The same operation ships differently depending on the data. "Make this attribute mandatory" is
+a one-line `NOT NULL` edit — but whether it applies in place or is blocked and has to ship as a
+scripted or staged change depends on whether the table holds any rows right now, not on whether
+the column has blanks. **You cannot classify from the `.sql` text alone.** You publish the
+change to a disposable copy of the Dev database, populated with real-shaped data, and read what
+SSDT's publish engine does with it. What the publish does — applies it in place, or blocks it,
+and what the generated script has to do to make it land — is the classification.
 
-The line the developer should experience:
+In conversation, that reaches the developer plainly:
 
-> "You said make Email mandatory. I published that to a copy of your data — SSDT vetoed it
-> because 1,240 rows are empty, so this is really a Pre-Deploy+Declarative change. Here's the
-> backfill that makes it pass, proven."
+> "You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks
+> whether the table has any rows, not whether Email has blanks, so it blocks the change while
+> the table holds data — even after the blanks are filled. On an empty table it would just
+> apply. With data in the table, this needs a deliberate call: relax the data-loss guard for
+> this one change after proving no blanks remain, or stage it over two releases."
 
-That is the whole product. Everything below is in service of delivering that line, grounded in
-a real generated delta and a real veto, every time.
+The change then becomes a pull request the reviewer approves by reading — the finding, its
+proof, and what was not checked. That is the whole product: the developer understands what will
+happen and why, and the reviewer approves without a meeting. Everything below is in service of
+that, grounded in a real generated delta and a real publish against real-shaped data, every
+time.
 
-## The two orthogonal axes (always emit BOTH)
+## The two findings (state both)
 
-A change is described by two independent coordinates. Do not collapse them.
+Every change carries two independent findings. State both; never collapse them into one label.
 
-- **MECHANISM — the "how"** (the team's "Five Mechanisms"):
-  1. **Pure Declarative** — edit the CREATE, no script. (release bucket: *single-phase*)
-  2. **Declarative + Post-Deploy** — CREATE + an idempotent post-deploy. (*single-PR*)
-  3. **Pre-Deploy + Declarative** — backfill first, then the CREATE lands clean. (*single-PR*)
-  4. **Script-Only** — the change is not expressible in the declarative model (CDC, FK
-     reconcile, IDENTITY swap). (*single-PR operational, or multi-PR if staged*)
-  5. **Multi-Phase** — spread across releases so old and new app code coexist. (*multi-PR*)
+**How it ships** — the shape the change takes to reach production, decided by the data:
 
-- **TIER 1–4 — the danger / who reviews:** Tier 1 self-serve … Tier 4 needs the gatekeeper.
-  Apply **+1 tier** for any of: **CDC-enabled**, **>1M rows**, **first-time operation**.
-  **Danger is not release-count.** Dropping a populated table is mechanically a one-shot
-  single-PR drop, but it is Tier 4 because data is lost irreversibly.
+- Applied in place, no data read or written — a single schema change.
+- One release: the schema change, then a post-deployment script that runs after it lands.
+- One release: a pre-deployment script prepares the data first, then the schema change lands
+  validated.
+- A scripted change, because it cannot be expressed as a table definition — enabling CDC,
+  reconciling a foreign key, an identity swap.
+- Across N releases, so the running application keeps working while the change is in flight.
 
-## The four state-variables that flip the bucket
+**Who must review, and why** — decided by what the change does to data and to the running app:
 
-A mechanism is provisional until you know these four facts, and three of the four can only be
+- Any team member — the change is additive and the running application is unaffected.
+- A dev lead or an experienced developer — the running application must change to keep working.
+- A dev lead — existing data is modified, or a cross-table relationship is added.
+- A principal — data is removed and the removal cannot be undone.
+
+Three facts add scrutiny on top of that, each stated on its own line when it holds: the table
+feeds a change-data-capture stream (the capture instance is frozen to its current columns and
+needs handling); at production row counts the change may block writes or run long (schedule a
+window); or the operation has not been performed on this estate before.
+
+The two findings are orthogonal — review need is not shipping shape. Dropping a populated table
+ships as a single in-place change, but a principal must review it, because the data is removed
+and cannot be undone. State how it ships and who must review as two separate findings, every
+time.
+
+## The four state-variables the data must settle
+
+The classification is provisional until four facts are known, and three of the four can only be
 learned by proving against the data:
 
 1. **Is the table populated?**
@@ -51,54 +72,70 @@ learned by proving against the data:
 3. **Is CDC enabled and is a no-gap capture required?**
 4. **Must old + new application code coexist** during the change?
 
-Each one crossing its threshold bumps the operation up a bucket. The proving ground exists to
-answer #1, #2, and (partly) #3 with evidence rather than a guess.
+Each fact that crosses its threshold changes how the change ships or who must review it. The
+disposable copy of Dev exists to settle #1, #2, and (partly) #3 with evidence rather than a
+guess.
 
 ## The tree map
 
 ```
 ssdt-agent/
-├── README.md ················ you are here — the model, the axes, the read order
+├── README.md ··············· you are here — the model, the two findings, the read order
+├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
+├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
 ├── agents/
-│   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, gather the 4 vars
-│   ├── change-author.md ···· the workhorse: edit the CREATE, classify, PROVE, deliver the verdict
-│   └── reviewer.md ········· Persona-2 STUB (deferred) — the review-packet contract only
+│   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the four facts
+│   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
+│   └── reviewer.md ········· Persona 2: reproduce the change, then a plain disposition
 ├── skills/
 │   ├── confirm-intent/ ····· OutSystems phrasing → catalog operation + the implicit destination
-│   ├── classify-mechanism/ · the decision cascade → a PROVISIONAL Mechanism + Tier
-│   ├── prove-on-dacpac/ ····· the proving loop that CONFIRMS or FLIPS the classification
-│   ├── talk-to-local-sql/ ··· the throwaway-DB substrate + the data-hash oracle
-│   └── operations/ ········· the ~50-operation catalog, grouped by family
-│       ├── tables.md  columns.md  keys-and-refs.md  indexes.md
-│       └── constraints.md  static-data.md  structural.md  views-synonyms.md  audit-cdc.md
-├── proving-ground/ ········· the hand-authored, self-contained sample project (the substrate)
+│   ├── classify-mechanism/ · the decision cascade → a provisional how-it-ships + who-reviews
+│   ├── prove-on-dacpac/ ····· the proving loop that confirms or flips the classification
+│   ├── talk-to-local-sql/ ··· the disposable-copy substrate + the content-hash check
+│   ├── op/ ················· the 48 per-operation skills — each proves, then feeds the PR
+│   ├── operations/ ········· the family TOC over op/ (tables · columns · keys · indexes · …)
+│   ├── _index/ ············· the shared reasoning ops cite (tightening-class, cdc, …)
+│   ├── author-pr/ ·········· the terminal artifact: the pull request a reviewer approves by reading
+│   └── review/ ············· Persona 2: reproduce-first review, dependency scope, dispositions
+├── proving-ground/ ········· the hand-authored, self-contained sample project (the disposable copy)
 │   ├── SampleCatalog.sqlproj   Modules/*.sql   Script.Pre/PostDeployment.sql   Data/Seed.sql
-│   ├── profiles/ ··········· Strict (veto detector) + Permissive (consequence oracle)
+│   ├── profiles/ ··········· Strict (detects the blocked publish) + Permissive (the consequence)
 │   └── README.md ··········· the end-to-end run procedure (the runbook for the loop)
 └── self-test/
-    ├── prompts.md ·········· human-shaped dev prompts, each tagged with expected Mechanism+Tier
-    └── rubric.md ··········· how to score a run (the same-op × different-seed gate)
+    ├── PROTOCOL.md ········· how to run the self-test end to end
+    ├── prompts.md ·········· human-shaped dev prompts, each tagged with its expected findings
+    ├── review-prompts.md ··· review scenarios for Persona 2
+    ├── review-rubric.md ···· how to score a review run
+    └── rubric.md ··········· how to score an authoring run (the same-op × different-seed gate)
 ```
 
 ## Read order
 
-1. **`agents/`** — pick your role. Persona 1 (the developer's request) enters at `intake.md`,
-   which hands a structured change-order to `change-author.md`. `reviewer.md` is a deferred
-   stub.
-2. **`skills/`** — the four capability skills (`confirm-intent` → `classify-mechanism` →
-   `prove-on-dacpac`, riding on `talk-to-local-sql`), then the per-operation knowledge in
-   `skills/operations/`.
-3. **`proving-ground/README.md`** — the runbook. Read it before you run a single command.
+1. **`THE_RECORD.md`** — the register every surface here is written in: two surfaces, the
+   conversation with the developer and the record a reviewer reads. Read it first; it governs
+   every word the tree says out loud.
+2. **`agents/`** — pick your role. Persona 1 (the developer's request) enters at `intake.md`,
+   which hands a structured change-order to `change-author.md`, which proves the change and
+   authors the pull request. Persona 2 is `reviewer.md`, which reproduces the change and returns
+   a disposition.
+3. **`skills/`** — the four capability skills (`confirm-intent` → `classify-mechanism` →
+   `prove-on-dacpac`, riding on `talk-to-local-sql`), the per-operation skills in `skills/op/`
+   (with the shared reasoning in `skills/_index/` and the family TOC in `skills/operations/`),
+   `skills/author-pr/` — the pull request they all feed — and `skills/review/` for Persona 2.
+4. **`proving-ground/README.md`** — the runbook. Read it before you run a single command.
 
 ## Scope
 
-**Persona 1 only.** This tree helps the OutSystems-native developer *author* a safe change
-and proves the classification for them. The reviewer / gatekeeper (Persona 2) is **deferred**
-— `agents/reviewer.md` ships shaped, not built, with only the handoff contract. The F#
-Projection engine that generated this whole codebase is an **optional accelerant** (it can
-emit the `.sqlproj`/dacpac from a real catalog instead of our hand-authored sample); the
-seams are catalogued in `CONNECTORS.md` and deliberately not wired.
+**Two personas, both built.** This tree helps the OutSystems-native developer author a safe
+change — confirm the intent, prove it on a disposable copy of Dev, and turn the result into a
+pull request — and it gives the reviewer the skills to approve that pull request by reproducing
+it, not just reading it. Persona 1 runs `agents/intake.md` → `agents/change-author.md` →
+`skills/author-pr`; Persona 2 runs `agents/reviewer.md` over `skills/review/` (reproduce-first
+review, dependency scope, and the four dispositions). The F# Projection engine that generated
+this codebase is an **optional accelerant** — it can emit the `.sqlproj`/dacpac from a real
+catalog instead of the hand-authored sample — but it is not wired: the seams are catalogued in
+`CONNECTORS.md` and the staged, verify-first path is in `ACCELERANT_PLAN.md`.
 
 ## Two operating notes
 

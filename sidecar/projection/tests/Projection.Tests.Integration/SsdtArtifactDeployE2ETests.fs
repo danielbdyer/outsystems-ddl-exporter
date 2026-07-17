@@ -38,7 +38,7 @@ let private countryKey = mkKey [ "Sales"; "Country" ]
 let private mkCountry () : Kind =
     let row idVal code label =
         { Identifier = mkKey [ "Sales"; "Country"; "Row"; code ]
-          Values = Map.ofList [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
+          Values = StaticRow.presentValues [ mkName "Id", idVal; mkName "Code", code; mkName "Label", label ] }
     { SsKey = countryKey; Name = mkName "Country"; Origin = Native
       Modality = [ Static [ row "1" "US" "United States"; row "2" "CA" "Canada" ] ]
       Physical = mkTableId "dbo" "OSUSR_E2E_COUNTRY"
@@ -87,12 +87,12 @@ let private mkMeasurement () : Kind =
         { Identifier = mkKey [ "Sales"; "Measurement"; "Row"; "M1" ]
           Values =
             Map.ofList
-                [ mkName "Id", "1"; mkName "Amount", "12.34"
-                  mkName "RecordedAt", "2026-05-10 12:30:00.0000000"; mkName "IsActive", "true"
-                  mkName "EffectiveDate", "2026-05-10"; mkName "Duration", "12:30:00"
-                  mkName "Payload", "0xCAFEBABE"; mkName "Ref", "0F0E0D0C-0B0A-0908-0706-050403020100"
-                  mkName "Note", ""                        // empty raw → NULL
-                  mkName "Label", "O'Brien ✓" ] }          // single-quote + non-ASCII Unicode
+                [ mkName "Id", Some "1"; mkName "Amount", Some "12.34"
+                  mkName "RecordedAt", Some "2026-05-10 12:30:00.0000000"; mkName "IsActive", Some "true"
+                  mkName "EffectiveDate", Some "2026-05-10"; mkName "Duration", Some "12:30:00"
+                  mkName "Payload", Some "0xCAFEBABE"; mkName "Ref", Some "0F0E0D0C-0B0A-0908-0706-050403020100"
+                  mkName "Note", None                          // explicit NULL (WP-3: out-of-band)
+                  mkName "Label", Some "O'Brien ✓" ] }         // single-quote + non-ASCII Unicode
     { SsKey = measurementKey; Name = mkName "Measurement"; Origin = Native
       Modality = [ Static [ row ] ]
       Physical = mkTableId "dbo" "OSUSR_E2E_MEASUREMENT"
@@ -156,30 +156,30 @@ let private e2eCatalog () : Catalog =
 
 let private migrationCtx () : MigrationDependencyContext =
     { Rows =
-        [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ];   Values = Map.ofList [ mkName "Id", "1"; mkName "Label", "Administrator" ] }
-          { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Auditor" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Label", "Auditor" ] } ] }
+        [ { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Admin" ];   Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Label", "Administrator" ] }
+          { KindKey = roleKey; Identifier = mkKey [ "Sales"; "Role"; "Row"; "Auditor" ]; Values = StaticRow.presentValues [ mkName "Id", "2"; mkName "Label", "Auditor" ] } ] }
 
 let private bootstrapRows () : Map<SsKey, StaticRow list> =
     Map.ofList
         [ productKey,
-          [ { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Widget" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Widget"; mkName "CountryId", "1" ] }
-            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gadget" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "Gadget"; mkName "CountryId", "2" ] }
-            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "Gizmo"; mkName "CountryId", "1" ] } ]
+          [ { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Widget" ]; Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Name", "Widget"; mkName "CountryId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gadget" ]; Values = StaticRow.presentValues [ mkName "Id", "2"; mkName "Name", "Gadget"; mkName "CountryId", "2" ] }
+            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = StaticRow.presentValues [ mkName "Id", "3"; mkName "Name", "Gizmo"; mkName "CountryId", "1" ] } ]
           // self-referential hierarchy — HQ is its OWN parent (Id=1, ParentId=1),
           // East/West point at HQ. Inserting any of these in a single phase would
           // violate the self-FK (the parent row isn't there yet), so two-phase is
           // mandatory: phase-1 MERGEs every row with ParentId NULL, phase-2 UPDATEs it.
           orgKey,
-          [ { Identifier = mkKey [ "Sales"; "Org"; "Row"; "HQ" ];   Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "HQ";   mkName "ParentId", "1" ] }
-            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "East" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "East"; mkName "ParentId", "1" ] }
-            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "West" ]; Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "West"; mkName "ParentId", "1" ] } ]
+          [ { Identifier = mkKey [ "Sales"; "Org"; "Row"; "HQ" ];   Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "Name", "HQ";   mkName "ParentId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "East" ]; Values = StaticRow.presentValues [ mkName "Id", "2"; mkName "Name", "East"; mkName "ParentId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "West" ]; Values = StaticRow.presentValues [ mkName "Id", "3"; mkName "Name", "West"; mkName "ParentId", "1" ] } ]
           // mutual A↔B cycle — A1.PeerBId → B10, B10.PeerAId → A1. The composer must
           // GLOBALLY interleave: BOTH rows land (phase-1, FKs NULL) before EITHER FK
           // is set (phase-2), or one side's FK would dangle.
           accountAKey,
-          [ { Identifier = mkKey [ "Sales"; "AccountA"; "Row"; "A1" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "PeerBId", "10" ] } ]
+          [ { Identifier = mkKey [ "Sales"; "AccountA"; "Row"; "A1" ]; Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "PeerBId", "10" ] } ]
           accountBKey,
-          [ { Identifier = mkKey [ "Sales"; "AccountB"; "Row"; "B10" ]; Values = Map.ofList [ mkName "Id", "10"; mkName "PeerAId", "1" ] } ] ]
+          [ { Identifier = mkKey [ "Sales"; "AccountB"; "Row"; "B10" ]; Values = StaticRow.presentValues [ mkName "Id", "10"; mkName "PeerAId", "1" ] } ] ]
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
@@ -279,7 +279,7 @@ type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
                         let! guidRef = scalar cnn "SELECT CAST([REF] AS VARCHAR(40)) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
                         Assert.Equal("0F0E0D0C-0B0A-0908-0706-050403020100", guidRef)   // Guid → UNIQUEIDENTIFIER (SQL Server reads back uppercase)
                         let! noteIsNull = scalar cnn "SELECT CASE WHEN [NOTE] IS NULL THEN 'NULL' ELSE 'SET' END FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
-                        Assert.Equal("NULL", noteIsNull)             // empty raw → NULL convention
+                        Assert.Equal("NULL", noteIsNull)             // explicit-None cell → NULL (WP-3)
                         let! label = scalar cnn "SELECT CAST([LABEL] AS NVARCHAR(50)) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
                         Assert.Equal("O'Brien ✓", label)             // quote-doubling + non-ASCII Unicode round-trip
                         // 4) idempotency: re-run post-deploy + bootstrap → counts unchanged (MERGE is upsert)

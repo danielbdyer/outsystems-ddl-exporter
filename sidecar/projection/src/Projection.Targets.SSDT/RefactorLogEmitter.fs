@@ -335,6 +335,185 @@ module RefactorLogEmitter =
             @ referenceRefactorEntries diff k)
 
 
+    // ------------------------------------------------------------------
+    // G3 (DECISIONS 2026-07-16) — the DEPLOYED-vocabulary emission.
+    //
+    // `emit` above speaks the CATALOG plane: `ElementName` renders the
+    // kind's `Physical` (OSSYS-flavored) table and the raw logical
+    // names. That vocabulary matches a deployed estate only when the
+    // logical-name emission is recompiled OFF — under the production
+    // default (`LogicalTableEmission`/`LogicalColumnEmission`, default-
+    // on, no config off-switch — register H1) the deployed estate
+    // speaks LOGICAL names, and DacFx matches refactor operations
+    // against the DEPLOYED model's element names. An operation naming
+    // `[dbo].[OSUSR_ABC_CUSTOMER]` on an estate whose table is
+    // `[dbo].[Customer]` matches nothing, is skipped, and the rename
+    // DROP+CREATEs anyway — the exact catastrophe the refactorlog
+    // exists to prevent. `emitDeployed` projects both sides of every
+    // rename through the SAME name-decision rules the emission passes
+    // apply, so the operations speak the deployed vocabulary:
+    //
+    //   * table — the post-chain outcome of `LogicalTableEmission.
+    //     substituteKind` + the operator rename pass (the LAST
+    //     `Kind.Physical` writer): a kind an operator `tableRenames`
+    //     override targets (EITHER form) deploys under its authored
+    //     `Physical` (physical-form additionally rides the S6.3 pins);
+    //     blank / >128-char logical names keep `Physical` (H1's
+    //     tripwire edge); otherwise the logical name IS the deployed
+    //     table name.
+    //   * column — `LogicalColumnEmission.substituteAttribute`: blank /
+    //     >128 falls back to the physical column; otherwise logical.
+    //   * a rename whose old and new DEPLOYED names coincide (a pinned
+    //     kind's logical rename; a double fallback) emits NO operation —
+    //     nothing changed on the estate, and a no-match operation is
+    //     noise at best.
+    //
+    // The FOREIGN-KEY channel is deliberately ABSENT here: deployed FK
+    // constraint names are SYNTHESIZED (`FK_<Owner>_<Target>_<Col>`,
+    // `SsdtDdlEmitter.fkDef` — honoring `Reference.Name` is WP-7's open
+    // remainder), so a logical `Reference.Name` rename changes no
+    // deployed constraint and its operation could never match. When
+    // WP-7 lands, the FK channel re-opens with the then-real deployed
+    // names. Kind/column operations keep `emit`'s OperationKey
+    // derivations verbatim (keys are over the LOGICAL rename triple),
+    // so accumulation dedup and cross-run identity are unchanged.
+    //
+    // Recompile coupling, named: if `LogicalTableEmission`/
+    // `LogicalColumnEmission` are ever recompiled `Disabled`, this
+    // projection must follow (deployed names become the physical ones).
+    // ------------------------------------------------------------------
+
+    /// The deployed table name a kind carries under the production
+    /// emission rule, for an arbitrary logical name (so the OLD and NEW
+    /// sides of a rename each project through the kind that carried
+    /// them — source kind for old, target kind for new). Validity by
+    /// construction: `TableName.create` embeds the exact blank/>128 rule
+    /// `LogicalTableEmission.substituteKind` pre-checks — an invalid
+    /// logical name keeps the physical (H1's tripwire edge).
+    let private deployedTableName (physicalNamedKinds: Set<SsKey>) (k: Kind) (logical: Name) : string =
+        if Set.contains k.SsKey physicalNamedKinds then TableId.tableText k.Physical
+        else
+            match TableName.create (Name.value logical) with
+            | Ok _    -> Name.value logical
+            | Error _ -> TableId.tableText k.Physical
+
+    /// The deployed column name an attribute carries under the
+    /// production emission rule (`LogicalColumnEmission` — no pins at
+    /// the column grain; an invalid logical name keeps the physical,
+    /// by the same `ColumnName.create` validity rule the pass checks).
+    let private deployedColumnName (a: Attribute) (logical: Name) : string =
+        match ColumnName.create (Name.value logical) with
+        | Ok _    -> Name.value logical
+        | Error _ -> ColumnRealization.columnNameText a.Column
+
+    /// `[schema]` for a kind — the SqlSchema parent element name.
+    let private deployedSchemaQualified (k: Kind) : string =
+        Render.quote (TableId.schemaText k.Physical)
+
+    /// The kind-level (SqlTable) deployed-vocabulary rename entries.
+    let private deployedKindRefactorEntries
+        (physicalNamedKinds: Set<SsKey>)
+        (diff: CatalogDiff)
+        (renames: Map<SsKey, RenameRecord>)
+        (k: Kind)
+        : RefactorLogEntry list =
+        match Map.tryFind k.SsKey renames with
+        | None -> []
+        | Some record ->
+            // The OLD side projects through the SOURCE kind (the plane the
+            // prior episode deployed); the NEW side through the target kind.
+            let sourceKind =
+                Catalog.tryFindKind k.SsKey (CatalogDiff.source diff)
+                |> Option.defaultValue k
+            let oldDeployed = deployedTableName physicalNamedKinds sourceKind record.OldName
+            let newDeployed = deployedTableName physicalNamedKinds k record.NewName
+            if oldDeployed = newDeployed then []
+            else
+                [
+                    {
+                        OperationKey = renameOperationKey k.SsKey record
+                        OperationKind = RenameRefactor
+                        ElementName =
+                            System.String.Join(".", [| deployedSchemaQualified k; Render.quote oldDeployed |])
+                        ElementType = SqlTable
+                        ParentElementName = deployedSchemaQualified k
+                        ParentElementType = SqlSchema
+                        NewName = newDeployed
+                        PassVersion = version
+                    }
+                ]
+
+    /// The column-level (SqlSimpleColumn) deployed-vocabulary rename
+    /// entries. Operations describe the PRE-publish estate, so the table
+    /// qualifier is the kind's OLD deployed name (relevant when the kind
+    /// renames in the same displacement — operations are sorted by
+    /// OperationKey, not authored order, so they must all speak one
+    /// consistent pre-publish vocabulary).
+    let private deployedColumnRefactorEntries
+        (physicalNamedKinds: Set<SsKey>)
+        (diff: CatalogDiff)
+        (renames: Map<SsKey, RenameRecord>)
+        (k: Kind)
+        : RefactorLogEntry list =
+        match CatalogDiff.attributeDiffOf k.SsKey diff with
+        | None -> []
+        | Some ad when Map.isEmpty ad.Renamed -> []
+        | Some ad ->
+            let sourceKind =
+                Catalog.tryFindKind k.SsKey (CatalogDiff.source diff)
+                |> Option.defaultValue k
+            let kindOldLogical =
+                match Map.tryFind k.SsKey renames with
+                | Some r -> r.OldName
+                | None -> k.Name
+            let tableDeployedOld = deployedTableName physicalNamedKinds sourceKind kindOldLogical
+            let tableQualifiedOld =
+                System.String.Join(".", [| deployedSchemaQualified k; Render.quote tableDeployedOld |])
+            ad.Renamed
+            |> Map.toList
+            |> List.choose (fun (attrKey, record) ->
+                let sourceAttr = sourceKind.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey)
+                let targetAttr = k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey)
+                match sourceAttr |> Option.orElse targetAttr, targetAttr |> Option.orElse sourceAttr with
+                | Some sa, Some ta ->
+                    let oldDeployed = deployedColumnName sa record.OldName
+                    let newDeployed = deployedColumnName ta record.NewName
+                    if oldDeployed = newDeployed then None
+                    else
+                        Some
+                            {
+                                OperationKey =
+                                    columnRenameOperationKey attrKey (Name.value record.OldName) (Name.value record.NewName)
+                                OperationKind = RenameRefactor
+                                ElementName =
+                                    System.String.Join(".", [| tableQualifiedOld; Render.quote oldDeployed |])
+                                ElementType = SqlSimpleColumn
+                                ParentElementName = tableQualifiedOld
+                                ParentElementType = SqlTable
+                                NewName = newDeployed
+                                PassVersion = version
+                            }
+                | _ -> None)
+
+    /// Π port realization for the DEPLOYED-vocabulary document (G3) —
+    /// the sibling of `emit` whose operations DacFx can match against a
+    /// logically-emitted estate. Same T11 keyset contract (every kind in
+    /// the diff's target Catalog appears; non-renamed kinds carry the
+    /// empty list); same OperationKey derivations (dedup identity is
+    /// unchanged); table + column channels only (FK channel named-absent
+    /// above). `physicalNamedKinds` are the kinds whose deployed table
+    /// name is their operator-authored `Physical.Table` — every operator
+    /// `tableRenames` target, either form (`Compose.operatorRenamedKinds`):
+    /// the chain's last `Kind.Physical` writer is the operator rename, so
+    /// for these kinds the logical name never deploys.
+    let emitDeployed (physicalNamedKinds: Set<SsKey>) : EmitterOverDiff<RefactorLogEntry list> = fun diff ->
+        use _ = Bench.scope "emit.refactorLog.emitDeployed"
+        let target = CatalogDiff.target diff
+        let renames = CatalogDiff.renamed diff
+        ArtifactByKind.perKind target (fun k ->
+            deployedKindRefactorEntries physicalNamedKinds diff renames k
+            @ deployedColumnRefactorEntries physicalNamedKinds diff renames k)
+
     /// Flatten an `ArtifactByKind<RefactorLogEntry list>` into a single
     /// `OperationKey`-sorted entry list. The per-kind keyset is discarded;
     /// what carries forward across episodes is the flat operation log (the

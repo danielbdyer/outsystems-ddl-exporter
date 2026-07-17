@@ -30,7 +30,7 @@ let private countryKind () : Kind =
     let labelKey = mkKey ["Mod"; "Country"; "Label"]
     let row code label =
         { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
-          Values = Map.ofList [ mkName "Id", code; mkName "Code", code; mkName "Label", label ] }
+          Values = StaticRow.presentValues [ mkName "Id", code; mkName "Code", code; mkName "Label", label ] }
     {
         SsKey = kindKey
         Name = mkName "Country"

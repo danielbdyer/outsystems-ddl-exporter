@@ -16,6 +16,13 @@ open Projection.Pipeline
 open Projection.Cli
 open Projection.Cli.OperatorConsole
 
+/// Write the artifact, translating an I/O failure into a plain advisory
+/// rather than an unhandled stack trace (THE_VOICE §14). The verdict
+/// stands on the rendered proof; the file is its machine sibling.
+let private tryWriteArtifact (path: string) (content: string) : unit =
+    try IO.File.WriteAllText(path, content)
+    with ex -> eprintfn "  Could not write %s: %s" path ex.Message
+
 let runCheckDataRows (args: CheckDataRowsArgs) : int =
     match (Ref.resolveCatalog (Ref.parse args.ModelRef)).GetAwaiter().GetResult() with
     | Error errs ->
@@ -50,5 +57,5 @@ let runCheckDataRows (args: CheckDataRowsArgs) : int =
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
                 FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
-            IO.File.WriteAllText("fidelity.rows.json", artifact)
+            tryWriteArtifact "fidelity.rows.json" artifact
             if RowFidelityReport.agrees report then 0 else 5

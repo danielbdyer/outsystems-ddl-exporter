@@ -223,3 +223,71 @@ let ``dataspace: a non-primary filegroup is intentional configuration and carrie
     let bundle = MetadataSnapshotRunner.toBundle s
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
     Assert.Equal(Some (DataSpace.Filegroup "INDEX_FG"), row.DataSpace)
+
+// ---------------------------------------------------------------------------
+// WP-4b (DECISIONS 2026-07-16) — columnStorageDivergences names every
+// logical-vs-deployed scalar storage-type disagreement, and reports which
+// value the engine emits (deployed for same-category refinements; logical for
+// the forced-BIGINT family and cross-category conflicts). bt* refs excluded.
+// ---------------------------------------------------------------------------
+
+let private attrT (attrId: int) (col: string) (dataType: string) : MetadataSnapshotRunner.OssysAttributeRow =
+    { AttrId = attrId; EntityId = 1; AttrName = col; AttrSsKey = None
+      DataType = Some dataType; Length = None; Precision = None; Scale = None
+      DefaultValue = None
+      IsMandatory = false; IsActive = true; IsAutoNumber = false
+      IsIdentifier = false; RefEntityId = None; OriginalName = None
+      ExternalDbType = None; DeleteRule = None; PhysicalCol = col
+      Description = None; Order = None }
+
+let private realityT (attrId: int) (col: string) (sqlType: string) (maxLen: int option) : MetadataSnapshotRunner.OssysColumnRealityRow =
+    { AttrId = attrId; IsNullable = true; SqlType = Some sqlType
+      MaxLength = maxLen; Precision = None; Scale = None; CollationName = None
+      IsIdentity = false; IsComputed = false; ComputedDefinition = None
+      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col }
+
+let private storageDivergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
+    MetadataSnapshotRunner.columnStorageDivergences s
+
+[<Fact>]
+let ``WP-4b: a same-category storage divergence is named and reports the DEPLOYED value wins`` () =
+    // logical text -> NVARCHAR(MAX); deployed VARCHAR(250). Same category (Text).
+    let s = snapshotOf [ attrT 100 "NOTES" "text" ] [ realityT 100 "NOTES" "varchar" (Some 250) ]
+    match storageDivergences s with
+    | [ d ] ->
+        Assert.Equal<string>("adapter.ossys.columnReality.storageDivergence", d.Code)
+        Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+        Assert.Equal<string option>(Some "NOTES", Map.tryFind "physicalColumn" d.Metadata)
+        Assert.Equal<string option>(Some "deployed", Map.tryFind "emits" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one storage divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``WP-4b: the forced-BIGINT family divergence is named but reports the LOGICAL value wins (C2)`` () =
+    // logical identifier -> BIGINT; deployed int. Named, but the engine keeps BIGINT.
+    let s = snapshotOf [ attrT 100 "LEGACYID" "Identifier" ] [ realityT 100 "LEGACYID" "int" None ]
+    match storageDivergences s with
+    | [ d ] ->
+        Assert.Equal<string>("adapter.ossys.columnReality.storageDivergence", d.Code)
+        Assert.Equal<string option>(Some "logical", Map.tryFind "emits" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one storage divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``WP-4b: a cross-category divergence is named and reports the LOGICAL value wins (no reclassification)`` () =
+    // logical rtDate -> DATE; deployed datetime (DateTime). Cross-category conflict.
+    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "datetime" None ]
+    match storageDivergences s with
+    | [ d ] -> Assert.Equal<string option>(Some "logical", Map.tryFind "emits" d.Metadata)
+    | other -> Assert.Fail(sprintf "expected one storage divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``WP-4b: an agreeing logical-vs-deployed storage is silent`` () =
+    // logical text -> NVARCHAR(MAX); deployed nvarchar with no length -> NVARCHAR(MAX). Equal.
+    let s = snapshotOf [ attrT 100 "NOTES" "text" ] [ realityT 100 "NOTES" "nvarchar" None ]
+    Assert.Empty(storageDivergences s)
+
+[<Fact>]
+let ``WP-4b: a bt* reference attribute is excluded from storage divergence`` () =
+    // bt* reference resolves BIGINT logically; deployed int would differ, but
+    // references have their own deployed-storage channel and are not named here.
+    let s = snapshotOf [ attrT 100 "OFFICEID" "btAbc*Def" ] [ realityT 100 "OFFICEID" "int" None ]
+    Assert.Empty(storageDivergences s)

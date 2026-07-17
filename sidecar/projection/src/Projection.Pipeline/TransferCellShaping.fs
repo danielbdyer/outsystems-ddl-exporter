@@ -38,8 +38,8 @@ module TransferCellShaping =
                 carried
                 |> List.map (fun a ->
                     let raw =
-                        if Set.contains a.Name deferred then ""
-                        else Map.tryFind a.Name row.Values |> Option.defaultValue ""
+                        if Set.contains a.Name deferred then None
+                        else StaticRow.value a.Name row
                     { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
 
     let toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
@@ -71,14 +71,16 @@ module TransferCellShaping =
             |> List.filter (fun a ->
                 Set.contains a.Name deferred || Option.isSome (RowBasis.tryOrdinal a.Name basis))
             |> List.map (fun a ->
-                let get =
-                    if Set.contains a.Name deferred then (fun _ -> "")
+                let get : RowQuantum -> string voption =
+                    if Set.contains a.Name deferred then (fun _ -> ValueNone)
                     else RowQuantum.cellGetter basis a.Name
                 ColumnRealization.columnNameText a.Column, a.Type, get)
         fun rows ->
             rows
             |> List.map (fun q ->
-                cols |> List.map (fun (col, ty, get) -> { Column = col; Type = ty; Raw = get q }))
+                cols
+                |> List.map (fun (col, ty, get) ->
+                    { Column = col; Type = ty; Raw = get q |> ValueOption.toOption }))
 
     /// The staged per-kind projection (PL-9 / S16): stage once beside the
     /// kind's chunk loop, apply per chunk.
@@ -135,8 +137,7 @@ module TransferCellShaping =
                 let ty = a.Type
                 fun row ->
                     col,
-                    (Map.tryFind name row.Values
-                     |> Option.defaultValue ""
+                    (StaticRow.value name row
                      |> SqlLiteral.ofRaw ty)
             let setGetters   = deferredAttrs |> List.map cellGetterOf
             let whereGetters = pkAttrs       |> List.map cellGetterOf
@@ -170,7 +171,7 @@ module TransferCellShaping =
             let cellGetterOf (a: Attribute) : RowQuantum -> string * SqlLiteral =
                 let get = RowQuantum.cellGetter basis a.Name
                 let col = ColumnRealization.columnNameText a.Column
-                fun q -> col, (get q |> SqlLiteral.ofRaw a.Type)
+                fun q -> col, (get q |> ValueOption.toOption |> SqlLiteral.ofRaw a.Type)
             let setGetters   = deferredAttrs |> List.map cellGetterOf
             let whereGetters = pkAttrs       |> List.map cellGetterOf
             fun q ->

@@ -1,6 +1,6 @@
 ---
 name: idempotent-seed
-description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and data-plane row ops. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash + 0 CDC captures on a no-op redeploy). Per-op skills POINT here. Points to _index/cdc for the CDC-silence face; the hash oracle lives in talk-to-local-sql.
+description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and data-plane row ops. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash + 0 CDC captures on a no-op redeploy). Per-op skills POINT here. Points to _index/cdc for the CDC-silence face; the hash check lives in talk-to-local-sql.
 ---
 
 # Idempotent seed — re-running changes nothing, and silence is the proof
@@ -44,8 +44,9 @@ whose key is IDENTITY is a trap to recognize and refuse.
 A lookup ID is an **identity other rows depend on.** A hard `DELETE` of a seed row doesn't "remove a
 value" — it **orphans every fact row** pointing at it and breaks the app's `StatusId = 3` constant.
 The discipline is **`IsActive = 0`**: retire the value while preserving its identity and history. A
-hard DELETE that orphans fact rows is Tier 3+ and usually **wrong** — refuse it, propose
-deactivation.
+hard DELETE that orphans fact rows removes data irreversibly and is usually **wrong** — refuse it and
+propose deactivation. A deletion pressed anyway is a principal's call, because the removal cannot be
+undone.
 
 ### 4. Silence is the proof (specialize per op; do not restate the whole thing there)
 
@@ -72,7 +73,9 @@ non-silent redeploy as a bug even when the data ends up correct.
 ## The ops this governs (and their distinguishing note)
 
 - **create-static-seed** — the CREATE is declarative (schema slot); the seed is the guarded MERGE
-  (data slot); explicit IDs. Mechanism 2 Declarative+Post-Deploy, Tier 1.
+  (data slot); explicit IDs. Ships as one release — the schema change, then the post-deployment
+  MERGE that runs after it lands; any team member can review it, since it is additive and the
+  running application is unaffected.
 - **edit-seed** — add a value (`WHEN NOT MATCHED`) or change a label (**one** guarded `WHEN MATCHED`
   row — prove the branch touches exactly 1 row, not the table size).
 - **delete-seed-value** — **deactivate, don't delete**; refuse the hard DELETE that orphans fact
@@ -81,7 +84,8 @@ non-silent redeploy as a bug even when the data ends up correct.
   is idempotent-MERGE work; the *rest* of extract-to-lookup (the FK backfill + old-column drop) is
   multi-phase, see `../multi-phase/SKILL.md`.
 - **data-plane row ops** — the four row fates (insert / guarded update / unchanged / careful
-  delete) under one null-safe MERGE; a bulk DELETE of populated rows escalates to Tier 4.
+  delete) under one null-safe MERGE; a bulk DELETE of populated rows removes data irreversibly, so a
+  principal must review it.
 
 ## The CDC-silence face (pointer)
 
@@ -91,7 +95,7 @@ isolation rule all live in `../cdc/SKILL.md`. This concern owns the *seed*; the 
 
 ## Prove it (pointer, not a re-scaffold)
 
-For the content-hash oracle (identical-before-and-after) and the guarded-branch rowcount probe, see
+For the content-hash check (identical-before-and-after) and the guarded-branch rowcount probe, see
 `../../talk-to-local-sql/SKILL.md`; for the deploy-twice loop that demonstrates the silent redeploy,
 see `../../prove-on-dacpac/SKILL.md`.
 

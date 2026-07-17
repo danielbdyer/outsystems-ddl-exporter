@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[PruneProbe] (
     [Id]   INT           IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_PruneProbe]
+        CONSTRAINT [PK_PruneProbe_Id]
             PRIMARY KEY CLUSTERED,
     [Code] NVARCHAR (20) NOT NULL
 )

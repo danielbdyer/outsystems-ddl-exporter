@@ -988,7 +988,7 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Ok,
-                    sprintf "The estate is one shape. %s environment(s) match the target schema and the data fits every declared constraint."
+                    sprintf "The environments are one shape. %s environment(s) match the target schema and the data fits every declared constraint."
                         (humane (textOr "envs" "0" p)))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -1020,10 +1020,10 @@ module Voice =
                 match lanes with
                 | [] ->
                     View.Hero(View.Warn,
-                        sprintf "The estate is converging: %s finding(s) remain across %s environment(s).%s" total envs queueClause)
+                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s).%s" total envs queueClause)
                 | ls ->
                     View.Hero(View.Warn,
-                        sprintf "The estate is converging: %s finding(s) remain across %s environment(s) — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
+                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s) — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
           Substantiation = fun _ -> []
           Action         =
             fun p ->
@@ -1042,7 +1042,7 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Bad,
-                    sprintf "The estate is forked in %s place(s): the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
+                    sprintf "The environments are forked in %s place(s): the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
                         (humane (textOr "forks" "0" p)))
           Substantiation = fun _ -> []
           Action         =
@@ -1061,14 +1061,14 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Warn,
-                    sprintf "Interim posture: %s relaxation(s) in estate.overlay.json — each carries the probe that retires it."
+                    sprintf "%s interim change(s) in environments.overlay.json — each carries the probe that clears it."
                         (humane (textOr "relaxations" "0" p)))
           Substantiation =
-            fun _ -> [ View.Note "The merge is an operator edit; the engine never applies it. estate.probes.sql carries every reopen probe as one runnable batch." ]
+            fun _ -> [ View.Note "The merge is an operator edit; the engine never applies it. environments.probes.sql carries every reopen probe as one runnable batch." ]
           Action         = fun _ -> None }
 
     /// `estate.envUnreadable` — §14: a named environment could not be read.
-    /// The estate verdict needs every named environment (no partial estate —
+    /// The comparison needs every named environment (no partial estate —
     /// DECISIONS 2026-07-15); the cause leads, the lever follows.
     let private estateEnvUnreadable : Copy =
         { Code           = "estate.envUnreadable"
@@ -1076,7 +1076,7 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Bad,
-                    sprintf "%s could not be read: %s. The estate verdict needs every named environment."
+                    sprintf "%s could not be read: %s. The comparison needs every named environment."
                         (textOr "env" "an environment" p) (textOr "reason" "the connection did not open" p))
           Substantiation = fun _ -> []
           Action         = fun _ -> Some (View.Action "Restore the connection, or narrow readiness.confirm deliberately.") }
@@ -1350,6 +1350,7 @@ module Voice =
         | SchemaUnreadable
         | TargetUnreachable
         | PermissionDenied
+        | CheckArgument
         | GenericStop
 
     /// Route an error code's top-prefix onto its `ErrorFrame`. Ordering matters
@@ -1369,6 +1370,9 @@ module Voice =
         elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then ReconcileArgumentInvalid
         elif code.StartsWith "adapter.osm." || code.StartsWith "model." then ModelLoadFailed
         elif code.StartsWith "readside." then SchemaUnreadable
+        // The read-only check verbs' argument/config refusals — a proper
+        // next-move frame, never GenericStop's "stopped before a change".
+        elif code.StartsWith "cli.check." then CheckArgument
         elif code.Contains "connection" then TargetUnreachable
         elif code.Contains "insufficientGrant" || code.Contains "grantProbe" || code.Contains "permission" then PermissionDenied
         else GenericStop
@@ -1423,6 +1427,12 @@ module Voice =
         | PermissionDenied ->
             View.Hero(View.Warn, "A required permission is denied. Grant it, then retry."),
             Some(View.Action "Grant the permission, then retry.")
+        | CheckArgument ->
+            // A read-only check refused because the command or config could not
+            // be used as given — never "stopped before a change" (a check writes
+            // nothing). The specific cause and fix ride the substantiation.
+            View.Hero(View.Warn, "The check cannot run as requested — the cause and the fix are shown below."),
+            Some(View.Action "Adjust the command or config as shown, then re-run.")
         | GenericStop ->
             View.Hero(View.Bad, "Stopped before any change was applied. The cause is shown below."),
             None

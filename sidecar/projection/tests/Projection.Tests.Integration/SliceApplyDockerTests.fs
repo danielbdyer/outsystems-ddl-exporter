@@ -63,10 +63,10 @@ type SliceApplyDockerTests(fixture: EphemeralContainerFixture) =
                     let golden : GoldenDataset =
                         { Version = 1
                           Entities =
-                            [ { Entity = "OSUSR_AP_COUNTRY"; Rows = [ Map.ofList [ nm "ID", "10"; nm "NAME", "US" ] ] }
-                              { Entity = "OSUSR_AP_USER";    Rows = [ Map.ofList [ nm "ID", "100"; nm "COUNTRY_ID", "10" ] ] }
+                            [ { Entity = "OSUSR_AP_COUNTRY"; Rows = [ StaticRow.presentValues [ nm "ID", "10"; nm "NAME", "US" ] ] }
+                              { Entity = "OSUSR_AP_USER";    Rows = [ StaticRow.presentValues [ nm "ID", "100"; nm "COUNTRY_ID", "10" ] ] }
                               { Entity = "OSUSR_AP_ORDER"
-                                Rows = [ Map.ofList [ nm "ID", "1000"; nm "USER_ID", "100"; nm "REGION", "West" ] ] } ] }
+                                Rows = [ StaticRow.presentValues [ nm "ID", "1000"; nm "USER_ID", "100"; nm "REGION", "West" ] ] } ] }
 
                     let rows = SliceApplyRun.mapToTarget catalog golden |> mustOk
                     let! reportR = Transfer.runGoldenApply Transfer.Mode.Execute false cnn catalog rows

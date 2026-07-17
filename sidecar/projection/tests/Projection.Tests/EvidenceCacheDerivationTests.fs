@@ -54,74 +54,70 @@ let private ov (x: 'a) : obj = upcast x
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``ofRaw: the empty raw form is the NULL sentinel for every primitive type`` () =
+let ``ofRaw: None is NULL for every primitive type (WP-3: NULL is out-of-band)`` () =
     let allTypes = [ Integer; Decimal; Text; Boolean; DateTime; Date; Time; Binary; Guid ]
     for t in allTypes do
-        Assert.Equal(NullValue, CachedValue.ofRaw t "")
+        Assert.Equal(NullValue, CachedValue.ofRaw t None)
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Integer raw forms parse to the reader's IntValue`` () =
-    Assert.Equal(CachedValue.ofReaderValue (ov 42), CachedValue.ofRaw Integer "42")
-    Assert.Equal(CachedValue.ofReaderValue (ov -7L), CachedValue.ofRaw Integer "-7")
+    Assert.Equal(CachedValue.ofReaderValue (ov 42), CachedValue.ofRaw Integer (Some "42"))
+    Assert.Equal(CachedValue.ofReaderValue (ov -7L), CachedValue.ofRaw Integer (Some "-7"))
     // bigint beyond int32 range survives the int64 parse
-    Assert.Equal(CachedValue.ofReaderValue (ov 2147483648L), CachedValue.ofRaw Integer "2147483648")
+    Assert.Equal(CachedValue.ofReaderValue (ov 2147483648L), CachedValue.ofRaw Integer (Some "2147483648"))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Boolean raw forms project to IntValue 0/1 (bit profiles as int)`` () =
-    Assert.Equal(CachedValue.ofReaderValue (ov true),  CachedValue.ofRaw Boolean (RawValueCodec.formatBoolean true))
-    Assert.Equal(CachedValue.ofReaderValue (ov false), CachedValue.ofRaw Boolean (RawValueCodec.formatBoolean false))
+    Assert.Equal(CachedValue.ofReaderValue (ov true),  CachedValue.ofRaw Boolean (Some (RawValueCodec.formatBoolean true)))
+    Assert.Equal(CachedValue.ofReaderValue (ov false), CachedValue.ofRaw Boolean (Some (RawValueCodec.formatBoolean false)))
     // parseBoolean's numeric raw forms land on the same values
-    Assert.Equal(IntValue 1L, CachedValue.ofRaw Boolean "1")
-    Assert.Equal(IntValue 0L, CachedValue.ofRaw Boolean "0")
+    Assert.Equal(IntValue 1L, CachedValue.ofRaw Boolean (Some "1"))
+    Assert.Equal(IntValue 0L, CachedValue.ofRaw Boolean (Some "0"))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Decimal invariant raw forms round-trip scale and sign`` () =
     for d in [ 12.34m; -0.5m; 0.0000001m; 99999999999999.99m; 0m ] do
-        Assert.Equal(CachedValue.ofReaderValue (ov d), CachedValue.ofRaw Decimal (d.ToString(inv)))
+        Assert.Equal(CachedValue.ofReaderValue (ov d), CachedValue.ofRaw Decimal (Some (d.ToString(inv))))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: DateTime raw form round-trips to tick precision, offset Zero`` () =
     // sub-millisecond ticks — the 7-f format carries full tick precision
     let dt = System.DateTime(2026, 7, 2, 13, 45, 30).AddTicks(1234567L)
-    Assert.Equal(CachedValue.ofReaderValue (ov dt), CachedValue.ofRaw DateTime (RawValueCodec.formatDateTime dt))
+    Assert.Equal(CachedValue.ofReaderValue (ov dt), CachedValue.ofRaw DateTime (Some (RawValueCodec.formatDateTime dt)))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Date raw form lands on midnight, offset Zero`` () =
     let d = System.DateTime(2026, 7, 2)
-    Assert.Equal(CachedValue.ofReaderValue (ov d), CachedValue.ofRaw Date (RawValueCodec.formatDate d))
+    Assert.Equal(CachedValue.ofReaderValue (ov d), CachedValue.ofRaw Date (Some (RawValueCodec.formatDate d)))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Time raw form equals the reader TimeSpan's ToString fallback`` () =
     let ts = System.TimeSpan(0, 13, 45, 30, 123)
-    Assert.Equal(CachedValue.ofReaderValue (ov ts), CachedValue.ofRaw Time (RawValueCodec.formatTime ts))
+    Assert.Equal(CachedValue.ofReaderValue (ov ts), CachedValue.ofRaw Time (Some (RawValueCodec.formatTime ts)))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Guid raw form equals the reader Guid's ToString fallback`` () =
     let g = System.Guid("6f9619ff-8b86-d011-b42d-00c04fc964ff")
-    Assert.Equal(CachedValue.ofReaderValue (ov g), CachedValue.ofRaw Guid (RawValueCodec.formatGuid g))
+    Assert.Equal(CachedValue.ofReaderValue (ov g), CachedValue.ofRaw Guid (Some (RawValueCodec.formatGuid g)))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Text raw form is the string itself`` () =
-    Assert.Equal(CachedValue.ofReaderValue (ov "hello"), CachedValue.ofRaw Text "hello")
+    Assert.Equal(CachedValue.ofReaderValue (ov "hello"), CachedValue.ofRaw Text (Some "hello"))
 
 [<Fact>]
 let ``ofRaw ≡ ofReaderValue: Binary hex raw form round-trips byte-for-byte`` () =
     let bytes = [| 0xDEuy; 0xADuy; 0xBEuy; 0xEFuy |]
     let raw = System.Convert.ToHexString bytes
-    Assert.Equal(CachedValue.ofReaderValue (ov bytes), CachedValue.ofRaw Binary raw)
+    Assert.Equal(CachedValue.ofReaderValue (ov bytes), CachedValue.ofRaw Binary (Some raw))
 
 [<Fact>]
-let ``ofRaw observes the IR plane: empty Text raw is NULL per the universal sentinel (Tolerance.EmptyTextNormalizedToNull)`` () =
-    // The empty raw string is the IR's UNIVERSAL NULL sentinel (NM-18,
-    // `SqlLiteral.ofRaw`): a stored empty string and a stored NULL are
-    // indistinguishable once a cell is in raw form, and the data lane
-    // itself publishes NULL for both. Derivation therefore projects ""
-    // to NullValue — consistent with the PUBLISHED data — where a live
-    // reader observing the SOURCE would yield StringValue "". The two
-    // evidence planes are equal modulo the already-named, witnessed
-    // erasure `Tolerance.EmptyTextNormalizedToNull`; this test pins
-    // which plane each constructor observes.
-    Assert.Equal(NullValue, CachedValue.ofRaw Text "")
+let ``ofRaw and ofReaderValue agree on the empty Text string: a VALUE, not NULL (F11)`` () =
+    // WP-3 retired the NM-18 universal `""`-as-NULL sentinel: the raw
+    // plane now carries NULL out-of-band (`None`), so a genuine empty
+    // string profiles as `StringValue ""` on BOTH constructors — the
+    // derived evidence finally matches what a live reader observes
+    // (`COUNT(*) WHERE col IS NULL` never counted `''`).
+    Assert.Equal(StringValue "", CachedValue.ofRaw Text (Some ""))
     Assert.Equal(StringValue "", CachedValue.ofReaderValue (ov ""))
 
 // ---------------------------------------------------------------------------
@@ -160,6 +156,12 @@ let private mkAccountKind () : Kind =
 
 let private mkRow (kind: Kind) (idx: int) (cells: (string * string) list) : StaticRow =
     { Identifier = mkKey ["TestModule"; Name.value kind.Name; "Row"; string idx]
+      Values     = cells |> List.map (fun (k, v) -> mkName k, Some v) |> Map.ofList }
+
+/// Option-grain sibling — for rows that author an explicit NULL cell
+/// (`None`) distinctly from an absent key (WP-3).
+let private mkRowOpt (kind: Kind) (idx: int) (cells: (string * string option) list) : StaticRow =
+    { Identifier = mkKey ["TestModule"; Name.value kind.Name; "Row"; string idx]
       Values     = cells |> List.map (fun (k, v) -> mkName k, v) |> Map.ofList }
 
 [<Fact>]
@@ -173,9 +175,11 @@ let ``cachedKindOfRows: exact RowCount and exact per-attribute NullCounts, missi
     let rows =
         [
             mkRow kind 1 [ "Id", "1"; "Name", "alpha"; "Flag", "true";  "Amount", "10.50" ]
-            mkRow kind 2 [ "Id", "2"; "Name", "";      "Flag", "false"; "Amount", "0.25" ]
-            // "Amount" key absent entirely — a missing map key IS the
-            // empty raw form (defaultValue ""), so it counts as NULL
+            // "Name" carries an EXPLICIT NULL cell (WP-3: `None`, no longer
+            // the `""` sentinel).
+            mkRowOpt kind 2 [ "Id", Some "2"; "Name", None; "Flag", Some "false"; "Amount", Some "0.25" ]
+            // "Amount" key absent entirely — a missing map key reads as
+            // no-value (`StaticRow.value` → None), so it counts as NULL.
             mkRow kind 3 [ "Id", "3"; "Name", "gamma"; "Flag", "true" ]
         ]
     let ck =
@@ -196,7 +200,7 @@ let ``cachedKindOfRows: Columns follow catalog attribute order and Values align 
     let rows =
         [
             mkRow kind 1 [ "Id", "1"; "Name", "alpha"; "Flag", "true";  "Amount", "10.50" ]
-            mkRow kind 2 [ "Id", "2"; "Name", "beta";  "Flag", "false"; "Amount", "" ]
+            mkRowOpt kind 2 [ "Id", Some "2"; "Name", Some "beta"; "Flag", Some "false"; "Amount", None ]
         ]
     let ck =
         EvidenceCache.cachedKindOfRows Map.empty kind rows
@@ -271,9 +275,9 @@ let ``cachedKindOfQuanta ≡ cachedKindOfRows over materialized rows (the positi
     let kind = mkAccountKind ()
     let basis = Kind.rowBasis kind
     let quanta : RowQuantum list =
-        [ { Cells = [| "1"; "alpha"; "true";  "10.50" |] }
-          { Cells = [| "2"; "";      "false"; ""      |] }
-          { Cells = [| "3"; "gamma"; "1";     "0.25"  |] } ]
+        [ { Cells = [| ValueSome "1"; ValueSome "alpha"; ValueSome "true";  ValueSome "10.50" |] }
+          { Cells = [| ValueSome "2"; ValueNone;         ValueSome "false"; ValueNone         |] }
+          { Cells = [| ValueSome "3"; ValueSome "gamma"; ValueSome "1";     ValueSome "0.25"  |] } ]
     let nullability = Map.ofList [ "NAME", true ]
     let rows =
         quanta
@@ -286,7 +290,7 @@ let ``cachedKindOfQuanta ≡ cachedKindOfRows over materialized rows (the positi
 [<Fact>]
 let ``cachedKindOfQuanta: a short row's missing tail reads as the empty raw (NULL)`` () =
     let kind = mkAccountKind ()
-    let quanta : RowQuantum list = [ { Cells = [| "1"; "alpha" |] } ]
+    let quanta : RowQuantum list = [ { Cells = [| ValueSome "1"; ValueSome "alpha" |] } ]
     let ck =
         EvidenceCache.cachedKindOfQuanta Map.empty kind quanta
         |> Option.defaultWith (fun () -> invalidOp "expected Some CachedKind")

@@ -42,8 +42,12 @@ module SsdtBundle =
     ///
     /// The `manifest.json` always lives at the directory root; per-
     /// table .sql files live at their `SsdtFile.RelativePath` per V1
-    /// convention (cross-platform-deterministic forward slashes).
-    let compose
+    /// convention (cross-platform-deterministic forward slashes);
+    /// per-schema `Schemas/<name>.sql` files (G6, DECISIONS 2026-07-16)
+    /// carry the non-dbo `CREATE SCHEMA` objects — empty for dbo-only
+    /// estates (the byte-identical default).
+    let composeWithSchemas
+        (schemaFiles: (string * string) list)
         (ssdtFiles: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
         (manifest: ManifestEmitter.Manifest)
         : Map<string, string> =
@@ -54,5 +58,14 @@ module SsdtBundle =
             |> Map.toSeq
             |> Seq.map (fun (_ssKey, file) -> file.RelativePath, file.Body)
         let manifestEntry = "manifest.json", ManifestEmitter.toJson manifest
-        Seq.append perTableEntries (Seq.singleton manifestEntry)
+        Seq.append (Seq.ofList schemaFiles) (Seq.append perTableEntries (Seq.singleton manifestEntry))
         |> Map.ofSeq
+
+    /// The schema-less form — the pre-G6 shape, byte-identical; callers
+    /// with a catalog in hand thread `SsdtDdlEmitter.schemaFiles` via
+    /// `composeWithSchemas`.
+    let compose
+        (ssdtFiles: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
+        (manifest: ManifestEmitter.Manifest)
+        : Map<string, string> =
+        composeWithSchemas [] ssdtFiles manifest

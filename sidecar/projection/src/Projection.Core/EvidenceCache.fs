@@ -94,9 +94,16 @@ module CachedValue =
     ///              `ToString()` "D" = `formatGuid`'s raw form)
     ///   Text     → StringValue raw
     ///   Binary   → BinaryValue (FromHexString)
-    let ofRaw (typ: PrimitiveType) (raw: string) : CachedValue =
-        if raw = "" then NullValue
-        else
+    /// WP-3 (F11): NULL arrives out-of-band as `None` → `NullValue`; a
+    /// `Some ""` Text cell is a genuine empty string and profiles as
+    /// `StringValue ""` — NOT as NULL evidence (matching what the live
+    /// profiler's `COUNT(*) WHERE col IS NULL` measures). A `Some ""`
+    /// on a numeric/temporal type falls into its parser's loud
+    /// `FormatException` (NM-20), never a silent NULL.
+    let ofRaw (typ: PrimitiveType) (raw: string option) : CachedValue =
+        match raw with
+        | None -> NullValue
+        | Some raw ->
             let inv = System.Globalization.CultureInfo.InvariantCulture
             match typ with
             | Integer  -> IntValue (System.Int64.Parse(raw, inv))
@@ -231,14 +238,12 @@ module EvidenceCache =
     /// holds ONLY for a FULLY hydrated kind — `RowCount` and `NullCounts`
     /// are exact because the rows are all of them (the live path's
     /// aggregate query is exact even under sampling, so a sampled kind
-    /// must keep live discovery; callers gate on full hydration) — and
-    /// MODULO the IR's universal NULL sentinel (NM-18): a stored empty
-    /// Text cell arrives in raw form as `""` and derives as `NullValue`,
-    /// where the live reader observes `StringValue ""` at the source.
-    /// That is not a new erasure — it is the named, witnessed
-    /// `Tolerance.EmptyTextNormalizedToNull` surfacing on the evidence
-    /// plane: derived evidence describes the data as PUBLISHED (the data
-    /// lane emits NULL for both), live evidence the source as stored.
+    /// must keep live discovery; callers gate on full hydration). WP-3
+    /// (F11): the equivalence is now UNCONDITIONAL on the value plane —
+    /// NULL arrives out-of-band (`None` → `NullValue`) and a stored empty
+    /// Text cell derives as `StringValue ""`, exactly what the live
+    /// reader observes (the NM-18 sentinel and its
+    /// `EmptyTextNormalizedToNull` tolerance are retired).
     /// Cell projection rides `CachedValue.ofRaw`'s equivalence table; per-row
     /// order is the reader's PK order on both paths, so `Values` arrays
     /// align positionally for single-column-PK kinds (derivations are
@@ -296,10 +301,7 @@ module EvidenceCache =
             for row in rows do
                 attrs
                 |> List.iteri (fun idx a ->
-                    let raw =
-                        Map.tryFind a.Name row.Values
-                        |> Option.defaultValue ""
-                    perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
+                    perColumn.[idx].Add (CachedValue.ofRaw a.Type (StaticRow.value a.Name row)))
             Some (cachedKindFromPerColumn nullability kind (int64 (List.length rows)) perColumn)
 
     /// Positional sibling of `cachedKindOfRows` — derive a kind's evidence
@@ -327,7 +329,8 @@ module EvidenceCache =
             for q in quanta do
                 attrs
                 |> List.iteri (fun idx a ->
-                    let raw = if idx < q.Cells.Length then q.Cells.[idx] else ""
+                    let raw =
+                        if idx < q.Cells.Length then ValueOption.toOption q.Cells.[idx] else None
                     perColumn.[idx].Add (CachedValue.ofRaw a.Type raw))
             Some (cachedKindFromPerColumn nullability kind (int64 (List.length quanta)) perColumn)
 

@@ -1,27 +1,26 @@
 ---
 name: talk-to-local-sql
-description: The throwaway-DB substrate for the proving ground. Use whenever prove-on-dacpac needs a warm local SQL Server to publish against, a fresh-or-reset ProvingGround database, ad-hoc sqlcmd queries (row counts, MAX(LEN), NULL counts), or the content-hash data oracle that answers "did the values actually change". Brings up the existing warm-sql container, supplies the connection string, the required runtime shim, and the docker-exec sqlcmd form (the host has NO sqlcmd) — the developer's agent runs the commands. No wrapper script.
+description: The disposable local-SQL substrate prove-on-dacpac publishes against. Use whenever prove-on-dacpac needs a warm local SQL Server to publish against, a fresh-or-reset ProvingGround database, ad-hoc sqlcmd queries (row counts, MAX(LEN), NULL counts), or the content-hash check that answers "did the values actually change". Brings up the existing warm-sql container, supplies the connection string, the required runtime shim, and the docker-exec sqlcmd form (the host has NO sqlcmd) — the developer's agent runs the commands. No wrapper script.
 ---
 
 # Talk to local SQL
 
-> **Why this (and what it teaches).** The hash and the probe are the proof because **a number you
-> measured beats a claim you asserted** — "1,240 rows are blank" is evidence; "some rows might be
-> blank" is a guess. And the strongest result this substrate produces is **silence**: a no-op
-> redeploy that captures 0 rows and an unchanged content digest is the proof a deploy is
-> idempotent. What this teaches: quantify before you classify (run the probe, get the count), and
-> treat an unchanged digest on a re-run as a *positive* guarantee, not a non-event. Surface this to
-> the developer — handing them "I measured 0 NULLs remain, and the second deploy moved nothing"
-> graduates them from trusting recollection to trusting measurement.
+> **Why this substrate.** The probe and the hash are the proof: a measured number is evidence, an
+> asserted one is a guess — "1,240 rows are blank" stands where "some rows might be blank" cannot.
+> The count is taken before the change is classified, so classification rests on the data, not on
+> recollection. The strongest result this substrate produces is silence: a no-op redeploy that
+> captures 0 rows and returns an unchanged content digest is the proof that a deploy is idempotent,
+> and an unchanged digest on a re-run is a positive guarantee, not a non-event. The developer is
+> owed the measured form — "0 NULLs remain, and the second deploy moved nothing" — over a
+> recollection.
 
-You are helping an **OutSystems-native developer** prove a schema change safely. This skill owns
-the **substrate** the proving lives on: a **throwaway** SQL Server database, real-*shaped* but
-disposable, that `prove-on-dacpac` publishes against. Nothing here ever touches production. The
-whole point is that this database can be reset between scenarios and dropped without a thought.
+This skill owns the substrate `prove-on-dacpac` publishes against: a disposable SQL Server
+database, real-*shaped* but safe to drop, standing in for the Dev database. Nothing here ever
+touches production; the database is reset between scenarios and dropped without ceremony.
 
-You **scaffold** the commands and SQL; the developer's agent runs them. There is **no wrapper
-script** — you reuse the existing `scripts/warm-sql.sh` (plain bash, already in the repo) and run
-`sqlcmd` (via `docker exec`, see below) / `sqlpackage` directly.
+The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
+script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and
+`sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
 
 ## The runtime shim (REQUIRED on this machine)
 
@@ -89,7 +88,7 @@ This yields the container `projection-mssql-warm` listening on **localhost,11433
 | User | `sa` |
 | Password | `Projection@Strong1` |
 | Options | `TrustServerCertificate=True;Encrypt=False` (or `-C` on sqlcmd) |
-| Throwaway DB | `ProvingGround` (or a per-executor `PG_<testId>_<rand>`, see PROTOCOL.md) |
+| Disposable copy | `ProvingGround` (or a per-executor `PG_<testId>_<rand>`, see PROTOCOL.md) |
 
 Full connection string (what the host-side publish profiles use):
 
@@ -110,13 +109,13 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 (`-C` = trust the server certificate; quote the password for the shell; remember
 `MSYS_NO_PATHCONV=1` on Git Bash for the `/opt/...` path.)
 
-The probes that predict a flip **before** you even build the dacpac (wrap each in the same
-`docker exec ... -Q "<sql>"` form):
+The probes that predict whether the change is blocked **before** the dacpac is even built (wrap each
+in the same `docker exec ... -Q "<sql>"` form):
 
 ```sql
--- make-mandatory: how many rows would the NOT NULL veto on?
--- (NOTE: the veto fires on table-has-rows, not this NULL count — but you still want the count
---  to prove the backfill cleared it; see prove-on-dacpac's make-mandatory finding.)
+-- make-mandatory: how many rows hold a NULL Email under the new NOT NULL rule?
+-- (NOTE: SSDT blocks on table-has-rows, not this NULL count — but the count still proves the
+--  backfill cleared it; see prove-on-dacpac's make-mandatory finding.)
 SELECT COUNT(*) AS NullRows FROM dbo.Customer WHERE Email IS NULL;
 
 -- narrow (Ambitious Narrowing): does any value exceed the new length?
@@ -141,11 +140,11 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 ```
 
 These probes **predict**; the Strict publish in `prove-on-dacpac` **proves**. Run the probe to know
-what to look for, then let the veto confirm it.
+what to look for, then let the blocked publish confirm it.
 
-## Create / reset / drop the throwaway DB (via docker exec)
+## Create / reset / drop the disposable database (via docker exec)
 
-Reset between scenarios so each flip starts from the known seed. The proving ground is disposable —
+Reset between scenarios so each case starts from the known seed. This database is disposable —
 dropping and recreating is the normal path, not a last resort.
 
 ```bash
@@ -161,7 +160,7 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 ```
 
 After a reset, re-establish the BEFORE state (deploy the current CREATEs + post-deploy seed) per
-`proving-ground/README.md` — that seed is the "real-shaped data" every flip is measured against.
+`proving-ground/README.md` — that seed is the "real-shaped data" every case is measured against.
 
 > **Parallel runs:** when many executors prove cases at once, each owns a **unique** DB
 > (`PG_<testId>_<rand>`) created and dropped exactly the same `docker exec` way, and never touches
@@ -169,54 +168,55 @@ After a reset, re-establish the BEFORE state (deploy the current CREATEs + post-
 > **`self-test/PROTOCOL.md`** — and it honours survival rule 2 (leaked per-run DBs degrade the warm
 > container), so every executor reaps its own DB on exit.
 
-## The content-hash data oracle ("did the values actually change?")
+## The content-hash check ("did the values actually change?")
 
-When a Permissive publish proceeds past a Strict veto, you need to know **exactly what moved**.
-The oracle is a per-row `SHA2_256` over the row's full shape, combined **order-independently** so
-row order is irrelevant, with **NULL kept distinct from `''`**. Snapshot it **before** and
-**after** the Permissive publish; an unchanged total means no value changed. (Run it through the
-same `docker exec ... -Q` form.)
+When a Permissive publish proceeds past what the Strict publish blocks, exactly what moved must be
+established. The content-hash check is a per-row `SHA2_256` over the row's full shape, combined
+**order-independently** so row order is irrelevant, with **NULL kept distinct from `''`**. Snapshot
+it **before** and **after** the Permissive publish; an unchanged total means no value changed. (Run
+it through the same `docker exec ... -Q` form.)
 
 ```sql
 -- Content hash of a table, order-independent over rows.
 -- (SELECT x.* FOR XML RAW) serializes the full row shape (column names included),
 -- so a rename changes the hash BY DESIGN — that is correct, the diff is the proof.
 -- NULL stays distinct from '' because FOR XML RAW omits NULL attributes entirely.
+-- CORRECTED (proven live, SQL Server 2022): the per-row hash must be hoisted through
+-- CROSS APPLY — a subquery placed directly inside SUM fails with Msg 130.
 SELECT
   COUNT(*)                                            AS RowCount,
   CONVERT(VARBINARY(8000),
     SUM(CONVERT(BIGINT,
-      CONVERT(INT, SUBSTRING(
-        HASHBYTES('SHA2_256',
-          (SELECT x.* FOR XML RAW)
-        ), 1, 4))                                      -- 32-bit slice, summed order-independently
+      CONVERT(INT, SUBSTRING(h.hb, 1, 4))              -- 32-bit slice, summed order-independently
     ))
   )                                                   AS ContentDigest
-FROM dbo.Customer AS x;
+FROM dbo.Customer AS x
+CROSS APPLY (SELECT HASHBYTES('SHA2_256', (SELECT x.* FOR XML RAW)) AS hb) AS h;
 ```
 
 Run it once before the Permissive publish, once after, and compare `RowCount` + `ContentDigest`:
 
 - **digest unchanged** -> no value moved (the change was structural-only, or truly benign).
 - **digest changed** -> values moved; the rows that differ are exactly what
-  `GenerateSmartDefaults` stamped, or what truncated. **That is the row count for the magic line.**
+  `GenerateSmartDefaults` stamped, or what truncated. **That is the row count the finding states.**
 - **digest changed on a rename** -> expected and correct; the column name is part of the row shape.
 
-> The digest is a *change detector*, not a forensic diff: a changed digest tells you values moved
-> and how many rows; to see the specific old-vs-new values, query the affected rows directly
-> (e.g. `WHERE Email = '' ` after a smart-default stamp). Pair the digest with a targeted SELECT
-> when the developer needs the actual values, not just the count.
+> The digest is a *change detector*, not a forensic diff: a changed digest reports that values
+> moved and how many rows; the specific old-vs-new values come from querying the affected rows
+> directly (e.g. `WHERE Email = '' ` after a smart-default stamp). Pair the digest with a targeted
+> SELECT when the developer needs the actual values, not just the count.
 >
-> **The no-op redeploy case is the silent-proof:** publish an unchanged tree twice; the second run
+> **The no-op redeploy is the idempotency proof:** publish an unchanged tree twice; the second run
 > should produce **zero delta**, the guarded seed MERGE should report **0 rows**, and the digest
 > should be **identical** — and on a CDC-tracked table, CDC should capture **0 changes**. That
-> silence is the idempotency / CDC-silence guarantee; surface it as the strongest result, not a
-> non-event.
+> silence is the idempotency / CDC-silence guarantee, the strongest result this substrate produces,
+> not a non-event.
 
 ## Honest limits of this substrate
 
-- It is real-*shaped*, not real-*sized* — it cannot prove production-scale timing or blocking
-  (that stays a `>1M rows` Tier escalation, see `classify-mechanism`).
+- It is real-*shaped*, not real-*sized* — it cannot prove production-scale timing or blocking; at
+  large row counts (on the order of `>1M rows`) a change may block writes or run long, which is an
+  added-scrutiny finding this copy cannot settle (see `classify-mechanism`).
 - It is a single instance — concurrency, online index builds, and live-traffic locks are not
   modeled.
 - It holds one catalog — External Entities and cross-database / ETL / report consumers are out of
@@ -225,7 +225,7 @@ Run it once before the Permissive publish, once after, and compare `RowCount` + 
   prove the running application keeps working against the new shape (see `prove-on-dacpac`'s
   honest-limits section).
 - Point profiles and the `docker exec` sqlcmd at **`ProvingGround` (or a per-executor
-  `PG_<testId>_<rand>`) only**. Never at anything you cannot afford to drop.
+  `PG_<testId>_<rand>`) only** — never at anything that cannot be safely dropped.
 
 ## Hard rules
 
@@ -238,8 +238,8 @@ Run it once before the Permissive publish, once after, and compare `RowCount` + 
 
 ## Connector points
 
-- The throwaway substrate reuses the **existing** `scripts/warm-sql.sh` — the connector boundary
-  is that the proving ground lives only on that warm container and is disposable. See
+- The disposable substrate reuses the **existing** `scripts/warm-sql.sh` — the connector boundary
+  is that this database lives only on that warm container and is disposable. See
   `CONNECTORS.md`.
 - A future build could replace the hand-seeded `ProvingGround` with data shaped by the F# engine
-  from a real OutSystems catalog (same connection, same oracle). Highlighted, not wired.
+  from a real OutSystems catalog (same connection, same content-hash check). Highlighted, not wired.

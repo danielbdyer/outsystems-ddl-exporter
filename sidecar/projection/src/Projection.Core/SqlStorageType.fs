@@ -114,7 +114,9 @@ module SqlStorageType =
     /// the fallback equivalence checkable (`toPrimitiveType
     /// (ofPrimitiveType pt) = pt`). The values mirror the existing
     /// `SqlTypeCorrespondence.baseName` / `ScriptDomBuild` defaults:
-    /// `Integer → INT`, `DateTime → DATETIME2`, `Text → NVARCHAR(MAX)`.
+    /// `Integer → INT`, `DateTime → DATETIME` (WP-17(d) — the platform
+    /// legacy default, aligned with the storage-evidence lane),
+    /// `Text → NVARCHAR(MAX)`.
     let ofPrimitiveType (pt: PrimitiveType) : SqlStorageType =
         match pt with
         | Integer  -> SqlStorageType.Int
@@ -125,7 +127,10 @@ module SqlStorageType =
         | Decimal  -> SqlStorageType.Decimal (18, 0)
         | Text     -> SqlStorageType.NVarChar Max
         | Boolean  -> SqlStorageType.Bit
-        | DateTime -> SqlStorageType.DateTime2 None
+        // WP-17(d) (DECISIONS 2026-07-16; audit §5a): the evidence-less
+        // fallback is the platform legacy `DATETIME`, matching the
+        // storage lane — the silent `DATETIME2` upgrade is retired.
+        | DateTime -> SqlStorageType.DateTime
         | Date     -> SqlStorageType.Date
         | Time     -> SqlStorageType.Time None
         | Binary   -> SqlStorageType.VarBinary Max

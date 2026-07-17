@@ -1,5 +1,5 @@
 CREATE TABLE [dbo].[Heap] (
-    [LoggedAt] DATETIME2      NOT NULL,
+    [LoggedAt] DATETIME       NOT NULL,
     [Message]  NVARCHAR (500) NULL
 )
 

@@ -603,11 +603,11 @@ module ReadSide =
     /// strings via `JsonElement.GetRawText`. Both producers feed the
     /// same emitter formatter, keeping the IR canonical.
     ///
-    /// `null` / `DBNull` is encoded as the empty string — the V2 raw-form
-    /// NULL sentinel (per `RawValueCodec` / `SqlLiteral.ofRaw`). The
-    /// emitter renders empty for nullable columns as `NULL`; columns
-    /// not present in the row's Values map are also `NULL` by
-    /// omission.
+    /// WP-3 (F11): NULL is carried OUT-OF-BAND — the row loop maps
+    /// `IsDBNull` to `ValueNone` before any formatter runs, so this
+    /// formatter only ever sees non-null cells. The `isNullish -> ""`
+    /// arm below is defensive (a provider surfacing `DBNull` through
+    /// `GetValue` off the null-checked path), not a sentinel contract.
     let private formatRawValue (typ: PrimitiveType) (value: obj | null) : string =
         // Format rules flow through `RawValueCodec` so the V2 raw-
         // form contract is single-sourced across emit / parse /
@@ -626,7 +626,16 @@ module ReadSide =
             | Boolean ->
                 RawValueCodec.formatBoolean (System.Convert.ToBoolean v)
             | DateTime ->
-                RawValueCodec.formatDateTime (System.Convert.ToDateTime v)
+                // WP-17(b) (DECISIONS 2026-07-16) — a `datetimeoffset`
+                // column surfaces a boxed `DateTimeOffset`, which
+                // `Convert.ToDateTime` REFUSES (`DateTimeOffset` is not
+                // IConvertible-to-DateTime — the S2 readback throw).
+                // Faithful carriage: format the offset-bearing raw
+                // (offset preserved, never normalized); everything else
+                // keeps the offset-less canonical form.
+                match v with
+                | :? System.DateTimeOffset as dto -> RawValueCodec.formatDateTimeOffset dto
+                | _ -> RawValueCodec.formatDateTime (System.Convert.ToDateTime v)
             | Date ->
                 RawValueCodec.formatDate (System.Convert.ToDateTime v)
             | Time ->
@@ -653,7 +662,18 @@ module ReadSide =
                             (sprintf "ReadSide.Guid: unexpected runtime type %s" (other.GetType().FullName))
                 RawValueCodec.formatGuid guid
             | Decimal ->
-                System.Convert.ToDecimal(v).ToString(inv)
+                // WP-17(a) (DECISIONS 2026-07-16) — `float`/`real`
+                // columns surface boxed `double`/`single`;
+                // `Convert.ToDecimal` truncated to ~15 significant
+                // digits and OVERFLOWED above ≈7.9E28 (the S1 read
+                // loss). Faithful carriage: the IEEE round-trip forms
+                // (`G17`/`G9` — V1's exact formats) into the raw
+                // string; genuine decimal-family columns keep the
+                // decimal conversion.
+                match v with
+                | :? double as d -> d.ToString("G17", inv)
+                | :? single as s -> s.ToString("G9", inv)
+                | _ -> System.Convert.ToDecimal(v).ToString(inv)
             | Text ->
                 match v.ToString() with
                 | null -> ""
@@ -681,8 +701,8 @@ module ReadSide =
     /// Byte-identical output: every fast path mirrors `formatRawValue`'s
     /// exact `RawValueCodec` / invariant formatting; any unexpected
     /// runtime field type falls back to `formatRawValue` untouched.
-    /// NULL handling stays in the row loop (`IsDBNull` → the empty-string
-    /// sentinel) — formatters see non-null cells only.
+    /// NULL handling stays in the row loop (`IsDBNull` → `ValueNone`,
+    /// WP-3) — formatters see non-null cells only.
     let private typedCellFormatter
         (typ: PrimitiveType)
         (fieldType: System.Type)
@@ -885,11 +905,14 @@ module ReadSide =
                             return None
                         else
                             let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
-                            let cells = Array.zeroCreate<string> attrs.Length
+                            let cells = Array.zeroCreate<string voption> attrs.Length
                             for i in 0 .. attrs.Length - 1 do
                                 cells.[i] <-
-                                    if r.IsDBNull i then ""
-                                    else formatters.[i] r i
+                                    // WP-3 (F11): SQL NULL is `ValueNone`; a
+                                    // genuine empty string is `ValueSome ""` —
+                                    // the read side preserves the distinction.
+                                    if r.IsDBNull i then ValueNone
+                                    else ValueSome (formatters.[i] r i)
                             materializeTicks <-
                                 materializeTicks
                                 + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
@@ -1211,8 +1234,11 @@ module ReadSide =
                 let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
                 match Map.tryFind coord defaults with
                 | Some definition ->
+                    // `normalizeDefault` strips outer parens only — a reflected
+                    // `('')` arrives as the two-char text `''`, never the empty
+                    // raw, so the WP-3 option lift is shape-preserving here.
                     let normalized = PhysicalSchema.normalizeDefault definition
-                    { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
+                    { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type (Some normalized)) }
                 | None -> a)
         { k with Attributes = attrs }
 

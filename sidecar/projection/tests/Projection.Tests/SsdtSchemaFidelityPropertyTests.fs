@@ -506,7 +506,7 @@ let ``5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in C
     let valAttr =
         { Attribute.create valAttrKey (mkName "Val") Integer with
             Column = ColumnRealization.create ("VAL") (false) |> Result.value
-            DefaultValue = Some (SqlLiteral.ofRaw Integer "42")
+            DefaultValue = Some (SqlLiteral.ofRaw Integer (Some "42"))
             DefaultName  = constraintName
             IsMandatory  = true }
     let kind =

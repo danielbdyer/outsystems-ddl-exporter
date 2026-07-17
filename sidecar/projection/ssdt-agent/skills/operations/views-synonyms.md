@@ -1,25 +1,25 @@
 # Operations — Views & synonyms (FAMILY INDEX)
 
 > **This file is now an INDEX.** The op specifics live in the per-op skills under `../op/`; the
-> shared reasoning lives in `../_index/`. Nothing here restates a guard or a flip mechanism.
+> shared reasoning lives in `../_index/`. Nothing here restates a guard or the deploy-time specifics.
 > The AUTHORED-HERE backward-compat-view recipe (§17.8) has moved its full body into
 > `../op/compat-view/SKILL.md` with the AUTHORED-HERE notice preserved verbatim.
 
 **Family framing.** Views, synonyms, and their materialized cousins are the *indirection layer*.
-Most are benign **Pure Declarative** changes — a view is a saved SELECT with no data to lose. The
+Most are benign changes applied in place — a view is a saved SELECT with no data to lose. The
 danger here is rarely data loss; it is **stale shape** (a `SELECT *` view that silently drifts as
 its base changes), the **backward-compat view** that keeps an old entity name readable through a
-rename/split, and the **binding tax** of materialization. Name each view in terms of the entity it
+rename/split, and the **binding cost** of materialization. Name each view in terms of the entity it
 stands in for (an OutSystems "External Entity" / "Advanced Query" is often a view underneath).
 
 ## Ops in this family
 
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
-| create-view | `../op/create-view/SKILL.md` | a saved SELECT; M1/Tier1; **enumerate columns** — `SELECT *` is a latent defect (the SELECT-* trap) |
-| compat-view | `../op/compat-view/SKILL.md` | a view bearing the OLD name after a rename/split; M1 view inside a multi-PR program, Tier3; temporary, enumerated *(AUTHORED-HERE §17.8)* |
-| synonym | `../op/synonym/SKILL.md` | a runtime-resolved alias to an external object; M1/Tier1 (Tier3 external); target NOT validated at publish |
-| indexed-view | `../op/indexed-view/SKILL.md` | SCHEMABINDING + unique clustered index; stores data, binds base columns; flips to Multi-Phase as the base grows |
+| create-view | `../op/create-view/SKILL.md` | a saved SELECT; ships in place, no data touched, any team member can review; **enumerate columns** — `SELECT *` is a latent defect (the SELECT-* trap) |
+| compat-view | `../op/compat-view/SKILL.md` | a view bearing the OLD name after a rename/split; ships in place, but as one step of a multi-PR program a dev lead or an experienced developer should review it — the dependency scope reaches outside the dacpac, to consumers the model cannot see still using the old name; temporary, enumerated *(AUTHORED-HERE §17.8)* |
+| synonym | `../op/synonym/SKILL.md` | a runtime-resolved alias to an external object; ships in place, any team member can review one inside the project — a dev lead when it points outside it; target NOT validated at publish |
+| indexed-view | `../op/indexed-view/SKILL.md` | SCHEMABINDING + unique clustered index; stores data, binds base columns; flips to a staged, multi-release change as the base grows |
 
 ## Shared concerns for this family
 - **`../_index/identity-and-refactorlog/SKILL.md`** — the refactorlog `sp_rename` that makes a

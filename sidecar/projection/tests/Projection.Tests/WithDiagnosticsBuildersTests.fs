@@ -53,7 +53,7 @@ let ``Slice ζ: buildSetExtendedProperty on SchemaProperty returns Diagnostics w
 let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today`` () =
     let table = mkTable "dbo" "Widget"
     let pkLit : SqlLiteral =
-        SqlLiteral.ofRaw Integer "1"
+        SqlLiteral.ofRaw Integer (Some "1")
     let args : MergeBuildArgs =
         {
             Target = table
@@ -64,6 +64,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             CdcAware = false
             DeleteScope = None
             RowSource = MergeRowSource.InlineValues
+            CastCompareColumns = Map.empty
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -72,8 +73,8 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
 [<Fact>]
 let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries today`` () =
     let table = mkTable "dbo" "Widget"
-    let pkLit  : SqlLiteral = SqlLiteral.ofRaw Integer "1"
-    let setLit : SqlLiteral = SqlLiteral.ofRaw Text    "renamed"
+    let pkLit  : SqlLiteral = SqlLiteral.ofRaw Integer (Some "1")
+    let setLit : SqlLiteral = SqlLiteral.ofRaw Text    (Some "renamed")
     let args : UpdateBuildArgs =
         {
             Target = table
@@ -106,12 +107,13 @@ let private mergeArgs (deleteScope: DeleteScope option) : MergeBuildArgs =
         PkColumns   = [ "Id" ]
         UpdColumns  = [ "Tenant"; "Name" ]
         Rows        =
-            [ [ SqlLiteral.ofRaw Integer "1"
-                SqlLiteral.ofRaw Integer "7"
-                SqlLiteral.ofRaw Text    "a" ] ]
+            [ [ SqlLiteral.ofRaw Integer (Some "1")
+                SqlLiteral.ofRaw Integer (Some "7")
+                SqlLiteral.ofRaw Text    (Some "a") ] ]
         CdcAware    = false
         DeleteScope = deleteScope
         RowSource   = MergeRowSource.InlineValues
+        CastCompareColumns = Map.empty
     }
 
 // ---------------------------------------------------------------------------
@@ -164,8 +166,8 @@ let ``Statement.Merge renders identically to buildMergeStatement (DU dispatch is
 let ``Statement.Update renders identically to buildUpdateStatement (DU dispatch is faithful)`` () =
     let args : UpdateBuildArgs =
         { Target     = mkTable "dbo" "Widget"
-          SetCells   = [ "Name", SqlLiteral.ofRaw Text "a" ]
-          WhereCells = [ "Id", SqlLiteral.ofRaw Integer "1" ]
+          SetCells   = [ "Name", SqlLiteral.ofRaw Text (Some "a") ]
+          WhereCells = [ "Id", SqlLiteral.ofRaw Integer (Some "1") ]
           CdcAware   = false }
     let direct =
         ScriptDomGenerate.generateOne
@@ -202,7 +204,7 @@ let ``buildCreateTempTable: a nullable, constraint-free staging heap with target
 
 [<Fact>]
 let ``buildInsertBatches: chunks at 1000 rows and targets the #temp`` () =
-    let rows = [ for i in 1 .. 2500 -> [ SqlLiteral.ofRaw Integer (string i) ] ]
+    let rows = [ for i in 1 .. 2500 -> [ SqlLiteral.ofRaw Integer (Some (string i)) ] ]
     let stmts = ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] rows
     Assert.Equal(3, List.length stmts)            // 1000 + 1000 + 500
     let sql = renderStmt (List.head stmts)
@@ -337,7 +339,7 @@ let ``AC-D7/AC-G4: DeleteScope=None is byte-identical to the pre-scope MERGE out
 [<Fact>]
 let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATCHED BY SOURCE THEN DELETE arm`` () =
     let scope : DeleteScope =
-        DeleteScope.create [ ("Tenant", SqlLiteral.ofRaw Integer "7") ] |> Option.get
+        DeleteScope.create [ ("Tenant", SqlLiteral.ofRaw Integer (Some "7")) ] |> Option.get
     let rendered = renderMerge (mergeArgs (Some scope))
     // Exactly one DELETE arm.
     let occurrences =
@@ -353,8 +355,8 @@ let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATC
 let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
     let scope : DeleteScope =
         DeleteScope.create
-            [ ("Tenant", SqlLiteral.ofRaw Integer "7")
-              ("Name",   SqlLiteral.ofRaw Text    "a") ]
+            [ ("Tenant", SqlLiteral.ofRaw Integer (Some "7"))
+              ("Name",   SqlLiteral.ofRaw Text    (Some "a")) ]
         |> Option.get
     let rendered = renderMerge (mergeArgs (Some scope))
     // The generator wraps long predicates with continuation-indentation;
@@ -364,3 +366,34 @@ let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
     Assert.Contains(
         "WHEN NOT MATCHED BY SOURCE AND [Target].[Tenant] = 7 AND [Target].[Name] = N'a' THEN DELETE",
         normalized)
+
+// ---------------------------------------------------------------------------
+// WP-17(c) (DECISIONS 2026-07-16) — an `xml` column has no `<>` operator; its
+// change-detect compare CASTs both sides to NVARCHAR(MAX) (content-level).
+// Without the guard, a CDC-enabled xml-bearing kind emitted an uncompilable
+// `Target.[c] <> Source.[c]` — the S5 latent MERGE error.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17c: a cast-compare column's change-detect arm CASTs both sides; plain columns stay bare`` () =
+    let args : MergeBuildArgs =
+        {
+            Target      = mkTable "dbo" "Doc"
+            AllColumns  = [ "Id"; "Payload"; "Name" ]
+            PkColumns   = [ "Id" ]
+            UpdColumns  = [ "Payload"; "Name" ]
+            Rows        =
+                [ [ SqlLiteral.ofRaw Integer (Some "1")
+                    SqlLiteral.ofRaw Text (Some "<a/>")
+                    SqlLiteral.ofRaw Text (Some "x") ] ]
+            CdcAware    = true
+            DeleteScope = None
+            RowSource   = MergeRowSource.InlineValues
+            CastCompareColumns = Map.ofList [ ("Payload", CastToNVarCharMax) ]
+        }
+    let sql = renderMerge args
+    Assert.Contains("CAST ([Target].[Payload] AS NVARCHAR (MAX)) <> CAST ([Source].[Payload] AS NVARCHAR (MAX))", sql)
+    Assert.Contains("[Target].[Name] <> [Source].[Name]", sql)
+    Assert.DoesNotContain("[Target].[Payload] <> [Source].[Payload]", sql)
+    // The null arms stay bare (IS NULL is legal on xml).
+    Assert.Contains("[Target].[Payload] IS NULL", sql)

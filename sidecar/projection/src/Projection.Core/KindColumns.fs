@@ -99,12 +99,28 @@ module KindColumns =
         matchAttributes deferred k
         |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
+    /// The OutSystems single-space sentinel (V1 parity, WP-3/F11):
+    /// Service Studio cannot author NULL into a static entity, so the
+    /// platform stores a single space `" "` in a NULLABLE Text attribute
+    /// to mean "no value" (V1: `StaticEntitySeedScriptGenerator
+    /// .NormalizeValue` — nullable-only, exactly one ordinal space;
+    /// `''` and multi-space values pass through untouched). The
+    /// STATIC-SEED emission lanes apply this rule — deliberately,
+    /// documented here — so the platform's noise-space seeds as NULL;
+    /// the transfer/reflection lanes NEVER apply it (they mirror stored
+    /// reality byte-for-byte), and the migration-dependency lane never
+    /// applies it (operator-authored cells mean what they say).
+    let outSystemsSpaceSentinel (a: Attribute) (cell: string option) : string option =
+        match cell with
+        | Some " " when a.Type = PrimitiveType.Text && not a.IsMandatory -> None
+        | other -> other
+
     /// Project a raw `StaticRow` (the `DataLoadPlan`'s converged row
     /// carrier — both the static and migration row shapes fold into it)
     /// into the typed `Map<Name, SqlLiteral>` shape `DataInsertRow.Values`
-    /// expects (slice κ pillar-1 lift). Absent values default to the
-    /// empty raw (`""` → NULL per the `RawValueCodec` contract); unknown
-    /// columns default to `PrimitiveType.Text`.
+    /// expects (slice κ pillar-1 lift). Absent and NULL cells project as
+    /// `NullLit` (WP-3: `StaticRow.value` flattens both to `None`);
+    /// unknown columns default to `PrimitiveType.Text`.
     let rowToTypedValues
         (typeLookup: Map<Name, PrimitiveType>)
         (attributes: Attribute list)
@@ -112,13 +128,10 @@ module KindColumns =
         : Map<Name, SqlLiteral> =
         attributes
         |> List.map (fun a ->
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
             let typ =
                 Map.tryFind a.Name typeLookup
                 |> Option.defaultValue PrimitiveType.Text
-            a.Name, SqlLiteral.ofRaw typ raw)
+            a.Name, SqlLiteral.ofRaw typ (StaticRow.value a.Name row))
         |> Map.ofList
 
     /// Positional sibling of `rowToTypedValues` — project a typed-Values
@@ -136,7 +149,8 @@ module KindColumns =
         : Map<Name, SqlLiteral> =
         attributes
         |> List.mapi (fun idx a ->
-            let raw = if idx < q.Cells.Length then q.Cells.[idx] else ""
+            let raw =
+                if idx < q.Cells.Length then ValueOption.toOption q.Cells.[idx] else None
             let typ =
                 Map.tryFind a.Name typeLookup
                 |> Option.defaultValue PrimitiveType.Text

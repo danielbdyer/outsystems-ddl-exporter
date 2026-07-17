@@ -1,6 +1,6 @@
 CREATE TABLE [dbo].[EnterpriseCustomerRelationshipManagementProfileSnapshot] (
     [Id] INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_EnterpriseCustomerRelationshipManagementProfileSnapshot]
+        CONSTRAINT [PK_EnterpriseCustomerRelationshipManagementProfileSnapshot_Id]
             PRIMARY KEY CLUSTERED
 )
 

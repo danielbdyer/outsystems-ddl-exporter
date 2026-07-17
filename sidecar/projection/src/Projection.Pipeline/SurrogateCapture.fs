@@ -110,13 +110,13 @@ module SurrogateCapture =
     /// S16: once per KIND when the caller stages once per kind), then
     /// applies per row (a Map lookup for `StaticRow`, an ordinal index
     /// for `RowQuantum`).
-    let private captureCellsStaged (getterOf: Attribute -> ('row -> string)) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) : 'row list -> CellValue list list =
+    let private captureCellsStaged (getterOf: Attribute -> ('row -> string option)) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) : 'row list -> CellValue list list =
         let idGet = getterOf identityAttr
         let colGets =
             insertCols
             |> List.map (fun a ->
                 let get =
-                    if Set.contains a.Name deferred then (fun _ -> "")
+                    if Set.contains a.Name deferred then (fun _ -> None)
                     else getterOf a
                 ColumnRealization.columnNameText a.Column, a.Type, get)
         fun rows ->
@@ -243,7 +243,7 @@ module SurrogateCapture =
     /// the source-key getter (Q3 — resolved once per chunk by
     /// `captureChunk`, generic over the row carrier).
     let rec private rowwiseChunk
-        (sink: SqlConnection) (kind: Kind) (idGet: 'row -> string) (litGets: (Attribute * ('row -> string)) list)
+        (sink: SqlConnection) (kind: Kind) (idGet: 'row -> string) (litGets: (Attribute * ('row -> string option)) list)
         (rows: 'row list)
         (acc: (string * string) list)
         : Task<(string * string) list> =
@@ -281,16 +281,18 @@ module SurrogateCapture =
     let captureChunkStaged
         (sink: SqlConnection)
         (kind: Kind)
-        (getterOf: Attribute -> ('row -> string))
+        (getterOf: Attribute -> ('row -> string option))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (staged: CaptureKindSql)
         : CaptureLane -> 'row list -> Task<(string * string) list> =
-        let idGet = getterOf identityAttr
+        // The (src → assigned) pair text stays flattened — identity source
+        // keys are non-null; the journal/pair-map bytes stay stable.
+        let idGet = fun row -> getterOf identityAttr row |> Option.defaultValue ""
         let litGets =
             staged.InsertCols
             |> List.map (fun a ->
-                a, (if Set.contains a.Name deferred then (fun _ -> "") else getterOf a))
+                a, (if Set.contains a.Name deferred then (fun _ -> None) else getterOf a))
         let stagedCells = captureCellsStaged getterOf identityAttr staged.InsertCols deferred
         fun lane rows ->
             task {
@@ -314,7 +316,7 @@ module SurrogateCapture =
     let captureChunk
         (sink: SqlConnection)
         (kind: Kind)
-        (getterOf: Attribute -> ('row -> string))
+        (getterOf: Attribute -> ('row -> string option))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (lane: CaptureLane)
@@ -339,7 +341,7 @@ module SurrogateCapture =
         (sink: SqlConnection)
         (kind: Kind)
         (kindKey: SsKey)
-        (getterOf: Attribute -> ('row -> string))
+        (getterOf: Attribute -> ('row -> string option))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (staged: CaptureKindSql)
@@ -376,7 +378,7 @@ module SurrogateCapture =
         (sink: SqlConnection)
         (kind: Kind)
         (kindKey: SsKey)
-        (getterOf: Attribute -> ('row -> string))
+        (getterOf: Attribute -> ('row -> string option))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (preferred: CaptureLane)

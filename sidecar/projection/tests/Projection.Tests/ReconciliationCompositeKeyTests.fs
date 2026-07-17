@@ -20,7 +20,7 @@ let private personKey = mkKey [ "Person" ]
 
 let private row (rowTag: string) (id: string) (first: string) (last: string) : StaticRow =
     { Identifier = mkKey [ "Person"; "Row"; rowTag ]
-      Values = Map.ofList [ mkName "ID", id; mkName "FIRST", first; mkName "LAST", last ] }
+      Values = StaticRow.presentValues [ mkName "ID", id; mkName "FIRST", first; mkName "LAST", last ] }
 
 [<Fact>]
 let ``MatchByColumns reuses the sink surrogate on a composite natural-key match`` () =

@@ -142,7 +142,7 @@ let private richCatalog () : Catalog =
 
     let staticPop : StaticRow =
         { Identifier = key 99
-          Values = Map.ofList [ nm "Id", "1"; nm "FullName", "seed" ] }
+          Values = StaticRow.presentValues [ nm "Id", "1"; nm "FullName", "seed" ] }
 
     let selfRef =
         { Reference.create (key 14) (nm "SponsorFk") selfFkAttr patronKey with
@@ -286,9 +286,35 @@ let private allLiterals : SqlLiteral list =
       SqlLiteral.BooleanLit true
       SqlLiteral.BooleanLit false
       SqlLiteral.TextLit "'hello'"
-      SqlLiteral.TemporalLit "'2026-01-01'"
+      // WP-17(d) — the three category-bearing temporal variants.
+      SqlLiteral.DateTimeLit "2026-01-01 08:30:00.0000000"
+      SqlLiteral.DateTimeOffsetLit "2026-01-01 08:30:00.0000000 -03:00"
+      SqlLiteral.DateLit "2026-01-01"
+      SqlLiteral.TimeLit "08:30:00"
       SqlLiteral.GuidLit "'00000000-0000-0000-0000-000000000000'"
       SqlLiteral.BinaryLit "0xDEADBEEF" ]
+
+[<Fact>]
+let ``a pre-WP-17 category-blind "TemporalLit" still READS, classified by raw shape`` () =
+    // Replay semantics: v-old artifacts wrote one "TemporalLit" kind; the
+    // reader classifies by the canonical raw shape (space ⇒ DateTime,
+    // colon ⇒ Time, else Date) — no re-record, no version refusal.
+    let readBack (rawJson: string) : Catalog =
+        match CatalogCodec.deserialize rawJson with
+        | Ok c -> c
+        | Error es -> failwithf "legacy read failed: %A" es
+    let legacyOf (value: string) : string =
+        let a = { baseAttr () with DefaultValue = Some (SqlLiteral.DateLit "1900-01-01") }
+        let modern = CatalogCodec.serialize (catalogOf (kindOfAttr a))
+        // Token-wise rewrite (indentation-agnostic): the fixture carries
+        // exactly one literal, so both tokens are unique in the document.
+        modern.Replace("\"DateLit\"", "\"TemporalLit\"").Replace("\"1900-01-01\"", sprintf "\"%s\"" value)
+    let defaultOf (c: Catalog) : SqlLiteral =
+        (Catalog.allKinds c |> List.head).Attributes
+        |> List.pick (fun a -> a.DefaultValue)
+    Assert.Equal<SqlLiteral>(SqlLiteral.DateTimeLit "2026-01-01 08:30:00.0000000", defaultOf (readBack (legacyOf "2026-01-01 08:30:00.0000000")))
+    Assert.Equal<SqlLiteral>(SqlLiteral.TimeLit "08:30:00", defaultOf (readBack (legacyOf "08:30:00")))
+    Assert.Equal<SqlLiteral>(SqlLiteral.DateLit "2026-01-01", defaultOf (readBack (legacyOf "2026-01-01")))
 
 [<Fact>]
 let ``every SqlLiteral round-trips as a DEFAULT`` () =
@@ -297,7 +323,7 @@ let ``every SqlLiteral round-trips as a DEFAULT`` () =
         assertRoundTrips (sprintf "SqlLiteral %A" lit) (catalogOf (kindOfAttr a))
 
 let private allModalityMarks : ModalityMark list =
-    [ ModalityMark.Static [ { Identifier = key 5; Values = Map.ofList [ nm "Col", "v" ] } ]
+    [ ModalityMark.Static [ { Identifier = key 5; Values = StaticRow.presentValues [ nm "Col", "v" ] } ]
       ModalityMark.Static []
       ModalityMark.TenantScoped
       ModalityMark.SoftDeletable

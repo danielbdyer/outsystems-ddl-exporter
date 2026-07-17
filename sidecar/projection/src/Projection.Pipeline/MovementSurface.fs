@@ -257,7 +257,10 @@ type ReadinessSpec =
       /// to the interim relaxation. `None` = the engine's named default
       /// (`Estate.repairBandDefault`); consumed by `check estate` in the
       /// same wave that parses it (A44 — never an inert key).
-      RepairBand : int64 option }
+      RepairBand : int64 option
+      /// Per-entity repair bands (`readiness.estate.repairBandByEntity`) —
+      /// logical entity name → band, overriding `RepairBand` for that entity.
+      RepairBandByEntity : Map<string, int64> }
 
 type ProjectionConfig =
     {
@@ -477,9 +480,25 @@ module ProjectionConfig =
                     | true, _ -> failwith "readiness.estate.repairBand must be a 64-bit integer."
                     | _ -> None
                 | _ -> None
+            // Per-entity bands (`estate.repairBandByEntity`): an object mapping
+            // logical entity name → band. Absent = empty (the default governs).
+            let repairBandByEntity =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "repairBandByEntity" with
+                    | true, m when m.ValueKind = JsonValueKind.Object ->
+                        m.EnumerateObject()
+                        |> Seq.map (fun p ->
+                            let mutable n = 0L
+                            if p.Value.ValueKind = JsonValueKind.Number && p.Value.TryGetInt64(&n) then p.Name, n
+                            else failwith (sprintf "readiness.estate.repairBandByEntity['%s'] must be a 64-bit integer." p.Name))
+                        |> Map.ofSeq
+                    | true, _ -> failwith "readiness.estate.repairBandByEntity must map each entity name to a 64-bit integer."
+                    | _ -> Map.empty
+                | _ -> Map.empty
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1402,12 +1421,15 @@ module ProjectionConfig =
                  let a = JsonArray()
                  for c in rs.Confirm do a.Add(JsonValue.Create c)
                  o.["confirm"] <- a)
-             (match rs.RepairBand with
-              | Some band ->
-                  let e = JsonObject()
-                  e.["repairBand"] <- JsonValue.Create band
-                  o.["estate"] <- e
-              | None -> ())
+             (let e = JsonObject()
+              (match rs.RepairBand with
+               | Some band -> e.["repairBand"] <- JsonValue.Create band
+               | None -> ())
+              if not (Map.isEmpty rs.RepairBandByEntity) then
+                  let m = JsonObject()
+                  for KeyValue(entity, band) in rs.RepairBandByEntity do m.[entity] <- JsonValue.Create band
+                  e.["repairBandByEntity"] <- m
+              if e.Count > 0 then o.["estate"] <- e)
              root.["readiness"] <- o
          | None -> ())
         root
@@ -2278,16 +2300,22 @@ module Command =
                         let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
-            | "estate" :: _ ->
-                // THE ESTATE INSTRUMENT (CHAPTER_ESTATE_OPEN.md; DECISIONS
-                // 2026-07-15) — the zero-flag contract: environments from
+            | ("environments" | "estate") :: _ ->
+                // THE ENVIRONMENTS INSTRUMENT (CHAPTER_ESTATE_OPEN.md; DECISIONS
+                // 2026-07-15) — `environments` is the verb; `estate` stays a
+                // back-compat alias (config-primary doctrine: never deprecate a
+                // shipped CLI surface). The zero-flag contract: environments from
                 // `readiness.confirm`, the target from `readiness.schema`
                 // (`--against model` selects the authored model instead; the
                 // run states which basis it used). Every named environment is
                 // required — a non-direct or unknown one is a NAMED refusal.
                 match cfg.Readiness with
                 | None ->
-                    PlanAction.Refused (2, err "cli.check.estateNoBlock" "projection check estate: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                    PlanAction.Refused (2, err "cli.check.estateNoBlock" "projection check environments: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs when List.isEmpty rs.Confirm ->
+                    // A check over zero environments verifies nothing; a green
+                    // verdict there would read as "clean". Refuse by name.
+                    PlanAction.Refused (2, err "cli.check.estateNoConfirm" "projection check environments: readiness.confirm is empty — name the environments to compare (e.g. \"confirm\": [\"cloud-dev\", \"cloud-qa\", \"cloud-uat\"]).")
                 | Some rs ->
                     let refOf (envName: string) : Result<string * string> =
                         match Map.tryFind envName cfg.Environments with
@@ -2300,7 +2328,7 @@ module Command =
                         if valueOf "--against" = Some "model" then
                             match (cfg.ModelOssys |> Option.orElse cfg.Shaping.Model.Ossys), cfg.Model with
                             | None, None ->
-                                Result.failureOf (err "cli.check.estateNoModel" "projection check estate --against model: no authored model is configured (set model.env / model.ossys, or model).")
+                                Result.failureOf (err "cli.check.estateNoModel" "projection check environments --against model: no authored model is configured (set model.env / model.ossys, or model).")
                             | ossys, file -> Result.success ("model", EstateTargetSource.AuthoredModel (ossys, file))
                         else
                             refOf rs.Schema
@@ -2329,9 +2357,9 @@ module Command =
                     let evidence : Result<EstateEvidenceMode> =
                         match offline, refreshRequested, unknownRefreshEnv with
                         | true, true, _ ->
-                            Result.failureOf (err "cli.check.estateEvidenceConflict" "projection check estate: --refresh and --offline contradict — refresh probes and re-captures; offline forbids the probe. Choose one.")
+                            Result.failureOf (err "cli.check.estateEvidenceConflict" "projection check environments: --refresh and --offline contradict — refresh probes and re-captures; offline forbids the probe. Choose one.")
                         | _, true, Some env ->
-                            Result.failureOf (err "cli.check.estateRefreshUnknownEnv" (sprintf "projection check estate: --refresh names '%s', which is not in readiness.confirm." env))
+                            Result.failureOf (err "cli.check.estateRefreshUnknownEnv" (sprintf "projection check environments: --refresh names '%s', which is not in readiness.confirm." env))
                         | true, false, _ -> Result.success EstateEvidenceMode.Offline
                         | false, true, None -> Result.success (EstateEvidenceMode.Refresh refreshEnvs)
                         | false, false, _ -> Result.success EstateEvidenceMode.FingerprintGated
@@ -2343,7 +2371,7 @@ module Command =
                     | Error (e :: _), _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
                     | Error (e :: _), _, _ -> PlanAction.Refused (6, e)
                     | Error [], _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
-                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check estate: the evidence flags did not resolve.")
+                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
                     | Ok _, Some e, _ -> PlanAction.Refused (6, e)
                     | Ok (label, source), None, Ok evidenceMode ->
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
@@ -2354,6 +2382,7 @@ module Command =
                               AsJson      = (valueOf "--format" = Some "json")
                               Evidence    = evidenceMode
                               RepairBand  = rs.RepairBand
+                              RepairBandByEntity = rs.RepairBandByEntity
                               Tightening  = cfg.Shaping.Policy.Tightening }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with

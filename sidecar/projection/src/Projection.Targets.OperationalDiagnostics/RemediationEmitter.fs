@@ -387,6 +387,14 @@ module RemediationEmitter =
     /// grammar and the artifact stitching.
     type EstateBlock =
         {
+            /// The readable label the block leads with — `<subject> (<phrase>)`,
+            /// e.g. `Order.CustomerId (orphan references)` (the board lever
+            /// names the same label, so the two locate each other in plain
+            /// words).
+            Title     : string
+            /// The cross-artifact machine key (the finding's token on the
+            /// board and in estate.json) — carried as a searchable comment
+            /// beneath the label, never the operator's headline.
             BlockId   : string
             Statement : string
             Locate    : string
@@ -403,15 +411,17 @@ module RemediationEmitter =
         for line in headerLines do
             sb.AppendLine(line) |> ignore
         sb.AppendLine("-- The locating SELECT in each block is active; every repair is commented out.") |> ignore
-        sb.AppendLine("-- Read each block before uncommenting any destructive action; the block id is") |> ignore
-        sb.AppendLine("-- the finding's key on the estate board and in estate.json.") |> ignore
+        sb.AppendLine("-- Read each block before uncommenting any destructive action. Each block leads") |> ignore
+        sb.AppendLine("-- with its readable label; the key beneath it is the finding's token on the") |> ignore
+        sb.AppendLine("-- estate board and in estate.json.") |> ignore
         sb.AppendLine() |> ignore
         match blocks with
         | [] ->
             sb.AppendLine("-- No prepared repairs for this environment this run.") |> ignore
         | _ ->
             for block in blocks do
-                sb.AppendLine(System.String.Concat("-- block ", block.BlockId)) |> ignore
+                sb.AppendLine(System.String.Concat("-- Block: ", block.Title)) |> ignore
+                sb.AppendLine(System.String.Concat("-- key: ", block.BlockId)) |> ignore
                 sb.AppendLine(System.String.Concat("-- ", block.Statement)) |> ignore
                 sb.AppendLine(block.Locate) |> ignore
                 for repair in block.Repairs do

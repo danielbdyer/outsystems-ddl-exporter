@@ -214,7 +214,7 @@ let private samplePayload : Voice.Payload =
           "relax",         box 2
           "watch",         box 1
           "env",           box "uat"
-          "artifactPath",  box "estate.json"
+          "artifactPath",  box "environments.json"
           // the evidence-provenance notices' filled branches (wave A2.5)
           "age",           box "9"
           "kinds",         box 214

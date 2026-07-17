@@ -64,7 +64,8 @@ module EstateRemediation =
         let subject = keyText.Substring(keyText.IndexOf ':' + 1)
         let blockOf (locate: string) (repairs: string list) : RemediationEmitter.EstateBlock option =
             Some
-                { BlockId = keyText
+                { Title = FindingKey.readableLabel finding.Key
+                  BlockId = keyText
                   Statement = finding.Statement
                   Locate = locate
                   Repairs = repairs }
@@ -176,7 +177,7 @@ module EstateRemediation =
     /// The artifact file name — one convention, minted here and read by the
     /// lever copy and the board index alike.
     let fileNameFor (env: string) : string =
-        sprintf "estate.remediation.%s.sql" env
+        sprintf "environments.remediation.%s.sql" env
 
     /// The provenance header (RT-12 — the wrong-environment mistake is
     /// structurally detectable): environment label, server + database read
@@ -190,5 +191,5 @@ module EstateRemediation =
                 (if builder.DataSource = "" then "unknown" else builder.DataSource),
                 (if builder.InitialCatalog = "" then "unknown" else builder.InitialCatalog)
             with :? ArgumentException | :? FormatException -> "unknown", "unknown"
-        [ sprintf "-- projection:estate-remediation env=%s server=%s database=%s generated=%s"
+        [ sprintf "-- projection:environments-remediation env=%s server=%s database=%s generated=%s"
               env server database (generatedUtc.ToString "o") ]

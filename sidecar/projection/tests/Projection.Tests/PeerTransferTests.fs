@@ -470,7 +470,7 @@ let ``Transfer.plannedSqlPreview: child-first wipe (loadSet-scoped), then phase-
     let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle sinkCell).Value
     let rowOf (ident: string) (values: (string * string) list) : StaticRow =
         { Identifier = SsKey.synthesizedComposite "PEER_ROW" [ ident ] |> Result.value
-          Values     = values |> List.map (fun (k, v) -> nm k, v) |> Map.ofList }
+          Values     = values |> List.map (fun (k, v) -> nm k, v) |> StaticRow.presentValues }
     let rows =
         Map.ofList
             [ kKey "City",     [ rowOf "c1" [ "Id", "1"; "Name", "Lisbon" ] ]

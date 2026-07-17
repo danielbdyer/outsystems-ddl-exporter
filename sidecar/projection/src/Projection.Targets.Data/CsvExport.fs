@@ -29,11 +29,12 @@ open Projection.Core
 /// `StringWriter` — is sealed inside `csvText`, so callers observe
 /// referential transparency.
 ///
-/// NULL and the empty string are INDISTINGUISHABLE in the files: the read
-/// substrate collapses SQL NULL to "" before any renderer sees a value
-/// (`ReadSide` — the same convention `SqlLiteral.ofRaw` honors), so both
-/// render as an empty field. The runbook carries the caveat; this renderer
-/// cannot recover a distinction that no longer exists.
+/// NULL vs the empty string (WP-3, F11 — RFC 4180 has no native NULL, so
+/// the convention is DELIBERATE and carried in `export-manifest.json`):
+/// a SQL NULL renders as a BARE empty field (`a,,b`); a genuine empty
+/// string renders as a QUOTED empty field (`a,"",b`). Both are valid
+/// RFC 4180; parsers that don't care read both as empty, parsers that do
+/// can recover the distinction the read substrate now preserves.
 [<RequireQualifiedAccess>]
 module CsvExport =
 
@@ -58,13 +59,22 @@ module CsvExport =
         cfg
 
     /// The terminal seam: a cell matrix to RFC 4180 text through CsvHelper.
-    /// Pure at the boundary — same rows in, same string out.
-    let private csvText (rows: string list list) : string =
+    /// Pure at the boundary — same rows in, same string out. A `None` cell
+    /// is SQL NULL → a bare empty field (quoting suppressed); a `Some ""`
+    /// cell is a genuine empty string → a FORCE-QUOTED `""` field (the
+    /// manifest-documented convention); any other value rides the
+    /// configured quote policy.
+    let private csvText (rows: string option list list) : string =
         use sw = new System.IO.StringWriter()
         use csv = new CsvWriter(sw, configuration ())
         rows
         |> List.iter (fun cells ->
-            cells |> List.iter csv.WriteField
+            cells
+            |> List.iter (fun cell ->
+                match cell with
+                | None      -> csv.WriteField("", false)
+                | Some ""   -> csv.WriteField("", true)
+                | Some v    -> csv.WriteField v)
             csv.NextRecord())
         csv.Flush()
         sw.ToString()
@@ -76,17 +86,17 @@ module CsvExport =
         KindColumns.orderedColumnNames kind
 
     /// One record's cells: the writable attributes in canonical order; each
-    /// cell is the row's raw value for that attribute ("" where absent — the
-    /// NULL convention). No escaping here — cells are VALUES; the byte
-    /// layout is the writer's.
-    let rowCells (kind: Kind) (row: StaticRow) : string list =
+    /// cell is the row's raw cell for that attribute (`None` — NULL — where
+    /// absent). No escaping here — cells are VALUES; the byte layout is the
+    /// writer's.
+    let rowCells (kind: Kind) (row: StaticRow) : string option list =
         KindColumns.writableAttributes kind
-        |> List.map (fun a -> StaticRow.valueOrEmpty a.Name row)
+        |> List.map (fun a -> StaticRow.value a.Name row)
 
     /// The whole file: header then records, CRLF-terminated (the final
     /// record included — one canonical choice keeps the bytes deterministic).
     let tableCsv (kind: Kind) (rows: StaticRow list) : string =
-        headerCells kind :: List.map (rowCells kind) rows
+        (headerCells kind |> List.map Some) :: List.map (rowCells kind) rows
         |> csvText
 
     /// The file name: the physical table, `.csv` — `OSUSR_ABC_CUSTOMER.csv`.
@@ -148,6 +158,10 @@ module CsvExport =
             o.["provenance"] <- JsonValue.Create (provenanceLabel e.Provenance)
             o :> JsonNode
         let root = JsonObject()
+        // The NULL encoding contract, carried IN the manifest so external
+        // consumers need no side-channel: a bare empty field is SQL NULL;
+        // a quoted "" field is a genuine empty string (WP-3, F11).
+        root.["nullEncoding"] <- JsonValue.Create "bare empty field = NULL; quoted \"\" = empty string"
         root.["tables"] <-
             JsonArray(entries |> List.sortBy (fun e -> e.Module, e.Entity) |> List.map entryNode |> Array.ofList)
         root.ToJsonString(JsonSerializerOptions(WriteIndented = true))

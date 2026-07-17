@@ -1,25 +1,27 @@
 /*
-  dbo.OrderLine — the composite-PK + cascade blast-radius table (deep FK graph).
+  dbo.OrderLine — the composite-PK table with a cascade delete whose dependency scope is
+  visible (deep FK graph).
 
   CREATE-only schema item. Child of dbo.[Order]. The seed plants 2-3 lines per Order so the
   Order -> OrderLine chain has real depth: a CASCADE delete rule change on Order.CustomerId (or on
-  the OrderLine->Order FK) has a VISIBLE blast radius, and orphan/cascade proofs have children to
-  act on.
+  the OrderLine->Order FK) has a visible dependency scope — what else the delete touches — and
+  orphan/cascade proofs have children to act on.
 
-  PARALLEL EXECUTORS — READ FIRST: do NOT edit this authored file in place. Copy the tree, publish
-  to a UNIQUE database per `../self-test/PROTOCOL.md`.
+  PARALLEL EXECUTORS — READ FIRST: do not edit this authored file in place. Copy the tree, publish
+  to a unique database per `../self-test/PROTOCOL.md`.
 
   WHAT THIS TABLE UNLOCKS
   -----------------------
-  - define-pk COMPOSITE (KEY-01): the natural key is (OrderId, LineNumber), not the surrogate Id.
-    Proving a composite PK on populated data is a claim about UNIQUENESS of the pair (a duplicate
-    pair vetoes the PK build) — see skills/_index/constraint-is-a-claim/ and skills/op/define-pk/.
-    A surrogate Id IDENTITY is present so the table is addressable while the composite PK is proven.
-  - change-delete-rule / cascade (KEY-04): Order -> OrderLine is the chain whose CASCADE makes the
-    delete blast radius visible in the delta. See skills/op/change-delete-rule/.
+  - define-pk composite (KEY-01): the natural key is (OrderId, LineNumber), not the surrogate Id.
+    Proving a composite PK on populated data is a claim about the uniqueness of the pair: a
+    duplicate pair blocks the PK build — see skills/_index/constraint-is-a-claim/ and
+    skills/op/define-pk/. A surrogate Id IDENTITY is present so the table is addressable while the
+    composite PK is proven.
+  - change-delete-rule / cascade (KEY-04): Order -> OrderLine is the chain whose CASCADE makes a
+    delete's dependency scope visible in the delta. See skills/op/change-delete-rule/.
   - FK graph depth for cascade/orphan proofs across keys-and-refs.
 
-  The OrderLine -> Order FK is intentionally NOT declared (declaring it is a create-fk proof).
+  The OrderLine -> Order FK is intentionally not declared (declaring it is a create-fk proof).
   Parents (Order) seed before this child.
 
   UNLOCKS self-test ids: KEY-01 (define-pk composite), KEY-04 (change-delete-rule cascade chain).

@@ -93,7 +93,7 @@ let private isDerived (key: SsKey) : bool =
     | _ -> false
 
 let private fkPolicy (enableCreation: bool) : Policy =
-    let fkCfg = ForeignKeyTighteningConfig.create enableCreation true true false true
+    let fkCfg = ForeignKeyTighteningConfig.create enableCreation true true
     { Policy.empty with
         Tightening = { Interventions = [ TighteningIntervention.ForeignKey ("dr-fk", fkCfg) ] } }
 
@@ -253,6 +253,47 @@ let ``source-backed references decide EnforceConstraint(DatabaseConstraintPresen
             d.Outcome))
 
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// WP-1c(ii) (DECISIONS 2026-07-16) — the mandatory evidence-gated eject
+// posture. Under the foreignKey intervention with NO profile evidence, a
+// logical-only reference resolves EvidenceMissing → DoNotEnforce and is
+// WITHHELD (V1-strict, allowNoCheckCreation=false); a source-backed
+// reference re-emits via the DatabaseConstraintPresent carve-out. The
+// emission is exercised through the chain's real DecisionOverlay (the
+// empty-overlay `emittedFks` cannot witness a drop).
+// ---------------------------------------------------------------------
+
+/// FK defs emitted from a catalog run through the full chain under `policy`
+/// + `profile`, applying the chain's real decision overlay (gating).
+let private gatedFks (policy: Policy) (profile: Profile) (catalog: Catalog) : ForeignKeyDef list =
+    let chain = RegisteredTransforms.allChainStepsFor policy profile
+    let state = LineageDiagnostics.payload (PassChainAdapter.compose chain (ComposeState.initial catalog))
+    let overlay = DecisionOverlay.ofComposeState state
+    SsdtDdlEmitter.statementsWith overlay state.Catalog
+    |> Seq.collect (function
+        | Statement.CreateTable (_, _, _, fks, _, _) -> Seq.ofList fks
+        | _ -> Seq.empty)
+    |> List.ofSeq
+
+/// The V1-strict eject intervention (evidence-gated; orphans withhold).
+let private ejectFkPolicy : Policy =
+    let fkCfg = ForeignKeyTighteningConfig.create true false false  // enable / no cross-schema / no NOCHECK
+    { Policy.empty with
+        Tightening = { Interventions = [ TighteningIntervention.ForeignKey ("eject-fks", fkCfg) ] } }
+
+[<Fact>]
+let ``WP-1c(ii): logical-only references are WITHHELD under the gated intervention with no profile evidence`` () =
+    // corporateShape false _ ⇒ HasDbConstraint=false (logical-only). No profile ⇒
+    // EvidenceMissing ⇒ withheld. No FK reaches the emitted DDL.
+    Assert.Empty (gatedFks ejectFkPolicy Profile.empty (corporateShape false true))
+
+[<Fact>]
+let ``WP-1c(ii): source-backed references re-emit under the gated intervention (DatabaseConstraintPresent carve-out)`` () =
+    // corporateShape true _ ⇒ HasDbConstraint=true (source-backed). The carve-out
+    // enforces BEFORE and REGARDLESS of the evidence gate: both forward FKs emit.
+    let fks = gatedFks ejectFkPolicy Profile.empty (corporateShape true true)
+    Assert.Equal(2, List.length fks)
+
 // WP1 — the FK-name collision tripwire (named, never a silent dedupe).
 // ---------------------------------------------------------------------
 
@@ -292,6 +333,57 @@ let ``FK-name collision tripwire: schema-scoped name overlap surfaces one Error 
 let ``FK-name collision tripwire is silent on the post-closure corporate shape (the invariant the exclusion restores)`` () =
     let catalog = closed (corporateShape true true)
     Assert.Empty (SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics DecisionOverlay.empty catalog)
+
+// ---------------------------------------------------------------------
+// WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision tripwire. Every
+// kind emits one CREATE TABLE at its schema-qualified (schema, table); two
+// kinds resolving to the same one would emit duplicate CREATE TABLEs (a
+// DacFx build failure across modules, a silent last-wins within one). One
+// Error per participating kind, never a silent last-win. Mirror of the
+// FK-name tripwire above (packet H7).
+// ---------------------------------------------------------------------
+
+/// Two kinds (distinct SsKeys) resolving to the same physical (dbo, Customer),
+/// each in its own module — the cross-module duplicate-entity shape.
+let private twoCustomerModules () : Catalog =
+    let a = Kind.create (kkey "A.Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "A.Customer.Id") "Id" true ]
+    let b = Kind.create (kkey "B.Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "B.Customer.Id") "Id" true ]
+    match Catalog.create
+              [ { SsKey = kkey "ModA"; Name = nm "ModA"; Kinds = [ a ]; IsActive = true; ExtendedProperties = [] }
+                { SsKey = kkey "ModB"; Name = nm "ModB"; Kinds = [ b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+    | Ok cat -> cat
+    | Error e -> failwithf "catalog %A" e
+
+[<Fact>]
+let ``Table-name collision tripwire: two kinds at the same (schema, table) surface one Error per participating kind`` () =
+    let diags = SsdtDdlEmitter.tableNameCollisionDiagnostics (twoCustomerModules ())
+    Assert.Equal(2, List.length diags)
+    Assert.All(diags, fun d ->
+        Assert.Equal<string>("emit.ssdt.table.nameCollision", d.Code)
+        Assert.Equal(DiagnosticSeverity.Error, d.Severity)
+        Assert.Equal<string option>(Some "dbo", Map.tryFind "schema" d.Metadata)
+        Assert.Equal<string option>(Some "Customer", Map.tryFind "table" d.Metadata))
+
+[<Fact>]
+let ``Table-name collision tripwire: a same-module duplicate (silent last-wins today) is named, not swallowed`` () =
+    // Two distinct kinds at (dbo, Customer) inside ONE module — the shared
+    // Modules/<Module>/dbo.Customer.sql file would silently last-win.
+    let a = Kind.create (kkey "Customer") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "Customer.Id") "Id" true ]
+    let b = Kind.create (kkey "CustomerDup") (nm "Customer") (mkTableId "dbo" "Customer")
+                [ mkAttr (akey "CustomerDup.Id") "Id" true ]
+    let catalog =
+        match Catalog.create
+                  [ { SsKey = kkey "Mod"; Name = nm "Mod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with
+        | Ok cat -> cat
+        | Error e -> failwithf "catalog %A" e
+    Assert.Equal(2, List.length (SsdtDdlEmitter.tableNameCollisionDiagnostics catalog))
+
+[<Fact>]
+let ``Table-name collision tripwire is silent when every kind has a distinct (schema, table)`` () =
+    Assert.Empty (SsdtDdlEmitter.tableNameCollisionDiagnostics (corporateShape true true))
 
 // ---------------------------------------------------------------------
 // Slice 3b (DECISIONS 2026-06-13) — the identifier-length budget for

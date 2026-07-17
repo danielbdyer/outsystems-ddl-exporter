@@ -107,7 +107,7 @@ let private cfg = SyntheticConfig.defaultConfig
 // Helper: a kind's generated rows' values for one attribute Name.
 let private valuesOf (m: Map<SsKey, StaticRow list>) (kindKey: SsKey) (attrName: string) : string list =
     m.[kindKey]
-    |> List.choose (fun (r: StaticRow) -> Map.tryFind (name attrName) r.Values)
+    |> List.choose (fun (r: StaticRow) -> StaticRow.value (name attrName) r)
 
 // ---------------------------------------------------------------------------
 
@@ -217,7 +217,7 @@ let ``F5b: a JointDistribution preserves FK co-occurrence in the synthetic data 
                     [ ("i:500|i:700", 100L); ("i:501|i:701", 100L) ] 2L false (probe 200L) |> mkOk ] }
     let m = SyntheticData.generate jCat jProf cfg 7UL
     let pairs =
-        m.[jBkK] |> List.map (fun r -> Map.tryFind (name "CustomerId") r.Values, Map.tryFind (name "RegionId") r.Values)
+        m.[jBkK] |> List.map (fun r -> StaticRow.value (name "CustomerId") r, StaticRow.value (name "RegionId") r)
     // Every booking pairs equal-rank parents (both "1" or both "2") — never crossed.
     Assert.All(pairs, fun (c, rg) -> Assert.Equal(c, rg))
     // Both correlated combinations actually appear (the draw isn't degenerate).
@@ -318,8 +318,8 @@ let ``PrimitiveType is exhausted — every variant generates a renderable raw`` 
     // Every emitted raw renders to SQL text without throwing.
     for row in m.[kindKey ["X"]] do
         for (i, t) in List.indexed allTypes do
-            match Map.tryFind (name (sprintf "Col%d" i)) row.Values with
-            | Some raw -> SqlLiteral.ofRaw t raw |> SqlLiteral.toString |> ignore
+            match StaticRow.value (name (sprintf "Col%d" i)) row with
+            | Some raw -> SqlLiteral.ofRaw t (Some raw) |> SqlLiteral.toString |> ignore
             | None -> ()
     Assert.True(true)
 

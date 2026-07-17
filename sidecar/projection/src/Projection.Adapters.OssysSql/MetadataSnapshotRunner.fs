@@ -943,8 +943,10 @@ module MetadataSnapshotRunner =
     ///   - Each `OssysReferenceRow` produces one `ReferenceRow` with the
     ///     DeleteRule lifted from the joined Attribute (V1 carries it on
     ///     the attribute; V2's `ReferenceRow` carries it on the reference).
-    ///     `HasDbConstraint` defaults to `true` when an FK is reflected
-    ///     in the references rowset.
+    ///     `HasDbConstraint` is `true` exactly when the attribute's FK is
+    ///     reflected in `#FkReality` (the `sys.foreign_keys` projection);
+    ///     a reference with no reflected FK is logical-only and carries
+    ///     `false` (JSON-path `ISNULL(HasFK, 0)` parity — WP-1a).
 
     /// Parse V1's `#AllIdx.DataCompressionJson` into a single-value
     /// compression code when the JSON encodes uniform compression
@@ -1038,6 +1040,70 @@ module MetadataSnapshotRunner =
             | _ -> None
         | _ -> None
 
+    /// The `#FkReality` row reflected for each reference attribute, keyed by
+    /// the reference's source `AttrId`. Encapsulates the JOIN chain
+    /// `OssysReferenceRow.AttrId ↔ OssysFkColumnRow.ParentAttrId ↔
+    /// OssysFkColumnRow.FkObjectId ↔ OssysFkRealityRow.FkObjectId` shared by
+    /// `toBundle` (presence ⇒ `HasDbConstraint`, plus `UpdateAction` /
+    /// `IsNoCheck` / `DeleteAction`) and `deleteRuleDivergences` (compares the
+    /// reflected `DeleteAction` against the model rule). One definition site so
+    /// the two consumers cannot drift.
+    let private fkRealityByParentAttrIdMap (snapshot: MetadataSnapshot) : Map<int, OssysFkRealityRow> =
+        let fkRealityById =
+            snapshot.ForeignKeysReality
+            |> List.map (fun fk -> fk.FkObjectId, fk)
+            |> Map.ofList
+        snapshot.ForeignKeyColumns
+        |> List.choose (fun c ->
+            match c.ParentAttrId, Map.tryFind c.FkObjectId fkRealityById with
+            | Some pid, Some fk -> Some (pid, fk)
+            | _ -> None)
+        |> Map.ofList
+
+    /// WP-1b (DECISIONS 2026-07-16) — NAME every disagreement between the
+    /// OutSystems model's delete-rule code and the deployed FK's reflected
+    /// `#FkReality.DeleteAction`, for physically-backed FKs. Database reality
+    /// wins the emitted ON DELETE action (the rowset reader prefers the
+    /// reflected action via `OssysTranslation.chooseOnDeleteAction`); this pure
+    /// pass tells the operator when the model disagreed, so the override is a
+    /// named observation, never silent. Only physically-backed FKs whose
+    /// reflected action is representable and differs from the model's are
+    /// reported. Deterministic — ordered by attribute id.
+    let deleteRuleDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let referenceActionText (a: ReferenceAction) =
+            match a with
+            | ReferenceAction.NoAction -> "NO ACTION"
+            | ReferenceAction.Cascade  -> "CASCADE"
+            | ReferenceAction.SetNull  -> "SET NULL"
+            | ReferenceAction.Restrict -> "RESTRICT"
+        let attributeById =
+            snapshot.Attributes |> List.map (fun a -> a.AttrId, a) |> Map.ofList
+        let fkReality = fkRealityByParentAttrIdMap snapshot
+        snapshot.References
+        |> List.sortBy (fun r -> r.AttrId)
+        |> List.choose (fun r ->
+            match Map.tryFind r.AttrId attributeById, Map.tryFind r.AttrId fkReality with
+            | Some attr, Some fk ->
+                match OssysTranslation.deleteActionDivergence attr.DeleteRule fk.DeleteAction with
+                | Some (modelAction, reflectedAction) ->
+                    Some
+                        { DiagnosticEntry.create
+                            "adapter:OSSYS" DiagnosticSeverity.Warning
+                            "adapter.ossys.fkReality.deleteActionDivergence"
+                            (sprintf "Reference on column %s (attr %d): the OutSystems model's delete rule maps to ON DELETE %s but the deployed FK reflects ON DELETE %s. The engine emits the DEPLOYED (reflected) action; remediate the model or confirm which is authoritative."
+                                attr.PhysicalCol r.AttrId
+                                (referenceActionText modelAction) (referenceActionText reflectedAction))
+                          with Metadata =
+                                Map.ofList
+                                    [ "attrId", string r.AttrId
+                                      "physicalColumn", attr.PhysicalCol
+                                      "modelDeleteRule", (attr.DeleteRule |> Option.defaultValue "<none>")
+                                      "modelAction", referenceActionText modelAction
+                                      "reflectedDeleteAction", (fk.DeleteAction |> Option.defaultValue "<none>")
+                                      "reflectedAction", referenceActionText reflectedAction ] }
+                | None -> None
+            | _ -> None)
+
     /// F9 (audit 2026-06-17) — NAME the logical-vs-deployed divergences instead
     /// of discarding them. The adapter carries the LOGICAL Service-Studio facets
     /// (`IsMandatory` → nullability, `IsAutoNumber` → identity); the SAME snapshot
@@ -1118,6 +1184,61 @@ module MetadataSnapshotRunner =
                                  "logicalNullableDeployedNotNull", string (List.length nullableButNotNull) ]
                                @ sampleMeta) } ]
         identityDivergences @ nullabilitySummary
+
+    /// WP-4b (DECISIONS 2026-07-16; register C1/C2) — NAME every disagreement
+    /// between an ordinary scalar's logical OSSYS type mapping and the deployed
+    /// `#ColumnReality` storage. The engine's posture is stated per column: a
+    /// SAME-category deployed refinement wins the emitted storage (V1's on-disk
+    /// precedence, `resolveAttributeType`); the forced-runtime-mapping family
+    /// (`identifier`/`autonumber`/`longinteger`) keeps its deliberate `BIGINT`
+    /// (C2 — the INT-vs-BIGINT call is an estate decision); a cross-category
+    /// deployed type keeps the logical value (no silent reclassification).
+    /// Reference-shaped `bt*` attributes are excluded — their deployed-storage
+    /// precedence is a separate, always-on channel. Deterministic — ordered by
+    /// attribute id.
+    let columnStorageDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let realityByAttrId =
+            snapshot.ColumnReality |> List.map (fun cr -> cr.AttrId, cr) |> Map.ofList
+        snapshot.Attributes
+        |> List.sortBy (fun a -> a.AttrId)
+        |> List.choose (fun a ->
+            match a.DataType, Map.tryFind a.AttrId realityByAttrId with
+            | Some rawType, Some cr ->
+                let deployedOpt =
+                    cr.SqlType
+                    |> Option.bind (fun t -> SqlStorageType.ofSqlType t cr.MaxLength cr.Precision cr.Scale)
+                let normalized = OssysTranslation.normalizeAttributeType rawType
+                let isBt =
+                    normalized.StartsWith("bt", System.StringComparison.Ordinal)
+                    && normalized.Contains "*"
+                match deployedOpt with
+                | Some deployed when not isBt ->
+                    match OssysTypeMapping.tryParse normalized a.Length a.Precision a.Scale with
+                    | Some (logicalPt, logicalStorage) when logicalStorage <> deployed ->
+                        let isForced =
+                            match normalized with
+                            | "identifier" | "autonumber" | "longinteger" -> true
+                            | _ -> false
+                        let sameCategory = SqlStorageType.toPrimitiveType deployed = logicalPt
+                        let emitsDeployed = (not isForced) && sameCategory
+                        Some
+                            { DiagnosticEntry.create
+                                "adapter:OSSYS" DiagnosticSeverity.Warning
+                                "adapter.ossys.columnReality.storageDivergence"
+                                (sprintf "Column %s (attr %d): the logical OSSYS model maps type '%s' to %A but the deployed schema has %A. The engine emits the %s value."
+                                    a.PhysicalCol a.AttrId rawType logicalStorage deployed
+                                    (if emitsDeployed then "DEPLOYED (on-disk precedence)" else "LOGICAL"))
+                              with Metadata =
+                                    Map.ofList
+                                        [ "attrId", string a.AttrId
+                                          "physicalColumn", a.PhysicalCol
+                                          "logicalType", rawType
+                                          "logicalStorage", sprintf "%A" logicalStorage
+                                          "deployedStorage", sprintf "%A" deployed
+                                          "emits", (if emitsDeployed then "deployed" else "logical") ] }
+                    | _ -> None
+                | _ -> None
+            | _ -> None)
 
     /// NAME the attribute-flag-vs-entity-key primary-key divergences. OSSYS
     /// carries PK identity twice: per-attribute (`Is_Identifier`) and
@@ -1289,30 +1410,40 @@ module MetadataSnapshotRunner =
         // FkReality metadata as a result. Per-FK-constraint axes
         // (UpdateAction + IsNoCheck) are constant across columns;
         // V2's per-attribute Reference IR is the natural carrier.
-        let fkRealityById =
-            snapshot.ForeignKeysReality
-            |> List.map (fun fk -> fk.FkObjectId, fk)
-            |> Map.ofList
-        let fkRealityByParentAttrId =
-            snapshot.ForeignKeyColumns
-            |> List.choose (fun c ->
-                match c.ParentAttrId, Map.tryFind c.FkObjectId fkRealityById with
-                | Some pid, Some fk -> Some (pid, fk)
-                | _ -> None)
-            |> Map.ofList
+        let fkRealityByParentAttrId = fkRealityByParentAttrIdMap snapshot
 
         let references =
             snapshot.References
             |> List.choose (fun r ->
                 match r.RefEntityName, Map.tryFind r.AttrId attributeById with
                 | Some refName, Some attr ->
-                    // The JOIN: when this attribute's FK is reflected
-                    // in #FkReality, propagate UpdateAction + the
-                    // inverted IsNoCheck. Absent rows degrade to the
-                    // ReferenceRow defaults (None / true).
+                    // The JOIN: this attribute's FK is reflected in
+                    // #FkReality iff `fkOpt` is Some. That presence IS
+                    // `HasDbConstraint` — a reflected FK propagates
+                    // UpdateAction + the inverted IsNoCheck; a reference
+                    // with NO reflected FK is logical-only, so
+                    // HasDbConstraint = false (mirroring the JSON path's
+                    // ISNULL(HasFK, 0) parity), OnUpdate None, trusted by
+                    // default.
+                    //
+                    // WP-1a (DECISIONS 2026-07-16) — this field was
+                    // hardcoded `true`, so every live-extracted reference
+                    // presented as source-backed and the FK evidence gate
+                    // (which lets source-backed FKs bypass orphan checks)
+                    // could never see a logical-only reference. The
+                    // hardcode contradicted this function's own doc
+                    // ("HasDbConstraint defaults to true when an FK is
+                    // reflected") and diverged from the JSON path, which
+                    // already defaults absent → false.
                     let fkOpt = Map.tryFind r.AttrId fkRealityByParentAttrId
                     let onUpdate =
                         fkOpt |> Option.bind (fun fk -> fk.UpdateAction)
+                    // WP-1b (DECISIONS 2026-07-16) — carry the reflected
+                    // ON DELETE action alongside OnUpdate; the rowset reader
+                    // prefers it over the model rule for physically-backed
+                    // FKs and `deleteRuleDivergences` names the disagreement.
+                    let onDelete =
+                        fkOpt |> Option.bind (fun fk -> fk.DeleteAction)
                     let isTrusted =
                         match fkOpt with
                         | Some fk -> not fk.IsNoCheck
@@ -1323,8 +1454,9 @@ module MetadataSnapshotRunner =
                             RefEntityName       = refName
                             RefEntityId         = r.RefEntityId
                             DeleteRuleCode      = attr.DeleteRule
-                            HasDbConstraint     = true
+                            HasDbConstraint     = Option.isSome fkOpt
                             OnUpdate            = onUpdate
+                            ReflectedOnDelete   = onDelete
                             IsConstraintTrusted = isTrusted
                         } : OssysRowsetTypes.ReferenceRow)
                 | _ -> None)

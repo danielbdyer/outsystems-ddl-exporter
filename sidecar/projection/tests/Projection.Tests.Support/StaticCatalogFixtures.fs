@@ -55,7 +55,7 @@ let staticCatalogOfKinds
         let attrNames = spec.Attrs |> List.map (fun a -> nmx a.Name)
         let row (tag: string, cells: string list) =
             { Identifier = mkKey (spec.KindKeyParts @ [ "Row"; tag ])
-              Values = List.zip attrNames cells |> Map.ofList }
+              Values = StaticRow.presentValues (List.zip attrNames cells) }
         let attribute (a: StaticAttrSpec) =
             { Attribute.create (mkKey (spec.KindKeyParts @ [ a.Name ])) (nmx a.Name) a.Type with
                 Column = ColumnRealization.create a.Column false |> Result.value

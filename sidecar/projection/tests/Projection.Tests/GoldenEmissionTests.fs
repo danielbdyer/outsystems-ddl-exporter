@@ -39,9 +39,27 @@ let private mustOk (r: Result<'a>) : 'a =
 // movement face, not the full-export face this corpus pins).
 // ---------------------------------------------------------------------
 
+/// WP-1c(ii) (DECISIONS 2026-07-16; operator regime decision) — the mandatory
+/// evidence-gated eject FK intervention the golden corpus now demonstrates. With
+/// `Profile.empty` (the golden path derives no orphan evidence), every
+/// logical-only reference resolves `EvidenceMissing → DoNotEnforce` and is
+/// withheld (V1-strict — `allowNoCheckCreation = false`, the operator decision);
+/// source-backed references (`Reference.withConstraintState true …`) re-emit via
+/// the `DatabaseConstraintPresent` carve-out. `allowCrossSchema` is omitted, so
+/// the WP-1c(i) binder default (`false`) applies.
+let private ejectFkIntervention : Config.TighteningInterventionEntry =
+    { Kind = "foreignKey"; Id = "eject-fks"
+      NullBudget = None; AllowMandatoryRelaxation = None; NullabilityOverrides = []
+      EnforceSingleColumnUnique = None; EnforceMultiColumnUnique = None
+      EnableCreation = Some true; AllowCrossSchema = None; AllowNoCheckCreation = Some false
+      ForeignKeyOverrides = []; MinDistinctCountForUniqueness = None }
+
 let private baseConfig : Config.Config =
     { Config.defaultConfig with
-        Output = { Dir = "golden" } }
+        Output = { Dir = "golden" }
+        Policy =
+            { Config.defaultConfig.Policy with
+                Tightening = Some { Interventions = [ ejectFkIntervention ] } } }
 
 /// The scenario matrix (DECISIONS 2026-06-13 — maximal master + standalone
 /// one-offs). `master` is the ONE massive emission: the full Platonic
@@ -85,15 +103,20 @@ let private scenarios : (string * Config.Config * Catalog) list =
 /// flat-stream realization (stream.sql — where GO framing and the
 /// constraint ladder live).
 let private emitScenario (cfg: Config.Config) (catalog: Catalog) : Map<string, string> =
-    let outputs = Compose.projectWithConfig cfg catalog |> mustOk
-    let postChain = Compose.applyShapingToCatalog cfg catalog |> mustOk
+    // WP-1c(ii): render stream.sql from the SAME post-chain ComposeState as the
+    // bundle, so its FK-decision overlay (`ofComposeState`) gates identically —
+    // a logical-only reference withheld in the per-table files is withheld in
+    // the flat stream too (the prior empty-overlay `statements` path silently
+    // kept every FK, diverging from the gated bundle).
+    let outputs, state = Compose.projectWithConfigAndState cfg catalog |> mustOk
+    let overlay = DecisionOverlay.ofComposeState state
     let emitted =
         EmissionPolicy.filterPlatformAutoIndexes
             (EmissionPolicy.withIncludePlatformAutoIndexes
                 cfg.Emission.IncludePlatformAutoIndexes
                 EmissionPolicy.empty)
-            postChain
-    let stream = SsdtDdlEmitter.statements emitted |> Render.toText
+            state.Catalog
+    let stream = SsdtDdlEmitter.statementsWith overlay emitted |> Render.toText
     let bundleFiles =
         outputs.SsdtBundle
         |> Map.filter (fun path _ -> path.EndsWith ".sql")

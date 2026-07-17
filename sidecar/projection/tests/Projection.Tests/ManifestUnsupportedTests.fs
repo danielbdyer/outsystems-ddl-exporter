@@ -45,7 +45,9 @@ let ``Unsupported.compute is deterministic (T1)`` () =
 let ``Unsupported.compute names match current ToleratedDivergence variants`` () =
     // The empirically-grounded variants. When the DU widens or shrinks,
     // this test surfaces it (closed-DU expansion empirical-test sibling).
-    // 6.A.4 (2026-06-02) added EmptyTextNormalizedToNull. AC-D6 added the
+    // 6.A.4 (2026-06-02) added EmptyTextNormalizedToNull — RETIRED by WP-3
+    // (2026-07-16): the option-grain cell carriers keep '' and NULL distinct,
+    // so the erasure it named no longer exists. AC-D6 added the
     // two representation-only tolerances (Char/Decimal) that do not fire CDC.
     // NM-17 (2026-06-14) RETIRED the four NM-16 kind-facet diff-erasure
     // tolerances (now a real `KindFacet` diff channel in `CatalogDiff`).
@@ -63,7 +65,6 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "CompositePkFkUnreflected"
               "DateTimeTickPrecisionTolerated"
               "DecimalScaleTolerated"
-              "EmptyTextNormalizedToNull"
               "FkTrustNotRestoredOnBulkLoad"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"

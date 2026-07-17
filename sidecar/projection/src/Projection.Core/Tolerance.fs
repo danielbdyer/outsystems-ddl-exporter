@@ -92,29 +92,6 @@ type ToleratedDivergence =
     /// @ladder StaticPopulationsUnreflected Data AcceptedFaithful
     | StaticPopulationsUnreflected
 
-    /// 6.A.4 — a genuine empty-string `Text` value and SQL `NULL` are
-    /// **indistinguishable** in the transfer IR: `ReadSide.formatRawValue`
-    /// maps both `DBNull` and `""` to the raw `""` (so even the canary's
-    /// row-hash cannot tell them apart), and `Bulk.parseRaw` maps `""` back
-    /// to `DBNull`. The net rule, made explicit: **an empty-string `Text`
-    /// value normalizes to `NULL` on transfer-write.** Named here so the
-    /// erasure is *closed* (documented + witnessed), not silent. Retiring it
-    /// requires a read-side sentinel that distinguishes absent from
-    /// empty-string end-to-end (an IR-grows-under-evidence slice; no fixture
-    /// forces faithful empty-string preservation today). NB: for a NOT-NULL
-    /// `Text` column an empty source value would instead fail the load —
-    /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
-    ///
-    /// NM-18 — SCOPE: the empty raw string is the V2 IR's *universal* NULL
-    /// sentinel (`SqlLiteral.ofRaw "" = NullLit` for EVERY `PrimitiveType`, by
-    /// the `RawValueCodec` single-source-of-truth convention), so this erasure
-    /// also covers a stored empty `TextLit ""` (`N''`) and a zero-length
-    /// `BinaryLit` (`0x`) — not just the empty-string-vs-NULL ambiguity the name
-    /// foregrounds. Retiring the sentinel (a faithful empty/zero-length form)
-    /// is the same IR-grows-under-evidence slice.
-    /// @ladder EmptyTextNormalizedToNull Data AcceptedFaithful
-    | EmptyTextNormalizedToNull
-
     /// AC-D6 — a `char(n)` / `nchar(n)` column's stored value is ANSI
     /// **trailing-blank-padded** to its declared width, so `'foo  '` and
     /// `'foo'` are the **same stored value** under SQL Server's comparison
@@ -304,7 +281,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
-        | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
         | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
@@ -332,7 +308,6 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.IndexOptionsUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
-                coverage ToleratedDivergence.EmptyTextNormalizedToNull
                 coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
@@ -354,7 +329,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
-        | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
         | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"

@@ -2,7 +2,7 @@ CREATE TABLE [dbo].[Assignment] (
     [ProjectId]  INT           NOT NULL,
     [ResourceId] INT           NOT NULL,
     [Role]       NVARCHAR (40) NULL,
-    CONSTRAINT [PK_dbo_Assignment]
+    CONSTRAINT [PK_Assignment_ProjectId_ResourceId]
         PRIMARY KEY ([ProjectId], [ResourceId])
 )
 

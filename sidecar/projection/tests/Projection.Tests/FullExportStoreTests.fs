@@ -6,6 +6,9 @@ open System.IO
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+// G3 — RefactorLogEntry / RefactorElementType (the bundle's `.refactorlog`
+// operations the store-wire witnesses assert on).
+open Projection.Targets.SSDT
 
 /// Track W1-B (seam T2) — the **diff-vs-prior store leg** for `full-export`,
 /// advancing protein cells X1 (P-1/P-2 load: diff-vs-prior + record) and X3
@@ -368,6 +371,199 @@ let ``X3.T2 (adversarial): the accumulated refactorlog is a distinct bundle memb
 // recorded episode (and the ChangeManifest of its edge) carries the run's
 // §5.5 applied-transforms overlay enumeration instead of the dead `[]` default.
 // ===========================================================================
+
+// ===========================================================================
+// G3 (DECISIONS 2026-07-16) — the accumulated `.refactorlog` is a BUNDLE
+// artifact. A store-threaded run writes `ProjectionCatalog.refactorlog`
+// (deployed vocabulary, rendered at the episode's `At`) inside the atomic
+// bundle and reports it; a store-less run writes nothing (byte-identical
+// genesis). With `emission.sqlproj: true` the project carries the matching
+// `RefactorLog` item exactly when the file exists.
+// ===========================================================================
+
+let private writeTempConfigSqlproj (modelPath: string) (outputDir: string) : string =
+    let json =
+        sprintf
+            """{ "model": { "path": "%s" }, "output": { "dir": "%s" }, "emission": { "sqlproj": true } }"""
+            (modelPath.Replace("\\", "\\\\"))
+            (outputDir.Replace("\\", "\\\\"))
+    let path =
+        Path.Combine(Path.GetTempPath(), sprintf "fes-config-%s.json" (Guid.NewGuid().ToString "N"))
+    File.WriteAllText(path, json)
+    path
+
+/// `runWithStore` returning the report too (the G3 witnesses assert on
+/// `report.Paths`).
+let private runWithStoreReport (configPath: string) (storePath: string) (atDay: int) : Compose.RunReport * Compose.FullExportStoreLeg =
+    let at = DateTimeOffset(2026, 6, atDay, 9, 0, 0, TimeSpan.Zero)
+    let outcome, leg =
+        FullExportRun.executeWithStore
+            configPath None LogSink.Verbosity.Quiet Set.empty
+            (Some storePath) tl Environment.Dev at
+    match outcome, leg with
+    | FullExportRun.RunOutcome.Succeeded (report, _), Some l -> report, l
+    | other, _ -> Assert.Fail(sprintf "expected Succeeded with a store leg, got %A" other); Unchecked.defaultof<_>
+
+[<Fact>]
+let ``G3: a store-threaded run writes ProjectionCatalog.refactorlog inside the bundle and reports it`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    let store = tempStorePath ()
+    try
+        let report, leg = runWithStoreReport cfg store 1
+        let refactorPath = Path.Combine(outDir, Compose.ArtifactPath.refactorLog)
+        Assert.True(File.Exists refactorPath, "the store-threaded bundle carries ProjectionCatalog.refactorlog")
+        Assert.Contains(refactorPath, report.Paths)
+        // Genesis: no prior, no renames — the truthful EMPTY document (the
+        // presence contract is store-threaded ⟺ file exists, not non-empty).
+        let xml = File.ReadAllText refactorPath
+        Assert.Contains("<Operations", xml)
+        Assert.DoesNotContain("<Operation ", xml)
+        Assert.Empty(leg.AccumulatedRefactorLog)
+    finally
+        safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath
+
+[<Fact>]
+let ``G3: a store-less run writes NO refactorlog (byte-identical genesis bundle)`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    try
+        let at = DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)
+        let outcome, _ =
+            FullExportRun.executeWithStore
+                cfg None LogSink.Verbosity.Quiet Set.empty
+                None tl Environment.Dev at
+        match outcome with
+        | FullExportRun.RunOutcome.Succeeded (report, _) ->
+            let refactorPath = Path.Combine(outDir, Compose.ArtifactPath.refactorLog)
+            Assert.False(File.Exists refactorPath, "a store-less bundle carries no refactorlog")
+            Assert.DoesNotContain(refactorPath, report.Paths)
+        | other -> Assert.Fail(sprintf "expected Succeeded, got %A" other)
+    finally
+        safeRm outDir; safeDel cfg; safeDel modelPath
+
+[<Fact>]
+let ``G3: with emission.sqlproj the store-threaded project carries the RefactorLog item; store-less carries none`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outWith = tempOutputDir ()
+    let outWithout = tempOutputDir ()
+    let cfgWith = writeTempConfigSqlproj modelPath outWith
+    let cfgWithout = writeTempConfigSqlproj modelPath outWithout
+    let store = tempStorePath ()
+    try
+        let _ = runWithStoreReport cfgWith store 1
+        let sqlprojWith = File.ReadAllText(Path.Combine(outWith, Compose.ArtifactPath.sqlproj))
+        Assert.Contains("RefactorLog", sqlprojWith)
+        Assert.Contains(Compose.ArtifactPath.refactorLog, sqlprojWith)
+        let at = DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero)
+        let outcome, _ =
+            FullExportRun.executeWithStore
+                cfgWithout None LogSink.Verbosity.Quiet Set.empty
+                None tl Environment.Dev at
+        match outcome with
+        | FullExportRun.RunOutcome.Succeeded _ ->
+            let sqlprojWithout = File.ReadAllText(Path.Combine(outWithout, Compose.ArtifactPath.sqlproj))
+            Assert.DoesNotContain("RefactorLog", sqlprojWithout)
+        | other -> Assert.Fail(sprintf "expected Succeeded, got %A" other)
+    finally
+        safeRm outWith; safeRm outWithout; safeDel cfgWith; safeDel cfgWithout; safeDel store; safeDel modelPath
+
+/// The PRIOR emission's schema, hand-authored with the SAME synthesized
+/// SsKeys the JSON reader derives for `v1ModelOneColumn` (module `AppCore`,
+/// entity `User`) but an OLDER logical name (`OldUser`). The store is the
+/// identity carrier (CatalogCodec persists SsKeys), so seeding it with this
+/// genesis simulates exactly what an identity-stable source produces across
+/// a rename — file-sourced models alone cannot thread identity across a
+/// rename (name-derived synthesized keys; the 6.A.7 limitation).
+let private priorSchemaOldUser () : Catalog =
+    let kindKey = SsKey.synthesizedComposite "OS_KIND" [ "AppCore"; "User" ] |> mustOk
+    let attrKey = SsKey.synthesizedComposite "OS_ATTR" [ "AppCore"; "User"; "Id" ] |> mustOk
+    let moduleKey = SsKey.synthesized "OS_MOD" "AppCore" |> mustOk
+    let nameOf (s: string) = Name.create s |> mustOk
+    let idAttr =
+        { Attribute.create attrKey (nameOf "Id") Integer with
+            Column = ColumnRealization.create "ID" false |> Result.value
+            IsPrimaryKey = true
+            IsMandatory = true
+            IsIdentity = true }
+    let kind =
+        Kind.create kindKey (nameOf "OldUser")
+            (TableId.create "dbo" "OSUSR_APPCORE_USER" |> mustOk)
+            [ idAttr ]
+    { Modules =
+        [ { SsKey = moduleKey; Name = nameOf "AppCore"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ]
+      Sequences = [] }
+
+[<Fact>]
+let ``G3: a rename across episodes lands in the bundle's refactorlog in DEPLOYED vocabulary, agreeing with the leg`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    let store = tempStorePath ()
+    try
+        // Seed the prior: one genesis episode whose kind is the SAME identity
+        // (SsKey) under the OLD logical name `OldUser`.
+        let priorAt = DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)
+        let coordinate =
+            EpisodeCoordinate.create (Version.create 0 "v0" |> mustOk) Environment.Dev priorAt
+        let genesis =
+            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.empty
+        LifecycleStore.save store (EpisodicLifecycle.genesis tl genesis) |> mustStoreOk
+        // Run the full-export: the model names the kind `User` — same SsKey,
+        // new logical name — a RENAME the deployed estate must sp_rename.
+        let report, leg = runWithStoreReport cfg store 2
+        // The leg's accumulated log carries exactly the table rename.
+        Assert.Equal(1, List.length leg.AccumulatedRefactorLog)
+        let entry = List.head leg.AccumulatedRefactorLog
+        Assert.Equal(SqlTable, entry.ElementType)
+        Assert.Equal("[dbo].[OldUser]", entry.ElementName)
+        Assert.Equal("User", entry.NewName)
+        // The bundle's document exists, is reported, and speaks the SAME
+        // operations (file ⇔ leg agreement — the hydrated-plane bundle
+        // derivation and the read-plane episode derivation agree).
+        let refactorPath = Path.Combine(outDir, Compose.ArtifactPath.refactorLog)
+        Assert.True(File.Exists refactorPath)
+        Assert.Contains(refactorPath, report.Paths)
+        let xml = File.ReadAllText refactorPath
+        Assert.Contains(sprintf "Key=\"%s\"" (entry.OperationKey.ToString "D"), xml)
+        Assert.Contains("Value=\"[dbo].[OldUser]\"", xml)
+        Assert.Contains("Value=\"User\"", xml)
+        // And the recorded chain now carries two episodes (the record phase
+        // still ran, after the bundle).
+        Assert.Equal(2, episodeCount store)
+    finally
+        safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath
+
+[<Fact>]
+let ``G3: the accumulated document is CUMULATIVE — a later no-change run still carries the rename`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let out2 = tempOutputDir ()
+    let out3 = tempOutputDir ()
+    let cfg2 = writeTempConfig modelPath out2
+    let cfg3 = writeTempConfig modelPath out3
+    let store = tempStorePath ()
+    try
+        let priorAt = DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)
+        let coordinate =
+            EpisodeCoordinate.create (Version.create 0 "v0" |> mustOk) Environment.Dev priorAt
+        let genesis =
+            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.empty
+        LifecycleStore.save store (EpisodicLifecycle.genesis tl genesis) |> mustStoreOk
+        let _, leg2 = runWithStoreReport cfg2 store 2
+        let _, leg3 = runWithStoreReport cfg3 store 3
+        // Run 3's displacement is empty (same model), but the ACCUMULATED
+        // document still carries the OldUser→User operation — the cumulative
+        // contract (AC-P6): DacFx sp_renames any source older than latest.
+        Assert.Equal(1, List.length leg3.AccumulatedRefactorLog)
+        Assert.Equal(
+            (List.head leg2.AccumulatedRefactorLog).OperationKey,
+            (List.head leg3.AccumulatedRefactorLog).OperationKey)
+        let xml3 = File.ReadAllText(Path.Combine(out3, Compose.ArtifactPath.refactorLog))
+        Assert.Contains("Value=\"[dbo].[OldUser]\"", xml3)
+    finally
+        safeRm out2; safeRm out3; safeDel cfg2; safeDel cfg3; safeDel store; safeDel modelPath
 
 [<Fact>]
 let ``NM-33: the recorded episode carries the run's AppliedTransforms (withProvenance is wired, not the dead [] default)`` () =

@@ -15,7 +15,7 @@ open Projection.Tests.Fixtures
 //     lane, a plane, and a distinct machine token.
 //   - The aggregation: divergences group by key across environments, the
 //     environments are named, a strict majority flips the closing clause.
-//   - One substrate: the board and estate.json project one report value.
+//   - One substrate: the board and environments.json project one report value.
 //   - The verb routing (the `estate` planCheck arm): the zero-flag contract,
 //     `--against model`, and the named refusals.
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ let ``T1: an environment missing the target's kinds reads as promotion lag — W
         Assert.Equal(EstatePlane.Schema, f.Plane)
         Assert.Equal<string list>([ "cloud-qa" ], f.Envs |> List.map fst)
         Assert.Contains("cloud-qa", f.Statement)
-        Assert.Contains("promotion lag", f.Statement)
+        Assert.Contains("the ordinary publish promotes it", f.Statement)
 
 [<Fact>]
 let ``T1: a kind an environment carries beyond the target reads as deployed-ahead drift — DECIDE lane`` () =
@@ -133,7 +133,7 @@ let ``T1: a kind an environment carries beyond the target reads as deployed-ahea
     for f in report.Findings do
         Assert.Equal(EstateFindingKind.SchemaPresence, f.Kind)
         Assert.Equal(EstateLane.Decide, f.Lane)
-        Assert.Contains("deployed-ahead drift", f.Statement)
+        Assert.Contains("no promotion added it", f.Statement)
 
 [<Fact>]
 let ``compute: one divergence in two environments groups onto one key and names both`` () =
@@ -186,10 +186,10 @@ let ``compute: a minority drift names its environment and never blames the targe
         Assert.DoesNotContain("the target may be the one behind", f.Statement)
         Assert.Contains("cloud-qa", f.Statement)
 
-// -- one substrate (board ≡ estate.json over one report value) ----------------
+// -- one substrate (board ≡ environments.json over one report value) ----------------
 
 [<Fact>]
-let ``one substrate: estate.json carries the verdict, every environment, and every finding the board renders`` () =
+let ``one substrate: environments.json carries the verdict, every environment, and every finding the board renders`` () =
     let report =
         Estate.compute agreed sampleCatalog
             [ "cloud-dev", operand "cloud-dev" sampleCatalog
@@ -206,14 +206,16 @@ let ``one substrate: estate.json carries the verdict, every environment, and eve
 let ``board: the empty state is a full surface (masthead, lanes, matrix, artifacts, action)`` () =
     let report = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
     let lines = Estate.render report
-    Assert.Contains(lines, fun (l: string) -> l.StartsWith "ESTATE — ")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "ENVIRONMENTS — ")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "DECIDE")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "REPAIR")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "RELAX")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "WATCH")
-    Assert.Contains(lines, fun (l: string) -> l.Contains "The interim posture is empty.")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "No interim changes are needed.")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "EMISSION — ")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "MATRIX")
-    Assert.Contains(lines, fun (l: string) -> l.Contains "estate.json — the full findings record")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "RUNBOOK — ")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "environments.json — the full findings record")
     Assert.Contains(lines, fun (l: string) -> l.StartsWith "Next: ")
 
 [<Fact>]
@@ -224,7 +226,7 @@ let ``board: the action names the first DECIDE finding's key when one exists`` (
     let lines = Estate.render report
     let firstDecide = Estate.laneFindings EstateLane.Decide report |> List.head
     Assert.Contains(lines, fun (l: string) ->
-        l.StartsWith "Next: rule the first DECIDE finding" && l.Contains (FindingKey.text firstDecide.Key))
+        l.StartsWith "Next: rule the first DECIDE finding" && l.Contains (FindingKey.readableLabel firstDecide.Key))
 
 // -- the consensus (wave A2): the join law + clean-environment attribution ----
 
@@ -390,7 +392,7 @@ let ``D12: rowcount asymmetry past the factor reads as a WATCH advisory naming b
     Assert.Equal(EstateLane.Watch, finding.Lane)
     Assert.Equal<string list>([ "cloud-dev"; "cloud-uat" ], finding.Envs |> List.map fst |> List.sort)
     Assert.Contains("Customer holds 10,400 row(s) in cloud-uat", finding.Statement)
-    Assert.Contains("Customer holds 12 row(s) in cloud-dev — verdicts drawn on this evidence are advisory at the asymmetry", finding.Statement)
+    Assert.Contains("Customer holds 12 row(s) in cloud-dev — findings drawn from the smaller sample are advisory", finding.Statement)
     let nearA = { Profile.empty with Columns = [ nullEvidence customerNameKey 1000L 0L ] }
     let nearB = { Profile.empty with Columns = [ nullEvidence customerNameKey 900L 0L ] }
     let quiet =
@@ -410,7 +412,7 @@ let ``D15: a column distinct in every observed row of every evidenced environmen
               "cloud-qa",  { operand "cloud-qa" sampleCatalog with Profile = Some qaP } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataUniquenessCandidate)
     Assert.Equal(EstateLane.Watch, finding.Lane)
-    Assert.Contains("Customer.TenantId is distinct in every observed row of cloud-dev (60 of 60 row(s))", finding.Statement)
+    Assert.Contains("Customer.TenantId has no duplicate in cloud-dev — 60 of 60 row(s) are distinct", finding.Statement)
     Assert.Contains("cloud-qa", finding.Statement)
     let dupFreqs = ("1", 2L) :: [ for i in 2 .. 60 -> string i, 1L ]
     let dupP = { Profile.empty with Distributions = [ categoricalOn customerTenantKey dupFreqs ] }
@@ -454,7 +456,7 @@ let ``O1: CDC tracking one environment and not another reads as a DECIDE parity 
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.OperationalCdc)
     Assert.Equal(EstateLane.Decide, finding.Lane)
     Assert.Equal(EstatePlane.Operational, finding.Plane)
-    Assert.Contains("CDC tracks Customer in cloud-uat and not in cloud-dev", finding.Statement)
+    Assert.Contains("Change tracking is on for Customer in cloud-uat and off in cloud-dev", finding.Statement)
 
 [<Fact>]
 let ``D13: a primary key past half its declared int ceiling reads as a WATCH headroom advisory; unknown storage never guesses a ceiling`` () =
@@ -467,7 +469,7 @@ let ``D13: a primary key past half its declared int ceiling reads as a WATCH hea
         Estate.compute agreed catalog [ "cloud-uat", { operand "cloud-uat" catalog with Profile = Some p } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataHeadroom)
     Assert.Equal(EstateLane.Watch, finding.Lane)
-    Assert.Contains("Customer.Id stands at 1,340,000,000 of int's 2,147,483,647 in cloud-uat — 62% of the ceiling is consumed", finding.Statement)
+    Assert.Contains("Customer.Id has reached 1,340,000,000 of int's 2,147,483,647 in cloud-uat — 62% of the limit is used", finding.Statement)
     let silent =
         Estate.compute agreed sampleCatalog [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some p } ]
     Assert.DoesNotContain(silent.Findings, fun f -> f.Kind = EstateFindingKind.DataHeadroom)
@@ -482,8 +484,8 @@ let ``D8: the 1900-01-01 empty-date convention reads as a WATCH sentinel advisor
         Estate.compute agreed catalog [ "cloud-uat", { operand "cloud-uat" catalog with Profile = Some p } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataDateSentinel)
     Assert.Equal(EstateLane.Watch, finding.Lane)
-    Assert.Contains("Customer.TenantId holds 812 row(s) at 1900-01-01 in cloud-uat", finding.Statement)
-    Assert.Contains("empty of meaning", finding.Statement)
+    Assert.Contains("Customer.TenantId holds 812 row(s) set to 1900-01-01 in cloud-uat", finding.Statement)
+    Assert.Contains("carry no real value", finding.Statement)
 
 [<Fact>]
 let ``D6: case-distinct values under a unique declaration read as a REPAIR collation collision`` () =
@@ -507,7 +509,7 @@ let ``I3: mixed identity provenance for one name reads as a WATCH advisory on th
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
     Assert.Equal(EstateLane.Watch, finding.Lane)
     Assert.Equal(EstatePlane.Identity, finding.Plane)
-    Assert.Contains("1 kind(s) in cloud-qa carry a different identity provenance than the target", finding.Statement)
+    Assert.Contains("1 kind(s) in cloud-qa number their rows differently than the target", finding.Statement)
     let uniform = Estate.compute agreed sampleCatalog [ "cloud-qa", operand "cloud-qa" sampleCatalog ]
     Assert.DoesNotContain(uniform.Findings, fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
 
@@ -562,7 +564,7 @@ let private node (label: string) (n: System.Text.Json.Nodes.JsonNode | null) : S
         Unchecked.defaultof<System.Text.Json.Nodes.JsonNode>
 
 [<Fact>]
-let ``provenance: estate.json carries the same provenance facts the masthead renders (one substrate)`` () =
+let ``provenance: environments.json carries the same provenance facts the masthead renders (one substrate)`` () =
     let json = Estate.toJson (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
     Assert.Equal("/var/projection/estate", (node "evidenceStore" json.["evidenceStore"]).GetValue<string>())
     let env = (node "environments[0]" ((node "environments" json.["environments"]).AsArray().[0])).AsObject()
@@ -748,9 +750,9 @@ let ``D3′: true orphans past the repair band land on the RELAX lane with the o
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphansPastBand)
     Assert.Equal(EstateLane.Relax, finding.Lane)
-    Assert.Contains("110,000 true orphan row(s) in cloud-uat exceed the repair band", finding.Statement)
+    Assert.Contains("110,000 reference(s) to missing rows in cloud-uat, past the repair band", finding.Statement)
     Assert.Equal(
-        Some "Merge overlay entry data.orphansPastBand:Order.CustomerId of estate.overlay.json.",
+        Some "Merge the config edit for Order.CustomerId (leave the relationship unenforced for now) in environments.overlay.json.",
         finding.Lever)
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphans))
 
@@ -776,9 +778,9 @@ let ``D1 relax arm: NOT-NULL contradictions past the band propose the keep-nulla
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand)
     Assert.Equal(EstateLane.Relax, finding.Lane)
-    Assert.Contains("200,000 contradicting row(s) in cloud-uat exceed the repair band", finding.Statement)
+    Assert.Contains("200,000 NULL row(s) in cloud-uat exceed the repair band", finding.Statement)
     Assert.Equal(
-        Some "Merge overlay entry data.notNullPastBand:Customer.Name of estate.overlay.json.",
+        Some "Merge the config edit for Customer.Name (leave the column nullable for now) in environments.overlay.json.",
         finding.Lever)
 
 [<Fact>]
@@ -791,6 +793,193 @@ let ``the band knob: readiness.estate.repairBand moves the split (A44 — the ke
     Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
 
 [<Fact>]
+let ``the per-entity band: readiness.estate.repairBandByEntity overrides the default for one entity`` () =
+    let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
+    // The default band is high — 4,120 sits inside it (REPAIR); Customer's own
+    // band is low — 4,120 exceeds it (RELAX). The per-entity band governs.
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with
+            RepairBand = 1_000_000L
+            RepairBandByEntity = Map.ofList [ "Customer", 100L ] }
+    let report =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
+    // The override is scoped by entity: Customer's band is 100, every other
+    // entity falls back to the high default.
+    Assert.Equal(100L, Estate.bandFor posture "Customer.Name")
+    Assert.Equal(1_000_000L, Estate.bandFor posture "Order.CustomerId")
+
+// -- the emission audit (Phase 1, the #669 audit): target-shape fidelity -------
+
+[<Fact>]
+let ``emission: a reference targeting a composite primary key is a WP-12 hazard (Order.CustomerId to Customer)`` () =
+    // Make Customer's PK composite (Id + TenantId); Order.CustomerId → Customer
+    // then targets a 2-column key, so the emitted single-column FK is invalid.
+    let compositePk =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with IsPrimaryKey = true } else a) }
+                                else k) }) }
+    let f = Estate.emissionFindingsFor compositePk |> List.exactlyOne
+    Assert.Equal(EstateFindingKind.EmissionCompositePkFk, f.Kind)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("Order.CustomerId → Customer targets a composite primary key", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the relationship"))
+    // The clean single-PK fixture is the negative — no false positive.
+    Assert.Empty(Estate.emissionFindingsFor sampleCatalog)
+
+[<Fact>]
+let ``emission: the audit dimension rides its own report list, separate from convergence findings`` () =
+    // A composite-PK-FK target is an EMISSION finding, never a convergence one:
+    // the emission list carries it; Findings (cross-env divergence) stays clean
+    // when the environments agree.
+    let compositePk =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with IsPrimaryKey = true } else a) }
+                                else k) }) }
+    let report = Estate.compute agreed compositePk [ "cloud-dev", operand "cloud-dev" compositePk ]
+    Assert.Empty report.Findings
+    Assert.NotEmpty report.EmissionFindings
+    Assert.Contains(Estate.render report, fun (l: string) -> l.StartsWith "EMISSION — ")
+
+[<Fact>]
+let ``emission: two entities emitting to the same table name collide (WP-16)`` () =
+    // Rename Order to "Customer" — two entities now emit as one [dbo].[Customer].
+    let dup =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = orderKey then { k with Name = Name.create "Customer" |> Result.value } else k) }) }
+    let f =
+        Estate.emissionFindingsFor dup
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionDuplicateName)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Contains("entities are named 'Customer'", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the collision"))
+
+[<Fact>]
+let ``emission: an identifier over 128 characters is a deploy blocker (WP-11)`` () =
+    let longName = System.String('x', 140)
+    let longCat =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerNameKey then { a with Name = Name.create longName |> Result.value } else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor longCat
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionLongName)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("140 characters", f.Statement)
+
+[<Fact>]
+let ``emission: an entity with no primary key emits as a heap (WATCH, no lever)`` () =
+    // Strip Customer's primary key — it now has no clustered key.
+    let heap =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with Attributes = k.Attributes |> List.map (fun a -> { a with IsPrimaryKey = false }) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor heap
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionNoPrimaryKey)
+    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Equal(None, f.Lever)
+    Assert.Contains("Customer has no primary key", f.Statement)
+
+[<Fact>]
+let ``emission: a float column is a lossy-carriage inventory item (WP-17, WATCH)`` () =
+    let lossy =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with SqlStorage = Some SqlStorageType.Float } else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor lossy
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionLossyScalar)
+    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Equal(None, f.Lever)
+    Assert.Contains("Customer.TenantId is float", f.Statement)
+
+[<Fact>]
+let ``emission: a non-default ON UPDATE reference is a WATCH advisory`` () =
+    let onUpdate =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = orderKey then
+                                    { k with References = k.References |> List.map (fun r -> { r with OnUpdate = Some ReferenceAction.Cascade }) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor onUpdate
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionNonDefaultOnUpdate)
+    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Contains("ON UPDATE CASCADE", f.Statement)
+
+[<Fact>]
 let ``the active posture: a relaxed relationship renders its meter and absorbs the orphan finding`` () =
     let posture : Estate.Posture =
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
@@ -800,7 +989,7 @@ let ``the active posture: a relaxed relationship renders its meter and absorbs t
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Equal(EstateLane.Relax, active.Lane)
-    Assert.Contains("the relationship Order.CustomerId → Customer is untracked by the interim posture; the reopen probe stands at 113 in cloud-uat", active.Statement)
+    Assert.Contains("Order.CustomerId → Customer is left unenforced for now; 113 reference(s) still point to missing rows in cloud-uat", active.Statement)
     Assert.Equal(None, active.Lever)
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphans))
 
@@ -814,7 +1003,7 @@ let ``the active posture: an unevidenced environment reads unobserved — the me
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-qa",  operand "cloud-qa" sampleCatalog ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
-    Assert.Contains("the reopen probe is unobserved in cloud-qa", active.Statement)
+    Assert.Contains("the count is unobserved in cloud-qa", active.Statement)
 
 [<Fact>]
 let ``the retirement notice: a relaxation whose probe reads zero everywhere becomes a preparable repair`` () =
@@ -826,9 +1015,9 @@ let ``the retirement notice: a relaxation whose probe reads zero everywhere beco
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some cleanNow } ]
     let retirable = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureRetirable)
     Assert.Equal(EstateLane.Repair, retirable.Lane)
-    Assert.Contains("the relaxation is retirable; the relationship can track WITH CHECK", retirable.Statement)
+    Assert.Contains("the relationship can be enforced again", retirable.Statement)
     Assert.Equal(
-        Some "Review block posture.retirable:Order.CustomerId of estate.remediation.cloud-uat.sql.",
+        Some "Review the block for Order.CustomerId (clean now — the interim change is removable) in environments.remediation.cloud-uat.sql.",
         retirable.Lever)
 
 [<Fact>]
@@ -843,8 +1032,8 @@ let ``the retirement notice: one dirty environment keeps the relaxation active e
               "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.PostureRetirable))
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
-    Assert.Contains("stands at 40 in cloud-uat", active.Statement)
-    Assert.Contains("stands at 0 in cloud-dev", active.Statement)
+    Assert.Contains("40 reference(s) still point to missing rows in cloud-uat", active.Statement)
+    Assert.Contains("0 reference(s) still point to missing rows in cloud-dev", active.Statement)
 
 [<Fact>]
 let ``the active posture: a kept-nullable column renders its meter and absorbs the NOT-NULL finding`` () =
@@ -855,7 +1044,7 @@ let ``the active posture: a kept-nullable column renders its meter and absorbs t
         Estate.computeWith posture agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
-    Assert.Contains("Customer.Name is kept nullable by the interim posture; the reopen probe stands at 4,120 in cloud-uat", active.Statement)
+    Assert.Contains("Customer.Name is left nullable for now; 4,120 row(s) are still NULL in cloud-uat", active.Statement)
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataNotNull))
 
 // -- the fork witness + the Forked verdict (A6) --------------------------------
@@ -922,6 +1111,6 @@ let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` ()
         Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
         |> Estate.withOverlay 3
     let lines = Estate.render report
-    Assert.Contains(lines, fun (l: string) -> l.Contains "estate.overlay.json — 3 interim relaxation(s)")
-    Assert.Contains(lines, fun (l: string) -> l.Contains "estate.probes.sql — every reopen probe, runnable as one batch")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "environments.overlay.json — 3 interim change(s)")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "environments.probes.sql — every reopen probe, runnable as one batch")
     Assert.Contains("\"entries\": 3", Estate.toJsonString report)

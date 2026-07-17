@@ -79,7 +79,10 @@ module DacpacEmitter =
         match s with
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
         | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ | AlterIndexDisable _
-        | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _ -> true
+        | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _
+        // G6 — schema objects are declarative model members; a non-dbo
+        // estate's dacpac fails validation without them.
+        | CreateSchema _ -> true
         // Imperative migration DDL — the in-place executor's, not the
         // declarative .dacpac model's. DacFx owns the ALTER/DROP at publish.
         | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _
@@ -124,6 +127,7 @@ module DacpacEmitter =
         | CreateTable _ -> "CreateTable"
         | CreateIndex _ -> "CreateIndex"
         | CreateSequence _ -> "CreateSequence"
+        | CreateSchema _ -> "CreateSchema"
         | SetExtendedProperty _ -> "SetExtendedProperty"
         | AlterTableNoCheckConstraint _ -> "AlterTableNoCheckConstraint"
         | AlterTableDisableConstraint _ -> "AlterTableDisableConstraint"

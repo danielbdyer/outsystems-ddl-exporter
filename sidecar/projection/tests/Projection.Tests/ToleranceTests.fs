@@ -35,7 +35,6 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.PostDeployForeignKeysSplit
                 ToleratedDivergence.IndexOptionsUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
-                ToleratedDivergence.EmptyTextNormalizedToNull
                 ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
@@ -74,8 +73,9 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // variants; CommentMetadataUnreflected retired when
     // SsdtDdlEmitter.extendedPropertyStatements began emitting
     // sp_addextendedproperty calls. **6.A.4 (2026-06-02):** back to 5 —
-    // EmptyTextNormalizedToNull names the empty-string-Text→NULL transfer
-    // normalization (closed, not silent). **AC-D6 (NEITHER→HELD):** 7 —
+    // EmptyTextNormalizedToNull named the empty-string-Text→NULL transfer
+    // normalization (closed, not silent; retired by WP-3, see the final
+    // entry). **AC-D6 (NEITHER→HELD):** 7 —
     // CharAnsiPaddingTolerated + DecimalScaleTolerated name the
     // representation-only differences ('foo  '≈'foo', 1.0≈1.00) that do
     // NOT fire CDC under SQL Server's ANSI-pad / numeric comparison.
@@ -112,7 +112,12 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // canonical-form erasures (BooleanCanonicalizationTolerated /
     // DateTimeTickPrecisionTolerated / IntegerWidthNormalized), all Data
     // AcceptedFaithful, so the open-gap count stays 3.
-    Assert.Equal (13, Set.count ToleratedDivergence.allKnown)
+    // **WP-3 / F11 (2026-07-16):** 12 — `EmptyTextNormalizedToNull` is
+    // RETIRED: the option-grain cell carriers keep `''` and NULL distinct
+    // end-to-end (None = NULL out-of-band; `Some ""` renders `N''` and
+    // survives transfer), so the erasure the tolerance named no longer
+    // exists to tolerate.
+    Assert.Equal (12, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -326,23 +331,23 @@ let ``M2: the trigger-body tolerance is named, parseable, and in allKnown`` () =
 
 [<Fact>]
 let ``matchedResidual: the accepted-AND-fired intersection is the run's residual`` () =
-    // Configured to accept empty-text + char-padding; the canary observed
-    // empty-text + decimal-scale firing. The residual is the intersection:
-    // empty-text alone (accepted AND fired).
+    // Configured to accept char-padding + boolean-canonicalization; the canary
+    // observed char-padding + decimal-scale firing. The residual is the
+    // intersection: char-padding alone (accepted AND fired).
     let configured =
         Tolerance.ofSet (Set.ofList
-            [ ToleratedDivergence.EmptyTextNormalizedToNull
-              ToleratedDivergence.CharAnsiPaddingTolerated ])
+            [ ToleratedDivergence.CharAnsiPaddingTolerated
+              ToleratedDivergence.BooleanCanonicalizationTolerated ])
     let observed =
         Set.ofList
-            [ ToleratedDivergence.EmptyTextNormalizedToNull
+            [ ToleratedDivergence.CharAnsiPaddingTolerated
               ToleratedDivergence.DecimalScaleTolerated ]
     let residual = Tolerance.matchedResidual observed configured
     Assert.Equal<Set<ToleratedDivergence>>(
-        Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ],
+        Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ],
         Tolerance.divergences residual)
 
 [<Fact>]
 let ``matchedResidual: nothing observed resolves to strict`` () =
-    let configured = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ])
+    let configured = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.CharAnsiPaddingTolerated ])
     Assert.True(Tolerance.isStrict (Tolerance.matchedResidual Set.empty configured))
