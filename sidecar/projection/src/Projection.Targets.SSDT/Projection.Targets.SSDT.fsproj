@@ -21,6 +21,7 @@
     <Compile Include="DacpacEmitter.fs" />
     <Compile Include="DockerImageEmitter.fs" />
     <Compile Include="ManifestEmitter.fs" />
+    <Compile Include="ApplyRunbookEmitter.fs" />
     <Compile Include="SsdtBundle.fs" />
     <Compile Include="PostDeployEmitter.fs" />
     <Compile Include="SqlprojEmitter.fs" />

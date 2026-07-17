@@ -28711,3 +28711,57 @@ the largest remaining terminus item and WP-12/13's trigger); the incremental pro
 `ApplyRunbookEmitter` (numbered ordered apply manifest); `Profile.replaceKindEvidence` + the
 FK-adjacency closure (per-kind evidence replacement atop the SsKey-flat profile). None blocks the
 closed loop.
+
+## 2026-07-17 — B6: the incremental proof cache + the cutover apply runbook (the ease tail continues)
+
+**Context.** Two of the four named next-program items land; a third is retired to its real trigger.
+
+**What shipped:**
+
+1. **The incremental proof cache (`FidelityProofCache`, Pipeline — B6).** `check fidelity <flow>`
+   skips the expensive container proof (scaffold → transfer → compare → reap) when nothing has
+   moved. The cache is keyed PER FLOW (`<store>/proofs/<flow>.proof.json`) so it is trivially
+   **clearable** — `--refresh` clears one flow's entry and forces a re-prove, `clearAll` removes
+   the whole `proofs/` directory, and the output NAMES the cache path every run. It lives under the
+   estate store root (`PROJECTION_ESTATE_DIR`); DISABLED (nothing cached, nothing to clear) when no
+   store is configured. The invalidation inputs ride INSIDE the file — the model's shape digest +
+   the source's per-kind fingerprints — so a moved fingerprint or a model retype makes the entry
+   stale; a cache entry exists ONLY for a green proof (the writer clears a non-green one), so a
+   fresh entry means "the last proof was green and nothing has moved." Reuses
+   `EstateEvidenceStore.probeLive`/`staleKinds`/`shapeHashOf`; root-parameterized I/O (the
+   `save`/`load` pattern) so it tests with a temp dir. The face short-circuits BEFORE the Docker
+   gate (a cached proof needs no container) and touches the flow-scoped proof so the estate board
+   (RT-10) reads it as current. Fingerprint honesty: the `(RowCount, MaxPk)` fingerprint is blind
+   to an in-place UPDATE (the store's named caveat), so `--refresh` is the certain re-prove — the
+   cache-hit line says so. Verified: 10 pure tests + a docker end-to-end (`B6 proof cache`: run 1
+   proves + caches, run 2 hits + skips the container — no new transfer journal — and `--refresh`
+   forces a re-prove).
+2. **The cutover apply runbook (`ApplyRunbookEmitter`, Targets.SSDT — ideation §12 F7).** A
+   numbered, ORDERED apply manifest emitted WITH the SSDT bundle (`apply-runbook.md`): schema →
+   tables (in the manifest's FK-safe deployment batches) → data → post-deploy → verify, each step
+   naming the precondition it stands on. The deploy ORDER is the manifest's `DeploymentBatches`
+   (Kahn-levels), so the runbook is a true PROJECTION of the bundle, never static prose that could
+   drift. Where `ManifestEmitter` produces the machine `manifest.json`, this produces the operator's
+   checklist — the same structure, the human lens. Reachable by construction:
+   `SsdtBundle.composeWithSchemas` joins it into EVERY bundle (the A44 consumer — the operator gets
+   it when they emit). The golden corpus is unperturbed (its emission filters to `.sql`); the
+   pipeline's bundle-determinism law holds (the runbook is a pure function of the manifest). 5
+   emitter tests (the four phases in order, the batches in dependency order with the closure
+   precondition, contiguous step numbers, the no-batch fallback, determinism).
+
+3. **The operator walk, proven over LIVE cells (ideation §12).** Two docker witnesses now cover
+   both loops of the walk over real OSSYS reads, not fixtures: the estate loop
+   (`operator walk: check environments reads two live espace-variant cells as one shape` in
+   `PeerWitnessDockerTests` — `Estate.computeWith` over two live-read contracts normalizes each to
+   its logical shape and reads them as one; A45 proven at the live seam, the board renders) and the
+   fidelity loop (the B6 cache witness — the container proof + cache over a live source). The
+   estate-board `View` seam (A8) makes the board assertable; the harness (`PeerEstateHarness`) that
+   was transfer-oriented now carries an estate assertion.
+
+**Retired to its trigger — `Profile.replaceKindEvidence`.** The estate `--refresh` path whole-swaps
+the profile (`liveProfile ()` re-reads it entire on any stale kind), so a per-kind evidence
+replacement has NO honest consumer today — building it would be zero-consumer dead code (the
+dead-algebra retirement precedent, and A44 in spirit). Its real trigger is a profiler that reads a
+kind SUBSET; until that lands, the whole-swap is correct and `replaceKindEvidence` stays named, not
+built. A FULLER §12 walk (the remediate → burndown → publish middle) is the one open thread, and it
+is additive over the two loops now witnessed.

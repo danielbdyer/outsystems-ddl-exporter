@@ -197,6 +197,7 @@
     <Compile Include="EstateHistoryTests.fs" />
     <Compile Include="EstateEvidenceStoreTests.fs" />
     <Compile Include="FidelityProofCacheTests.fs" />
+    <Compile Include="ApplyRunbookEmitterTests.fs" />
     <Compile Include="RowDigestFoldTests.fs" />
     <Compile Include="RowFidelityTests.fs" />
     <Compile Include="ReadinessConfigTests.fs" />

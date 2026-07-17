@@ -1,4 +1,51 @@
-# Handoff addendum — 2026-07-17 (latest), THE EASE TAIL + THE CHAPTER CLOSE: D10 goes executable, the live board lands, A45/T17 become law. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+# Handoff addendum — 2026-07-17 (latest), THE NEXT PROGRAM, CONTINUED: the proof cache + the cutover apply runbook land; replaceKindEvidence retired to its trigger. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+
+To the next agent.
+
+Two of the four named next-program items shipped; one is honestly retired.
+
+- **The incremental proof cache (B6) — done, docker-verified, EASILY CLEARABLE (the operator's
+  explicit ask).** `check fidelity <flow>` skips the container proof when the model + source
+  fingerprints are unchanged. `FidelityProofCache` (Pipeline) is keyed per flow
+  (`<store>/proofs/<flow>.proof.json`): `--refresh` clears one flow + re-proves, `clearAll` wipes
+  the dir, the output names the path. Root-parameterized I/O (tests with a temp dir). It reuses
+  `EstateEvidenceStore.probeLive`/`staleKinds`/`shapeHashOf`; only a GREEN proof is cached (the
+  writer clears a non-green one). The `(RowCount, MaxPk)` blindness to in-place UPDATE is the named
+  caveat — `--refresh` is the certain re-prove. The docker witness (`B6 proof cache` in
+  `ReverseLegCanaryTests`) proves the whole path: cache on run 1, hit + skip on run 2 (no new
+  journal), `--refresh` re-proves.
+- **The cutover apply runbook — done.** `ApplyRunbookEmitter` (Targets.SSDT) emits `apply-runbook.md`
+  into EVERY bundle (via `SsdtBundle.composeWithSchemas` — reachable by construction): a numbered,
+  ordered apply manifest (schema → tables in the manifest's FK-safe `DeploymentBatches` → data →
+  post-deploy → verify), each step naming its precondition. It is a PROJECTION of the manifest (the
+  order is the bundle's own Kahn levels), not static prose. The golden corpus is unperturbed (it
+  filters to `.sql`); the bundle-determinism law holds.
+
+**WHAT REMAINS:**
+
+- **`Profile.replaceKindEvidence` — RETIRED to its trigger, do NOT build it yet.** The estate
+  `--refresh` whole-swaps the profile (`liveProfile ()` re-reads it entire), so per-kind evidence
+  replacement has no consumer — building it now is zero-consumer dead code (A44 in spirit). Its
+  trigger is a profiler that reads a kind SUBSET. Land that first, then `replaceKindEvidence` +
+  the FK-adjacency closure (invalidate the FK evidence a replaced kind OWNS and the FK evidence
+  POINTING AT IT) has a real home.
+- **The operator walk — both loops now witnessed over LIVE cells.** The estate loop
+  (`operator walk: check environments reads two live espace-variant cells as one shape` in
+  `PeerWitnessDockerTests` — `Estate.computeWith` over two live-read contracts reads them as one
+  shape; A45 at the live seam) and the fidelity loop (the B6 cache witness). What's left is the
+  FULLER §12 middle — remediate → burndown → publish between the two — additive over the two loops
+  now proven; drive it over the same `PeerEstateHarness` when you pick it up.
+
+**Traps this session (add to the standing list):** an XML `<Compile>` comment cannot contain `--`
+(the `--refresh`/`-rf` bite); the `[datetime-now]` lint flags `DateTime.UtcNow` but NOT
+`DateTimeOffset.UtcNow` (capture `nowUtc` once at the boundary, use `.UtcDateTime` for
+`SetLastWriteTimeUtc`); `SsKey.rootOriginal` carries a prefix (not the bare kind name) — assert on
+preconditions, not member phrasing; the golden emission test filters the bundle to `.sql`, so a
+new non-SQL bundle file (like `apply-runbook.md`) is invisible to it — no golden regen needed.
+
+---
+
+# Handoff addendum — 2026-07-17, THE EASE TAIL + THE CHAPTER CLOSE: D10 goes executable, the live board lands, A45/T17 become law. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
 
 To the next agent.
 
