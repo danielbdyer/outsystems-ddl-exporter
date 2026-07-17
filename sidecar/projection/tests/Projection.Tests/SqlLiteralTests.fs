@@ -219,3 +219,38 @@ let ``Closed-DU coverage: every PrimitiveType variant produces a SqlLiteral via 
     for v in variants do
         let lit = SqlLiteral.ofRaw v (Some "0")  // any non-empty raw
         Assert.NotEqual<SqlLiteral> (NullLit, lit)
+
+// ---------------------------------------------------------------------------
+// WP-17(e) (DECISIONS 2026-07-16) — CR/LF/TAB splice into CHAR() concatenation
+// (V1 `EscapeUnicodeString` parity); the emitted SQL carries no raw control
+// bytes. A control-char-free raw renders byte-identically to the pre-WP-17
+// form (the default everywhere).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``WP-17e: toString splices CR LF TAB into CHAR() concatenation (V1 parity)`` () =
+    Assert.Equal<string> ("N'a' + CHAR(13) + N'b'", SqlLiteral.toString (TextLit "a\rb"))
+    Assert.Equal<string> ("N'a' + CHAR(10) + N'b'", SqlLiteral.toString (TextLit "a\nb"))
+    Assert.Equal<string> ("N'a' + CHAR(9) + N'b'",  SqlLiteral.toString (TextLit "a\tb"))
+    // CRLF = two adjacent control chars — the V1-parity blind splice keeps
+    // the empty run between them.
+    Assert.Equal<string> ("N'a' + CHAR(13) + N'' + CHAR(10) + N'b'", SqlLiteral.toString (TextLit "a\r\nb"))
+    // Leading/trailing control chars yield empty edge runs (V1 parity).
+    Assert.Equal<string> ("N'' + CHAR(10) + N'x'", SqlLiteral.toString (TextLit "\nx"))
+    Assert.Equal<string> ("N'x' + CHAR(9) + N''",  SqlLiteral.toString (TextLit "x\t"))
+
+[<Fact>]
+let ``WP-17e: quote-doubling still applies inside spliced runs`` () =
+    Assert.Equal<string> ("N'O''Brien' + CHAR(10) + N'line2'", SqlLiteral.toString (TextLit "O'Brien\nline2"))
+
+[<Fact>]
+let ``WP-17e: a control-char-free Text raw renders byte-identically (no splice)`` () =
+    Assert.Equal<string> ("N'Hello'", SqlLiteral.toString (TextLit "Hello"))
+    Assert.Equal<string> ("N''", SqlLiteral.toString (TextLit ""))
+
+[<Fact>]
+let ``WP-17e: textLiteralSegments — the shared segmentation both planes ride`` () =
+    Assert.Equal<TextLiteralSegment list>([ TextRun "plain" ], SqlLiteral.textLiteralSegments "plain")
+    Assert.Equal<TextLiteralSegment list>(
+        [ TextRun "a"; ControlChar 13; TextRun ""; ControlChar 10; TextRun "b" ],
+        SqlLiteral.textLiteralSegments "a\r\nb")

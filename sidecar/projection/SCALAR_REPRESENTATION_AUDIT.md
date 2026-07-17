@@ -225,7 +225,7 @@ Ranked by data-fidelity stakes:
 | S1 | `Float`/`Real` precision loss + overflow | `SqlStorageType.toPrimitiveType:89-90` → `Decimal` carrier | any `float`/`real` column (external/DBA) in a data lane | WP-17 |
 | S2 | `DateTimeOffset` zone dropped; readback throws | `toPrimitiveType:101` → `DateTime`; `ReadSide.fs:628-629` | any `datetimeoffset` column read back / transferred | WP-17 |
 | S3 | Fallback DDL lane upgrades `DateTime → DATETIME2`; seed literal bare (no CAST) | `ScriptDomBuild.fs:129`, `:306-310` | storage-evidence-less catalog (goldens, ReadSide, JSON-no-storage) | **✅ WP-17(d) LANDED (2026-07-16)** — fallback = legacy `DATETIME` (3 mirror sites); literals = explicit CAST via the category-bearing `DateTimeLit`/`DateLit`/`TimeLit` split |
-| S4 | Text control chars embedded raw in `N'…'` | `SqlLiteral.toString:107-111` | any seed value with CR/LF/TAB | WP-17 |
+| S4 | Text control chars embedded raw in `N'…'` | `SqlLiteral.toString:107-111` | any seed value with CR/LF/TAB | **✅ WP-17(e) LANDED (2026-07-16)** — `CHAR()` splice via the shared `textLiteralSegments`, both planes |
 | S5 | `Xml` re-serialization + empty-xml erase + CDC `<>` compile error | `toPrimitiveType:98` → `Text`; CDC predicate | any `xml` column, esp. on a CDC-enabled kind | WP-17 (+ WP-3 for the erase) |
 | S6 | `''` → NULL universal erasure | `SqlLiteral.ofRaw:81`, `Bulk.parseRaw:52` | every empty-string Text value | **✅ WP-3 LANDED (2026-07-16)** — option-grain cells; `''` survives; an empty raw on a non-empty-capable type refuses loudly |
 

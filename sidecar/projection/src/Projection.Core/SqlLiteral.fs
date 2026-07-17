@@ -73,6 +73,18 @@ type SqlLiteral =
     /// hex bare (no quoting). Maps to ScriptDom `BinaryLiteral`.
     | BinaryLit of hexPrefixed: string
 
+/// WP-17(e) (DECISIONS 2026-07-16) — one segment of a Text literal whose
+/// raw value carries control characters. V1 escapes CR/LF/TAB into
+/// `CHAR()` concatenation (`SqlLiteralFormatter.EscapeUnicodeString`)
+/// so the emitted SQL contains no raw control bytes; V2's two terminal
+/// planes (text `toString`, ScriptDom `buildSqlLiteral`) both compose
+/// from this shared segmentation so they cannot drift. `TextRun` may be
+/// empty (the V1-parity blind splice: a leading/trailing/adjacent
+/// control char yields an empty `N''` run).
+type TextLiteralSegment =
+    | TextRun of string
+    | ControlChar of code: int
+
 [<RequireQualifiedAccess>]
 module SqlLiteral =
 
@@ -82,6 +94,28 @@ module SqlLiteral =
     /// (the NM-20 malformed-raw precedent — loud, named, never coerced).
     [<Literal>]
     let EmptyNotEmptyCapableCode : string = "rawValue.empty.notEmptyCapable"
+
+    /// WP-17(e) — split a Text raw into literal runs and the control
+    /// characters between them. Exactly V1's escape set (CR 13, LF 10,
+    /// TAB 9 — `SqlLiteralFormatter.cs:58-61`); every other character
+    /// stays inside its run. A control-char-free raw yields the single
+    /// `[ TextRun raw ]` (the byte-identical default for both planes).
+    let textLiteralSegments (raw: string) : TextLiteralSegment list =
+        if raw.IndexOfAny [| '\r'; '\n'; '\t' |] < 0 then [ TextRun raw ]
+        else
+            let segments = System.Collections.Generic.List<TextLiteralSegment>()
+            let run = System.Text.StringBuilder()
+            let flush () =
+                segments.Add(TextRun (run.ToString()))
+                run.Clear() |> ignore
+            for c in raw do
+                match c with
+                | '\r' -> flush (); segments.Add(ControlChar 13)
+                | '\n' -> flush (); segments.Add(ControlChar 10)
+                | '\t' -> flush (); segments.Add(ControlChar 9)
+                | c    -> run.Append c |> ignore
+            flush ()
+            List.ofSeq segments
 
     /// Project an IR `(PrimitiveType, raw)` cell into a typed
     /// `SqlLiteral`. WP-3 (F11): NULL is carried OUT-OF-BAND as `None`
@@ -135,8 +169,18 @@ module SqlLiteral =
         | TextLit raw        ->
             // Single-quote doubling per the SQL-standard escape; `N`
             // prefix per the unicode-string-literal SQL convention.
-            let escaped = raw.Replace("'", "''")
-            System.String.Concat("N'", escaped, "'")  // LINT-ALLOW: terminal Unicode SQL string-literal text formatting; segments are typed (escaped from raw via single-quote-doubling, the SQL-standard escape); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
+            // WP-17(e): CR/LF/TAB splice into `CHAR()` concatenation
+            // (V1 `EscapeUnicodeString` parity) — the emitted SQL
+            // carries no raw control bytes; a control-char-free raw
+            // renders byte-identically to the pre-WP-17 form.
+            textLiteralSegments raw
+            |> List.map (fun segment ->
+                match segment with
+                | TextRun run ->
+                    System.String.Concat("N'", run.Replace("'", "''"), "'")  // LINT-ALLOW: terminal Unicode SQL string-literal text formatting; segments are typed (escaped from raw via single-quote-doubling, the SQL-standard escape); BCL `String.Concat` IS the use-case-specific library at the absolute terminal SQL-text boundary
+                | ControlChar code ->
+                    System.String.Concat("CHAR(", string code, ")"))  // LINT-ALLOW: terminal SQL CHAR() call formatting at the same boundary; code is one of the typed 13/10/9 set
+            |> String.concat " + "  // LINT-ALLOW: terminal SQL concatenation-operator join over the typed segment renderings at the same boundary
         | BinaryLit prefixed -> prefixed
 
     /// Convenience: `ofRaw` then `toString`. The combined surface

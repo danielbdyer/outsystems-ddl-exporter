@@ -28229,3 +28229,28 @@ CAST machinery are their substrate. V1's byte-form (`CAST('…' AS datetime2(7))
 no space) vs V2's ScriptDom house form (`CAST ('…' AS DATETIME2 (7))`) differ in rendering,
 deliberately: the DECISION adopts the explicit-CAST semantics; each terminal boundary keeps
 its own pinned generator style.
+
+## 2026-07-16 — WP-17(e): text control characters splice into `CHAR()` concatenation — no raw control bytes in emitted SQL
+
+**Decision (packet C11(e); audit S4).** A Text literal whose raw value carries CR/LF/TAB now
+renders as V1's concatenation form (`SqlLiteralFormatter.EscapeUnicodeString` parity):
+`N'line1' + CHAR(13) + N'' + CHAR(10) + N'line2'` — the emitted seed SQL contains no raw
+control bytes (they broke diff review, byte-determinism assumptions, and any downstream that
+assumes single-line literals). One shared segmentation owns the split
+(`SqlLiteral.textLiteralSegments` — `TextRun`/`ControlChar` over exactly V1's escape set
+13/10/9, blind-splice semantics: adjacent/edge control chars keep their empty `N''` runs);
+both terminal planes compose from it so they cannot drift — `toString` joins with ` + `,
+`ScriptDomBuild.buildSqlLiteral` builds the `BinaryExpression(Add)` chain over national
+`StringLiteral`s and `CHAR(n)` `FunctionCall`s. A control-char-free raw renders byte-identically
+to the pre-WP-17 form on both planes (the default everywhere — goldens untouched). The
+concatenation evaluates to the identical string value, so CDC-silence and the WP-3
+empty-string contract (`N''`) are unchanged.
+
+**Witness.** The shared-segmentation pins (single-run default; the `a\r\nb` five-segment
+shape); the three per-char splice forms + CRLF adjacency + leading/trailing edge runs +
+quote-doubling-inside-runs on the text plane; the ScriptDom row-value pin (an `InsertRow`
+Text cell renders `CHAR(13)/CHAR(10)/CHAR(9)` with NO raw control bytes in the rendered SQL).
+
+**Scope notes.** Exactly V1's escape set (CR/LF/TAB) — other C0 controls pass through inside
+runs, as V1. The round-trip fixture for control-char text (deploy → read back → value equality)
+belongs to WP-17(f)'s fixture backlog with the other unwitnessed types.

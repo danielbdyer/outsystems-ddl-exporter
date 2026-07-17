@@ -1423,3 +1423,21 @@ let ``WP-17d: an InsertRow temporal cell renders as the explicit CAST form (Scri
     Assert.Contains("CAST ('08:30:00' AS TIME (7))", sql)
     // And never the pre-WP-17 bare quoted forms.
     Assert.DoesNotContain("'2026-05-10 12:30:00.0000000',", sql)
+
+[<Fact>]
+let ``WP-17e: an InsertRow Text cell with control chars renders CHAR() concatenation — no raw control bytes in the SQL`` () =
+    let table = mkTableId "dbo" "OSUSR_T_NOTE"
+    let cells : CellValue list =
+        [ { Column = "ID";   Type = Integer; Raw = Some "1" }
+          { Column = "BODY"; Type = Text;    Raw = Some "line1\r\nline2\tend" } ]
+    let sql = Render.toText [ Statement.InsertRow (table, cells) ]
+    Assert.Contains("CHAR(13)", sql)
+    Assert.Contains("CHAR(10)", sql)
+    Assert.Contains("CHAR(9)", sql)
+    Assert.Contains("N'line1'", sql)
+    // The seed text carries NO raw control bytes inside the literal —
+    // the exact property WP-17(e) exists for (diff review,
+    // byte-determinism, single-line literals).
+    Assert.DoesNotContain("line1\r", sql)
+    Assert.DoesNotContain("\nline2", sql)
+    Assert.DoesNotContain("line2\t", sql)

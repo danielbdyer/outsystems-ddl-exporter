@@ -840,8 +840,8 @@ and adopting golden-diff-as-change-review going forward.
     precision+overflow, `DateTimeOffset` offset-dropped-and-readback-throws, `Xml`
     re-serialize + CDC `<>` compile error, ~~temporal bare-literal vs V1's CAST, and the
     fallback-lane `DateTime → DATETIME2` upgrade~~ (**✅ WP-17(d) landed 2026-07-16** — CAST
-    literals + legacy-`DATETIME` fallback). ⚑ WP-17(a–c,e,f) remain (bite on DBA/External
-    columns — size via the §9 estate inventory).
+    literals + legacy-`DATETIME` fallback; **✅ WP-17(e)** control-char `CHAR()` splice).
+    ⚑ WP-17(a–c,f) remain (bite on DBA/External columns — size via the §9 estate inventory).
 
 **Doc drift found while profiling** (trust code + DECISIONS over these): `THE_GOLDEN_EMISSION.md:170`
 (index synthesis shipped 2026-07-01) and `:129` (empty-text DEFAULT); `DeleteScopePolicy`/
@@ -1000,7 +1000,8 @@ string; and fix the fallback DDL lane so `DateTime` without storage evidence def
 `DATETIME` rather than `DATETIME2` (aligns the goldens with a live export). **✅ LANDED
 2026-07-16 (DECISIONS — WP-17(d)).**
 (e) **Text control characters** — escape CR/LF/TAB (V1's `CHAR()` concatenation) rather than
-embedding raw control bytes in `N'…'`.
+embedding raw control bytes in `N'…'`. **✅ LANDED 2026-07-16 (DECISIONS — WP-17(e)):
+`SqlLiteral.textLiteralSegments` shared segmentation; both terminal planes compose from it.**
 (f) **Fixture backlog** — a round-trip witness for every concrete type that has none today
 (`Float`/`Real`/`DateTimeOffset`/`Xml`/`Image`/`SmallDateTime`/`Money`), so the audit's §4
 verdicts become test-proven, not code-derived.

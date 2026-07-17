@@ -353,10 +353,40 @@ module ScriptDomBuild =
             l.IsNational <- false
             l :> ScalarExpression
         | TextLit raw ->
-            let l = StringLiteral()
-            l.Value <- raw
-            l.IsNational <- true
-            l :> ScalarExpression
+            // WP-17(e) (DECISIONS 2026-07-16) — CR/LF/TAB splice into a
+            // `CHAR()` concatenation chain (V1 `EscapeUnicodeString`
+            // parity; the shared `SqlLiteral.textLiteralSegments` owns
+            // the segmentation so the two terminal planes cannot
+            // drift). The emitted SQL carries no raw control bytes;
+            // value-identical on evaluation, so CDC-silence holds. A
+            // control-char-free raw stays the plain national
+            // StringLiteral (the byte-identical default).
+            let nationalLit (run: string) : ScalarExpression =
+                let l = StringLiteral()
+                l.Value <- run
+                l.IsNational <- true
+                l :> ScalarExpression
+            match SqlLiteral.textLiteralSegments raw with
+            | [ TextRun only ] -> nationalLit only
+            | segments ->
+                let charCall (code: int) : ScalarExpression =
+                    let f = FunctionCall()
+                    f.FunctionName <- Identifier(Value = "CHAR")
+                    let arg = IntegerLiteral()
+                    arg.Value <- string code
+                    f.Parameters.Add(arg)
+                    f :> ScalarExpression
+                segments
+                |> List.map (fun segment ->
+                    match segment with
+                    | TextRun run -> nationalLit run
+                    | ControlChar code -> charCall code)
+                |> List.reduce (fun acc next ->
+                    let add = BinaryExpression()
+                    add.BinaryExpressionType <- BinaryExpressionType.Add
+                    add.FirstExpression <- acc
+                    add.SecondExpression <- next
+                    add :> ScalarExpression)
         | BinaryLit prefixed ->
             let l = BinaryLiteral()
             // ScriptDom's `BinaryLiteral.Value` carries the value
