@@ -154,7 +154,7 @@ let ``the retirement block: a zero-probe relaxation earns the re-trust candidate
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", operand "cloud-uat" sampleCatalog (Some cleanNow) ]
     let block =
         EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some cleanNow) report

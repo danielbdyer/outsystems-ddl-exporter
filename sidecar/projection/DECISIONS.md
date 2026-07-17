@@ -28587,3 +28587,55 @@ feed before the next commit — an inert detector is the NM-69 class A44 forbids
   surfaces as a row-fidelity difference in `check fidelity <flow>` (every row byte-compared
   modulo the journal's recorded key remaps). The dedicated D10/D11 estate findings are the
   more ergonomic PRE-cutover surfacing; the underlying detection is live via the proof + RT-10.
+
+## 2026-07-17 — Phase 3 slice 3a (D10/D11) SHIPS: the static-content detectors land with their live probe — the third named divergence closes
+
+**Context.** The slice designed in the entry above, built. The original request's third named
+divergence ("no AutoNumber static entities") now has a live estate detector. The two finding
+kinds registered in slice 3b's foundation are no longer expressible-but-inert (the A44
+obligation the entry named is discharged in this commit).
+
+**What shipped:**
+
+1. **The pure detectors (Estate.fs, beside the other cross-env detectors).** `computeWith`
+   gains a `StaticContent { Seed; ByEnv }` parameter (`compute` passes `StaticContent.empty` —
+   byte-identical); `staticContentContributions` (D10) compares each env's rows vs the seed via
+   `Reconciliation.staticLookupIdentity` (REPAIR-lane `EnvContribution` through the standard
+   grouping/lever mint, so D10 earns its ReviewBlock lever); `staticIdentityContributions`
+   (D11) compares the AutoNumber business-key→surrogate map ACROSS envs (a business key with
+   ≥2 distinct surrogate values). The fork condition extends to `DataStaticIdentity` — two
+   envs numbering the same rows differently carry distinct signatures → a fork → the verdict
+   forks. Business key = the first mandatory non-key TEXT attribute (the Label convention); a
+   kind with none contributes nothing (coverage honesty).
+2. **The live probe (Faces/Estate.fs).** `ReadSide.readStaticRows` (the private capped
+   `readRows`, exposed) reads each STATIC kind's rows per environment (bounded at 50,000 — a
+   table over the cap is skipped, not static reference data). The Seed is the target's
+   `Kind.staticPopulations` when the target is the authored model, else the agreed env's read;
+   `ByEnv` is each confirm env's read. `--offline` skips the probe; a connection/probe failure
+   degrades to empty (advisory-silent, the acquireEvidence idiom) — no D10/D11 finding without
+   evidence, the schema/data verdict still leads.
+3. **Coverage honesty.** `EstateReport.StaticInspected` (set by `computeWith` from a non-empty
+   `ByEnv`) drops "static-entity content" from the not-inspected masthead line exactly when the
+   probe ran; the JSON carries `staticContentInspected`.
+4. **The D10 remediation block (EstateRemediation).** A `DataStaticContent` arm resolves the
+   static kind by name (the subject is the kind, not `Entity.Column`), locates the env's
+   reference data (`SELECT * … ORDER BY <businessKey>`), and comments the alignment MERGE
+   matched by the business key — the surrogate PK stays out of the ON/INSERT (the sink mints
+   its own keys; that is D11's ruling). The full typed-VALUES MERGE via `MergeRender` is a
+   named follow-on in the block comment (the block needs the seed rows threaded, deferred).
+
+**Witnesses (pure — the estate chapter's convention; the face probe follows the established
+acquireEvidence try/with degradation idiom):** D11 fork + verdict-forks over two envs numbering
+'Approved' differently; identical numbering mints nothing; D10 missing-seed-row → REPAIR
+finding + a remediation block matched by the business key (`[LABEL]` in the locate); `compute`
+(empty content) mints neither D10 nor D11 and leaves static content not-inspected (masthead +
+JSON). Estate + remediation + posture suites 96/96; the arity/field ripple clean across config/
+voice/fidelity; lint at the 66 baseline.
+
+**The loop is CLOSED on the original request.** The daily convergence instrument
+(`check environments` — schema/data divergences, the burndown, the interim posture), the three
+named divergences (NULLs-in-NOT-NULL = `DataNotNull`, FK-orphans = `DataOrphans`, AutoNumber
+static entities = `DataStaticIdentity`), provable row fidelity (`check fidelity <flow>`, the
+container proof), and the board reading the proof into its verdict (RT-10) — all live. Phase 4
+(the ease tail: live board, proof cache, runbook) and the terminus (the operator walk, the
+chapter close) are enhancements beyond the original ask.

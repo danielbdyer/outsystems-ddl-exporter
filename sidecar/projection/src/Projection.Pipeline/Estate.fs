@@ -196,6 +196,12 @@ module Estate =
             /// `compute` stays proof-blind (I/O lives at the boundary).
             /// `NotConfigured` until stamped.
             Fidelity : FidelityClause
+            /// Whether the static-content probe (D10/D11, wave A4β) ran this
+            /// run — true when per-env static rows were threaded (the face's
+            /// live probe), false on `compute` / `--offline`. Drives the
+            /// coverage-honesty line (a clean verdict covers static content
+            /// only when it was inspected).
+            StaticInspected : bool
         }
 
     /// The movement between a recorded baseline reading and this run —
@@ -304,6 +310,28 @@ module Estate =
               RepairBandByEntity = Map.empty
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
+
+    /// The per-run STATIC ROW content the D10/D11 detectors read (wave A4β).
+    /// The estate carries only statistical `Profile` in its operands, and the
+    /// OSSYS read marks a static entity `Modality.Static` WITHOUT its row
+    /// content (the records ride a skipped metamodel result set) — so the face
+    /// reads the actual rows (bounded; static tables are small reference data)
+    /// and threads them here. `Seed` is the reference basis (the target's
+    /// declared static content); `ByEnv` is each confirm environment's actual
+    /// rows, per static kind (keyed by SsKey — espace-stable). `empty` is
+    /// `compute`'s basis and the offline / no-static-kind case (no D10/D11
+    /// findings; the coverage line stays honest).
+    type StaticContent =
+        {
+            Seed  : Map<SsKey, StaticRow list>
+            ByEnv : Map<string, Map<SsKey, StaticRow list>>
+        }
+
+    [<RequireQualifiedAccess>]
+    module StaticContent =
+        /// No static-row evidence — `compute`'s basis; the D10/D11 detectors
+        /// produce nothing.
+        let empty : StaticContent = { Seed = Map.empty; ByEnv = Map.empty }
 
     /// The logical entity a finding's subject names (the part before the
     /// first `.` in `Entity.Column`, or the whole token for an entity).
@@ -1121,6 +1149,128 @@ module Estate =
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
+    // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
+
+    /// The business key of a static entity — the label convention: the first
+    /// mandatory, non-key, TEXT attribute (a Country's Name, a Status's
+    /// Label). `None` when the kind has none; the detectors then skip the kind
+    /// by name (coverage honesty), never guessing a key.
+    let private staticBusinessKey (k: Kind) : Attribute option =
+        k.Attributes
+        |> List.tryFind (fun a -> a.IsMandatory && not a.IsPrimaryKey && a.Type = Text)
+
+    /// The static entity's primary-key attribute (the surrogate whose minting
+    /// D11 watches).
+    let private staticPk (k: Kind) : Attribute option =
+        k.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey)
+
+    /// D10 (`DataStaticContent`): each environment's static rows compared
+    /// against the SEED (the target's declared static content) by business
+    /// key — missing rows, extra rows, or column drift, via
+    /// `Reconciliation.staticLookupIdentity`. A REPAIR-lane finding (the
+    /// alignment MERGE is the prepared repair). The surrogate PK is EXCLUDED
+    /// from the compare (the environments mint their own keys; that is D11's
+    /// concern). A kind absent from the seed, or with no business key,
+    /// contributes nothing.
+    let private staticContentContributions
+        (logicalTarget: Catalog)
+        (content: StaticContent)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            match Map.tryFind kind.SsKey content.Seed, staticBusinessKey kind, staticPk kind with
+            | Some seedRows, Some bk, Some pk when not (List.isEmpty seedRows) ->
+                content.ByEnv
+                |> Map.toList
+                |> List.choose (fun (env, byKind) ->
+                    match Map.tryFind kind.SsKey byKind with
+                    | None -> None
+                    | Some envRows ->
+                        let div =
+                            Reconciliation.staticLookupIdentity Set.empty kind.SsKey bk.Name pk.Name seedRows envRows
+                        if div.IsClean then None
+                        else
+                            let missing = List.length div.MissingOnTarget
+                            let extra = List.length div.ExtraOnTarget
+                            let drift = div.ColumnDrifts |> List.sumBy (fun d -> d.DifferingPairs)
+                            let name = Name.value kind.Name
+                            Some
+                                { Kind = EstateFindingKind.DataStaticContent
+                                  Subject = name
+                                  Reference = None
+                                  Env = env
+                                  Fragment =
+                                    sprintf "%s in %s differs from the seed — %s row(s) missing, %s extra, %s value difference(s)"
+                                        name env (humane missing) (humane extra) (humane drift)
+                                  Weight = int64 (missing + extra + drift)
+                                  Signature = None })
+            | _ -> [])
+
+    /// D11 (`DataStaticIdentity`): an AUTONUMBER static entity (its PK an
+    /// IDENTITY — `SurrogateRemap.IdentityDisposition.ofKind = AssignedBySink`)
+    /// that numbers the SAME business rows differently across environments —
+    /// every inbound reference means something different per environment. A
+    /// DECIDE-lane fork (rule the seed; pin explicit keys). The comparison is
+    /// the business-key→surrogate map ACROSS environments — the surrogate the
+    /// content compare (D10) deliberately excludes. Emits only when a shared
+    /// business key carries at least two distinct surrogate values.
+    let private staticIdentityContributions
+        (logicalTarget: Catalog)
+        (content: StaticContent)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            match staticBusinessKey kind, staticPk kind with
+            | Some bk, Some pk when pk.IsIdentity ->
+                let mapByEnv =
+                    content.ByEnv
+                    |> Map.toList
+                    |> List.choose (fun (env, byKind) ->
+                        Map.tryFind kind.SsKey byKind
+                        |> Option.map (fun rows ->
+                            let m =
+                                rows
+                                |> List.choose (fun r ->
+                                    match StaticRow.value bk.Name r, StaticRow.value pk.Name r with
+                                    | Some bkv, Some pkv when bkv <> "" -> Some (bkv, pkv)
+                                    | _ -> None)
+                                |> List.distinctBy fst
+                                |> Map.ofList
+                            env, m))
+                if List.length mapByEnv < 2 then []
+                else
+                    // A business key present in >= 2 envs with >= 2 distinct
+                    // surrogate values is the divergence.
+                    let sharedKeys =
+                        mapByEnv
+                        |> List.map (fun (_, m) -> m |> Map.toList |> List.map fst |> Set.ofList)
+                        |> List.reduce Set.intersect
+                    let diverging =
+                        sharedKeys
+                        |> Set.filter (fun bkv ->
+                            mapByEnv
+                            |> List.choose (fun (_, m) -> Map.tryFind bkv m)
+                            |> List.distinct
+                            |> List.length >= 2)
+                    if Set.isEmpty diverging then []
+                    else
+                        let name = Name.value kind.Name
+                        let example = diverging |> Set.toList |> List.sort |> List.head
+                        mapByEnv
+                        |> List.map (fun (env, m) ->
+                            let ev = Map.tryFind example m |> Option.defaultValue "?"
+                            { Kind = EstateFindingKind.DataStaticIdentity
+                              Subject = name
+                              Reference = None
+                              Env = env
+                              Fragment = sprintf "%s numbers '%s' as %s in %s" name example ev env
+                              Weight = int64 (Set.count diverging)
+                              // The surrogate map is the fork signature: two envs
+                              // with different maps numbered the same rows
+                              // differently — no single adoption resolves it.
+                              Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",") })
+            | _ -> [])
+
     /// Compute the estate report from the resolved target and confirm
     /// operands, under the operator's posture (the repair band + the loaded
     /// config's active relaxations — wave A6). Every catalog is normalized
@@ -1132,6 +1282,7 @@ module Estate =
     /// environments, may be the one behind).
     let computeWith
         (posture: Posture)
+        (staticContent: StaticContent)
         (target: TargetOperand)
         (targetCatalog: Catalog)
         (envs: (string * Compare.Operand) list)
@@ -1270,6 +1421,11 @@ module Estate =
             @ synthesizedIdentityContributions logicalTarget logicalEnvs
             @ cdcParityContributions logicalTarget profilesByEnv
             @ postureContributions logicalTarget posture (envs |> List.map fst) profilesByEnv
+            // D10 / D11 (wave A4β): the static-entity content + identity
+            // detectors over the per-env static rows the face read (empty on
+            // `compute` / offline — no findings, the coverage line honest).
+            @ staticContentContributions logicalTarget staticContent
+            @ staticIdentityContributions logicalTarget staticContent
         let findings =
             (perEnv |> List.collect (fun (_, _, contributions) -> contributions)) @ crossEnv
             |> List.groupBy (fun c -> c.Kind, c.Subject)
@@ -1300,8 +1456,13 @@ module Estate =
                 // changed, differently — no promotion order explains it,
                 // and no single adoption resolves it.
                 let fork =
-                    plane = EstatePlane.Schema
-                    && EstateFindingKind.laneOf kind = EstateLane.Decide
+                    // A schema Decide finding forks when the environments
+                    // carry distinct divergence signatures; D11 (identity
+                    // plane) forks the same way over the surrogate maps — the
+                    // same rows numbered differently, no single adoption
+                    // resolving it (wave A4β).
+                    (plane = EstatePlane.Schema && EstateFindingKind.laneOf kind = EstateLane.Decide
+                     || kind = EstateFindingKind.DataStaticIdentity)
                     && (perEnvRows |> List.choose (fun c -> c.Signature) |> List.distinct |> List.length) >= 2
                 let forkNote =
                     if fork then
@@ -1351,7 +1512,8 @@ module Estate =
           EmissionFindings = emissionFindingsFor logicalTarget
           Burndown = None
           Streak = 0
-          Fidelity = FidelityClause.NotConfigured }
+          Fidelity = FidelityClause.NotConfigured
+          StaticInspected = not (Map.isEmpty staticContent.ByEnv) }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -1360,7 +1522,7 @@ module Estate =
         (targetCatalog: Catalog)
         (envs: (string * Compare.Operand) list)
         : EstateReport =
-        computeWith Posture.defaults target targetCatalog envs
+        computeWith Posture.defaults StaticContent.empty target targetCatalog envs
 
     /// The face's remediation stamp: the artifacts it wrote this run —
     /// (file, block count) per environment (`compute` stays file-blind;
@@ -1562,7 +1724,13 @@ module Estate =
               match report.Fidelity with
               | FidelityClause.NotConfigured -> "A clean verdict covers schema and data convergence only."
               | _ -> "A clean verdict covers schema convergence, data convergence, and the row-fidelity proof."
-          yield sprintf "  Not inspected this run: static-entity content, user references, grants, computed columns, and emission fidelity (clustering, temporal tables, sequences). %s" coveredTail
+          // The static-content probe (D10/D11) joins the covered set exactly
+          // when it ran this run — dropped from the not-inspected list then.
+          let notInspected =
+              [ if not report.StaticInspected then "static-entity content"
+                "user references"; "grants"; "computed columns"
+                "emission fidelity (clustering, temporal tables, sequences)" ]
+          yield sprintf "  Not inspected this run: %s. %s" (String.concat ", " notInspected) coveredTail
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
@@ -1741,6 +1909,7 @@ module Estate =
         for lane, count in laneCounts report do
             lanes.[laneToken lane] <- JsonValue.Create count
         root.["lanes"] <- lanes
+        root.["staticContentInspected"] <- JsonValue.Create report.StaticInspected
         let remediation = JsonArray()
         for file, blocks in report.Remediation do
             let o = JsonObject()

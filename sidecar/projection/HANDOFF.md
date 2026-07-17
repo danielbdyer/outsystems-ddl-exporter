@@ -1,3 +1,57 @@
+# Handoff addendum — 2026-07-17 (latest), THE LOOP IS CLOSED: Phase 3 slice 3a (D10/D11) SHIPS — the third named divergence lands. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+
+To the next agent.
+
+**The original request is CLOSED.** The operator came with two loops (daily convergence +
+provable row fidelity) and three named divergences (no NULLs in NOT NULL, no FK orphans, no
+AutoNumber static entities). All live:
+
+- **Daily convergence** — `check environments`: schema/data divergences across the estate, the
+  burndown (A7), the interim posture (A6), and now the static-content plane (A4β).
+- **The three named divergences** — `DataNotNull` (NULLs in NOT NULL, A3), `DataOrphans` (FK
+  orphans, A3), and **`DataStaticIdentity` (AutoNumber static entities, THIS slice)**: an
+  AutoNumber static entity numbering the same business rows differently across environments is
+  a DECIDE fork (rule the seed). Its sibling `DataStaticContent` (D10) catches static-content
+  drift as a REPAIR finding with an alignment-MERGE block.
+- **Provable row fidelity** — `check fidelity <flow>`, the container proof (B5): every row
+  byte-identical modulo the journal's recorded interventions.
+- **The board reads the proof** — RT-10 (slice 3b): `readiness.estate.fidelityFlow` folds the
+  proof's verdict into the estate's.
+
+**Slice 3a (D10/D11) shipped this letter's commit.** The pure detectors live in `Estate.fs`
+(a `StaticContent { Seed; ByEnv }` parameter on `computeWith`; `compute` passes empty); the
+live per-env static-row probe is in the face (`ReadSide.readStaticRows`, bounded at 50,000,
+degrades to empty on offline/failure — the acquireEvidence idiom); `EstateReport.StaticInspected`
+drives the coverage line; the D10 remediation block resolves the kind by name and comments the
+business-key alignment MERGE. Estate + remediation + posture 96/96; the arity/field ripple
+clean across config/voice/fidelity/axiom (163 pass); lint 66. The face probe follows the estate
+chapter's pure-fixture convention (no docker for the estate face); the detector is pure-tested
+via `computeWith` directly.
+
+**WHAT REMAINS — enhancements BEYOND the original ask (Phase 4 + terminus):**
+
+- **Phase 4 (A8 + B6) — the ease tail.** The live Spectre board (GoBoardView donor); the
+  incremental proof cache (`proofs/<proofKey>/digests.json`); `Profile.replaceKindEvidence` +
+  FK-adjacency closure; the `runInit` stanza; the `ApplyRunbookEmitter`.
+- **The terminus.** The ideation §12 operator walk end-to-end on the fixture estate (this is
+  also WP-12/13's trigger — both fail loud on the proof path today); A45/T17 promotion
+  finalized; the DECISIONS eight-item chapter close; CLAUDE.md currency; matrix regeneration;
+  the final HANDOFF letter.
+- **The named D10 follow-on:** the D10 remediation block comments the alignment MERGE rather
+  than emitting the full typed VALUES (that needs the seed rows threaded into
+  `EstateRemediation.blocksFor` + a `StaticRow → Map<Name, SqlLiteral>` conversion via the
+  column types — `MergeRender.renderMerge` is ready to consume it). Small, well-scoped.
+
+**Traps this phase (cumulative):** the estate JSON `fidelityClause` is a state OBJECT; the
+five estate finding kinds fan out through all SEVEN `EstateFinding.fs` registries; the
+lever⇔lane law accepts "Run …" for the proof family; `computeWith` now takes `StaticContent`
+as its SECOND param (every caller updated — tests pass `Estate.StaticContent.empty`); `ReadSide`
+is not opened in the estate face (fully-qualify `Projection.Adapters.Sql.ReadSide`);
+`mkCatalog`/`mkModule` are in `Projection.Tests.IRBuilders`, `RemediationEmitter` in
+`Projection.Targets.OperationalDiagnostics` (open both in a new estate test file).
+
+---
+
 # Handoff addendum — 2026-07-17 (later still), THE LOOP-CLOSING PROGRAM Phase 3 opens: RT-10 (the fidelity clause) SHIPS — `check environments` reads the container proof and folds it into the verdict. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
 
 To the next agent.

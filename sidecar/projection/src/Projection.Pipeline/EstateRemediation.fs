@@ -137,6 +137,28 @@ module EstateRemediation =
                 blockOf
                     (sprintf "SELECT [name], [is_not_trusted] FROM sys.foreign_keys WHERE [parent_object_id] = OBJECT_ID(N'%s');" t)
                     [ sprintf "ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL; -- re-trusts every constraint on the kind; scans the table" t ])
+        | EstateFindingKind.DataStaticContent ->
+            // D10 (wave A4β) — the subject is the static KIND (not
+            // Entity.Column), so resolve the kind by name and align its
+            // content to the model's declared seed, MATCHED BY BUSINESS KEY,
+            // never rewriting the surrogate (that is D11's ruling). The
+            // located SELECT shows the environment's current reference data;
+            // the alignment MERGE is the commented repair (the surrogate PK
+            // stays out of the ON / INSERT — the sink mints its own keys).
+            findKind catalog subject
+            |> Option.bind (fun k ->
+                let bk =
+                    k.Attributes
+                    |> List.tryFind (fun a -> a.IsMandatory && not a.IsPrimaryKey && a.Type = Text)
+                match bk with
+                | Some bkAttr ->
+                    let t = tableOf k
+                    let bkCol = columnOf bkAttr
+                    blockOf
+                        (sprintf "SELECT * FROM %s ORDER BY %s;" t bkCol)
+                        [ sprintf "-- align %s to the model's declared static seed, matched by %s (the business key); the surrogate primary key is never rewritten." t bkCol
+                          sprintf "-- MERGE %s AS [t] USING (<the model's seed rows>) AS [s] ON [t].%s = [s].%s WHEN NOT MATCHED BY TARGET THEN INSERT (...) WHEN MATCHED THEN UPDATE SET ... WHEN NOT MATCHED BY SOURCE THEN DELETE; -- projection's seed emitter renders the typed VALUES" t bkCol bkCol ]
+                | None -> None)
         | EstateFindingKind.PostureRetirable ->
             // The retirement repair (wave A6): the reopen probe reads zero
             // in every evidenced environment. An FK-anchored subject earns

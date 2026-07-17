@@ -3,7 +3,9 @@ module Projection.Tests.EstateTests
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open Projection.Targets.OperationalDiagnostics
 open Projection.Tests.Fixtures
+open Projection.Tests.IRBuilders
 
 // ---------------------------------------------------------------------------
 // The estate instrument (`check estate` — CHAPTER_ESTATE_OPEN.md; DECISIONS
@@ -794,7 +796,7 @@ let ``the band knob: readiness.estate.repairBand moves the split (A44 — the ke
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
     let tight : Estate.Posture = { Estate.Posture.defaults with RepairBand = 100L }
     let report =
-        Estate.computeWith tight agreed sampleCatalog
+        Estate.computeWith tight Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
 
@@ -808,7 +810,7 @@ let ``the per-entity band: readiness.estate.repairBandByEntity overrides the def
             RepairBand = 1_000_000L
             RepairBandByEntity = Map.ofList [ "Customer", 100L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
     // The override is scoped by entity: Customer's band is 100, every other
@@ -991,7 +993,7 @@ let ``the active posture: a relaxed relationship renders its meter and absorbs t
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Equal(EstateLane.Relax, active.Lane)
@@ -1005,7 +1007,7 @@ let ``the active posture: an unevidenced environment reads unobserved — the me
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-qa",  operand "cloud-qa" sampleCatalog ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
@@ -1017,7 +1019,7 @@ let ``the retirement notice: a relaxation whose probe reads zero everywhere beco
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some cleanNow } ]
     let retirable = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureRetirable)
     Assert.Equal(EstateLane.Repair, retirable.Lane)
@@ -1033,7 +1035,7 @@ let ``the retirement notice: one dirty environment keeps the relaxation active e
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let dirty    = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 40L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some cleanNow }
               "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.PostureRetirable))
@@ -1047,7 +1049,7 @@ let ``the active posture: a kept-nullable column renders its meter and absorbs t
         { Estate.Posture.defaults with RelaxedAttributes = Set.singleton customerNameKey }
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Contains("Customer.Name is left nullable for now; 4,120 row(s) are still NULL in cloud-uat", active.Statement)
@@ -1264,3 +1266,102 @@ let ``tryReadProof: an absent or torn proof reads as no proof (fail-closed); a v
         | None -> Assert.Fail "expected the valid proof to read"
     finally
         if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+// ---------------------------------------------------------------------------
+// D10 / D11 — static-entity content + identity (wave A4β; the original ask's
+// third named divergence). The laws:
+//   - D11 (`DataStaticIdentity`): an AutoNumber static entity numbering the
+//     SAME business rows differently across environments is a DECIDE fork.
+//   - D10 (`DataStaticContent`): an environment's static rows differing from
+//     the seed (missing/extra/drift by business key) is a REPAIR finding with
+//     a remediation block.
+//   - `compute` (empty static content) mints neither; the coverage line then
+//     keeps "static-entity content" as not-inspected.
+// ---------------------------------------------------------------------------
+
+let private statusKey       = kindKey ["Status"]
+let private statusIdKey     = attrKey ["Status"; "Id"]
+let private statusLabelKey  = attrKey ["Status"; "Label"]
+
+/// An AUTONUMBER static entity: Id is an IDENTITY PK; Label is the mandatory
+/// TEXT business key. Marked static (empty populations — the row content is
+/// threaded as `StaticContent`, mirroring the live OSSYS read).
+let private statusCatalog : Catalog =
+    let statusKind : Kind =
+        { Kind.create statusKey (mkName "Status") (mkTableId "dbo" "OSUSR_X_STATUS")
+            [ { Attribute.create statusIdKey (mkName "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsIdentity = true; IsMandatory = true }
+              { Attribute.create statusLabelKey (mkName "Label") Text with
+                  Column = ColumnRealization.create "LABEL" false |> Result.value
+                  IsMandatory = true } ]
+            with Modality = [ Static [] ] }
+    mkCatalog [ mkModule (modKey "Ref") (mkName "Ref") [ statusKind ] ]
+
+let private statusRow (label: string) (id: string) : StaticRow =
+    { Identifier = rowKey ("Status_" + label + "_" + id)
+      Values = StaticRow.presentValues [ mkName "Label", label; mkName "Id", id ] }
+
+let private statusEnvs =
+    [ "cloud-dev", operand "cloud-dev" statusCatalog
+      "cloud-qa",  operand "cloud-qa"  statusCatalog ]
+
+[<Fact>]
+let ``D11: an AutoNumber static entity numbered differently across environments is a DECIDE fork — the verdict forks`` () =
+    // 'Approved' is 3 in cloud-dev and 7 in cloud-qa; 'Pending' agrees.
+    let content : Estate.StaticContent =
+        { Seed = Map.empty
+          ByEnv =
+            Map.ofList
+                [ "cloud-dev", Map.ofList [ statusKey, [ statusRow "Approved" "3"; statusRow "Pending" "1" ] ]
+                  "cloud-qa",  Map.ofList [ statusKey, [ statusRow "Approved" "7"; statusRow "Pending" "1" ] ] ] }
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog statusEnvs
+    let d11 = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.DataStaticIdentity)
+    Assert.Equal(1, List.length d11)
+    let f = List.head d11
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Identity, f.Plane)
+    Assert.True(f.Fork, "the environments number the same rows differently — a fork")
+    Assert.Equal(Estate.Verdict.Forked, report.Verdict)
+    Assert.Contains("Approved", f.Statement)
+
+[<Fact>]
+let ``D11: an AutoNumber static entity numbering rows identically across environments mints no finding`` () =
+    let content : Estate.StaticContent =
+        { Seed = Map.empty
+          ByEnv =
+            Map.ofList
+                [ "cloud-dev", Map.ofList [ statusKey, [ statusRow "Approved" "3" ] ]
+                  "cloud-qa",  Map.ofList [ statusKey, [ statusRow "Approved" "3" ] ] ] }
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog statusEnvs
+    Assert.DoesNotContain(report.Findings, fun f -> f.Kind = EstateFindingKind.DataStaticIdentity)
+
+[<Fact>]
+let ``D10: an environment's static rows missing a seed row is a REPAIR finding with a remediation block matched by business key`` () =
+    // The seed declares US/CA/MX; cloud-qa is missing MX.
+    let content : Estate.StaticContent =
+        { Seed = Map.ofList [ statusKey, [ statusRow "US" "1"; statusRow "CA" "2"; statusRow "MX" "3" ] ]
+          ByEnv = Map.ofList [ "cloud-qa", Map.ofList [ statusKey, [ statusRow "US" "1"; statusRow "CA" "2" ] ] ] }
+    let envs = [ "cloud-qa", operand "cloud-qa" statusCatalog ]
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog envs
+    let d10 = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.DataStaticContent)
+    Assert.Equal(1, List.length d10)
+    let f = List.head d10
+    Assert.Equal(EstateLane.Repair, f.Lane)
+    Assert.Contains("differs from the seed", f.Statement)
+    // The REPAIR lever is backed by a real block matched by the business key,
+    // never rewriting the surrogate.
+    let blocks =
+        EstateRemediation.blocksFor "cloud-qa" statusCatalog None report
+    Assert.Contains(blocks, fun (b: RemediationEmitter.EstateBlock) -> b.BlockId.StartsWith "data.staticContent:")
+    let block = blocks |> List.find (fun b -> b.BlockId.StartsWith "data.staticContent:")
+    Assert.Contains("[LABEL]", block.Locate)
+    Assert.Contains(block.Repairs, fun (r: string) -> r.Contains "business key")
+
+[<Fact>]
+let ``static content: compute (empty static content) mints no D10/D11 and leaves static content not-inspected`` () =
+    let report = Estate.compute agreed statusCatalog statusEnvs
+    Assert.DoesNotContain(report.Findings, fun f -> f.Kind = EstateFindingKind.DataStaticContent || f.Kind = EstateFindingKind.DataStaticIdentity)
+    Assert.False report.StaticInspected
+    Assert.Contains(Estate.render report, fun (l: string) -> l.Contains "static-entity content")
+    Assert.Contains("\"staticContentInspected\": false", Estate.toJsonString report)

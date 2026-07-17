@@ -230,8 +230,48 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 match store with
                 | Some dir -> Estate.EvidenceStoreBasis.Enabled dir
                 | None -> Estate.EvidenceStoreBasis.Disabled
+            // D10 / D11 (wave A4β): the per-env static-row probe. Static
+            // entities' ROW CONTENT is not in the OSSYS-read catalog (the
+            // records ride a skipped metamodel result set), so the face reads
+            // it live — bounded (reference tables are small). `--offline`
+            // skips the probe (the coverage line stays honest); a connection /
+            // probe failure degrades to empty (no D10/D11 finding without
+            // evidence — advisory-silent, the schema/data verdict still leads).
+            let staticContent : Estate.StaticContent =
+                let staticMaxRows = 50_000
+                let isStaticKind (k: Kind) =
+                    k.Modality |> List.exists (function ModalityMark.Static _ -> true | _ -> false)
+                let readStaticRowsFor (refStr: string) (catalog: Catalog) : Map<SsKey, StaticRow list> =
+                    try
+                        use cnn = new Microsoft.Data.SqlClient.SqlConnection(Source.resolveConn refStr)
+                        cnn.OpenAsync().GetAwaiter().GetResult()
+                        Catalog.allKinds catalog
+                        |> List.filter isStaticKind
+                        |> List.choose (fun k ->
+                            match (Projection.Adapters.Sql.ReadSide.readStaticRows cnn k staticMaxRows).GetAwaiter().GetResult() with
+                            | Some rows when not (List.isEmpty rows) -> Some (k.SsKey, rows)
+                            | _ -> None)
+                        |> Map.ofList
+                    with _ -> Map.empty
+                match args.Evidence with
+                | EstateEvidenceMode.Offline -> Estate.StaticContent.empty
+                | _ ->
+                    let seed =
+                        match args.Target with
+                        | EstateTargetSource.AuthoredModel _ ->
+                            Catalog.allKinds target
+                            |> List.choose (fun k -> match Kind.staticPopulations k with [] -> None | rows -> Some (k.SsKey, rows))
+                            |> Map.ofList
+                        | EstateTargetSource.AgreedEnv connRef -> readStaticRowsFor connRef target
+                    let byEnv =
+                        outcomes
+                        |> List.map (fun ((label, operandValue), _) ->
+                            let refStr = args.Confirm |> List.tryFind (fun (l, _) -> l = label) |> Option.map snd |> Option.defaultValue ""
+                            label, readStaticRowsFor refStr operandValue.Catalog)
+                        |> Map.ofList
+                    { Seed = seed; ByEnv = byEnv }
             let computed =
-                Estate.computeWith posture targetOperand target envs
+                Estate.computeWith posture staticContent targetOperand target envs
                 |> Estate.withEvidence storeBasis provenanceByEnv
             // The remediation artifacts (wave A5): one file per environment
             // carrying REPAIR-lane blocks — written BEFORE the report is
