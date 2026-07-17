@@ -2363,17 +2363,31 @@ module Command =
                         | true, false, _ -> Result.success EstateEvidenceMode.Offline
                         | false, true, None -> Result.success (EstateEvidenceMode.Refresh refreshEnvs)
                         | false, false, _ -> Result.success EstateEvidenceMode.FingerprintGated
-                    match target, confirmError, evidence with
-                    // A missing authored model or a contradictory evidence
-                    // flag is a config-shape refusal (2); an unresolvable
-                    // environment is a connection-plane one (6).
-                    | _, _, Error (e :: _) -> PlanAction.Refused (2, e)
-                    | Error (e :: _), _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
-                    | Error (e :: _), _, _ -> PlanAction.Refused (6, e)
-                    | Error [], _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
-                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
-                    | Ok _, Some e, _ -> PlanAction.Refused (6, e)
-                    | Ok (label, source), None, Ok evidenceMode ->
+                    // `--since @runId` (wave A7): the burndown's named
+                    // baseline. The @-form is the house run-reference
+                    // spelling; anything else is a refusal that names the
+                    // form, never a guess.
+                    let since : Result<string option> =
+                        match valueOf "--since" with
+                        | None -> Result.success None
+                        | Some v when v.StartsWith "@" && v.Length > 1 ->
+                            Result.success (Some (v.Substring 1))
+                        | Some v ->
+                            Result.failureOf (err "cli.check.estateSinceForm" (sprintf "projection check environments: --since takes a run reference in the @runId form; '%s' does not name one." v))
+                    match target, confirmError, evidence, since with
+                    // A missing authored model, a contradictory evidence
+                    // flag, or a malformed baseline reference is a
+                    // config-shape refusal (2); an unresolvable environment
+                    // is a connection-plane one (6).
+                    | _, _, Error (e :: _), _ -> PlanAction.Refused (2, e)
+                    | _, _, _, Error (e :: _) -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _, _ -> PlanAction.Refused (6, e)
+                    | Error [], _, _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
+                    | _, _, Error [], _ -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
+                    | _, _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateSinceForm" "projection check environments: the --since reference did not resolve.")
+                    | Ok _, Some e, _, _ -> PlanAction.Refused (6, e)
+                    | Ok (label, source), None, Ok evidenceMode, Ok sinceRun ->
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckEstate
                             { TargetLabel = label
@@ -2383,6 +2397,7 @@ module Command =
                               Evidence    = evidenceMode
                               RepairBand  = rs.RepairBand
                               RepairBandByEntity = rs.RepairBandByEntity
+                              Since       = sinceRun
                               Tightening  = cfg.Shaping.Policy.Tightening }
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with

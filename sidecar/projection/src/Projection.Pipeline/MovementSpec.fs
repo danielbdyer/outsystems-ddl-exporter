@@ -760,6 +760,10 @@ and CheckEstateArgs =
       /// `readiness.estate.repairBandByEntity` — per-entity band overrides
       /// (logical entity name → band). Empty = the default governs all.
       RepairBandByEntity : Map<string, int64>
+      /// `--since @runId` (wave A7): the burndown's NAMED baseline — a
+      /// recorded reading in the evidence store's history (never the run
+      /// ledger). `None` = the latest recorded reading.
+      Since       : string option
       /// The loaded config's tightening section (wave A6): the face binds
       /// it against the resolved target catalog to read the ACTIVE interim
       /// posture — the relaxation keys whose meter lines the board carries.

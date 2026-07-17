@@ -46,7 +46,7 @@ let private usageLines : string list =
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready | shape | go <flow>"
-        "                      | environments [--against model] [--refresh] [--offline] | plan <flow> )"
+        "                      | environments [--against model] [--refresh] [--offline] [--since @runId] | plan <flow> )"
         "                      shape = the cross-environment readiness gate (the `readiness` set"
         "                      resolves to one espace-safe shape + zero data dealbreakers)"
         "                      go    = THE GO BOARD for a data flow: every open decision +"

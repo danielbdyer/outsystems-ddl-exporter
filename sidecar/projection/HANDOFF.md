@@ -1,3 +1,60 @@
+# Handoff addendum — 2026-07-17, THE LOOP-CLOSING PROGRAM opens: the programs collapse, Phase 1 (A7, the burndown) ships. Branch `claude/projection-reconciliation-ideate-pzm60d` (restarted content-identical to main after the #668 squash merge)
+
+To the next agent.
+
+**The world since the letter below:** PR #668 merged (squash `d7f4566`, taken at `89466db` —
+a final usability overhaul that renamed the verb: the canonical face is now **`projection
+check environments`** (`estate` still parses), and the artifacts are `environments.json` /
+`environments.remediation.<env>.sql` / `environments.overlay.json` /
+`environments.probes.sql` — the letter below predates the rename; read its `estate.*`
+artifact names as the `environments.*` ones. Main then landed the SSDT remediation campaign
+(#669: the WP-1..17 plan of record with WP-1a–1d/3/4/4b/8/16 CODE already landed; #671: the
+eject-blockers G3 refactorlog-in-bundle + G6 CREATE SCHEMA + WP-17 scalar carriage; #670:
+the ssdt-agent rewrite, docs only). The lint baseline is 66 now (upstream's marked
+`readableLabel` site).
+
+**The program you are in: THE LOOP-CLOSING PROGRAM** (DECISIONS 2026-07-17) — the operator
+collapsed the two programs and pointed at the ORIGINAL request's terminus: the daily
+convergence loop and the provable row fidelity. Five phases; the first is shipped in this
+letter's commit:
+
+- **Phase 1 (A7, SHIPPED): the burndown.** `EstateHistory` (Pipeline) records each run's
+  reading under the evidence store (`estate/<runId>.estate.json` + `latest.json`, one set of
+  bytes); first-seen instants CARRY across readings (a finding's age belongs to the
+  finding); the streak counts consecutive unified readings; `Estate.Burndown` +
+  `withHistory` stamp the report; the BURNDOWN region has three honest states (movement /
+  first reading / no-store-no-memory); `--since @runId` names the baseline (@-form required;
+  no-store and not-recorded refuse by name, exit 2); the displayed movement diffs against
+  the operator's baseline while the RECORDED reading always chains from latest; one
+  `summary.environments` envelope per run (the `summary.readiness` precedent). Tests:
+  `EstateHistoryTests` + the EstateTests burndown/streak/routing facts.
+- **Phase 2 (NEXT): the container proof** — B4a folded in (journal promotion on the
+  materialized path; `filterSeedRows` de-silencing; `--interventions @runId` resolves), then
+  `check fidelity <flow>`: per-run container DB, DacFx apply of the bundle (G3/G6 are
+  landed upstream — stand on them), leveled seed, the container transfer sink, the
+  ledger-modulated proof, reap; flow-map membership BEFORE the `.sql` default arm; WP-12/13/15
+  exactly where the apply/transfer path needs them. A substrate-mapping agent's report may
+  be in the session transcript; verify its citations before building on them.
+- **Phase 3: the verdict closes** — A4β's D10/D11 static alignment (the original ask's
+  third named divergence) + `EstateAlignmentEmitter`; `readiness.estate` fidelity-flow key;
+  ProofMissing/ProofStale DECIDE findings; the Unified formula includes the green proof.
+- **Phase 4: the ease tail** — the live Spectre board, the incremental proof cache,
+  `Profile.replaceKindEvidence`, the runInit stanza, ApplyRunbookEmitter.
+- **Terminus: the operator walk** (the ideation §12 loop end-to-end) **+ the chapter close
+  ritual.** The emission-polish WPs (2/5/6/7/9/10/11/1e) stay on the SSDT campaign's own
+  handoff (`SSDT_REMEDIATION_HANDOFF.md`), sequenced after.
+
+Traps this session added to the standing list: FS1104 (no `@` in backticked test names —
+bit twice now); the fast pool's long quiet tail is the R4 promotion property, not a hang;
+`grep -c` exits 1 on zero matches (a "failed" background build with a clean log is that);
+the permission classifier blocks `checkout -B`/`reset --hard`/force-push — reconcile by
+merge and verify `git diff origin/main HEAD` is empty instead.
+
+The letter below (B4b → A6) still describes machinery you operate; read it next, with the
+rename note above in hand.
+
+---
+
 # Handoff addendum — 2026-07-15 (latest), MID-CHAPTER: waves B4b → A4α → A5 → A6 shipped — the exception-ledger compare, the probe/static detectors, the remediation artifacts, and the POSTURE (the nullability-binder amendment, the interim overlay + reopen probes, the Forked verdict, the code-resident presentation contract). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
 
 To the next agent.

@@ -124,6 +124,12 @@
          the profile-capture cluster and before MovementSpec.fs so the A2.5β
          flag threading (refresh/offline) can reach it from the surface. -->
     <Compile Include="EstateEvidenceStore.fs" />
+    <!-- EstateHistory.fs: the estate's recorded readings (wave A7 - the
+         burndown's memory under the evidence store; movement + streak
+         derivations pure, atomic save / fail-closed load at the boundary).
+         Reads Estate; placed beside the evidence store it shares a root
+         with. -->
+    <Compile Include="EstateHistory.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />

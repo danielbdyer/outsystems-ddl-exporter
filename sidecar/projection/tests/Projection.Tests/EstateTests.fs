@@ -1114,3 +1114,57 @@ let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` ()
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.overlay.json — 3 interim change(s)")
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.probes.sql — every reopen probe, runnable as one batch")
     Assert.Contains("\"entries\": 3", Estate.toJsonString report)
+
+// -- the burndown (wave A7): memory, movement, the streak ----------------------
+
+[<Fact>]
+let ``the burndown renders the movement line from the stamped baseline — closed, opened, remaining, the oldest age`` () =
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+        |> Estate.withHistory
+            (Some { SinceRunId = "01ABC"; SinceAgeDays = 5; Closed = 8; Opened = 1; Remaining = 4; OldestDays = Some 12 })
+            0
+    Assert.Contains(
+        Estate.render report,
+        fun (l: string) -> l = "BURNDOWN — since run 01ABC (5 day(s) ago): 8 closed, 1 opened, 4 remain — the oldest open finding is 12 day(s) old.")
+    let json = Estate.toJsonString report
+    Assert.Contains("\"sinceRunId\": \"01ABC\"", json)
+    Assert.Contains("\"closed\": 8", json)
+    Assert.Contains("\"oldestDays\": 12", json)
+
+[<Fact>]
+let ``the burndown's three honest states: movement, a first recorded reading, and no store — never implied`` () =
+    let bare = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    Assert.Contains(
+        Estate.render bare,
+        fun (l: string) -> l.StartsWith "BURNDOWN — the estate keeps no memory without a store")
+    let stored = bare |> Estate.withEvidence (Estate.EvidenceStoreBasis.Enabled "/tmp/store") Map.empty
+    Assert.Contains(
+        Estate.render stored,
+        fun (l: string) -> l.StartsWith "BURNDOWN — this run is the estate's first recorded reading")
+
+[<Fact>]
+let ``the streak rides the board and the action line once the estate holds`` () =
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+        |> Estate.withHistory None 3
+    let lines = Estate.render report
+    Assert.Contains(lines, fun (l: string) -> l.Contains "The estate has read unified for 3 consecutive run(s).")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "Next: the estate holds — 3 consecutive unified run(s)")
+    Assert.Contains("\"streak\": 3", Estate.toJsonString report)
+
+[<Fact>]
+let ``check environments: --since takes the run-reference form onto the args record`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "environments"; "--since"; "@01HXYZ" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(Some "01HXYZ", args.Since)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check environments: a --since value outside the run-reference form is refused by name, exit 2`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "environments"; "--since"; "yesterday" ]).Action with
+    | PlanAction.Refused (exit, e) ->
+        Assert.Equal(2, exit)
+        Assert.Equal("cli.check.estateSinceForm", e.Code)
+    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)

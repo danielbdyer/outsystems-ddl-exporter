@@ -106,6 +106,29 @@ let runCheckEstate (args: CheckEstateArgs) : int =
             match postureBinding with
             | Ok p -> p
             | Error _ -> Estate.Posture.defaults   // unreachable behind the guard above
+        // The burndown's NAMED baseline (`--since @runId`, wave A7): a
+        // recorded reading in the store's history. A `--since` with no
+        // store, or naming a run never recorded here, refuses by name
+        // (exit 2) — the movement is never diffed against a guess.
+        let sinceBaseline : Result<HistoryRecord option> =
+            match args.Since, store with
+            | None, _ -> Result.success None
+            | Some _, None ->
+                Result.failureOf
+                    (ValidationError.create "estate.history.sinceNoStore"
+                        "projection check environments --since: no evidence store is configured — PROJECTION_ESTATE_DIR (or the ledger directory's estate child) holds the recorded readings.")
+            | Some runId, Some root ->
+                match EstateHistory.loadRun root runId with
+                | Some r -> Result.success (Some r)
+                | None ->
+                    Result.failureOf
+                        (ValidationError.create "estate.history.sinceNotFound"
+                            (sprintf "run %s has no recorded reading in the estate history." runId))
+        let sinceErrors = match sinceBaseline with Error errs -> errs | Ok _ -> []
+        if not (List.isEmpty sinceErrors) then
+            printErrors Console.Error sinceErrors
+            2
+        else
         // One environment's data-plane evidence under the store discipline.
         // A store/probe failure prints as an advisory and the run proceeds
         // live — the evidence stays fresh; only the pay-once saving is lost.
@@ -249,12 +272,60 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     (EstateOverlayEmitter.emitProbes
                         [ sprintf "-- projection:environments-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
                         relaxations)
-            let report =
+            let stamped =
                 computed
                 |> Estate.withRemediation remediationArtifacts
                 |> (fun r ->
                     if List.isEmpty relaxations then r
                     else Estate.withOverlay (List.length relaxations) r)
+            // The burndown (wave A7): this run's reading chains from the
+            // LATEST recorded one (first-seen carry + the streak), while the
+            // displayed movement diffs against the operator's baseline — the
+            // named `--since` run when given, else that same latest. The
+            // reading is recorded before the board renders, so the next run
+            // diffs against exactly what this one showed.
+            let latest = store |> Option.bind EstateHistory.loadLatest
+            let baseline =
+                match sinceBaseline with
+                | Ok (Some named) -> Some named
+                | _ -> latest
+            let record = EstateHistory.recordOf nowUtc (LogSink.runId ()) latest stamped
+            let burndown = baseline |> Option.map (fun b -> EstateHistory.burndownOf nowUtc b stamped)
+            let report = stamped |> Estate.withHistory burndown record.Streak
+            (match store with
+             | Some root ->
+                 match EstateHistory.save root record with
+                 | Ok () -> ()
+                 | Error errs -> printErrors Console.Error errs
+             | None -> ())
+            // The machine sibling of the verdict (the `summary.readiness`
+            // precedent): one structured envelope on channel 1, so CI and
+            // the ledger can branch on the estate without parsing the board.
+            let envelopePayload : Map<string, objnull> =
+                let laneCount lane =
+                    Estate.laneCounts report
+                    |> List.tryFind (fun (l, _) -> l = lane)
+                    |> Option.map snd
+                    |> Option.defaultValue 0
+                Map.ofList
+                    [ "verdict",  box (match report.Verdict with
+                                       | Estate.Verdict.Unified -> "unified"
+                                       | Estate.Verdict.Converging -> "converging"
+                                       | Estate.Verdict.Forked -> "forked")
+                      "environments", box (List.length report.Bases)
+                      "findings", box (List.length report.Findings)
+                      "decide",   box (laneCount EstateLane.Decide)
+                      "repair",   box (laneCount EstateLane.Repair)
+                      "relax",    box (laneCount EstateLane.Relax)
+                      "watch",    box (laneCount EstateLane.Watch)
+                      "forks",    box (report.Findings |> List.filter (fun f -> f.Fork) |> List.length)
+                      "closed",   box (report.Burndown |> Option.map (fun b -> b.Closed) |> Option.defaultValue 0)
+                      "opened",   box (report.Burndown |> Option.map (fun b -> b.Opened) |> Option.defaultValue 0)
+                      "remaining", box (report.Burndown |> Option.map (fun b -> b.Remaining) |> Option.defaultValue (List.length report.Findings))
+                      "streak",   box report.Streak ]
+            LogSink.emit
+                { LogSink.envelope LogSink.Info LogSink.Summary "summary.environments" envelopePayload with
+                    Phase = LogSink.End }
             let artifact = Estate.toJsonString report
             if args.AsJson then
                 printfn "%s" artifact

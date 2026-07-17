@@ -163,6 +163,35 @@ module Estate =
             /// does it model reality), not cross-environment divergences, so
             /// they carry their own list and their own board section.
             EmissionFindings : Finding list
+            /// The movement since a recorded baseline (the burndown, wave A7)
+            /// — the face stamps it from the evidence store's history;
+            /// `compute` stays store-blind. `None` = no baseline (a first
+            /// recorded reading, or no store).
+            Burndown : Burndown option
+            /// Consecutive UNIFIED runs, this one included (0 while the
+            /// estate diverges) — the gate streak. Stamped with the burndown.
+            Streak : int
+        }
+
+    /// The movement between a recorded baseline reading and this run —
+    /// findings keyed by `FindingKey`, so the burndown, the block ids, and
+    /// the overlay entries all say one name (wave A7).
+    and Burndown =
+        {
+            /// The baseline reading's run identity (`--since @runId`, or the
+            /// latest recorded reading by default).
+            SinceRunId   : string
+            /// The baseline reading's age at this run, whole days.
+            SinceAgeDays : int
+            /// Findings present at the baseline and absent now — closed.
+            Closed       : int
+            /// Findings absent at the baseline and present now — opened.
+            Opened       : int
+            /// Findings present in both readings — remaining.
+            Remaining    : int
+            /// The oldest open finding's age in whole days (first-seen
+            /// carried across readings); `None` when nothing is open.
+            OldestDays   : int option
         }
 
     // ----------------------------------------------------------------------
@@ -1294,7 +1323,9 @@ module Estate =
           Evidence = EvidenceStoreBasis.Disabled
           Remediation = []
           OverlayEntries = None
-          EmissionFindings = emissionFindingsFor logicalTarget }
+          EmissionFindings = emissionFindingsFor logicalTarget
+          Burndown = None
+          Streak = 0 }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -1316,6 +1347,13 @@ module Estate =
     /// ARTIFACTS index and the JSON read it; `compute` stays file-blind.
     let withOverlay (entries: int) (report: EstateReport) : EstateReport =
         { report with OverlayEntries = Some entries }
+
+    /// The face's history stamp (wave A7): the movement against the recorded
+    /// baseline and the unified-run streak, read from the evidence store's
+    /// history — `compute` stays store-blind; the boundary owns clocks and
+    /// directories.
+    let withHistory (burndown: Burndown option) (streak: int) (report: EstateReport) : EstateReport =
+        { report with Burndown = burndown; Streak = streak }
 
     /// The face's evidence stamp: the resolved store basis and each
     /// environment's actual acquisition path, applied onto a computed report
@@ -1492,8 +1530,27 @@ module Estate =
                   yield sprintf "  %-14s %s" basis.Env cells
           yield ""
 
-          // BURNDOWN — joins at the history wave; the first run says so.
-          yield "BURNDOWN — this run is the estate's first recorded reading; movement renders from the next run."
+          // BURNDOWN — the movement since the recorded baseline (wave A7).
+          // Three honest states: movement against a named baseline; a first
+          // recorded reading; no store, no memory — said, never implied.
+          match report.Burndown, report.Evidence with
+          | Some b, _ ->
+              let sinceClause =
+                  if b.SinceAgeDays <= 0 then "earlier today"
+                  else sprintf "%s day(s) ago" (humane b.SinceAgeDays)
+              let oldestClause =
+                  match b.OldestDays with
+                  | Some days when b.Remaining + b.Opened > 0 ->
+                      sprintf " — the oldest open finding is %s day(s) old" (humane days)
+                  | _ -> ""
+              yield sprintf "BURNDOWN — since run %s (%s): %s closed, %s opened, %s remain%s."
+                        b.SinceRunId sinceClause (humane b.Closed) (humane b.Opened) (humane b.Remaining) oldestClause
+          | None, EvidenceStoreBasis.Enabled _ ->
+              yield "BURNDOWN — this run is the estate's first recorded reading; movement renders from the next run."
+          | None, EvidenceStoreBasis.Disabled ->
+              yield "BURNDOWN — the estate keeps no memory without a store; PROJECTION_ESTATE_DIR (or the ledger directory's estate child) enables the burndown."
+          if report.Streak > 0 then
+              yield sprintf "  The estate has read unified for %s consecutive run(s)." (humane report.Streak)
           yield ""
 
           // ARTIFACTS — the index: one line per artifact naming its role.
@@ -1520,13 +1577,15 @@ module Estate =
           yield "  is not yet proven."
           yield ""
 
-          // ACTION — the one next move.
+          // ACTION — the one next move; a holding estate names its streak.
           let action =
               match laneFindings EstateLane.Decide report with
               | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
               | [] ->
                   match laneFindings EstateLane.Repair report with
                   | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
+                  | [] when report.Streak > 1 ->
+                      sprintf "Next: the estate holds — %s consecutive unified run(s); re-run on the publish cadence." (humane report.Streak)
                   | [] -> "Next: the estate holds; re-run on the publish cadence."
           yield action ]
 
@@ -1610,6 +1669,20 @@ module Estate =
              root.["overlay"] <- o
          | None -> ())
         root.["fidelityClause"] <- JsonValue.Create "notConfigured"
+        (match report.Burndown with
+         | Some b ->
+             let o = JsonObject()
+             o.["sinceRunId"] <- JsonValue.Create b.SinceRunId
+             o.["sinceAgeDays"] <- JsonValue.Create b.SinceAgeDays
+             o.["closed"] <- JsonValue.Create b.Closed
+             o.["opened"] <- JsonValue.Create b.Opened
+             o.["remaining"] <- JsonValue.Create b.Remaining
+             (match b.OldestDays with
+              | Some days -> o.["oldestDays"] <- JsonValue.Create days
+              | None -> ())
+             root.["burndown"] <- o
+         | None -> ())
+        root.["streak"] <- JsonValue.Create report.Streak
         let findings = JsonArray()
         for f in report.Findings do
             let o = JsonObject()

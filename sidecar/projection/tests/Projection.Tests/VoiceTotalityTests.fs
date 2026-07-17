@@ -93,6 +93,9 @@ let private knownEmittableCodes : Set<string> =
           // had drifted behind — `summary.stageProgress` (LogSink → Watch) and
           // `summary.readiness` (the readiness board's machine envelope).
           "summary.stageProgress"; "summary.readiness"
+          // the estate board's machine envelope (wave A7 — the
+          // summary.readiness precedent; emitted by runCheckEstate)
+          "summary.environments"
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"

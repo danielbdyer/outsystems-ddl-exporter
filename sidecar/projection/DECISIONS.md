@@ -28310,3 +28310,52 @@ did not change (the READ formatter fix covers the shared `ReadSide` row path; `t
 fast paths fall back to the fixed generic arm for the exotic field types). `SmallDateTime`
 carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
 DECISIONS 2026-07-16 — WP-17(a–c,f).
+
+## 2026-07-17 — The loop-closing program opens: the programs collapse, `check environments` named for the record, and the burndown lands (wave A7)
+
+**Context.** PR #668 (the estate chapter through A6, squash `d7f4566`) merged carrying a
+final usability overhaul (`89466db`) that landed WITHOUT its decisions entry; the SSDT
+remediation campaign (#669/#671) then landed WP-1..4b/8/16/17 + G3/G6 on a parallel axis.
+The operator's direction (2026-07-17): **collapse the programs and close the loop on the
+original request** — the daily convergence loop and the provable row fidelity.
+
+**Decisions:**
+
+1. **The rename, recorded** (retroactive — the overhaul shipped it): the verb's canonical
+   face is `projection check environments`; `check estate` remains an accepted spelling
+   (`("environments" | "estate")` in the planCheck arm — both parse, one face string). The
+   artifacts follow: `environments.json` / `environments.remediation.<env>.sql` /
+   `environments.overlay.json` / `environments.probes.sql`. The overhaul also added
+   `FindingKey.readableLabel` (the plain-words face beside the machine token),
+   `readiness.estate.repairBandByEntity` (per-entity bands over the default), artifact-write
+   safety (`tryWriteArtifact`), and the emission-audit board dimension
+   (`EstateReport.EmissionFindings`, the #669 bridge). Chapter docs are synced to the
+   `environments.*` names in this entry's commit; internal store paths and the `estate.*`
+   Voice/refusal code namespaces are UNRENAMED (machine tokens, not operator surfaces).
+2. **The loop-closing program** (the collapse): one sequence to the original request's
+   terminus — Phase 1 the burndown (A7, this entry) → Phase 2 the container proof (B5, with
+   B4a folded in: prove-implies-journal goes real on every transfer path, and
+   `--interventions @runId` stops refusing; plus WP-12/13/15 exactly where the proof's
+   apply/transfer path stands on them) → Phase 3 the verdict closes (A4β's D10/D11 static
+   alignment — the original ask's third named divergence — + the RT-10 fidelity clause:
+   `ProofMissing`/`ProofStale` as DECIDE findings once `readiness.estate` names a flow) →
+   Phase 4 the ease tail (A8 live board + B6 proof cache/runbook) → the operator walk and
+   the chapter close. The remaining emission-polish WPs (2, 5, 6, 7, 9, 10, 11, 1e) stay on
+   the SSDT campaign's own handoff, sequenced after.
+3. **The burndown (wave A7).** The estate's memory lives in the evidence store's history —
+   `estate/<runId>.estate.json` + `estate/latest.json` (the entry-4 layout; the pointer IS a
+   byte-copy, so a torn pointer never orphans a record). Each run records its reading:
+   findings by `FindingKey` with FIRST-SEEN CARRIED across readings (a finding's age belongs
+   to the finding, never to the file), the verdict, and the unified-run streak (O(1) read;
+   resets on any diverged reading). The board's BURNDOWN region has three honest states —
+   movement against a named baseline ("since run <id> (N day(s) ago): X closed, Y opened, Z
+   remain — the oldest open finding is D day(s) old"), a first recorded reading, and
+   no-store-no-memory — never implied. `--since @runId` names the baseline (the estate
+   history, NEVER the run ledger; the @-form is required, refused by name otherwise;
+   `--since` with no store or an unrecorded run refuses by name, exit 2). The displayed
+   movement diffs against the operator's baseline; the RECORDED reading always chains from
+   latest (first-seen carry and the streak are chain facts, not display choices). One
+   machine envelope per run — `summary.environments` (the `summary.readiness` precedent):
+   verdict, lane counts, forks, closed/opened/remaining, streak — so CI branches on the
+   estate without parsing the board. History writes are atomic + advisory; reads
+   fail-closed.
