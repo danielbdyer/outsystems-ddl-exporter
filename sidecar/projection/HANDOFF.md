@@ -1,3 +1,67 @@
+# Handoff addendum — 2026-07-17 (later), THE LOOP-CLOSING PROGRAM Phase 2 ships: B4a (prove-implies-journal everywhere) + B5 (`check fidelity <flow>`, the container proof — T17 executable at the face) + WP-15. Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #672
+
+To the next agent.
+
+**Phase 2 is SHIPPED in this letter's two commits** (`8ed5224` B4a, `43790a2` B5). The original
+request's second half — "every row in the target database after applying the FKs [is]
+byte-identical, excepting … known row interventions" — now has its one-command vehicle:
+
+- **B4a — the journal is the intervention ledger on EVERY path.** The materialized transfer
+  records every captured `(source → assigned)` pair (`WriteOptions.Journal` → `writePlan` →
+  the capture ladder; COMPLETE records only — the G10 envelope owns resume).
+  `CaptureJournal.startFresh` is the truncation law (the journal describes THE
+  state-producing run; an EMPTY file means "the ledger was kept, nothing was minted"). The
+  minted-bulk fast lane STANDS DOWN under a journal (an unrecorded mint would be a row the
+  replay cannot translate). `Run.LedgerRef.JournalRef` carries digest AND path;
+  `TransferReport` gains `JournalPath` + `SeedRowsSkipped` (the de-silenced seed pre-filter,
+  voiced as `transfer.seedRowsSkipped`); `--interventions @runId` resolves in the engine
+  with four named refusals. The selector refusal `journalRequiresStreaming` is RETIRED.
+- **B5 — `projection check fidelity <flow>`.** Flow-map membership BEFORE the `.sql` default
+  arm (the `.sql` spelling keeps the canary byte-identically). The walk:
+  `Deploy.withScratchDatabase` (NEW; connection-string-handing scratch, one `reapDatabase`
+  under both primitives) → stand the TARGET's shape up (the model's LOGICAL rendition — the
+  comparator's after-side contract; the physical stand-in was the first wrong draft, the
+  witness caught it) → journaled WipeAndLoad ACROSS the rendition gap (physical source
+  contract → logical sink contract) with FKs re-trusted → `FidelityCompareRun` modulo the
+  journal → reap. ReadOnly register; the verb's own Replace greenlight (the scratch is not
+  an operator substrate); the run records its JournalRef. Exits 0/5/6/4. v1 simplifications
+  NAMED with triggers in the DECISIONS entry (no config shaping on the stand-in; no leveled
+  seed under wipe-and-load; reconcile/subset posture proven by `check data --rows`).
+- **WP-15 shipped** (streaming + synthetic re-trust — materialized parity). **WP-12/13
+  deferred BACK to the SSDT handoff BY EVIDENCE** (both fail LOUD on the proof's path:
+  `transfer.loadOrderUnproven` + the server's missing-referent error; the named composite-PK
+  tolerance). Trigger: the terminus operator walk.
+- **THE CATCH OF THE PHASE — the Preflight.all thunk amendment** (own DECISIONS entry): the
+  B5 witness ran the suite's first `allowCdc=false` Execute and exposed the hot-task gate
+  race (two gates sharing one SqlConnection, started at construction). `Preflight.all` /
+  `allReporting` take THUNKS now; the migrate face's hand-sequencing collapsed into the
+  contract; the G0 law tests shed their TaskCompletionSource harness. If you see "endpoint
+  is not reachable" on a live sink in an OLD branch — this is why.
+
+**Witnesses:** the B5 docker witness runs the WHOLE walk on the LE-3 estate (every PK
+sink-minted, FK chain + diamond, colliding key spaces): green end to end, then an FK-orphan
+source row reads exit 5 with the row named missing. B4a's witness is the LE-3 apparatus
+canary run JOURNALED (all four kinds' pairs incl. the no-FK-target kind; truncation-on-rerun
+proven). Pure: the routing facts + the run-reference refusals + the thunked G0 laws.
+
+**Where you stand / what's next:** Phase 3 (A4β + RT-10) — D10/D11 static alignment (the
+original ask's third named divergence) + `EstateAlignmentEmitter` (business-key MERGE, never
+the surrogate PK), `readiness.estate` fidelity-flow key, ProofMissing/ProofStale DECIDE
+findings, the Unified formula includes the green proof. Then Phase 4 (A8+B6, the ease tail)
+and the terminus (the §12 operator walk). The full fast+docker pools were kicked at this
+letter's push — check their verdicts before stacking Phase 3 (any breakage lands as a
+fix-forward commit on this branch).
+
+**New traps beyond the letter below's list:** the F# `task { }` CE is HOT — never hand two
+constructed tasks that share a connection to a sequential-looking combinator (the thunk
+contract is the cure); `check fidelity`'s compare needs the stand-in on the LOGICAL
+rendition (the comparator reads before=physical / after=logical — a physical stand-in reads
+"Invalid object name 'dbo.<Entity>'"); the fidelity witness writes `fidelity.rows.json` +
+`fidelity-proof/<flow>/` into the TEST cwd — clean up in `finally` or the artifacts leak
+between test runs.
+
+---
+
 # Handoff addendum — 2026-07-17, THE LOOP-CLOSING PROGRAM opens: the programs collapse, Phase 1 (A7, the burndown) ships. Branch `claude/projection-reconciliation-ideate-pzm60d` (restarted content-identical to main after the #668 squash merge)
 
 To the next agent.
