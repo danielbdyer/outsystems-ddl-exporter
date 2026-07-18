@@ -1,10 +1,12 @@
 # THE_TWIN.md — the synthetic data sidecar for the ejected SSDT estate
 
-**Status: OPEN (2026-07-18).** M0–M2 shipped and green (the schema loop, the evidence-free
-mint loop, K1); M3 (evidence tiers) and M4 (the scenario compiler + K2) are the active
-lanes; M5 (the proof verb, `bake`, the ejection dry-run) closes the charter. Provenance:
-the `data-twin` deferral (DECISIONS 2026-05-19), cashed out by operator directive
-2026-07-18 (`DECISIONS 2026-07-18 — The Twin opens`).
+**Status: CHARTER BUILD COMPLETE (2026-07-18).** M0–M5 shipped and green: the schema
+loop, the mint loop (K1/K1b/K1c), evidence tiers (import both renditions, derive, verify),
+the scenario compiler (K2 date windows, weights, ratios, pins), and the proof surface
+(`check`, `classify`, `bake`, the ejection dry-run). Witness pools at close: kernel fast
+green · kernel synthetic Docker green · Twin pure 65 · Twin Docker 6. Provenance: the
+`data-twin` deferral (DECISIONS 2026-05-19), cashed out and closed by the two
+`DECISIONS 2026-07-18` entries.
 
 ---
 
@@ -51,14 +53,18 @@ shaped from day one to peel off as a standalone tool (§8).
    estate definition or refuses by name and location (`TwinIdentityTests``law 2``;
    `twin.coordinate.*.unknown`).
 3. **Shape-tier literal-freedom** — the committed evidence pack carries no captured
-   literal value (property test lands with M3).
+   literal value (`EvidenceTests``law 3``; asserted again at the file grain in the
+   evidence-loop E2E).
 4. **Collision refusal** — a table claimed by two evidence sources is a parse-time
    refusal naming the table and both sources (`TwinConfigTests``law 4``).
 5. **Twin self-description** — the `[twin]` schema (one single-row state table) is the
    tool's only write outside the estate's own objects, excluded from schema comparison.
 6. **Inherited and re-asserted at the twin's grain** — T1 determinism of the mint
-   (`TwinMintLoopTests``T1``), zero FK orphans (`K1 + L1`), the privacy contract, and
-   π ∘ σ ≈ id (productized as `twin check`, M5).
+   (`TwinMintLoopTests``T1``; byte-identical re-mints by construction under K1c), zero
+   FK orphans (`K1 + L1`), the privacy contract (the evidence-loop E2E's
+   never-re-emitted source emails), and π ∘ σ ≈ id productized as `twin check`
+   (model → publish → lanes → mint ×2 → zero orphans + identical digests +
+   preserved-vocabulary re-profile).
 
 ## 4 — Identity: the anti-corruption layer
 
@@ -165,10 +171,14 @@ twin bake                          (M5) the distributable pre-seeded image (Dock
 ```
 
 Scenario semantics: **a scenario only rewrites evidence, volumes, corrections, and pins —
-it never generates.** `rows`/`scale`/`seed` apply today; `columns`/`perParent`/`pins`
-parse (the closed-schema law covers them) and refuse `twin.scenario.notYetSupported`
-until the compiler lands (M4). `perParent` is declared on the CHILD naming the parent
-(a child may carry several FKs).
+it never generates** (`Twin.Core/ScenarioCompiler.fs`). Weights reshape a text column's
+vocabulary and force it Preserve (displacing a Synthesize classification, explicitly);
+`between` windows a date or numeric column with `early`/`late`/`uniform` percentile skews
+(dates ride K2's tick encoding); `perParent` — declared on the CHILD naming the parent —
+derives the child's volume from the parent's resolved rows (uniform draws land the mean
+fan-out); pins render per attribute type, merge AFTER Faker realization (verbatim), and
+their keys join the FK-draw pools (K1b). Every override binds or refuses with the
+scenario, coordinate, and expected shape named.
 
 ## 8 — Ejection (the peel, designed now, exercised at M5)
 
@@ -184,13 +194,16 @@ until the compiler lands (M4). `perParent` is declared on the CHILD naming the p
 
 ## 9 — Named boundaries (honest, current)
 
-- **K2 (open; lands with M4).** Date columns cannot carry distribution evidence — the
-  profiler's numeric gate is `Integer | Decimal` (`ProfileDerivation.fs`) and
-  `sampleNumeric`'s DateTime fall-through renders a bare invariant decimal, not a
-  `RawValueCodec` form (`SyntheticData.fs`). K2 encodes date evidence as decimal
-  day-offsets, renders through `RawValueCodec.formatDateTime/formatDate`, and widens the
-  profiler's gate — making scenario date windows ordinary `NumericDistribution`
-  rewrites. Until then: dates mint as deterministic type-defaults.
+- **K2 is closed** (2026-07-18): date columns carry tick-encoded distribution evidence
+  and sample through `RawValueCodec` — scenario date windows are ordinary rewrites.
+- **The cardinality threshold is the masking pivot for unclassified columns**: ≤ τ (50)
+  distinct values preserve by design (reference vocabularies). A sub-τ personal-data
+  column must be classified (`twin classify`, the corrections artifact) to synthesize —
+  the E2E suite pins the above-τ auto-synthesize side.
+- **A self-referencing FK draws from the unaugmented own pool** (K1b's split view — the
+  pool length is the row range).
+- **`perParent` lands the MEAN fan-out via volumes**; skewed fan-out is the evidence
+  plane's (`ForeignKeySelectivity`, F5a).
 - **v1 re-mints on every schema change** (data-preserving refresh is future work).
 - **Evidence-free realism needs a corrections artifact** — without one, columns mint as
   shaped tokens; `twin init`'s proposer scaffolds the classification (M5 wires it).

@@ -112,6 +112,31 @@ let private runWithConfig
             emit (Render.failure es)
             exitCodeFor es
 
+/// Open the running twin and hand its read-back catalog to `body` — the
+/// classify / bake / evidence-verify precondition.
+let private withTwinCatalog
+    (root: string)
+    (config: TwinConfig)
+    (body: Projection.Core.Catalog -> Result<string list>)
+    : System.Threading.Tasks.Task<Result<string list>> =
+    task {
+        match TwinContainer.resolvePassword config.Container.PasswordRef with
+        | Error es -> return Result.failure es
+        | Ok password ->
+            let! state = TwinContainer.state config.Container
+            match state with
+            | Error es -> return Result.failure es
+            | Ok TwinContainer.Running ->
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(TwinContainer.twinConnectionString config.Container password)
+                do! cnn.OpenAsync()
+                let! catalog = Readback.readSchema cnn
+                return catalog |> Result.bind body
+            | Ok _ ->
+                return
+                    Result.failureOf
+                        (ValidationError.create "twin.notUp" "The twin is not running. Run: twin up, then retry.")
+    }
+
 [<EntryPoint>]
 let main argv =
     match List.ofArray argv with
@@ -137,6 +162,41 @@ let main argv =
                 let! report = Runs.status root config scenario
                 return report |> Result.map Render.status
             })
+    | "check" :: rest ->
+        runWithConfig rest (fun root config scenario ->
+            task {
+                let! report = Check.run root config scenario
+                return report |> Result.map Render.check
+            })
+    | "evidence" :: "import" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            task {
+                let! report = EvidenceImport.importAll root config
+                return report |> Result.map Render.evidenceImport
+            })
+    | "evidence" :: "derive" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            task {
+                let! path = EvidenceImport.derive root config
+                return path |> Result.map Render.evidenceDerive
+            })
+    | "evidence" :: "verify" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            withTwinCatalog root config (fun catalog ->
+                Result.success (Render.evidenceVerify (EvidenceImport.verify root config catalog))))
+    | "evidence" :: _ ->
+        emit
+            (Render.failure
+                [ ValidationError.create "twin.argv.verb" "evidence takes one of: import, derive, verify." ])
+        exitArgv
+    | "classify" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            withTwinCatalog root config (fun catalog ->
+                Classify.run root config catalog |> Result.map Render.classify))
+    | "bake" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            withTwinCatalog root config (fun catalog ->
+                Bake.run root catalog |> Result.map Render.bake))
     | "down" :: _ ->
         runWithConfig [] (fun _ config _ ->
             task {

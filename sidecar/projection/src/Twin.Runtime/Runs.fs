@@ -237,43 +237,34 @@ module Runs =
                                     // (populations stripped — σ never reads them; the
                                     // pools carry what matters).
                                     let mintCatalog = Catalog.stripStaticPopulations catalog
-                                    match TwinConfig.resolveScenario config scenarioName with
+                                    match Mint.prepare root config scenarioName mintCatalog pools with
                                     | Error es -> return Result.failure es
-                                    | Ok scenario ->
-                                        let correction = Mint.loadCorrection root config.CorrectionsPath
-                                        match correction with
+                                    | Ok plan ->
+                                        let! minted = Mint.run twinCnn mintCatalog plan
+                                        match minted with
                                         | Error es -> return Result.failure es
-                                        | Ok correction ->
-                                            match Mint.prepare config scenario mintCatalog pools correction with
+                                        | Ok report ->
+                                            let! totalRows = TwinDatabase.totalRows twinCnn
+                                            let! wrote =
+                                                TwinDatabase.writeDataState twinCnn dataFp scenarioName plan.Seed totalRows
+                                            match wrote with
                                             | Error es -> return Result.failure es
-                                            | Ok (syntheticConfig, realize) ->
-                                                let _, seed = Mint.effectiveScaleSeed config scenario
-                                                let! minted =
-                                                    Mint.run twinCnn mintCatalog Profile.empty syntheticConfig seed realize
-                                                match minted with
-                                                | Error es -> return Result.failure es
-                                                | Ok report ->
-                                                    let! totalRows = TwinDatabase.totalRows twinCnn
-                                                    let! wrote =
-                                                        TwinDatabase.writeDataState twinCnn dataFp scenarioName seed totalRows
-                                                    match wrote with
-                                                    | Error es -> return Result.failure es
-                                                    | Ok () ->
-                                                        let counts = EstateDefinition.counts estate
-                                                        return
-                                                            Result.success
-                                                                { SchemaPublished = schemaPublished
-                                                                  LanesApplied = lanesApplied
-                                                                  ProvidedKinds = Map.count pools
-                                                                  MintedKinds =
-                                                                      Catalog.allKinds mintCatalog
-                                                                      |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
-                                                                      |> List.length
-                                                                  Scenario = scenarioName
-                                                                  Seed = seed
-                                                                  TotalRows = totalRows
-                                                                  DefinedTables = counts.Tables
-                                                                  UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks }
+                                            | Ok () ->
+                                                let counts = EstateDefinition.counts estate
+                                                return
+                                                    Result.success
+                                                        { SchemaPublished = schemaPublished
+                                                          LanesApplied = lanesApplied
+                                                          ProvidedKinds = Map.count pools
+                                                          MintedKinds =
+                                                              Catalog.allKinds mintCatalog
+                                                              |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
+                                                              |> List.length
+                                                          Scenario = scenarioName
+                                                          Seed = plan.Seed
+                                                          TotalRows = totalRows
+                                                          DefinedTables = counts.Tables
+                                                          UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks }
         }
 
     /// The one-click converge. Fingerprint match on both planes is the
@@ -290,7 +281,7 @@ module Runs =
                     | Error es -> return Result.failure es
                     | Ok password ->
                         let schemaFp = schemaFingerprint config estate
-                        let _, seed = Mint.effectiveScaleSeed config scenario
+                        let _, seed = Mint.effectiveScaleSeed config (TwinConfig.scenarioChain config scenarioName)
                         let dataFp = dataFingerprint root config estate scenarioName seed
                         let! running = TwinContainer.ensureRunning config.Container password
                         match running with
@@ -338,7 +329,7 @@ module Runs =
                     | Ok password ->
                         let counts = EstateDefinition.counts estate
                         let schemaFp = schemaFingerprint config estate
-                        let _, seed = Mint.effectiveScaleSeed config scenario
+                        let _, seed = Mint.effectiveScaleSeed config (TwinConfig.scenarioChain config scenarioName)
                         let dataFp = dataFingerprint root config estate scenarioName seed
                         let! containerState = TwinContainer.state config.Container
                         match containerState with

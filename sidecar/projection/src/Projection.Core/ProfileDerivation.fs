@@ -183,10 +183,22 @@ module ProfileDerivation =
         (catalog: Catalog)
         : NumericDistribution list =
         use _ = Bench.scope "profile.cache.deriveNumericDistributions"
-        let isNumeric (attr: Attribute) : bool =
+        // K2 (DECISIONS 2026-07-18, the Twin) — the numeric-evidence gate
+        // widens to the chronological types: a DateTime/Date column's
+        // distribution is captured as decimal TICKS (lossless, ordered,
+        // `decimal`-exact), so date columns carry percentile shape the same
+        // way numerics do and σ can sample them (`sampleNumeric` renders the
+        // tick decimal back through `RawValueCodec`). Integer/Decimal
+        // behavior is byte-identical.
+        let projectionFor (attr: Attribute) : (CachedValue -> decimal option) option =
             match attr.Type with
-            | PrimitiveType.Integer | PrimitiveType.Decimal -> true
-            | _ -> false
+            | PrimitiveType.Integer | PrimitiveType.Decimal -> Some CachedValue.tryDecimal
+            | PrimitiveType.DateTime | PrimitiveType.Date ->
+                Some (fun v ->
+                    match v with
+                    | CachedValue.DateValue dto -> Some (decimal dto.Ticks)
+                    | _ -> None)
+            | _ -> None
         catalog
         |> Catalog.allKinds
         |> List.collect (fun kind ->
@@ -194,15 +206,16 @@ module ProfileDerivation =
             | None        -> []
             | Some cached ->
                 kind.Attributes
-                |> List.filter isNumeric
                 |> List.choose (fun attr ->
+                    projectionFor attr |> Option.map (fun projection -> attr, projection))
+                |> List.choose (fun (attr, projection) ->
                     let column = Map.tryFind attr.SsKey cached.ColumnsByKey
                     match column with
                     | None        -> None
                     | Some column ->
                         let nonNullValues =
                             column.Values
-                            |> Array.choose CachedValue.tryDecimal
+                            |> Array.choose projection
                         let sampleSize = int64 nonNullValues.Length
                         // F15 (audit 2026-06-17) — single source of truth: the
                         // statistical sample-size floor is owned by

@@ -32,6 +32,8 @@
     <Compile Include="Fingerprint.fs" />
     <Compile Include="TwinIdentity.fs" />
     <Compile Include="TwinConfig.fs" />
+    <Compile Include="ScenarioCompiler.fs" />
+    <Compile Include="Evidence.fs" />
   </ItemGroup>
 
   <ItemGroup>

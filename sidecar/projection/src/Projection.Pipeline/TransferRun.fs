@@ -1704,6 +1704,13 @@ module Transfer =
         (mode: Mode)
         (emission: EmissionMode)
         (allowCdc: bool)
+        // K1c (DECISIONS 2026-07-18, the Twin) — the identity disposition of
+        // the generated rows. `Structural` (every prior caller) keeps the
+        // byte-identical AssignedBySink path for identity kinds; a
+        // FullRights sink may pass `PreferPreservedKeys` so σ's minted keys
+        // land verbatim (IDENTITY_INSERT bracketing) — pinned keys are
+        // honored and a re-mint is byte-identical without counter hygiene.
+        (policy: IdentityPolicy)
         (sink: SqlConnection)
         (catalog: Catalog)
         (profile: Profile)
@@ -1772,7 +1779,7 @@ module Transfer =
                 // tokens σ emitted) BEFORE planning the load. Identity when the
                 // correction is empty (byte-identical to the pre-F0c load).
                 let realizedRows = realize rows
-                let plan = DataLoadPlan.build catalog topo realizedRows SurrogateRemapContext.empty
+                let plan = DataLoadPlan.buildWith policy catalog topo realizedRows SurrogateRemapContext.empty
                 let preWrite =
                     if mode = Execute then
                         match executeGate catalog plan with

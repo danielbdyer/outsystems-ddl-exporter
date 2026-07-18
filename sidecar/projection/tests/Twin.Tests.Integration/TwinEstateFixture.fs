@@ -33,7 +33,20 @@ type TwinEstateFixture (containerName: string, port: int) =
   "container": { "name": "%s", "port": %d },
   "seed": 7,
   "defaultRows": 25,
-  "scenarios": { "default": {} }
+  "scenarios": {
+    "default": {},
+    "skewed": {
+      "tables": {
+        "dbo.Order": {
+          "rows": 40,
+          "columns": {
+            "Channel":  { "weights": { "Web": 8, "Store": 2 } },
+            "PlacedOn": { "between": ["2026-01-01", "2026-03-31"], "skew": "late" } } },
+        "dbo.OrderLine": { "perParent": { "dbo.Order": { "mean": 2.0 } } } },
+      "pins": [
+        { "table": "dbo.Customer",
+          "rows": [ { "Id": 1000, "Name": "Canonical Test Customer", "Email": "canon@example.test",
+                      "StatusId": 1, "CreatedOn": "2026-01-15" } ] } ] } }
 }
 """
             containerName port
@@ -62,6 +75,7 @@ type TwinEstateFixture (containerName: string, port: int) =
     [Id]         INT           IDENTITY(1,1) NOT NULL,
     [CustomerId] INT           NOT NULL,
     [StatusId]   INT           NOT NULL,
+    [Channel]    NVARCHAR(20)  NOT NULL,
     [Total]      DECIMAL(18,2) NOT NULL,
     [PlacedOn]   DATETIME2     NOT NULL,
     CONSTRAINT [PK_Order] PRIMARY KEY ([Id]),
@@ -105,6 +119,9 @@ WHEN NOT MATCHED BY SOURCE THEN DELETE;
 
     /// The parsed fixture configuration.
     member _.Config : TwinConfig = config
+
+    /// The raw twin.json text (the evidence-loop tests derive variants).
+    member _.ConfigJson : string = configJson
 
     /// The twin-database connection string (documented local default password).
     member _.TwinConnectionString : string =

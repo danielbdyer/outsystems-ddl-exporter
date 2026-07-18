@@ -114,12 +114,81 @@ module Render =
         [ "twin.json is already present; nothing was written."
           System.String.Concat("    ", path) ]
 
+    let check (r: Check.CheckReport) : string list =
+        let clean =
+            r.OrphanRows = 0L && r.DeterministicRemint && List.isEmpty r.Findings
+            && r.TablesLive = r.TablesDefined
+        let verdict =
+            if clean then "Verified. The estate models, publishes, and mints; the proof holds."
+            else "The proof returned findings. Each is shown below."
+        let body =
+            [ System.String.Concat(
+                "    ", ni r.TablesLive, " of ", ni r.TablesDefined, " tables live · ",
+                ni r.LanesApplied, " lanes · ", n0 r.TotalRows, " rows · ",
+                n0 r.OrphanRows, " orphaned references")
+              System.String.Concat(
+                "    re-mint ",
+                (if r.DeterministicRemint then "byte-identical" else "DIVERGED — determinism does not hold")) ]
+        let findings =
+            r.Findings
+            |> List.map (fun f -> System.String.Concat("  ", f.Coordinate, " — ", f.Detail))
+        verdict :: body @ findings
+
+    let evidenceImport (r: EvidenceImport.ImportReport) : string list =
+        let perSource =
+            r.Sources
+            |> List.map (fun s ->
+                System.String.Concat("    ", s.Source, " — ", ni s.Tables, " tables, ", ni s.Columns, " columns"))
+        [ "Evidence imported — the rich pack is written."
+          System.String.Concat("    ", r.RichPath) ]
+        @ perSource
+        @ [ System.String.Concat("    ", ni r.FanOuts, " relationship fan-outs captured.")
+            "Next: twin evidence derive — the committed, literal-free shape tier." ]
+
+    let evidenceDerive (path: string) : string list =
+        [ "The shape tier is derived — counts, null rates, cardinalities, fan-out shapes; no captured literal."
+          System.String.Concat("    ", path)
+          "Commit it beside twin.json; the rich pack stays out of the repository." ]
+
+    let evidenceVerify (r: EvidenceImport.VerifyReport) : string list =
+        let header =
+            match r.RichPresent, r.ShapePresent with
+            | false, false -> "No evidence packs are present. Run: twin evidence import"
+            | _ ->
+                if List.isEmpty r.Problems then "Evidence binds against the current estate definition."
+                else "Evidence no longer binds cleanly. Each problem is shown below."
+        let coverage =
+            r.Coverage
+            |> List.map (fun c ->
+                System.String.Concat(
+                    "    ", c.Table, " — ", c.Tier, " · ",
+                    ni c.EvidencedColumns, " of ", ni c.TotalColumns, " columns"))
+        header :: coverage @ errorLines r.Problems
+
+    let classify (r: Classify.ClassifyReport) : string list =
+        [ System.String.Concat(ni r.Classified, " columns classified as personal data by name; the artifact is written for review.")
+          System.String.Concat("    ", r.Path) ]
+        @ (if r.ConfigSet then []
+           else [ "Add \"corrections\": \"twin/corrections.json\" to twin.json so the mint applies it." ])
+
+    let bake (r: Bake.BakeReport) : string list =
+        [ "A docker build context for the estate's schema image is written."
+          System.String.Concat("    ", r.Directory)
+          "Build with: docker build -t twin-estate ."
+          "The image carries the schema; start it, then apply the lanes and twin seed for data." ]
+
     let usage : string list =
         [ "twin — a synthetic-data sidecar for an SSDT repository."
           ""
           "  twin up      [--scenario <name>]   Container present, schema current, data present. No-op when nothing changed."
           "  twin seed    [--scenario <name>]   Re-mint the data, reproducibly."
           "  twin status  [--scenario <name>]   What the twin holds against what the repository defines."
+          "  twin check   [--scenario <name>]   The proof, on a throwaway database: model, publish, mint, zero orphans, byte-identical re-mint."
+          "  twin evidence import                Profile the configured sources into the rich pack (out of repo)."
+          "  twin evidence derive                Project rich → shape: the committed, literal-free tier."
+          "  twin evidence verify                Bind both packs against the estate; the per-table coverage board."
+          "  twin classify                       Propose PII classifications from column names (reviewable artifact)."
+          "  twin bake                           A docker build context for a distributable schema image."
           "  twin down                           Stop the container; keep its state."
           "  twin reset                          Remove the container and its data."
           "  twin init                           Write a starter twin.json."

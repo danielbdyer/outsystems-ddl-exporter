@@ -75,9 +75,10 @@ type TwinSchemaLoopTests (fixture: TwinSchemaEstateFixture) =
     [Id]         INT           IDENTITY(1,1) NOT NULL,
     [CustomerId] INT           NOT NULL,
     [StatusId]   INT           NOT NULL,
+    [Channel]    NVARCHAR(20)  NOT NULL,
     [Total]      DECIMAL(18,2) NOT NULL,
     [PlacedOn]   DATETIME2     NOT NULL,
-    [Channel]    NVARCHAR(20)  NULL,
+    [Note]       NVARCHAR(50)  NULL,
     CONSTRAINT [PK_Order] PRIMARY KEY ([Id]),
     CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]),
     CONSTRAINT [FK_Order_Status] FOREIGN KEY ([StatusId]) REFERENCES [dbo].[Status] ([Id])
@@ -94,10 +95,10 @@ type TwinSchemaLoopTests (fixture: TwinSchemaEstateFixture) =
             | Runs.NothingToApply _ -> failwith "an edited estate cannot be a no-op"
 
             // The new column is live.
-            let! channel =
+            let! note =
                 this.Scalar
-                    "SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id WHERE t.name = N'Order' AND c.name = N'Channel';"
-            Assert.Equal(1L, channel)
+                    "SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id WHERE t.name = N'Order' AND c.name = N'Note';"
+            Assert.Equal(1L, note)
 
             // And the twin is current again.
             let! fourth = this.Up()

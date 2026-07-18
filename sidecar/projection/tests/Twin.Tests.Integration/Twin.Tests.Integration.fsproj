@@ -25,6 +25,7 @@
     <Compile Include="TwinEstateFixture.fs" />
     <Compile Include="TwinSchemaLoopTests.fs" />
     <Compile Include="TwinMintLoopTests.fs" />
+    <Compile Include="TwinEvidenceLoopTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

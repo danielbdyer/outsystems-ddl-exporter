@@ -25,6 +25,8 @@
     <Compile Include="FingerprintTests.fs" />
     <Compile Include="TwinConfigTests.fs" />
     <Compile Include="TwinIdentityTests.fs" />
+    <Compile Include="ScenarioCompilerTests.fs" />
+    <Compile Include="EvidenceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

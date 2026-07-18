@@ -80,17 +80,21 @@ module EstateModel =
             [| ObjectType.Users; ObjectType.Logins; ObjectType.RoleMembership; ObjectType.Permissions |]
         options
 
-    /// Publish the dacpac to the twin database (created when absent,
+    /// Publish the dacpac to a named database (created when absent,
     /// upgraded in place otherwise — DacFx computes the minimal delta).
-    let publish (masterConnStr: string) (dacpac: byte[]) : Task<Result<unit>> =
+    let publishTo (masterConnStr: string) (databaseName: string) (dacpac: byte[]) : Task<Result<unit>> =
         task {
             try
                 use stream = new MemoryStream(dacpac)
                 use package = DacPackage.Load stream
                 let services = DacServices masterConnStr
                 do! Task.Run(fun () ->
-                        services.Deploy(package, TwinContainer.TwinDatabaseName, true, deployOptions ()))
+                        services.Deploy(package, databaseName, true, deployOptions ()))
                 return Result.success ()
             with ex ->
                 return Result.failureOf (publishFailure ex.Message)
         }
+
+    /// Publish to the twin database.
+    let publish (masterConnStr: string) (dacpac: byte[]) : Task<Result<unit>> =
+        publishTo masterConnStr TwinContainer.TwinDatabaseName dacpac

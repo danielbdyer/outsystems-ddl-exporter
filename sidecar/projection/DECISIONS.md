@@ -28361,3 +28361,57 @@ post-eject local life) gets its own language, laws, and surface. Scenario overla
 distribution gap (profiler gates `Integer|Decimal`; `sampleNumeric`'s DateTime branch
 renders a non-`RawValueCodec` form) is K2, named in `THE_TWIN.md`, landing with the
 compiler. Evidence import/tiers ride the same charter.
+
+## 2026-07-18 — The Twin's charter build completes: evidence tiers, the scenario compiler, and three sibling kernel changes (K1b, K1c, K2)
+
+**Status:** ADOPTED (operator directive 2026-07-18 — "execute the plan until completion of
+the entire thing, no deferrals; everything is in scope").
+
+**Context.** The Twin's M0–M2 foundation (`DECISIONS 2026-07-18 — The Twin opens`) proved
+the schema and mint loops. The remaining charter lanes — tiered evidence, first-class
+scenarios, and the proof surface — exposed three more kernel seams, each surfaced by a
+live E2E failure rather than speculation.
+
+**Decision.**
+1. **K1b — pool augmentation.** `SyntheticConfig.AugmentPools`: PK values appended to a
+   kind's pool for OTHER kinds' FK draws only — a kind's OWN row minting always sees its
+   unaugmented pool (the pool length is the row range; the first cut grew generation, and
+   the `K1b` property tests now pin the split view). Named boundary: a self-referencing
+   FK draws from the unaugmented own pool. Consumer: pinned rows' keys, referenceable by
+   the synthetic mass.
+2. **K1c — the identity disposition parameter.** `Transfer.runSynthetic` gains an
+   `IdentityPolicy`; every prior caller passes `Structural` (byte-identical). The Twin — a
+   FullRights sink — passes `PreferPreservedKeys`, so σ's minted keys land verbatim:
+   pinned keys are honored and a re-mint is byte-identical by construction (the first
+   check-verb run diverged on sink-assigned identity drift; the fix is disposition, not
+   counter hygiene — the reseed discipline stays as the persistent twin's wipe hygiene).
+3. **K2 — chronological distribution evidence.** `deriveNumericDistributions` widens its
+   gate to `DateTime`/`Date`, captured as tick-encoded decimals; `sampleNumeric` renders
+   the tick decimal back through `RawValueCodec.formatDateTime/formatDate` (the prior
+   fall-through emitted a bare invariant decimal — an invalid raw form, unreachable until
+   the gate widened). Scenario date windows are now ordinary `NumericDistribution`
+   rewrites. `K2` test family in `SyntheticDataTests.fs`.
+4. **The scenario compiler** (`Twin.Core/ScenarioCompiler.fs`, pure): weights → preserved
+   categorical rewrites (displacing a Synthesize classification explicitly); `between` →
+   decimal or tick windows with `early`/`late`/`uniform` percentile skews; `perParent` →
+   the child's volume derived from the parent's resolved rows (uniform draws land the
+   mean fan-out; skewed fan-out remains the evidence plane's); pins → typed-rendered
+   `StaticRow`s merged AFTER Faker realization (verbatim), keys into K1b. Every override
+   binds or refuses with scenario + coordinate + expected shape named.
+5. **Evidence tiers** (`Twin.Core/Evidence.fs` + `Twin.Runtime/EvidenceImport.fs`): the
+   coordinate-keyed pack (no SsKey on the wire), rich/shape tiers with the literal-freedom
+   law property-tested and E2E-asserted at the file grain, capture-side rebinding for both
+   renditions (logical: `ReadSide.readSchema`; physical: `LiveModelRead.fromConnection`),
+   closed-set completeness + ambiguity + collision refusals, `layer` precedence
+   (scenario → rich → shape → defaults), and the per-table coverage board.
+6. **The proof surface**: `twin check` (throwaway database: model → publish → lanes →
+   mint ×2 → zero orphans + byte-identical digests + preserved-vocabulary re-profile),
+   `twin classify` (the kernel proposer, written as the reviewable artifact), `twin bake`
+   (the `DockerImageEmitter` build context), `scripts/twin-eject-dryrun.sh` (the peel's
+   binary-travels proof, run green 2026-07-18), and `TWIN_README.md` (the SSDT-repo copy).
+
+**Reasoning.** Each kernel change is additive with a byte-identical default, landed with
+its property tests in the same commit, and named here first per the standing law. The
+witness pools at close: kernel fast pool green; kernel synthetic Docker suites green under
+K1c; Twin pure pool 65 green; Twin Docker pool 6 green (schema, mint, scenario, evidence,
+proof).
