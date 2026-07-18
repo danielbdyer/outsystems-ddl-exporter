@@ -1987,7 +1987,24 @@ module Estate =
               yield sprintf "  … and %s more — environments.json carries every finding." (humane emissionExtra)
           if List.isEmpty report.EmissionFindings then
               yield "  No emission hazards in the checks that run today."
-          yield "  Checks run today: composite-PK foreign keys, duplicate table names, over-long identifiers, missing primary keys (heaps), lossy-carriage column types, non-default ON UPDATE. Coming (need extraction/emission work): FK trust regime, delete-rule reality, type authority, UNIQUE flattening, clustering, temporal tables, sequences, faithful scalar carriage."
+          // The coverage line is DERIVED from the detector set (the
+          // `DetectionStatus` classifier), never restated — the predecessor
+          // was hand-maintained and drifted (it promised temporal tables and
+          // sequences as "coming" after both shipped). One source, no drift.
+          let emissionPhrasesBy status =
+              EstateFindingKind.all
+              |> List.filter (fun k ->
+                  EstateFindingKind.planeOf k = EstatePlane.Emission
+                  && EstateFindingKind.detectionStatus k = status)
+              |> List.map EstateFindingKind.phrase
+          match emissionPhrasesBy DetectionStatus.Active with
+          | [] -> ()
+          | ps -> yield sprintf "  Runs today, each catching one hazard: %s." (String.concat "; " ps)
+          match emissionPhrasesBy DetectionStatus.NotYetDetected with
+          | [] -> ()
+          | ps -> yield sprintf "  Named follow-ons, not yet checked: %s." (String.concat "; " ps)
+          if EstateFindingKind.all |> List.exists (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission) then
+              yield "  Index compression, sequences, and PERSISTED computed columns are carried faithfully by the emitter itself — no board check is owed."
           yield ""
 
           // MATRIX — environment × plane counts (the drill-down door).

@@ -197,7 +197,25 @@ let ofReport (report: Estate.EstateReport) : View =
               let shown = report.EmissionFindings |> List.truncate Estate.laneCap
               yield! shown |> List.map findingBlock
               let extra = List.length report.EmissionFindings - List.length shown
-              if extra > 0 then yield Note (sprintf "and %d more — environments.json carries every finding." extra) ]
+              if extra > 0 then yield Note (sprintf "and %d more — environments.json carries every finding." extra)
+          // The coverage line is DERIVED from the detector set (the
+          // `DetectionStatus` classifier), so the rich board and the text
+          // board name the same checks and neither can drift (Estate.render's
+          // sibling; DECISIONS 2026-07-18).
+          let emissionPhrasesBy status =
+              EstateFindingKind.all
+              |> List.filter (fun k ->
+                  EstateFindingKind.planeOf k = EstatePlane.Emission
+                  && EstateFindingKind.detectionStatus k = status)
+              |> List.map EstateFindingKind.phrase
+          match emissionPhrasesBy DetectionStatus.Active with
+          | [] -> ()
+          | ps -> yield Note (sprintf "Runs today, each catching one hazard: %s." (String.concat "; " ps))
+          match emissionPhrasesBy DetectionStatus.NotYetDetected with
+          | [] -> ()
+          | ps -> yield Note (sprintf "Named follow-ons, not yet checked: %s." (String.concat "; " ps))
+          if EstateFindingKind.all |> List.exists (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission) then
+              yield Note "Index compression, sequences, and PERSISTED computed columns are carried faithfully by the emitter itself — no board check is owed." ]
     let matrix =
         [ yield Rule (Some "MATRIX — findings by environment and plane", Neutral)
           if List.isEmpty report.Findings then yield Note "No findings; the matrix is empty."

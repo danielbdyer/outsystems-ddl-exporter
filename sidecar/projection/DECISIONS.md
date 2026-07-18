@@ -29365,3 +29365,40 @@ its property tests in the same commit, and named here first per the standing law
 witness pools at close: kernel fast pool green; kernel synthetic Docker suites green under
 K1c; Twin pure pool 65 green; Twin Docker pool 6 green (schema, mint, scenario, evidence,
 proof).
+
+---
+
+## 2026-07-18 — The estate board's emission-coverage line is derived, not restated (a readiness-checker audit)
+
+**Context.** A readiness-checker audit (against `CUTOVER_BOARD_POPULATION_PLAN.md`) found
+the EMISSION section's coverage sentence (`Estate.render`, the "Checks run today / Coming"
+line) had drifted against the detector set — the predecessor's documented failure mode
+applied to operator copy. It still promised *temporal tables* and *sequences* as "coming"
+after both had shipped (`emissionTemporalFindings`; sequence emission via
+`SsdtDdlEmitter.sequenceStatements`), and it never named the authored-default or
+computed-expression checks that had landed. A hand-maintained feature list on the board is a
+first-class defect by the same logic that retired the one in `CLAUDE.md`.
+
+**Decision.** The coverage line is **derived** from a total `EstateFindingKind.detectionStatus`
+classifier (Core), rendered by both boards (`Estate.render` + `EstateBoardView`). A kind
+cannot land without declaring its status — `Active` (a detector produces it),
+`CarriedByEmission` (the emitter owns the property; no runtime gap), or `NotYetDetected` (a
+named follow-on). The line therefore cannot advertise a check that does not run, nor omit
+one that does. A property test (`EstateTests`) holds the two coherence laws: only
+Emission-plane kinds carry a non-`Active` status, and the `CarriedByEmission` set is exactly
+the three closed-gap kinds.
+
+**The `CarriedByEmission` finding — a retirement recommendation.** The audit found three
+"inert" emission finding kinds (`EmissionIndexOptionDropped`, `EmissionSequenceDropped`,
+`EmissionPersistedDropped`) that carry full contract rows but have no detector — because the
+emission gap each was scoped for has since closed: index `DATA_COMPRESSION`
+(`SsdtDdlEmitter` `dataCompressionSql`), sequences (`sequenceStatements`), and PERSISTED
+computed columns (`ScriptDomBuild` `col.IsPersisted`) are all emitted faithfully today.
+Writing detectors for them would produce false reds; their `phrase` text ("…the emission
+does not carry") is itself stale. They are named `CarriedByEmission` for now (the honest
+board line), and flagged here as **retirement candidates** — the removal from the DU and its
+totality tables is deferred pending operator sign-off (they are harmless dead taxonomy in the
+interim, never produced). The fourth inert kind, `EmissionDeployedNotNullLoosened`, is a
+genuine uncovered check (model nullable where the deployed database is NOT NULL); its
+evidence exists (`Profile.AttributeRealities.IsNullableInDatabase`, populated by
+`LiveProfiler`), and its detector is a named follow-on (`NotYetDetected`).

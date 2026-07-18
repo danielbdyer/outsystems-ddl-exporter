@@ -68,6 +68,34 @@ type EstateLeverForm =
     /// next move is the probe's meter, not an imperative.
     | NoLever
 
+/// Whether `check estate` runs a detector for a kind today — the honest,
+/// derived basis for the board's emission-coverage line. The predecessor
+/// copy was hand-maintained and drifted against the detector set: it still
+/// promised "temporal tables" and "sequences" as *coming* after both had
+/// shipped, and never named the authored-default or computed-expression
+/// checks that had already landed. Deriving the line from this total
+/// classifier closes that drift class — a new kind cannot land without
+/// declaring its detection status, so the coverage line can never advertise
+/// a check that does not run, nor omit one that does (DECISIONS 2026-07-18 —
+/// the derived coverage line).
+[<RequireQualifiedAccess>]
+type DetectionStatus =
+    /// A detector produces this kind today.
+    | Active
+    /// No runtime detector, and none is owed: the SSDT emitter already
+    /// carries the property faithfully (index DATA_COMPRESSION via
+    /// `SsdtDdlEmitter.dataCompressionSql`; sequences via `sequenceStatements`;
+    /// PERSISTED computed columns via `ScriptDomBuild` `col.IsPersisted`), so
+    /// there is no runtime gap for the board to detect — the carriage is
+    /// guarded by the emitter's own emission tests. These kinds are
+    /// retirement candidates: each was scoped for an emission gap that has
+    /// since closed (their `phrase` text — "…the emission does not carry" —
+    /// is itself stale and must not be rendered as coverage).
+    | CarriedByEmission
+    /// Named in the vocabulary, no detector yet — the evidence plumbing or
+    /// emission work the kind needs is a named follow-on.
+    | NotYetDetected
+
 /// The closed set of finding kinds the estate check produces today. Grows
 /// with the detector waves (each new kind lands WITH its contract row —
 /// statement pattern, lane, lever — per the chapter-open appendix); the
@@ -702,6 +730,67 @@ module EstateFindingKind =
             "The fidelity proof for flow 'uat-load' is 9 day(s) old and the estate's evidence has moved since — the proof predates what this run can see."
         | EstateFindingKind.ProofDiverged ->
             "The fidelity proof for flow 'uat-load' reports 3 differing row(s) — the load is not yet byte-faithful."
+
+    /// Whether the estate check runs a detector for a kind today (Appendix
+    /// A, DECISIONS 2026-07-18 — the derived coverage line). Total, so the
+    /// board's coverage sentence is generated, never restated: a kind added
+    /// without a detector must be declared `NotYetDetected` here (or
+    /// `CarriedByEmission` when the emitter owns the property), and the line
+    /// re-derives. The three `CarriedByEmission` kinds are the retirement
+    /// candidates the 2026-07-18 audit surfaced — the emission gap they were
+    /// scoped for has closed (see `DetectionStatus.CarriedByEmission`).
+    let detectionStatus (kind: EstateFindingKind) : DetectionStatus =
+        match kind with
+        // The emitter carries these faithfully today; no runtime gap remains.
+        | EstateFindingKind.EmissionIndexOptionDropped
+        | EstateFindingKind.EmissionSequenceDropped
+        | EstateFindingKind.EmissionPersistedDropped -> DetectionStatus.CarriedByEmission
+        // Needs per-environment deployed-nullability evidence (the reality
+        // plane) — the named follow-on.
+        | EstateFindingKind.EmissionDeployedNotNullLoosened -> DetectionStatus.NotYetDetected
+        // Every other kind is produced by a live detector today.
+        | EstateFindingKind.SchemaPresence
+        | EstateFindingKind.SchemaLag
+        | EstateFindingKind.SchemaRename
+        | EstateFindingKind.SchemaAttributes
+        | EstateFindingKind.SchemaReferences
+        | EstateFindingKind.SchemaIndexes
+        | EstateFindingKind.SchemaTrigger
+        | EstateFindingKind.SchemaCheck
+        | EstateFindingKind.SchemaModality
+        | EstateFindingKind.SchemaActivity
+        | EstateFindingKind.SchemaTrust
+        | EstateFindingKind.DataNotNull
+        | EstateFindingKind.DataUnique
+        | EstateFindingKind.DataOrphans
+        | EstateFindingKind.DataOverflow
+        | EstateFindingKind.DataAsymmetry
+        | EstateFindingKind.DataUniquenessCandidate
+        | EstateFindingKind.DataHeadroom
+        | EstateFindingKind.DataDateSentinel
+        | EstateFindingKind.DataCollationCollision
+        | EstateFindingKind.DataOrphansPastBand
+        | EstateFindingKind.DataNotNullPastBand
+        | EstateFindingKind.PostureActive
+        | EstateFindingKind.PostureRetirable
+        | EstateFindingKind.IdentitySynthesized
+        | EstateFindingKind.OperationalCdc
+        | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionDuplicateName
+        | EstateFindingKind.EmissionLongName
+        | EstateFindingKind.EmissionNoPrimaryKey
+        | EstateFindingKind.EmissionLossyScalar
+        | EstateFindingKind.EmissionNonDefaultOnUpdate
+        | EstateFindingKind.EmissionAuthoredDefault
+        | EstateFindingKind.EmissionComputedExprIdentifiers
+        | EstateFindingKind.EmissionTriggerUnrewritten
+        | EstateFindingKind.EmissionDataLaneOrder
+        | EstateFindingKind.EmissionTemporalDropped
+        | EstateFindingKind.DataStaticContent
+        | EstateFindingKind.DataStaticIdentity
+        | EstateFindingKind.ProofMissing
+        | EstateFindingKind.ProofStale
+        | EstateFindingKind.ProofDiverged -> DetectionStatus.Active
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

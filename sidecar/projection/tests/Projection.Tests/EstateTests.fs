@@ -105,6 +105,37 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.Fail(sprintf "%s's lever form %A is incoherent with its lane %A" token form lane)
 
 [<Fact>]
+let ``coverage: the emission coverage line is derived from the detector set — non-Active status is emission-plane only, and the carried set is exactly the closed-gap kinds (no drift)`` () =
+    // DECISIONS 2026-07-18 — the derived coverage line. The predecessor copy
+    // was hand-maintained and drifted (it promised temporal tables + sequences
+    // as "coming" after both shipped, and never named authored-default /
+    // computed-expression). Deriving the line from `detectionStatus` closes
+    // that drift class. Two laws hold it: (1) only Emission-plane kinds carry
+    // a non-Active status (carriage/gaps are emission facts); (2) the
+    // CarriedByEmission set is exactly the three closed-gap kinds the audit
+    // found the emitter already carries.
+    for kind in EstateFindingKind.all do
+        match EstateFindingKind.detectionStatus kind with
+        | DetectionStatus.Active -> ()
+        | DetectionStatus.CarriedByEmission
+        | DetectionStatus.NotYetDetected ->
+            Assert.Equal(EstatePlane.Emission, EstateFindingKind.planeOf kind)
+    let carriedTokens =
+        EstateFindingKind.all
+        |> List.filter (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission)
+        |> List.map EstateFindingKind.token
+        |> List.sort
+    Assert.Equal<string list>(
+        [ "emission.indexOptionDropped"; "emission.persistedDropped"; "emission.sequenceDropped" ],
+        carriedTokens)
+    // The run list is non-empty — the board always names what it checks.
+    Assert.NotEmpty(
+        EstateFindingKind.all
+        |> List.filter (fun k ->
+            EstateFindingKind.planeOf k = EstatePlane.Emission
+            && EstateFindingKind.detectionStatus k = DetectionStatus.Active))
+
+[<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
     let a = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
     let b = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
