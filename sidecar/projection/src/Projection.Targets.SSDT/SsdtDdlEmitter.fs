@@ -1128,7 +1128,21 @@ module SsdtDdlEmitter =
                                 Name.value target.Name,
                                 List.length (Kind.primaryKey target)))
                     | _ -> None))
-        match compositeKeyRefusal with
+        // A kind carrying `ModalityMark.Temporal` cannot yet emit deployable
+        // DDL (the period columns' GENERATED ALWAYS clauses are the named
+        // backlog item) — the publish refuses rather than silently dropping
+        // system-versioning from the target. A red board finding
+        // (`EmissionTemporalDropped`, the same predicate) and this refusal
+        // are the same fact (DECISIONS 2026-07-18; #669 EF-23).
+        let temporalRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Modality
+                |> List.tryPick (function
+                    | ModalityMark.Temporal _ ->
+                        Some (EmitError.TemporalKindRefused (Name.value k.Name))
+                    | _ -> None))
+        match compositeKeyRefusal |> Option.orElse temporalRefusal with
         | Some refusal -> Error refusal
         | None ->
             // PL-4 (S54) — the per-(module, schema) first-kind decision derives

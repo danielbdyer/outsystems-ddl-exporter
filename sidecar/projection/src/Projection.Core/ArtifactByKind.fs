@@ -60,6 +60,15 @@ type EmitError =
     /// owner kind's name, the reference's name, the target kind's name,
     /// and the target key's column count.
     | CompositeKeyReferenceRefused of owner: string * reference: string * target: string * keyColumns: int
+    /// DECISIONS 2026-07-18 (#669 EF-23; the fail-loudly ruling joined to
+    /// the board's `EmissionTemporalDropped` finding) — a kind carries
+    /// `ModalityMark.Temporal` (a system-versioned table), and the
+    /// emission cannot yet render its period columns' GENERATED ALWAYS
+    /// clauses — the emitted DDL would not deploy, and before this
+    /// refusal the system-versioning silently vanished from the target.
+    /// The publish refuses; carrying the temporal estate over remains
+    /// the named backlog item. Carries the kind's name.
+    | TemporalKindRefused of kind: string
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

@@ -363,6 +363,18 @@ module MetadataSnapshotRunner =
           IsCached     : bool
           CacheSize    : int option }
 
+    /// Rowset 25 — per-entity system-versioning reflection (DECISIONS
+    /// 2026-07-18; #669 EF-23). Lifts into `ModalityMark.Temporal` so
+    /// the estate board's temporal dealbreaker fires from the mark.
+    type OssysTemporalRow =
+        { EntityId       : int
+          HistorySchema  : string option
+          HistoryTable   : string option
+          PeriodStart    : string option
+          PeriodEnd      : string option
+          RetentionValue : int option
+          RetentionUnit  : string option }
+
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
     /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
@@ -384,6 +396,7 @@ module MetadataSnapshotRunner =
             ForeignKeyColumns  : OssysFkColumnRow list
             Triggers           : OssysTriggerRow list
             Sequences          : OssysSequenceRow list
+            Temporal           : OssysTemporalRow list
         }
 
     // -------------------------------------------------------------------
@@ -716,6 +729,18 @@ module MetadataSnapshotRunner =
           IsCached     = readBool       r 8
           CacheSize    = readIntOpt     r 9 }
 
+    /// Rowset 25 (system-versioning) — ordinals mirror the SELECT:
+    /// EntityId, HistorySchema, HistoryTable, PeriodStartColumn,
+    /// PeriodEndColumn, RetentionValue, RetentionUnit.
+    let private mapTemporalRow (r: RowAtRest) : OssysTemporalRow =
+        { EntityId       = readInt       r 0
+          HistorySchema  = readStringOpt r 1
+          HistoryTable   = readStringOpt r 2
+          PeriodStart    = readStringOpt r 3
+          PeriodEnd      = readStringOpt r 4
+          RetentionValue = readIntOpt    r 5
+          RetentionUnit  = readStringOpt r 6 }
+
     /// Number of user-visible result sets the carbon-copied OSSYS rowsets
     /// script emits. V1's documentation describes 22 user-visible rowsets
     /// (rowsets 0..21); the canary's empirical walk observes **23** —
@@ -727,10 +752,11 @@ module MetadataSnapshotRunner =
     /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
     /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
     /// instead of silently accepting partial data. Matrix row 35.
-    /// **24 as of the extraction fork** (DECISIONS 2026-07-18; #669
-    /// EF-22): the appended `sys.sequences` rowset joins the walk.
+    /// **25 as of the extraction fork** (DECISIONS 2026-07-18; #669
+    /// EF-22 + EF-23): the appended `sys.sequences` and temporal-
+    /// configuration rowsets join the walk.
     [<Literal>]
-    let ExpectedResultSets = 24
+    let ExpectedResultSets = 25
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
@@ -917,9 +943,11 @@ module MetadataSnapshotRunner =
                 do! skip "triggerJson"
                 do! skip "moduleJson"
 
-                // Rowset 24 — sequences (the extraction fork; DECISIONS
-                // 2026-07-18; #669 EF-22). Appended at the script's end.
+                // Rowsets 24 + 25 — sequences + temporal configuration
+                // (the extraction fork; DECISIONS 2026-07-18; #669
+                // EF-22 + EF-23). Appended at the script's end.
                 let! sequences = read "sequences" mapSequenceRow
+                let! temporal  = read "temporal"  mapTemporalRow
 
                 // Drain any trailing rowsets the SQL might emit beyond
                 // the documented 23. Per matrix row 35: a SQL-contract
@@ -964,6 +992,7 @@ module MetadataSnapshotRunner =
                         ForeignKeyColumns  = fkColumns
                         Triggers           = triggers
                         Sequences          = sequences
+                        Temporal           = temporal
                     }
             with
             | ex ->
@@ -1003,13 +1032,20 @@ module MetadataSnapshotRunner =
     ///     a reference with no reflected FK is logical-only and carries
     ///     `false` (JSON-path `ISNULL(HasFK, 0)` parity — WP-1a).
 
-    /// Parse V1's `#AllIdx.DataCompressionJson` into a single-value
+    /// Parse `#AllIdx.DataCompressionJson` into a single-value
     /// compression code when the JSON encodes uniform compression
-    /// across every partition. The JSON shape per V1's SQL is
-    /// `[{"P":1,"Code":"PAGE"}, …]` — one entry per partition.
-    /// Returns `Some "<code>"` when every entry's Code matches;
-    /// `None` when heterogeneous or unparseable (row 56 partition
-    /// axis residual). Pillar 7 four-question analysis: the typed
+    /// across every partition. The JSON shape per the extraction
+    /// script's rowset-9 projection is
+    /// `[{"partition":1,"compression":"PAGE"}, …]` — one entry per
+    /// partition (`data_compression_desc AS [compression]`). The
+    /// original wiring read a property named `Code` that the script
+    /// never emitted, so every parse returned `None` and the whole
+    /// compression chain (bundle → reader → emitter) sat dark —
+    /// the audit observed exactly that as EF-25 (DATA_COMPRESSION
+    /// dropped). `Code` stays as a fallback for vintage captures.
+    /// Returns `Some "<code>"` when every entry matches; `None`
+    /// when heterogeneous or unparseable (row 56 partition axis
+    /// residual). Pillar 7 four-question analysis: the typed
     /// AST library is `System.Text.Json` (JsonDocument is the BCL
     /// canonical parser); no LINT-ALLOW needed because the parsing
     /// is a structured walk, not string composition.
@@ -1023,7 +1059,8 @@ module MetadataSnapshotRunner =
                     seq {
                         for entry in doc.RootElement.EnumerateArray() do
                             let mutable codeEl = Unchecked.defaultof<System.Text.Json.JsonElement>
-                            if entry.TryGetProperty("Code", &codeEl) then
+                            if entry.TryGetProperty("compression", &codeEl)
+                               || entry.TryGetProperty("Code", &codeEl) then
                                 match Option.ofObj (codeEl.GetString()) with
                                 | Some s -> yield s
                                 | None   -> ()
@@ -1624,6 +1661,19 @@ module MetadataSnapshotRunner =
                     CacheSize    = s.CacheSize
                 } : OssysRowsetTypes.SequenceRow))
 
+        let temporal =
+            snapshot.Temporal
+            |> List.map (fun t ->
+                ({
+                    EntityId       = t.EntityId
+                    HistorySchema  = t.HistorySchema
+                    HistoryTable   = t.HistoryTable
+                    PeriodStart    = t.PeriodStart
+                    PeriodEnd      = t.PeriodEnd
+                    RetentionValue = t.RetentionValue
+                    RetentionUnit  = t.RetentionUnit
+                } : OssysRowsetTypes.TemporalRow))
+
         {
             Modules      = modules
             Kinds        = kinds
@@ -1634,4 +1684,5 @@ module MetadataSnapshotRunner =
             Triggers     = triggers
             ColumnChecks = columnChecks
             Sequences    = sequences
+            Temporal     = temporal
         }

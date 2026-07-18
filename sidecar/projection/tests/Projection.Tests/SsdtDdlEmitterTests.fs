@@ -1192,6 +1192,37 @@ let ``composite-key gate: the overlay's dropped reference passes, and no foreign
     Assert.DoesNotContain ("FOREIGN KEY", body)
 
 [<Fact>]
+let ``temporal gate: a system-versioned kind refuses the publish — system-versioning never drops silently (#669 EF-23)`` () =
+    // The emission cannot yet render the period columns' GENERATED ALWAYS
+    // clauses, so a kind carrying ModalityMark.Temporal refuses rather than
+    // deploying a table whose system-versioning silently vanished. The
+    // board's EmissionTemporalDropped finding states the same fact.
+    let temporalConfig : TemporalConfig =
+        { HistorySchema = Some "history"
+          HistoryTable  = Some "CUSTOMER_History"
+          PeriodStart   = None
+          PeriodEnd     = None
+          Retention     = Infinite }
+    let withTemporal =
+        { compositeTargetCatalog with
+            Modules =
+                compositeTargetCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    References = []
+                                    Modality = ModalityMark.Temporal temporalConfig :: k.Modality }) }) }
+    let enriched = enrich withTemporal
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TemporalKindRefused kind) ->
+        Assert.False (System.String.IsNullOrWhiteSpace kind)
+    | Error other -> Assert.Fail (sprintf "expected the temporal refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the temporal refusal; the publish emitted"
+
+[<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =
     // Reconciliation slice 3 (DECISIONS 2026-06-13): per-table bodies
     // render through Render.toText, so V1's clause normalization applies

@@ -32,7 +32,7 @@ let private snapshotOf
     (realities: MetadataSnapshotRunner.OssysColumnRealityRow list)
     : MetadataSnapshotRunner.MetadataSnapshot =
     { Modules = []; Entities = []; Attributes = attrs; References = []
-      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []
+      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = [] }
 
@@ -223,6 +223,41 @@ let ``dataspace: a non-primary filegroup is intentional configuration and carrie
     let bundle = MetadataSnapshotRunner.toBundle s
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
     Assert.Equal(Some (DataSpace.Filegroup "INDEX_FG"), row.DataSpace)
+
+// ---------------------------------------------------------------------------
+// EF-25 closure — the script's rowset-9 projection emits
+// `[{"partition":n,"compression":"<desc>"}]`; the original parser read a
+// property named `Code` that never existed, so the whole compression chain
+// sat dark. These pin the script-truth shape (and the vintage `Code`
+// fallback) through `toBundle`.
+// ---------------------------------------------------------------------------
+
+let private idxRowCompression (json: string option) : MetadataSnapshotRunner.OssysAllIdxRow =
+    { idxRow "IX_C" None None with DataCompressionJson = json }
+
+[<Fact>]
+let ``EF-25: script-shaped uniform PAGE compression JSON lifts into the bundle row`` () =
+    let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"PAGE"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(Some "PAGE", row.DataCompression)
+
+[<Fact>]
+let ``EF-25: heterogeneous per-partition compression stays absent (row 56 residual)`` () =
+    let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"ROW"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(None, row.DataCompression)
+
+[<Fact>]
+let ``EF-25: the vintage Code-property shape still parses (fallback)`` () =
+    let json = Some """[{"P":1,"Code":"ROW"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(Some "ROW", row.DataCompression)
 
 // ---------------------------------------------------------------------------
 // WP-4b (DECISIONS 2026-07-16) — columnStorageDivergences names every

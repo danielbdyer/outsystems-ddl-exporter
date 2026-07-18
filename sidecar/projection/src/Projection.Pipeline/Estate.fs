@@ -1151,6 +1151,24 @@ module Estate =
                                 (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
                                     subject (String.concat "], [" tokens) (Name.value k.Name))))))
 
+    /// EF-23 (DECISIONS 2026-07-18): a system-versioned kind. The emission
+    /// cannot yet deploy its period columns (GENERATED ALWAYS is the named
+    /// backlog item), so the publish refuses (`EmitError.TemporalKindRefused`,
+    /// the same predicate) — the board names the fact and its ruling.
+    let private emissionTemporalFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.choose (fun k ->
+            k.Modality
+            |> List.tryPick (function ModalityMark.Temporal tc -> Some tc | _ -> None)
+            |> Option.map (fun tc ->
+                let history =
+                    match tc.HistorySchema, tc.HistoryTable with
+                    | Some hs, Some ht -> sprintf " (history table %s.%s)" hs ht
+                    | _ -> ""
+                emissionFinding EstateFindingKind.EmissionTemporalDropped (Name.value k.Name)
+                    (sprintf "%s is system-versioned%s — the emission cannot yet carry SYSTEM_VERSIONING, so the publish refuses rather than dropping it silently."
+                        (Name.value k.Name) history)))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1162,7 +1180,8 @@ module Estate =
           emissionNonDefaultOnUpdateFindings target
           emissionAuthoredDefaultFindings target
           emissionDataLaneOrderFindings target
-          emissionComputedExprFindings target ]
+          emissionComputedExprFindings target
+          emissionTemporalFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 

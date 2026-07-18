@@ -111,7 +111,7 @@ let private snapshot () : MetadataSnapshotRunner.MetadataSnapshot =
       References =
         [ referenceRow 201
           referenceRow 301 ]
-      PhysicalTables = []; ColumnReality = []; ColumnChecks = []; Sequences = []
+      PhysicalTables = []; ColumnReality = []; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = [ fkRealityRow 5000 (Some "CASCADE") ]
       ForeignKeyColumns  = [ fkColumnRow 201 5000 ]

@@ -324,6 +324,10 @@ module OssysRowsetReader =
             /// resolution at context construction. Slice
             /// 5.13.ossys-rowsets-cluster; matrix row 12.
             ColumnChecksByEntity : Map<int, ColumnCheckRow list>
+            /// EntityId → system-versioning configuration (rowset 25;
+            /// DECISIONS 2026-07-18; #669 EF-23). At most one row per
+            /// entity; lifts into `ModalityMark.Temporal`.
+            TemporalByEntity : Map<int, TemporalRow>
         }
 
     /// Slice 5.13.ossys-rowsets-cluster — IndexColumn direction parser.
@@ -473,7 +477,15 @@ module OssysRowsetReader =
                 row.DataCompression
                 |> Option.bind (fun s ->
                     match s.ToUpperInvariant() with
-                    | "NONE" -> Some DataCompressionLevel.None
+                    // Reflection-lane semantics: uniform NONE is the
+                    // default state of every index — nobody chose it, so
+                    // it reflects as ABSENCE, not as an explicit
+                    // `DATA_COMPRESSION = NONE` annotation on every
+                    // emitted index. Only a deliberate ROW/PAGE choice
+                    // becomes a fact the emitter renders. (An authored
+                    // model can still say None explicitly via the JSON
+                    // lane, which parses independently.)
+                    | "NONE" -> Option<DataCompressionLevel>.None
                     | "ROW"  -> Some DataCompressionLevel.Row
                     | "PAGE" -> Some DataCompressionLevel.Page
                     | _      -> None)
@@ -663,6 +675,31 @@ module OssysRowsetReader =
                 [
                     if kindRow.IsStatic       then yield Static []
                     if kindRow.IsSystemEntity then yield SystemOwned
+                    // Rowset 25 (DECISIONS 2026-07-18; #669 EF-23) — a
+                    // system-versioned entity carries the Temporal mark;
+                    // the estate board's dealbreaker (and the publish
+                    // refusal) fire from it. Retention: value -1 or unit
+                    // INFINITE mean no retention limit; the four named
+                    // units map to the closed DU.
+                    match Map.tryFind kindRow.EntityId ctx.TemporalByEntity with
+                    | None -> ()
+                    | Some tr ->
+                        let retention =
+                            match tr.RetentionValue, tr.RetentionUnit with
+                            | Some v, Some u when v > 0 ->
+                                match u.ToUpperInvariant() with
+                                | "DAY"   | "DAYS"   -> Limited (v, Days)
+                                | "WEEK"  | "WEEKS"  -> Limited (v, Weeks)
+                                | "MONTH" | "MONTHS" -> Limited (v, Months)
+                                | "YEAR"  | "YEARS"  -> Limited (v, Years)
+                                | _                  -> Infinite
+                            | _ -> Infinite
+                        yield Temporal
+                            { HistorySchema = tr.HistorySchema
+                              HistoryTable  = tr.HistoryTable
+                              PeriodStart   = tr.PeriodStart |> Option.bind (Name.create >> Result.toOption)
+                              PeriodEnd     = tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption)
+                              Retention     = retention }
                 ]
             Result.success
                 { SsKey       = k
@@ -954,7 +991,11 @@ module OssysRowsetReader =
               IndexesByEntity      = indexesByEntity
               IndexColumnsByIndex  = indexColumnsByIndex
               TriggersByEntity     = triggersByEntity
-              ColumnChecksByEntity = columnChecksByEntity }
+              ColumnChecksByEntity = columnChecksByEntity
+              TemporalByEntity     =
+                bundle.Temporal
+                |> List.map (fun t -> t.EntityId, t)
+                |> Map.ofList }
         let moduleResults =
             bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
         // Rowset 24 (DECISIONS 2026-07-18; #669 EF-22) — deployed

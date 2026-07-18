@@ -366,6 +366,21 @@ module OssysRowsetTypes =
             Definition  : string option
         }
 
+    /// Rowset 25 — one system-versioned entity's temporal configuration
+    /// (DECISIONS 2026-07-18; #669 EF-23). Lifts into
+    /// `ModalityMark.Temporal` so the estate board's temporal
+    /// dealbreaker fires on rowset-sourced catalogs.
+    type TemporalRow =
+        {
+            EntityId       : int
+            HistorySchema  : string option
+            HistoryTable   : string option
+            PeriodStart    : string option
+            PeriodEnd      : string option
+            RetentionValue : int option
+            RetentionUnit  : string option
+        }
+
     /// Rowset 24 — one deployed `sys.sequences` row (DECISIONS 2026-07-18;
     /// #669 EF-22). The ten axes mirror `ReadSide`'s reflection so both
     /// lanes reconstruct the same `Sequence` values.
@@ -432,6 +447,12 @@ module OssysRowsetTypes =
             /// closes the round-trip. Empty for sources without the
             /// extended extraction (fixtures; the JSON path).
             Sequences : SequenceRow list
+            /// Rowset 25 (DECISIONS 2026-07-18; #669 EF-23) — per-entity
+            /// system-versioning configuration. Lifts into
+            /// `ModalityMark.Temporal`; the estate board's temporal
+            /// dealbreaker (and the publish refusal) fire from the mark.
+            /// Empty for sources without the extended extraction.
+            Temporal : TemporalRow list
         }
 
     /// Empty RowsetBundle helper. Test fixtures + JSON-path placeholders
@@ -454,4 +475,5 @@ module OssysRowsetTypes =
               IndexColumns = []
               Triggers     = []
               ColumnChecks = []
-              Sequences    = [] }
+              Sequences    = []
+              Temporal     = [] }

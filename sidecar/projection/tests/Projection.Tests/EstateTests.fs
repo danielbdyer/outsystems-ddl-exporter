@@ -1101,6 +1101,41 @@ let ``emission: an authored default that does not parse as its column's type is 
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionAuthoredDefault))
 
 [<Fact>]
+let ``emission: a system-versioned kind is a DECIDE ruling — the board names the temporal fact the publish refuses (#669 EF-23)`` () =
+    // The rowset lane now carries ModalityMark.Temporal (rowset 25); the
+    // emission cannot yet deploy period columns, so the publish refuses
+    // (EmitError.TemporalKindRefused) and the board states the same fact.
+    let temporalConfig : TemporalConfig =
+        { HistorySchema = Some "history"
+          HistoryTable  = Some "CUSTOMER_History"
+          PeriodStart   = None
+          PeriodEnd     = None
+          Retention     = Infinite }
+    let withTemporal =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with Modality = ModalityMark.Temporal temporalConfig :: k.Modality }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor withTemporal
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionTemporalDropped)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Contains("system-versioned", f.Statement)
+    Assert.Contains("history.CUSTOMER_History", f.Statement)
+    // The negative: the unmarked catalog carries no temporal finding.
+    Assert.True(
+        Estate.emissionFindingsFor sampleCatalog
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionTemporalDropped))
+
+[<Fact>]
 let ``a LOGICAL-ONLY relationship's orphans reach the board — the orphan derivation walks every catalog reference (decision 3)`` () =
     // The reference carries no backing SQL Server constraint
     // (ConstraintState = NoDbConstraint); with enforcement decided, its

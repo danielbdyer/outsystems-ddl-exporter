@@ -1275,3 +1275,26 @@ SELECT
   s.cache_size AS CacheSize
 FROM sys.sequences AS s
 ORDER BY SCHEMA_NAME(s.schema_id), s.[name];
+
+-- Rowset 25 — temporal configuration (DECISIONS 2026-07-18; #669 EF-23).
+-- One row per system-versioned entity: history table, period columns,
+-- retention. The reader lifts these into ModalityMark.Temporal so the
+-- estate board's EmissionTemporalDropped dealbreaker fires on rowset-
+-- sourced catalogs (the fail-loudly ruling; full deployable emission of
+-- GENERATED ALWAYS period columns remains the named backlog item). The
+-- result-set contract bumps 24 → 25 in lockstep.
+SELECT
+  pt.EntityId,
+  SCHEMA_NAME(h.schema_id) AS HistorySchema,
+  h.[name] AS HistoryTable,
+  cs.[name] AS PeriodStartColumn,
+  ce.[name] AS PeriodEndColumn,
+  t.history_retention_period AS RetentionValue,
+  t.history_retention_period_unit_desc AS RetentionUnit
+FROM #PhysTbls pt
+JOIN sys.tables t   ON t.object_id = pt.object_id AND t.temporal_type = 2
+LEFT JOIN sys.tables h  ON h.object_id = t.history_table_id
+LEFT JOIN sys.periods pr ON pr.object_id = t.object_id AND pr.period_type = 1
+LEFT JOIN sys.columns cs ON cs.object_id = t.object_id AND cs.column_id = pr.start_column_id
+LEFT JOIN sys.columns ce ON ce.object_id = t.object_id AND ce.column_id = pr.end_column_id
+ORDER BY pt.EntityId;

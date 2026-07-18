@@ -161,7 +161,7 @@ let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form S
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -189,7 +189,7 @@ let ``F1: a rowset attribute's collation threads through to ColumnRealization.Co
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -231,7 +231,7 @@ let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
@@ -273,7 +273,7 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors ->
@@ -318,7 +318,7 @@ let ``SnapshotRowsets: inactive modules carry through with IsActive=false (slice
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -341,7 +341,7 @@ let ``SnapshotRowsets: inactive kinds carry through with IsActive=false (slice �
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -364,7 +364,7 @@ let ``SnapshotRowsets: inactive attributes carry through with IsActive=false (sl
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -412,7 +412,7 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     let resJson = parseSync (CatalogReader.SnapshotJson json)
     let resRow  = parseSync (CatalogReader.SnapshotRowsets bundle)
@@ -547,7 +547,7 @@ let private referenceBundle : OssysRowsetTypes.RowsetBundle =
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 [<Fact>]
@@ -653,7 +653,7 @@ let ``slice 2: Reference SsKey is always synthesized (rowsets carry no per-refer
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
@@ -778,7 +778,7 @@ let private externalBundle (espaceKind: string option) : OssysRowsetTypes.Rowset
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 let private originOf (bundle: OssysRowsetTypes.RowsetBundle) : Origin =
@@ -826,7 +826,7 @@ let ``slice 3: isExternal=false → Native regardless of EspaceKind`` () =
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     Assert.Equal<Origin>(Native, originOf bundle)
 
@@ -957,7 +957,7 @@ let private systemBundle : OssysRowsetTypes.RowsetBundle =
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 [<Fact>]
@@ -983,7 +983,7 @@ let ``slice 4: IsSystemEntity=false → Modality omits SystemOwned (matches V1 d
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -1010,7 +1010,7 @@ let ``slice 4: SystemOwned coexists with Static (composite-modality case)`` () =
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -1037,7 +1037,7 @@ let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -1062,7 +1062,7 @@ let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
@@ -1250,7 +1250,7 @@ let private minimalRowsetBundleNoGuids : OssysRowsetTypes.RowsetBundle =
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 let private referenceJsonFixture =
@@ -1372,7 +1372,7 @@ let ``slice 5 parity: reference-bearing fixture — JSON ≡ Rowset (no Guids; t
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     assertCatalogsTotallyEqual referenceJsonFixture bundle
 
@@ -1391,7 +1391,7 @@ let ``slice 5 parity: minimal fixture WITH Guids — shape parity holds modulo S
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     // SsKey identity diverges (rowset = OssysOriginal Guid; JSON =
     // Synthesized); structural shape (names, types, columns,
@@ -1412,7 +1412,7 @@ let ``slice 5 parity: SsKey divergence axis — Guids change identity but not sh
             Indexes      = []
             IndexColumns = []
             Triggers     = []
-            ColumnChecks = []; Sequences = []
+            ColumnChecks = []; Sequences = []; Temporal = []
         }
     let jsonCat   =
         match parseSync (CatalogReader.SnapshotJson minimalJsonFixture) with
@@ -1450,7 +1450,7 @@ let private pkBundle (kinds: OssysRowsetTypes.KindRow list) (attrs: OssysRowsetT
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 let private parsedUserAttrs (bundle: OssysRowsetTypes.RowsetBundle) : Attribute list =
@@ -1556,7 +1556,7 @@ let private normalizationBundle
         Indexes      = []
         IndexColumns = []
         Triggers     = []
-        ColumnChecks = []; Sequences = []
+        ColumnChecks = []; Sequences = []; Temporal = []
     }
 
 [<Fact>]
@@ -1666,7 +1666,8 @@ let ``rowset 24: a bundle sequence row lifts into Catalog.Sequences with the Rea
             [ { Schema = "dbo"; Name = "SEQ_InvoiceNumber"; DataType = "bigint"
                 StartValue = Some 1000M; Increment = Some 1M
                 MinimumValue = Some 1M; MaximumValue = Some 9999999M
-                IsCycling = false; IsCached = true; CacheSize = Some 50 } ] }
+                IsCycling = false; IsCached = true; CacheSize = Some 50 } ]
+          Temporal   = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
     | Ok catalog ->
@@ -1685,7 +1686,62 @@ let ``rowset 24: an empty Sequences bundle yields an empty Catalog.Sequences —
           Kinds      = [ userKindRow None ]
           Attributes = [ idAttrRow None ]
           References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []
-          Sequences  = [] }
+          Sequences  = []; Temporal = [] }
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
     | Ok catalog -> Assert.Empty catalog.Sequences
+
+// -----------------------------------------------------------------
+// Rowset 25 — temporal configuration (DECISIONS 2026-07-18; #669
+// EF-23). A system-versioned entity's row lifts into
+// ModalityMark.Temporal; the estate board's dealbreaker and the
+// publish refusal fire from the mark.
+// -----------------------------------------------------------------
+
+[<Fact>]
+let ``rowset 25: a temporal row lifts into ModalityMark.Temporal with history, periods, and retention`` () =
+    let bundle : OssysRowsetTypes.RowsetBundle =
+        { Modules    = [ moduleRow None ]
+          Kinds      = [ userKindRow None ]
+          Attributes = [ idAttrRow None ]
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []
+          Sequences  = []
+          Temporal   =
+            [ { EntityId = 11; HistorySchema = Some "history"; HistoryTable = Some "USER_History"
+                PeriodStart = Some "SysStartTime"; PeriodEnd = Some "SysEndTime"
+                RetentionValue = Some 6; RetentionUnit = Some "MONTH" } ] }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok catalog ->
+        let kind = catalog.Modules |> List.collect (fun m -> m.Kinds) |> List.exactlyOne
+        let tc =
+            kind.Modality
+            |> List.tryPick (function ModalityMark.Temporal t -> Some t | _ -> None)
+        match tc with
+        | None -> Assert.Fail "expected ModalityMark.Temporal on the system-versioned kind"
+        | Some t ->
+            Assert.Equal(Some "history", t.HistorySchema)
+            Assert.Equal(Some "USER_History", t.HistoryTable)
+            Assert.Equal(Some "SysStartTime", t.PeriodStart |> Option.map Name.value)
+            Assert.Equal(Some "SysEndTime",   t.PeriodEnd   |> Option.map Name.value)
+            Assert.Equal(Limited (6, Months), t.Retention)
+
+[<Fact>]
+let ``rowset 25: retention value -1 (INFINITE) lifts as Infinite; a non-temporal entity carries no mark`` () =
+    let bundle : OssysRowsetTypes.RowsetBundle =
+        { Modules    = [ moduleRow None ]
+          Kinds      = [ userKindRow None ]
+          Attributes = [ idAttrRow None ]
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []
+          Sequences  = []
+          Temporal   =
+            [ { EntityId = 11; HistorySchema = Some "dbo"; HistoryTable = Some "USER_History"
+                PeriodStart = Some "VF"; PeriodEnd = Some "VT"
+                RetentionValue = Some -1; RetentionUnit = Some "INFINITE" } ] }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error es -> Assert.Fail (sprintf "Expected Ok; got Error: %A" es)
+    | Ok catalog ->
+        let kind = catalog.Modules |> List.collect (fun m -> m.Kinds) |> List.exactlyOne
+        match kind.Modality |> List.tryPick (function ModalityMark.Temporal t -> Some t | _ -> None) with
+        | None -> Assert.Fail "expected the Temporal mark"
+        | Some t -> Assert.Equal(Infinite, t.Retention)
