@@ -107,6 +107,7 @@ type CentralityVolumeCanaryTests(fixture: EphemeralContainerFixture) =
                     let! report =
                         Transfer.runSynthetic
                             Transfer.Execute EmissionMode.Incremental true
+                            IdentityPolicy.Structural   // K1c — the pre-K1c disposition, byte-identical
                             sink CentralityVolumeFixtures.catalog CentralityVolumeFixtures.profile
                             CentralityVolumeFixtures.weightedConfig 42UL id
                     match report with

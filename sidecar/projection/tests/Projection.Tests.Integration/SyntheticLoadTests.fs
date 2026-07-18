@@ -130,6 +130,7 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                             Transfer.Execute
                             EmissionMode.Incremental
                             true   // allowCdc — the warm container is not CDC-tracked
+                            IdentityPolicy.Structural   // K1c — the pre-K1c disposition, byte-identical
                             sink
                             SyntheticLoadFixtures.catalog
                             SyntheticLoadFixtures.profile
@@ -160,6 +161,7 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                             Transfer.DryRun
                             EmissionMode.Incremental
                             true
+                            IdentityPolicy.Structural   // K1c — the pre-K1c disposition, byte-identical
                             sink
                             SyntheticLoadFixtures.catalog
                             SyntheticLoadFixtures.profile
@@ -203,6 +205,7 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                     let! report =
                         Transfer.runSynthetic
                             Transfer.Execute EmissionMode.Incremental true
+                            IdentityPolicy.Structural   // K1c — the pre-K1c disposition, byte-identical
                             sink SyntheticLoadFixtures.catalog SyntheticLoadFixtures.profile cfg 42UL realize
                     match report with
                     | Error es -> Assert.True(false, sprintf "runSynthetic failed: %A" es)

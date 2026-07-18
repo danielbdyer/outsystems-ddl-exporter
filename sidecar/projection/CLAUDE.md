@@ -67,6 +67,7 @@ bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
 | `projection.json` / flows / verbs | `THE_CONFIG_CONTROL_PLANE.md` (A44: expressible ⇔ reachable) |
 | cloud insertion / data producers | `THE_DATA_PRODUCERS.md` + `PREFLIGHT_CLOUD_INSERTION.md` |
 | synthetic data | `THE_SYNTHETIC_DATA_DESIGN.md` (σ: Profile → Data; π ∘ σ ≈ id) |
+| the Twin (`Twin.*` — the post-eject SSDT synthetic-data sidecar) | `THE_TWIN.md` (the charter: mission, laws, kernel manifest, ejection) |
 | architecture beyond the current program | `CONSTELLATION.md` — the architectural-future thesis: the eight stars, the holonic grain tower, the calculus and thermodynamics of the change-accounting, the adjudicated streaming question, R1–R5 with their reification in F#, and the pattern corpus. Read §10 (migration path) before §§1–9 if you only want the build order. |
 | opening or closing a chapter | `V2_DRIVER.md` (the destination KPI; per-axis stakes) + `BACKLOG.md` (the operational ledger) + the chapter-rhythm entries in `DECISIONS.md` (strategic-frame axis-naming at open; chapter-mid-audit; the eight-item close ritual) |
 | reaching for a name or a string/text primitive | `PLAYBOOK.md` decision trees — the executable form of pillars 7/8 |

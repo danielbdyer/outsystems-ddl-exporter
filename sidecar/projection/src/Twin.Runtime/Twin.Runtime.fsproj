@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Twin.Runtime</RootNamespace>
+    <AssemblyName>Twin.Runtime</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    THE TWIN — the I/O shell of the Twin context (THE_TWIN.md).
+    Container lifecycle (docker CLI), estate file reading, DacFx model
+    build + publish, static-seed lanes, ReadSide read-back, the
+    [twin].[__state] table, evidence capture, and the mint-and-load
+    orchestration. May reference the Projection kernel projects listed
+    below and nothing else; nothing in Projection.* references Twin.*
+    (executable: `Twin.Tests/BoundaryTests.fs`).
+  -->
+
+  <ItemGroup>
+    <Compile Include="EstateFiles.fs" />
+    <Compile Include="TwinContainer.fs" />
+    <Compile Include="EstateModel.fs" />
+    <Compile Include="TwinDatabase.fs" />
+    <Compile Include="Readback.fs" />
+    <Compile Include="EvidenceImport.fs" />
+    <Compile Include="Mint.fs" />
+    <Compile Include="Runs.fs" />
+    <Compile Include="Check.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Twin.Core\Twin.Core.fsproj" />
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+    <ProjectReference Include="..\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
+    <ProjectReference Include="..\Projection.Pipeline\Projection.Pipeline.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.Json\Projection.Targets.Json.fsproj" />
+    <ProjectReference Include="..\Projection.Targets.Data\Projection.Targets.Data.fsproj" />
+  </ItemGroup>
+
+</Project>
