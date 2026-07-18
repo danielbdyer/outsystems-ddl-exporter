@@ -1388,3 +1388,119 @@ let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` ()
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.overlay.json — 3 interim change(s)")
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.probes.sql — every reopen probe, runnable as one batch")
     Assert.Contains("\"entries\": 3", Estate.toJsonString report)
+
+[<Fact>]
+let ``A46: refusal completeness — one predicate on three surfaces (resolver ⟺ gate ⟺ board), certificate carried (#669 v7)`` () =
+    // The STRONG cycle: Customer→Order→Customer with non-nullable FKs on
+    // both legs. All three surfaces fire from the one predicate — the
+    // pass marks the component Refused (carrying its certificate), the
+    // transfer gate refuses, and the board's advisory names the members.
+    let strongCycle =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    let fkAttr =
+                                        { Attribute.create customerTenantKey (mkName "OrderRef") PrimitiveType.Integer with
+                                            Column = ColumnRealization.create "ORDERREF" false |> Result.value
+                                            IsMandatory = true }
+                                    { k with
+                                        Attributes = k.Attributes |> List.map (fun a -> if a.SsKey = customerTenantKey then fkAttr else a)
+                                        References = [ Reference.create (kindKey ["cust-to-order"]) (mkName "ToOrder") customerTenantKey orderKey ] }
+                                elif k.SsKey = orderKey then
+                                    { k with
+                                        References =
+                                            k.References
+                                            |> List.map (fun r -> { r with TargetKind = customerKey }) }
+                                else k) }) }
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle strongCycle).Value
+    // Surface 1 — the resolver: a Refused component with its certificate.
+    let refusedComponents =
+        topo.Cycles |> List.filter (CycleDiagnostic.isResolved >> not)
+    Assert.NotEmpty refusedComponents
+    (match refusedComponents |> List.tryPick (function CycleDiagnostic.Refused (_, cert, _) -> Some cert | _ -> None) with
+     | Some cert -> Assert.NotEmpty (CycleResolution.StrongCycleCertificate.edges cert)
+     | None -> Assert.Fail "expected the certified refusal on the strong cycle")
+    // Surface 2 — the live gate refuses.
+    match Transfer.orderedLoadGate strongCycle topo with
+    | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
+    | None -> Assert.Fail "expected the transfer gate to refuse the unproven order"
+    // Surface 3 — the board's advisory names the component.
+    let findings =
+        Estate.emissionFindingsFor strongCycle
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+    Assert.NotEmpty findings
+    // The NEGATIVE: weaken one leg (nullable) — the cycle resolves and
+    // all three surfaces go quiet together.
+    let weakened =
+        { strongCycle with
+            Modules =
+                strongCycle.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then
+                                                    { a with Column = ColumnRealization.create "ORDERREF" true |> Result.value; IsMandatory = false }
+                                                else a) }
+                                else k) }) }
+    let topoW = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle weakened).Value
+    Assert.True(topoW.Cycles |> List.forall CycleDiagnostic.isResolved)
+    Assert.True((Transfer.orderedLoadGate weakened topoW).IsNone)
+    Assert.True(
+        Estate.emissionFindingsFor weakened
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))
+
+[<Fact>]
+let ``one Voice copy: the certificate narration on the gate and the board advisory is the same sentence (v7 slice 8)`` () =
+    // Rebuild the strong cycle from the A46 fixture shape and assert both
+    // surfaces carry CycleNarration's text — the edges with their
+    // nullability/delete-rule detail and the imperative cheapest fix.
+    let strongCycle =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    let fkAttr =
+                                        { Attribute.create customerTenantKey (mkName "OrderRef") PrimitiveType.Integer with
+                                            Column = ColumnRealization.create "ORDERREF" false |> Result.value
+                                            IsMandatory = true }
+                                    { k with
+                                        Attributes = k.Attributes |> List.map (fun a -> if a.SsKey = customerTenantKey then fkAttr else a)
+                                        References = [ Reference.create (kindKey ["cust-to-order"]) (mkName "ToOrder") customerTenantKey orderKey ] }
+                                elif k.SsKey = orderKey then
+                                    { k with References = k.References |> List.map (fun r -> { r with TargetKind = customerKey }) }
+                                else k) }) }
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle strongCycle).Value
+    let gateText =
+        match Transfer.orderedLoadGate strongCycle topo with
+        | Some e -> e.Message
+        | None -> ""
+    let boardText =
+        Estate.emissionFindingsFor strongCycle
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+        |> List.map (fun f -> f.Statement)
+        |> String.concat "\n"
+    Assert.Contains("Cheapest fix:", gateText)
+    Assert.Contains("Cheapest fix:", boardText)
+    Assert.Contains("the cycle's edges:", gateText)
+    Assert.Contains("the cycle's edges:", boardText)
+    // The imperative names a concrete column on both surfaces.
+    Assert.Contains("nullable", gateText)
+    Assert.Contains("nullable", boardText)

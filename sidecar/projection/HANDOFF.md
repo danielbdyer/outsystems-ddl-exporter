@@ -1,4 +1,38 @@
-# Handoff addendum — 2026-07-15 (latest), MID-CHAPTER: waves B4b → A4α → A5 → A6 shipped — the exception-ledger compare, the probe/static detectors, the remediation artifacts, and the POSTURE (the nullability-binder amendment, the interim overlay + reopen probes, the Forked verdict, the code-resident presentation contract). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
+# Handoff addendum — 2026-07-18 (latest): the v7 cycle-resolution arc shipped whole — measured-minimal breaks, the unforgeable certificate, per-component precision, the evidence-weighted render binding, the exact repair set, T18 + A46 as law, the condensation, and the one-Voice certificate. Branch `claude/topological-v7-cycle-algebra`, PR #674
+
+To the next agent.
+
+**What shipped (nine slices, one day).** `TopologicalOrderPass` is at **v7**: the break
+choice is EXACT — per SCC, the feasible weak subset minimizing `(Σ cost, cardinality, lex)`,
+greedy only above the named threshold — and the resolver is an `OrderingConfig` axis
+(`ResolutionPolicy = SchemaMinimal | EvidenceWeighted of EdgeCost`). The render binding
+(`Pipeline.renderTopologyFor`, the ONE weighted site per flow; Rows-lane publishes only —
+the pipelined/Prerendered flow is schema-minimal end to end BY CONSTRUCTION) prices breaks
+at `repairCostOf` = the Phase-2 repair's CDC capture count (T15 read at the choice site).
+`CycleDiagnostic` is a closed DU; a refusal CARRIES its `StrongCycleCertificate`
+(private-ctor: closed cycle, zero Weak, or no value) plus the cheapest relaxation, and
+`CycleNarration.certificateText` is the ONE Voice copy on the load gate, the estate
+advisory, and the go board. Deferral and unsatisfiability judge PER COMPONENT
+(`DeferralScope`; a resolved component defers its BROKEN edges only), Phase-2 renders
+exactly the repair set in all four lanes, and `Condensation` (acyclic by construction)
+retired the estate-wide singleton degrade in `levels`. **T18** (cycle-break factorization —
+the ledger an equality, proven LIVE by `T18CycleBreakCanaryTests`) and **A46** (refusal
+completeness — one predicate, three surfaces) are law with same-commit witnesses; Bucket A
+is 17 axioms + 4 theorems.
+
+**What to watch.** Two deferral rows are live: the manual cycle-ordering override
+(`Overlaid of pins * ResolutionPolicy` — one DU case away now) and the
+`EmissionDataLaneOrder` Ruling-lever upgrade (fires only on an operator's ask; the WATCH ⇔
+no-lever law guards it). The weighted binding changes emitted bytes only on evidence-bearing
+Rows-lane publishes with multi-weak resolved components — if a golden ever diffs, that is a
+DEFECT (neither corpus carries a cyclic kind). The exact solver is bounded (≤ 2^12 subsets,
+Bench label `pass.topologicalOrder.exactSolver`); if a real estate ever trips the
+above-threshold greedy, the downgrade is named in the reason — read it before assuming the
+break set is minimal.
+
+---
+
+# Handoff addendum — 2026-07-15, MID-CHAPTER: waves B4b → A4α → A5 → A6 shipped — the exception-ledger compare, the probe/static detectors, the remediation artifacts, and the POSTURE (the nullability-binder amendment, the interim overlay + reopen probes, the Forked verdict, the code-resident presentation contract). Branch `claude/projection-reconciliation-ideate-pzm60d`, PR #668
 
 To the next agent.
 

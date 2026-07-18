@@ -92,8 +92,8 @@
     <Compile Include="Episode.fs" />
     <Compile Include="ChangeManifest.fs" />
     <Compile Include="Migration.fs" />
-    <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/CycleResolution.fs" />
+    <Compile Include="TopologicalOrder.fs" />
     <Compile Include="Strategies/NullabilityRules.fs" />
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />

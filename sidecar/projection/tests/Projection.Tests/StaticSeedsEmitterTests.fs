@@ -689,12 +689,19 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let m = ArtifactByKind.toMap artifact
     let aScript = Map.find aKey m
     let bScript = Map.find bKey m
-    // Each kind defers its own FK to the other.
-    Assert.True (Set.contains (mkName "BId") (List.head aScript.Phase1Merges).DeferredFkSet)
-    Assert.True (Set.contains (mkName "AId") (List.head bScript.Phase1Merges).DeferredFkSet)
-    // And each kind has Phase2Updates populated.
-    Assert.NotEmpty aScript.Phase2Updates
-    Assert.NotEmpty bScript.Phase2Updates
+    // v7 slice 5 (DECISIONS 2026-07-18) — the exact repair set: the
+    // resolver breaks EXACTLY ONE edge of the symmetric weak 2-cycle, and
+    // only the BROKEN edge's kind defers its FK column; the other kind
+    // loads at its proven order position with the FK inline. (Pre-v7 both
+    // deferred — pure Phase-2 norm inflation on the proven side.)
+    let aDefers = Set.contains (mkName "BId") (List.head aScript.Phase1Merges).DeferredFkSet
+    let bDefers = Set.contains (mkName "AId") (List.head bScript.Phase1Merges).DeferredFkSet
+    Assert.True ((aDefers <> bDefers), "exactly one side of the symmetric weak 2-cycle defers")
+    // Phase-2 exists exactly on the deferring side (its row carries a
+    // non-NULL deferred value).
+    let deferring, proven = if aDefers then aScript, bScript else bScript, aScript
+    Assert.NotEmpty deferring.Phase2Updates
+    Assert.Empty proven.Phase2Updates
 
 [<Fact>]
 let ``T1 (slice δ): byte-determinism holds across repeat invocations under cycle-breaking`` () =
@@ -1107,3 +1114,37 @@ let ``renderQuanta ≡ renderLoad over materialized rows at FULL record grain (t
         let viaQuanta =
             StaticSeedsEmitter.renderQuanta DataEmitOptions.defaults Profile.empty.CdcAwareness country deferred quanta
         Assert.Equal<DataInsertScript>(viaRows, viaQuanta)
+
+[<Fact>]
+let ``v7 slice 5: phase 2 touches exactly the repair set — an all-NULL deferred row renders no UPDATE`` () =
+    // A self-referential kind (nullable ParentId) with two rows: one
+    // carries a real parent (the repair set), one a NULL parent (landed
+    // whole by Phase-1). Phase-2 must carry exactly ONE update.
+    let key = mkKey ["SelfRef"]
+    let idK = mkKey ["SelfRef"; "Id"]
+    let fkK = mkKey ["SelfRef"; "ParentId"]
+    let refK = mkKey ["SelfRef"; "ToSelf"]
+    let mkAttr ssk name typ col isPk isNull =
+        { Attribute.create ssk (mkName name) typ with Column = ColumnRealization.create (col) (isNull) |> Result.value; IsPrimaryKey = isPk; IsMandatory = not isNull }
+    let rowWithParent =
+        { Identifier = mkKey ["SelfRef"; "row1"]
+          Values = StaticRow.presentValues [ mkName "Id", "1"; mkName "ParentId", "2" ] }
+    let rowWithoutParent =
+        { Identifier = mkKey ["SelfRef"; "row2"]
+          Values = StaticRow.presentValues [ mkName "Id", "2" ] }
+    let kind : Kind =
+        { SsKey = key; Name = mkName "SelfRef"; Origin = Native
+          Modality = [ Static [ rowWithParent; rowWithoutParent ] ]
+          Physical = mkTableId "dbo" "OSUSR_SELFREF"
+          Attributes = [ mkAttr idK "Id" Integer "ID" true false
+                         mkAttr fkK "ParentId" Integer "PARENTID" false true ]
+          References = [ Reference.create refK (mkName "ToSelf") fkK key ]
+          Indexes = []
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    let catalog = mkCatalog [ kind ]
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find key
+    Assert.Equal(2, script.Phase1Merges.Length)
+    // The repair set is exactly the one row with a non-NULL parent.
+    Assert.Equal(1, script.Phase2Updates.Length)
+    Assert.Equal(rowWithParent.Identifier, script.Phase2Updates.Head.Identifier)

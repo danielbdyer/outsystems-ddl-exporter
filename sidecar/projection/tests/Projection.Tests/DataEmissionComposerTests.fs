@@ -893,19 +893,80 @@ let ``P2: the leveled plan deploys FK parents at earlier Phase-1 levels; FK-inde
     Assert.Empty leveled.Phase2Levels
 
 [<Fact>]
-let ``P2: an unresolved cycle anywhere degrades the plan to singleton groups — parallelism is never licensed on an unproven order`` () =
-    // One UNRESOLVABLE cycle (the static mutual pair) puts the catalog
-    // into Mode = PartialTopological (v6); the members of the cycle carry
-    // no intra-cycle precedence proof, so the mint refuses multi-member
-    // groups — the leveled deploy degrades to exactly the fused
-    // sequential order, never to unproven concurrency. (The P2-wire
-    // finding: before the mode guard, this catalog collapsed the real
-    // Root←Mid←Leaf FK chain into ONE concurrent group.)
+let ``P2′: an unresolved cycle serializes only its OWN members — cross-component parallelism stays licensed (the singleton degrade is retired; v7 slice 7)`` () =
+    // One UNRESOLVABLE cycle (the static mutual pair, Restrict-strong)
+    // puts the catalog into Mode = PartialTopological. Pre-v7 the mint
+    // degraded the WHOLE estate to singleton groups; the condensation
+    // proves the quotient DAG, so only the cycle's two members serialize
+    // (their internal precedence is unproven) while the acyclic majority
+    // keeps its concurrent levels.
     let _, leveled = composeBoth (mkCycleBearingCatalog ())
-    for level in leveled.Phase1Levels @ leveled.Phase2Levels do
-        Assert.Equal(1, ParallelSafe.members level |> List.length)
+    let allLevels = leveled.Phase1Levels @ leveled.Phase2Levels
+    // The cycle members are ALWAYS singleton-grouped...
+    for level in allLevels do
+        let members = ParallelSafe.members level
+        let cycleMembers =
+            members |> List.filter (fun s -> s.Contains "OSUSR_TEST_LVL_CYC")
+        if not (List.isEmpty cycleMembers) then
+            Assert.Equal(1, List.length members)
+    // ...and the acyclic majority keeps at least one multi-member level —
+    // the estate-wide degrade is retired.
+    Assert.True(
+        leveled.Phase1Levels
+        |> List.exists (fun lvl -> ParallelSafe.members lvl |> List.length >= 2),
+        "expected the acyclic majority to keep a concurrent level under PartialTopological")
     // The cycle pair's deferred FKs still land in Phase 2.
     Assert.NotEmpty leveled.Phase2Levels
+
+[<Fact>]
+let ``condensation: the emitted Order is a LINEAR EXTENSION of the quotient — every cross-component edge respected, in every mode`` () =
+    // The v7 slice-7 law, containment form (v6's re-run Kahn may
+    // interleave outsiders between an unresolved component's members, so
+    // node-atomic equality is deliberately not claimed).
+    for kinds in
+        [ mkAcyclicLeveledCatalog ()
+          mkCycleBearingCatalog ()
+          mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ] ] do
+        let catalog = mkCatalog kinds
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        match Condensation.ofOrder topo with
+        | Error e -> Assert.Fail (sprintf "condensation must be total on live modes: %s" e)
+        | Ok condensation ->
+            let orderIndex = topo.Order |> List.mapi (fun i k -> k, i) |> Map.ofList
+            let componentOf =
+                Condensation.nodes condensation
+                |> List.collect (fun ms -> ms |> List.map (fun m -> m, List.head ms))
+                |> Map.ofList
+            // Every cross-component FK edge (child → parent) has the
+            // parent's EARLIEST member before the child's LATEST member —
+            // the quotient's precedence is respected by the linear order.
+            for (child, parent) in topo.Edges do
+                match Map.tryFind child componentOf, Map.tryFind parent componentOf with
+                | Some hc, Some hp when hc <> hp ->
+                    let membersOfHead h =
+                        Condensation.nodes condensation |> List.find (fun ms -> List.head ms = h)
+                    let parentFirst =
+                        membersOfHead hp |> List.map (fun m -> Map.find m orderIndex) |> List.min
+                    let childLast =
+                        membersOfHead hc |> List.map (fun m -> Map.find m orderIndex) |> List.max
+                    Assert.True(parentFirst < childLast,
+                        "a cross-component parent must begin before its child component ends")
+                | _ -> ()
+
+[<Fact>]
+let ``condensation mint safety: within any minted group, no FK edge connects two members — under every mode`` () =
+    for kinds in
+        [ mkAcyclicLeveledCatalog ()
+          mkCycleBearingCatalog ()
+          mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ] ] do
+        let catalog = mkCatalog kinds
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        let edgeSet = topo.Edges |> List.filter (fun (s, t) -> s <> t) |> Set.ofList
+        for group in TopologicalOrder.levels topo do
+            let members = ParallelSafe.members group |> Set.ofList
+            for (s, t) in Set.toList edgeSet do
+                Assert.False(Set.contains s members && Set.contains t members,
+                    "a minted concurrent group must never contain both ends of an FK edge")
 
 [<Fact>]
 let ``P2: a nullable self-FK no longer degrades the order — the self-loop resolves, levels stay licensed, the deferral stays`` () =
@@ -1035,7 +1096,7 @@ let ``BootstrapLane: Prerendered drain-time scripts compose the SAME bundle as t
     // batch build folds + the same `renderLoad`, under the bootstrap
     // lane's delete-scope-suppressed posture (what
     // `Hydration.collectBootstrapRenderedUsing` runs per kind at drain).
-    let cycleMembers = TopologicalOrder.cycleMembers topo
+    let cycleMembers = TopologicalOrder.deferralScopes topo
     let opts =
         DataEmitOptions.withDeleteScope None
             (DataEmitOptions.ofEmissionPolicy policy.Emission)

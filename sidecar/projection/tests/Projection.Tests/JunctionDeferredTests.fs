@@ -66,7 +66,7 @@ let private buildJunctionCatalog () : Catalog =
             [ author; book; junction ] ]
 
 let private deferredConfig : OrderingConfig =
-    { SelfLoops = TreatAsCycle; JunctionDeferral = DeferJunctionKinds }
+    { SelfLoops = TreatAsCycle; JunctionDeferral = DeferJunctionKinds; Resolution = SchemaMinimal }
 
 [<Fact>]
 let ``JunctionDeferred mode: junction kind appears at the end of the order`` () =
@@ -93,7 +93,7 @@ let ``JunctionDeferred mode: non-junction kinds precede the junction`` () =
 [<Fact>]
 let ``EmitInTopologicalOrder config produces Topological mode not JunctionDeferred`` () =
     let catalog = buildJunctionCatalog ()
-    let config = { SelfLoops = TreatAsCycle; JunctionDeferral = EmitInTopologicalOrder }
+    let config = { SelfLoops = TreatAsCycle; JunctionDeferral = EmitInTopologicalOrder; Resolution = SchemaMinimal }
     let result =
         TopologicalOrderPass.runWithConfig config catalog
         |> fun l -> l.Value

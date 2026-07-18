@@ -74,8 +74,18 @@ module TopologicalOrderPass =
     ///       cycles keeps its true dependency position — `Mode =
     ///       PartialTopological`. Whole-catalog `Alphabetical` remains
     ///       only as the defensive residue arm.
+    /// v7 — The minimal weak feedback set (2026-07-18, the measured-
+    ///       minimality program): the resolver becomes a parameter
+    ///       (default `CycleResolution.defaultStrategy`) and the default
+    ///       break choice becomes EXACT — per SCC, the feasible weak
+    ///       subset minimizing `(Σ cost, cardinality, lexicographic)`,
+    ///       enumerated when |Weak| ≤ `exactWeakEdgeThreshold`, greedy
+    ///       above it with the downgrade named. Refusal is computed
+    ///       directly on the strong-only subgraph (I3 in one step).
+    ///       The cost axis admits the evidence-weighted member of the
+    ///       family (`repairCostOf` — the render-plane binding).
     [<Literal>]
-    let version : int = 6
+    let version : int = 7
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -422,19 +432,31 @@ module TopologicalOrderPass =
             let internalEdges = internalEdgesOf scc graph.ClassifiedEdges
             let step = resolver scc internalEdges
             if List.isEmpty step.EdgesToBreak then
-                unresolved.Add(
-                    { Members        = scc
-                      BreakableEdges = []
-                      Reason         = step.Reason })
+                // v7 — the typed rationale routes each empty-break outcome
+                // to its own diagnostic constructor: a certified refusal
+                // keeps its certificate; the degenerate/disabled arms are
+                // Anomalous with the legible note.
+                match step.Reason with
+                | CycleResolution.ResolutionReason.Refused (certificate, relaxation) ->
+                    unresolved.Add(CycleDiagnostic.Refused (scc, certificate, relaxation))
+                | CycleResolution.ResolutionReason.NoCycleFound
+                | CycleResolution.ResolutionReason.Disabled _
+                | CycleResolution.ResolutionReason.AutoResolved _ ->
+                    unresolved.Add(CycleDiagnostic.Anomalous (scc, CycleResolution.describe step))
             else
                 for (source, target) in step.EdgesToBreak do
                     // Translate FK orientation (source, target) to
                     // precedence orientation (parent=target, child=source).
                     removed <- Set.add (target, source) removed
-                resolved.Add(
-                    { Members        = scc
-                      BreakableEdges = step.EdgesToBreak
-                      Reason         = step.Reason }))
+                let objective =
+                    match step.Reason with
+                    | CycleResolution.ResolutionReason.AutoResolved o -> o
+                    | _ ->
+                        // A resolver returning breaks with a non-resolved
+                        // reason is malformed; record the walk as greedy so
+                        // the break set still rides the audit surface.
+                        CycleResolution.BreakObjective.GreedyWalk
+                resolved.Add(CycleDiagnostic.Resolved (scc, step.EdgesToBreak, objective)))
 
         { RemovedPrecedenceEdges = removed
           ResolvedDiagnostics    = resolved |> List.ofSeq
@@ -485,7 +507,7 @@ module TopologicalOrderPass =
     /// syntax allows inline self-FK constraints see the kind in
     /// topological position. Same algorithm, two projections — replaces
     /// the `RawTextEmitter.emissionOrder` duplicate (Agent 4 #6).
-    let private orderOf (graph: Graph) : TopologicalOrder =
+    let private orderOf (resolver: CycleResolution.Resolver) (graph: Graph) : TopologicalOrder =
         let sorted, unprocessed = kahnSort graph
 
         if List.isEmpty unprocessed then
@@ -505,7 +527,7 @@ module TopologicalOrderPass =
             // edges it's willing to break.
             let sccs = tarjanScc unprocessed graph.Adjacency
             let resolution =
-                applyResolver CycleResolution.weakFeedbackStrategy graph sccs
+                applyResolver resolver graph sccs
 
             if List.isEmpty resolution.UnresolvedDiagnostics then
                 // Every SCC resolved. Re-run Kahn on the reduced graph.
@@ -533,9 +555,7 @@ module TopologicalOrderPass =
                     let leftoverDiagnostics =
                         leftover
                         |> List.map (fun members ->
-                            { Members        = members
-                              BreakableEdges = []
-                              Reason         = "residual SCC after resolver; please report" })
+                            CycleDiagnostic.Anomalous (members, "residual SCC after resolver; please report"))
                     { Mode         = Alphabetical
                       Order        = graph.Nodes
                       Edges        = graph.Edges
@@ -559,7 +579,7 @@ module TopologicalOrderPass =
                 let unresolvedInternalPrecedence =
                     resolution.UnresolvedDiagnostics
                     |> List.collect (fun d ->
-                        internalEdgesOf d.Members graph.ClassifiedEdges
+                        internalEdgesOf (CycleDiagnostic.members d) graph.ClassifiedEdges
                         |> List.map (fun ((source, target), _) ->
                             // FK orientation → precedence orientation
                             // (parent = target, child = source), mirroring
@@ -598,9 +618,24 @@ module TopologicalOrderPass =
                               resolution.UnresolvedDiagnostics.Length
                       ] }
 
-    let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
+    let private lineageOfWith (resolver: CycleResolution.Resolver) (graph: Graph) : Lineage<TopologicalOrder> =
         let events = graph.Nodes |> List.map touchedEvent
-        Lineage.ofValueAndEvents events (orderOf graph)
+        Lineage.ofValueAndEvents events (orderOf resolver graph)
+
+    // v7: the default resolver is the exact minimal weak feedback set at
+    // zero cost (schema-only). The OrderingConfig `Resolution` axis
+    // threads a caller-chosen resolver (evidence-weighted at the render
+    // binding); every legacy entry inherits this default.
+    let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
+        lineageOfWith CycleResolution.defaultStrategy graph
+
+    /// The resolver a `ResolutionPolicy` selects — `SchemaMinimal` is the
+    /// zero-cost exact family member; `EvidenceWeighted` the same solver
+    /// at the supplied cost (v7 slice 4).
+    let private resolverOf (policy: ResolutionPolicy) : CycleResolution.Resolver =
+        match policy with
+        | SchemaMinimal -> CycleResolution.defaultStrategy
+        | EvidenceWeighted cost -> CycleResolution.minimalFeedbackStrategy cost
 
     let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
         lineageOf (buildGraphWithin selfLoops None c)
@@ -681,7 +716,8 @@ module TopologicalOrderPass =
     /// to `runWithConfig { SelfLoops = selfLoops; JunctionDeferral =
     /// EmitInTopologicalOrder }`.
     let runWithConfig (config: OrderingConfig) (c: Catalog) : Lineage<TopologicalOrder> =
-        let base_ = runWith config.SelfLoops c
+        let base_ =
+            lineageOfWith (resolverOf config.Resolution) (buildGraphWithin config.SelfLoops None c)
         match config.JunctionDeferral with
         | EmitInTopologicalOrder -> base_
         | DeferJunctionKinds ->

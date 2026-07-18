@@ -2122,3 +2122,57 @@ the lockstep comparator's docker witness — two identical databases prove byte-
 flipped cell names its business key). The two digest planes (client-canonical SHA256
 authoritative; server `HASHBYTES` fast-path) are projections of one canonical form; their
 agreement is property-tested per SQL type (wave B3).
+
+## T18 — cycle-break factorization: the break⊕repair ledger (v7, 2026-07-18)
+
+**Statement.** For a RESOLVED cycle component under the v7 minimal-feedback resolver, the
+unconstrained load displacement FACTORS through the two-phase form:
+
+    A ⊕ δ_load = (A ⊕ δ_phase1) ⊕ δ_phase2        (a W2/Chasles instance)
+
+with δ_phase1 constraint-admissible at A (the broken edges' columns land NULL; every honored
+edge loads in the proven order) and the factorization RESIDUE-FREE — the final state is
+row-equal to the direct load, and every foreign key finishes enabled and trusted. The norm
+ledger is an EQUALITY (v7 slice 5 made it exact):
+
+    ‖δ_phase1‖ + ‖δ_phase2‖ = ‖δ_load‖ + Σ_k |repairRows_k|
+
+where `repairRows_k = { r ∈ rows(k) : ∃ c ∈ deferred(k), r.c ≠ NULL }` — the load's norm
+inflation is EXACTLY the repair set, and the v7 break objective `(Σ ‖repair(e)‖, cardinality,
+lex)` minimizes it, with `‖repair(e)‖ = RowCount(src) − NullCount(src.col)` (the Phase-2
+UPDATE's CDC capture count). Deferral is thereby the MINIMAL non-isometry admissibility
+forces — the fallback reading of T15 (the complete-replace precedent), now with the minimum
+measured and chosen.
+
+**Enforcement.** Phase-2 renders only the repair set in all four lanes (static seeds,
+migration, staged and quantum transfer — v7 slice 5); the resolved-scope deferral is
+edge-derived (`DeferralScope.BrokenEdges`); the weighted break choice minimizes the repair
+norm at the flow's one render binding (`Pipeline.renderTopologyFor`).
+
+**Property test.** `T18 canary: a weak 2-cycle loads two-phase on SQL Server and ends
+row-equal to the source, every FK trusted` (Projection.Tests.Integration — the live
+value-half); `v7 slice 5: phase 2 touches exactly the repair set` (the ledger's exactness);
+`measured minimality: the weighted break set minimizes Σ cost` (the minimum's optimality).
+
+## A46 — refusal completeness for ordering: one predicate, three surfaces (v7, 2026-07-18)
+
+**Statement.** Over the effective (scoped) graph under the transfer configuration
+(`TreatAsCycle`, no junction deferral), ONE predicate: a refused component exists
+(`CycleDiagnostic.Refused` or `Anomalous`). The live load refuses ⟺ the predicate holds ⟺
+the estate board's `EmissionDataLaneOrder` advisory names that component. The refusal is
+RESOLVER-INVARIANT across the v7 strategy family (every member satisfies I3: refuse ⟺ an
+all-strong cycle exists — the strong-only subgraph's cyclicity, independent of any cost
+function), every refusal CARRIES its `StrongCycleCertificate` (private-constructor: a closed
+cycle of zero Weak edges, or no value), and every certificate names its cheapest relaxation
+(the minimal strong-edge set, nullability changes preferred over delete-rule changes). One
+fact, three surfaces — a red board line, a refused gate, and a certified resolver diagnostic
+are the same statement.
+
+**Enforcement.** The certificate's smart constructor (`StrongCycleCertificate.create`); the
+gate filters to unresolved components (`Transfer.orderedLoadGate`); the board detector reads
+the same discriminant (`Estate.emissionDataLaneOrderFindings`).
+
+**Property test.** `A46: refusal completeness — one predicate on three surfaces (resolver ⟺
+gate ⟺ board), certificate carried` (EstateTests — positive and negative arms);
+`v7 I3 refusal precision` + `A46 lemma — refusal invariance` (CycleResolutionTests,
+FsCheck); the certificate ctor refusals (Weak edge; open path).

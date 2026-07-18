@@ -161,24 +161,41 @@ module StaticSeedsEmitter =
             // the Phase-2 branch).
             let valueRows = typedRows |> List.map snd
             let rowCount = List.length typedRows
+            // v7 slice 5 (DECISIONS 2026-07-18) — the EXACT repair set:
+            // Phase-2 touches only rows carrying at least one non-NULL
+            // deferred value. A row whose deferred columns are all NULL
+            // was landed whole by Phase-1 — updating it re-set NULL over
+            // NULL, inflating the load's norm (T15) for nothing. The
+            // ledger becomes exact: ‖phase2‖ = |repairRows|.
+            let repairRows =
+                if Set.isEmpty deferred then []
+                else
+                    typedRows
+                    |> List.filter (fun (_, vs) ->
+                        deferred
+                        |> Set.exists (fun c ->
+                            match Map.tryFind c vs with
+                            | Some SqlLiteral.NullLit | None -> false
+                            | Some _ -> true))
             let renderedPhase1 =
                 MergeRender.renderMerge "emit.staticSeeds" verification staging scopeForKind cdcAware deferred bracketIdentity kind valueRows
             let renderedPhase2 =
-                if Set.isEmpty deferred then ""
+                if List.isEmpty repairRows then ""
                 elif DataStagingPolicy.shouldStage staging rowCount then
                     // Set-based escalation (Step 4): above the SAME staging
                     // threshold that routes Phase-1 through a `#temp`, Phase-2's
                     // N per-row UPDATEs collapse to ONE `UPDATE … FROM target
                     // JOIN #fk` — a kind is treated coherently across both phases
-                    // by one threshold. The narrow `#fk` temp carries the real
-                    // deferred-FK values; Phase-1 already inserted the rows with
-                    // those columns NULLed.
-                    StagedMerge.renderStagedPhase2 "emit.staticSeeds" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred valueRows
+                    // by one threshold (the ROUTE judges by Phase-1's row count;
+                    // the staged rows are the repair set only). The narrow `#fk`
+                    // temp carries the real deferred-FK values; Phase-1 already
+                    // inserted the rows with those columns NULLed.
+                    StagedMerge.renderStagedPhase2 "emit.staticSeeds" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred (repairRows |> List.map snd)
                 else
                     // PL-3 (S27/S57) — the per-kind constants prebind once;
                     // the row loop threads only the typed values.
                     let renderRow = MergeRender.renderUpdateForKind "emit.staticSeeds" cdcAware kind deferred
-                    typedRows
+                    repairRows
                     |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> renderRow vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; the typed `Statement` DU does not yet model UPDATE so `ScriptDomGenerate.toText` is not applicable
             let rendered =
@@ -189,11 +206,10 @@ module StaticSeedsEmitter =
                   Values        = values
                   DeferredFkSet = deferred }
             let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
-            // PL-3 (S18) — Phase-2's row list IS Phase-1's when any column
-            // deferred; never a second identical build.
+            // v7 slice 5 — Phase-2's row list is the REPAIR set (rows with
+            // a non-NULL deferred value), not Phase-1's whole list.
             let phase2Rows =
-                if Set.isEmpty deferred then []
-                else phase1Rows
+                repairRows |> List.map (fun (id, vs) -> mkRow id vs)
             { Phase1Merges   = phase1Rows
               Phase2Updates  = phase2Rows
               RenderedPhase1 = renderedPhase1
