@@ -28310,3 +28310,60 @@ did not change (the READ formatter fix covers the shared `ReadSide` row path; `t
 fast paths fall back to the fixed generic arm for the exotic field types). `SmallDateTime`
 carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
 DECISIONS 2026-07-16 — WP-17(a–c,f).
+
+## 2026-07-18 — Email/phone revert to ANSI VARCHAR: the OutSystems 11 platform mapping is the fact; WP-4's premise is refuted (and text lengths are preserved verbatim to 4000)
+
+**Context.** The all-OutSystems-sourced SSDT norm sweep (2026-07-17/18) re-opened WP-4 (2026-07-16,
+register C3). The operator ruled the platform's own published mapping authoritative over every
+internal surface ("authoritative online research trumps all") and supplied the live page; the docs
+source repo was read independently. Both witnesses agree, row for row — the **OutSystems 11
+Database Data Types** reference (`success.outsystems.com/documentation/11/reference/
+outsystems_language/data/database_reference/database_data_types/`; source
+`OutSystems/docs-product` `src/ref/data/database/database-data-types.md`), SQL Server column:
+
+- Text → `nvarchar(<length>)` if length ≤ 2000, `nvarchar(max)` otherwise
+- **Email → `varchar(250)`** · **Phone Number → `varchar(20)`**
+- Integer → `int` (+`IDENTITY` under auto number) · Long Integer → `bigint` (+`IDENTITY`)
+- Decimal → `decimal(Length, Decimals)` · Currency → `decimal(37,8)` · Boolean → `bit`
+- Date Time → `datetime` · Date → `datetime` · Time → `datetime` · Binary Data → `image`
+- Entity Identifier → depends on the Identifier's type
+
+**The premise audit.** WP-4's evidence chain does not survive re-reading. (a) `ossys_User.EMAIL`
+being on-disk `nvarchar(250)` is TRUE but IRRELEVANT: `ossys_*` tables are platform *system-table*
+DDL, hand-shipped by OutSystems — not output of the attribute mapping that governs entity columns.
+(b) The handbook row cited ("Email, Phone Number → NVARCHAR(n)") was our own document, downstream
+of the same packet — circular. (c) `notes/note14.md`'s "VARCHAR for user text" anti-pattern is
+generic SQL guidance, which OutSystems scalar intent supersedes (operator decision, Q14,
+2026-07-17). The ANSI islands WP-4 closed are the platform's own deliberate islands: an
+otherwise-NVARCHAR schema in which Email/Phone are ASCII-typed by the vendor.
+
+**The decision.** `email → VarChar (boundedOr (Bounded 250))`, `phone`/`phonenumber →
+VarChar (boundedOr (Bounded 20))` — the WP-4 arms reverted; the default widths and the
+declared-length-wins rule unchanged; `PrimitiveType` stays `Text` (data plane untouched; `N'…'`
+literals implicit-convert into varchar). Simultaneously, **`textLength` now preserves a declared
+length verbatim** — operator ruling ("preserve source intent if it's ever set, period, always"):
+`Bounded n` for 1 ≤ n ≤ 4000 (the NVARCHAR bounded physical ceiling), `Max` above it, `Max` for
+absent/zero. Two platform deltas are deliberate and named: the platform collapses >2000 to
+`nvarchar(max)` — we keep the model's 2001–4000 verbatim (source intent outranks the platform's
+storage collapse); and the old code's `>= 2000 → Max` off-by-one (the platform keeps 2000 bounded)
+is fixed as a side effect. `boundedOr` is untouched (no newly reachable widths).
+
+**Witness.** `OssysTypeMappingTests` — the reverted pins (`email → VarChar (Bounded 250)`,
+declared-length override, `phone`/`phonenumber → VarChar (Bounded 20)`) and the new `textLength`
+boundary theory (2000/4000 → `Bounded`; 4001/5000 → `Max`; 100 → `Bounded`; None/0 → `Max`).
+`SqlStorageEmissionTests` — the OSSYS-adapter arm re-pinned to `VarChar`.
+
+**Golden note.** No golden change expected (the corpus is catalog-direct and never exercised the
+`email`/`phone` arms — WP-4's own golden note); the edge-case seed carries no >2000 declared text
+length. Verified by the pure-pool run.
+
+**Named residuals.** (1) **Date/Time storage**: platform emits `datetime` for Date AND Time; V2
+maps `date → DATE`, `time → TIME(7)` — a real divergence now NAMED, decision deferred to the
+operator (semantic typing vs platform-storage faithfulness; WP-4b on-disk precedence is the
+systemic remedy either way). (2) **Binary Data**: platform emits deprecated `image`; V2 maps
+`binarydata → VARBINARY(MAX)` — same class, same deferral; deployed `image` columns round-trip via
+the `Image` storage case. (3) **Entity Identifier**: platform says "depends on the Identifier's
+type"; V2's blanket `BIGINT` stands on the operator's estate attestation (2026-07-17, "the bigint
+identity is also correct") — an estate probe (any `int`-typed identity columns) remains the cheap
+falsifier. (4) A declared email/phone length beyond varchar's bounded ceiling would render invalid
+SQL — operator-invalid model, unreachable today, named not guarded.

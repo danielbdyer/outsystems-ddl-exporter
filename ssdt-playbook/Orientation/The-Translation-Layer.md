@@ -50,12 +50,12 @@ This section is your translation guide. It won't make SSDT feel like OutSystems 
 | Long Integer | BIGINT | For values > 2.1 billion. |
 | Decimal | DECIMAL(p,s) | You specify precision (p) and scale (s). e.g., `DECIMAL(37,8)` for currency. |
 | Boolean | BIT | 0 = false, 1 = true. |
-| Text | NVARCHAR(n) or NVARCHAR(MAX) | We use NVARCHAR (Unicode) by default. Specify length. |
+| Text | NVARCHAR(n) or NVARCHAR(MAX) | We use NVARCHAR (Unicode) by default. A declared length is preserved verbatim up to 4000; beyond that, NVARCHAR(MAX). |
 | Date | DATE | Date only, no time component. |
 | Time | TIME | Time only, no date component. |
 | Date Time | DATETIME | `rtDateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`. |
 | Binary Data | VARBINARY(n) or VARBINARY(MAX) | For files, images, etc. |
-| Email, Phone Number | VARCHAR(n) | ANSI `VARCHAR` — Email `VARCHAR(250)`, Phone `VARCHAR(20)`. |
+| Email, Phone Number | VARCHAR(n) | ANSI `VARCHAR` — the platform mapping: Email `VARCHAR(250)`, Phone `VARCHAR(20)`. |
 | Currency | DECIMAL(37,8) | We use DECIMAL, not the MONEY type. |
 | Entity Identifier (FK) | BIGINT | Must match the referenced primary key's type. |
 

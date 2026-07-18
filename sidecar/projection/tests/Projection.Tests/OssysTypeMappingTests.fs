@@ -5,8 +5,8 @@ open Projection.Core
 
 // recon #10 — the OSSYS→V2 type-correspondence DECISIONS now live in pure Core,
 // so they are pinned here directly (no OSSYS JSON/DB fixture). These guard the
-// load-bearing choices: the legacy `datetime`, the imposed V1-parity widths, the
-// `(MAX)` threshold, and the reference-storage convention.
+// load-bearing choices: the legacy `datetime`, the OutSystems 11 platform widths,
+// the verbatim-to-4000 text-length rule, and the reference-storage convention.
 
 [<Fact>]
 let ``tryParse: longinteger collapses to Integer but keeps BIGINT storage`` () =
@@ -25,11 +25,11 @@ let ``tryParse: currency is the imposed DECIMAL(37,8); decimal defaults to (18,0
     Assert.Equal(Some (Decimal, SqlStorageType.Decimal (12, 4)), OssysTypeMapping.tryParse "decimal" None (Some 12) (Some 4))
 
 [<Fact>]
-let ``WP-4: email/phone map to platform-native NVARCHAR, with the default width overridden by a declared length`` () =
-    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 250)), OssysTypeMapping.tryParse "email" None None None)
-    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 50)),  OssysTypeMapping.tryParse "email" (Some 50) None None)
-    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 20)),  OssysTypeMapping.tryParse "phone" None None None)
-    Assert.Equal(Some (Text, SqlStorageType.NVarChar (Bounded 20)),  OssysTypeMapping.tryParse "phonenumber" None None None)
+let ``email/phone map to the OutSystems 11 platform VARCHAR(250)/(20), with the default width overridden by a declared length (DECISIONS 2026-07-18)`` () =
+    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 250)), OssysTypeMapping.tryParse "email" None None None)
+    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 50)),  OssysTypeMapping.tryParse "email" (Some 50) None None)
+    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 20)),  OssysTypeMapping.tryParse "phone" None None None)
+    Assert.Equal(Some (Text, SqlStorageType.VarChar (Bounded 20)),  OssysTypeMapping.tryParse "phonenumber" None None None)
 
 [<Fact>]
 let ``tryParse: a reference (entityreference and the bt*-binding form) stores the target identifier as BIGINT`` () =
@@ -41,14 +41,21 @@ let ``tryParse: an unmapped type is None (the adapter names the refusal)`` () =
     Assert.Equal(None, OssysTypeMapping.tryParse "nonsensetype" None None None)
 
 [<Theory>]
+[<InlineData(100)>]
 [<InlineData(2000)>]
+[<InlineData(2500)>]
+[<InlineData(4000)>]
+let ``textLength: a declared length is preserved verbatim through the NVARCHAR bounded ceiling (DECISIONS 2026-07-18)`` (n: int) =
+    Assert.Equal(Bounded n, OssysTypeMapping.textLength (Some n))
+
+[<Theory>]
+[<InlineData(4001)>]
 [<InlineData(5000)>]
-let ``textLength: at or above the 2000 threshold is open-ended (MAX)`` (n: int) =
+let ``textLength: beyond the 4000 bounded ceiling is open-ended (MAX)`` (n: int) =
     Assert.Equal(Max, OssysTypeMapping.textLength (Some n))
 
 [<Fact>]
-let ``textLength: a positive sub-threshold length is Bounded; absence is MAX`` () =
-    Assert.Equal(Bounded 100, OssysTypeMapping.textLength (Some 100))
+let ``textLength: absence (or a non-positive length) is MAX`` () =
     Assert.Equal(Max, OssysTypeMapping.textLength None)
     Assert.Equal(Max, OssysTypeMapping.textLength (Some 0))
 
