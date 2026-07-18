@@ -89,6 +89,15 @@ type SyntheticConfig = {
     /// a generic clustering (the `from:synthetic` composition derives it from
     /// `BoundedContextDiscovery`; Core stays decoupled from that source type).
     FkLocalityClusters     : Map<SsKey, SsKey>
+    /// K1 (DECISIONS 2026-07-18, the Twin) — pre-seeded parent pools. A kind
+    /// listed here already holds real rows at the sink (the estate's own
+    /// static reference data, seeded outside σ); σ does NOT generate rows for
+    /// it, and child FK columns draw from the PK values listed here exactly as
+    /// they would from a minted pool. The listed kinds are likewise excluded
+    /// from the synthetic load's wipe scope (`Transfer.runSynthetic`) — their
+    /// rows are the sink's own. Empty (the default) is byte-identical to the
+    /// pre-K1 flow.
+    ProvidedPools          : Map<SsKey, string list>
 }
 
 [<RequireQualifiedAccess>]
@@ -102,7 +111,8 @@ module SyntheticConfig =
           SynthesizeColumns      = Set.empty
           Scale                  = 1M
           VolumeByKind           = Map.empty
-          FkLocalityClusters     = Map.empty }
+          FkLocalityClusters     = Map.empty
+          ProvidedPools          = Map.empty }
 
 
 /// NM-21 — a named lineage event σ emits when a **non-nullable** FK column
@@ -635,13 +645,19 @@ module SyntheticData =
         : Map<SsKey, string list> =
         Catalog.allKinds catalog
         |> List.map (fun kind ->
-            let n = rowCountFor profile config kind
-            let kindHash = fnv1a (SsKey.serialize kind.SsKey)
-            let pool =
-                match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey) with
-                | None -> List.replicate n ""   // PK-less kind: no FK-referenceable pool.
-                | Some pk -> [ for i in 0 .. n - 1 -> surrogateRaw pk.Type kindHash i ]
-            kind.SsKey, pool)
+            // K1 — a provided pool IS the kind's pool: the sink already holds
+            // the rows (the estate's own seed data); child FKs draw from the
+            // provided PK values and no fresh surrogates are minted.
+            match Map.tryFind kind.SsKey config.ProvidedPools with
+            | Some provided -> kind.SsKey, provided
+            | None ->
+                let n = rowCountFor profile config kind
+                let kindHash = fnv1a (SsKey.serialize kind.SsKey)
+                let pool =
+                    match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey) with
+                    | None -> List.replicate n ""   // PK-less kind: no FK-referenceable pool.
+                    | Some pk -> [ for i in 0 .. n - 1 -> surrogateRaw pk.Type kindHash i ]
+                kind.SsKey, pool)
         |> Map.ofList
 
     /// `σ` with its lineage — generate the synthetic dataset (design §8, slice
@@ -665,6 +681,10 @@ module SyntheticData =
         let pkPools = mintPkPools catalog profile config seed
         let perKind =
             Catalog.allKinds catalog
+            // K1 — a provided kind is not generated: the sink's own rows stand,
+            // and the dataset carries no entry for it (so the load plan carries
+            // zero rows and the synthetic wipe scope excludes it).
+            |> List.filter (fun kind -> not (Map.containsKey kind.SsKey config.ProvidedPools))
             |> List.map (fun kind ->
                 let rows, diags = generateKindRows catalog profile config seed pkPools kind
                 kind.SsKey, rows, diags)

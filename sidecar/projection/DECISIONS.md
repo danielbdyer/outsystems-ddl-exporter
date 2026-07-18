@@ -227,7 +227,7 @@ table before continuing.
 | **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** | 2026-05-20 (logging-format implementation gap audit) | Operator runs the CLI + reports NDJSON-only stderr emission as unfriendly for interactive runs (verbatim from `docs/logging-format.md` §15.3 post-chapter framing). Substrate sketched in §15.1 (two-channel diagram) + §15.3 (`Projection.Cli/TtyRenderer.fs` F# adapter shape). The micro-chapter pairs with the `data-twin` CLI verb row above — both operator-facing UX-layer surfaces over established structural substrate. | Deferred at 2026-05-20. Slice 6.5 ships the channel-1-only `LogSink` (the structural commitment); channel-2 TtyRenderer is the optional layer on top. Per the contract: "Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it." See `DECISIONS 2026-05-20 (logging-format implementation gap audit)` entry below. |
 | **Standalone `projection extract` + `projection profile` CLI subcommands** | 2026-05-19 (chapter B.4 rescope — chapter-mid scope change) | A concrete operator-paced workflow surfaces that needs catalog-extract or profile-attach as a stand-alone step independent of `full-export` (e.g., a CI lane that materializes the snapshot without emitting; a profile-cache refresh job). The chapter-B.4-open's slice plan named both subcommands at slices 6 + 7; the rescope drops them after operator framing produced no workflow demand independent of full-export. | Deferred at chapter B.4 (2026-05-19). Today `full-export` is the only operator-touchable CLI subcommand. Reserved code paths in the logging-format contract still name `extract.*` + `profile.*` event categories (these fire from `full-export`'s orchestration); promoting them to standalone subcommands requires only a CLI surface (no Core change). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
 | **Multi-environment configuration (DEV / TEST / UAT / PROD) + UAT-users logic** | 2026-05-19 (chapter B.4 rescope) | V2 brings the operator's V1 managed-environment remote HEAD into V2's tree — both components are fully done in V1 today; the V2 carbon-copy path is gated on access to the V1 implementation. Pairs with the `LiveOssysConnection` deferral above (live OSSYS connectivity is the bridge that lets multi-environment / UAT-users be exercised end-to-end). | Deferred at chapter B.4. Today `full-export` uses a single-environment config shape; multi-environment + UAT-users carbon-copy lands when V1 remote HEAD is available. See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
-| **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | Deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 managed-environment material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
+| **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | **Trigger fired + cashed out 2026-07-18 (the Twin)** — the per-developer local Docker SQL Server demand surfaced as an operator request; realized as the standalone Twin bounded context (`THE_TWIN.md`; `twin up` — a persistent managed container + DacFx publish of the ejected SSDT estate + K1-pooled synthetic mint) rather than a `projection` verb, per the post-eject portability requirement. The baked-image variant (`twin bake` over `DockerImageEmitter`) remains the packaging follow-on, trigger unchanged. Originally: deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 managed-environment material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
 | **`MetadataContractOverrides` wiring into V2 `MetadataSnapshotRunner` mappers** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A real V1-source drift event surfaces a strict column in V2 production extraction producing NULL where V2's mapper expects non-NULL. Today V2 has zero direct wiring carry-over from V1 (V1's sole consumer `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` reads the V1-SUNSET `attrJson` rowset that V2 skips at `MetadataSnapshotRunner.fs:778`). Per IR-grows-under-evidence: pick the relaxable column on real drift, not speculatively. | Mechanism shipped at slice 5 (`MetadataContractOverrides.fs`); structurally available + tested; wiring deferred. Cash-out shape: thread `MetadataContractOverrides` through `runAndParse` as a parameter; introduce `readStringRelaxable resultSet column ordinal overrides` helper that consults `isColumnOptional` and dispatches to `readString` or `readStringOpt`; refactor the affected mapper to use the helper. See `DECISIONS 2026-05-19 (slice B.4.5.metadata-contract-overrides)` entry below. |
 | **`OverlayAxis.Extraction` candidate (sixth variant)** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A second consumer of operator-intent-at-the-extraction-boundary materializes beyond `MetadataContractOverrides`. Today the only candidate is `MetadataContractOverrides` itself; per chapter A.4.7 open Q9 trigger-fires discipline, a single candidate doesn't yet warrant a sixth `OverlayAxis` variant. Slice 7 decides at TransformRegistry wiring time whether to stretch `Tightening` with a docstring note OR add the sixth variant when the second consumer materializes. | Open. The MetadataContractOverrides `OverlayAxis` classification at slice 7 sets the precedent: either stretches `Tightening` (operator-decision-about-constraint-enforcement; explicit docstring note that extraction-time contract relaxation is structurally distinct from emission-time tightening) OR adds the sixth variant. The deferral records the open question so future agents see the deliberate ambiguity. |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | **Cashed out — chapter 3.x slice α (2026-05-11) adopts `Microsoft.SqlServer.DacFx` v162.x in `Projection.Targets.SSDT`.** Pure F# wrapper (empirical condition: `use TSqlModel`, `model.AddObjects`, `DacPackageExtensions.BuildPackage` — four `IDisposable`-aware calls F# handles natively). No C# subproject; pre-scope §6.2 bias yielded under empirical pressure. See `2026-05-11 — Chapter 3.x DacpacEmitter open` entry below. |
@@ -28310,3 +28310,54 @@ did not change (the READ formatter fix covers the shared `ReadSide` row path; `t
 fast paths fall back to the fixed generic arm for the exotic field types). `SmallDateTime`
 carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
 DECISIONS 2026-07-16 — WP-17(a–c,f).
+
+## 2026-07-18 — The Twin opens: a post-eject bounded context for the SSDT estate's synthetic data sidecar (K1 provided pools; the twin wipe discipline)
+
+**Status:** ADOPTED (operator directive 2026-07-18 — "a post-database-cutover feature that
+can live on the SSDT SQL database repository … a one-click easy-to-maintain lightweight
+synthetic data sidecar").
+
+**Context.** The `data-twin` deferral's trigger fired: per-developer local Docker SQL
+Server demand surfaced as a direct operator request, aimed at the POST-EJECT world — the
+SSDT repository as sole schema truth, no SsKey bindings on any emitted table, engineers
+needing a safe local database with realistic-but-never-real data. The synthesis engine
+(σ : Profile → Data, the privacy contract, corrections/Faker, FK-aware loading) already
+ships; what did not exist: name-based identity, SSDT-bundle ingestion, a persistent
+container lifecycle, and the estate's own seed data feeding σ's FK pools.
+
+**Decision.**
+1. **A new bounded context, not new engine features.** `Twin.Core` / `Twin.Runtime` /
+   `Twin.Cli` (AssemblyName `twin`) live in this solution and consume the kernel one-way:
+   Twin.Core → Projection.Core only; Twin.Runtime → the kernel manifest named in
+   `THE_TWIN.md`; nothing in Projection.* references Twin.* (executable —
+   `Twin.Tests/BoundaryTests.fs`). The Twin's durable artifacts (twin.json, evidence
+   packs, corrections refs, scenarios) carry logical coordinates (`schema.table.column`)
+   only — an `SsKey` lives exactly as long as one process run, bound at the
+   `CatalogIndex`/`TwinIdentity` ACL against the `ReadSide` read-back of the twin database.
+   This is what makes the later ejection a project move, not a rewrite.
+2. **K1 — σ accepts provided parent pools.** `SyntheticConfig.ProvidedPools :
+   Map<SsKey, string list>` (additive; empty = byte-identical): a listed kind is not
+   generated — its PK values ARE the pool child FKs draw from — and
+   `Transfer.runSynthetic`'s wipe scope excludes it (the rows are the sink's own).
+   Consumer: the twin's estate-seeded lookup tables. Properties in
+   `SyntheticDataTests.fs` (`K1:` family): provided kinds emit zero rows; child FK
+   values ⊆ provided pool; empty-pools byte-identity; determinism.
+3. **The twin wipe discipline.** A mint starts from a clean slate: nullable deferred-FK
+   columns nulled, the kernel's child-first wipe, then **identity counters reseeded to
+   the declared seed** (guarded on `sys.identity_columns.last_value` to normalize SQL
+   Server's virgin-vs-deleted RESEED asymmetry) — so sink-assigned identities are stable
+   and a re-mint is byte-identical (T1 at the twin's grain; witnessed by
+   `TwinMintLoopTests` — the first E2E run caught exactly this drift, Ids 26–50 on the
+   second mint). The lane-seeded provided set is then derived **by observation** (after
+   the wipe, a row-carrying kind is lane-seeded by construction) — no configuration names
+   the seeded tables; the estate itself does.
+
+**Reasoning.** Cashing out a named deferral against its own trigger beats inventing a
+sibling concept; the bounded context keeps the engine's mission (publication-and-
+provenance, terminating at eject) untouched while the Twin's mission (the estate's
+post-eject local life) gets its own language, laws, and surface. Scenario overlays
+(column distributions, per-parent ratios, pins) parse today and refuse as
+`twin.scenario.notYetSupported` until the scenario compiler lands; the date-typed
+distribution gap (profiler gates `Integer|Decimal`; `sampleNumeric`'s DateTime branch
+renders a non-`RawValueCodec` form) is K2, named in `THE_TWIN.md`, landing with the
+compiler. Evidence import/tiers ride the same charter.

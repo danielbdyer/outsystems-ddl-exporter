@@ -413,3 +413,44 @@ let ``H-072: intra-cluster generation is deterministic for a fixed seed`` () =
     let a = SyntheticData.generate catalog profile clustered 3UL
     let b = SyntheticData.generate catalog profile clustered 3UL
     Assert.Equal<Map<SsKey, StaticRow list>>(a, b)
+
+// ---------------------------------------------------------------------------
+// K1 (DECISIONS 2026-07-18, the Twin) — provided parent pools: a kind whose
+// rows the sink already holds (the estate's own seed data) is excluded from
+// generation, and child FKs draw from the provided PK values.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``K1: a provided kind emits zero rows`` () =
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, [ "1"; "2"; "3" ] ] }
+    let m = SyntheticData.generate catalog profile provided 5UL
+    Assert.False(Map.containsKey custKey m, "a provided kind must not appear in the generated dataset")
+    Assert.True(Map.containsKey ordKey m, "non-provided kinds still generate")
+
+[<Fact>]
+let ``K1: child FK values draw from the provided pool and no others`` () =
+    let pool = [ "101"; "202"; "303" ]
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, pool ] }
+    let m = SyntheticData.generate catalog profile provided 5UL
+    let poolSet = Set.ofList pool
+    let custFks = valuesOf m ordKey "CustomerId"
+    Assert.Equal(250, custFks.Length)
+    Assert.True(custFks |> List.forall (fun v -> Set.contains v poolSet),
+                "a mandatory FK drew a value outside the provided pool")
+    let optFks = valuesOf m ordKey "OptCustomerId"
+    Assert.True(optFks |> List.forall (fun v -> Set.contains v poolSet),
+                "an optional FK drew a value outside the provided pool")
+
+[<Fact>]
+let ``K1: empty provided pools are byte-identical to the default flow`` () =
+    let baseline = SyntheticData.generate catalog profile cfg 7UL
+    let explicitEmpty = { cfg with ProvidedPools = Map.empty }
+    let m = SyntheticData.generate catalog profile explicitEmpty 7UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(baseline, m)
+
+[<Fact>]
+let ``K1: provided-pool generation is deterministic for a fixed seed`` () =
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, [ "9"; "8" ] ] }
+    let a = SyntheticData.generate catalog profile provided 3UL
+    let b = SyntheticData.generate catalog profile provided 3UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(a, b)

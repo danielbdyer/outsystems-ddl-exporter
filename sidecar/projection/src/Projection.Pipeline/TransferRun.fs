@@ -1788,8 +1788,20 @@ module Transfer =
                             else
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
-                                    // σ generation has no declared subset — wipe all.
-                                    do! TransferResume.wipeFkOrdered sink catalog plan topo None
+                                    // K1 — a provided-pool kind's rows are the sink's OWN
+                                    // (the estate's seed data, loaded outside σ); the wipe
+                                    // must not touch them. With no provided pools the scope
+                                    // stays None — wipe every loaded kind, byte-identical to
+                                    // the pre-K1 flow.
+                                    let wipeScope =
+                                        if Map.isEmpty config.ProvidedPools then None
+                                        else
+                                            Catalog.allKinds catalog
+                                            |> List.map (fun k -> k.SsKey)
+                                            |> List.filter (fun k -> not (Map.containsKey k config.ProvidedPools))
+                                            |> Set.ofList
+                                            |> Some
+                                    do! TransferResume.wipeFkOrdered sink catalog plan topo wipeScope
                                     return! writePlan sink catalog Set.empty plan false None
                                 | EmissionMode.Incremental ->
                                     return! writePlan sink catalog Set.empty plan false None
