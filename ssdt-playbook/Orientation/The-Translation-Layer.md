@@ -51,8 +51,8 @@ This section is your translation guide. It won't make SSDT feel like OutSystems 
 | Decimal | DECIMAL(p,s) | You specify precision (p) and scale (s). e.g., `DECIMAL(37,8)` for currency. |
 | Boolean | BIT | 0 = false, 1 = true. |
 | Text | NVARCHAR(n) or NVARCHAR(MAX) | We use NVARCHAR (Unicode) by default. A declared length is preserved verbatim up to 4000; beyond that, NVARCHAR(MAX). |
-| Date | DATE | Date only, no time component. |
-| Time | TIME | Time only, no date component. |
+| Date | DATETIME | The platform mapping — date-only intent, stored with a midnight time component. |
+| Time | DATETIME | The platform mapping — time-only intent, stored on the datetime epoch date. |
 | Date Time | DATETIME | `rtDateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`. |
 | Binary Data | VARBINARY(n) or VARBINARY(MAX) | For files, images, etc. |
 | Email, Phone Number | VARCHAR(n) | ANSI `VARCHAR` — the platform mapping: Email `VARCHAR(250)`, Phone `VARCHAR(20)`. |

@@ -273,11 +273,20 @@ let ``WP-4b: the forced-BIGINT family divergence is named but reports the LOGICA
 
 [<Fact>]
 let ``WP-4b: a cross-category divergence is named and reports the LOGICAL value wins (no reclassification)`` () =
-    // logical rtDate -> DATE; deployed datetime (DateTime). Cross-category conflict.
-    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "datetime" None ]
+    // logical rtDate -> DATETIME (the platform mapping, DECISIONS 2026-07-18);
+    // a deployed true DATE column (DateTime vs Date category) is a genuine
+    // cross-category conflict — the logical value stands, the divergence named.
+    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "date" None ]
     match storageDivergences s with
     | [ d ] -> Assert.Equal<string option>(Some "logical", Map.tryFind "emits" d.Metadata)
     | other -> Assert.Fail(sprintf "expected one storage divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``a date attribute deployed as datetime agrees with the platform mapping and is silent`` () =
+    // The real estate's shape: rtDate columns are physically datetime. With the
+    // platform mapping (rtDate -> DATETIME) the pair agrees; no divergence fires.
+    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "datetime" None ]
+    Assert.Empty(storageDivergences s)
 
 [<Fact>]
 let ``WP-4b: an agreeing logical-vs-deployed storage is silent`` () =

@@ -238,19 +238,20 @@ let ``deployed storage: an explicit external database type wins over deployed ev
     Assert.Equal(Some (SqlStorageType.VarChar (Bounded 20)), attr.SqlStorage)
 
 [<Fact>]
-let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATE)`` () =
+let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATETIME)`` () =
     // WP-4b: on-disk precedence is a SAME-category refinement only. A logical
-    // `rtDate` (Date) deployed as `datetime` (DateTime) is a genuine conflict,
+    // `rtDate` (DateTime under the platform mapping, DECISIONS 2026-07-18)
+    // deployed as a true `date` column (Date category) is a genuine conflict,
     // not a refinement — the logical value stands (no silent reclassification);
     // the divergence is named separately by columnStorageDivergences.
     let idAttr = attrRow 100 "Id" "Identifier" false None None
     let birthDate =
         { attrRow 101 "BirthDate" "rtDate" false None None with
-            DeployedStorage = Some SqlStorageType.DateTime }
+            DeployedStorage = Some SqlStorageType.Date }
     let cat = parseToCatalog (buildBundle [ idAttr; birthDate ])
     let attr = findAttribute cat "BirthDate"
-    Assert.Equal(Date, attr.Type)
-    Assert.Equal(Some SqlStorageType.Date, attr.SqlStorage)
+    Assert.Equal(DateTime, attr.Type)
+    Assert.Equal(Some SqlStorageType.DateTime, attr.SqlStorage)
 
 [<Fact>]
 let ``WP-4b: a SAME-category deployed storage wins over the logical mapping for an ordinary scalar`` () =

@@ -28367,3 +28367,33 @@ type"; V2's blanket `BIGINT` stands on the operator's estate attestation (2026-0
 identity is also correct") — an estate probe (any `int`-typed identity columns) remains the cheap
 falsifier. (4) A declared email/phone length beyond varchar's bounded ceiling would render invalid
 SQL — operator-invalid model, unreachable today, named not guarded.
+
+## 2026-07-18 — Date-only and time-only attributes store as DATETIME (the platform mapping); Binary Data keeps VARBINARY(MAX)
+
+**Context.** The same-day platform-mapping entry above named two deferred divergences: the
+OutSystems 11 reference maps Date → `datetime`, Time → `datetime`, and Binary Data → `image`,
+where V2 mapped `date → DATE`, `time → TIME(7)`, `binarydata → VARBINARY(MAX)`. The operator ruled
+same-day: **platform-faithful `datetime` for the date/time singles; `VARBINARY(MAX)` stands for
+binary** (deployed `image` columns round-trip via the `Image` storage case and the deployed-
+reflection lane). A third ruling closes the ServiceCenter User residual: the surgical User entity
+carries **no hand-set storage** — its attributes arrive from the extraction exactly as the platform
+presents them (the deployed-reflection channel supplies the physical types).
+
+**The decision.** `tryParse "date"` and `tryParse "time"` → `(DateTime, SqlStorageType.DateTime)`.
+The semantic category collapses with the storage because the two-field law holds (the storage an
+adapter sets always projects back to the semantic type it sets; a `(Date, DATETIME)` pair would be
+the codebase's sole violator). The `Date` / `Time` primitive and storage cases REMAIN — they are
+the deployed-reflection lane's carriers for true `DATE` / `TIME(n)` columns (DBA-authored), which
+under WP-4b's cross-category rule keep the logical value and name the divergence. Consequences:
+a date attribute deployed as `datetime` — the whole real estate — is now a silent same-category
+agreement; the cross-category example pair in the WP-4b witnesses flips to rtDate-deployed-as-DATE.
+The edge-case seed's `LAUNCHDATE` / `OPENTIME` physicals align to `DATETIME` (the platform never
+creates `DATE`/`TIME` columns; a DBA-modernized column is its own edge case, not the base estate).
+
+**Witness.** `OssysTypeMappingTests` (the date/time → DATETIME pin), `ColumnRealityDivergenceTests`
+(rtDate + deployed `datetime` silent; rtDate + deployed `date` named, logical wins),
+`ColumnRealitySourceSidePopulationTests` (cross-category no-reclassification, re-pointed),
+`OssysComprehensiveFixtureTests` (LaunchDate / OpenTime pins → DATETIME).
+
+**Named residuals.** None new. The Entity-Identifier blanket-BIGINT attestation and the
+declared-length-beyond-varchar-ceiling edge stand as named in the entry above.

@@ -19,6 +19,11 @@ let ``tryParse: datetime maps to legacy DATETIME, not DATETIME2`` () =
     Assert.Equal(Some (DateTime, SqlStorageType.DateTime2 (Some 7)), OssysTypeMapping.tryParse "datetime2" None None None)
 
 [<Fact>]
+let ``tryParse: date-only and time-only store as DATETIME, the platform mapping (DECISIONS 2026-07-18)`` () =
+    Assert.Equal(Some (DateTime, SqlStorageType.DateTime), OssysTypeMapping.tryParse "date" None None None)
+    Assert.Equal(Some (DateTime, SqlStorageType.DateTime), OssysTypeMapping.tryParse "time" None None None)
+
+[<Fact>]
 let ``tryParse: currency is the imposed DECIMAL(37,8); decimal defaults to (18,0)`` () =
     Assert.Equal(Some (Decimal, SqlStorageType.Decimal (37, 8)), OssysTypeMapping.tryParse "currency" None None None)
     Assert.Equal(Some (Decimal, SqlStorageType.Decimal (18, 0)), OssysTypeMapping.tryParse "decimal" None None None)

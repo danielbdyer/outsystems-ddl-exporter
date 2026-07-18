@@ -63,8 +63,14 @@ module OssysTypeMapping =
         | "datetime"       -> Some (DateTime, SqlStorageType.DateTime)
         | "datetime2"      -> Some (DateTime, SqlStorageType.DateTime2 (Some 7))
         | "datetimeoffset" -> Some (DateTime, SqlStorageType.DateTimeOffset (Some 7))
-        | "date"           -> Some (Date, SqlStorageType.Date)
-        | "time"           -> Some (Time, SqlStorageType.Time (Some 7))
+        // Date-only and time-only attributes store as DATETIME — the OutSystems 11
+        // platform mapping (Date → datetime, Time → datetime; operator ruling,
+        // DECISIONS 2026-07-18). The semantic category collapses with the storage
+        // because the two-field law holds (storage always projects back to the
+        // semantic type it was set with); a true DATE / TIME(n) column still
+        // arrives intact via the deployed-reflection lane.
+        | "date"           -> Some (DateTime, SqlStorageType.DateTime)
+        | "time"           -> Some (DateTime, SqlStorageType.DateTime)
         | "decimal"        ->
             Some
                 (Decimal,

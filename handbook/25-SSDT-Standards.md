@@ -116,7 +116,7 @@ These are our standards. Deviate only with good reason.
 | Time only | `TIME` | Rare |
 | Legacy compatibility | `DATETIME` | Only for existing systems |
 
-**OutSystems `DateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`.**
+**OutSystems `DateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`. OutSystems `Date` and `Time` attributes also store as `DATETIME` — the platform mapping.**
 
 ### Other
 
