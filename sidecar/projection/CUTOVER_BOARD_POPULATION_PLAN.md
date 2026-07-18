@@ -219,6 +219,43 @@ FROM sys.indexes i JOIN sys.partitions p ON p.object_id=i.object_id AND p.index_
 WHERE p.data_compression_desc <> 'NONE';
 -- Target database collation (→ decides whether EmissionComputedExprIdentifiers is a blocker)
 SELECT DATABASEPROPERTYEX(DB_NAME(),'Collation');
+-- Function-valued DEFAULT constraints (→ EmissionAuthoredDefault exposure; the authored
+--   channel is classified, the reflected channel stays un-lifted — matrix row 53)
+SELECT OBJECT_NAME(parent_object_id), COL_NAME(parent_object_id, parent_column_id), definition
+FROM sys.default_constraints WHERE definition LIKE '%(%' AND definition LIKE '%)%'
+  AND definition NOT LIKE '(''%''%' AND definition NOT LIKE '((%';
+-- Hand-curated FK names (→ decision 6: synthesized names reset these; inventory first)
+SELECT name, OBJECT_NAME(parent_object_id) FROM sys.foreign_keys
+WHERE name NOT LIKE 'OSFRK%' AND name NOT LIKE 'FK__%';
+-- Mandatory CreatedBy/UpdatedBy user references (→ P-3 re-key exposure, deferred lane)
+SELECT OBJECT_NAME(fk.parent_object_id), c.name
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+JOIN sys.columns c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
+WHERE c.name IN ('CREATEDBY','UPDATEDBY','CREATED_BY','UPDATED_BY') AND c.is_nullable = 0;
+-- Self-referencing and cyclic entity clusters (→ EmissionDataLaneOrder; the load defers
+--   enforcement inside a true cycle)
+SELECT OBJECT_NAME(parent_object_id) AS child, OBJECT_NAME(referenced_object_id) AS parent
+FROM sys.foreign_keys WHERE parent_object_id = referenced_object_id
+   OR referenced_object_id IN
+      (SELECT parent_object_id FROM sys.foreign_keys f2
+       WHERE f2.referenced_object_id = sys.foreign_keys.parent_object_id);
+-- Static entities over 1,000 rows (→ the v1 Authoritative-sync loss class, EF-23; v2 is
+--   immune, but the row volume scopes the seed lane)
+SELECT e.NAME, e.PHYSICAL_TABLE_NAME FROM ossys_Entity e
+WHERE e.IS_STATIC = 1 AND e.IS_ACTIVE = 1;  -- join row counts per table when running
+-- Non-default temporal scales (→ EF-24: v2 preserves them; v1 widened to 7 — inventory
+--   confirms the exposure either way)
+SELECT OBJECT_NAME(object_id), name, scale FROM sys.columns
+WHERE system_type_id IN (42, 43, 41) AND scale <> 7;  -- datetime2, datetimeoffset, time
+-- Text attributes declared over 2,000 (→ the verbatim-length ruling, DECISIONS 2026-07-18:
+--   2,001–4,000 now emit bounded where the platform deployed nvarchar(max) — narrowing a
+--   deployed MAX column rebuilds it, so prove no row exceeds the declared length first)
+SELECT e.NAME, a.NAME, a.LENGTH FROM ossys_Entity_Attr a
+JOIN ossys_Entity e ON e.ID = a.ENTITY_ID
+WHERE a.TYPE = 'rtText' AND a.LENGTH > 2000 AND e.IS_ACTIVE = 1;
+-- ... and for each hit, the overflow probe (zero rows = the narrowing applies without loss):
+--   SELECT COUNT(*) FROM <physical_table> WHERE LEN(<physical_column>) > <declared_length>;
 ```
 
 The audit's `reproduce.sh` and the empirical harness already stand these up on the warm container —

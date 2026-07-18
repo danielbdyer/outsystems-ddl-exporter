@@ -397,6 +397,14 @@ module ScriptDomBuild =
             // writer emits the value verbatim.
             l.Value <- prefixed
             l :> ScalarExpression
+        | ExpressionLit call ->
+            // DECISIONS 2026-07-18 (#669 M-1) — a niladic function-call
+            // default (`getutcdate()`) is the callable expression, never
+            // a quoted string. The classifier guarantees the `name()`
+            // shape, so the name is everything before the parentheses.
+            let f = FunctionCall()
+            f.FunctionName <- Identifier(Value = call.Substring(0, call.Length - 2).Trim())
+            f :> ScalarExpression
 
     // -----------------------------------------------------------------------
     // Column definitions inside CREATE TABLE.

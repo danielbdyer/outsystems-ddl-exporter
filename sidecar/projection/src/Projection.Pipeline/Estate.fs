@@ -1055,6 +1055,45 @@ module Estate =
                                 subject actionName))
                 | _ -> None))
 
+    /// #669 M-1 residue (DECISIONS 2026-07-18): an authored default whose
+    /// raw text does not parse as a value of the column's type. The
+    /// classification lift (`SqlLiteral.ofAuthoredDefault`) carries niladic
+    /// calls and quoted text faithfully; what remains in a value literal
+    /// must actually BE a value — a raw that is not deploys as a DEFAULT
+    /// and then fails at the first insert that relies on it. Validation is
+    /// SQL-shaped (invariant TryParse), not canonical-format-strict, so a
+    /// legitimate authored `2024-01-01` date-time passes.
+    let private emissionAuthoredDefaultFindings (target: Catalog) : Finding list =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        let unparsable (lit: SqlLiteral) : string option =
+            match lit with
+            | SqlLiteral.IntegerLit raw when not (fst (System.Int64.TryParse(raw, System.Globalization.NumberStyles.Integer, inv))) ->
+                Some (sprintf "'%s' does not parse as an integer value" raw)
+            | SqlLiteral.DecimalLit raw when not (fst (System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, inv))) ->
+                Some (sprintf "'%s' does not parse as a decimal value" raw)
+            | SqlLiteral.DateTimeLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as a date-time value" raw)
+            | SqlLiteral.DateLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as a date value" raw)
+            | SqlLiteral.TimeLit raw when not (fst (System.TimeSpan.TryParse(raw, inv))) ->
+                Some (sprintf "'%s' does not parse as a time value" raw)
+            | SqlLiteral.DateTimeOffsetLit raw when not (fst (System.DateTimeOffset.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as an offset-bearing date-time value" raw)
+            | SqlLiteral.GuidLit raw when not (fst (System.Guid.TryParse raw)) ->
+                Some (sprintf "'%s' does not parse as a GUID value" raw)
+            | _ -> None
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Attributes
+            |> List.choose (fun a ->
+                a.DefaultValue
+                |> Option.bind unparsable
+                |> Option.map (fun problem ->
+                    let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                    emissionFinding EstateFindingKind.EmissionAuthoredDefault subject
+                        (sprintf "%s carries an authored default that %s — the DEFAULT deploys, and the first insert that relies on it fails."
+                            subject problem))))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1063,7 +1102,8 @@ module Estate =
           emissionLongNameFindings target
           emissionNoPrimaryKeyFindings target
           emissionLossyScalarFindings target
-          emissionNonDefaultOnUpdateFindings target ]
+          emissionNonDefaultOnUpdateFindings target
+          emissionAuthoredDefaultFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 

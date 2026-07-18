@@ -181,7 +181,10 @@ module CatalogCodec =
          | SqlLiteral.DateLit r       -> jw.WriteString("kind", "DateLit");     jw.WriteString("value", r)
          | SqlLiteral.TimeLit r       -> jw.WriteString("kind", "TimeLit");     jw.WriteString("value", r)
          | SqlLiteral.GuidLit r       -> jw.WriteString("kind", "GuidLit");     jw.WriteString("value", r)
-         | SqlLiteral.BinaryLit h     -> jw.WriteString("kind", "BinaryLit");   jw.WriteString("value", h))
+         | SqlLiteral.BinaryLit h     -> jw.WriteString("kind", "BinaryLit");   jw.WriteString("value", h)
+         // DECISIONS 2026-07-18 (#669 M-1) — the authored function-call
+         // default (`getutcdate()`), carried as its callable text.
+         | SqlLiteral.ExpressionLit c -> jw.WriteString("kind", "ExpressionLit"); jw.WriteString("value", c))
         jw.WriteEndObject()
 
     let private wTableId (jw: Utf8JsonWriter) (t: TableId) : unit =
@@ -605,6 +608,8 @@ module CatalogCodec =
                     else SqlLiteral.DateLit r)
             | "GuidLit"     -> field el "value" asString |> Result.map SqlLiteral.GuidLit
             | "BinaryLit"   -> field el "value" asString |> Result.map SqlLiteral.BinaryLit
+            // DECISIONS 2026-07-18 (#669 M-1) — the authored function-call default.
+            | "ExpressionLit" -> field el "value" asString |> Result.map SqlLiteral.ExpressionLit
             | o -> fail "codec.sqlLiteral.unknown" (sprintf "unknown SqlLiteral kind '%s'" o)) el
 
     let private readTableId (el: JsonElement) : Result<TableId> =

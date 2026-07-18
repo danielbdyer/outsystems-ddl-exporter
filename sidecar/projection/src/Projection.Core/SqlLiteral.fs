@@ -82,6 +82,15 @@ type SqlLiteral =
     /// .withHexPrefix` (e.g., `0xCAFEBABE`). Rendered as the prefixed
     /// hex bare (no quoting). Maps to ScriptDom `BinaryLiteral`.
     | BinaryLit of hexPrefixed: string
+    /// Niladic function-call default expression (`getutcdate()`,
+    /// `newid()`, `sysutcdatetime()`) — the DEFAULT constraint's payload
+    /// when the authored default is a call, not a value (DECISIONS
+    /// 2026-07-18; the #669 M-1 finding: lifting the call as a value
+    /// rendered a quoted string that deployed but failed at first
+    /// insert). Produced ONLY by `ofAuthoredDefault` — the data plane's
+    /// `ofRaw` never yields it, because rows carry values. Rendered
+    /// bare; maps to ScriptDom `FunctionCall`.
+    | ExpressionLit of call: string
 
 /// WP-17(e) (DECISIONS 2026-07-16) — one segment of a Text literal whose
 /// raw value carries control characters. V1 escapes CR/LF/TAB into
@@ -197,6 +206,7 @@ module SqlLiteral =
                     System.String.Concat("CHAR(", string code, ")"))  // LINT-ALLOW: terminal SQL CHAR() call formatting at the same boundary; code is one of the typed 13/10/9 set
             |> String.concat " + "  // LINT-ALLOW: terminal SQL concatenation-operator join over the typed segment renderings at the same boundary
         | BinaryLit prefixed -> prefixed
+        | ExpressionLit call -> call
 
     /// Convenience: `ofRaw` then `toString`. The combined surface
     /// matches the legacy `Render.formatSqlLiteral` shape (typed
@@ -204,3 +214,43 @@ module SqlLiteral =
     /// without restructuring their call sites.
     let formatRaw (typ: PrimitiveType) (raw: string option) : string =
         ofRaw typ raw |> toString
+
+    /// True when a trimmed authored default is a niladic function call —
+    /// `name()` with an identifier-shaped name (`getutcdate()`, `newid()`,
+    /// `sysutcdatetime()`). Argument-bearing calls stay out: the authored
+    /// channel (Service Studio) cannot produce them, and treating free
+    /// text with parentheses as SQL would corrupt text defaults.
+    let private isNiladicCall (trimmed: string) : bool =
+        trimmed.Length > 2
+        && trimmed.EndsWith "()"
+        && (System.Char.IsLetter trimmed.[0] || trimmed.[0] = '_')
+        && trimmed.Substring(0, trimmed.Length - 2)
+           |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_' || c = '$')
+
+    /// Classify an AUTHORED default (`ossys_Entity_Attr.Default_Value` /
+    /// the JSON `default` field) into its typed literal (DECISIONS
+    /// 2026-07-18; the #669 M-1 finding). The authored channel carries
+    /// three shapes the value lift (`ofRaw`) cannot discriminate:
+    ///   - a niladic function call (`getutcdate()`) — an EXPRESSION;
+    ///     lifted as a value it rendered `CAST('getutcdate()' …)`, which
+    ///     deployed and then failed at first insert;
+    ///   - a SQL-quoted text form (`''`, `'Draft'`) — the VALUE inside
+    ///     the quotes; lifted verbatim the quotes doubled (`N''''''`);
+    ///   - the bare value forms `ofRaw` already carries faithfully.
+    /// An absent or whitespace-only raw carries nothing — a nullable
+    /// column's implicit NULL is normal SQL behavior, not a configured
+    /// default.
+    let ofAuthoredDefault (typ: PrimitiveType) (raw: string) : SqlLiteral option =
+        let trimmed = raw.Trim()
+        if trimmed = "" then None
+        elif isNiladicCall trimmed then Some (ExpressionLit trimmed)
+        elif typ = Text
+             && trimmed.Length >= 2
+             && trimmed.StartsWith "'" && trimmed.EndsWith "'" then
+            // The SQL-quoted authored form: unwrap the outer quotes and
+            // undo the standard single-quote doubling. `''` is the
+            // authored EMPTY STRING (`DEFAULT N''`), the estate's most
+            // common authored default.
+            let inner = trimmed.Substring(1, trimmed.Length - 2).Replace("''", "'")
+            Some (TextLit inner)
+        else Some (ofRaw typ (Some raw))

@@ -87,25 +87,24 @@ module OssysRowsetReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Authored-default lift: the LOGICAL `Default_Value`
-                  // surface (an authored `False` says the team configured
-                  // a default — `SqlLiteral.ofRaw` projects it against the
-                  // resolved primitive, so BIT `False` emits `DEFAULT 0`).
-                  // No-op defaults are suppressed: an absent or
-                  // empty/whitespace authored value carries nothing (a
-                  // nullable column's implicit NULL is normal SQL
-                  // behavior, not a configured default). This is the
-                  // authored channel only — `#ColumnReality
+                  // Authored-default lift (DECISIONS 2026-07-18; the #669
+                  // M-1 finding): `SqlLiteral.ofAuthoredDefault` classifies
+                  // the LOGICAL `Default_Value` surface — a niladic call
+                  // (`getutcdate()`) becomes the callable expression, a
+                  // SQL-quoted text form (`''`, `'Draft'`) becomes the
+                  // value inside the quotes, and the bare value forms
+                  // project as before (an authored `False` on BIT emits
+                  // `DEFAULT 0`). No-op defaults are suppressed inside the
+                  // classifier: an absent or whitespace-only authored value
+                  // carries nothing (a nullable column's implicit NULL is
+                  // normal SQL behavior, not a configured default). This is
+                  // the authored channel only — `#ColumnReality
                   // .DefaultDefinition` (the reflected constraint
                   // expression) stays un-lifted per matrix row 53's named
-                  // trigger ("expression-shaped defaults flow via
-                  // raw-string pass-through at the realization
-                  // boundary").
+                  // trigger.
                   DefaultValue =
                       row.DefaultValue
-                      |> Option.bind (fun raw ->
-                          if System.String.IsNullOrWhiteSpace raw then None
-                          else Some (SqlLiteral.ofRaw p (Some raw)))
+                      |> Option.bind (SqlLiteral.ofAuthoredDefault p)
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for

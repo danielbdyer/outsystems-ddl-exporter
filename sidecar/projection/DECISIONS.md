@@ -28397,3 +28397,53 @@ creates `DATE`/`TIME` columns; a DBA-modernized column is its own edge case, not
 
 **Named residuals.** None new. The Entity-Identifier blanket-BIGINT attestation and the
 declared-length-beyond-varchar-ceiling edge stand as named in the entry above.
+
+## 2026-07-18 — Authored defaults classified at the lift (the M-1 bomb defused), and the cutover board's nine emission kinds land
+
+**Context.** `CUTOVER_BOARD_POPULATION_PLAN.md` §3/§4 (the #669 audit made executable). The audit's
+highest-value single fix (M-1 / EF-2): the authored-default lift pushed every raw through the VALUE
+projection, so `getutcdate()` on a DateTime attribute rendered `CAST('getutcdate()' AS
+datetime2(7))` — a DEFAULT that deploys and then fails at the first insert that relies on it
+(`Msg 241`) — and the estate's most common authored default, `''`, rendered as the doubled
+`N''''''`. The board, meanwhile, saw six emission failure modes where the audit proved ~15.
+
+**The decision — the classification lift.** `SqlLiteral` grows `ExpressionLit of call: string` —
+the DEFAULT constraint's payload when the authored default is a niladic function call, produced
+ONLY by the new `SqlLiteral.ofAuthoredDefault` (the data plane's `ofRaw` never yields it: rows
+carry values). The classifier discriminates three authored shapes: a niladic call
+(identifier-shaped `name()` — `getutcdate()`, `newid()`; argument-bearing calls and parenthesized
+prose stay out) becomes the callable expression; a SQL-quoted text form (`''`, `'Draft'`,
+`'it''s'`) becomes the value inside the quotes with the standard quote-doubling undone; everything
+else takes the existing value projection. Absent/whitespace raws carry nothing (unchanged). Both
+adapter lifts (rowset + JSON) route through the classifier; the JSON path's WP-3 `""`-on-non-text
+`DEFAULT NULL` rendering is preserved. The codec writes/reads the new kind (`ExpressionLit`);
+ScriptDom renders it as a bare `FunctionCall`.
+
+**The decision — the board vocabulary.** Nine kinds land in `EstateFindingKind` with their full
+contract rows (token, phrase, lane, plane, lever, specimen — the six total matches):
+`EmissionAuthoredDefault`, `EmissionComputedExprIdentifiers`, `EmissionTriggerUnrewritten`,
+`EmissionIndexOptionDropped`, `EmissionDeployedNotNullLoosened`, `EmissionDataLaneOrder`,
+`EmissionTemporalDropped`, `EmissionPersistedDropped`, `EmissionSequenceDropped`. Seven are
+DECIDE-lane rulings (deploy-blocking or intent-dropping emission facts); two are WATCH advisories
+(an index option the emission does not carry; a handled reference cycle). One deviation from the
+plan's §3 table, named: `EmissionComputedExprIdentifiers` and `EmissionDataLaneOrder` were
+sketched REPAIR — but the REPAIR lane's contract is a prepared remediation block, and an emission
+defect has no data-repair block; they land DECIDE and WATCH respectively.
+
+**The decision — the first detector.** `emissionAuthoredDefaultFindings`: an authored default
+whose raw does not parse as a value of its column's type (SQL-shaped invariant TryParse, not
+canonical-format-strict — a legitimate authored `2024-01-01` passes). The classified shapes are
+the negatives: a callable expression and a parseable value carry no finding. The remaining eight
+detectors land with their families (each engine fix defines the residue its detector flags).
+
+**Witness.** `SqlLiteralTests` (the classification corpus: call / quoted-empty / quoted-text /
+suppression / bare values / parenthesized-prose negative), `SsdtDdlEmitterTests` (the rendering
+canary: `getutcdate()` callable, never quoted; `DEFAULT N''`, never doubled),
+`CatalogCodecTests` (`ExpressionLit` in the literal round-trip corpus), `EstateTests` (the
+detector's positive + the two classified negatives), and the `finding ⇔ presentation` walk (nine
+new contract rows under the register laws).
+
+**Named residuals.** The reflected constraint expression (`#ColumnReality.DefaultDefinition`)
+stays un-lifted per matrix row 53's named trigger — the authored channel is the fix's scope.
+`BinaryLit` raw hex is not shape-validated at detection (garbage hex fails at deploy; rare,
+named). Boolean garbage refuses loudly at the lift (NM-20), so the detector never sees it.
