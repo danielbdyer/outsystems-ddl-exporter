@@ -28753,3 +28753,30 @@ M16 gate green over the grown corpus; Bucket A rises to 17 axioms + 4 theorems.
 instrument reads it live through the CdcMeasure weight table); a per-edge ‖repair(e)‖
 decomposition property over generated multi-edge components is admissible follow-on if the
 count form ever proves too coarse.
+
+## 2026-07-18 — The condensation carrier: levels stop serializing the acyclic majority under PartialTopological
+
+**Context.** One unresolved cycle anywhere degraded the leveled parallel deploy to singleton
+groups ESTATE-WIDE (the P2 pin). The quotient DAG was implicit in the v6 re-run; nothing
+carried it as a value, so nothing could license what it proves.
+
+**The decision.** `Condensation` — a private-constructor carrier built from a pass-produced
+`TopologicalOrder`: nodes are the cycle components plus singletons, edges the cross-component
+projections of `Edges` (well-defined because the resolver only breaks intra-component edges),
+and the smart ctor KAHN-CHECKS the induced graph — a value of the type IS a DAG, the
+ArtifactByKind type-theorem move. `levels` under `PartialTopological` walks the condensation:
+a level's singleton components form one `ParallelSafe` group; a multi-member component
+contributes its members as consecutive singletons in `Order` relative order — serialization
+is exactly as wide as the cycle. The REFUSED half of the design is recorded: `orderOf` does
+NOT factor through the carrier (v6's re-run Kahn interleaves outsiders between an unresolved
+component's members, so node-atomic extension is not byte-compatible; the honest law is
+CONTAINMENT — the emitted Order is A linear extension of the quotient). The carrier lives or
+dies with its consumers (levels, the certificate narration, the T18/A46 witnesses).
+
+**Witness.** `DataEmissionComposerTests` — P2′ (the cycle serializes only its own members;
+the acyclic majority keeps a concurrent level; the singleton degrade retired); the
+linear-extension containment law over all three mode fixtures; mint safety (no minted group
+carries both ends of an FK edge) under every mode; the leveled ≡ fused partition law holds
+unchanged over the new grouping.
+
+**Named residuals.** None — the levels upgrade was the carrier's landing consumer.

@@ -248,6 +248,118 @@ module ParallelSafe =
 
     let isEmpty (ParallelSafe xs) : bool = List.isEmpty xs
 
+/// The quotient of the FK graph by its cycle components — ACYCLIC BY
+/// CONSTRUCTION (v7 slice 7; DECISIONS 2026-07-18). Nodes are each
+/// `Cycles` member-set plus a singleton per remaining ordered kind;
+/// edges are the cross-component projections of `t.Edges`. The private
+/// constructor Kahn-checks the induced graph and REFUSES residue, so a
+/// value of this type IS a DAG — the type theorem (the ArtifactByKind
+/// move). Well-defined off a pass-produced order because the resolver
+/// only ever breaks INTRA-component edges: every cross-component edge
+/// survives into `Edges`. The emitted `Order` is a LINEAR EXTENSION of
+/// this quotient (property-pinned; the containment form — v6's re-run
+/// Kahn may interleave outsiders between an unresolved component's
+/// members, so node-atomic equality is deliberately NOT claimed).
+type Condensation = private {
+    CNodes : SsKey list list
+    CEdges : (SsKey * SsKey) list
+}
+
+[<RequireQualifiedAccess>]
+module Condensation =
+
+    /// Build the quotient from a pass-produced order. `Error` names the
+    /// impossible state (a cyclic quotient — the resolver broke only
+    /// intra-component edges, so cross-component cycles cannot exist off
+    /// a live pass output; a hand-built order CAN produce one, and the
+    /// refusal is the named guard).
+    let ofOrder (t: TopologicalOrder) : Result<Condensation, string> =
+        let components =
+            t.Cycles |> List.map (fun c -> CycleDiagnostic.members c |> List.sort)
+        let inComponent =
+            components
+            |> List.indexed
+            |> List.collect (fun (i, ms) -> ms |> List.map (fun m -> m, i))
+            |> Map.ofList
+        let singletons =
+            t.Order
+            |> List.filter (fun k -> not (Map.containsKey k inComponent))
+            |> List.map (fun k -> [ k ])
+        let nodes = (components @ singletons) |> List.sortBy List.head
+        // A component head represents its node; the projection keys every
+        // member to the head.
+        let headOf =
+            nodes
+            |> List.collect (fun ms -> ms |> List.map (fun m -> m, List.head ms))
+            |> Map.ofList
+        let edges =
+            t.Edges
+            |> List.choose (fun (s, tgt) ->
+                match Map.tryFind s headOf, Map.tryFind tgt headOf with
+                | Some hs, Some ht when hs <> ht -> Some (hs, ht)
+                | _ -> None)
+            |> List.distinct
+            |> List.sort
+        // The smart ctor's law: the quotient is acyclic (Kahn over the
+        // head-keyed edges; residue refuses).
+        let heads = nodes |> List.map List.head
+        let mutable indegree = heads |> List.map (fun h -> h, 0) |> Map.ofList
+        for (_, ht) in edges do
+            indegree <- Map.add ht (Map.find ht indegree + 1) indegree
+        let mutable ready = heads |> List.filter (fun h -> Map.find h indegree = 0) |> List.sort
+        let mutable seen = 0
+        let childrenOf =
+            edges |> List.groupBy fst |> List.map (fun (h, es) -> h, es |> List.map snd) |> Map.ofList
+        while not (List.isEmpty ready) do
+            let h = List.head ready
+            ready <- List.tail ready
+            seen <- seen + 1
+            for child in (Map.tryFind h childrenOf |> Option.defaultValue []) do
+                let d = Map.find child indegree - 1
+                indegree <- Map.add child d indegree
+                if d = 0 then ready <- List.sort (child :: ready)
+        if seen <> List.length heads then
+            Error "the condensation is cyclic — a cross-component cycle survived quotienting; please report"
+        else
+            Ok { CNodes = nodes; CEdges = edges }
+
+    let nodes (c: Condensation) : SsKey list list = c.CNodes
+    let edges (c: Condensation) : (SsKey * SsKey) list = c.CEdges
+
+    /// Kahn-level assignment over the quotient DAG — level k+1 may
+    /// depend on level k; within a level, nodes are independent.
+    let levels (c: Condensation) : SsKey list list list =
+        let headOf (ms: SsKey list) = List.head ms
+        let parentsOf =
+            c.CEdges
+            |> List.groupBy fst
+            |> List.map (fun (child, es) -> child, es |> List.map snd)
+            |> Map.ofList
+        let nodeByHead = c.CNodes |> List.map (fun ms -> headOf ms, ms) |> Map.ofList
+        // Longest-path level: 1 + max parent level (0 for roots), computed
+        // over the DAG in a topological pass (iterate until fixpoint over
+        // the acyclic edges — bounded by node count).
+        let mutable levelMap : Map<SsKey, int> = c.CNodes |> List.map (fun ms -> headOf ms, 0) |> Map.ofList
+        let mutable changed = true
+        while changed do
+            changed <- false
+            for (child, _) in (parentsOf |> Map.toList) do
+                let parents = Map.find child parentsOf
+                let want =
+                    parents
+                    |> List.map (fun p -> Map.tryFind p levelMap |> Option.defaultValue 0)
+                    |> List.fold max -1
+                    |> (+) 1
+                if Map.find child levelMap < want then
+                    levelMap <- Map.add child want levelMap
+                    changed <- true
+        levelMap
+        |> Map.toList
+        |> List.groupBy snd
+        |> List.sortBy fst
+        |> List.map (fun (_, pairs) ->
+            pairs |> List.map (fun (h, _) -> Map.find h nodeByHead) |> List.sortBy List.head)
+
 [<RequireQualifiedAccess>]
 module TopologicalOrder =
 
@@ -445,14 +557,43 @@ module TopologicalOrder =
     /// exactly.
     let levels (t: TopologicalOrder) : ParallelSafe<SsKey> list =
         match t.Mode with
-        | PartialTopological
         | Alphabetical
         | JunctionDeferred ->
             // The mint refuses to license parallelism it cannot prove:
-            // under PartialTopological an unresolved cycle's members are
-            // NOT dependency-ordered among themselves, so the honest
+            // these modes carry no dependency proof at all, so the honest
             // degenerate stays singleton groups in `t.Order` order.
             t.Order |> List.map (fun k -> ParallelSafe [ k ])
+        | PartialTopological ->
+            // v7 slice 7 (DECISIONS 2026-07-18) — the condensation retires
+            // the estate-wide singleton degrade: the quotient DAG is
+            // proven, so cross-component parallelism stays licensed. Per
+            // condensation level: the level's SINGLETON components form
+            // one concurrent-safe group; each multi-member component
+            // contributes its members as CONSECUTIVE SINGLETON groups in
+            // `t.Order` relative order (their internal precedence is
+            // unproven — serialization is exactly as wide as the cycle).
+            match Condensation.ofOrder t with
+            | Error _ ->
+                // The defensive arm: an impossible quotient degrades to
+                // the pre-v7 honest singletons.
+                t.Order |> List.map (fun k -> ParallelSafe [ k ])
+            | Ok condensation ->
+                let orderIndex = t.Order |> List.mapi (fun i k -> k, i) |> Map.ofList
+                Condensation.levels condensation
+                |> List.collect (fun levelNodes ->
+                    let singles =
+                        levelNodes
+                        |> List.filter (fun ms -> List.length ms = 1)
+                        |> List.map List.head
+                        |> List.sort
+                    let multis =
+                        levelNodes
+                        |> List.filter (fun ms -> List.length ms > 1)
+                        |> List.sortBy List.head
+                    [ if not (List.isEmpty singles) then yield ParallelSafe singles
+                      for ms in multis do
+                        for m in ms |> List.sortBy (fun k -> Map.tryFind k orderIndex |> Option.defaultValue 0) do
+                            yield ParallelSafe [ m ] ])
         | Topological ->
             let parentsOf =
                 t.Edges
