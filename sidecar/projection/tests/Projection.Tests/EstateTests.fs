@@ -171,6 +171,34 @@ let ``emission: a column the model emits nullable but a deployed environment enf
     Assert.Empty(Estate.deployedNotNullFindings (target false false) [ "cloud-uat", profileWith false ])
 
 [<Fact>]
+let ``sentinel census: a DateTime column pinned at the SQL datetime floor (1753-01-01) reads as an empty-date sentinel (D8, widened)`` () =
+    // The census covers the OutSystems 1900-01-01 stand-in AND the SQL Server
+    // datetime floor 1753-01-01 — a column pinned at its type's minimum reads
+    // as satisfied-but-empty the same way. WATCH, witnessed by categorical
+    // evidence.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let idKey = attrKey ["Log"; "Id"]
+    let dateKey = attrKey ["Log"; "ClosedOn"]
+    let logKind =
+        Kind.create (kindKey ["Log"]) (nm "Log") (TableId.create "dbo" "OSUSR_X_LOG" |> Result.value)
+            [ { Attribute.create idKey (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create dateKey (nm "ClosedOn") DateTime with
+                  Column = ColumnRealization.create "CLOSED_ON" false |> Result.value } ]
+    let cat = mkCatalog [ mkModule (kindKey ["M"]) (nm "M") [ logKind ] ]
+    let categorical =
+        AttributeDistribution.Categorical
+            (CategoricalDistribution.create dateKey [ "1753-01-01 00:00:00", 800L; "2024-06-01", 200L ] 2L false (ProbeStatus.observed 1000L)
+             |> Result.value)
+    let env : Compare.Operand = { Label = "cloud-uat"; Catalog = cat; Profile = Some { Profile.empty with Distributions = [ categorical ] } }
+    let report = Estate.compute agreed cat [ "cloud-uat", env ]
+    let sentinel = report.Findings |> List.tryFind (fun f -> f.Kind = EstateFindingKind.DataDateSentinel)
+    Assert.True(sentinel.IsSome, "the 1753-01-01 floor should register as a date sentinel")
+    Assert.Contains("1753-01-01", sentinel.Value.Statement)
+    Assert.Contains("800", sentinel.Value.Statement)
+
+[<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
     let a = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
     let b = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"

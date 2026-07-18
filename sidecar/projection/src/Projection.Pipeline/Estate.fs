@@ -743,9 +743,15 @@ module Estate =
                                       Signature = None }
                             else None))))
 
-    /// D8 (wave A4): the platform's empty-date convention — a date column's
-    /// categorical evidence carrying 1900-01-01 values reads as satisfied
-    /// NOT NULL, empty of meaning. Witnessed or silent, never guessed.
+    /// D8 (wave A4): a date column's empty-of-meaning sentinels — a value that
+    /// satisfies a NOT-NULL reading but carries no real date. The census
+    /// covers the OutSystems platform's stand-in `1900-01-01` AND the SQL
+    /// Server `datetime` floor `1753-01-01` (a column pinned at its type's
+    /// minimum reads the same way). Witnessed by categorical evidence, or
+    /// silent — never guessed. The `9999-12-31` "far future" is deliberately
+    /// NOT a sentinel here: it usually carries real intent ("never expires").
+    let private dateSentinels : string list = [ "1900-01-01"; "1753-01-01" ]
+
     let private dateSentinelContributions
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
@@ -759,11 +765,20 @@ module Estate =
                 |> List.choose (fun (env, p) ->
                     Profile.tryFindCategorical a.SsKey p
                     |> Option.bind (fun c ->
-                        let sentinelCount =
-                            c.Frequencies
-                            |> List.filter (fun (value, _) -> value.StartsWith "1900-01-01")
-                            |> List.sumBy snd
+                        // Sum every row sitting on a sentinel, and name the
+                        // sentinel that carries the most (the one the operator
+                        // sees first) so the statement stays concrete.
+                        let hits =
+                            dateSentinels
+                            |> List.choose (fun s ->
+                                let n =
+                                    c.Frequencies
+                                    |> List.filter (fun (value, _) -> value.StartsWith s)
+                                    |> List.sumBy snd
+                                if n > 0L then Some (s, n) else None)
+                        let sentinelCount = hits |> List.sumBy snd
                         if sentinelCount > 0L then
+                            let leadSentinel = hits |> List.maxBy snd |> fst
                             let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
                             Some
                                 { Kind = EstateFindingKind.DataDateSentinel
@@ -771,8 +786,8 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s holds %s row(s) set to 1900-01-01 in %s — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
-                                        subject (humane64 sentinelCount) env
+                                    sprintf "%s holds %s row(s) set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
+                                        subject (humane64 sentinelCount) leadSentinel env
                                   Weight = sentinelCount
                                   Signature = None }
                         else None))))
