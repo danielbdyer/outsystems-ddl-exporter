@@ -27,6 +27,18 @@ type FingerprintReading =
         /// setting) costs a spurious re-profile, never a stale reuse —
         /// movement detection degrades only in the safe direction.
         MaxPk    : string option
+        /// `CHECKSUM_AGG(BINARY_CHECKSUM(<columns>))` over the kind's
+        /// checksummable columns — the content-movement signal that closes the
+        /// `(RowCount, MaxPk)` UPDATE-blindness (survival rule 14): an in-place
+        /// UPDATE that changes a value but neither the row count nor the max PK
+        /// still moves this term, so cached evidence is not reused over stale
+        /// reality. `None` for a kind with no checksummable column (only an XML
+        /// column, which `BINARY_CHECKSUM` rejects) — the term is dropped
+        /// per-kind rather than failing the whole batch, so movement detection
+        /// degrades only in the safe direction (that kind falls back to the
+        /// row/PK signal). A checksum collision costs a stale reuse in the
+        /// vanishingly-rare case; `--refresh` remains the override.
+        Content  : string option
     }
 
 [<RequireQualifiedAccess>]
@@ -52,7 +64,24 @@ module EvidenceFingerprint =
                 | [ pk ] ->
                     String.Concat("CAST(MAX(", encode (ColumnRealization.columnNameText pk.Column), ") AS NVARCHAR(128))")
                 | _ -> "CAST(NULL AS NVARCHAR(128))"
-            String.Concat("SELECT ", string idx, " AS [i], COUNT_BIG(*) AS [c], ", maxExpr, " AS [m] FROM ", table)
+            // The content-movement term: an order-independent aggregate of the
+            // per-row binary checksums over every checksummable column. XML
+            // columns are excluded (`BINARY_CHECKSUM` rejects them, and a
+            // rejected column would fail the whole batch); a kind left with no
+            // checksummable column emits NULL and degrades to the row/PK signal.
+            let checksumCols =
+                kind.Attributes
+                |> List.choose (fun a ->
+                    match a.SqlStorage with
+                    | Some SqlStorageType.Xml -> None
+                    | _ -> Some (encode (ColumnRealization.columnNameText a.Column)))
+            let contentExpr =
+                match checksumCols with
+                | [] -> "CAST(NULL AS NVARCHAR(32))"
+                | cols ->
+                    String.Concat(
+                        "CAST(CHECKSUM_AGG(BINARY_CHECKSUM(", String.Join(", ", cols), ")) AS NVARCHAR(32))")
+            String.Concat("SELECT ", string idx, " AS [i], COUNT_BIG(*) AS [c], ", maxExpr, " AS [m], ", contentExpr, " AS [h] FROM ", table)
         kinds |> List.mapi selectFor |> String.concat " UNION ALL "
 
     /// Probe every kind's row count + `MAX(pk)` in ONE round-trip (Bench
@@ -70,7 +99,7 @@ module EvidenceFingerprint =
                     cmd.CommandText <- probeSql kinds
                     cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                     use! reader = cmd.ExecuteReaderAsync()
-                    let readings = System.Collections.Generic.Dictionary<int, int64 * string option>()
+                    let readings = System.Collections.Generic.Dictionary<int, int64 * string option * string option>()
                     let mutable advanced = true
                     while advanced do
                         let! more = reader.ReadAsync()
@@ -79,16 +108,17 @@ module EvidenceFingerprint =
                             let idx = reader.GetInt32 0
                             let count = if reader.IsDBNull 1 then 0L else reader.GetInt64 1
                             let maxPk = if reader.IsDBNull 2 then None else Some (reader.GetString 2)
-                            readings.[idx] <- (count, maxPk)
+                            let content = if reader.IsDBNull 3 then None else Some (reader.GetString 3)
+                            readings.[idx] <- (count, maxPk, content)
                     return
                         kinds
                         |> List.mapi (fun idx kind ->
                             match readings.TryGetValue idx with
-                            | true, (count, maxPk) -> { Kind = kind.SsKey; RowCount = count; MaxPk = maxPk }
+                            | true, (count, maxPk, content) -> { Kind = kind.SsKey; RowCount = count; MaxPk = maxPk; Content = content }
                             // Unreachable by construction (an aggregate SELECT
                             // always yields its row); kept total in the safe
                             // direction — an absent row reads as movement.
-                            | false, _ -> { Kind = kind.SsKey; RowCount = 0L; MaxPk = None })
+                            | false, _ -> { Kind = kind.SsKey; RowCount = 0L; MaxPk = None; Content = None })
                         |> Result.success
                 with ex ->
                     return

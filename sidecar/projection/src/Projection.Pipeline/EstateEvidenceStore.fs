@@ -18,12 +18,15 @@ open Projection.Targets.Json
 
 /// One kind's staleness fingerprint — the cheap re-derivable shape that gates
 /// evidence reuse (the `CaptureJournal.fingerprintOf` precedent, per-kind).
-/// **Named honesty caveat (the DECISIONS entry, restated at the consumer):**
-/// `(RowCount, MaxPk)` is blind to in-place UPDATEs — the fingerprint gates
-/// the DEFAULT; `--refresh` is the override; evidence age rides every
-/// decision line. `SchemaShapeHash` catches what row counts cannot: a
-/// type/nullability change invalidates a kind's data evidence at identical
-/// row count.
+/// The `(RowCount, MaxPk)` pair catches inserts and deletes; `ContentHash`
+/// (an aggregate row checksum) closes the in-place-UPDATE blindness that was
+/// survival rule 14 — an UPDATE that changes a value but neither the row
+/// count nor the max PK still moves the content hash, so cached evidence is
+/// not reused over stale reality. `SchemaShapeHash` catches what neither can:
+/// a type/nullability change at identical rows and content. The residual
+/// caveats (a kind with only an XML column carries no content hash and falls
+/// back to row/PK; a checksum collision is vanishingly rare) keep `--refresh`
+/// the override, and evidence age still rides every decision line.
 type KindFingerprint =
     {
         Kind            : SsKey
@@ -31,6 +34,13 @@ type KindFingerprint =
         RowCount        : int64
         /// `MAX(pk)`'s canonical string at capture; `None` for a PK-less kind.
         MaxPk           : string option
+        /// `CHECKSUM_AGG(BINARY_CHECKSUM(...))` at capture — the content-movement
+        /// signal (survival rule 14's mitigation). `None` for a kind with no
+        /// checksummable column. An older sidecar (pre-content-hash) parses this
+        /// as `None`; a live probe returns `Some`, so the record inequality
+        /// reads as movement and re-profiles — backward-compatible in the safe
+        /// direction.
+        ContentHash     : string option
         /// SHA256 over the kind's logical shape at capture (an opaque token —
         /// the probe computes it; the store only compares).
         SchemaShapeHash : string
@@ -131,6 +141,9 @@ module EstateEvidenceStore =
             (match fp.MaxPk with
              | Some pk -> o.["maxPk"] <- JsonValue.Create pk
              | None -> ())
+            (match fp.ContentHash with
+             | Some h -> o.["contentHash"] <- JsonValue.Create h
+             | None -> ())
             o.["schemaShapeHash"] <- JsonValue.Create fp.SchemaShapeHash
             kinds.Add o
         root.["kinds"] <- kinds
@@ -180,6 +193,7 @@ module EstateEvidenceStore =
                     { Kind = kind
                       RowCount = rowCount
                       MaxPk = tryStr o "maxPk"
+                      ContentHash = tryStr o "contentHash"
                       SchemaShapeHash = hash }
             | _ -> None
 
@@ -295,6 +309,7 @@ module EstateEvidenceStore =
             { Kind = r.Kind
               RowCount = r.RowCount
               MaxPk = r.MaxPk
+              ContentHash = r.Content
               SchemaShapeHash = Map.tryFind r.Kind hashByKind |> Option.defaultValue "" })
 
     /// The live staleness probe for one environment: resolve the conn-ref

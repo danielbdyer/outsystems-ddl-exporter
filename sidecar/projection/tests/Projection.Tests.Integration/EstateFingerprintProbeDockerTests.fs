@@ -72,6 +72,43 @@ module EstateFingerprintProbeDockerTests =
             })
 
     [<Fact>]
+    let ``fingerprint probe: an in-place UPDATE moves the content hash while the row count and MAX(pk) hold (survival rule 14)`` () =
+        // The blindness the content term closes: a row changed but not
+        // added/removed keeps COUNT_BIG and MAX(pk) identical. The
+        // CHECKSUM_AGG(BINARY_CHECKSUM(...)) term moves, so the store re-profiles.
+        let label = "EstateFpProbeUpdate"
+        if not (skipIfNoDocker label) then () else
+        TaskSync.run (fun () ->
+            task {
+                let seed =
+                    "CREATE TABLE [dbo].[FP_UPD] ([ID] INT NOT NULL PRIMARY KEY, [NAME] NVARCHAR(50) NULL); \
+                     INSERT INTO [dbo].[FP_UPD] ([ID],[NAME]) VALUES (1, N'one'), (2, N'two');"
+                let k = probeKind "Upd" "FP_UPD" [ "Id", "ID", Integer, true; "Name", "NAME", Text, false ]
+                let! outcome =
+                    Deploy.withBootstrappedDatabase label seed (fun cnn ->
+                        task {
+                            let! before = EvidenceFingerprint.probe cnn [ k ]
+                            use upd = cnn.CreateCommand()
+                            // Same row count, same MAX(pk) — only a value changes
+                            // (a case flip, which BINARY_CHECKSUM sees).
+                            upd.CommandText <- "UPDATE [dbo].[FP_UPD] SET [NAME] = N'ONE' WHERE [ID] = 1;"
+                            let! _ = upd.ExecuteNonQueryAsync()
+                            let! after = EvidenceFingerprint.probe cnn [ k ]
+                            return (before, after)
+                        })
+                let before, after = outcome
+                match before, after with
+                | Ok bs, Ok afs ->
+                    let b = List.head bs
+                    let a = List.head afs
+                    Assert.Equal(b.RowCount, a.RowCount)
+                    Assert.Equal(b.MaxPk, a.MaxPk)
+                    Assert.True(a.Content.IsSome, "the content hash is present for a checksummable table")
+                    Assert.NotEqual<string option>(b.Content, a.Content)
+                | _ -> Assert.True(false, sprintf "a probe failed: before=%A after=%A" before after)
+            })
+
+    [<Fact>]
     let ``fingerprint probe: an empty kind list answers without a round-trip`` () =
         let label = "EstateFpProbeEmpty"
         if not (skipIfNoDocker label) then () else

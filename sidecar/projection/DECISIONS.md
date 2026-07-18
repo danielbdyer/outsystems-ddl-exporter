@@ -29433,3 +29433,30 @@ catalog and assert the refusal; the golden emission corpus is unaffected (it car
 unparseable default or unresolvable computed expression). The engine fixes that make these
 cases emittable (M-1 default classification, M-8 computed-expression rewrite) retire the
 refusals; until then the publish fails loud instead of shipping a DDL that deploys and breaks.
+
+---
+
+## 2026-07-18 — The estate fingerprint carries a content hash: in-place UPDATE blindness closed (survival rule 14)
+
+**Context.** The estate evidence store gated cache reuse on a per-kind `(RowCount, MaxPk)`
+fingerprint plus the pure `SchemaShapeHash`. Survival rule 14 named the residual blindness: an
+in-place UPDATE that changes a value but neither the row count nor the max PK kept the
+fingerprint clean, so stale cached evidence was reused over changed reality. The caveat was
+default-gated (`--refresh`) and stated on the masthead, but it was a real correctness gap — a
+board could read a phantom-clean off an updated environment.
+
+**Decision.** The probe now carries a content term: `CHECKSUM_AGG(BINARY_CHECKSUM(<columns>))`
+over every checksummable column, added as `FingerprintReading.Content` /
+`KindFingerprint.ContentHash`. `staleKinds` already compares fingerprints by structural
+equality, so the field participates in staleness with no further wiring — an UPDATE moves the
+content hash, the record inequality reads as movement, and the kind re-profiles. XML columns
+are excluded from the checksum (`BINARY_CHECKSUM` rejects them, and a rejected column would
+fail the whole batch); a kind left with no checksummable column emits NULL and degrades to the
+row/PK signal — movement detection degrades only in the safe direction. The sidecar codec (and
+the shared `FidelityProofCache` codec) serialize `contentHash`; an older sidecar without it
+parses as `None`, so a live probe's `Some` reads as movement and re-profiles —
+backward-compatible in the safe direction. Residual caveats (XML-only kinds; a
+vanishingly-rare checksum collision) keep `--refresh` the override. A pure test holds the
+staleness + round-trip wiring; a Docker probe test holds the end-to-end fact (an UPDATE at
+identical row count and MAX(pk) moves the content hash). Survival rule 14 and its masthead
+basis are updated in the same change.

@@ -36,7 +36,7 @@ let private colEvidence (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : 
       NullCountProbeStatus = ProbeStatus.observed rowCount }
 
 let private fp (kind: SsKey) (rows: int64) (maxPk: string option) (hash: string) : KindFingerprint =
-    { Kind = kind; RowCount = rows; MaxPk = maxPk; SchemaShapeHash = hash }
+    { Kind = kind; RowCount = rows; MaxPk = maxPk; ContentHash = None; SchemaShapeHash = hash }
 
 let private withTempStore (f: string -> unit) : unit =
     let root = Path.Combine(Path.GetTempPath(), "estate-store-" + Guid.NewGuid().ToString "N")
@@ -82,6 +82,23 @@ let ``evidence store: a second save replaces the first — refresh replaces, nev
         | Some evidence ->
             Assert.Equal<Profile>(second, evidence.Profile)
             Assert.Equal<KindFingerprint list>([ fp customerKey 9000L (Some "2") "h2" ], evidence.Fingerprints))
+
+[<Fact>]
+let ``staleKinds + codec: a content-hash change flags the kind even when rows and max PK hold (survival rule 14 closed) and round-trips`` () =
+    // The in-place-UPDATE case: same COUNT_BIG, same MAX(pk), same schema
+    // shape — only the aggregate row checksum moved. The content hash makes it
+    // movement, so cached evidence is not reused over the update.
+    let cached = [ { fp customerKey 4200L (Some "9931") "shape-v1" with ContentHash = Some "AAAA" } ]
+    let live   = [ { fp customerKey 4200L (Some "9931") "shape-v1" with ContentHash = Some "BBBB" } ]
+    Assert.Equal<SsKey list>([ customerKey ], EstateEvidenceStore.staleKinds cached live)
+    // Identical content hashes read as clean — no spurious re-profile.
+    Assert.Empty(EstateEvidenceStore.staleKinds cached cached)
+    // The content hash survives the sidecar round-trip.
+    withTempStore (fun root ->
+        mustSave root "cloud-uat" Profile.empty cached
+        match EstateEvidenceStore.load root "cloud-uat" with
+        | Some ev -> Assert.Equal<KindFingerprint list>(cached, ev.Fingerprints)
+        | None -> failwith "the content-hash sidecar loaded as absent")
 
 // -- fail-closed ---------------------------------------------------------------
 
