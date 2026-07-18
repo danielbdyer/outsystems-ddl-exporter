@@ -36,6 +36,34 @@ module Compose =
     // module abbreviations are file-local, so nothing is re-exported.
     module DataComposer = Projection.Targets.Data.DataEmissionComposer
 
+    /// v7 slice 4 (DECISIONS 2026-07-18) — THE one weighted decision site
+    /// per flow. The stored (chain) topo is schema-minimal by the A18/A34
+    /// profile-invariance of the prefix; when the profile carries COLUMN
+    /// row evidence, the render plane (Π consumes Catalog × Profile)
+    /// recomputes the order with the EVIDENCE-WEIGHTED family member —
+    /// the break choice minimizes the repair norm (`repairCostOf`). An
+    /// empty-evidence profile returns the stored topo unchanged (the
+    /// conservative-extension law: weighted at zero evidence ≡
+    /// schema-minimal), so every pre-evidence flow is byte-identical.
+    /// Weights enter ONLY here; the chain, the drain plane, the
+    /// composer's internal hoists, and `TransferScope` stay
+    /// `SchemaMinimal` (the drain by physical necessity — sound because
+    /// SCC membership and refusal are resolver-invariant).
+    let private renderTopologyFor
+        (profile: Profile)
+        (catalog: Catalog)
+        (stored: TopologicalOrder option)
+        : TopologicalOrder =
+        if List.isEmpty profile.Columns then
+            match stored with
+            | Some t -> t
+            | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+        else
+            let cost = CycleResolution.repairCostOf catalog profile
+            (Projection.Core.Passes.TopologicalOrderPass.runWithConfig
+                { OrderingConfig.defaultConfig with Resolution = EvidenceWeighted cost }
+                catalog).Value
+
     /// Per-emitter output captured into memory before being written to
     /// disk. Tests assert against these values without round-tripping
     /// through the file system.
@@ -827,16 +855,15 @@ module Compose =
                 // migration kinds (`hydrateBootstrapRowsExcluding`), so the
                 // composer's `OverlappingEmitterCoverage` partition law holds.
                 // The chain's `TopologicalOrderPass` already ran Kahn/Tarjan
-                // over this exact catalog and stored the order — thread it
-                // instead of letting the composer re-derive it. A filtered
-                // chain without the pass falls back to the composer's own
-                // computation.
+                // over this exact catalog and stored the order. v7 slice 4:
+                // this is the flow's ONE render-topo binding — with row
+                // evidence present, the break choice upgrades to the
+                // EVIDENCE-WEIGHTED family member (repair-norm-minimal); the
+                // weighted topo threads to the composer via `...Using`, so
+                // every break-choice consumer downstream reads one value.
                 let composed =
-                    match finalState.TopologicalOrder with
-                    | Some topo ->
-                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
-                    | None ->
-                        DataComposer.composeRenderedBundleWithBootstrapLane fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
+                    let topo = renderTopologyFor profile finalState.Catalog finalState.TopologicalOrder
+                    DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                 match composed with
                 | Ok bundle ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
@@ -2589,10 +2616,13 @@ module Compose =
                     // over this exact catalog — thread its order; a filtered
                     // chain without the pass recomputes (mirrors the bundle
                     // decoration's fallback).
+                    // v7 slice 4 — this flow's one render-topo binding. The
+                    // seed-plan preview carries no row evidence
+                    // (`Profile.empty` below), so the conservative
+                    // extension returns the stored schema-minimal order —
+                    // named: the preview's break choice is schema-only.
                     let topo =
-                        match acquired.FinalState.TopologicalOrder with
-                        | Some t -> t
-                        | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle renderCatalog).Value
+                        renderTopologyFor Profile.empty renderCatalog acquired.FinalState.TopologicalOrder
                     match
                         DataComposer.composeRenderedLeveledWithBootstrapLaneUsing
                             topo policy renderCatalog Profile.empty
@@ -2608,6 +2638,7 @@ module Compose =
                         invalidOp (sprintf "Compose.projectSeedPlanUsing: DataEmissionComposer.composeRenderedLeveled: %A" err)
 
     /// Standalone compute-then-delegate entry (the `hydrateCatalogUsing`
+
     /// pattern): ONE model read + hydration from cfg, the profile-invariant
     /// prefix state (no artifact fold — S52's carrier), then
     /// `projectSeedPlanUsing`. The combined verb threads the publish's

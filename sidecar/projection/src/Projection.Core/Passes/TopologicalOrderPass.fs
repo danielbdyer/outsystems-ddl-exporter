@@ -618,13 +618,24 @@ module TopologicalOrderPass =
                               resolution.UnresolvedDiagnostics.Length
                       ] }
 
-    let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
+    let private lineageOfWith (resolver: CycleResolution.Resolver) (graph: Graph) : Lineage<TopologicalOrder> =
         let events = graph.Nodes |> List.map touchedEvent
-        // v7: the default resolver is the exact minimal weak feedback set
-        // at zero cost (schema-only). Slice 4 threads the caller-chosen
-        // resolver (evidence-weighted at the render binding) through the
-        // OrderingConfig axis; every entry below inherits this default.
-        Lineage.ofValueAndEvents events (orderOf CycleResolution.defaultStrategy graph)
+        Lineage.ofValueAndEvents events (orderOf resolver graph)
+
+    // v7: the default resolver is the exact minimal weak feedback set at
+    // zero cost (schema-only). The OrderingConfig `Resolution` axis
+    // threads a caller-chosen resolver (evidence-weighted at the render
+    // binding); every legacy entry inherits this default.
+    let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
+        lineageOfWith CycleResolution.defaultStrategy graph
+
+    /// The resolver a `ResolutionPolicy` selects — `SchemaMinimal` is the
+    /// zero-cost exact family member; `EvidenceWeighted` the same solver
+    /// at the supplied cost (v7 slice 4).
+    let private resolverOf (policy: ResolutionPolicy) : CycleResolution.Resolver =
+        match policy with
+        | SchemaMinimal -> CycleResolution.defaultStrategy
+        | EvidenceWeighted cost -> CycleResolution.minimalFeedbackStrategy cost
 
     let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
         lineageOf (buildGraphWithin selfLoops None c)
@@ -705,7 +716,8 @@ module TopologicalOrderPass =
     /// to `runWithConfig { SelfLoops = selfLoops; JunctionDeferral =
     /// EmitInTopologicalOrder }`.
     let runWithConfig (config: OrderingConfig) (c: Catalog) : Lineage<TopologicalOrder> =
-        let base_ = runWith config.SelfLoops c
+        let base_ =
+            lineageOfWith (resolverOf config.Resolution) (buildGraphWithin config.SelfLoops None c)
         match config.JunctionDeferral with
         | EmitInTopologicalOrder -> base_
         | DeferJunctionKinds ->

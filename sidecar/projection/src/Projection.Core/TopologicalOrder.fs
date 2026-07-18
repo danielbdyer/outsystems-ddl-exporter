@@ -81,25 +81,41 @@ type JunctionDeferralPolicy =
     | DeferJunctionKinds
 
 
+/// HOW the resolver chooses which weak edges to break (v7 slice 4;
+/// DECISIONS 2026-07-18). `SchemaMinimal` — the exact minimal feedback
+/// set at zero cost (minimum cardinality, lexicographic ties;
+/// byte-identical default). `EvidenceWeighted` — the SAME solver at a
+/// caller-supplied cost function (`CycleResolution.repairCostOf` at the
+/// render binding: the Phase-2 repair's row count, T15's norm).
+/// Refusal is resolver-invariant across the family (the A46 lemma) —
+/// only the break CHOICE varies, so pre-profile planes (the chain
+/// prefix, the drain) stay `SchemaMinimal` soundly.
+type ResolutionPolicy =
+    | SchemaMinimal
+    | EvidenceWeighted of CycleResolution.EdgeCost
+
 /// Combined ordering configuration for the topological-order pass.
-/// Bundles the two orthogonal ordering axes — self-loop handling and
-/// junction deferral — so callers that need to configure one axis
-/// don't have to change the call site for the other
-/// (harmonization-via-parameterization per A40). The default config
-/// reproduces pre-H-040 behaviour.
+/// Bundles the three orthogonal ordering axes — self-loop handling,
+/// junction deferral, and break-choice resolution — so callers that
+/// need to configure one axis don't have to change the call site for
+/// the others (harmonization-via-parameterization per A40). The
+/// default config reproduces pre-H-040 behaviour.
 type OrderingConfig = {
     SelfLoops        : SelfLoopPolicy
     JunctionDeferral : JunctionDeferralPolicy
+    Resolution       : ResolutionPolicy
 }
 
 [<RequireQualifiedAccess>]
 module OrderingConfig =
 
-    /// Default ordering configuration: treat self-edges as cycles and
-    /// emit junction kinds at their topological position.
+    /// Default ordering configuration: treat self-edges as cycles,
+    /// emit junction kinds at their topological position, and choose
+    /// breaks schema-minimally.
     let defaultConfig : OrderingConfig =
         { SelfLoops        = TreatAsCycle
-          JunctionDeferral = EmitInTopologicalOrder }
+          JunctionDeferral = EmitInTopologicalOrder
+          Resolution       = SchemaMinimal }
 
 
 /// Per-SCC outcome of cycle resolution — a CLOSED DU (v7; DECISIONS

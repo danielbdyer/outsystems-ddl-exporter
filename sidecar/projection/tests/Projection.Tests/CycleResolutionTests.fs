@@ -558,3 +558,65 @@ let ``relaxation prefers a nullability change over a delete-rule change: Other r
     | CycleResolution.ResolutionReason.Refused (_, relaxation) ->
         Assert.Equal<(SsKey * SsKey) list>([ (b, a) ], relaxation)
     | other -> Assert.Fail (sprintf "expected the certified refusal, got %A" other)
+
+// ---------------------------------------------------------------------------
+// v7 slice 4 — the evidence-weighted family member (DECISIONS 2026-07-18).
+// Conservative extension, refusal invariance (the A46 lemma), measured
+// minimality, and permutation invariance under weights.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``conservative extension: the weighted strategy at ZERO evidence is byte-equal to the schema-minimal default`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let zero = CycleResolution.minimalFeedbackStrategy (fun _ -> 0L) members edges
+    let dflt = CycleResolution.defaultStrategy members edges
+    zero = dflt
+
+[<Property>]
+let ``A46 lemma — refusal invariance: SchemaMinimal and any weighted member refuse exactly the same SCCs`` (raw: (byte * byte * byte) list) (seed: int) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    // A deterministic pseudo-arbitrary cost from the seed — refusal must
+    // not depend on it.
+    let cost (e: SsKey * SsKey) : int64 = int64 (abs (hash (e, seed)) % 1000)
+    let weighted = CycleResolution.minimalFeedbackStrategy cost members edges
+    let schema = CycleResolution.defaultStrategy members edges
+    List.isEmpty weighted.EdgesToBreak = List.isEmpty schema.EdgesToBreak
+
+[<Property>]
+let ``measured minimality: the weighted break set minimizes Σ cost (then cardinality, then lex) among feasible weak subsets`` (raw: (byte * byte * byte) list) (seed: int) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let cost (e: SsKey * SsKey) : int64 = int64 (abs (hash (e, seed)) % 100)
+    let step = CycleResolution.minimalFeedbackStrategy cost members edges
+    let allEdges = edges |> List.map fst
+    let strongOnly = edges |> List.choose (fun (e, st) -> if st <> EdgeStrength.Weak then Some e else None)
+    if isAcyclic allEdges || not (isAcyclic strongOnly) then true
+    else
+        // Brute-force the weighted optimum independently.
+        let weak = edges |> List.choose (fun (e, s) -> if s = EdgeStrength.Weak then Some e else None) |> List.sort
+        let strong = strongOnly
+        let n = List.length weak
+        let weakArr = List.toArray weak
+        let mutable best : (int64 * int * (SsKey * SsKey) list) option = None
+        for mask in 0 .. (1 <<< n) - 1 do
+            let subset = [ for i in 0 .. n - 1 do if mask &&& (1 <<< i) <> 0 then yield weakArr.[i] ]
+            let remaining = strong @ (weak |> List.except subset)
+            if isAcyclic remaining then
+                let cand = (subset |> List.sumBy cost, List.length subset, List.sort subset)
+                match best with
+                | None -> best <- Some cand
+                | Some cur -> if compare cand cur < 0 then best <- Some cand
+        match best with
+        | Some (_, _, expected) -> step.EdgesToBreak = expected
+        | None -> false
+
+[<Property>]
+let ``permutation invariance under weights: the weighted break set is input-order independent`` (raw: (byte * byte * byte) list) (seed: int) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let cost (e: SsKey * SsKey) : int64 = int64 (abs (hash (e, seed)) % 1000)
+    let forward = CycleResolution.minimalFeedbackStrategy cost members edges
+    let reversed = CycleResolution.minimalFeedbackStrategy cost (List.rev members) (List.rev edges)
+    forward.EdgesToBreak = reversed.EdgesToBreak

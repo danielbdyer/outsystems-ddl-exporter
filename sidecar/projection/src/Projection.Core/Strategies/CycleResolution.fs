@@ -509,3 +509,26 @@ module CycleResolution =
     /// the chain prefix schema-only).
     let defaultStrategy : Resolver =
         minimalFeedbackStrategy (fun _ -> 0L)
+
+    /// The repair-norm cost of breaking FK edge (s, t) — ‖repair(e)‖:
+    /// the Phase-2 UPDATE's row count, which is its CDC capture count
+    /// (T15's norm read at the break-choice site). Per reference of
+    /// kind s targeting t: `max 0 (RowCount − NullCount)` of the source
+    /// column's profile evidence — the rows whose deferred value is
+    /// non-NULL and must be re-pointed. Absent evidence contributes 0,
+    /// so an EMPTY profile makes this the zero cost function and the
+    /// weighted strategy degenerates to `defaultStrategy` — the
+    /// conservative-extension law, property-tested.
+    let repairCostOf (catalog: Catalog) (profile: Profile) : EdgeCost =
+        let kindIndex = Catalog.kindIndex catalog
+        fun (s, t) ->
+            match Map.tryFind s kindIndex with
+            | None -> 0L
+            | Some k ->
+                k.References
+                |> List.sumBy (fun r ->
+                    if r.TargetKind = t then
+                        match Profile.tryFindColumn r.SourceAttribute profile with
+                        | Some cp -> max 0L (cp.RowCount - cp.NullCount)
+                        | None -> 0L
+                    else 0L)

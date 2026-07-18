@@ -28664,3 +28664,34 @@ pin (the bridge never defers; each component's own nullable edge does).
 
 **Named residuals.** Resolved-scope deferral still spans the whole component; the exact
 repair set (broken-edge columns only) is the arc's slice 5.
+
+## 2026-07-18 — The resolver is a pass parameter; the render binding weighs breaks by the repair norm
+
+**Context.** The 2026-05-08/09 seam decision deferred resolver dispatch "until the second
+strategy actually arrives." It arrived (slice 1). And the break choice had no evidence axis:
+schema-minimal picks the smallest feasible set, but two feasible sets of equal size can differ
+by orders of magnitude in Phase-2 repair rows.
+
+**The decision.** `OrderingConfig` gains `Resolution : ResolutionPolicy = SchemaMinimal |
+EvidenceWeighted of EdgeCost` (default `SchemaMinimal`, byte-identical).
+`CycleResolution.repairCostOf catalog profile` prices breaking edge (s,t) at the Phase-2
+repair's row count — `max 0 (RowCount − NullCount)` per source column, T15's norm read at the
+break-choice site; absent evidence is 0, so an empty profile degenerates the weighted member to
+the schema-minimal default (the conservative-extension law). Weights enter at ONE site per
+flow — `Pipeline.renderTopologyFor` (the publish flow's bundle binding; the seed-plan preview
+binds with `Profile.empty` and is NAMED schema-only) — and the weighted topo threads to every
+break-choice consumer via the existing `...Using` seam: one resolution value, no second source
+of truth. The chain prefix (A18/A34, pinned), the drain plane (pre-evidence by necessity), the
+composer's internal hoists, and `TransferScope` stay `SchemaMinimal` — sound because SCC
+membership and refusal are resolver-invariant across the family (the A46 lemma, property-
+tested). Registry: `cycleResolution` gains the `weightedResolution` site (DataIntent —
+evidence-derived, no operator opinion); the deferred manual-override row's future shape
+sharpens to a composing `Overlaid of pins * ResolutionPolicy`.
+
+**Witness.** `CycleResolutionTests` — conservative extension (zero evidence ≡ default,
+byte-equal); refusal invariance under arbitrary costs; measured minimality (the weighted set IS
+the brute-force optimum of (Σ cost, cardinality, lex)); permutation invariance under weights.
+
+**Named residuals.** The weighted choice changes emitted bytes only on evidence-bearing cyclic
+publishes (multi-weak resolved components); the exact repair set (slice 5) makes the norm the
+choice minimizes equal the norm the emission spends.
