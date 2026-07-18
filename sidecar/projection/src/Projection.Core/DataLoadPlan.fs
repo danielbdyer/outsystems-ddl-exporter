@@ -113,7 +113,7 @@ module DataLoadPlan =
 
     let private loadForCore
         (policy: IdentityPolicy)
-        (cycleMembers: Set<SsKey>)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remapTargets: Set<SsKey>)
         (remap: SurrogateRemapContext)
         (k: Kind)
@@ -123,7 +123,7 @@ module DataLoadPlan =
         let load =
             { Kind              = k.SsKey
               Disposition       = IdentityDisposition.byPolicy policy k
-              DeferredFkColumns = TopologicalOrder.deferredFkColumns cycleMembers k
+              DeferredFkColumns = TopologicalOrder.deferredFkColumns deferralScopes k
               Rows              = remapped.Rows }
         load, (remapped.Skipped |> List.map (fun u -> k.SsKey, u))
 
@@ -134,26 +134,26 @@ module DataLoadPlan =
     /// depends on another kind's rows — order, cycle membership, and the
     /// remap are all fixed before acquisition). Equivalence with the batch
     /// build is BY CONSTRUCTION: `buildWith` folds the same core this
-    /// function wraps. `cycleMembers` is `TopologicalOrder.cycleMembers
+    /// function wraps. `deferralScopes` is `TopologicalOrder.deferralScopes
     /// topo`, hoisted by the caller (once per plan, not once per kind).
     let loadForWith
         (policy: IdentityPolicy)
-        (cycleMembers: Set<SsKey>)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remap: SurrogateRemapContext)
         (k: Kind)
         (raw: StaticRow list)
         : DataLoadKind * (SsKey * UnresolvedReference) list =
-        loadForCore policy cycleMembers (remapTargetsOf remap) remap k raw
+        loadForCore policy deferralScopes (remapTargetsOf remap) remap k raw
 
     /// The structural-policy per-kind build — `loadForWith` under
     /// `IdentityPolicy.Structural`, mirroring the `build`/`buildWith` pair.
     let loadFor
-        (cycleMembers: Set<SsKey>)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remap: SurrogateRemapContext)
         (k: Kind)
         (raw: StaticRow list)
         : DataLoadKind * (SsKey * UnresolvedReference) list =
-        loadForWith IdentityPolicy.Structural cycleMembers remap k raw
+        loadForWith IdentityPolicy.Structural deferralScopes remap k raw
 
     let buildWith
         (policy: IdentityPolicy)
@@ -162,7 +162,7 @@ module DataLoadPlan =
         (rawRowsByKind: Map<SsKey, StaticRow list>)
         (remap: SurrogateRemapContext)
         : DataLoadPlan =
-        let members = TopologicalOrder.cycleMembers topo
+        let scopes = TopologicalOrder.deferralScopes topo
         let remapTargets = remapTargetsOf remap
 
         let loadAndSkipped =
@@ -171,7 +171,7 @@ module DataLoadPlan =
                 Catalog.tryFindKind key catalog
                 |> Option.map (fun k ->
                     let raw = Map.tryFind key rawRowsByKind |> Option.defaultValue []
-                    loadForCore policy members remapTargets remap k raw))
+                    loadForCore policy scopes remapTargets remap k raw))
 
         let loads   = loadAndSkipped |> List.map fst
         let skipped = loadAndSkipped |> List.collect snd
@@ -183,22 +183,30 @@ module DataLoadPlan =
         // handles. `members` (all cycle participants) still drives the
         // DEFERRAL above — a resolved SCC's broken weak edges genuinely
         // defer to phase 2.
-        let unresolvedMembers = TopologicalOrder.unresolvedCycleMembers topo
+        // v7 slice 3 — the unsatisfiability judges PER COMPONENT: a
+        // non-nullable FK is unbreakable only when source and target sit
+        // in the SAME unresolved component. The prior flat-union check
+        // flagged an FK between two DISTINCT unresolved cycles — a false
+        // refusal the re-run order satisfies (the condensation orders
+        // the two components).
+        let unresolvedScopes = TopologicalOrder.unresolvedCycleScopes topo
         let unbreakable =
             topo.Order
             |> List.collect (fun key ->
                 match Catalog.tryFindKind key catalog with
                 | None -> []
-                | Some k when not (Set.contains key unresolvedMembers) -> []
                 | Some k ->
-                    k.References
-                    |> List.choose (fun r ->
-                        if Set.contains r.TargetKind unresolvedMembers then
-                            Kind.tryFindAttribute r.SourceAttribute k
-                            |> Option.bind (fun a ->
-                                if a.Column.IsNullable then None
-                                else Some { Kind = key; Column = a.Name; Target = r.TargetKind })
-                        else None))
+                    let owningScopes = unresolvedScopes |> List.filter (Set.contains key)
+                    if List.isEmpty owningScopes then []
+                    else
+                        k.References
+                        |> List.choose (fun r ->
+                            if owningScopes |> List.exists (Set.contains r.TargetKind) then
+                                Kind.tryFindAttribute r.SourceAttribute k
+                                |> Option.bind (fun a ->
+                                    if a.Column.IsNullable then None
+                                    else Some { Kind = key; Column = a.Name; Target = r.TargetKind })
+                            else None))
 
         // The dropped rows, recovered by identifier difference per kind
         // (2026-07-08): `remapRowFksWith` is order-preserving and drops a
@@ -287,9 +295,9 @@ module DataLoadPlan =
               TransformSite.dataIntent "dispositionClassification"
                 "Classify each kind's `IdentityDisposition` via `IdentityDisposition.ofKind` (PreservedFromSource for business PKs; AssignedBySink for IDENTITY PKs). Pure over Catalog evidence."
               TransformSite.dataIntent "deferredFkSelection"
-                "Select cycle-deferred FK columns per kind via `TopologicalOrder.deferredFkColumns` (in-cycle + same-cycle target + nullable). Structural cycle-break."
+                "Select cycle-deferred FK columns per kind via `TopologicalOrder.deferredFkColumns` (same-COMPONENT target; a resolved component defers its broken edges only, an unresolved one every nullable intra-component edge — v7 slices 3+5). Structural cycle-break."
               TransformSite.dataIntent "unbreakableCycleDiagnostics"
-                "Surface non-nullable same-cycle FKs as `UnbreakableCycleFk` so realizations refuse to execute an unsatisfiable plan. Structural; total decisions, named skips."
+                "Surface non-nullable same-COMPONENT FKs (unresolved components only — v7 slice 3) as `UnbreakableCycleFk` so realizations refuse to execute an unsatisfiable plan. Structural; total decisions, named skips."
               TransformSite.operatorIntent "identitySubstitution" Insertion
                 "Apply the operator-supplied `SurrogateRemapContext` to FK values in raw rows, producing post-substitution rows in target identity space. Every FK column whose target is in the remap is re-pointed (Source surrogate → assigned-side surrogate); rows whose targeted FK has no matched assigned counterpart are dropped (skip-and-diagnose). This is the canonical OperatorIntent Insertion site for the entire data-load family — realizations (StaticSeedsEmitter, MigrationDependenciesEmitter, BootstrapEmitter, Transfer.runReconciling) consume the post-substitution plan and classify entirely DataIntent. Empty remap → identity over rows (skeleton-purity preserved)." ]
           Status = Active }

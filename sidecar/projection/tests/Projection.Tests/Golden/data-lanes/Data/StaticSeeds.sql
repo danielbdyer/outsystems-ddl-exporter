@@ -15,9 +15,10 @@ WHEN NOT MATCHED THEN INSERT ([ID], [NAME], [PARTNER_ID]) VALUES ([Source].[ID],
 GO
 MERGE INTO [dbo].[GOLD_REGION_B]
  AS [Target]
-USING (VALUES (1, N'South', NULL)) AS [Source]([ID], [NAME], [PARTNER_ID]) ON [Target].[ID] = [Source].[ID]
+USING (VALUES (1, N'South', 1)) AS [Source]([ID], [NAME], [PARTNER_ID]) ON [Target].[ID] = [Source].[ID]
 WHEN MATCHED THEN UPDATE 
-    SET [Target].[NAME] = [Source].[NAME]
+    SET [Target].[NAME]       = [Source].[NAME],
+        [Target].[PARTNER_ID] = [Source].[PARTNER_ID]
 WHEN NOT MATCHED THEN INSERT ([ID], [NAME], [PARTNER_ID]) VALUES ([Source].[ID], [Source].[NAME], [Source].[PARTNER_ID]);
 GO
 MERGE INTO [dbo].[GOLD_SCOPED_LOOKUP]
@@ -45,10 +46,6 @@ WHEN NOT MATCHED THEN INSERT ([ID], [NAME]) VALUES ([Source].[ID], [Source].[NAM
 SET IDENTITY_INSERT [dbo].[GOLD_TIER] OFF;
 GO
 UPDATE  [dbo].[GOLD_REGION_A]
-    SET [PARTNER_ID] = 1
-WHERE   [ID] = 1;
-GO
-UPDATE  [dbo].[GOLD_REGION_B]
     SET [PARTNER_ID] = 1
 WHERE   [ID] = 1;
 GO

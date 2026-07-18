@@ -181,7 +181,7 @@ let ``Product carries a CHECK constraint on Price`` () =
 // --- SqlStorageType vocabulary coverage -----------------------------
 
 [<Fact>]
-let ``StockItem covers Integer / LongInteger / GUID / DateTimeOffset / Time / Float storage`` () =
+let ``StockItem covers Integer / LongInteger / GUID / DateTimeOffset / Float storage; a time-only attribute stores as DATETIME`` () =
     withCatalog "comp-types-stockitem" (fun catalog ->
         let s = kindNamed "StockItem" catalog
         Assert.Equal(Some SqlStorageType.Int, (attrNamed "ReorderLevel" s).SqlStorage)
@@ -191,17 +191,17 @@ let ``StockItem covers Integer / LongInteger / GUID / DateTimeOffset / Time / Fl
         match (attrNamed "LastSyncedAt" s).SqlStorage with
         | Some (SqlStorageType.DateTimeOffset _) -> ()
         | other -> Assert.Fail (sprintf "expected DateTimeOffset storage, got %A" other)
-        match (attrNamed "OpenTime" s).SqlStorage with
-        | Some (SqlStorageType.Time _) -> ()
-        | other -> Assert.Fail (sprintf "expected Time storage, got %A" other))
+        // Time-only stores as DATETIME — the platform mapping (DECISIONS 2026-07-18).
+        Assert.Equal(Some SqlStorageType.DateTime, (attrNamed "OpenTime" s).SqlStorage))
 
 [<Fact>]
-let ``Product covers Decimal / Currency / Date / VARBINARY(MAX) / NVARCHAR(MAX) storage`` () =
+let ``Product covers Decimal / Currency / VARBINARY(MAX) / NVARCHAR(MAX) storage; a date-only attribute stores as DATETIME`` () =
     withCatalog "comp-types-product" (fun catalog ->
         let p = kindNamed "Product" catalog
         Assert.Equal(Some (SqlStorageType.Decimal (18, 2)), (attrNamed "Price" p).SqlStorage)
         Assert.Equal(Some (SqlStorageType.Decimal (37, 8)), (attrNamed "Cost" p).SqlStorage)
-        Assert.Equal(Some SqlStorageType.Date, (attrNamed "LaunchDate" p).SqlStorage)
+        // Date-only stores as DATETIME — the platform mapping (DECISIONS 2026-07-18).
+        Assert.Equal(Some SqlStorageType.DateTime, (attrNamed "LaunchDate" p).SqlStorage)
         Assert.Equal(Some (SqlStorageType.VarBinary Max), (attrNamed "Photo" p).SqlStorage)
         Assert.Equal(Some (SqlStorageType.NVarChar Max), (attrNamed "Notes" p).SqlStorage))
 

@@ -202,7 +202,8 @@ table before continuing.
 |---|---|---|---|
 | **The `delete-scope` write-signoff EMISSION gate** | 2026-07-08 (the write-signoff greenlight) | The first flow that ships an `emission.deleteScope` arm (`WHEN NOT MATCHED BY SOURCE … DELETE`) intended for a live publish. `delete-scope` is enumerated in the `WriteSignoff.WriteMode` vocabulary, but its enforcement seam is the emission composer, a DIFFERENT config plane (the shaping/emission config, not `flows.<flow>.signoff`). | **Cashed out 2026-07-09** — a new top-level **`emission.signoff` array** (reusing `WriteSignoff.WriteApproval` + `verify`) greenlights the emission plane's destructive modes; `buildPolicyFromConfig` refuses `emission.deleteScope.ungreenlit` when a `deleteScope` arm is present without the `delete-scope` greenlight. `WriteSignoff.fs` moved ahead of `Config.fs` in the compile order (dependency-free) so the shaping config shares the vocabulary. Presence-gated (the arm is a WHERE predicate, not a table set). See `DECISIONS 2026-07-09 — The transfer-guarantees program`. |
 | **Per-run `--csv <dir>` override on a live flow** | 2026-07-10 (the csv-destination program) | An operator asks to snapshot an EXISTING live flow's data to files for one run without authoring a csv environment — i.e. the flag form of what `"access": "csv"` expresses durably. Cash-out shape: parse `--csv <dir>` in the flow arm of `Command.parse`, rewrite the resolved spec's `Destination` to `Csv dir` before `planMovement` (routing and the runner need nothing new — the destination arm already dispatches before direction). | deferred (2026-07-10) |
-| **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07) |
+| **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07; **shape sharpened 2026-07-18, v7 slice 4**: a third `ResolutionPolicy` case `Overlaid of pins * ResolutionPolicy` composing over any base — the config axis now exists, so the cash-out is one DU case + the overlay source) |
+| **`EmissionDataLaneOrder` Ruling-lever upgrade (Watch → Decide)** | 2026-07-18 (v7 slice 8 — the certificate on the three surfaces) | An operator asks to RULE the cycle from the board (accept-and-relax vs repair) rather than read the advisory. Upgrading moves the lane to DECIDE and re-reds every estate carrying a hard cycle whether or not anyone transfers those kinds — do not fire without that ask (the WATCH ⇔ no-lever law, `EstateFinding.leverFormOf`). | deferred (2026-07-18) |
 | **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
 | **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
 | **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
@@ -210,7 +211,7 @@ table before continuing.
 | **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25). **Note (2026-05-15):** the sibling *transform-registry* deferral (`DECISIONS 2026-05-06 → cashed out 2026-05-13`) re-opened under different consumer pressure as `Projection.Core.TransformRegistry` for skeleton/overlay separation (L3-CC-Transform-Totality; workstream A.4.7). That re-opening is **enumerative** (compile-time `Pass` totality), not **name-keyed lookup**, so it does NOT fire the strategy-registry-mechanism trigger here. The strategy-registry-mechanism deferral remains open under its original framing; the transform-registry shape and the strategy-registry shape are now structurally distinct. See `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality`. |
 | **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
-| **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | No second resolver; reason field still free-form string (session 25) |
+| **`CycleResolution.ResolutionStep.Reason` migration to structured DU** | 2026-05-11 (Strategy layer: a named architectural vector — caveat) | A second resolver strategy lands per the 2026-05-08 pluggability deferral | **Cashed out 2026-07-18 (v7 slice 2)** — `minimalFeedbackStrategy` was the second strategy; `ResolutionReason` DU (`AutoResolved \| Refused of certificate * relaxation \| NoCycleFound \| Disabled`) + the `CycleDiagnostic` closed DU landed with the unforgeable `StrongCycleCertificate`. Display through one projection (`describe` / `reasonText`); resolver-as-parameter cashed the same arc (v7 slice 4, `OrderingConfig.Resolution`). |
 | **Cross-catalog FK detection IR refinement** (`Catalog : string option` on `Reference` and `ForeignKeyKeepReason.CrossCatalogBlocked` made reachable) | 2026-05-13 (Closed-DU expansion: empirical confirmation) | A fixture exercising cross-catalog FKs surfaces the gap | **Partially landed (ledger-reconciled 2026-06-25).** The typed-catalog IR half DID land at chapter A.0' slice θ — `TableId.Catalog : string option` (`Coordinates.fs:226`; `createWithCatalog` / `fromTypedWithCatalog`) carries the V1 `db_catalog` field. The reachability half remains held: `ForeignKeyKeepReason.CrossCatalogBlocked` is still the reserved-but-unreachable variant (do not delete). Only the cross-catalog FK *detection* that would fire it is deferred. |
 | **Cross-module FK IR refinement** | 2026-05-19 (rule 16's same-module assumption — session 19 reference-bearing slice) | A fixture exercising cross-module FK surfaces a gap **at the emit layer that topological ordering cannot satisfy** (refined trigger condition; see status). | **Trigger fired and partially satisfied (chapter 4.1.A close arc, 2026-05-10).** Chapter 4.1.A's enterprise canary fixture exercises cross-module FKs (PRODUCT.CATEGORYID, ORDER.CUSTOMERID, ORDERLINE.PRODUCTID, audit FKs to IDM.USER). The fixture deploys clean: `SsdtDdlEmitter.statements` uses `TopologicalOrderPass.runWith SkipSelfEdges` so FK targets emit before referencers regardless of module membership. **The IR refinement (adding cross-module distinction at the `Reference` type) remains deferred** pending a use case where topological ordering at the emit layer is insufficient — e.g., a DacpacEmitter `SqlSchemaModel` cross-database reference that needs schema-disambiguation metadata, or an OssysOriginal catalog spanning multiple V1 SS instances. Cross-module FK same-module assumption (rule 16) at the OSSYS adapter rowset path also remains the operational shape (chapter 3.2 same-module fixtures all round-trip); the gap is at the IR, not the adapter (session 41 reframe; first noted at `CHAPTER_4_1_A_CLOSE.md:80-85`). |
 | **Faker emitter (synthetic-data Π)** | 2026-05-13 (Session 11 reflection) | Either a third evidence type lands, or a use case forces proceeding with two evidence types and accepting the limitations | **TRIGGER STRUCTURALLY MET — chapter B.3 close (2026-05-19).** Three new evidence types shipped at slice B.3.8 (`ForeignKeyCardinality`, `ForeignKeySelectivity`, `JointDistribution`) plus slice B.3.5's `StatisticalMoments` lifts the Numeric variant from "percentiles + range" to "percentiles + range + Mean + StdDev + CV." All four `ADMIRE.md`-named gating evidence chain nodes ship (categorical / numeric / joint FK / cardinality). **Cashed out — built (ledger-reconciled 2026-06-25).** The synthetic-data Π shipped: the σ engine (`Projection.Core/SyntheticData.fs` + `SyntheticCorrection.fs`; orchestrated by `Projection.Pipeline/SyntheticLoadRun.fs`) and the coordinate-addressed tunable Faker (`Projection.Pipeline/FakerRealization.fs` — Bogus-backed, seeded-deterministic, referentially consistent; mask/overrides/wide catalog) landed via commits `c1e56c14` (σ) and `fa15126a`/`a853f030` (F2/F-Faker). The "awaiting explicit promotion / bring to principal-PO" instruction is overtaken by events — the emitter exists on `main`. See `CHAPTER_B_3_CLOSE.md` "Substantive contributions §3" + `THE_SYNTHETIC_DATA_FUZZING.md`. |
@@ -28311,6 +28312,501 @@ fast paths fall back to the fixed generic arm for the exotic field types). `Smal
 carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
 DECISIONS 2026-07-16 — WP-17(a–c,f).
 
+## 2026-07-18 — Email/phone revert to ANSI VARCHAR: the OutSystems 11 platform mapping is the fact; WP-4's premise is refuted (and text lengths are preserved verbatim to 4000)
+
+**Context.** The all-OutSystems-sourced SSDT norm sweep (2026-07-17/18) re-opened WP-4 (2026-07-16,
+register C3). The operator ruled the platform's own published mapping authoritative over every
+internal surface ("authoritative online research trumps all") and supplied the live page; the docs
+source repo was read independently. Both witnesses agree, row for row — the **OutSystems 11
+Database Data Types** reference (`success.outsystems.com/documentation/11/reference/
+outsystems_language/data/database_reference/database_data_types/`; source
+`OutSystems/docs-product` `src/ref/data/database/database-data-types.md`), SQL Server column:
+
+- Text → `nvarchar(<length>)` if length ≤ 2000, `nvarchar(max)` otherwise
+- **Email → `varchar(250)`** · **Phone Number → `varchar(20)`**
+- Integer → `int` (+`IDENTITY` under auto number) · Long Integer → `bigint` (+`IDENTITY`)
+- Decimal → `decimal(Length, Decimals)` · Currency → `decimal(37,8)` · Boolean → `bit`
+- Date Time → `datetime` · Date → `datetime` · Time → `datetime` · Binary Data → `image`
+- Entity Identifier → depends on the Identifier's type
+
+**The premise audit.** WP-4's evidence chain does not survive re-reading. (a) `ossys_User.EMAIL`
+being on-disk `nvarchar(250)` is TRUE but IRRELEVANT: `ossys_*` tables are platform *system-table*
+DDL, hand-shipped by OutSystems — not output of the attribute mapping that governs entity columns.
+(b) The handbook row cited ("Email, Phone Number → NVARCHAR(n)") was our own document, downstream
+of the same packet — circular. (c) `notes/note14.md`'s "VARCHAR for user text" anti-pattern is
+generic SQL guidance, which OutSystems scalar intent supersedes (operator decision, Q14,
+2026-07-17). The ANSI islands WP-4 closed are the platform's own deliberate islands: an
+otherwise-NVARCHAR schema in which Email/Phone are ASCII-typed by the vendor.
+
+**The decision.** `email → VarChar (boundedOr (Bounded 250))`, `phone`/`phonenumber →
+VarChar (boundedOr (Bounded 20))` — the WP-4 arms reverted; the default widths and the
+declared-length-wins rule unchanged; `PrimitiveType` stays `Text` (data plane untouched; `N'…'`
+literals implicit-convert into varchar). Simultaneously, **`textLength` now preserves a declared
+length verbatim** — operator ruling ("preserve source intent if it's ever set, period, always"):
+`Bounded n` for 1 ≤ n ≤ 4000 (the NVARCHAR bounded physical ceiling), `Max` above it, `Max` for
+absent/zero. Two platform deltas are deliberate and named: the platform collapses >2000 to
+`nvarchar(max)` — we keep the model's 2001–4000 verbatim (source intent outranks the platform's
+storage collapse); and the old code's `>= 2000 → Max` off-by-one (the platform keeps 2000 bounded)
+is fixed as a side effect. `boundedOr` is untouched (no newly reachable widths).
+
+**Witness.** `OssysTypeMappingTests` — the reverted pins (`email → VarChar (Bounded 250)`,
+declared-length override, `phone`/`phonenumber → VarChar (Bounded 20)`) and the new `textLength`
+boundary theory (2000/4000 → `Bounded`; 4001/5000 → `Max`; 100 → `Bounded`; None/0 → `Max`).
+`SqlStorageEmissionTests` — the OSSYS-adapter arm re-pinned to `VarChar`.
+
+**Golden note.** No golden change expected (the corpus is catalog-direct and never exercised the
+`email`/`phone` arms — WP-4's own golden note); the edge-case seed carries no >2000 declared text
+length. Verified by the pure-pool run.
+
+**Named residuals.** (1) **Date/Time storage**: platform emits `datetime` for Date AND Time; V2
+maps `date → DATE`, `time → TIME(7)` — a real divergence now NAMED, decision deferred to the
+operator (semantic typing vs platform-storage faithfulness; WP-4b on-disk precedence is the
+systemic remedy either way). (2) **Binary Data**: platform emits deprecated `image`; V2 maps
+`binarydata → VARBINARY(MAX)` — same class, same deferral; deployed `image` columns round-trip via
+the `Image` storage case. (3) **Entity Identifier**: platform says "depends on the Identifier's
+type"; V2's blanket `BIGINT` stands on the operator's estate attestation (2026-07-17, "the bigint
+identity is also correct") — an estate probe (any `int`-typed identity columns) remains the cheap
+falsifier. (4) A declared email/phone length beyond varchar's bounded ceiling would render invalid
+SQL — operator-invalid model, unreachable today, named not guarded.
+
+## 2026-07-18 — Date-only and time-only attributes store as DATETIME (the platform mapping); Binary Data keeps VARBINARY(MAX)
+
+**Context.** The same-day platform-mapping entry above named two deferred divergences: the
+OutSystems 11 reference maps Date → `datetime`, Time → `datetime`, and Binary Data → `image`,
+where V2 mapped `date → DATE`, `time → TIME(7)`, `binarydata → VARBINARY(MAX)`. The operator ruled
+same-day: **platform-faithful `datetime` for the date/time singles; `VARBINARY(MAX)` stands for
+binary** (deployed `image` columns round-trip via the `Image` storage case and the deployed-
+reflection lane). A third ruling closes the ServiceCenter User residual: the surgical User entity
+carries **no hand-set storage** — its attributes arrive from the extraction exactly as the platform
+presents them (the deployed-reflection channel supplies the physical types).
+
+**The decision.** `tryParse "date"` and `tryParse "time"` → `(DateTime, SqlStorageType.DateTime)`.
+The semantic category collapses with the storage because the two-field law holds (the storage an
+adapter sets always projects back to the semantic type it sets; a `(Date, DATETIME)` pair would be
+the codebase's sole violator). The `Date` / `Time` primitive and storage cases REMAIN — they are
+the deployed-reflection lane's carriers for true `DATE` / `TIME(n)` columns (DBA-authored), which
+under WP-4b's cross-category rule keep the logical value and name the divergence. Consequences:
+a date attribute deployed as `datetime` — the whole real estate — is now a silent same-category
+agreement; the cross-category example pair in the WP-4b witnesses flips to rtDate-deployed-as-DATE.
+The edge-case seed's `LAUNCHDATE` / `OPENTIME` physicals align to `DATETIME` (the platform never
+creates `DATE`/`TIME` columns; a DBA-modernized column is its own edge case, not the base estate).
+
+**Witness.** `OssysTypeMappingTests` (the date/time → DATETIME pin), `ColumnRealityDivergenceTests`
+(rtDate + deployed `datetime` silent; rtDate + deployed `date` named, logical wins),
+`ColumnRealitySourceSidePopulationTests` (cross-category no-reclassification, re-pointed),
+`OssysComprehensiveFixtureTests` (LaunchDate / OpenTime pins → DATETIME).
+
+**Named residuals.** None new. The Entity-Identifier blanket-BIGINT attestation and the
+declared-length-beyond-varchar-ceiling edge stand as named in the entry above.
+
+## 2026-07-18 — Authored defaults classified at the lift (the M-1 bomb defused), and the cutover board's nine emission kinds land
+
+**Context.** `CUTOVER_BOARD_POPULATION_PLAN.md` §3/§4 (the #669 audit made executable). The audit's
+highest-value single fix (M-1 / EF-2): the authored-default lift pushed every raw through the VALUE
+projection, so `getutcdate()` on a DateTime attribute rendered `CAST('getutcdate()' AS
+datetime2(7))` — a DEFAULT that deploys and then fails at the first insert that relies on it
+(`Msg 241`) — and the estate's most common authored default, `''`, rendered as the doubled
+`N''''''`. The board, meanwhile, saw six emission failure modes where the audit proved ~15.
+
+**The decision — the classification lift.** `SqlLiteral` grows `ExpressionLit of call: string` —
+the DEFAULT constraint's payload when the authored default is a niladic function call, produced
+ONLY by the new `SqlLiteral.ofAuthoredDefault` (the data plane's `ofRaw` never yields it: rows
+carry values). The classifier discriminates three authored shapes: a niladic call
+(identifier-shaped `name()` — `getutcdate()`, `newid()`; argument-bearing calls and parenthesized
+prose stay out) becomes the callable expression; a SQL-quoted text form (`''`, `'Draft'`,
+`'it''s'`) becomes the value inside the quotes with the standard quote-doubling undone; everything
+else takes the existing value projection. Absent/whitespace raws carry nothing (unchanged). Both
+adapter lifts (rowset + JSON) route through the classifier; the JSON path's WP-3 `""`-on-non-text
+`DEFAULT NULL` rendering is preserved. The codec writes/reads the new kind (`ExpressionLit`);
+ScriptDom renders it as a bare `FunctionCall`.
+
+**The decision — the board vocabulary.** Nine kinds land in `EstateFindingKind` with their full
+contract rows (token, phrase, lane, plane, lever, specimen — the six total matches):
+`EmissionAuthoredDefault`, `EmissionComputedExprIdentifiers`, `EmissionTriggerUnrewritten`,
+`EmissionIndexOptionDropped`, `EmissionDeployedNotNullLoosened`, `EmissionDataLaneOrder`,
+`EmissionTemporalDropped`, `EmissionPersistedDropped`, `EmissionSequenceDropped`. Seven are
+DECIDE-lane rulings (deploy-blocking or intent-dropping emission facts); two are WATCH advisories
+(an index option the emission does not carry; a handled reference cycle). One deviation from the
+plan's §3 table, named: `EmissionComputedExprIdentifiers` and `EmissionDataLaneOrder` were
+sketched REPAIR — but the REPAIR lane's contract is a prepared remediation block, and an emission
+defect has no data-repair block; they land DECIDE and WATCH respectively.
+
+**The decision — the first detector.** `emissionAuthoredDefaultFindings`: an authored default
+whose raw does not parse as a value of its column's type (SQL-shaped invariant TryParse, not
+canonical-format-strict — a legitimate authored `2024-01-01` passes). The classified shapes are
+the negatives: a callable expression and a parseable value carry no finding. The remaining eight
+detectors land with their families (each engine fix defines the residue its detector flags).
+
+**Witness.** `SqlLiteralTests` (the classification corpus: call / quoted-empty / quoted-text /
+suppression / bare values / parenthesized-prose negative), `SsdtDdlEmitterTests` (the rendering
+canary: `getutcdate()` callable, never quoted; `DEFAULT N''`, never doubled),
+`CatalogCodecTests` (`ExpressionLit` in the literal round-trip corpus), `EstateTests` (the
+detector's positive + the two classified negatives), and the `finding ⇔ presentation` walk (nine
+new contract rows under the register laws).
+
+**Named residuals.** The reflected constraint expression (`#ColumnReality.DefaultDefinition`)
+stays un-lifted per matrix row 53's named trigger — the authored channel is the fix's scope.
+`BinaryLit` raw hex is not shape-validated at detection (garbage hex fails at deploy; rare,
+named). Boolean garbage refuses loudly at the lift (NM-20), so the detector never sees it.
+
+## 2026-07-18 — The composite-key gate: a reference targeting a composite primary key refuses the publish
+
+**Context.** #669 B-3 / EF-17 (+ the EF-17b sibling). The `Reference` IR carries one source column;
+`FkEmissionLookups.PkAttrByKey` carries the target's FIRST key attribute — a composite-key target
+emitted a single-leg foreign key pointing at a non-key column, SQL Server rejected it at deploy
+(`Msg 1776`), and the publish exited clean with no diagnostic: the downgrades-never-silent law's
+sharpest open violation.
+
+**The decision.** `EmitError` grows `CompositeKeyReferenceRefused (owner, reference, target,
+keyColumns)`; `emitSlicesWithRendering` gates before composition — a deployable, non-overlay-dropped
+reference whose target kind declares a composite primary key refuses the publish. The board's
+`EmissionCompositePkFk` finding and the refusal are the same predicate, so a red board and a refused
+publish are the same fact. The overlay's `DropFk` is the ruling's second arm (drop the relationship
+→ no constraint emits → the publish proceeds). The pure `statements` stream (canary, dacpac,
+reverse-leg consumers) is deliberately ungated — the artifact surface of the cutover is
+`emitSlices`, and the round-trip proofs run on truncation-free fixtures.
+
+**Witness.** `SsdtDdlEmitterTests` — the refusal (owner/target/key-column count carried) and the
+overlay-dropped pass with no FOREIGN KEY emitted.
+
+**Named residuals.** Modeling multi-leg references (the referenced-column list on the IR) stays the
+forward path that RETIRES this refusal; the gate holds the line until it lands.
+
+## 2026-07-18 — Logical-only relationships' orphans reach the board (decision 3, verified structural)
+
+**Context.** The population plan's cluster 3 asked whether the orphan evidence covers enforced
+LOGICAL-ONLY references (no backing SQL Server constraint) — the operator's clear-or-relax workflow
+must not depend on a constraint existing.
+
+**The decision.** No engine change: `ProfileDerivation.deriveForeignKeyRealitiesWith` walks
+`srcKind.References` with no deployable/physical filter, so a logical-only reference's orphan
+counts flow the same path a physically-backed one's do; the `Relaxation` record REQUIRES its
+`ReopenProbe` (a non-optional field), so a relaxation cannot exist without its re-tighten trigger.
+Both facts are now WITNESSED rather than assumed.
+
+**Witness.** `EstateTests` — a `NoDbConstraint` reference with orphan evidence produces the REPAIR
+finding exactly as a physically-backed one.
+
+**Named residuals.** Static source kinds skip orphan derivation (their rows ride the seed lane);
+composite-key targets resolve `ambiguous` (now ALSO gated at publish by the composite-key refusal —
+the two dispositions are coherent).
+
+## 2026-07-18 — The partial-topological order (v6): an unresolved cycle no longer degrades the whole catalog
+
+**Context.** #669 B-1 / EF-8 — the audit's data-lane blocker. One unresolvable dependency cycle
+anywhere put the ENTIRE catalog's data-lane order into the alphabetical fallback: children loaded
+before parents estate-wide, and the emitted `Data/*.sql` failed on a linear deploy (`Msg 547`) for
+kinds nowhere near the cycle.
+
+**The decision.** `OrderingMode` grows `PartialTopological`; the pass (v5 → v6) removes the
+unresolved cycles' internal precedence edges, re-runs Kahn, and every kind OUTSIDE the cycles keeps
+its true dependency position — the members of an unresolved cycle order alphabetically among
+themselves at the position the condensed cycle occupies. Whole-catalog `Alphabetical` survives only
+as the defensive residue arm ("please report"). The parallel-levels mint treats the new mode as
+unproven (singleton groups); the live-transfer gate still refuses (`transfer.loadOrderUnproven` —
+the message now names the unproven region as the cycles, since the rest of the order is
+dependency-true). The board's `EmissionDataLaneOrder` advisory names each unresolvable cycle's
+members (the `check estate` face of the same fact).
+
+**Witness.** `TopologicalOrderPassTests` — the mode flips on every unresolved-cycle fixture, plus
+the new majority witness (a hard 2-cycle beside a downstream child and an independent kind: the
+child follows BOTH cycle members; every kind appears once). `EstateTests` — the cycle advisory
+names "Customer and Order"; the acyclic fixture carries none. `DataEmissionComposerTests` — the
+partition law and the singleton-mint degrade hold under the new mode unchanged.
+
+**Named residuals.** The emitted data lanes still carry an unresolvable cycle's own rows without
+intra-cycle precedence — loading them in one pass with both relationships enforced fails; the
+deferred-enforcement emission for hard cycles (NOCHECK around the cycle's load, re-trust after)
+is the named follow-up that would retire the advisory entirely.
+
+## 2026-07-18 — Expressions rename with their columns (M-8), and constraint names go logical proper-case (the operator's lock)
+
+**Context.** #669 M-8 / EF-19: the emitted table renames every column to its logical name, but
+computed-column and CHECK expressions kept the source's physical identifiers
+(`[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])`) — latent on a case-insensitive collation, a hard
+deploy failure (`Msg 207`) on a case-sensitive one. And the operator's proper-case lock
+(2026-07-17): emitted DEFAULT/CHECK constraint names derive from logical names, never from the
+source's physical-derived forms.
+
+**The decision.** `ScriptDomGenerate.rewritePhysicalIdentifiers` — AST-level: parse through the
+pinned parser (scalar first, boolean predicate second), rename each column reference whose last
+identifier part matches a physical column (case-insensitive), re-render through the pinned
+generator. The ORIGINAL text returns verbatim when nothing matched (byte-stability) and when the
+parse fails (the board names the unrewritable residue; emission never guesses). Applied at
+`createTableStatementUsing` to both computed expressions and CHECK definitions. DEFAULT names:
+always synthesized `DF_<Table>_<Column>` from LOGICAL names through the identifier budget — the
+carried physical-derived name is not emitted (the espace-varying artifact the estate check already
+normalizes away). CHECK names: a carried name embedding the physical table token re-states it as
+the logical name; an absent name stays server-named. The board's
+`EmissionComputedExprIdentifiers` detector names the residue: a bracketed identifier resolving to
+no column of the entity, physical or logical.
+
+**Witness.** `SsdtDdlEmitterTests` — the rewrite (physical spellings absent from the body, logical
+present, CHECK included); `EstateTests` — the unresolvable-token ruling and the resolvable
+negative. Goldens carrying defaults re-record under the blessing protocol (the named-DF delta).
+
+**Named residuals.** The migration emitter's ALTER/ADD column path shares `columnDefOfAttribute`
+WITHOUT kind context — an ADD of a computed column stays unrewritten there (the CREATE TABLE
+surface is the cutover artifact; the migration path is the named follow-up). Cross-kind column
+references in expressions rewrite only against the owning kind's map. CHECK-expression residue
+rides the computed-expression finding's family; a dedicated check-token detector lands with the
+trigger family (4e), whose rewriter shares the same machinery.
+
+## 2026-07-18 — The cutover ladder: green is a derivation of the report, and the one outstanding item is named
+
+**Context.** `CUTOVER_BOARD_POPULATION_PLAN.md` §0 defined green in prose; the board needed it in
+code, with THE_VOICE §8's discipline — one outstanding item named, never a list of ten.
+
+**The decision.** `Estate.cutoverLadder : EstateReport -> CutoverLadder` — pure derivation:
+**green** ⇔ no Emission-plane RULING remains open (WATCH advisories never block) AND no data
+dealbreaker remains on the REPAIR lane (orphans, NULLs under NOT NULL, duplicates, overflow,
+collation collisions — each cleared, or past-band and RELAXED with its reopen probe; a RETIRABLE
+posture is the healthy endpoint and never blocks). The per-environment data readiness
+(`check shape` → `Readiness.isReady`) composes at the face — the third leg of the plan's green,
+riding its own run surface. `cutoverLadderLines` renders the verdict and, when red, the ONE item
+in the way with its lever. Same-day sibling: the PERSISTED extraction carriage (EF-21) landed —
+the emission already rendered the keyword, so carrying the fact closed that round-trip whole.
+Decision 11's posture is confirmed in the plan: `emission.identityAnnotations` defaults `true`;
+the cutover configuration sets it `false`, suppressing the vendor pair with a named diagnostic
+while `MS_Description` emits regardless.
+
+**Witness.** `EstateTests` — the four-scenario ladder: clean → green with the completing-gate
+line; an orphaned relationship → red naming it; the same orphans RELAXED past-band → green (the
+probe carries the re-tighten); a composite-key target → red naming the emission ruling first.
+`ColumnRealitySourceSidePopulationTests` — the PERSISTED thread-through.
+
+**Named residuals.** The face wiring (`check estate` printing the ladder beneath the board) and
+the `Readiness.isReady` composition line are the surface half, landing with the M-7 report
+alignment; the derivation and its law are what this entry fixes.
+
+## 2026-07-18 — The minimal weak feedback set (v7): the break choice becomes measured; the second strategy fires the family
+
+**Context.** v5's `weakFeedbackStrategy` walks the first cycle found and breaks its smallest weak
+edge, one break per residual cycle — frugal (I5) but not minimal: two rings sharing a weak edge
+break twice where once suffices, and every unnecessary break is a real Phase-2 UPDATE against
+real rows. The measured-minimality program (T15 — minimality is measured, the CDC capture count
+is the norm) reaches the break choice itself.
+
+**The decision.** `CycleResolution.minimalFeedbackStrategy : EdgeCost -> Resolver` — ONE
+resolver family over ONE cost axis (A40). Per SCC: the strong-only subgraph is cycle-checked
+DIRECTLY (a cycle there IS an all-strong cycle — I3's refusal predicate computed in one step,
+refusal phrasing unchanged); otherwise, with |Weak| ≤ `exactWeakEdgeThreshold` (12; ≤ 4096
+candidates, Bench label `pass.topologicalOrder.exactSolver`), the solver enumerates weak subsets
+in deterministic order and keeps the feasible minimum of the TOTAL objective
+`(Σ cost, cardinality, lexicographic)`; above the threshold the v5 greedy walk resolves (refusal
+is impossible past step 1) and the reason NAMES the downgrade. `defaultStrategy` =
+`minimalFeedbackStrategy (fun _ -> 0L)`: at zero cost the objective degenerates to
+(cardinality, lex) — the schema-only exact strategy IS the family's zero point, and the
+evidence-weighted member is the same function at the repair-cost function (the render-plane
+binding, its own slice). The pass (v6 → v7) takes the resolver as a parameter (default
+`defaultStrategy`); `weakFeedbackStrategy` stays public as the named fallback engine.
+
+**Witness.** `CycleResolutionTests` — I1–I4 restated verbatim over `defaultStrategy`; I5′+I6
+(the exact set IS the brute-force minimum, independent test-side enumeration); I7 (exact ≤
+greedy, always); the named-delta fixture (two weak rings sharing (b,c): greedy broke two, exact
+breaks exactly {(b,c)}); the above-threshold downgrade named; the weighted member flipping a
+symmetric 2-cycle's choice when cost dominates cardinality's tie.
+
+**Named residuals.** The second strategy has now ARRIVED — the deferral triggers on
+`ResolutionStep.Reason` (free-form → structured DU) and resolver-as-pass-parameter dispatch have
+FIRED; both cash out in this arc's next slices. The evidence-weighted binding (`repairCostOf`,
+the ONE weighted site per flow at the render-topo binding, A18-clean) is the family's second
+member, landing with its conservative-extension and refusal-invariance laws.
+
+## 2026-07-18 — The typed rationale + the refusal certificate: the Reason-DU deferral cashes out
+
+**Context.** The 2026-07-07 deferral "`ResolutionStep.Reason` migration to structured DU" named
+its trigger: a second resolver strategy. Slice 1's `minimalFeedbackStrategy` is that strategy —
+the trigger has fired.
+
+**The decision.** `ResolutionStep.Reason` becomes `ResolutionReason` (closed DU: `AutoResolved
+of BreakObjective | Refused of certificate * relaxation | NoCycleFound | Disabled`), and
+`CycleDiagnostic` becomes a closed DU (`Resolved | Refused | Anomalous`) — the
+resolved/unresolved discriminant is the CONSTRUCTOR, not the `BreakableEdges = []` sentinel.
+`StrongCycleCertificate` is a private-constructor type: a value cannot exist unless its edge
+list forms a closed cycle carrying zero Weak edges — I3's refusal half made unforgeable at the
+diagnostic surface (the ArtifactByKind pattern). The refusal now CARRIES its certificate plus
+the cheapest relaxation: the minimal strong-edge set (Other preferred over Cascade, 1 vs 10^6)
+whose columns, made nullable, admit automatic resolution — computed by the same exact-subset
+solver over the strong-only subgraph (A40: one solver, two consumers). Display is one owner
+(`CycleResolution.describe` / `CycleDiagnostic.reasonText`) preserving the pre-DU operator
+phrases byte-for-byte. Migration exposed and fixed a latent imprecision: the transfer load
+gate counted and named RESOLVED cycles in its "unproven" message — it now filters to the
+unresolved components its claim is about. Compile-order: `CycleResolution.fs` now precedes
+`TopologicalOrder.fs` (the diagnostic carries domain-typed rationale; the algebra/domain split
+holds — the PASS still never applies domain rules itself).
+
+**Witness.** `CycleResolutionTests` — the two ctor refusals (Weak edge; open path); the
+certified refusal carrying edges + strengths; the relaxation admitting resolution when
+weakened; Other-before-Cascade preference. All pre-DU substring pins pass unchanged through
+the display projections.
+
+**Named residuals.** The certificate's narration on the three operator surfaces (board
+advisory, load gate, go board) is the arc's surface slice; the relaxation list is carried but
+not yet prosed there.
+
+## 2026-07-18 — Cycle scopes: deferral and unsatisfiability judge per component; two cross-cycle near-misses retired
+
+**Context.** `deferredFkColumns` and the plan's unbreakable computation consumed the flat UNION
+of all cycles' members. Two near-misses followed: a nullable FK between members of two DISTINCT
+cycles deferred though the condensation order proves it (wasted Phase-2 norm), and — live — a
+non-nullable FK between two distinct unresolved cycles was flagged `UnbreakableCycleFk`: a
+FALSE REFUSAL of a load the re-run order satisfies.
+
+**The decision.** `TopologicalOrder.cycleScopes` / `unresolvedCycleScopes` — one member set per
+component. "Same cycle" now means "same component" at both judges: `deferredFkColumns` defers
+only when source and target share a scope; `DataLoadPlan.buildWith` flags unbreakable only
+within one unresolved scope. The per-kind seam (`loadForWith`/`loadFor`) and the drain-time
+prerender thread scopes (the batch/drain equivalence stays by construction — one core).
+
+**Witness.** `DataLoadPlanTests` — the F1(c) pin (a non-nullable bridge between two unresolved
+components does not refuse; the same-component strong edge still does) and the deferral-scope
+pin (the bridge never defers; each component's own nullable edge does).
+
+**Named residuals.** Resolved-scope deferral still spans the whole component; the exact
+repair set (broken-edge columns only) is the arc's slice 5.
+
+## 2026-07-18 — The resolver is a pass parameter; the render binding weighs breaks by the repair norm
+
+**Context.** The 2026-05-08/09 seam decision deferred resolver dispatch "until the second
+strategy actually arrives." It arrived (slice 1). And the break choice had no evidence axis:
+schema-minimal picks the smallest feasible set, but two feasible sets of equal size can differ
+by orders of magnitude in Phase-2 repair rows.
+
+**The decision.** `OrderingConfig` gains `Resolution : ResolutionPolicy = SchemaMinimal |
+EvidenceWeighted of EdgeCost` (default `SchemaMinimal`, byte-identical).
+`CycleResolution.repairCostOf catalog profile` prices breaking edge (s,t) at the Phase-2
+repair's row count — `max 0 (RowCount − NullCount)` per source column, T15's norm read at the
+break-choice site; absent evidence is 0, so an empty profile degenerates the weighted member to
+the schema-minimal default (the conservative-extension law). Weights enter at ONE site per
+flow — `Pipeline.renderTopologyFor` (the publish flow's bundle binding; the seed-plan preview
+binds with `Profile.empty` and is NAMED schema-only) — and the weighted topo threads to every
+break-choice consumer via the existing `...Using` seam: one resolution value, no second source
+of truth. The chain prefix (A18/A34, pinned), the drain plane (pre-evidence by necessity), the
+composer's internal hoists, and `TransferScope` stay `SchemaMinimal` — sound because SCC
+membership and refusal are resolver-invariant across the family (the A46 lemma, property-
+tested). Registry: `cycleResolution` gains the `weightedResolution` site (DataIntent —
+evidence-derived, no operator opinion); the deferred manual-override row's future shape
+sharpens to a composing `Overlaid of pins * ResolutionPolicy`.
+
+**Witness.** `CycleResolutionTests` — conservative extension (zero evidence ≡ default,
+byte-equal); refusal invariance under arbitrary costs; measured minimality (the weighted set IS
+the brute-force optimum of (Σ cost, cardinality, lex)); permutation invariance under weights.
+
+**Named residuals.** The weighted choice changes emitted bytes only on evidence-bearing cyclic
+publishes (multi-weak resolved components); the exact repair set (slice 5) makes the norm the
+choice minimizes equal the norm the emission spends.
+
+## 2026-07-18 — The repair set is exact: edge-derived deferral + non-NULL Phase-2 rows; T18's ledger becomes an equality
+
+**Context.** Two norm inflations rode the two-phase load. Deferral was member-derived: a
+RESOLVED component deferred every nullable intra-component column though the re-run order
+proves every non-broken edge. And Phase-2 rendered an UPDATE for EVERY row of a deferred kind,
+re-setting NULL over NULL for rows whose deferred values were all NULL. Under T15 (the CDC
+capture count is the norm) both were measurable waste — and they made the break⊕repair ledger
+an inequality.
+
+**The decision.** `TopologicalOrder.DeferralScope` — per component: a Resolved scope carries
+its BROKEN edges and defers exactly those edges' columns; a Refused/Anomalous scope carries
+`BrokenEdges = None` and keeps the blanket nullable-intra-component rule (its internal order
+proves nothing — the best-effort lane). `deferredFkColumns` consumes `deferralScopes`; the
+whole chain threads it (plan build, per-kind seam, drain prerender, perf lanes). Phase-2
+renders ONLY the repair set — rows with ≥1 non-NULL deferred value — in all four lanes:
+static seeds and migration (row filter + staged `#fk` rows), and both transfer renderers
+(the staged/quantum closures return None on an all-NULL row). The staging ROUTE still judges
+by Phase-1's row count (one threshold treats a kind coherently); the staged rows are the
+repair set. The pipelined (Prerendered-lane) publish's render binding stays SCHEMA-MINIMAL
+end to end — its bootstrap scripts were drain-rendered before evidence existed, and the batch
+must agree with them by construction (one resolution value per flow; the Rows-lane publish is
+where the weighted upgrade lives). Consequence, named: `‖phase2‖ = |repairRows|` exactly —
+the ledger T18 states as an equality.
+
+**Witness.** `StaticSeedsEmitterTests` — the all-NULL row renders no UPDATE (repair set of
+exactly one on the two-row self-reference); the symmetric weak 2-cycle now defers on exactly
+ONE side (the broken edge) with Phase-2 only there — the pre-v7 both-sides expectation
+updated to the sharper truth. Slice-3's scope pins carry the cross-component negatives.
+
+**Named residuals.** The transfer per-row lane's repair filtering rides the closure seam
+(None on all-NULL) — its live-path witness is the T18 canary (next slice).
+
+## 2026-07-18 — T18 + A46 land: the break⊕repair factorization and refusal completeness become law
+
+**Context.** The v7 arc's algebra needed its named laws: the two-phase load was correct by
+tests but unstated as an equation; the refusal's three surfaces (resolver, gate, board) were
+kept aligned by discipline, not by a law with a witness.
+
+**The decision.** AXIOMS.md gains **T18 — cycle-break factorization**: `A ⊕ δ_load =
+(A ⊕ δ_phase1) ⊕ δ_phase2` (a W2/Chasles instance), residue-free, with the norm ledger AS AN
+EQUALITY — `‖phase1‖ + ‖phase2‖ = ‖load‖ + Σ|repairRows|` — and the v7 objective minimizing
+exactly that inflation; deferral is the minimal non-isometry admissibility forces (T15's
+fallback reading, measured). And **A46 — refusal completeness for ordering**: one predicate
+(a refused component exists), three surfaces (live gate ⟺ board advisory ⟺ certified
+resolver diagnostic), resolver-invariant across the family, every refusal carrying its
+unforgeable certificate and cheapest relaxation. Both land as LAW (not candidates): the live
+half shipped in the same arc — `T18CycleBreakCanaryTests` deploys the weak 2-cycle's composed
+two-phase load against real SQL Server and proves row-equality with every FK trusted.
+
+**Witness.** AxiomTests T18 + A46 entries (citationOf: the Docker canary, the exact-repair
+pin, the weighted-minimality property; the triple-surface Fact, I3, and the invariance lemma).
+M16 gate green over the grown corpus; Bucket A rises to 17 axioms + 4 theorems.
+
+**Named residuals.** T18's symbolic ledger is stated at count grain (the CDC-capture
+instrument reads it live through the CdcMeasure weight table); a per-edge ‖repair(e)‖
+decomposition property over generated multi-edge components is admissible follow-on if the
+count form ever proves too coarse.
+
+## 2026-07-18 — The condensation carrier: levels stop serializing the acyclic majority under PartialTopological
+
+**Context.** One unresolved cycle anywhere degraded the leveled parallel deploy to singleton
+groups ESTATE-WIDE (the P2 pin). The quotient DAG was implicit in the v6 re-run; nothing
+carried it as a value, so nothing could license what it proves.
+
+**The decision.** `Condensation` — a private-constructor carrier built from a pass-produced
+`TopologicalOrder`: nodes are the cycle components plus singletons, edges the cross-component
+projections of `Edges` (well-defined because the resolver only breaks intra-component edges),
+and the smart ctor KAHN-CHECKS the induced graph — a value of the type IS a DAG, the
+ArtifactByKind type-theorem move. `levels` under `PartialTopological` walks the condensation:
+a level's singleton components form one `ParallelSafe` group; a multi-member component
+contributes its members as consecutive singletons in `Order` relative order — serialization
+is exactly as wide as the cycle. The REFUSED half of the design is recorded: `orderOf` does
+NOT factor through the carrier (v6's re-run Kahn interleaves outsiders between an unresolved
+component's members, so node-atomic extension is not byte-compatible; the honest law is
+CONTAINMENT — the emitted Order is A linear extension of the quotient). The carrier lives or
+dies with its consumers (levels, the certificate narration, the T18/A46 witnesses).
+
+**Witness.** `DataEmissionComposerTests` — P2′ (the cycle serializes only its own members;
+the acyclic majority keeps a concurrent level; the singleton degrade retired); the
+linear-extension containment law over all three mode fixtures; mint safety (no minted group
+carries both ends of an FK edge) under every mode; the leveled ≡ fused partition law holds
+unchanged over the new grouping.
+
+**Named residuals.** None — the levels upgrade was the carrier's landing consumer.
+
+## 2026-07-18 — The certificate reaches the three surfaces; the board lever upgrade consciously deferred
+
+**Context.** Slice 2 gave every refusal its certificate and cheapest relaxation; the operator
+surfaces still spoke in member lists.
+
+**The decision.** `CycleNarration.certificateText` (Core, beside the carrier) — ONE Voice copy:
+the certificate's edges joined to the catalog (column, nullability, delete rule) and the
+imperative close ("make X.Col nullable — it then defers to phase 2 automatically"). Three
+consumers: the transfer load gate (`orderedLoadGate` gains the catalog parameter and appends
+the narration), the estate board's `EmissionDataLaneOrder` advisory statement, and the go
+board's Red load-order item (which rides the gate's message). The finding's LANE AND LEVER
+are untouched: `EstateFinding.leverFormOf`'s law is explicit — WATCH ⇔ no lever, by design —
+and the same-day #669 B-1 decision deliberately made the advisory a Watch line once the
+acyclic majority ordering shipped. Upgrading to a Ruling lever would move the lane to DECIDE
+and re-red every estate carrying a hard cycle whether or not anyone transfers those kinds — a
+silent reversal of a dated decision. **Deferral added to the Active-deferrals index:**
+"EmissionDataLaneOrder Ruling-lever upgrade (Watch → Decide); trigger: an operator asks to
+rule the cycle from the board."
+
+**Witness.** `EstateTests` — the one-copy pin (both surfaces carry "the cycle's edges:" +
+"Cheapest fix:" + a concrete nullable column); the A46 triple-surface fact continues to pin
+predicate identity.
+
+**Named residuals.** None on the narration; the lever deferral row is the consciously-open
+item.
 ## 2026-07-17 — The loop-closing program opens: the programs collapse, `check environments` named for the record, and the burndown lands (wave A7)
 
 **Context.** PR #668 (the estate chapter through A6, squash `d7f4566`) merged carrying a

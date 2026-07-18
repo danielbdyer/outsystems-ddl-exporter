@@ -291,3 +291,48 @@ let ``WP-17b: an offset-bearing DateTime raw owns its CAST target (datetimeoffse
     Assert.Equal<SqlLiteral> (
         DateTimeLit "2026-07-16 12:30:00.0000000",
         SqlLiteral.ofRaw DateTime (Some "2026-07-16 12:30:00.0000000"))
+
+// ---------------------------------------------------------------------------
+// DECISIONS 2026-07-18 (#669 M-1) — the authored-default classification.
+// `ofAuthoredDefault` discriminates the three authored shapes the value lift
+// cannot: a niladic function call (the callable expression), a SQL-quoted
+// text form (the value inside the quotes), and the bare value forms.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``ofAuthoredDefault: a niladic call is the callable expression, on any type`` () =
+    Assert.Equal<SqlLiteral option> (Some (ExpressionLit "getutcdate()"), SqlLiteral.ofAuthoredDefault DateTime "getutcdate()")
+    Assert.Equal<SqlLiteral option> (Some (ExpressionLit "newid()"),      SqlLiteral.ofAuthoredDefault Guid "newid()")
+    Assert.Equal<SqlLiteral option> (Some (ExpressionLit "sysutcdatetime()"), SqlLiteral.ofAuthoredDefault DateTime "sysutcdatetime()")
+    // The expression renders bare — the database receives the call.
+    Assert.Equal<string> ("getutcdate()", SqlLiteral.toString (ExpressionLit "getutcdate()"))
+
+[<Fact>]
+let ``ofAuthoredDefault: the SQL-quoted empty string is the authored DEFAULT N''`` () =
+    // The estate's most common authored default. Lifted verbatim it rendered
+    // N'''''' (the quotes doubled); classified, it is the empty-string VALUE.
+    Assert.Equal<SqlLiteral option> (Some (TextLit ""), SqlLiteral.ofAuthoredDefault Text "''")
+    Assert.Equal<string> ("N''", SqlLiteral.toString (TextLit ""))
+
+[<Fact>]
+let ``ofAuthoredDefault: a SQL-quoted text form carries the value inside the quotes`` () =
+    Assert.Equal<SqlLiteral option> (Some (TextLit "Draft"), SqlLiteral.ofAuthoredDefault Text "'Draft'")
+    Assert.Equal<SqlLiteral option> (Some (TextLit "it's"),  SqlLiteral.ofAuthoredDefault Text "'it''s'")
+
+[<Fact>]
+let ``ofAuthoredDefault: an absent or whitespace-only raw carries nothing`` () =
+    Assert.Equal<SqlLiteral option> (None, SqlLiteral.ofAuthoredDefault Text "")
+    Assert.Equal<SqlLiteral option> (None, SqlLiteral.ofAuthoredDefault DateTime "   ")
+
+[<Fact>]
+let ``ofAuthoredDefault: bare value forms project as before`` () =
+    Assert.Equal<SqlLiteral option> (Some (BooleanLit false), SqlLiteral.ofAuthoredDefault Boolean "False")
+    Assert.Equal<SqlLiteral option> (Some (IntegerLit "42"),  SqlLiteral.ofAuthoredDefault Integer "42")
+    Assert.Equal<SqlLiteral option> (Some (TextLit "Pending"), SqlLiteral.ofAuthoredDefault Text "Pending")
+
+[<Fact>]
+let ``ofAuthoredDefault: free text with parentheses stays a text value`` () =
+    // The niladic-call test requires the identifier shape `name()` exactly;
+    // parenthesized prose and digit-led shapes stay values.
+    Assert.Equal<SqlLiteral option> (Some (TextLit "hello (world)"), SqlLiteral.ofAuthoredDefault Text "hello (world)")
+    Assert.Equal<SqlLiteral option> (Some (TextLit "123()"), SqlLiteral.ofAuthoredDefault Text "123()")

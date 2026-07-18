@@ -1137,6 +1137,149 @@ module Estate =
                                 subject actionName))
                 | _ -> None))
 
+    /// #669 M-1 residue (DECISIONS 2026-07-18): an authored default whose
+    /// raw text does not parse as a value of the column's type. The
+    /// classification lift (`SqlLiteral.ofAuthoredDefault`) carries niladic
+    /// calls and quoted text faithfully; what remains in a value literal
+    /// must actually BE a value — a raw that is not deploys as a DEFAULT
+    /// and then fails at the first insert that relies on it. Validation is
+    /// SQL-shaped (invariant TryParse), not canonical-format-strict, so a
+    /// legitimate authored `2024-01-01` date-time passes.
+    let private emissionAuthoredDefaultFindings (target: Catalog) : Finding list =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        let unparsable (lit: SqlLiteral) : string option =
+            match lit with
+            | SqlLiteral.IntegerLit raw when not (fst (System.Int64.TryParse(raw, System.Globalization.NumberStyles.Integer, inv))) ->
+                Some (sprintf "'%s' does not parse as an integer value" raw)
+            | SqlLiteral.DecimalLit raw when not (fst (System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, inv))) ->
+                Some (sprintf "'%s' does not parse as a decimal value" raw)
+            | SqlLiteral.DateTimeLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as a date-time value" raw)
+            | SqlLiteral.DateLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as a date value" raw)
+            | SqlLiteral.TimeLit raw when not (fst (System.TimeSpan.TryParse(raw, inv))) ->
+                Some (sprintf "'%s' does not parse as a time value" raw)
+            | SqlLiteral.DateTimeOffsetLit raw when not (fst (System.DateTimeOffset.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+                Some (sprintf "'%s' does not parse as an offset-bearing date-time value" raw)
+            | SqlLiteral.GuidLit raw when not (fst (System.Guid.TryParse raw)) ->
+                Some (sprintf "'%s' does not parse as a GUID value" raw)
+            | _ -> None
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Attributes
+            |> List.choose (fun a ->
+                a.DefaultValue
+                |> Option.bind unparsable
+                |> Option.map (fun problem ->
+                    let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                    emissionFinding EstateFindingKind.EmissionAuthoredDefault subject
+                        (sprintf "%s carries an authored default that %s — the DEFAULT deploys, and the first insert that relies on it fails."
+                            subject problem))))
+
+    /// #669 B-1 (DECISIONS 2026-07-18): entities that reference each other
+    /// in a cycle that nullable-column deferral cannot break. The v6
+    /// ordering keeps every other kind in true dependency position; the
+    /// cycle's members are the load-order residue — the live transfer
+    /// refuses, and the cycle's own rows cannot load in one pass while its
+    /// relationships are enforced. Advisory, one finding per cycle, the
+    /// members named.
+    let private emissionDataLaneOrderFindings (target: Catalog) : Finding list =
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle target).Value
+        topo.Cycles
+        |> List.filter (CycleDiagnostic.isResolved >> not)
+        |> List.map (fun c ->
+            let names =
+                CycleDiagnostic.members c
+                |> List.map (fun key ->
+                    Catalog.tryFindKind key target
+                    |> Option.map (fun kind -> Name.value kind.Name)
+                    |> Option.defaultValue (SsKey.rootOriginal key))
+            let subject = String.concat "+" names
+            // v7 slice 8 — the certificate narration (one Voice copy with
+            // the gate and the go board).
+            let narration =
+                CycleNarration.certificateText target c
+                |> Option.map (sprintf " %s")
+                |> Option.defaultValue ""
+            emissionFinding EstateFindingKind.EmissionDataLaneOrder subject
+                (sprintf "%s reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced.%s"
+                    (envListText names) narration))
+
+    /// #669 M-8 / EF-19 (DECISIONS 2026-07-18): a computed column whose
+    /// expression references an identifier resolving to NO column of the
+    /// entity — physical or logical. The emitter rewrites physical
+    /// identifiers to logical; a token matching neither cannot be
+    /// rewritten, and a case-sensitive target rejects the emitted
+    /// expression at deploy. Bracketed identifiers only (`sys`
+    /// definitions arrive bracket-normalized).
+    let private emissionComputedExprFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            let known =
+                k.Attributes
+                |> List.collect (fun a ->
+                    [ (ColumnRealization.columnNameText a.Column).ToUpperInvariant()
+                      (Name.value a.Name).ToUpperInvariant() ])
+                |> Set.ofList
+            k.Attributes
+            |> List.choose (fun a ->
+                a.Computed
+                |> Option.bind (fun cfg ->
+                    let unresolved =
+                        System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
+                        |> Seq.map (fun m -> m.Groups.[1].Value)
+                        |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
+                        |> Seq.distinct
+                        |> List.ofSeq
+                    match unresolved with
+                    | [] -> None
+                    | tokens ->
+                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                        Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
+                                (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
+                                    subject (String.concat "], [" tokens) (Name.value k.Name))))))
+
+    /// EF-23 (DECISIONS 2026-07-18): a system-versioned kind. The emission
+    /// cannot yet deploy its period columns (GENERATED ALWAYS is the named
+    /// backlog item), so the publish refuses (`EmitError.TemporalKindRefused`,
+    /// the same predicate) — the board names the fact and its ruling.
+    let private emissionTemporalFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.choose (fun k ->
+            k.Modality
+            |> List.tryPick (function ModalityMark.Temporal tc -> Some tc | _ -> None)
+            |> Option.map (fun tc ->
+                let history =
+                    match tc.HistorySchema, tc.HistoryTable with
+                    | Some hs, Some ht -> sprintf " (history table %s.%s)" hs ht
+                    | _ -> ""
+                emissionFinding EstateFindingKind.EmissionTemporalDropped (Name.value k.Name)
+                    (sprintf "%s is system-versioned%s — the emission cannot yet carry SYSTEM_VERSIONING, so the publish refuses rather than dropping it silently."
+                        (Name.value k.Name) history)))
+
+    /// EF-20 / family 4e (DECISIONS 2026-07-18): a trigger body that does
+    /// not parse, or that still carries an OutSystems physical identifier
+    /// after the logical-emission passes. The publish refuses the same two
+    /// predicates (`EmitError.TriggerUnrewrittenRefused`) — one shared
+    /// parse-check (`ScriptDomGenerate.tryParseTriggerDefinition`) keeps
+    /// the board and the gate the same fact.
+    let private emissionTriggerFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Triggers
+            |> List.choose (fun t ->
+                let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value t.Name)
+                match Projection.Targets.SSDT.ScriptDomGenerate.tryParseTriggerDefinition t.Definition with
+                | Error reason ->
+                    Some (emissionFinding EstateFindingKind.EmissionTriggerUnrewritten subject
+                            (sprintf "%s's body does not parse (%s) — its identifiers cannot be rewritten to the published names, so the publish refuses." subject reason))
+                | Ok () ->
+                    match Projection.Targets.SSDT.ScriptDomGenerate.firstPhysicalResidue t.Definition with
+                    | Some token ->
+                        Some (emissionFinding EstateFindingKind.EmissionTriggerUnrewritten subject
+                                (sprintf "%s's body still references the physical identifier '%s' after logical-name emission — the published body would target an object that does not exist, so the publish refuses." subject token))
+                    | None -> None))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1145,7 +1288,12 @@ module Estate =
           emissionLongNameFindings target
           emissionNoPrimaryKeyFindings target
           emissionLossyScalarFindings target
-          emissionNonDefaultOnUpdateFindings target ]
+          emissionNonDefaultOnUpdateFindings target
+          emissionAuthoredDefaultFindings target
+          emissionDataLaneOrderFindings target
+          emissionComputedExprFindings target
+          emissionTemporalFindings target
+          emissionTriggerFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
@@ -1527,6 +1675,67 @@ module Estate =
         (envs: (string * Compare.Operand) list)
         : EstateReport =
         computeWith Posture.defaults StaticContent.empty target targetCatalog envs
+
+    /// The cutover ladder (`CUTOVER_BOARD_POPULATION_PLAN.md` §0's green
+    /// definition; DECISIONS 2026-07-18). Green — ready to cut an
+    /// environment over — holds when:
+    ///   1. no Emission-plane RULING remains open (the deploy-blocking or
+    ///      intent-dropping emission facts; WATCH advisories never block),
+    ///      and
+    ///   2. no data dealbreaker remains on the REPAIR lane (orphan
+    ///      references, NULLs under NOT NULL, duplicates, overflow,
+    ///      collation collisions) — each is either CLEARED, or past-band
+    ///      and RELAXED with its reopen probe (the RELAX lane never
+    ///      blocks; a RETIRABLE posture is the healthy endpoint and never
+    ///      blocks), and
+    ///   3. the per-environment data readiness (`check shape` —
+    ///      `Readiness.isReady`) holds; that verdict rides its own run
+    ///      surface and composes with this one at the face.
+    /// The ladder names ONE outstanding item (THE_VOICE §8 — one lever,
+    /// never a list of ten): the first emission ruling, else the first
+    /// data dealbreaker.
+    type CutoverLadder =
+        { EmissionRulings : Finding list
+          DataBlockers    : Finding list
+          Green           : bool
+          OutstandingItem : Finding option }
+
+    let cutoverLadder (report: EstateReport) : CutoverLadder =
+        let emissionRulings =
+            report.EmissionFindings
+            |> List.filter (fun f -> f.Lane = EstateLane.Decide)
+        let dataBlockers =
+            report.Findings
+            |> List.filter (fun f ->
+                f.Plane = EstatePlane.Data
+                && f.Lane = EstateLane.Repair
+                && f.Kind <> EstateFindingKind.PostureRetirable)
+        let outstanding =
+            match emissionRulings, dataBlockers with
+            | f :: _, _ -> Some f
+            | [], f :: _ -> Some f
+            | [], [] -> None
+        { EmissionRulings = emissionRulings
+          DataBlockers    = dataBlockers
+          Green           = Option.isNone outstanding
+          OutstandingItem = outstanding }
+
+    /// The ladder's surface lines (THE_VOICE §8): the verdict, then —
+    /// when an item stands in the way — the one item and its lever.
+    let cutoverLadderLines (ladder: CutoverLadder) : string list =
+        if ladder.Green then
+            [ "Ready to cut over on this board: no emission ruling remains open, and every data dealbreaker is cleared or relaxed with its reopen probe."
+              "The per-environment data readiness (check shape) completes the gate." ]
+        else
+            let total = List.length ladder.EmissionRulings + List.length ladder.DataBlockers
+            let head =
+                if total = 1 then "One item remains before cutover."
+                else sprintf "%d items remain before cutover. The one in the way:" total
+            match ladder.OutstandingItem with
+            | Some f ->
+                [ head; f.Statement ]
+                @ (match f.Lever with Some l -> [ l ] | None -> [])
+            | None -> [ head ]
 
     /// The face's remediation stamp: the artifacts it wrote this run —
     /// (file, block count) per environment (`compute` stays file-blind;

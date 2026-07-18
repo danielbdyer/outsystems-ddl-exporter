@@ -988,6 +988,280 @@ let ``emission: a non-default ON UPDATE reference is a WATCH advisory`` () =
     Assert.Contains("ON UPDATE CASCADE", f.Statement)
 
 [<Fact>]
+let ``emission: a computed expression referencing an unknown identifier is a ruling (#669 M-8 residue)`` () =
+    // [SKU_OLD] resolves to no column of Customer — physical or logical —
+    // so the emitter's rewrite cannot complete; the board names it before
+    // a case-sensitive deploy rejects it.
+    let withComputed =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey
+                                                then { a with Computed = ComputedColumnConfig.create "([SKU_OLD] * 2)" false |> Result.toOption }
+                                                else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor withComputed
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionComputedExprIdentifiers)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("[SKU_OLD]", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the expression"))
+    // An expression over the entity's own columns (physical or logical
+    // spelling) carries no finding — the rewrite completes.
+    let resolvable =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey
+                                                then { a with Computed = ComputedColumnConfig.create "([NAME] + [Name])" false |> Result.toOption }
+                                                else a) }
+                                else k) }) }
+    Assert.True(
+        Estate.emissionFindingsFor resolvable
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionComputedExprIdentifiers))
+
+[<Fact>]
+let ``emission: an unresolvable reference cycle is a WATCH advisory naming its members (#669 B-1)`` () =
+    // Add the reverse reference Customer → Order (non-nullable source, no
+    // deferrable edge) — a hard 2-cycle. The board names the members; the
+    // v6 ordering keeps every other kind in dependency position.
+    let backRef =
+        Reference.create (refKey ["Customer"; "Order"; "back"]) (mkName "OrderBack") customerTenantKey orderKey
+    let cyclic =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey
+                                then { k with References = backRef :: k.References }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor cyclic
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Contains("Customer and Order", f.Statement)
+    Assert.Contains("cycle", f.Statement)
+    // The clean acyclic fixture carries no cycle advisory.
+    Assert.True(
+        Estate.emissionFindingsFor sampleCatalog
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))
+
+[<Fact>]
+let ``emission: an authored default that does not parse as its column's type is a ruling (#669 M-1 residue)`` () =
+    // The classification lift carries `getutcdate()` as a callable expression
+    // and `''` as the empty-string value; what remains inside a VALUE literal
+    // must parse as the type. A date-time default of 'tomorrow' deploys and
+    // then fails at the first insert — the board names it before the deploy.
+    let withDefault (lit: SqlLiteral option) =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with DefaultValue = lit } else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.DateTimeLit "tomorrow")))
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionAuthoredDefault)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Contains("does not parse as a date-time value", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the default"))
+    // The classified shapes are the negatives: a callable expression and a
+    // parseable value carry no finding.
+    Assert.True(
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.ExpressionLit "getutcdate()")))
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionAuthoredDefault))
+    Assert.True(
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.DateTimeLit "2026-01-01 08:30:00")))
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionAuthoredDefault))
+
+[<Fact>]
+let ``emission: a system-versioned kind is a DECIDE ruling — the board names the temporal fact the publish refuses (#669 EF-23)`` () =
+    // The rowset lane now carries ModalityMark.Temporal (rowset 25); the
+    // emission cannot yet deploy period columns, so the publish refuses
+    // (EmitError.TemporalKindRefused) and the board states the same fact.
+    let temporalConfig : TemporalConfig =
+        { HistorySchema = Some "history"
+          HistoryTable  = Some "CUSTOMER_History"
+          PeriodStart   = None
+          PeriodEnd     = None
+          Retention     = Infinite }
+    let withTemporal =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with Modality = ModalityMark.Temporal temporalConfig :: k.Modality }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor withTemporal
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionTemporalDropped)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Contains("system-versioned", f.Statement)
+    Assert.Contains("history.CUSTOMER_History", f.Statement)
+    // The negative: the unmarked catalog carries no temporal finding.
+    Assert.True(
+        Estate.emissionFindingsFor sampleCatalog
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionTemporalDropped))
+
+[<Fact>]
+let ``emission: a trigger body that does not parse — or still physical after the passes — is a DECIDE ruling (family 4e; #669 EF-20)`` () =
+    // One shared predicate with the publish gate
+    // (EmitError.TriggerUnrewrittenRefused): parse failure or OSUSR/OSSYS
+    // residue. A clean logical body carries no finding.
+    let withTriggerBody (definition: string) =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Triggers =
+                                            [ Trigger.create (attrKey ["Customer"; "TRG_X"]) (mkName "TRG_X") false definition
+                                              |> Result.value ] }
+                                else k) }) }
+    let findingsOf body =
+        Estate.emissionFindingsFor (withTriggerBody body)
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionTriggerUnrewritten)
+    // Parse failure names the parser's line.
+    match findingsOf "CREATE TRIGGER ON WHERE !!" with
+    | [ f ] ->
+        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Equal(EstatePlane.Emission, f.Plane)
+        Assert.Contains("does not parse", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one parse-failure finding, got %d" (List.length other))
+    // Residue names the surviving physical token.
+    match findingsOf "CREATE TRIGGER [TRG_X] ON [dbo].[Customer] AFTER INSERT AS BEGIN UPDATE [dbo].[OSUSR_AAA_ORDER] SET [X] = 1 END" with
+    | [ f ] -> Assert.Contains("OSUSR_AAA_ORDER", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one residue finding, got %d" (List.length other))
+    // The clean logical body is silent.
+    Assert.Empty (findingsOf "CREATE TRIGGER [TRG_X] ON [dbo].[Customer] AFTER INSERT AS BEGIN SELECT 1 END")
+
+[<Fact>]
+let ``a LOGICAL-ONLY relationship's orphans reach the board — the orphan derivation walks every catalog reference (decision 3)`` () =
+    // The reference carries no backing SQL Server constraint
+    // (ConstraintState = NoDbConstraint); with enforcement decided, its
+    // orphan evidence must surface exactly as a physically-backed
+    // reference's would — REPAIR (clear the rows) below the band,
+    // RELAX (leave unenforced, reopen probe) past it. The profile
+    // derivation walks `srcKind.References` with no deployable filter,
+    // so the evidence path is one path; this pins it.
+    let logicalOnly =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    References =
+                                        k.References
+                                        |> List.map (fun r ->
+                                            if r.SsKey = orderRefToCustomer
+                                            then { r with ConstraintState = ConstraintState.ofLegacyBooleans false false }
+                                            else r) }) }) }
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 42L ] }
+    let report =
+        Estate.compute agreed logicalOnly
+            [ "cloud-uat", { operand "cloud-uat" logicalOnly with Profile = Some dirty } ]
+    let f = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphans)
+    Assert.Equal(EstateLane.Repair, f.Lane)
+    Assert.Contains("42", f.Statement)
+
+[<Fact>]
+let ``the cutover ladder: green when nothing stands in the way; the one outstanding item named otherwise (plan §0)`` () =
+    // Clean estate — green, and the surface says what completes the gate.
+    let clean = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    let green = Estate.cutoverLadder clean
+    Assert.True(green.Green)
+    Assert.Contains("Ready to cut over", Estate.cutoverLadderLines green |> List.head)
+    // An orphaned relationship (REPAIR lane) blocks, and the ladder names it.
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 7L ] }
+    let red =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+        |> Estate.cutoverLadder
+    Assert.False(red.Green)
+    Assert.True(red.OutstandingItem |> Option.exists (fun f -> f.Kind = EstateFindingKind.DataOrphans))
+    Assert.Contains("before cutover", Estate.cutoverLadderLines red |> List.head)
+    // A relaxed (past-band) posture does not block — the RELAX lane
+    // carries its reopen probe instead.
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let relaxed =
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+        |> Estate.cutoverLadder
+    Assert.True(relaxed.Green)
+    // An emission ruling blocks ahead of data: the composite-key target.
+    let compositePk =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with IsPrimaryKey = true } else a) }
+                                else k) }) }
+    let emissionRed =
+        Estate.compute agreed compositePk [ "cloud-dev", operand "cloud-dev" compositePk ]
+        |> Estate.cutoverLadder
+    Assert.False(emissionRed.Green)
+    Assert.True(emissionRed.OutstandingItem |> Option.exists (fun f -> f.Kind = EstateFindingKind.EmissionCompositePkFk))
+
+[<Fact>]
 let ``the active posture: a relaxed relationship renders its meter and absorbs the orphan finding`` () =
     let posture : Estate.Posture =
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
@@ -1125,6 +1399,121 @@ let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` ()
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.probes.sql — every reopen probe, runnable as one batch")
     Assert.Contains("\"entries\": 3", Estate.toJsonString report)
 
+[<Fact>]
+let ``A46: refusal completeness — one predicate on three surfaces (resolver ⟺ gate ⟺ board), certificate carried (#669 v7)`` () =
+    // The STRONG cycle: Customer→Order→Customer with non-nullable FKs on
+    // both legs. All three surfaces fire from the one predicate — the
+    // pass marks the component Refused (carrying its certificate), the
+    // transfer gate refuses, and the board's advisory names the members.
+    let strongCycle =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    let fkAttr =
+                                        { Attribute.create customerTenantKey (mkName "OrderRef") PrimitiveType.Integer with
+                                            Column = ColumnRealization.create "ORDERREF" false |> Result.value
+                                            IsMandatory = true }
+                                    { k with
+                                        Attributes = k.Attributes |> List.map (fun a -> if a.SsKey = customerTenantKey then fkAttr else a)
+                                        References = [ Reference.create (kindKey ["cust-to-order"]) (mkName "ToOrder") customerTenantKey orderKey ] }
+                                elif k.SsKey = orderKey then
+                                    { k with
+                                        References =
+                                            k.References
+                                            |> List.map (fun r -> { r with TargetKind = customerKey }) }
+                                else k) }) }
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle strongCycle).Value
+    // Surface 1 — the resolver: a Refused component with its certificate.
+    let refusedComponents =
+        topo.Cycles |> List.filter (CycleDiagnostic.isResolved >> not)
+    Assert.NotEmpty refusedComponents
+    (match refusedComponents |> List.tryPick (function CycleDiagnostic.Refused (_, cert, _) -> Some cert | _ -> None) with
+     | Some cert -> Assert.NotEmpty (CycleResolution.StrongCycleCertificate.edges cert)
+     | None -> Assert.Fail "expected the certified refusal on the strong cycle")
+    // Surface 2 — the live gate refuses.
+    match Transfer.orderedLoadGate strongCycle topo with
+    | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
+    | None -> Assert.Fail "expected the transfer gate to refuse the unproven order"
+    // Surface 3 — the board's advisory names the component.
+    let findings =
+        Estate.emissionFindingsFor strongCycle
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+    Assert.NotEmpty findings
+    // The NEGATIVE: weaken one leg (nullable) — the cycle resolves and
+    // all three surfaces go quiet together.
+    let weakened =
+        { strongCycle with
+            Modules =
+                strongCycle.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then
+                                                    { a with Column = ColumnRealization.create "ORDERREF" true |> Result.value; IsMandatory = false }
+                                                else a) }
+                                else k) }) }
+    let topoW = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle weakened).Value
+    Assert.True(topoW.Cycles |> List.forall CycleDiagnostic.isResolved)
+    Assert.True((Transfer.orderedLoadGate weakened topoW).IsNone)
+    Assert.True(
+        Estate.emissionFindingsFor weakened
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))
+
+[<Fact>]
+let ``one Voice copy: the certificate narration on the gate and the board advisory is the same sentence (v7 slice 8)`` () =
+    // Rebuild the strong cycle from the A46 fixture shape and assert both
+    // surfaces carry CycleNarration's text — the edges with their
+    // nullability/delete-rule detail and the imperative cheapest fix.
+    let strongCycle =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    let fkAttr =
+                                        { Attribute.create customerTenantKey (mkName "OrderRef") PrimitiveType.Integer with
+                                            Column = ColumnRealization.create "ORDERREF" false |> Result.value
+                                            IsMandatory = true }
+                                    { k with
+                                        Attributes = k.Attributes |> List.map (fun a -> if a.SsKey = customerTenantKey then fkAttr else a)
+                                        References = [ Reference.create (kindKey ["cust-to-order"]) (mkName "ToOrder") customerTenantKey orderKey ] }
+                                elif k.SsKey = orderKey then
+                                    { k with References = k.References |> List.map (fun r -> { r with TargetKind = customerKey }) }
+                                else k) }) }
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle strongCycle).Value
+    let gateText =
+        match Transfer.orderedLoadGate strongCycle topo with
+        | Some e -> e.Message
+        | None -> ""
+    let boardText =
+        Estate.emissionFindingsFor strongCycle
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+        |> List.map (fun f -> f.Statement)
+        |> String.concat "\n"
+    Assert.Contains("Cheapest fix:", gateText)
+    Assert.Contains("Cheapest fix:", boardText)
+    Assert.Contains("the cycle's edges:", gateText)
+    Assert.Contains("the cycle's edges:", boardText)
+    // The imperative names a concrete column on both surfaces.
+    Assert.Contains("nullable", gateText)
+    Assert.Contains("nullable", boardText)
 // -- the burndown (wave A7): memory, movement, the streak ----------------------
 
 [<Fact>]

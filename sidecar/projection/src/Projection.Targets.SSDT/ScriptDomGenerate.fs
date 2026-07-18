@@ -107,6 +107,124 @@ module ScriptDomGenerate =
     let private pinNewlines (text: string) : string =
         text.Replace("\r\n", "\n").Replace("\r", "\n")
 
+    // -----------------------------------------------------------------------
+    // DECISIONS 2026-07-18 (#669 M-8 / EF-19) — the physical-identifier
+    // rewrite for computed-column and CHECK-constraint expressions.
+    // -----------------------------------------------------------------------
+
+    /// AST visitor: renames every column reference whose LAST identifier
+    /// part matches a PHYSICAL column name (case-insensitive) to its
+    /// LOGICAL name. Counts the rewrites so an untouched expression can
+    /// return verbatim.
+    type private PhysicalIdentifierRewriter(physicalToLogical: Map<string, string>) =
+        inherit TSqlFragmentVisitor()
+        member val Rewritten = 0 with get, set
+        override this.Visit(node: ColumnReferenceExpression) : unit =
+            match Option.ofObj node.MultiPartIdentifier with
+            | Some mpi when mpi.Identifiers.Count > 0 ->
+                let last = mpi.Identifiers.[mpi.Identifiers.Count - 1]
+                match Option.ofObj last.Value with
+                | Some v ->
+                    match Map.tryFind (v.ToUpperInvariant()) physicalToLogical with
+                    | Some logical when v <> logical ->
+                        last.Value <- logical
+                        this.Rewritten <- this.Rewritten + 1
+                    | _ -> ()
+                | None -> ()
+            | _ -> ()
+
+    /// The rewriter's own thread-local parser (`TSql160Parser` is not
+    /// thread-safe; same discipline as `ScriptDomBuild`'s).
+    let private rewriterParser =
+        new System.Threading.ThreadLocal<TSql160Parser>(
+            fun () -> TSql160Parser(initialQuotedIdentifiers = false))
+
+    /// Rewrite PHYSICAL column identifiers inside a computed-column or
+    /// CHECK-constraint expression to their LOGICAL names (DECISIONS
+    /// 2026-07-18; #669 M-8 / EF-19). `sys.computed_columns.definition`
+    /// and `sys.check_constraints.definition` carry the source's physical
+    /// identifiers; the emitted table renames every column to its logical
+    /// name, so an unrewritten expression references columns that do not
+    /// exist in the published table — a hard deploy failure on a
+    /// case-sensitive database (`Msg 207`). The expression parses through
+    /// the pinned parser (scalar first, boolean predicate second), the
+    /// visitor renames matching column references, and the pinned
+    /// generator re-renders. The ORIGINAL text returns verbatim when
+    /// nothing matched (byte-stability for already-logical expressions)
+    /// and when neither parse succeeds (the estate board names the
+    /// unrewritable residue; the emission stays faithful to the source
+    /// text rather than guessing).
+    let rewritePhysicalIdentifiers (physicalToLogical: Map<string, string>) (expressionSql: string) : string =
+        if Map.isEmpty physicalToLogical || System.String.IsNullOrWhiteSpace expressionSql then expressionSql
+        else
+            let parseFragment () : TSqlFragment option =
+                use scalarReader = new System.IO.StringReader(expressionSql)
+                let scalar, _ = rewriterParser.Value.ParseExpression(scalarReader)
+                match Option.ofObj scalar with
+                | Some s -> Some (s :> TSqlFragment)
+                | None ->
+                    use boolReader = new System.IO.StringReader(expressionSql)
+                    let boolean, _ = rewriterParser.Value.ParseBooleanExpression(boolReader)
+                    Option.ofObj boolean |> Option.map (fun b -> b :> TSqlFragment)
+            match parseFragment () with
+            | None -> expressionSql
+            | Some fragment ->
+                let visitor = PhysicalIdentifierRewriter(physicalToLogical)
+                fragment.Accept(visitor)
+                if visitor.Rewritten = 0 then expressionSql
+                else
+                    let generator = Sql160ScriptGenerator(sharedPinnedOptions)
+                    let mutable text : string | null = null
+                    generator.GenerateScript(fragment, &text)
+                    match Option.ofObj text with
+                    | Some t when not (System.String.IsNullOrWhiteSpace t) -> pinNewlines t
+                    | _ -> expressionSql
+
+    // -----------------------------------------------------------------------
+    // Family 4e (DECISIONS 2026-07-18; #669 EF-20) — the trigger-definition
+    // GATE. The rewrite itself is the passes' half (`LogicalTableEmission`
+    // v2 rewrites table references; `LogicalColumnEmission` v3 the owning
+    // kind's columns — Core-side, token grain). This layer owns the two
+    // refusal predicates the ScriptDom-free Core cannot: (a) the body does
+    // not PARSE, so no rewrite can be trusted; (b) the body still carries
+    // an OutSystems physical identifier (`OSUSR_*` / `OSSYS_*`) after the
+    // passes ran — the rewrite missed it, and the published body would
+    // target tables that do not exist in the renamed estate. The estate
+    // board's `EmissionTriggerUnrewritten` names the same two shapes.
+    // -----------------------------------------------------------------------
+
+    /// Parse a trigger definition as a full T-SQL script. `Ok` when it
+    /// parses clean; `Error` carries the first parse error. Shared by the
+    /// emission gate (refusal) and the estate board's detector, so a red
+    /// finding and a refused publish are the same predicate.
+    let tryParseTriggerDefinition (definition: string) : Result<unit, string> =
+        if System.String.IsNullOrWhiteSpace definition then Error "empty trigger definition"
+        else
+            use reader = new System.IO.StringReader(definition)
+            let fragment, errors = rewriterParser.Value.Parse(reader)
+            if not (isNull (box errors)) && errors.Count > 0 then
+                let e = errors.[0]
+                Error (sprintf "line %d: %s" e.Line e.Message)
+            elif Option.ofObj fragment |> Option.isSome then Ok ()
+            else Error "trigger definition did not parse"
+
+    let private ossysResiduePattern =
+        System.Text.RegularExpressions.Regex(
+            "\\b(?:OSUSR|OSSYS)_[A-Za-z0-9_]+",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            ||| System.Text.RegularExpressions.RegexOptions.Compiled)
+
+    /// The first OutSystems physical identifier still present in a
+    /// trigger definition after the logical-emission passes, `None` when
+    /// the body is clean. An `OSUSR_` / `OSSYS_` token in the published
+    /// estate is residue by construction — those prefixes exist only in
+    /// the source's physical layer.
+    let firstPhysicalResidue (definition: string) : string option =
+        if System.String.IsNullOrWhiteSpace definition then None
+        else
+            let m = ossysResiduePattern.Match(definition)
+            if m.Success then Some m.Value else None
+
     /// Generate T-SQL text for a single typed `TSqlStatement` via
     /// `Sql160ScriptGenerator`. Returns the rendered text without
     /// trailing newline; callers append the framing.

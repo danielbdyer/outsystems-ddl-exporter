@@ -1014,6 +1014,80 @@ let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + 
     Assert.Equal (b1, b2)
 
 // ---------------------------------------------------------------------------
+// DECISIONS 2026-07-18 (#669 M-1) — the classified authored defaults render
+// faithfully: a niladic call is the callable expression (never a quoted
+// string that fails at first insert), and the authored empty string is
+// `DEFAULT N''` (never the doubled `N''''''`).
+// ---------------------------------------------------------------------------
+
+let private authoredDefaultsKind : Kind =
+    let mkAttr key label typ isPk =
+        { Attribute.create (attrKey ["Job"; key]) (mkName label) typ
+            with Column = ColumnRealization.create (label.ToUpperInvariant()) (not isPk) |> Result.value
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr = mkAttr "Id" "Id" Integer true
+    let createdOn =
+        { mkAttr "CreatedOn" "CreatedOn" DateTime false with
+            DefaultValue = SqlLiteral.ofAuthoredDefault DateTime "getutcdate()" }
+    let note =
+        { mkAttr "Note" "Note" Text false with
+            Length = Some 50
+            DefaultValue = SqlLiteral.ofAuthoredDefault Text "''" }
+    Kind.create (kindKey ["Job"]) (mkName "Job") (mkTableId "dbo" "OSUSR_J_JOB")
+        [ idAttr; createdOn; note ]
+
+[<Fact>]
+let ``computed expressions rewrite physical identifiers to logical names (#669 M-8)`` () =
+    // The source's computed definition references physical columns
+    // ([WAREHOUSEQTY] * [AVGCOST]); the emitted table's columns are
+    // logical (WarehouseQty, AvgCost) — the expression renames with them.
+    // The CHECK constraint's definition rewrites through the same map.
+    let mkAttr key label typ isPk =
+        { Attribute.create (attrKey ["Stock"; key]) (mkName label) typ
+            with Column = ColumnRealization.create (label.ToUpperInvariant()) (not isPk) |> Result.value
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr  = mkAttr "Id" "Id" Integer true
+    let qty     = mkAttr "WarehouseQty" "WarehouseQty" Integer false
+    let cost    = mkAttr "AvgCost" "AvgCost" Integer false
+    let total =
+        { mkAttr "TotalValue" "TotalValue" Integer false with
+            Computed = ComputedColumnConfig.create "([WAREHOUSEQTY] * [AVGCOST])" false |> Result.toOption }
+    let check =
+        ColumnCheck.create
+            (attrKey ["Stock"; "CK_Qty"])
+            (Name.create "CK_Stock_QtyPositive" |> Result.toOption)
+            "([WAREHOUSEQTY] >= 0)"
+            false
+        |> Result.value
+    let kind =
+        { Kind.create (kindKey ["Stock"]) (mkName "Stock") (mkTableId "dbo" "OSUSR_S_STOCK")
+            [ idAttr; qty; cost; total ]
+          with ColumnChecks = [ check ] }
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "StockModule") (mkName "StockModule") [ kind ] ]
+          Sequences = [] }
+    let artifact = SsdtDdlEmitter.emitSlices (enrich catalog) |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find kind.SsKey).Body
+    Assert.Contains ("[WarehouseQty]", body)
+    Assert.Contains ("[AvgCost]", body)
+    Assert.DoesNotContain ("[WAREHOUSEQTY] * [AVGCOST]", body)
+    Assert.DoesNotContain ("[WAREHOUSEQTY] >= 0", body)
+
+[<Fact>]
+let ``authored defaults: a niladic call renders callable and the quoted empty string renders N'' (#669 M-1)`` () =
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "JobModule") (mkName "JobModule") [ authoredDefaultsKind ] ]
+          Sequences = [] }
+    let artifact = SsdtDdlEmitter.emitSlices (enrich catalog) |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find authoredDefaultsKind.SsKey).Body
+    Assert.Contains ("getutcdate()", body)
+    Assert.DoesNotContain ("'getutcdate()'", body)
+    Assert.Contains ("DEFAULT N''", body)
+    Assert.DoesNotContain ("N''''''", body)
+
+// ---------------------------------------------------------------------------
 // Slice 5.13.fk-features-emit — ON UPDATE referential action + WITH NOCHECK
 // FK trust-state preservation through the SSDT realization. Mirrors the
 // column-features-emit pattern on the FK axis (matrix rows 58 + 59).
@@ -1064,6 +1138,133 @@ let private fkFeaturesCatalog (onUpdate: ReferenceAction option) (trusted: bool)
               { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind onUpdate trusted ]; IsActive = true; ExtendedProperties = [] } ]
         Sequences = []
     }
+
+// ---------------------------------------------------------------------------
+// DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate. A
+// reference targeting a composite primary key refuses the publish (before
+// this, the emitted foreign key silently referenced only the first key
+// column and the deploy rejected it). The overlay's DropFk is the ruling's
+// second arm: a dropped reference emits no constraint and the publish
+// proceeds.
+// ---------------------------------------------------------------------------
+
+let private compositeTargetAKind : Kind =
+    let secondPk = attrKey ["A"; "AKind"; "Tenant"]
+    { Kind.create
+        fkFeaturesAKey
+        (mkName "AKind")
+        (mkTableId "dbo" "OSUSR_A_AKIND")
+        [ { Attribute.create fkFeaturesAIdAttr (mkName "Id") Integer with
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          { Attribute.create secondPk (mkName "Tenant") Integer with
+                Column = ColumnRealization.create ("TENANT") (false) |> Result.value
+                IsPrimaryKey = true
+                IsMandatory  = true } ]
+      with References = []; Indexes = [] }
+
+let private compositeTargetCatalog : Catalog =
+    {
+        Modules =
+            [ { SsKey = modKey "A"; Name = mkName "A"; Kinds = [ compositeTargetAKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind None true ]; IsActive = true; ExtendedProperties = [] } ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``composite-key gate: a reference targeting a composite primary key refuses the publish (#669 B-3)`` () =
+    let enriched = enrich compositeTargetCatalog
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.CompositeKeyReferenceRefused (owner, _, target, keyColumns)) ->
+        Assert.Equal("BKind", owner)
+        Assert.Equal("AKind", target)
+        Assert.Equal(2, keyColumns)
+    | Error other -> Assert.Fail (sprintf "expected the composite-key refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the composite-key refusal; the publish emitted"
+
+[<Fact>]
+let ``composite-key gate: the overlay's dropped reference passes, and no foreign key emits (the ruling's second arm)`` () =
+    let enriched = enrich compositeTargetCatalog
+    let overlay = { DecisionOverlay.empty with DropFk = Set.singleton fkFeaturesCrossRef }
+    let artifact = SsdtDdlEmitter.emitSlicesWith overlay enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.DoesNotContain ("FOREIGN KEY", body)
+
+[<Fact>]
+let ``temporal gate: a system-versioned kind refuses the publish — system-versioning never drops silently (#669 EF-23)`` () =
+    // The emission cannot yet render the period columns' GENERATED ALWAYS
+    // clauses, so a kind carrying ModalityMark.Temporal refuses rather than
+    // deploying a table whose system-versioning silently vanished. The
+    // board's EmissionTemporalDropped finding states the same fact.
+    let temporalConfig : TemporalConfig =
+        { HistorySchema = Some "history"
+          HistoryTable  = Some "CUSTOMER_History"
+          PeriodStart   = None
+          PeriodEnd     = None
+          Retention     = Infinite }
+    let withTemporal =
+        { compositeTargetCatalog with
+            Modules =
+                compositeTargetCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    References = []
+                                    Modality = ModalityMark.Temporal temporalConfig :: k.Modality }) }) }
+    let enriched = enrich withTemporal
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TemporalKindRefused kind) ->
+        Assert.False (System.String.IsNullOrWhiteSpace kind)
+    | Error other -> Assert.Fail (sprintf "expected the temporal refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the temporal refusal; the publish emitted"
+
+/// Family 4e (#669 EF-20) — inject one trigger into every kind of a
+/// references-cleared composite-target catalog, so the trigger gate is the
+/// only refusal in play.
+let private withTrigger (definition: string) : Catalog =
+    { compositeTargetCatalog with
+        Modules =
+            compositeTargetCatalog.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            { k with
+                                References = []
+                                Triggers =
+                                    [ Trigger.create (modKey (Name.value k.Name + "-trg")) (mkName "TRG_X") false definition
+                                      |> Result.value ] }) }) }
+
+[<Fact>]
+let ``trigger gate: a body that does not parse refuses the publish (family 4e; #669 EF-20)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER ON WHERE SELECT !!")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TriggerUnrewrittenRefused (_, trigger, reason)) ->
+        Assert.Equal("TRG_X", trigger)
+        Assert.Contains("line", reason)
+    | Error other -> Assert.Fail (sprintf "expected the trigger refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the trigger refusal; the publish emitted"
+
+[<Fact>]
+let ``trigger gate: an OSUSR residue after the logical passes refuses the publish (family 4e; #669 EF-20)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER [TRG_X] ON [dbo].[AKind] AFTER INSERT AS BEGIN UPDATE [dbo].[OSUSR_ABC_LEFTOVER] SET [X] = 1 END")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TriggerUnrewrittenRefused (_, _, reason)) ->
+        Assert.Contains("OSUSR_ABC_LEFTOVER", reason)
+    | Error other -> Assert.Fail (sprintf "expected the residue refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the residue refusal; the publish emitted"
+
+[<Fact>]
+let ``trigger gate: a clean fully-logical trigger body publishes (the negative)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER [TRG_X] ON [dbo].[AKind] AFTER INSERT AS BEGIN SELECT 1 END")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Ok _ -> ()
+    | Error e -> Assert.Fail (sprintf "expected the publish to emit; got %A" e)
 
 [<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =
@@ -1441,3 +1642,29 @@ let ``WP-17e: an InsertRow Text cell with control chars renders CHAR() concatena
     Assert.DoesNotContain("line1\r", sql)
     Assert.DoesNotContain("\nline2", sql)
     Assert.DoesNotContain("line2\t", sql)
+
+// ---------------------------------------------------------------------------
+// Task 14 (the board plan) — the JSON lane's targeted fixture: an AUTHORED
+// model carrying a disabled index + IGNORE_DUP_KEY travels codec → parse →
+// emission with both facets landing in the DDL. The rowset lane was proven
+// at the deployed level (EF-11/EF-12); this pins the authored lane's leg.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``JSON lane: disabled + IGNORE_DUP_KEY index facets survive serialize → deserialize → emission (task 14)`` () =
+    let authored = idxFeaturesCatalog true true None
+    // The wire form names both facets (the codec's contract)...
+    let json = Projection.Targets.Json.CatalogCodec.serialize authored
+    Assert.Contains("\"ignoreDuplicateKey\": true", json)
+    Assert.Contains("\"isDisabled\": true", json)
+    // ...and the parsed catalog emits both: IGNORE_DUP_KEY = ON inside the
+    // CREATE INDEX options, ALTER INDEX ... DISABLE after it.
+    let parsed =
+        match Projection.Targets.Json.CatalogCodec.deserialize json with
+        | Ok c -> c
+        | Error e -> failwithf "deserialize failed: %A" e
+    let body =
+        (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices (enrich parsed) |> mustOk)
+         |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains("IGNORE_DUP_KEY = ON", body)
+    Assert.Contains("DISABLE", body)

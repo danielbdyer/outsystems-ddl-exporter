@@ -85,6 +85,7 @@
     <Compile Include="SyntheticCanaryTests.fs" />
     <Compile Include="CentralityVolumeCanaryTests.fs" />
     <Compile Include="ModelResolutionDockerTests.fs" />
+    <Compile Include="T18CycleBreakCanaryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

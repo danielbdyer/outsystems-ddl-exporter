@@ -178,6 +178,21 @@ module OssysRowsetTypes =
             /// reflection didn't fire or the deployed type is
             /// unrecognized.
             DeployedStorage : SqlStorageType option
+            /// DECISIONS 2026-07-18 (decision 2; #669 M-3 / EF-18) — the
+            /// DEPLOYED nullability (`#ColumnReality.IsNullable`,
+            /// `sys.columns.is_nullable`). `Some false` (deployed NOT
+            /// NULL) is PRESERVED at the lift: the emitted column stays
+            /// NOT NULL even when the model marks the attribute optional
+            /// — deployed-schema over model; an incremental apply can
+            /// never drive a DBA-tightened column back to NULL. `Some
+            /// true` and `None` leave the model's declaration in charge.
+            DeployedIsNullable : bool option
+            /// DECISIONS 2026-07-18 (#669 EF-21) — the deployed PERSISTED
+            /// marking of a computed column (`sys.computed_columns
+            /// .is_persisted`). Threads into `ComputedColumnConfig
+            /// .IsPersisted`; the emission already renders the PERSISTED
+            /// keyword, so carrying the fact closes the round-trip.
+            IsPersisted : bool
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter
@@ -351,6 +366,38 @@ module OssysRowsetTypes =
             Definition  : string option
         }
 
+    /// Rowset 25 — one system-versioned entity's temporal configuration
+    /// (DECISIONS 2026-07-18; #669 EF-23). Lifts into
+    /// `ModalityMark.Temporal` so the estate board's temporal
+    /// dealbreaker fires on rowset-sourced catalogs.
+    type TemporalRow =
+        {
+            EntityId       : int
+            HistorySchema  : string option
+            HistoryTable   : string option
+            PeriodStart    : string option
+            PeriodEnd      : string option
+            RetentionValue : int option
+            RetentionUnit  : string option
+        }
+
+    /// Rowset 24 — one deployed `sys.sequences` row (DECISIONS 2026-07-18;
+    /// #669 EF-22). The ten axes mirror `ReadSide`'s reflection so both
+    /// lanes reconstruct the same `Sequence` values.
+    type SequenceRow =
+        {
+            Schema       : string
+            Name         : string
+            DataType     : string
+            StartValue   : decimal option
+            Increment    : decimal option
+            MinimumValue : decimal option
+            MaximumValue : decimal option
+            IsCycling    : bool
+            IsCached     : bool
+            CacheSize    : int option
+        }
+
     /// V1 rowset `#ColumnCheckReality` — per-column CHECK constraint
     /// reflection (chapter 5.13 slice ossys-rowsets-cluster; matrix
     /// row 12). One row per CHECK constraint per attribute; V2's
@@ -394,6 +441,18 @@ module OssysRowsetTypes =
             /// constraints. Lifts into `Kind.ColumnChecks` (grouped
             /// by the AttrId's owning Kind).
             ColumnChecks : ColumnCheckRow list
+            /// Rowset 24 (DECISIONS 2026-07-18; #669 EF-22) — the deployed
+            /// `sys.sequences` rows. Lifts into `Catalog.Sequences`; the
+            /// emission already renders CREATE SEQUENCE, so carriage
+            /// closes the round-trip. Empty for sources without the
+            /// extended extraction (fixtures; the JSON path).
+            Sequences : SequenceRow list
+            /// Rowset 25 (DECISIONS 2026-07-18; #669 EF-23) — per-entity
+            /// system-versioning configuration. Lifts into
+            /// `ModalityMark.Temporal`; the estate board's temporal
+            /// dealbreaker (and the publish refusal) fire from the mark.
+            /// Empty for sources without the extended extraction.
+            Temporal : TemporalRow list
         }
 
     /// Empty RowsetBundle helper. Test fixtures + JSON-path placeholders
@@ -415,4 +474,6 @@ module OssysRowsetTypes =
               Indexes      = []
               IndexColumns = []
               Triggers     = []
-              ColumnChecks = [] }
+              ColumnChecks = []
+              Sequences    = []
+              Temporal     = [] }

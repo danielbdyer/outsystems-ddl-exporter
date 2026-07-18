@@ -35,14 +35,13 @@ let private v1SourcePath : string =
 [<Fact>]
 let ``Slice α: embedded SQL resource loads with expected line count`` () =
     let sql = MetadataExtractionSql.read()
-    // V1's donor file is 1253 lines after the @SkipJsonRowsets
-    // session-context gate joined the default-collation suppression and
-    // the NM-72 Order_Num threading (the donor + the V2 embedded copy
-    // stay byte-identical per the carbon-copy invariant; both are synced
-    // on every edit).
+    // V2's copy FORKED from V1's 1253-line donor on 2026-07-18 (#669
+    // EF-21; DECISIONS — the PERSISTED carriage appended to
+    // #ColumnReality). The carbon-copy era's invariant is retired; the
+    // fork is pinned by the divergence test below.
     let lineCount = sql.Split('\n').Length
     // Be tolerant of trailing-newline variations.
-    Assert.InRange(lineCount, 1253, 1255)
+    Assert.InRange(lineCount, 1299, 1301)
 
 [<Fact>]
 let ``Slice α: embedded SQL declares the five expected parameters`` () =
@@ -61,33 +60,30 @@ let ``Slice α: embedded SQL contains the goal-header sentinel comment`` () =
     let sql = MetadataExtractionSql.read()
     Assert.Contains("OutSystems → JSON (Two-phase, CTE-free)", sql)
 
-[<Fact(Skip = "Gates on V1 trunk being checked out alongside V2. Manually run during merges from V1.")>]
-let ``Slice α: embedded SQL bytes are identical to V1's source file (gated)`` () =
-    if not (File.Exists v1SourcePath) then
-        // V1 source not present in this environment; the test is a no-op.
-        ()
-    else
-        let v1Bytes = File.ReadAllBytes v1SourcePath
-        let v2Bytes =
-            System.Text.Encoding.UTF8.GetBytes(MetadataExtractionSql.read())
-        Assert.Equal<byte[]>(v1Bytes, v2Bytes)
-
 [<Fact>]
-let ``Slice α: V1 source bytes match V2 embedded resource bytes (present-environment only)`` () =
-    // Non-gated variant that runs when V1's trunk is present, but does
-    // not Skip when absent — the assertion is structural rather than
-    // a hard requirement. Useful when running the suite in the
-    // V1-trunk-present environment (e.g., the current monorepo
-    // checkout).
+let ``Slice α: V2's extraction FORKED from V1's on the PERSISTED carriage — the divergence is exactly the named extension`` () =
+    // The carbon-copy invariant is RETIRED (DECISIONS 2026-07-18; #669
+    // EF-21): V2's extraction evolves. The pin flips from byte-identity
+    // to the NAMED fork — V2 carries the appended `IsPersisted` column;
+    // V1's donor does not. A future V2-side extension extends this pin;
+    // an unnamed drift still fails it.
+    let v2Sql = MetadataExtractionSql.read()
+    Assert.Contains("IsPersisted", v2Sql)
     if File.Exists v1SourcePath then
-        let v1Bytes = File.ReadAllBytes v1SourcePath
-        let v2Bytes =
-            System.Text.Encoding.UTF8.GetBytes(MetadataExtractionSql.read())
-        Assert.Equal<byte[]>(v1Bytes, v2Bytes)
-    else
-        // V1 trunk absent — assertion is vacuous; test passes by
-        // construction. This is the V2-only branch case.
-        Assert.True true
+        let v1Sql = File.ReadAllText v1SourcePath
+        Assert.DoesNotContain("IsPersisted", v1Sql)
+        // Stripping the extension's lines recovers the shared spine: every
+        // V1 line still appears in V2 (line-set containment, normalized
+        // for the trailing-comma continuation an appended column adds to
+        // its predecessor — the fork is append-only).
+        let normalize (s: string) = s.TrimEnd().TrimEnd(',')
+        let v1Lines = v1Sql.Split('\n') |> Array.map normalize |> Set.ofArray
+        let v2Lines = v2Sql.Split('\n') |> Array.map normalize |> Set.ofArray
+        let missing = Set.difference v1Lines v2Lines
+        Assert.True(
+            Set.isEmpty missing,
+            sprintf "V1 lines absent from V2's fork (the fork must stay append-only): %A"
+                (missing |> Set.toList |> List.truncate 5))
 
 // ---------------------------------------------------------------------------
 // Slice β — V1 OSSYS bootstrap fixture (`tests/Fixtures/sql/model.edge-case

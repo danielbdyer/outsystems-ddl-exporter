@@ -127,6 +127,17 @@ let ``bt-resolved reference emits a FOREIGN KEY referencing the target table`` (
     withCatalog "bt-ref-fk-emission" (fun catalog ->
         let enriched =
             (CanonicalizeIdentity.registered.Run catalog |> Lineage.map (fun d -> d.Value)).Value
+        // Family 4e — the edge-case snapshot's audit trigger references its
+        // table by the PHYSICAL name; production emission always runs the
+        // logical-emission passes first (they rewrite trigger bodies), and
+        // the emitter's gate refuses any un-rewritten residue. Mirror the
+        // production order here.
+        let enriched =
+            ((LogicalTableEmission.registered LogicalTableEmission.Enabled).Run enriched
+             |> Lineage.map (fun d -> d.Value)).Value
+        let enriched =
+            ((LogicalColumnEmission.registered LogicalColumnEmission.Enabled).Run enriched
+             |> Lineage.map (fun d -> d.Value)).Value
         match SsdtDdlEmitter.emitSlices enriched with
         | FsResult.Error err -> Assert.Fail (sprintf "emit failed: %A" err)
         | FsResult.Ok artifact ->
@@ -136,6 +147,8 @@ let ``bt-resolved reference emits a FOREIGN KEY referencing the target table`` (
                 | Some f -> f.Body
                 | None   -> Assert.Fail "expected a slice for Customer"; ""
             // The bt-resolved CityId reference must materialize as a real
-            // FK constraint pointing at City's physical table.
+            // FK constraint pointing at City's PUBLISHED table — the
+            // logical name, post-passes (family 4e mirrors production
+            // emission order here).
             Assert.Contains("FOREIGN KEY", body)
-            Assert.Contains("OSUSR_DEF_CITY", body))
+            Assert.Contains("[City]", body))

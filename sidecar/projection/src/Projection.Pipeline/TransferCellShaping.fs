@@ -142,11 +142,17 @@ module TransferCellShaping =
             let setGetters   = deferredAttrs |> List.map cellGetterOf
             let whereGetters = pkAttrs       |> List.map cellGetterOf
             fun row ->
-                Some (renderPhase2Update
-                    { Target     = kind.Physical
-                      SetCells   = setGetters   |> List.map (fun g -> g row)
-                      WhereCells = whereGetters |> List.map (fun g -> g row)
-                      CdcAware   = true })
+                let setCells = setGetters |> List.map (fun g -> g row)
+                // v7 slice 5 — the exact repair set: a row whose deferred
+                // values are all NULL was landed whole by Phase-1; its
+                // UPDATE would re-set NULL over NULL (norm inflation).
+                if setCells |> List.forall (fun (_, lit) -> lit = SqlLiteral.NullLit) then None
+                else
+                    Some (renderPhase2Update
+                        { Target     = kind.Physical
+                          SetCells   = setCells
+                          WhereCells = whereGetters |> List.map (fun g -> g row)
+                          CdcAware   = true })
 
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
@@ -175,8 +181,12 @@ module TransferCellShaping =
             let setGetters   = deferredAttrs |> List.map cellGetterOf
             let whereGetters = pkAttrs       |> List.map cellGetterOf
             fun q ->
-                Some (renderPhase2Update
-                    { Target     = kind.Physical
-                      SetCells   = setGetters   |> List.map (fun g -> g q)
-                      WhereCells = whereGetters |> List.map (fun g -> g q)
-                      CdcAware   = true })
+                let setCells = setGetters |> List.map (fun g -> g q)
+                // v7 slice 5 — the exact repair set (quantum twin).
+                if setCells |> List.forall (fun (_, lit) -> lit = SqlLiteral.NullLit) then None
+                else
+                    Some (renderPhase2Update
+                        { Target     = kind.Physical
+                          SetCells   = setCells
+                          WhereCells = whereGetters |> List.map (fun g -> g q)
+                          CdcAware   = true })

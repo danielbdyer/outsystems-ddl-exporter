@@ -1,0 +1,49 @@
+9c9
+< dbo.Category 3 ParentCategoryId bigint 8 19 0 0 0 NULL   0
+---
+> dbo.Category 3 ParentCategoryId bigint 8 19 0 1 0 NULL   0
+19,21c19,21
+< dbo.Customer 2 FirstName nvarchar 200 0 0 1 0 SQL_Latin1_General_CP1_CI_AS ('') DF_OSUSR_ABC_CUSTOMER_FIRSTNAME 0
+< dbo.Customer 3 LastName nvarchar 200 0 0 1 0 SQL_Latin1_General_CP1_CI_AS ('') DF_OSUSR_ABC_CUSTOMER_LASTNAME 0
+< dbo.Customer 4 Email nvarchar 510 0 0 0 0 SQL_Latin1_General_CP1_CI_AS   0
+---
+> dbo.Customer 2 FirstName nvarchar 200 0 0 1 0 SQL_Latin1_General_CP1_CI_AS (N'''''') DF_OSUSR_ABC_CUSTOMER_FIRSTNAME 0
+> dbo.Customer 3 LastName nvarchar 200 0 0 1 0 SQL_Latin1_General_CP1_CI_AS (N'''''') DF_OSUSR_ABC_CUSTOMER_LASTNAME 0
+> dbo.Customer 4 Email nvarchar 510 0 0 0 0 Latin1_General_CI_AI   0
+25c25
+< dbo.JobRun 3 CreatedOn datetime2 8 27 7 0 0 NULL (getutcdate()) DF_OSUSR_XYZ_JOBRUN_CREATEDON 0
+---
+> dbo.JobRun 3 CreatedOn datetime2 8 27 7 0 0 NULL (CONVERT([datetime2](7),'getutcdate()')) DF_OSUSR_XYZ_JOBRUN_CREATEDON 0
+51c51
+< dbo.StockMovement 3 SupplierId bigint 8 19 0 0 0 NULL   0
+---
+> dbo.StockMovement 3 SupplierId bigint 8 19 0 1 0 NULL   0
+57c57
+< dbo.SyncLog 3 RawXml nvarchar -1 0 0 1 0 SQL_Latin1_General_CP1_CI_AS   0
+---
+> dbo.SyncLog 3 RawXml xml -1 0 0 1 0 NULL   0
+62c62
+< FK_Category_Parent_ParentCategoryId dbo.Category ParentCategoryId Category NO_ACTION NO_ACTION 0 0
+---
+> FK_Category_Category_ParentCategoryId dbo.Category ParentCategoryId Category NO_ACTION NO_ACTION 0 0
+65c65
+< FK_SalesOrderLine_SalesOrder_SalesOrderId dbo.OrderLine OrderId SalesOrder NO_ACTION NO_ACTION 0 0
+---
+> FK_OrderLine_SalesOrder_OrderId dbo.OrderLine OrderId SalesOrder CASCADE NO_ACTION 0 0
+67,69c67,69
+< FK_SalesOrder_Customer_CustomerId dbo.SalesOrder CustomerId Customer NO_ACTION NO_ACTION 0 0
+< FK_StockMovement_StockItem_StockItemId dbo.StockMovement StockItemId StockItem NO_ACTION NO_ACTION 0 0
+< FK_StockMovement_Supplier_SupplierId dbo.StockMovement SupplierId Supplier NO_ACTION NO_ACTION 1 1
+---
+> FK_SalesOrder_Customer_CustomerId dbo.SalesOrder CustomerId Customer CASCADE NO_ACTION 0 0
+> FK_StockMovement_StockItem_StockItemId dbo.StockMovement StockItemId StockItem NO_ACTION CASCADE 0 0
+> FK_StockMovement_Supplier_SupplierId dbo.StockMovement SupplierId Supplier SET_NULL NO_ACTION 1 0
+81a82
+> dbo.JobRun IX_JobRun_CreatedOn NONCLUSTERED 0 0 0 0 0  CreatedOn DESC
+96,98d96
+< TR_JobRun_AUDIT JobRun 0
+< TR_StockMovement_INS StockMovement 0
+< TR_StockMovement_UPD StockMovement 0
+102a101,102
+> Projection.LogicalName 70
+> Projection.SsKey 70

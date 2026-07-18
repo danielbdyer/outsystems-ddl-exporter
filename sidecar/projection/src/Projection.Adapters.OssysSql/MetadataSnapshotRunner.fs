@@ -232,7 +232,12 @@ module MetadataSnapshotRunner =
           ComputedDefinition    : string option
           DefaultConstraintName : string option
           DefaultDefinition     : string option
-          PhysicalColumn        : string option }
+          PhysicalColumn        : string option
+          /// DECISIONS 2026-07-18 (#669 EF-21) — `sys.computed_columns
+          /// .is_persisted`. Appended LAST per the append-only column
+          /// contract; threads to `ComputedColumnConfig.IsPersisted`,
+          /// whose emission already renders the PERSISTED keyword.
+          IsPersisted           : bool }
 
     /// `#ColumnCheckReality` rowset (matrix row 12). Per-column CHECK
     /// constraint reflection. V2's `Kind.ColumnChecks` IR exists per
@@ -342,6 +347,34 @@ module MetadataSnapshotRunner =
           IsDisabled        : bool
           TriggerDefinition : string option }
 
+    /// Rowset 24 — deployed `sys.sequences` reflection (DECISIONS
+    /// 2026-07-18; #669 EF-22). Appended at the script's end; the ten
+    /// axes mirror `ReadSide`'s `SequenceRow` so both lanes reconstruct
+    /// the same `Sequence` values.
+    type OssysSequenceRow =
+        { Schema       : string
+          Name         : string
+          DataType     : string
+          StartValue   : decimal option
+          Increment    : decimal option
+          MinimumValue : decimal option
+          MaximumValue : decimal option
+          IsCycling    : bool
+          IsCached     : bool
+          CacheSize    : int option }
+
+    /// Rowset 25 — per-entity system-versioning reflection (DECISIONS
+    /// 2026-07-18; #669 EF-23). Lifts into `ModalityMark.Temporal` so
+    /// the estate board's temporal dealbreaker fires from the mark.
+    type OssysTemporalRow =
+        { EntityId       : int
+          HistorySchema  : string option
+          HistoryTable   : string option
+          PeriodStart    : string option
+          PeriodEnd      : string option
+          RetentionValue : int option
+          RetentionUnit  : string option }
+
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
     /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
@@ -362,6 +395,8 @@ module MetadataSnapshotRunner =
             ForeignKeysReality : OssysFkRealityRow list
             ForeignKeyColumns  : OssysFkColumnRow list
             Triggers           : OssysTriggerRow list
+            Sequences          : OssysSequenceRow list
+            Temporal           : OssysTemporalRow list
         }
 
     // -------------------------------------------------------------------
@@ -454,6 +489,13 @@ module MetadataSnapshotRunner =
     let private readGuidOpt (row: RowAtRest) (ordinal: int) : Guid option =
         if isDbNull row ordinal then None
         else Some (unbox<Guid> (cellAt row ordinal))
+
+    let private readDecimalOpt (row: RowAtRest) (ordinal: int) : decimal option =
+        // sys.sequences ranges surface as decimal(38,0) via the rowset's
+        // explicit CAST; Convert tolerates provider width variation the
+        // same way `readInt` does.
+        if isDbNull row ordinal then None
+        else Some (System.Convert.ToDecimal(cellAt row ordinal))
 
     /// Read all rows of the current result set — each row captured at
     /// rest via `captureRow`, then handed to `mapper`; advance to the
@@ -591,7 +633,11 @@ module MetadataSnapshotRunner =
           ComputedDefinition    = readStringOpt  r 9
           DefaultConstraintName = readStringOpt  r 10
           DefaultDefinition     = readStringOpt  r 11
-          PhysicalColumn        = readStringOpt  r 12 }
+          PhysicalColumn        = readStringOpt  r 12
+          // DECISIONS 2026-07-18 (#669 EF-21) — appended column 13. The
+          // SQL and this reader ship together (one resource, one
+          // assembly); the result-set contract check guards drift.
+          IsPersisted           = readBool       r 13 }
 
     let private mapColumnCheckRow (r: RowAtRest) : OssysColumnCheckRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1042-1048
@@ -668,6 +714,33 @@ module MetadataSnapshotRunner =
           IsDisabled        = readBool      r 2
           TriggerDefinition = readStringOpt r 3 }
 
+    /// Rowset 24 (`sys.sequences`) — ordinals mirror the SELECT:
+    /// SchemaName, SequenceName, DataType, StartValue, Increment,
+    /// MinimumValue, MaximumValue, IsCycling, IsCached, CacheSize.
+    let private mapSequenceRow (r: RowAtRest) : OssysSequenceRow =
+        { Schema       = readString     r 0
+          Name         = readString     r 1
+          DataType     = readString     r 2
+          StartValue   = readDecimalOpt r 3
+          Increment    = readDecimalOpt r 4
+          MinimumValue = readDecimalOpt r 5
+          MaximumValue = readDecimalOpt r 6
+          IsCycling    = readBool       r 7
+          IsCached     = readBool       r 8
+          CacheSize    = readIntOpt     r 9 }
+
+    /// Rowset 25 (system-versioning) — ordinals mirror the SELECT:
+    /// EntityId, HistorySchema, HistoryTable, PeriodStartColumn,
+    /// PeriodEndColumn, RetentionValue, RetentionUnit.
+    let private mapTemporalRow (r: RowAtRest) : OssysTemporalRow =
+        { EntityId       = readInt       r 0
+          HistorySchema  = readStringOpt r 1
+          HistoryTable   = readStringOpt r 2
+          PeriodStart    = readStringOpt r 3
+          PeriodEnd      = readStringOpt r 4
+          RetentionValue = readIntOpt    r 5
+          RetentionUnit  = readStringOpt r 6 }
+
     /// Number of user-visible result sets the carbon-copied OSSYS rowsets
     /// script emits. V1's documentation describes 22 user-visible rowsets
     /// (rowsets 0..21); the canary's empirical walk observes **23** —
@@ -679,8 +752,11 @@ module MetadataSnapshotRunner =
     /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
     /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
     /// instead of silently accepting partial data. Matrix row 35.
+    /// **25 as of the extraction fork** (DECISIONS 2026-07-18; #669
+    /// EF-22 + EF-23): the appended `sys.sequences` and temporal-
+    /// configuration rowsets join the walk.
     [<Literal>]
-    let ExpectedResultSets = 23
+    let ExpectedResultSets = 25
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
@@ -867,6 +943,12 @@ module MetadataSnapshotRunner =
                 do! skip "triggerJson"
                 do! skip "moduleJson"
 
+                // Rowsets 24 + 25 — sequences + temporal configuration
+                // (the extraction fork; DECISIONS 2026-07-18; #669
+                // EF-22 + EF-23). Appended at the script's end.
+                let! sequences = read "sequences" mapSequenceRow
+                let! temporal  = read "temporal"  mapTemporalRow
+
                 // Drain any trailing rowsets the SQL might emit beyond
                 // the documented 23. Per matrix row 35: a SQL-contract
                 // drift adds rowsets here; the contract check below
@@ -909,6 +991,8 @@ module MetadataSnapshotRunner =
                         ForeignKeysReality = fkReality
                         ForeignKeyColumns  = fkColumns
                         Triggers           = triggers
+                        Sequences          = sequences
+                        Temporal           = temporal
                     }
             with
             | ex ->
@@ -948,13 +1032,20 @@ module MetadataSnapshotRunner =
     ///     a reference with no reflected FK is logical-only and carries
     ///     `false` (JSON-path `ISNULL(HasFK, 0)` parity — WP-1a).
 
-    /// Parse V1's `#AllIdx.DataCompressionJson` into a single-value
+    /// Parse `#AllIdx.DataCompressionJson` into a single-value
     /// compression code when the JSON encodes uniform compression
-    /// across every partition. The JSON shape per V1's SQL is
-    /// `[{"P":1,"Code":"PAGE"}, …]` — one entry per partition.
-    /// Returns `Some "<code>"` when every entry's Code matches;
-    /// `None` when heterogeneous or unparseable (row 56 partition
-    /// axis residual). Pillar 7 four-question analysis: the typed
+    /// across every partition. The JSON shape per the extraction
+    /// script's rowset-9 projection is
+    /// `[{"partition":1,"compression":"PAGE"}, …]` — one entry per
+    /// partition (`data_compression_desc AS [compression]`). The
+    /// original wiring read a property named `Code` that the script
+    /// never emitted, so every parse returned `None` and the whole
+    /// compression chain (bundle → reader → emitter) sat dark —
+    /// the audit observed exactly that as EF-25 (DATA_COMPRESSION
+    /// dropped). `Code` stays as a fallback for vintage captures.
+    /// Returns `Some "<code>"` when every entry matches; `None`
+    /// when heterogeneous or unparseable (row 56 partition axis
+    /// residual). Pillar 7 four-question analysis: the typed
     /// AST library is `System.Text.Json` (JsonDocument is the BCL
     /// canonical parser); no LINT-ALLOW needed because the parsing
     /// is a structured walk, not string composition.
@@ -968,7 +1059,8 @@ module MetadataSnapshotRunner =
                     seq {
                         for entry in doc.RootElement.EnumerateArray() do
                             let mutable codeEl = Unchecked.defaultof<System.Text.Json.JsonElement>
-                            if entry.TryGetProperty("Code", &codeEl) then
+                            if entry.TryGetProperty("compression", &codeEl)
+                               || entry.TryGetProperty("Code", &codeEl) then
                                 match Option.ofObj (codeEl.GetString()) with
                                 | Some s -> yield s
                                 | None   -> ()
@@ -1172,7 +1264,7 @@ module MetadataSnapshotRunner =
                 [ { DiagnosticEntry.create
                       "adapter:OSSYS" DiagnosticSeverity.Info
                       "adapter.ossys.columnReality.nullabilityDivergence"
-                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). The engine carries the LOGICAL value for emitted schema; rows that actually violate the logical model are itemized separately in the data-fidelity diagnostics."
+                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model, and rows that violate it are itemized separately in the data-fidelity diagnostics."
                           (List.length diverged)
                           (List.length mandatoryButNullable)
                           (List.length nullableButNotNull)
@@ -1395,6 +1487,18 @@ module MetadataSnapshotRunner =
                     // F1 (audit 2026-06-17) — carry the deployed collation.
                     Collation             = realityCollation
                     DeployedStorage       = realityStorage
+                    // Decision 2 (DECISIONS 2026-07-18; #669 M-3 / EF-18) —
+                    // carry the deployed nullability; the reader preserves
+                    // a deployed NOT NULL over a model-optional declaration.
+                    DeployedIsNullable    =
+                        Map.tryFind a.AttrId columnRealityByAttrId
+                        |> Option.map (fun cr -> cr.IsNullable)
+                    // #669 EF-21 — carry the PERSISTED marking; the reader
+                    // threads it into the computed-column configuration.
+                    IsPersisted           =
+                        Map.tryFind a.AttrId columnRealityByAttrId
+                        |> Option.map (fun cr -> cr.IsPersisted)
+                        |> Option.defaultValue false
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with
@@ -1541,6 +1645,35 @@ module MetadataSnapshotRunner =
                     IsNotTrusted   = c.IsNotTrusted
                 } : OssysRowsetTypes.ColumnCheckRow)
 
+        let sequences =
+            snapshot.Sequences
+            |> List.map (fun s ->
+                ({
+                    Schema       = s.Schema
+                    Name         = s.Name
+                    DataType     = s.DataType
+                    StartValue   = s.StartValue
+                    Increment    = s.Increment
+                    MinimumValue = s.MinimumValue
+                    MaximumValue = s.MaximumValue
+                    IsCycling    = s.IsCycling
+                    IsCached     = s.IsCached
+                    CacheSize    = s.CacheSize
+                } : OssysRowsetTypes.SequenceRow))
+
+        let temporal =
+            snapshot.Temporal
+            |> List.map (fun t ->
+                ({
+                    EntityId       = t.EntityId
+                    HistorySchema  = t.HistorySchema
+                    HistoryTable   = t.HistoryTable
+                    PeriodStart    = t.PeriodStart
+                    PeriodEnd      = t.PeriodEnd
+                    RetentionValue = t.RetentionValue
+                    RetentionUnit  = t.RetentionUnit
+                } : OssysRowsetTypes.TemporalRow))
+
         {
             Modules      = modules
             Kinds        = kinds
@@ -1550,4 +1683,6 @@ module MetadataSnapshotRunner =
             IndexColumns = indexColumns
             Triggers     = triggers
             ColumnChecks = columnChecks
+            Sequences    = sequences
+            Temporal     = temporal
         }

@@ -422,7 +422,10 @@ SELECT
     cc.definition AS ComputedDefinition,
     dc.name AS DefaultConstraintName,
     dc.definition AS DefaultDefinition,
-    c.[name] AS PhysicalColumn
+    c.[name] AS PhysicalColumn,
+    -- DECISIONS 2026-07-18 (#669 EF-21): the PERSISTED marking of a
+    -- computed column. Appended LAST (append-only column contract).
+    CAST(ISNULL(cc.is_persisted, 0) AS bit) AS IsPersisted
 INTO #ColumnReality
 FROM #Attr a
 JOIN #PhysTbls pt ON pt.EntityId = a.EntityId
@@ -1104,7 +1107,8 @@ SELECT
   cr.ComputedDefinition,
   cr.DefaultConstraintName,
   cr.DefaultDefinition,
-  cr.PhysicalColumn
+  cr.PhysicalColumn,
+  cr.IsPersisted
 FROM #ColumnReality AS cr
 ORDER BY cr.AttrId;
 
@@ -1251,3 +1255,46 @@ SELECT
   mj.[module.entities]
 FROM #ModuleJson AS mj
 ORDER BY mj.[module.name];
+
+-- Rowset 24 — sequences (DECISIONS 2026-07-18; #669 EF-22). The deployed
+-- sys.sequences shape, mirroring ReadSide's reflection so both lanes
+-- reconstruct the same Sequence values; the emission already renders
+-- CREATE SEQUENCE, so carrying the rows closes the round-trip. A NEW
+-- result set appended at the script's end (the runner's result-set
+-- contract bumps 23 → 24 in lockstep).
+SELECT
+  SCHEMA_NAME(s.schema_id) AS SchemaName,
+  s.[name] AS SequenceName,
+  TYPE_NAME(s.user_type_id) AS DataType,
+  CAST(s.start_value AS decimal(38, 0)) AS StartValue,
+  CAST(s.increment AS decimal(38, 0)) AS Increment,
+  CAST(s.minimum_value AS decimal(38, 0)) AS MinimumValue,
+  CAST(s.maximum_value AS decimal(38, 0)) AS MaximumValue,
+  s.is_cycling AS IsCycling,
+  s.is_cached AS IsCached,
+  s.cache_size AS CacheSize
+FROM sys.sequences AS s
+ORDER BY SCHEMA_NAME(s.schema_id), s.[name];
+
+-- Rowset 25 — temporal configuration (DECISIONS 2026-07-18; #669 EF-23).
+-- One row per system-versioned entity: history table, period columns,
+-- retention. The reader lifts these into ModalityMark.Temporal so the
+-- estate board's EmissionTemporalDropped dealbreaker fires on rowset-
+-- sourced catalogs (the fail-loudly ruling; full deployable emission of
+-- GENERATED ALWAYS period columns remains the named backlog item). The
+-- result-set contract bumps 24 → 25 in lockstep.
+SELECT
+  pt.EntityId,
+  SCHEMA_NAME(h.schema_id) AS HistorySchema,
+  h.[name] AS HistoryTable,
+  cs.[name] AS PeriodStartColumn,
+  ce.[name] AS PeriodEndColumn,
+  t.history_retention_period AS RetentionValue,
+  t.history_retention_period_unit_desc AS RetentionUnit
+FROM #PhysTbls pt
+JOIN sys.tables t   ON t.object_id = pt.object_id AND t.temporal_type = 2
+LEFT JOIN sys.tables h  ON h.object_id = t.history_table_id
+LEFT JOIN sys.periods pr ON pr.object_id = t.object_id AND pr.period_type = 1
+LEFT JOIN sys.columns cs ON cs.object_id = t.object_id AND cs.column_id = pr.start_column_id
+LEFT JOIN sys.columns ce ON ce.object_id = t.object_id AND ce.column_id = pr.end_column_id
+ORDER BY pt.EntityId;

@@ -62,7 +62,7 @@ let private twoReferenceSnapshot () : MetadataSnapshotRunner.MetadataSnapshot =
       References =
         [ referenceRow 201
           referenceRow 301 ]
-      PhysicalTables = []; ColumnReality = []; ColumnChecks = []
+      PhysicalTables = []; ColumnReality = []; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = [ fkRealityRow 5000 ]
       ForeignKeyColumns  = [ fkColumnRow 201 5000 ]

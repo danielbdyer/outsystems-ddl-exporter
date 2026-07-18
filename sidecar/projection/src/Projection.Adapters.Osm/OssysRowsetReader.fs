@@ -76,7 +76,15 @@ module OssysRowsetReader =
                   // F10: the rowset path does not yet read a non-default identity
                   // seed (OS-native autonumbers are (1,1)) — None = default.
                   Column       = { ColumnName = physicalColumnName
-                                   IsNullable = not row.IsMandatory
+                                   // Decision 2 (DECISIONS 2026-07-18; #669
+                                   // M-3 / EF-18): a deployed NOT NULL is
+                                   // preserved over a model-optional
+                                   // declaration — deployed-schema over
+                                   // model. Otherwise the model decides.
+                                   IsNullable =
+                                       match row.DeployedIsNullable with
+                                       | Some false -> false
+                                       | _          -> not row.IsMandatory
                                    Collation  = row.Collation
                                    Identity   = None }
                   IsPrimaryKey = row.IsIdentifier || matchesEntityPrimaryKey
@@ -87,25 +95,24 @@ module OssysRowsetReader =
                   IsIdentity   = row.IsAutoNumber
                   Description  = row.Description
                   IsActive     = row.IsActive
-                  // Authored-default lift: the LOGICAL `Default_Value`
-                  // surface (an authored `False` says the team configured
-                  // a default — `SqlLiteral.ofRaw` projects it against the
-                  // resolved primitive, so BIT `False` emits `DEFAULT 0`).
-                  // No-op defaults are suppressed: an absent or
-                  // empty/whitespace authored value carries nothing (a
-                  // nullable column's implicit NULL is normal SQL
-                  // behavior, not a configured default). This is the
-                  // authored channel only — `#ColumnReality
+                  // Authored-default lift (DECISIONS 2026-07-18; the #669
+                  // M-1 finding): `SqlLiteral.ofAuthoredDefault` classifies
+                  // the LOGICAL `Default_Value` surface — a niladic call
+                  // (`getutcdate()`) becomes the callable expression, a
+                  // SQL-quoted text form (`''`, `'Draft'`) becomes the
+                  // value inside the quotes, and the bare value forms
+                  // project as before (an authored `False` on BIT emits
+                  // `DEFAULT 0`). No-op defaults are suppressed inside the
+                  // classifier: an absent or whitespace-only authored value
+                  // carries nothing (a nullable column's implicit NULL is
+                  // normal SQL behavior, not a configured default). This is
+                  // the authored channel only — `#ColumnReality
                   // .DefaultDefinition` (the reflected constraint
                   // expression) stays un-lifted per matrix row 53's named
-                  // trigger ("expression-shaped defaults flow via
-                  // raw-string pass-through at the realization
-                  // boundary").
+                  // trigger.
                   DefaultValue =
                       row.DefaultValue
-                      |> Option.bind (fun raw ->
-                          if System.String.IsNullOrWhiteSpace raw then None
-                          else Some (SqlLiteral.ofRaw p (Some raw)))
+                      |> Option.bind (SqlLiteral.ofAuthoredDefault p)
                   // Slice A.4.7'-prelude.row53-source-side: V1
                   // `#ColumnReality.DefaultConstraintName` (sys
                   // .default_constraints.name) → V2 DefaultName for
@@ -136,7 +143,11 @@ module OssysRowsetReader =
                       if row.IsComputed then
                           row.ComputedDefinition
                           |> Option.bind (fun expr ->
-                              ComputedColumnConfig.create expr false
+                              // #669 EF-21 (DECISIONS 2026-07-18): the
+                              // deployed PERSISTED marking carries; the
+                              // emission renders the keyword, closing the
+                              // round-trip the audit proved dropped.
+                              ComputedColumnConfig.create expr row.IsPersisted
                               |> Result.toOption)
                       else
                           None
@@ -313,6 +324,10 @@ module OssysRowsetReader =
             /// resolution at context construction. Slice
             /// 5.13.ossys-rowsets-cluster; matrix row 12.
             ColumnChecksByEntity : Map<int, ColumnCheckRow list>
+            /// EntityId → system-versioning configuration (rowset 25;
+            /// DECISIONS 2026-07-18; #669 EF-23). At most one row per
+            /// entity; lifts into `ModalityMark.Temporal`.
+            TemporalByEntity : Map<int, TemporalRow>
         }
 
     /// Slice 5.13.ossys-rowsets-cluster — IndexColumn direction parser.
@@ -462,7 +477,15 @@ module OssysRowsetReader =
                 row.DataCompression
                 |> Option.bind (fun s ->
                     match s.ToUpperInvariant() with
-                    | "NONE" -> Some DataCompressionLevel.None
+                    // Reflection-lane semantics: uniform NONE is the
+                    // default state of every index — nobody chose it, so
+                    // it reflects as ABSENCE, not as an explicit
+                    // `DATA_COMPRESSION = NONE` annotation on every
+                    // emitted index. Only a deliberate ROW/PAGE choice
+                    // becomes a fact the emitter renders. (An authored
+                    // model can still say None explicitly via the JSON
+                    // lane, which parses independently.)
+                    | "NONE" -> Option<DataCompressionLevel>.None
                     | "ROW"  -> Some DataCompressionLevel.Row
                     | "PAGE" -> Some DataCompressionLevel.Page
                     | _      -> None)
@@ -652,6 +675,31 @@ module OssysRowsetReader =
                 [
                     if kindRow.IsStatic       then yield Static []
                     if kindRow.IsSystemEntity then yield SystemOwned
+                    // Rowset 25 (DECISIONS 2026-07-18; #669 EF-23) — a
+                    // system-versioned entity carries the Temporal mark;
+                    // the estate board's dealbreaker (and the publish
+                    // refusal) fire from it. Retention: value -1 or unit
+                    // INFINITE mean no retention limit; the four named
+                    // units map to the closed DU.
+                    match Map.tryFind kindRow.EntityId ctx.TemporalByEntity with
+                    | None -> ()
+                    | Some tr ->
+                        let retention =
+                            match tr.RetentionValue, tr.RetentionUnit with
+                            | Some v, Some u when v > 0 ->
+                                match u.ToUpperInvariant() with
+                                | "DAY"   | "DAYS"   -> Limited (v, Days)
+                                | "WEEK"  | "WEEKS"  -> Limited (v, Weeks)
+                                | "MONTH" | "MONTHS" -> Limited (v, Months)
+                                | "YEAR"  | "YEARS"  -> Limited (v, Years)
+                                | _                  -> Infinite
+                            | _ -> Infinite
+                        yield Temporal
+                            { HistorySchema = tr.HistorySchema
+                              HistoryTable  = tr.HistoryTable
+                              PeriodStart   = tr.PeriodStart |> Option.bind (Name.create >> Result.toOption)
+                              PeriodEnd     = tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption)
+                              Retention     = retention }
                 ]
             Result.success
                 { SsKey       = k
@@ -943,12 +991,36 @@ module OssysRowsetReader =
               IndexesByEntity      = indexesByEntity
               IndexColumnsByIndex  = indexColumnsByIndex
               TriggersByEntity     = triggersByEntity
-              ColumnChecksByEntity = columnChecksByEntity }
+              ColumnChecksByEntity = columnChecksByEntity
+              TemporalByEntity     =
+                bundle.Temporal
+                |> List.map (fun t -> t.EntityId, t)
+                |> Map.ofList }
         let moduleResults =
             bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
+        // Rowset 24 (DECISIONS 2026-07-18; #669 EF-22) — deployed
+        // sequences lift into `Catalog.Sequences`, mirroring ReadSide's
+        // reconstruction (same CacheMode derivation) so both lanes agree.
+        // Rows that fail the smart constructor are dropped the same way
+        // ReadSide drops them: a sequence the IR cannot hold is absent,
+        // never mangled.
+        let sequences =
+            bundle.Sequences
+            |> List.choose (fun r ->
+                let cacheMode =
+                    if not r.IsCached then NoCache
+                    elif Option.isSome r.CacheSize then Cache
+                    else Unspecified
+                match SsKey.synthesized "OSSYS_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+                      Name.create r.Name with
+                | Ok sk, Ok nm ->
+                    match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with
+                    | Ok s -> Some s
+                    | Error _ -> None
+                | _ -> None)
         match Result.aggregate moduleResults with
         | Ok modules ->
-            Catalog.create modules []
+            Catalog.create modules sequences
         | Error errors -> Error errors
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.

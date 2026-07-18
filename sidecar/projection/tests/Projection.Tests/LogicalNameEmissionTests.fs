@@ -250,3 +250,56 @@ let ``Slice D.1.a end-to-end: after both passes, every Kind.Physical.Table and C
         Assert.Equal(Name.value k.Name, TableId.tableText k.Physical)
         for a in k.Attributes do
             Assert.Equal(Name.value a.Name, ColumnRealization.columnNameText a.Column)
+
+// ---------------------------------------------------------------------------
+// Family 4e (DECISIONS 2026-07-18; #669 EF-20) — the substitution follows
+// the renames into trigger bodies: LogicalTableEmission v2 rewrites TABLE
+// references (bracketed and bare), LogicalColumnEmission v3 the owning
+// kind's COLUMN references (bracketed). The emitter's gate refuses any
+// residue; these pin the rewrite half.
+// ---------------------------------------------------------------------------
+
+let private triggerBearingCatalog (definition: string) : Catalog =
+    let c = divergentCatalog ()
+    let withTrigger (k: Kind) : Kind =
+        { k with
+            Triggers =
+                [ Trigger.create (attrKey ["Sales"; "Customer"; "TRG"]) (name "TRG_Customer") false definition
+                  |> Result.value ] }
+    { c with Modules = c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map withTrigger }) }
+
+let private triggerDefinitionAfter (pass: Lineage<Diagnostics<Catalog>>) : string =
+    let catalog = pass.Value.Value
+    (Catalog.allKinds catalog |> List.head).Triggers |> List.head |> fun t -> t.Definition
+
+[<Fact>]
+let ``4e table pass: a bracketed physical table reference in a trigger body rewrites to the logical name`` () =
+    let src = "CREATE TRIGGER [TRG_Customer] ON [dbo].[OSUSR_ABC_CUSTOMER] AFTER INSERT AS BEGIN SELECT 1 END"
+    let rewritten = triggerDefinitionAfter (runTablePass LogicalTableEmission.Enabled (triggerBearingCatalog src))
+    Assert.Contains("[Customer]", rewritten)
+    Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", rewritten)
+
+[<Fact>]
+let ``4e table pass: a BARE physical table reference (legal T-SQL) also rewrites, to the bracketed logical name`` () =
+    let src = "CREATE TRIGGER TRG_Customer ON dbo.OSUSR_ABC_CUSTOMER AFTER UPDATE AS BEGIN UPDATE dbo.OSUSR_ABC_CUSTOMER SET [EMAIL] = NULL END"
+    let rewritten = triggerDefinitionAfter (runTablePass LogicalTableEmission.Enabled (triggerBearingCatalog src))
+    Assert.Contains("dbo.[Customer]", rewritten)
+    Assert.DoesNotContain("OSUSR_ABC_CUSTOMER", rewritten)
+
+[<Fact>]
+let ``4e column pass: the owning kind's bracketed physical column in a trigger body rewrites to the logical name`` () =
+    let src = "CREATE TRIGGER [TRG_Customer] ON [dbo].[Customer] AFTER INSERT AS BEGIN UPDATE [dbo].[Customer] SET [EMAIL] = LOWER([EMAIL]) END"
+    let rewritten = triggerDefinitionAfter (runColumnPass LogicalColumnEmission.Enabled (triggerBearingCatalog src))
+    Assert.Contains("[Email]", rewritten)
+    Assert.DoesNotContain("[EMAIL]", rewritten)
+
+[<Fact>]
+let ``4e chained: table then column pass leaves a fully-logical trigger body with zero physical residue`` () =
+    let src = "CREATE TRIGGER [TRG_Customer] ON [dbo].[OSUSR_ABC_CUSTOMER] AFTER INSERT AS BEGIN UPDATE dbo.OSUSR_ABC_CUSTOMER SET [EMAIL] = NULL END"
+    let afterTable =
+        (runTablePass LogicalTableEmission.Enabled (triggerBearingCatalog src)).Value.Value
+    let rewritten = triggerDefinitionAfter (runColumnPass LogicalColumnEmission.Enabled afterTable)
+    Assert.DoesNotContain("OSUSR", rewritten)
+    Assert.DoesNotContain("[EMAIL]", rewritten)
+    Assert.Contains("[Customer]", rewritten)
+    Assert.Contains("[Email]", rewritten)

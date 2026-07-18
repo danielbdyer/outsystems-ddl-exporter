@@ -42,10 +42,14 @@ module LogicalColumnEmission =
     ///      and `Index.Filter` (bracketed physical references rewritten
     ///      to the logical names; an unrewritten definition would
     ///      reference a column that no longer exists on the emitted
-    ///      table). Trigger definitions are NOT rewritten yet (they
-    ///      reference table names too — own slice).
+    ///      table).
+    /// v3 — family 4e (DECISIONS 2026-07-18; #669 EF-20): the
+    ///      substitution follows the column into `Trigger.Definition`
+    ///      (the OWNING kind's columns only — a cross-table column
+    ///      reference stays, the same bracket-token grain as v2; table
+    ///      names are `LogicalTableEmission` v2's half of the slice).
     [<Literal>]
-    let version : int = 2
+    let version : int = 3
 
     [<Literal>]
     let private passName : string = "logicalColumnEmission"
@@ -125,7 +129,13 @@ module LogicalColumnEmission =
                         |> List.map (fun idx ->
                             match idx.Filter with
                             | None -> idx
-                            | Some f -> { idx with Filter = Some (rewriteDefinition pairs f) }) }
+                            | Some f -> { idx with Filter = Some (rewriteDefinition pairs f) })
+                    // v3 (family 4e) — the owning kind's column renames
+                    // follow into its trigger bodies.
+                    Triggers =
+                        k'.Triggers
+                        |> List.map (fun t ->
+                            { t with Definition = rewriteDefinition pairs t.Definition }) }
 
     let private run (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalColumnEmission"

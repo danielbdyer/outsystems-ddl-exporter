@@ -25,14 +25,14 @@ let private reality (attrId: int) (col: string) (isNullable: bool) (isIdentity: 
     { AttrId = attrId; IsNullable = isNullable; SqlType = Some "nvarchar"
       MaxLength = None; Precision = None; Scale = None; CollationName = None
       IsIdentity = isIdentity; IsComputed = false; ComputedDefinition = None
-      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col }
+      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col; IsPersisted = false }
 
 let private snapshotOf
     (attrs: MetadataSnapshotRunner.OssysAttributeRow list)
     (realities: MetadataSnapshotRunner.OssysColumnRealityRow list)
     : MetadataSnapshotRunner.MetadataSnapshot =
     { Modules = []; Entities = []; Attributes = attrs; References = []
-      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []
+      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = [] }
 
@@ -225,6 +225,41 @@ let ``dataspace: a non-primary filegroup is intentional configuration and carrie
     Assert.Equal(Some (DataSpace.Filegroup "INDEX_FG"), row.DataSpace)
 
 // ---------------------------------------------------------------------------
+// EF-25 closure — the script's rowset-9 projection emits
+// `[{"partition":n,"compression":"<desc>"}]`; the original parser read a
+// property named `Code` that never existed, so the whole compression chain
+// sat dark. These pin the script-truth shape (and the vintage `Code`
+// fallback) through `toBundle`.
+// ---------------------------------------------------------------------------
+
+let private idxRowCompression (json: string option) : MetadataSnapshotRunner.OssysAllIdxRow =
+    { idxRow "IX_C" None None with DataCompressionJson = json }
+
+[<Fact>]
+let ``EF-25: script-shaped uniform PAGE compression JSON lifts into the bundle row`` () =
+    let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"PAGE"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(Some "PAGE", row.DataCompression)
+
+[<Fact>]
+let ``EF-25: heterogeneous per-partition compression stays absent (row 56 residual)`` () =
+    let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"ROW"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(None, row.DataCompression)
+
+[<Fact>]
+let ``EF-25: the vintage Code-property shape still parses (fallback)`` () =
+    let json = Some """[{"P":1,"Code":"ROW"}]"""
+    let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
+    let bundle = MetadataSnapshotRunner.toBundle s
+    let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
+    Assert.Equal(Some "ROW", row.DataCompression)
+
+// ---------------------------------------------------------------------------
 // WP-4b (DECISIONS 2026-07-16) — columnStorageDivergences names every
 // logical-vs-deployed scalar storage-type disagreement, and reports which
 // value the engine emits (deployed for same-category refinements; logical for
@@ -244,7 +279,7 @@ let private realityT (attrId: int) (col: string) (sqlType: string) (maxLen: int 
     { AttrId = attrId; IsNullable = true; SqlType = Some sqlType
       MaxLength = maxLen; Precision = None; Scale = None; CollationName = None
       IsIdentity = false; IsComputed = false; ComputedDefinition = None
-      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col }
+      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col; IsPersisted = false }
 
 let private storageDivergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnStorageDivergences s
@@ -273,11 +308,20 @@ let ``WP-4b: the forced-BIGINT family divergence is named but reports the LOGICA
 
 [<Fact>]
 let ``WP-4b: a cross-category divergence is named and reports the LOGICAL value wins (no reclassification)`` () =
-    // logical rtDate -> DATE; deployed datetime (DateTime). Cross-category conflict.
-    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "datetime" None ]
+    // logical rtDate -> DATETIME (the platform mapping, DECISIONS 2026-07-18);
+    // a deployed true DATE column (DateTime vs Date category) is a genuine
+    // cross-category conflict — the logical value stands, the divergence named.
+    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "date" None ]
     match storageDivergences s with
     | [ d ] -> Assert.Equal<string option>(Some "logical", Map.tryFind "emits" d.Metadata)
     | other -> Assert.Fail(sprintf "expected one storage divergence, got %A" (other |> List.map (fun d -> d.Code)))
+
+[<Fact>]
+let ``a date attribute deployed as datetime agrees with the platform mapping and is silent`` () =
+    // The real estate's shape: rtDate columns are physically datetime. With the
+    // platform mapping (rtDate -> DATETIME) the pair agrees; no divergence fires.
+    let s = snapshotOf [ attrT 100 "BIRTHDATE" "rtDate" ] [ realityT 100 "BIRTHDATE" "datetime" None ]
+    Assert.Empty(storageDivergences s)
 
 [<Fact>]
 let ``WP-4b: an agreeing logical-vs-deployed storage is silent`` () =

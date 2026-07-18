@@ -119,12 +119,13 @@ module SpecialCircumstancesDiagnostics =
         : DiagnosticEntry list =
         topo.Cycles
         |> List.map (fun cycle ->
-            let memberSet = Set.ofList cycle.Members
+            let cycleMembers = CycleDiagnostic.members cycle
+            let memberSet = Set.ofList cycleMembers
             let isAccepted = Set.contains memberSet allowed
             let baseMeta : Map<string, string> =
                 Map.empty
-                |> Map.add "members" (renderKeys cycle.Members)
-                |> Map.add "reason"  cycle.Reason
+                |> Map.add "members" (renderKeys cycleMembers)
+                |> Map.add "reason"  (CycleDiagnostic.reasonText cycle)
             let meta =
                 if isAccepted then
                     baseMeta |> Map.add "acceptedVia" acceptedViaCycle
@@ -139,8 +140,8 @@ module SpecialCircumstancesDiagnostics =
                 Message         =
                     sprintf
                         "Topological sort surfaced unresolved cycle [%s]: %s"
-                        (renderKeys cycle.Members)
-                        cycle.Reason
+                        (renderKeys cycleMembers)
+                        (CycleDiagnostic.reasonText cycle)
                 SsKey           = None
                 Metadata        = meta
                 SuggestedConfig = None

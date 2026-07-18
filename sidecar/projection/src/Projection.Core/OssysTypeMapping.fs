@@ -1,9 +1,10 @@
 namespace Projection.Core
 
 /// The OutSystems(OSSYS) → V2 type correspondence (recon #10). These are
-/// *decisions*, not translations — the 2000-char `(MAX)` threshold, the
-/// `currency → DECIMAL(37,8)` choice, the platform-native `email`/`phone`
-/// `NVARCHAR(250)/(20)` (WP-4), the `longinteger → BIGINT` / `datetime → DATETIME` (legacy, not
+/// *decisions*, not translations — the verbatim-to-4000 text-length rule, the
+/// `currency → DECIMAL(37,8)` choice, the platform-mapped `email`/`phone`
+/// `VARCHAR(250)/(20)` (OutSystems 11 database data types; DECISIONS 2026-07-18),
+/// the `longinteger → BIGINT` / `datetime → DATETIME` (legacy, not
 /// `DATETIME2`) collapses — so they belong in Core next to `SqlTypeCorrespondence`,
 /// where they are property-testable WITHOUT an OSSYS fixture and reusable by a
 /// second source adapter (the rowset reader, a future XML reader). The adapter's
@@ -17,14 +18,17 @@ namespace Projection.Core
 [<RequireQualifiedAccess>]
 module OssysTypeMapping =
 
-    /// `Text` / `VarChar` width: OutSystems treats a declared length at or above
-    /// the unicode-text threshold (V1's `maxLengthThreshold = 2000`) as open-ended
-    /// `(MAX)`; a positive sub-threshold length is `Bounded`; absence is `(MAX)`.
+    /// `Text` width: a declared length is preserved VERBATIM (`Bounded n`) up to
+    /// NVARCHAR's bounded physical ceiling (4000); beyond it — and on absence —
+    /// the width is open-ended `(MAX)`. Source-model intent outranks the
+    /// platform's own >2000 → `nvarchar(max)` storage collapse (operator ruling;
+    /// DECISIONS 2026-07-18 — which also retired V1's `maxLengthThreshold = 2000`
+    /// flip, an off-by-one against the platform's ≤2000-stays-bounded contract).
     let textLength (length: int option) : SqlLength =
         match length with
-        | Some n when n >= 2000 -> Max
-        | Some n when n > 0     -> Bounded n
-        | _                     -> Max
+        | Some n when n > 4000 -> Max
+        | Some n when n > 0    -> Bounded n
+        | _                    -> Max
 
     /// A positive declared length wins (`Bounded`); otherwise the supplied
     /// fallback width applies (the V1-parity imposition or `(MAX)`).
@@ -59,8 +63,14 @@ module OssysTypeMapping =
         | "datetime"       -> Some (DateTime, SqlStorageType.DateTime)
         | "datetime2"      -> Some (DateTime, SqlStorageType.DateTime2 (Some 7))
         | "datetimeoffset" -> Some (DateTime, SqlStorageType.DateTimeOffset (Some 7))
-        | "date"           -> Some (Date, SqlStorageType.Date)
-        | "time"           -> Some (Time, SqlStorageType.Time (Some 7))
+        // Date-only and time-only attributes store as DATETIME — the OutSystems 11
+        // platform mapping (Date → datetime, Time → datetime; operator ruling,
+        // DECISIONS 2026-07-18). The semantic category collapses with the storage
+        // because the two-field law holds (storage always projects back to the
+        // semantic type it was set with); a true DATE / TIME(n) column still
+        // arrives intact via the deployed-reflection lane.
+        | "date"           -> Some (DateTime, SqlStorageType.DateTime)
+        | "time"           -> Some (DateTime, SqlStorageType.DateTime)
         | "decimal"        ->
             Some
                 (Decimal,
@@ -76,20 +86,20 @@ module OssysTypeMapping =
         | "image"          -> Some (Binary, SqlStorageType.Image)
         | "longtext"       -> Some (Text, SqlStorageType.NVarChar Max)
         | "text"           -> Some (Text, SqlStorageType.NVarChar (textLength length))
-        // WP-4 (DECISIONS 2026-07-16; register C3). `email`/`phone` map to
-        // NVARCHAR — the PLATFORM-NATIVE storage (modeled `ossys_User.EMAIL` is
-        // on-disk `nvarchar(250)`; the handbook's guidance is "Email, Phone
-        // Number → NVARCHAR(n)"; `notes/note14.md` names "Using VARCHAR for
-        // User Text" an anti-pattern). The prior ANSI `VARCHAR` was an imposed
-        // V1-parity inference that left two ANSI islands in an otherwise
-        // NVARCHAR schema (collation/codepage sensitivity, implicit-conversion
-        // risk, non-Latin truncation) — and V2's text literals already emit as
-        // `N'…'`, so NVARCHAR is also the consistent carrier. The default width
+        // `email`/`phone` map to ANSI VARCHAR(250)/(20) — the OutSystems 11
+        // platform mapping (Database Data Types reference: Email → varchar(250),
+        // Phone Number → varchar(20); confirmed against the live page and the
+        // docs source, DECISIONS 2026-07-18). These are the platform's own
+        // deliberate ASCII islands in an otherwise-NVARCHAR schema. WP-4's
+        // NVARCHAR revision (2026-07-16) rested on `ossys_User.EMAIL` being
+        // `nvarchar(250)` — true, but that is hand-shipped SYSTEM-table DDL,
+        // not attribute-mapping output — and is reverted. The default width
         // budgets (250 / 20) stay; an explicit declared length always wins
-        // (`boundedOr`).
-        | "email"          -> Some (Text, SqlStorageType.NVarChar (boundedOr (Bounded 250) length))
+        // (`boundedOr`); `N'…'` literals implicit-convert into varchar, so the
+        // data plane is unchanged.
+        | "email"          -> Some (Text, SqlStorageType.VarChar (boundedOr (Bounded 250) length))
         | "phonenumber" | "phone" ->
-            Some (Text, SqlStorageType.NVarChar (boundedOr (Bounded 20) length))
+            Some (Text, SqlStorageType.VarChar (boundedOr (Bounded 20) length))
         | "url" | "password" | "username" | "identifiertext" ->
             Some (Text, SqlStorageType.NVarChar (textLength length))
         | "guid" | "uniqueidentifier" -> Some (Guid, SqlStorageType.UniqueIdentifier)

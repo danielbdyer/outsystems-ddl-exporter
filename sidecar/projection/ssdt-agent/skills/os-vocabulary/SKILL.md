@@ -21,7 +21,7 @@ Both words are correct in conversation; the record always carries the SQL name
 |---|---|---|
 | entity | table | interchangeable in conversation |
 | attribute | column | interchangeable in conversation |
-| identifier | primary key (`INT IDENTITY` by default) | "your Id column" |
+| identifier | primary key (`BIGINT IDENTITY` by default) | "your Id column" |
 | AutoNumber | the `IDENTITY` property | toggling it is a table rebuild — see `../op/identity-swap/` |
 | reference | foreign key | "the relationship from Order to Customer" |
 | Mandatory (the checkbox) | `NOT NULL` | whether it lands depends on the rows — see `../op/make-mandatory/` |

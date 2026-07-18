@@ -329,9 +329,9 @@ let private rowsetWith (isExternal: bool) (espaceKind: string option) : OssysRow
           IsAutoNumber = true; Length = None; Precision = None; Scale = None
           AttrSsKey = None; IsActive = true; Description = None
           OriginalName = None; ExternalDatabaseType = None
-          IsComputed = false; ComputedDefinition = None; DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None }
+          IsComputed = false; ComputedDefinition = None; DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false }
     { Modules = [ moduleRow ]; Kinds = [ kindRow ]
-      Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
+      Attributes = [ idRow ]; References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []; Sequences = []; Temporal = [] }
 
 [<Fact>]
 let ``Origin audit (rowset path): isExternal=false → Native regardless of EspaceKind`` () =

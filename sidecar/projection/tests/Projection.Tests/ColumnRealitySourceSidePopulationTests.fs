@@ -80,7 +80,7 @@ let private attrRow
       DefaultConstraintName = defaultConstraintName
       Order                = None
       Collation            = None
-      DeployedStorage      = None }
+      DeployedStorage      = None; DeployedIsNullable = None; IsPersisted = false }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with
@@ -113,11 +113,21 @@ let ``A.4.7'-prelude.row53-source-side: rowset path populates Attribute.Computed
     match computed.Computed with
     | Some config ->
         Assert.Equal("([BASE] * 2)", config.Expression)
-        // V1's #ColumnReality doesn't surface sys.computed_columns
-        // .is_persisted; default to false.
+        // The row carried IsPersisted = false; the config mirrors it.
         Assert.False(config.IsPersisted)
     | None ->
         Assert.Fail("expected Attribute.Computed = Some when IsComputed = true")
+
+[<Fact>]
+let ``#669 EF-21: the deployed PERSISTED marking threads into the computed configuration (DECISIONS 2026-07-18)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let persisted =
+        { attrRow 101 "Total" "Integer" true (Some "([BASE] * 2)") None with
+            IsPersisted = true }
+    let cat = parseToCatalog (buildBundle [ idAttr; persisted ])
+    match (findAttribute cat "Total").Computed with
+    | Some config -> Assert.True(config.IsPersisted)
+    | None -> Assert.Fail("expected Attribute.Computed = Some when IsComputed = true")
 
 [<Fact>]
 let ``A.4.7'-prelude.row53-source-side: rowset path leaves Attribute.Computed = None when IsComputed = false`` () =
@@ -238,19 +248,40 @@ let ``deployed storage: an explicit external database type wins over deployed ev
     Assert.Equal(Some (SqlStorageType.VarChar (Bounded 20)), attr.SqlStorage)
 
 [<Fact>]
-let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATE)`` () =
+let ``decision 2: a deployed NOT NULL is preserved over a model-optional declaration (#669 EF-18)`` () =
+    // A DBA-tightened column: the model says optional, the deployed schema
+    // says NOT NULL. The emitted column stays NOT NULL — deployed-schema
+    // over model — and the model's own declaration (IsMandatory) is
+    // untouched. A deployed-nullable column leaves the model in charge.
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let tightened =
+        { attrRow 101 "Email" "Text" false None None with
+            DeployedIsNullable = Some false }
+    let cat = parseToCatalog (buildBundle [ idAttr; tightened ])
+    let attr = findAttribute cat "Email"
+    Assert.False(attr.Column.IsNullable)
+    Assert.False(attr.IsMandatory)
+    let loose =
+        { attrRow 102 "Phone" "Text" false None None with
+            DeployedIsNullable = Some true }
+    let cat2 = parseToCatalog (buildBundle [ idAttr; loose ])
+    Assert.True((findAttribute cat2 "Phone").Column.IsNullable)
+
+[<Fact>]
+let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATETIME)`` () =
     // WP-4b: on-disk precedence is a SAME-category refinement only. A logical
-    // `rtDate` (Date) deployed as `datetime` (DateTime) is a genuine conflict,
+    // `rtDate` (DateTime under the platform mapping, DECISIONS 2026-07-18)
+    // deployed as a true `date` column (Date category) is a genuine conflict,
     // not a refinement — the logical value stands (no silent reclassification);
     // the divergence is named separately by columnStorageDivergences.
     let idAttr = attrRow 100 "Id" "Identifier" false None None
     let birthDate =
         { attrRow 101 "BirthDate" "rtDate" false None None with
-            DeployedStorage = Some SqlStorageType.DateTime }
+            DeployedStorage = Some SqlStorageType.Date }
     let cat = parseToCatalog (buildBundle [ idAttr; birthDate ])
     let attr = findAttribute cat "BirthDate"
-    Assert.Equal(Date, attr.Type)
-    Assert.Equal(Some SqlStorageType.Date, attr.SqlStorage)
+    Assert.Equal(DateTime, attr.Type)
+    Assert.Equal(Some SqlStorageType.DateTime, attr.SqlStorage)
 
 [<Fact>]
 let ``WP-4b: a SAME-category deployed storage wins over the logical mapping for an ordinary scalar`` () =

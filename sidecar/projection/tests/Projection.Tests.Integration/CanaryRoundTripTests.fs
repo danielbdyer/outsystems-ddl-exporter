@@ -407,8 +407,13 @@ let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / de
         Assert.True((not (List.isEmpty recovered)),
             "ReadSide recovered ZERO computed columns — the hollow-canary defect (L3-S7 real-SQL leg regressed).")
 
-        // (b) State + definition restored: the recovered computed column,
-        //     normalized through encodeComputed, equals the source's.
+        // (b) State + definition restored — through the family-4d lens
+        //     (DECISIONS 2026-07-18): the fixture AUTHORS the physical
+        //     form `[QTY]*(100)`, the emitter rewrites expression
+        //     identifiers to the emitted logical column names (`[Qty]`;
+        //     the Msg-207 CS-collation fix), and the deployed reflection
+        //     returns the REWRITTEN form. The canary witnesses that
+        //     rewrite surviving the live emit → deploy → ReadSide leg.
         let sourceComputed =
             Catalog.allKinds source
             |> List.collect (fun k -> k.Attributes)
@@ -416,8 +421,8 @@ let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / de
             |> Map.ofList
         for (col, cc) in recovered do
             match Map.tryFind col sourceComputed with
-            | Some srcEnc ->
-                Assert.Equal(srcEnc, PhysicalSchema.encodeComputed cc)
+            | Some _ ->
+                Assert.Equal("[Qty]*(100)|persisted", PhysicalSchema.encodeComputed cc)
             | None -> Assert.Fail(sprintf "recovered computed column %s not in source" col)
 
         // (c) Surfaces on the PhysicalColumn.Computed axis.

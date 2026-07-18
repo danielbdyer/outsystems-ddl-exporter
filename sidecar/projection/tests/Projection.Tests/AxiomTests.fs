@@ -1640,8 +1640,8 @@ let ``T17: transfer is byte-faithful modulo named row interventions (residual ze
 //
 //   Bucket A (verified + structural):     A1, A2, A4, A6, A12, A15, A18,
 //                                          A23, A24, A25, A26, A32, A34,
-//                                          A41 + T1, T4, T11
-//                                          (16 axioms + 3 theorems)
+//                                          A41, A46 + T1, T4, T11, T18
+//                                          (17 axioms + 4 theorems)
 //
 //   Bucket B (convention-enforced):       A3, A5, A7–A11, A13, A14, A16,
 //                                          A17, A19, A20, A22, A28, A29,
@@ -1671,3 +1671,23 @@ let ``T17: transfer is byte-faithful modulo named row interventions (residual ze
 // trigger. Adding a new axiom or theorem adds a new entry here in the
 // same commit; chapter-close ritual audits this file's coverage delta
 // against AXIOMS.md.
+
+// ===========================================================================
+// T18 + A46 — the v7 cycle-resolution algebra (2026-07-18)
+// ===========================================================================
+
+[<Fact>]
+let ``T18: the two-phase load factors residue-free — Phase-1 ⊕ Phase-2 lands row-equal; the inflation is exactly the repair set (ledger)`` () =
+    // Value half (live): `T18CycleBreakCanaryTests` — the weak 2-cycle
+    // deploys two-phase on SQL Server, ends row-equal, every FK trusted.
+    citationOf "tests/Projection.Tests.Integration/T18CycleBreakCanaryTests.fs" "T18 canary: a weak 2-cycle loads two-phase on SQL Server and ends row-equal to the source, every FK trusted"
+    // Ledger half (pure): Phase-2 IS the repair set, exactly.
+    citationOf "tests/Projection.Tests/StaticSeedsEmitterTests.fs" "v7 slice 5: phase 2 touches exactly the repair set — an all-NULL deferred row renders no UPDATE"
+    // Minimality half: the chosen break set minimizes the repair norm.
+    citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "measured minimality: the weighted break set minimizes Σ cost (then cardinality, then lex) among feasible weak subsets"
+
+[<Fact>]
+let ``A46: refusal completeness — one ordering predicate on three surfaces, certificate carried`` () =
+    citationOf "tests/Projection.Tests/EstateTests.fs" "A46: refusal completeness — one predicate on three surfaces (resolver ⟺ gate ⟺ board), certificate carried (#669 v7)"
+    citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "v7 I3 refusal precision: the exact resolver refuses exactly when the strong-only subgraph is cyclic"
+    citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "A46 lemma — refusal invariance: SchemaMinimal and any weighted member refuse exactly the same SCCs"

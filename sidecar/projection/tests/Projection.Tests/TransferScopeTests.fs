@@ -69,14 +69,14 @@ let private subsetScope : TransferScope =
 [<Fact>]
 let ``an unrelated unresolvable estate cycle degrades the WHOLE-estate order (the pre-scope behavior, kept for full transfers)`` () =
     let whole = (TopologicalOrderPass.runWith TreatAsCycle estateWithUnrelatedCycle).Value
-    Assert.Equal(Alphabetical, whole.Mode)
-    Assert.True(Option.isSome (Transfer.orderedLoadGate whole))
+    Assert.Equal(PartialTopological, whole.Mode)
+    Assert.True(Option.isSome (Transfer.orderedLoadGate estateWithUnrelatedCycle whole))
 
 [<Fact>]
 let ``the scoped topology ignores an unrelated estate cycle — the subset's load order proves topological`` () =
     let topo = TransferScope.topology TreatAsCycle subsetScope estateWithUnrelatedCycle
     Assert.Equal(Topological, topo.Mode)
-    Assert.True(Option.isNone (Transfer.orderedLoadGate topo))
+    Assert.True(Option.isNone (Transfer.orderedLoadGate estateWithUnrelatedCycle topo))
     Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "City"; mkKey "Customer" ], Set.ofList topo.Order)
     Assert.True(TopologicalOrder.precedes (mkKey "City") (mkKey "Customer") topo)
 

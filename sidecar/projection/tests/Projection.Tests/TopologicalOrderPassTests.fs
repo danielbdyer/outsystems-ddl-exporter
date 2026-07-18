@@ -180,17 +180,17 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
       Sequences = c.Sequences }
 
 [<Fact>]
-let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
+let ``cycle: Mode is PartialTopological when input contains an unresolvable cycle (v6 — the whole-catalog degrade is retired)`` () =
     // Add a reverse reference Customer → Order so we have a 2-cycle.
     let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
 
 [<Fact>]
-let ``cycle: every kind still appears in Order under alphabetical fallback`` () =
+let ``cycle: every kind still appears in Order under the partial-topological outcome`` () =
     let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
@@ -230,7 +230,7 @@ let ``Tarjan: 2-cycle produces one SCC with both members`` () =
     let scc = result.Value.Cycles |> List.head
     Assert.Equal<Set<SsKey>>(
         Set.ofList [ customerKey; orderKey ],
-        Set.ofList scc.Members)
+        Set.ofList (CycleDiagnostic.members scc))
 
 [<Fact>]
 let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
@@ -240,7 +240,7 @@ let ``Tarjan: SCC members are sorted by SsKey within the diagnostic`` () =
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
-    Assert.Equal<SsKey list>(scc.Members, List.sort scc.Members)
+    Assert.Equal<SsKey list>(CycleDiagnostic.members scc, List.sort (CycleDiagnostic.members scc))
 
 [<Fact>]
 let ``Tarjan: Country (no cycle) is not in any SCC`` () =
@@ -252,7 +252,7 @@ let ``Tarjan: Country (no cycle) is not in any SCC`` () =
     let result = topoRun cyclic
     let allSccMembers =
         result.Value.Cycles
-        |> List.collect (fun c -> c.Members)
+        |> List.collect (fun c -> CycleDiagnostic.members c)
         |> Set.ofList
     Assert.DoesNotContain(countryKey, allSccMembers)
 
@@ -274,7 +274,7 @@ let ``Tarjan: BreakableEdges is empty in v2 (resolver pending v3)`` () =
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
-    Assert.Empty(scc.BreakableEdges)
+    Assert.Empty(CycleDiagnostic.breakableEdges scc)
 
 [<Fact>]
 let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
@@ -288,7 +288,7 @@ let ``Tarjan: SCC reason explains why the cycle stayed unresolved`` () =
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
     let scc = result.Value.Cycles |> List.head
-    Assert.Contains("non-deferrable", scc.Reason)
+    Assert.Contains("non-deferrable", CycleDiagnostic.reasonText scc)
 
 // ---------------------------------------------------------------------------
 // Self-loop detection (v4) — surfaced by chapter 4.1.B slice δ.
@@ -312,8 +312,8 @@ let ``v4 self-loop: kind referencing itself produces a 1-member SCC`` () =
     Assert.NotEmpty(result.Value.Cycles)
     let scc =
         result.Value.Cycles
-        |> List.find (fun c -> c.Members = [ customerKey ])
-    Assert.Equal<SsKey list>([ customerKey ], scc.Members)
+        |> List.find (fun c -> CycleDiagnostic.members c = [ customerKey ])
+    Assert.Equal<SsKey list>([ customerKey ], CycleDiagnostic.members scc)
 
 [<Fact>]
 let ``v4 self-loop: non-self-loop 1-node SCCs are still NOT cycles (filter retained)`` () =
@@ -323,7 +323,7 @@ let ``v4 self-loop: non-self-loop 1-node SCCs are still NOT cycles (filter retai
     let result = topoRun sampleCatalog
     let allSccMembers =
         result.Value.Cycles
-        |> List.collect (fun c -> c.Members)
+        |> List.collect (fun c -> CycleDiagnostic.members c)
         |> Set.ofList
     Assert.DoesNotContain(countryKey, allSccMembers)
     Assert.DoesNotContain(customerKey, allSccMembers)
@@ -402,8 +402,8 @@ let ``Tarjan: two disjoint 2-cycles produce two SCCs`` () =
     // SCCs are sorted by smallest member; A-B comes before C-D.
     let firstScc  = result.Value.Cycles.[0]
     let secondScc = result.Value.Cycles.[1]
-    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "A"; mkKey "B" ], Set.ofList firstScc.Members)
-    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "C"; mkKey "D" ], Set.ofList secondScc.Members)
+    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "A"; mkKey "B" ], Set.ofList (CycleDiagnostic.members firstScc))
+    Assert.Equal<Set<SsKey>>(Set.ofList [ mkKey "C"; mkKey "D" ], Set.ofList (CycleDiagnostic.members secondScc))
 
 // ---------------------------------------------------------------------------
 // Edge classification (commit 6).
@@ -486,12 +486,12 @@ let ``V1 contract: asymmetric-2-cycle auto-resolves via Weak edge`` () =
     let diag = result.Value.Cycles |> List.head
     Assert.Equal<Set<SsKey>>(
         Set.ofList [ mkKey "Parent"; mkKey "Audit" ],
-        Set.ofList diag.Members)
-    Assert.Equal(1, diag.BreakableEdges.Length)
+        Set.ofList (CycleDiagnostic.members diag))
+    Assert.Equal(1, (CycleDiagnostic.breakableEdges diag).Length)
     // The broken edge is the Weak one — Parent's FK to Audit, in V2's
     // (source, target) orientation.
-    Assert.Equal((mkKey "Parent", mkKey "Audit"), diag.BreakableEdges.[0])
-    Assert.Contains("auto-resolved", diag.Reason)
+    Assert.Equal((mkKey "Parent", mkKey "Audit"), (CycleDiagnostic.breakableEdges diag).[0])
+    Assert.Contains("auto-resolved", CycleDiagnostic.reasonText diag)
 
 [<Fact>]
 let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
@@ -502,10 +502,10 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Empty(diag.BreakableEdges)
-    Assert.Contains("non-deferrable", diag.Reason)
+    Assert.Empty(CycleDiagnostic.breakableEdges diag)
+    Assert.Contains("non-deferrable", CycleDiagnostic.reasonText diag)
 
 [<Fact>]
 let ``resolver v5: 2-cycle with two Weak edges resolves — one edge broken, deterministically chosen`` () =
@@ -520,12 +520,12 @@ let ``resolver v5: 2-cycle with two Weak edges resolves — one edge broken, det
     let result = topoRun cyclic
     Assert.Equal(Topological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Equal(1, diag.BreakableEdges.Length)
-    Assert.Contains("auto-resolved", diag.Reason)
+    Assert.Equal(1, (CycleDiagnostic.breakableEdges diag).Length)
+    Assert.Contains("auto-resolved", CycleDiagnostic.reasonText diag)
     // The kept edge is honored by the order: breaking (Audit -> Parent)
     // leaves Parent's FK to Audit, so Audit loads first. Deterministic —
     // the smallest edge by SsKey pair breaks.
-    Assert.Equal((mkKey "Audit", mkKey "Parent"), diag.BreakableEdges.[0])
+    Assert.Equal((mkKey "Audit", mkKey "Parent"), (CycleDiagnostic.breakableEdges diag).[0])
     Assert.True(TopologicalOrder.precedes (mkKey "Audit") (mkKey "Parent") result.Value)
 
 [<Fact>]
@@ -539,9 +539,9 @@ let ``resolver v5: an all-weak 3-cycle resolves with exactly ONE broken edge (I5
     let result = topoRun cyclic
     Assert.Equal(Topological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Equal(3, diag.Members.Length)
-    Assert.Equal(1, diag.BreakableEdges.Length)
-    Assert.Contains("auto-resolved", diag.Reason)
+    Assert.Equal(3, (CycleDiagnostic.members diag).Length)
+    Assert.Equal(1, (CycleDiagnostic.breakableEdges diag).Length)
+    Assert.Contains("auto-resolved", CycleDiagnostic.reasonText diag)
 
 [<Fact>]
 let ``resolver v5: a 3-cycle whose every edge is STRONG refuses, naming the cycle`` () =
@@ -552,10 +552,10 @@ let ``resolver v5: a 3-cycle whose every edge is STRONG refuses, naming the cycl
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Empty(diag.BreakableEdges)
-    Assert.Contains("non-deferrable", diag.Reason)
+    Assert.Empty(CycleDiagnostic.breakableEdges diag)
+    Assert.Contains("non-deferrable", CycleDiagnostic.reasonText diag)
 
 [<Fact>]
 let ``resolver: Cascade edges are never broken`` () =
@@ -568,9 +568,29 @@ let ``resolver: Cascade edges are never broken`` () =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
-    Assert.Empty(diag.BreakableEdges)
+    Assert.Empty(CycleDiagnostic.breakableEdges diag)
+
+[<Fact>]
+let ``v6: an unresolved cycle keeps the acyclic majority in dependency position (#669 B-1 — the whole-catalog degrade is retired)`` () =
+    // A hard 2-cycle {Parent, Audit} plus a downstream Child referencing
+    // Parent and an independent Lone kind. The cycle's members lose only
+    // their intra-cycle precedence; Child still loads AFTER both cycle
+    // members (the condensed cycle's dependency position), and every kind
+    // appears exactly once.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") false NoAction
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
+    let child  = kindWithRef "Child"  "ChildRef"  (mkKey "Parent") false NoAction
+    let lone   = noRefKind "Lone"
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit; child; lone ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+    let result = topoRun cyclic
+    Assert.Equal(PartialTopological, result.Value.Mode)
+    Assert.Equal(4, List.length result.Value.Order)
+    Assert.True(TopologicalOrder.precedes (mkKey "Parent") (mkKey "Child") result.Value)
+    Assert.True(TopologicalOrder.precedes (mkKey "Audit") (mkKey "Child") result.Value)
 
 [<Fact>]
 let ``resolver: resolved cycles still appear in Cycles for audit`` () =
@@ -586,7 +606,7 @@ let ``resolver: resolved cycles still appear in Cycles for audit`` () =
     Assert.Equal(Topological, result.Value.Mode)
     Assert.NotEmpty(result.Value.Cycles)
     let diag = result.Value.Cycles |> List.head
-    Assert.Equal(1, diag.BreakableEdges.Length)
+    Assert.Equal(1, (CycleDiagnostic.breakableEdges diag).Length)
 
 // ---------------------------------------------------------------------------
 // Lineage discipline — A23 + A25.
@@ -637,8 +657,10 @@ let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () 
         |> fun lineage -> lineage.Value
     let result = topoRun withInverses
     // Symmetric closure introduced an inverse on Customer → Order
-    // alongside the original Order → Customer; the FK graph is now cyclic.
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    // alongside the original Order → Customer; the FK graph is now cyclic
+    // and the cycle is unresolvable — v6 keeps the rest of the catalog in
+    // dependency position.
+    Assert.Equal(PartialTopological, result.Value.Mode)
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences

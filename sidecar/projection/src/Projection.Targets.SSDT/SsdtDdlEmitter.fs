@@ -371,14 +371,73 @@ module SsdtDdlEmitter =
         (resolvedFks: (Reference * ForeignKeyDef) list)
         (k: Kind)
         : Statement =
-        let columns = k.Attributes |> List.map (columnDef overlay)
+        // DECISIONS 2026-07-18 (#669 M-8 / EF-19) — the emitted table
+        // renames every column to its logical name, so computed-column
+        // and CHECK expressions must rename WITH them: the kind's
+        // physical→logical map drives an AST-level identifier rewrite.
+        // An expression the rewriter cannot parse stays verbatim (the
+        // estate board names the unrewritable residue).
+        let physicalToLogical =
+            k.Attributes
+            |> List.map (fun a ->
+                (ColumnRealization.columnNameText a.Column).ToUpperInvariant(), Name.value a.Name)
+            |> Map.ofList
+        let rewriteExpr = ScriptDomGenerate.rewritePhysicalIdentifiers physicalToLogical
+        let kindName = Name.value k.Name
+        let columns =
+            k.Attributes
+            |> List.map (fun a -> a, columnDef overlay a)
+            |> List.map (fun (a, c) ->
+                let c =
+                    match c.Computed with
+                    | Some cfg ->
+                        let rewritten = rewriteExpr cfg.Expression
+                        if rewritten = cfg.Expression then c
+                        else
+                            match ComputedColumnConfig.create rewritten cfg.IsPersisted with
+                            | Ok cfg' -> { c with Computed = Some cfg' }
+                            | Error _ -> c
+                    | None -> c
+                // DECISIONS 2026-07-18 (the operator's proper-case lock):
+                // a DEFAULT constraint's emitted name derives from the
+                // LOGICAL table + column (`DF_<Table>_<Column>`), never
+                // from the source's physical-derived name — the emitted
+                // schema is logical everywhere its names are.
+                if c.DefaultValue.IsSome then
+                    { c with
+                        DefaultName =
+                            Some (IdentifierBudget.fit
+                                    (System.String.Concat("DF_", kindName, "_", Name.value a.Name))) }  // LINT-ALLOW: constraint-name convention mirror at the emission boundary; segments are typed (logical kind + attribute names); same discipline as the FK naming site
+                else c)
         let pk = pkDef k
         let fks = resolvedFks |> List.map snd
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
         // rowset path lifting #ColumnCheckReality) through the
         // realization layer's CHECK-constraint emission.
-        let checks = k.ColumnChecks |> List.map columnCheckDef
+        let checks =
+            k.ColumnChecks
+            |> List.map columnCheckDef
+            |> List.map (fun chk ->
+                let definition =
+                    let rewritten = rewriteExpr chk.Definition
+                    if rewritten = chk.Definition then chk.Definition else rewritten
+                // The proper-case lock, CHECK arm: a carried name that
+                // embeds the physical table token re-states it as the
+                // logical name; an absent name stays server-named.
+                let name =
+                    chk.Name
+                    |> Option.map (fun n ->
+                        let physicalTable = (TableId.tableText k.Physical).ToUpperInvariant()
+                        if n.ToUpperInvariant().Contains physicalTable then
+                            System.Text.RegularExpressions.Regex.Replace(
+                                n,
+                                System.Text.RegularExpressions.Regex.Escape (TableId.tableText k.Physical),
+                                kindName,
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                            |> IdentifierBudget.fit
+                        else n)
+                { chk with Definition = definition; Name = name })
         // H-022: extract TemporalConfig from Kind.Modality if the kind is
         // a system-versioned temporal table. `tryPick` returns None for
         // non-temporal kinds; None is the `TemporalConfig option` default.
@@ -1046,30 +1105,91 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let lookups = FkEmissionLookups.ofCatalog catalog
-        // PL-4 (S54) — the per-(module, schema) first-kind decision derives
-        // once per module here, not per kind inside the render loop.
-        let firstKindBySchemaByModule =
-            catalog.Modules
-            |> List.map (fun m -> m.SsKey, firstKindBySchemaOf m)
-            |> Map.ofList
-        // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
-        // cost (the dominant emit.ssdt work at production scale is
-        // proportional to the kind count). Slice A.4.7'-prelude
-        // .perf-sweep-6 instrumentation gap-fill.
-        ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
-            match Map.tryFind k.SsKey modules with
-            | Some m ->
-                let firstKindBySchema =
-                    Map.tryFind m.SsKey firstKindBySchemaByModule
-                    |> Option.defaultValue Map.empty
-                kindToSsdtFile renderMode emitIdentityAnnotations overlay lookups firstKindBySchema m k
-            | None ->
-                // Unreachable: `Catalog.allKinds` walks
-                // `c.Modules |> List.collect (fun m -> m.Kinds)`;
-                // every yielded Kind has an owning Module. The
-                // defensive `invalidOp` makes the unreachability
-                // structural.
-                invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
+        // DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate.
+        // A deployable, non-overlay-dropped reference whose target kind
+        // declares a composite primary key cannot emit as a single-column
+        // foreign key: the truncated key is rejected at deploy (`Msg 1776`).
+        // The publish refuses here — a red board finding
+        // (`EmissionCompositePkFk`, the same predicate) and a refused
+        // publish are the same fact. The overlay's `DropFk` is the ruling's
+        // second arm: a dropped reference emits no constraint and passes.
+        let compositeKeyRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.References
+                |> List.filter Reference.isDeployable
+                |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+                |> List.tryPick (fun r ->
+                    match Map.tryFind r.TargetKind lookups.TargetByKey with
+                    | Some target when List.length (Kind.primaryKey target) > 1 ->
+                        Some (EmitError.CompositeKeyReferenceRefused (
+                                Name.value k.Name,
+                                Name.value r.Name,
+                                Name.value target.Name,
+                                List.length (Kind.primaryKey target)))
+                    | _ -> None))
+        // A kind carrying `ModalityMark.Temporal` cannot yet emit deployable
+        // DDL (the period columns' GENERATED ALWAYS clauses are the named
+        // backlog item) — the publish refuses rather than silently dropping
+        // system-versioning from the target. A red board finding
+        // (`EmissionTemporalDropped`, the same predicate) and this refusal
+        // are the same fact (DECISIONS 2026-07-18; #669 EF-23).
+        let temporalRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Modality
+                |> List.tryPick (function
+                    | ModalityMark.Temporal _ ->
+                        Some (EmitError.TemporalKindRefused (Name.value k.Name))
+                    | _ -> None))
+        // Family 4e (DECISIONS 2026-07-18; #669 EF-20) — a trigger body
+        // that does not parse, or that still carries an OutSystems
+        // physical identifier after the logical-emission passes, refuses
+        // the publish. A red board finding (`EmissionTriggerUnrewritten`,
+        // the same two predicates) and this refusal are the same fact.
+        let triggerRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Triggers
+                |> List.sortBy (fun t -> t.SsKey)
+                |> List.tryPick (fun t ->
+                    match ScriptDomGenerate.tryParseTriggerDefinition t.Definition with
+                    | Error reason ->
+                        Some (EmitError.TriggerUnrewrittenRefused (Name.value k.Name, Name.value t.Name, reason))
+                    | Ok () ->
+                        match ScriptDomGenerate.firstPhysicalResidue t.Definition with
+                        | Some token ->
+                            Some (EmitError.TriggerUnrewrittenRefused (
+                                    Name.value k.Name, Name.value t.Name,
+                                    sprintf "physical identifier '%s' survives in the body" token))
+                        | None -> None))
+        match compositeKeyRefusal |> Option.orElse temporalRefusal |> Option.orElse triggerRefusal with
+        | Some refusal -> Error refusal
+        | None ->
+            // PL-4 (S54) — the per-(module, schema) first-kind decision derives
+            // once per module here, not per kind inside the render loop.
+            let firstKindBySchemaByModule =
+                catalog.Modules
+                |> List.map (fun m -> m.SsKey, firstKindBySchemaOf m)
+                |> Map.ofList
+            // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
+            // cost (the dominant emit.ssdt work at production scale is
+            // proportional to the kind count). Slice A.4.7'-prelude
+            // .perf-sweep-6 instrumentation gap-fill.
+            ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
+                match Map.tryFind k.SsKey modules with
+                | Some m ->
+                    let firstKindBySchema =
+                        Map.tryFind m.SsKey firstKindBySchemaByModule
+                        |> Option.defaultValue Map.empty
+                    kindToSsdtFile renderMode emitIdentityAnnotations overlay lookups firstKindBySchema m k
+                | None ->
+                    // Unreachable: `Catalog.allKinds` walks
+                    // `c.Modules |> List.collect (fun m -> m.Kinds)`;
+                    // every yielded Kind has an owning Module. The
+                    // defensive `invalidOp` makes the unreachability
+                    // structural.
+                    invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
 
     /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
     /// is the principled `empty`-default wrapper. With `empty`, every per-kind

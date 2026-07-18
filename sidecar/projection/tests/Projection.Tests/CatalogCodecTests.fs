@@ -292,7 +292,9 @@ let private allLiterals : SqlLiteral list =
       SqlLiteral.DateLit "2026-01-01"
       SqlLiteral.TimeLit "08:30:00"
       SqlLiteral.GuidLit "'00000000-0000-0000-0000-000000000000'"
-      SqlLiteral.BinaryLit "0xDEADBEEF" ]
+      SqlLiteral.BinaryLit "0xDEADBEEF"
+      // DECISIONS 2026-07-18 (#669 M-1) — the authored function-call default.
+      SqlLiteral.ExpressionLit "getutcdate()" ]
 
 [<Fact>]
 let ``a pre-WP-17 category-blind "TemporalLit" still READS, classified by raw shape`` () =

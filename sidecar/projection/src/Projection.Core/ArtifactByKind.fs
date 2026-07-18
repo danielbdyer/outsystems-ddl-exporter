@@ -48,6 +48,35 @@ type EmitError =
     /// impossible state so the refusal surfaces loudly. `reason` is
     /// human-readable; never parse it.
     | NonComposableLifecycleChain of reason: string
+    /// DECISIONS 2026-07-18 (#669 B-3 / EF-17; the downgrades-never-silent
+    /// law joined to the board's `EmissionCompositePkFk` finding) — a
+    /// reference targets a kind whose primary key is composite. The
+    /// `Reference` IR carries one source column, so the emitted foreign key
+    /// would reference only the target's first key column — SQL Server
+    /// rejects that at deploy (`Msg 1776`), and before this refusal the
+    /// publish truncated the key silently and exited clean. The publish now
+    /// refuses unless the operator overlay drops the reference
+    /// (`overlay.DropFk` — the board ruling's second arm). Carries the
+    /// owner kind's name, the reference's name, the target kind's name,
+    /// and the target key's column count.
+    | CompositeKeyReferenceRefused of owner: string * reference: string * target: string * keyColumns: int
+    /// DECISIONS 2026-07-18 (#669 EF-23; the fail-loudly ruling joined to
+    /// the board's `EmissionTemporalDropped` finding) — a kind carries
+    /// `ModalityMark.Temporal` (a system-versioned table), and the
+    /// emission cannot yet render its period columns' GENERATED ALWAYS
+    /// clauses — the emitted DDL would not deploy, and before this
+    /// refusal the system-versioning silently vanished from the target.
+    /// The publish refuses; carrying the temporal estate over remains
+    /// the named backlog item. Carries the kind's name.
+    | TemporalKindRefused of kind: string
+    /// DECISIONS 2026-07-18 (#669 EF-20; family 4e joined to the board's
+    /// `EmissionTriggerUnrewritten` finding) — a trigger definition did
+    /// not parse, so its physical→logical identifier rewrite cannot run
+    /// and the published body would target tables that do not exist in
+    /// the renamed estate. The publish refuses rather than shipping the
+    /// unrewritten body. Carries the owning kind, the trigger, and the
+    /// parser's first error.
+    | TriggerUnrewrittenRefused of kind: string * trigger: string * reason: string
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

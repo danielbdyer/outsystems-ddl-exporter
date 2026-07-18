@@ -3,7 +3,7 @@ CREATE TABLE [dbo].[Engagement] (
         CONSTRAINT [PK_Engagement_Id]
             PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
-        DEFAULT 0,
+        CONSTRAINT [DF_Engagement_AltCustomerId] DEFAULT 0,
     [CreatedBy]     INT            NOT NULL
         CONSTRAINT [FK_Engagement_User_CreatedBy]
             FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
