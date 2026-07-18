@@ -1,4 +1,11 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE: the `twin check` proof runner — orchestrates
+//   model → publish → mint → re-profile against a throwaway database and reports
+//   the verdict. The mutable locals accumulate the multi-stage run state (an
+//   imperative pipeline over side-effecting I/O with no pure equivalent); the
+//   `String.Concat` sites compose terminal operator-facing check prose at the
+//   report boundary (no typed AST applies to free-text narration); box/unbox
+//   crosses the ADO.NET result boundary. All at the I/O orchestration boundary.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

@@ -1,4 +1,10 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE: the only non-typed primitive here is `sprintf` composing the
+//   authored-default parse-failure PROSE ("'<raw>' does not parse as an <type>
+//   value") — human-readable diagnostic text, the discipline's named allowed
+//   exception (same as the pass drivers). No typed AST produces equivalent
+//   prose; the interpolated value is an already-refused raw literal. The literal
+//   emission itself is typed-AST (ScriptDom); this marker covers the prose only.
 
 /// Typed SQL literal expression. Per the chapter 4.1.A close arc
 /// (RawTextEmitter retirement Tier-1 #4): the IR→SQL projection is

@@ -1,4 +1,11 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: the discover-once evidence-cache SQL probe + single-pass
+//   derivation — `sprintf` composes the SELECT text from VALIDATED coordinates
+//   (schema / table / column come from typed `TableId` / `ColumnName` VOs,
+//   bracket-quoted; injection-safe by construction, no user text reaches the
+//   command); the mutable locals are the one-pass row-stream accumulators (the
+//   discover-once pattern's imperative core, isolated and pure-pool-tested).
+//   SQL-text + accumulation boundary.
 
 // THE EVIDENCE CACHE (2026-07-10, the manifest program, slice 2 —
 // THE_TRANSFER_MANIFEST.md §4.2-§4.5): the row substrate behind the decision

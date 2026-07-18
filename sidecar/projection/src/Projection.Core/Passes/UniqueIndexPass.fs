@@ -111,23 +111,47 @@ module UniqueIndexPass =
         | UniqueIndexOutcome.EnforceUnique _ ->
             None
         | UniqueIndexOutcome.DoNotEnforce reason ->
-            let code, message =
+            let code, severity, message =
                 match reason with
                 | UniqueIndexKeepReason.PolicyDisabled ->
-                    "tightening.uniqueIndex.policyDisabled",
+                    "tightening.uniqueIndex.policyDisabled", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Enable policy support before enforcement can proceed."
                 | UniqueIndexKeepReason.DataHasDuplicates ->
-                    "tightening.uniqueIndex.duplicates",
+                    "tightening.uniqueIndex.duplicates", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Resolve duplicate values before enforcement can proceed."
                 | UniqueIndexKeepReason.EvidenceMissing ->
-                    "tightening.uniqueIndex.evidenceMissing",
+                    "tightening.uniqueIndex.evidenceMissing", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Collect profiling evidence before enforcement can proceed."
                 | UniqueIndexKeepReason.NoCandidateProfiled ->
-                    "tightening.uniqueIndex.noCandidate",
+                    "tightening.uniqueIndex.noCandidate", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. No profile candidate exists; collect profiling evidence before enforcement can proceed."
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                    // Advisory, not a problem: the index is a valid promotion
+                    // candidate (no duplicates) but the dev team did not declare
+                    // it unique, so it is surfaced, not applied (Info, not Warning).
+                    "tightening.uniqueIndex.promotionAdvised", DiagnosticSeverity.Info,
+                    "Unique-index promotion candidate: the data shows no duplicates, but the index is not declared UNIQUE in the model. Enforcement is advised, not applied — set applyUniquePromotions to apply it, or declare it unique in the model."
+            // The advise-only candidate carries the ONE config edit that applies
+            // it (and every sibling candidate on the same intervention) —
+            // `applyUniquePromotions: true`. Sibling candidates share this Path,
+            // so `suggest-config.json` dedupes them into ONE reviewable
+            // bulk-apply suggestion. No other keep-reason is config-actionable
+            // (duplicates need a data fix; missing evidence needs profiling;
+            // policy-disabled is the operator's own toggle).
+            let suggestedConfig =
+                match reason with
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                    Some {
+                        Path  = sprintf "$.tightening.interventions[?(@.id==\"%s\")].applyUniquePromotions" decision.InterventionId
+                        Value = "true"
+                        Note  =
+                            "Profile evidence shows no duplicates for one or more indexes not declared UNIQUE in the model. Applying promotes EVERY such candidate on this intervention to an enforced UNIQUE — a tightening BEYOND the source's declared indexes. Review the promotionAdvised findings before applying, or declare the intended indexes UNIQUE in the model instead."
+                            |> Some
+                    }
+                | _ -> None
             Some {
                 Source   = passName
-                Severity = DiagnosticSeverity.Warning
+                Severity = severity
                 Code     = code
                 Message  = message
                 SsKey    = Some decision.IndexKey
@@ -138,7 +162,7 @@ module UniqueIndexPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
-                SuggestedConfig = None
+                SuggestedConfig = suggestedConfig
             }
 
     /// Run the UniqueIndexPass.

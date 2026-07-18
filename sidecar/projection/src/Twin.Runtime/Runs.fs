@@ -1,4 +1,9 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE: the Twin's run-store driver — persists and lists run records
+//   on disk. `String.Concat` composes terminal run-directory paths / run-id tags
+//   at the filesystem boundary (the concatenated segment IS the artifact key);
+//   considered `Path.Combine`, rejected because it emits platform-specific
+//   separators that break T1 cross-platform byte-determinism. I/O-boundary.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

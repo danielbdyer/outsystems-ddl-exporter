@@ -1,4 +1,9 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE-MUTATION: the Twin's estate-model file reader — the mutable
+//   locals are a single-pass accumulator over the on-disk model files (an
+//   imperative fold at the file-read boundary, isolated and pure-pool-testable,
+//   no escape). I/O-boundary read; no pure-functional equivalent for the
+//   sequential file walk.
 
 open System.IO
 open System.Threading.Tasks

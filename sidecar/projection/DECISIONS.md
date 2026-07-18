@@ -29682,3 +29682,83 @@ default `(37, 8)` re-blesses goldens and is deferred with this trigger: the firs
 storage-evidence-less catalog whose emitted decimal width is observed wrong in review.
 Tuple-grain declared-unique composite evidence (point 5) fires when an estate's composite
 duplicates must block a cutover rather than inform a review.
+
+## 2026-07-18 — Cutover readiness: unique-summary precision + advise-only promotion, remediation.sql out of the DacFx build, and one model/profiler source
+
+**Status:** ADOPTED (operator assignment 2026-07-18 — three items; the three
+design choices resolved via the operator question set: advise-only promotion,
+`catalog.snapshot.json` as a model source, profiler-derives-from-`model.ossys`).
+
+**1 — The unique-index summary splits, and profile-driven promotion is
+advise-only.** `manifest.summary.txt`'s single "unique-index candidates
+tightened — declared unique or profile shows no duplicates" line conflated
+source fidelity with tightening. It now splits (from the same decision set):
+**carried from source** (`AlreadyUnique` — declared UNIQUE in the model,
+emitted faithfully), **advised — could be promoted** (a no-duplicate candidate
+the operator COULD apply), **promoted from profile evidence** (a candidate the
+operator APPLIED), and three withheld reasons (**duplicates** / **missing
+evidence** / **policy disabled**) the prior single line dropped.
+
+The finding behind it: **a default publish auto-promotes nothing** —
+`UniqueIndexPass` is a no-op unless a `uniqueIndex` intervention is registered,
+and emission is `declared-unique OR overlay.EnforceUnique`, the overlay empty
+otherwise. Per the operator directive, a CONFIGURED intervention is now
+**advise-only by default too**: `UniqueIndexTighteningConfig.ApplyProfilePromotions`
+gates whether a no-duplicate candidate is APPLIED (`EnforceUnique`) or ADVISED
+(`DoNotEnforce PromotionAdvisedNotApplied` — a new keep-reason surfaced as an
+Info opportunity, never entering `overlay.EnforceUnique`, so emission stays
+faithful). The operator binder (`bindUniqueIndex`) defaults it OFF and reads
+`applyUniquePromotions: true` to apply; the low-level `create` keeps
+`ApplyProfilePromotions = true` (back-compat for the internal callers/canaries —
+no emitted-schema churn). `AlreadyUnique` (carried) always enforces regardless.
+The dev team's declared indexes are authoritative; a promotion is opt-in-twice.
+
+**2 — `manifest.remediation.sql` is excluded from the `.sqlproj` Build glob.**
+The operator's data-cleanup script (UPDATE/DELETE/SELECT) is a bundle-root
+sibling of `ProjectionCatalog.sqlproj`; the Microsoft.Build.Sql SDK's default
+`**/*.sql` glob compiled it as a schema object and DacFx blocked the
+`dotnet build`/`sqlpackage` deploy on the non-declarative DML (the failure a
+POPULATED remediation script produced under `emission.dacpac`/`sqlproj`).
+`SqlprojEmitter.emit` gains an `auxiliaryScriptRelPaths` parameter and
+`Build Remove`s it (Remove only — it is not `:r`-included and need not be a
+project item; a safe no-op when absent). The gated `dotnet build` test now
+writes a populated remediation script and still builds to a `.dacpac`. The
+in-process `DacpacEmitter.emit` byte path was already schema-filtered (clean);
+the failure was always the buildable `.sqlproj`.
+
+**3a — `model.path` accepts a `catalog.snapshot.json` (or a publish dir).**
+The single model-file reader `Compose.read` (the publish path's
+`readConfigModel` file branch dispatches through it) now delegates to
+`Source.ofFile` — faithful- and directory-aware: a `CatalogCodec` snapshot
+(top-level `codecVersion`) reads losslessly, so the FROZEN model (the exact
+emitted shape a full-export wrote) is a first-class file source for the cutover's
+`check … --against model` gating, independent of any live connection; a directory
+resolves to its bundle `catalog.snapshot.json` inside; an `osm_model.json` keeps
+the registered `CatalogReader.parse` (byte-identical).
+
+**3b — the live profiler derives its connection from `model.ossys`.**
+`profiler.provider = "live"` read `PROJECTION_MSSQL_CONN_STR` and nothing else,
+so a live-OSSYS model (`model.ossys = file:…`) had to supply the SAME database
+twice. `acquireProfile` now resolves in precedence: `PROJECTION_MSSQL_CONN_STR`
+(explicit override) → `model.ossys` (resolved via `ConnectionSpec.resolveSpec`;
+in a live OSSYS environment the metadata DB and the data DB are one) → a named
+refusal that now points at BOTH sources. D9-preserving: `model.ossys` is an
+out-of-band `env:`/`file:` reference, so the secret is still never in the config
+document. The double-configuration the operator hit is removed.
+
+**Gates:** pure pool green (incl. the new `ModelSourceTests`, the advise-only
+`UniqueIndexRules`/`SummaryFormatter` cases, and the sqlproj auxiliary-exclusion
+unit test); the gated `dotnet build` sqlproj tests 4/4 with a populated
+remediation script.
+
+**The advise-only candidate flows to `suggest-config.json`.** Each
+`PromotionAdvisedNotApplied` diagnostic carries a `SuggestedConfig` proposing
+the ONE edit that applies it — `applyUniquePromotions: true` on its
+intervention (`$.tightening.interventions[?(@.id=="<id>")].applyUniquePromotions`,
+the sibling-pass path convention). Every candidate on one intervention shares
+that Path, so `SuggestConfigEmitter` dedupes them into a SINGLE reviewable
+bulk-apply suggestion (the operator reviews the `promotionAdvised` findings,
+then applies all with one edit — or declares the intended indexes UNIQUE in the
+model). The other keep-reasons stay non-config-actionable (duplicates need a
+data fix; missing evidence needs profiling; policy-disabled is the operator's
+own toggle). Closes the machine-readable-candidate-list residual named above.

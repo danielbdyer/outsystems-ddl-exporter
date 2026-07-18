@@ -1,4 +1,8 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: user-FK reconciliation evidence — `+` composes terminal
+//   evidence-key tags ("reconcile:<col>", "+fallback:<key>") at the accumulation
+//   boundary; the tags are opaque map keys (not structured data), and the one
+//   mutable step is a single-pass tally. Isolated, pure-pool-testable.
 
 // THE ACT FINGERPRINT DERIVATION (2026-07-10, the transfer-manifest program,
 // slices 4a/4b — THE_TRANSFER_MANIFEST.md §6.3): the bridge from the typed

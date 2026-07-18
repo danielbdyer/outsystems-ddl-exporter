@@ -1,4 +1,8 @@
 module Projection.Cli.GoBoardView
+// LINT-ALLOW-FILE: the go/no-go board terminal view — `String.concat` / `+`
+//   compose the operator-facing board rows at the console text boundary; the one
+//   mutable local is the render-line accumulator. Terminal-render boundary, no
+//   typed AST for free-text narration.
 
 // THE GO BOARD, rendered through the `View` engine (2026-07-08, the
 // rendering-elevation program). The pure `GoBoard.Board` (Pipeline) is the ONE

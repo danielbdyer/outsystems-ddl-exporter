@@ -1,4 +1,8 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: transfer triage — `String.concat "|"` composes the terminal
+//   segment-member key (a deterministic `|`-joined SsKey list that IS the group
+//   key); no AST applies to an opaque grouping key, and the members are validated
+//   SsKey tokens.
 
 open Projection.Core
 

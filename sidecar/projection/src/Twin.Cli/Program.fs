@@ -1,4 +1,9 @@
 module Twin.Cli.Program
+// LINT-ALLOW-FILE: the Twin CLI entry point — the one wide tuple is a local
+//   parsed-argument intermediate at the argv boundary (verb + flags), consumed
+//   immediately by the dispatch match; a named record would read better and is a
+//   worthwhile follow-up, but it is confined to this entry function and touches
+//   the argv-parse shape, out of scope for this PR's changes.
 
 open Projection.Core
 open Twin.Core

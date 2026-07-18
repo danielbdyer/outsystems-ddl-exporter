@@ -1,4 +1,8 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: transfer table-subset resolution — `String.concat` composes the
+//   terminal not-found / ambiguous table-name lists inside operator-facing refusal
+//   messages (a comma/semicolon-joined name list IS the message); no typed AST
+//   applies to free-text refusal prose, and each name is a validated token.
 
 open Projection.Core
 

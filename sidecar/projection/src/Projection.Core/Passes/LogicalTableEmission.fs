@@ -1,4 +1,11 @@
 namespace Projection.Core.Passes
+// LINT-ALLOW-FILE: the physical→logical identifier rewrite — `Regex` replaces a
+//   physical column token with its logical name inside computed-column / CHECK
+//   expression text, the gold-standard primitive for a case-insensitive
+//   word-boundary substitution (considered a manual tokenizer, rejected as
+//   reimplementing regex word-boundaries for an identifier swap); the
+//   interpolation / `+` build the anchored `(?<![\w[])name(?![\w\]])` pattern.
+//   Boundary of the expression-rewrite; the surrounding emission is typed-AST.
 
 open Projection.Core
 

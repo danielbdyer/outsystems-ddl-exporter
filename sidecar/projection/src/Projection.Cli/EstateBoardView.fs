@@ -1,4 +1,8 @@
 module Projection.Cli.EstateBoardView
+// LINT-ALLOW-FILE: the estate-board terminal view — `String.concat` composes the
+//   operator-facing board rows at the console text boundary (the rendered string
+//   IS the output); no typed AST applies to free-text terminal narration, and
+//   each segment is a pre-rendered typed value. Terminal-render boundary.
 
 // THE ESTATE BOARD, rendered through the `View` engine (wave A8, the live-board
 // program — the ease tail of the loop-closing chapter). The pure

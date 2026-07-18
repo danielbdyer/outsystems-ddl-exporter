@@ -116,10 +116,15 @@ module TighteningBinding =
     let private bindUniqueIndex
         (entry: Config.TighteningInterventionEntry)
         : Result<TighteningIntervention> =
-        let config : UniqueIndexTighteningConfig = {
-            EnforceSingleColumnUnique = defaultArg entry.EnforceSingleColumnUnique true
-            EnforceMultiColumnUnique  = defaultArg entry.EnforceMultiColumnUnique true
-        }
+        // Advise-only by default (operator directive 2026-07-18): a
+        // profile-driven promotion is APPLIED only on an explicit
+        // `applyUniquePromotions: true`; otherwise the candidate is surfaced
+        // as advice and the dev team's declared indexes stay authoritative.
+        let config : UniqueIndexTighteningConfig =
+            UniqueIndexTighteningConfig.createWith
+                (defaultArg entry.EnforceSingleColumnUnique true)
+                (defaultArg entry.EnforceMultiColumnUnique true)
+                (defaultArg entry.ApplyUniquePromotions false)
         Result.success (TighteningIntervention.UniqueIndex (entry.Id, config))
 
     let private parseReferenceOverrideAction

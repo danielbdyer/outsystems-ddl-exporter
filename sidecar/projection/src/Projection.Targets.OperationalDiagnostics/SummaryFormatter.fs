@@ -126,7 +126,9 @@ module SummaryFormatter =
         | Bucket.ForeignKey ->
             "FK constraints elected for creation — passed evidence + cross-schema gates."
         | Bucket.Unique ->
-            "unique-index candidates tightened — declared unique or profile shows no duplicates."
+            // The count is the ENFORCED total (carried + promoted); the split
+            // beneath separates source fidelity from profile-driven tightening.
+            "unique-index enforcements — the split beneath separates carried-from-source from promoted."
         | Bucket.Remediation ->
             "operator-attention findings — model/data conflict needs reconciliation before tightening."
 
@@ -142,6 +144,74 @@ module SummaryFormatter =
         |> ignore
         for key in rollup.FirstKeys do
             sb.AppendLine(sprintf "                   sample: %s" (SsKey.rootOriginal key)) |> ignore
+
+    // -- The unique-index decision split (2026-07-18) -----------------------
+    //
+    // The `[Unique]` bucket count is the ENFORCED total, which conflated two
+    // very different outcomes: an index the dev team DECLARED unique (source
+    // fidelity — never a tightening) and an index PROMOTED from profile
+    // evidence (a tightening BEYOND what the source declared). This split
+    // reports the two separately, plus the three withheld reasons the prior
+    // single line dropped entirely (duplicates / missing evidence / policy
+    // disabled). **The dev team's declared indexes are authoritative**: a
+    // promotion is only ever APPLIED when an operator explicitly registers a
+    // `uniqueIndex` tightening intervention (`UniqueIndexPass` is a no-op
+    // otherwise — a default publish promotes nothing and this whole section
+    // reads zero). The count exists so a configured promotion is never silent.
+
+    /// The per-outcome tally of the unique-index decision set — carried vs
+    /// promoted (the two enforced arms) and the three withheld reasons.
+    type private UniqueSplit = {
+        Carried                 : int
+        Promoted                : int
+        AdvisedNotApplied       : int
+        WithheldDuplicates      : int
+        WithheldMissingEvidence : int
+        WithheldPolicyDisabled  : int
+    }
+
+    let private emptyUniqueSplit : UniqueSplit = {
+        Carried = 0; Promoted = 0; AdvisedNotApplied = 0
+        WithheldDuplicates = 0; WithheldMissingEvidence = 0; WithheldPolicyDisabled = 0
+    }
+
+    let private uniqueSplitOf (uniqueIndex: UniqueIndexDecisionSet) : UniqueSplit =
+        uniqueIndex.Decisions
+        |> List.fold (fun acc d ->
+            match d.Outcome with
+            | UniqueIndexOutcome.EnforceUnique UniqueIndexEvidence.AlreadyUnique ->
+                { acc with Carried = acc.Carried + 1 }
+            | UniqueIndexOutcome.EnforceUnique (UniqueIndexEvidence.SingleColumnNoDuplicates _)
+            | UniqueIndexOutcome.EnforceUnique UniqueIndexEvidence.CompositeNoDuplicates ->
+                { acc with Promoted = acc.Promoted + 1 }
+            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                { acc with AdvisedNotApplied = acc.AdvisedNotApplied + 1 }
+            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.DataHasDuplicates ->
+                { acc with WithheldDuplicates = acc.WithheldDuplicates + 1 }
+            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.EvidenceMissing
+            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.NoCandidateProfiled ->
+                { acc with WithheldMissingEvidence = acc.WithheldMissingEvidence + 1 }
+            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.PolicyDisabled ->
+                { acc with WithheldPolicyDisabled = acc.WithheldPolicyDisabled + 1 }) emptyUniqueSplit
+
+    /// Render the split as indented sub-lines beneath the `[Unique]` bucket.
+    /// Every line is emitted (including zeros) for diff-friendliness and so an
+    /// operator reads the full disposition of the unique axis at a glance.
+    let private writeUniqueSplit (sb: StringBuilder) (split: UniqueSplit) : unit =
+        let line (label: string) (n: int) (gloss: string) =
+            sb.AppendLine(sprintf "        %-30s %4d — %s" label n gloss) |> ignore
+        line "carried from source" split.Carried
+            "declared UNIQUE in the model; emitted faithfully (source fidelity, not a tightening)."
+        line "advised — could be promoted" split.AdvisedNotApplied
+            "not declared UNIQUE, profile shows no duplicates; a promotion the operator COULD apply. Advisory only — emission stays faithful to the model unless applyUniquePromotions is set."
+        line "promoted from profile evidence" split.Promoted
+            "a promotion the operator APPLIED (applyUniquePromotions set) — a tightening BEYOND the source's declaration."
+        line "withheld — duplicates" split.WithheldDuplicates
+            "profile shows duplicate values; enforcing would break existing rows (also counted under Remediation)."
+        line "withheld — missing evidence" split.WithheldMissingEvidence
+            "no reliable probe or no profiled candidate; evidence absent, so no tightening."
+        line "withheld — policy disabled" split.WithheldPolicyDisabled
+            "the intervention's toggle for this index's column-count category is off."
 
     /// Build the per-bucket rollup `Map` from the three DecisionSets.
     /// Each decision contributes to at most one bucket per
@@ -215,8 +285,13 @@ module SummaryFormatter =
               Bucket.ForeignKey
               Bucket.Unique
               Bucket.Remediation ]
+        let uniqueSplit = uniqueSplitOf uniqueIndex
         for bucket in bucketOrder do
             writeBucket sb (Map.find bucket rollups)
+            // The unique axis carries its carried-vs-promoted-vs-withheld split
+            // immediately beneath its bucket line (the fidelity-vs-tightening
+            // precision, 2026-07-18).
+            if bucket = Bucket.Unique then writeUniqueSplit sb uniqueSplit
         sb.AppendLine() |> ignore
         let totalActioned =
             rollups

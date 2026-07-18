@@ -86,7 +86,15 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
         for (rel, body) in dataLanes do writeFile dir rel body
         let laneRelPaths = dataLanes |> List.map fst
         writeFile dir PostDeployEmitter.fileName (PostDeployEmitter.renderIncludes laneRelPaths)
-        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit laneRelPaths true false)
+        // Regression witness (2026-07-18): a POPULATED remediation script — the
+        // operator's data-cleanup DML — sits at the bundle root as a sibling of
+        // the project. Left in the SDK's `**/*.sql` Build glob, DacFx parses the
+        // UPDATE/DELETE as a schema object and the build FAILS. The emitter must
+        // Build-Remove it; this build proves the exclusion holds end-to-end.
+        writeFile dir Compose.ArtifactPath.remediation
+            "-- remediation candidates\nUPDATE [dbo].[Country] SET [Name] = N'?' WHERE [Name] IS NULL;\nDELETE FROM [dbo].[Country] WHERE [Id] < 0;\n"
+        writeFile dir SqlprojEmitter.fileName
+            (SqlprojEmitter.emit laneRelPaths [ Compose.ArtifactPath.remediation ] true false)
         writeFile dir "nuget.config" nugetConfig
         // dotnet build the emitted .sqlproj → a .dacpac
         let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
@@ -144,7 +152,7 @@ let ``Sqlproj build: a NON-dbo estate's bundle builds to a .dacpac (Schemas/ obj
     try
         for KeyValue (rel, body) in outputs.SsdtBundle do
             if rel.EndsWith ".sql" then writeFile dir rel body
-        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] false false)
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] [] false false)
         writeFile dir "nuget.config" nugetConfig
         let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
         psi.WorkingDirectory <- dir
@@ -209,7 +217,7 @@ let ``Sqlproj build: a bundle with a refactorlog builds and the .dacpac embeds r
         for KeyValue (rel, body) in outputs.SsdtBundle do
             if rel.EndsWith ".sql" then writeFile dir rel body
         writeFile dir SqlprojEmitter.refactorLogFileName refactorXml
-        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] false true)
+        writeFile dir SqlprojEmitter.fileName (SqlprojEmitter.emit [] [] false true)
         writeFile dir "nuget.config" nugetConfig
         let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
         psi.WorkingDirectory <- dir

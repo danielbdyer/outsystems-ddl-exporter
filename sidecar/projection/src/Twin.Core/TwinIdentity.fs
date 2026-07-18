@@ -1,4 +1,8 @@
 namespace Twin.Core
+// LINT-ALLOW-FILE: the Twin's identity/coordinate value objects — `String.Concat`
+//   composes the terminal canonical identity form (a length/segment-delimited
+//   key that IS the serialization); no typed AST applies to an identity
+//   pre-image, and every segment is a validated VO field. Boundary-confined.
 
 open Projection.Core
 

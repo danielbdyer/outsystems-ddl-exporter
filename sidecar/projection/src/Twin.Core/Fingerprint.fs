@@ -52,7 +52,7 @@ module Fingerprint =
             contributions
             |> List.sortBy (fun c -> c.Name.ToLowerInvariant())
             |> List.map (fun c -> System.String.Concat(field (c.Name.ToLowerInvariant()), field (contentHash c.Content)))  // LINT-ALLOW: length-prefixed canonical-form pair; see module doc
-            |> String.concat ""
+            |> String.concat ""  // LINT-ALLOW: terminal join of the length-prefixed canonical-form fields (the fingerprint's collision-free serialization); each element is already a self-delimiting `len:value` primitive, so the empty-separator concat IS the canonical form — no AST applies to a digest pre-image
         let rendered =
             System.String.Concat(field toolVersion, field scenario, field (string seed), field canonical)  // LINT-ALLOW: length-prefixed canonical-form assembly; see module doc
         Fingerprint (sha256Hex (System.Text.Encoding.UTF8.GetBytes rendered))

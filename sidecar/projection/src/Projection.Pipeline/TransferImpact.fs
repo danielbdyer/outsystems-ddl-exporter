@@ -1,4 +1,8 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: the transfer-impact analyzer — the mutable locals are
+//   single-pass accumulators over the impacted-rows estimate (an imperative fold,
+//   isolated and pure-pool-tested). No pure-functional equivalent is warranted at
+//   the estimate boundary.
 
 open Projection.Core
 

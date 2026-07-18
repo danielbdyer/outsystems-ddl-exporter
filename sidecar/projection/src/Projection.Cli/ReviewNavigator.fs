@@ -1,4 +1,9 @@
 namespace Projection.Cli
+// LINT-ALLOW-FILE: the interactive review navigator — a terminal-UI state machine
+//   (cursor / page / selection) driven by keypress events. The mutable locals ARE
+//   the imperative navigation state (a UI loop over the terminal-as-world has no
+//   pure-value equivalent); `String.concat` composes the rendered lines at the
+//   console text boundary. Boundary-confined to the interactive surface.
 
 // THE REVIEW WORKBENCH (2026-07-10, the manifest program, slice 3 —
 // THE_TRANSFER_MANIFEST.md §4 / §6): the interactive surface where each
