@@ -1404,6 +1404,67 @@ module Estate =
         : EstateReport =
         computeWith Posture.defaults target targetCatalog envs
 
+    /// The cutover ladder (`CUTOVER_BOARD_POPULATION_PLAN.md` §0's green
+    /// definition; DECISIONS 2026-07-18). Green — ready to cut an
+    /// environment over — holds when:
+    ///   1. no Emission-plane RULING remains open (the deploy-blocking or
+    ///      intent-dropping emission facts; WATCH advisories never block),
+    ///      and
+    ///   2. no data dealbreaker remains on the REPAIR lane (orphan
+    ///      references, NULLs under NOT NULL, duplicates, overflow,
+    ///      collation collisions) — each is either CLEARED, or past-band
+    ///      and RELAXED with its reopen probe (the RELAX lane never
+    ///      blocks; a RETIRABLE posture is the healthy endpoint and never
+    ///      blocks), and
+    ///   3. the per-environment data readiness (`check shape` —
+    ///      `Readiness.isReady`) holds; that verdict rides its own run
+    ///      surface and composes with this one at the face.
+    /// The ladder names ONE outstanding item (THE_VOICE §8 — one lever,
+    /// never a list of ten): the first emission ruling, else the first
+    /// data dealbreaker.
+    type CutoverLadder =
+        { EmissionRulings : Finding list
+          DataBlockers    : Finding list
+          Green           : bool
+          OutstandingItem : Finding option }
+
+    let cutoverLadder (report: EstateReport) : CutoverLadder =
+        let emissionRulings =
+            report.EmissionFindings
+            |> List.filter (fun f -> f.Lane = EstateLane.Decide)
+        let dataBlockers =
+            report.Findings
+            |> List.filter (fun f ->
+                f.Plane = EstatePlane.Data
+                && f.Lane = EstateLane.Repair
+                && f.Kind <> EstateFindingKind.PostureRetirable)
+        let outstanding =
+            match emissionRulings, dataBlockers with
+            | f :: _, _ -> Some f
+            | [], f :: _ -> Some f
+            | [], [] -> None
+        { EmissionRulings = emissionRulings
+          DataBlockers    = dataBlockers
+          Green           = Option.isNone outstanding
+          OutstandingItem = outstanding }
+
+    /// The ladder's surface lines (THE_VOICE §8): the verdict, then —
+    /// when an item stands in the way — the one item and its lever.
+    let cutoverLadderLines (ladder: CutoverLadder) : string list =
+        if ladder.Green then
+            [ "Ready to cut over on this board: no emission ruling remains open, and every data dealbreaker is cleared or relaxed with its reopen probe."
+              "The per-environment data readiness (check shape) completes the gate." ]
+        else
+            let total = List.length ladder.EmissionRulings + List.length ladder.DataBlockers
+            let head =
+                if total = 1 then "One item remains before cutover."
+                else sprintf "%d items remain before cutover. The one in the way:" total
+            match ladder.OutstandingItem with
+            | Some f ->
+                [ head; f.Statement ]
+                @ (match f.Lever with Some l -> [ l ] | None -> [])
+            | None -> [ head ]
+
     /// The face's remediation stamp: the artifacts it wrote this run —
     /// (file, block count) per environment (`compute` stays file-blind;
     /// the ARTIFACTS index and the JSON read the stamped list).

@@ -1134,6 +1134,54 @@ let ``a LOGICAL-ONLY relationship's orphans reach the board — the orphan deriv
     Assert.Contains("42", f.Statement)
 
 [<Fact>]
+let ``the cutover ladder: green when nothing stands in the way; the one outstanding item named otherwise (plan §0)`` () =
+    // Clean estate — green, and the surface says what completes the gate.
+    let clean = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    let green = Estate.cutoverLadder clean
+    Assert.True(green.Green)
+    Assert.Contains("Ready to cut over", Estate.cutoverLadderLines green |> List.head)
+    // An orphaned relationship (REPAIR lane) blocks, and the ladder names it.
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 7L ] }
+    let red =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+        |> Estate.cutoverLadder
+    Assert.False(red.Green)
+    Assert.True(red.OutstandingItem |> Option.exists (fun f -> f.Kind = EstateFindingKind.DataOrphans))
+    Assert.Contains("before cutover", Estate.cutoverLadderLines red |> List.head)
+    // A relaxed (past-band) posture does not block — the RELAX lane
+    // carries its reopen probe instead.
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
+    let relaxed =
+        Estate.computeWith posture agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+        |> Estate.cutoverLadder
+    Assert.True(relaxed.Green)
+    // An emission ruling blocks ahead of data: the composite-key target.
+    let compositePk =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with IsPrimaryKey = true } else a) }
+                                else k) }) }
+    let emissionRed =
+        Estate.compute agreed compositePk [ "cloud-dev", operand "cloud-dev" compositePk ]
+        |> Estate.cutoverLadder
+    Assert.False(emissionRed.Green)
+    Assert.True(emissionRed.OutstandingItem |> Option.exists (fun f -> f.Kind = EstateFindingKind.EmissionCompositePkFk))
+
+[<Fact>]
 let ``the active posture: a relaxed relationship renders its meter and absorbs the orphan finding`` () =
     let posture : Estate.Posture =
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }

@@ -28550,3 +28550,30 @@ surface is the cutover artifact; the migration path is the named follow-up). Cro
 references in expressions rewrite only against the owning kind's map. CHECK-expression residue
 rides the computed-expression finding's family; a dedicated check-token detector lands with the
 trigger family (4e), whose rewriter shares the same machinery.
+
+## 2026-07-18 — The cutover ladder: green is a derivation of the report, and the one outstanding item is named
+
+**Context.** `CUTOVER_BOARD_POPULATION_PLAN.md` §0 defined green in prose; the board needed it in
+code, with THE_VOICE §8's discipline — one outstanding item named, never a list of ten.
+
+**The decision.** `Estate.cutoverLadder : EstateReport -> CutoverLadder` — pure derivation:
+**green** ⇔ no Emission-plane RULING remains open (WATCH advisories never block) AND no data
+dealbreaker remains on the REPAIR lane (orphans, NULLs under NOT NULL, duplicates, overflow,
+collation collisions — each cleared, or past-band and RELAXED with its reopen probe; a RETIRABLE
+posture is the healthy endpoint and never blocks). The per-environment data readiness
+(`check shape` → `Readiness.isReady`) composes at the face — the third leg of the plan's green,
+riding its own run surface. `cutoverLadderLines` renders the verdict and, when red, the ONE item
+in the way with its lever. Same-day sibling: the PERSISTED extraction carriage (EF-21) landed —
+the emission already rendered the keyword, so carrying the fact closed that round-trip whole.
+Decision 11's posture is confirmed in the plan: `emission.identityAnnotations` defaults `true`;
+the cutover configuration sets it `false`, suppressing the vendor pair with a named diagnostic
+while `MS_Description` emits regardless.
+
+**Witness.** `EstateTests` — the four-scenario ladder: clean → green with the completing-gate
+line; an orphaned relationship → red naming it; the same orphans RELAXED past-band → green (the
+probe carries the re-tighten); a composite-key target → red naming the emission ruling first.
+`ColumnRealitySourceSidePopulationTests` — the PERSISTED thread-through.
+
+**Named residuals.** The face wiring (`check estate` printing the ladder beneath the board) and
+the `Readiness.isReady` composition line are the surface half, landing with the M-7 report
+alignment; the derivation and its law are what this entry fixes.
