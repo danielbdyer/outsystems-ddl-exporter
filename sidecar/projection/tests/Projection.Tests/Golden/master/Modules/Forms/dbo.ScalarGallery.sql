@@ -289,7 +289,7 @@ GO
 GO
 
 CREATE TRIGGER [dbo].[TRG_ScalarGallery_Audit]
-    ON [dbo].[GOLD_SCALAR_GALLERY]
+    ON [dbo].[ScalarGallery]
     AFTER INSERT
     AS BEGIN
            SET NOCOUNT ON;

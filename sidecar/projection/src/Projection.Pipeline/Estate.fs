@@ -1169,6 +1169,29 @@ module Estate =
                     (sprintf "%s is system-versioned%s — the emission cannot yet carry SYSTEM_VERSIONING, so the publish refuses rather than dropping it silently."
                         (Name.value k.Name) history)))
 
+    /// EF-20 / family 4e (DECISIONS 2026-07-18): a trigger body that does
+    /// not parse, or that still carries an OutSystems physical identifier
+    /// after the logical-emission passes. The publish refuses the same two
+    /// predicates (`EmitError.TriggerUnrewrittenRefused`) — one shared
+    /// parse-check (`ScriptDomGenerate.tryParseTriggerDefinition`) keeps
+    /// the board and the gate the same fact.
+    let private emissionTriggerFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Triggers
+            |> List.choose (fun t ->
+                let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value t.Name)
+                match Projection.Targets.SSDT.ScriptDomGenerate.tryParseTriggerDefinition t.Definition with
+                | Error reason ->
+                    Some (emissionFinding EstateFindingKind.EmissionTriggerUnrewritten subject
+                            (sprintf "%s's body does not parse (%s) — its identifiers cannot be rewritten to the published names, so the publish refuses." subject reason))
+                | Ok () ->
+                    match Projection.Targets.SSDT.ScriptDomGenerate.firstPhysicalResidue t.Definition with
+                    | Some token ->
+                        Some (emissionFinding EstateFindingKind.EmissionTriggerUnrewritten subject
+                                (sprintf "%s's body still references the physical identifier '%s' after logical-name emission — the published body would target an object that does not exist, so the publish refuses." subject token))
+                    | None -> None))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1181,7 +1204,8 @@ module Estate =
           emissionAuthoredDefaultFindings target
           emissionDataLaneOrderFindings target
           emissionComputedExprFindings target
-          emissionTemporalFindings target ]
+          emissionTemporalFindings target
+          emissionTriggerFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 

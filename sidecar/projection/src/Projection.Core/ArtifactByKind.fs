@@ -69,6 +69,14 @@ type EmitError =
     /// The publish refuses; carrying the temporal estate over remains
     /// the named backlog item. Carries the kind's name.
     | TemporalKindRefused of kind: string
+    /// DECISIONS 2026-07-18 (#669 EF-20; family 4e joined to the board's
+    /// `EmissionTriggerUnrewritten` finding) — a trigger definition did
+    /// not parse, so its physical→logical identifier rewrite cannot run
+    /// and the published body would target tables that do not exist in
+    /// the renamed estate. The publish refuses rather than shipping the
+    /// unrewritten body. Carries the owning kind, the trigger, and the
+    /// parser's first error.
+    | TriggerUnrewrittenRefused of kind: string * trigger: string * reason: string
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

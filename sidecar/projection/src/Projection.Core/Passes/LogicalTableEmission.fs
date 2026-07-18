@@ -43,8 +43,16 @@ open Projection.Core
 module LogicalTableEmission =
 
     /// Pass version. Bump when substitution semantics change.
+    /// v1 — `Kind.Physical.Table` substitution only.
+    /// v2 — family 4e (DECISIONS 2026-07-18; #669 EF-20): the
+    ///      substitution follows the TABLE into every `Trigger.Definition`
+    ///      catalog-wide (a trigger body references tables by their
+    ///      source physical names — bracketed and bare forms both
+    ///      rewrite to the bracketed logical name; a physical name
+    ///      inside a string literal would also rewrite, the same
+    ///      accepted limitation `LogicalColumnEmission` v2 documents).
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private passName : string = "logicalTableEmission"
@@ -104,11 +112,62 @@ module LogicalTableEmission =
             LineageBuffer.add (substitutedEvent k.SsKey k.Physical after) events
             { k with Physical = after }
 
+    /// v2 (family 4e) — rewrite a trigger definition's references to the
+    /// substituted tables: the bracketed physical form via the one Core
+    /// quoter, and the bare (unbracketed) form via a word-boundary match
+    /// (`ON dbo.OSUSR_ABC_CUSTOMER` is legal T-SQL), both to the
+    /// BRACKETED logical name. String-token grain, not a parse — Core is
+    /// ScriptDom-free by design; the emitter's gate refuses any residue.
+    let private rewriteTriggerTables (pairs: (string * string) list) (definition: string) : string =
+        pairs
+        |> List.fold
+            (fun (acc: string) (physical, logical) ->
+                let bracketed =
+                    acc.Replace(  // LINT-ALLOW: bracketed-identifier token rewrite at the substitution pass (the LogicalColumnEmission v2 precedent); tokens are typed names lifted from the IR
+                        SqlIdentifier.quote physical,
+                        SqlIdentifier.quote logical,
+                        System.StringComparison.OrdinalIgnoreCase)
+                System.Text.RegularExpressions.Regex.Replace(
+                    bracketed,
+                    "(?<![\\[\\w])" + System.Text.RegularExpressions.Regex.Escape physical + "(?![\\w\\]])",
+                    (SqlIdentifier.quote logical).Replace("$", "$$"),
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            definition
+
     let private run (pins: Set<SsKey>) (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalTableEmission"
         match mode with
         | Disabled -> Lineage.ofValue c
-        | Enabled  -> c |> CatalogTraversal.mapKindsTotal (substituteKind pins)
+        | Enabled  ->
+            c
+            |> CatalogTraversal.mapKindsTotal (substituteKind pins)
+            |> Lineage.map (fun substituted ->
+                // v2 (family 4e) — catalog-wide before/after table pairs
+                // (a trigger may reference OTHER kinds' tables), then the
+                // definition rewrite over every kind's triggers. Pairs
+                // come from zipping the pre/post kind walks: mapKindsTotal
+                // conserves count and order (A1), so the zip is positional
+                // by construction.
+                let pairs =
+                    List.zip (Catalog.allKinds c) (Catalog.allKinds substituted)
+                    |> List.choose (fun (before, after) ->
+                        let b = TableName.value before.Physical.Table
+                        let a = TableName.value after.Physical.Table
+                        if b = a then None else Some (b, a))
+                if List.isEmpty pairs then substituted
+                else
+                    let rewriteKind (k: Kind) : Kind =
+                        if List.isEmpty k.Triggers then k
+                        else
+                            { k with
+                                Triggers =
+                                    k.Triggers
+                                    |> List.map (fun t ->
+                                        { t with Definition = rewriteTriggerTables pairs t.Definition }) }
+                    { substituted with
+                        Modules =
+                            substituted.Modules
+                            |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map rewriteKind }) })
 
     /// Factory with operator physical-rename pins (S6.3). The pinned SsKeys are
     /// the kinds whose `Kind.Physical` an operator-supplied physical-form

@@ -1142,7 +1142,28 @@ module SsdtDdlEmitter =
                     | ModalityMark.Temporal _ ->
                         Some (EmitError.TemporalKindRefused (Name.value k.Name))
                     | _ -> None))
-        match compositeKeyRefusal |> Option.orElse temporalRefusal with
+        // Family 4e (DECISIONS 2026-07-18; #669 EF-20) — a trigger body
+        // that does not parse, or that still carries an OutSystems
+        // physical identifier after the logical-emission passes, refuses
+        // the publish. A red board finding (`EmissionTriggerUnrewritten`,
+        // the same two predicates) and this refusal are the same fact.
+        let triggerRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Triggers
+                |> List.sortBy (fun t -> t.SsKey)
+                |> List.tryPick (fun t ->
+                    match ScriptDomGenerate.tryParseTriggerDefinition t.Definition with
+                    | Error reason ->
+                        Some (EmitError.TriggerUnrewrittenRefused (Name.value k.Name, Name.value t.Name, reason))
+                    | Ok () ->
+                        match ScriptDomGenerate.firstPhysicalResidue t.Definition with
+                        | Some token ->
+                            Some (EmitError.TriggerUnrewrittenRefused (
+                                    Name.value k.Name, Name.value t.Name,
+                                    sprintf "physical identifier '%s' survives in the body" token))
+                        | None -> None))
+        match compositeKeyRefusal |> Option.orElse temporalRefusal |> Option.orElse triggerRefusal with
         | Some refusal -> Error refusal
         | None ->
             // PL-4 (S54) — the per-(module, schema) first-kind decision derives

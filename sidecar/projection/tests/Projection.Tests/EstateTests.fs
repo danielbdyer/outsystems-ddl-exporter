@@ -1136,6 +1136,43 @@ let ``emission: a system-versioned kind is a DECIDE ruling — the board names t
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionTemporalDropped))
 
 [<Fact>]
+let ``emission: a trigger body that does not parse — or still physical after the passes — is a DECIDE ruling (family 4e; #669 EF-20)`` () =
+    // One shared predicate with the publish gate
+    // (EmitError.TriggerUnrewrittenRefused): parse failure or OSUSR/OSSYS
+    // residue. A clean logical body carries no finding.
+    let withTriggerBody (definition: string) =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Triggers =
+                                            [ Trigger.create (attrKey ["Customer"; "TRG_X"]) (mkName "TRG_X") false definition
+                                              |> Result.value ] }
+                                else k) }) }
+    let findingsOf body =
+        Estate.emissionFindingsFor (withTriggerBody body)
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionTriggerUnrewritten)
+    // Parse failure names the parser's line.
+    match findingsOf "CREATE TRIGGER ON WHERE !!" with
+    | [ f ] ->
+        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Equal(EstatePlane.Emission, f.Plane)
+        Assert.Contains("does not parse", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one parse-failure finding, got %d" (List.length other))
+    // Residue names the surviving physical token.
+    match findingsOf "CREATE TRIGGER [TRG_X] ON [dbo].[Customer] AFTER INSERT AS BEGIN UPDATE [dbo].[OSUSR_AAA_ORDER] SET [X] = 1 END" with
+    | [ f ] -> Assert.Contains("OSUSR_AAA_ORDER", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one residue finding, got %d" (List.length other))
+    // The clean logical body is silent.
+    Assert.Empty (findingsOf "CREATE TRIGGER [TRG_X] ON [dbo].[Customer] AFTER INSERT AS BEGIN SELECT 1 END")
+
+[<Fact>]
 let ``a LOGICAL-ONLY relationship's orphans reach the board — the orphan derivation walks every catalog reference (decision 3)`` () =
     // The reference carries no backing SQL Server constraint
     // (ConstraintState = NoDbConstraint); with enforcement decided, its

@@ -1222,6 +1222,50 @@ let ``temporal gate: a system-versioned kind refuses the publish — system-vers
     | Error other -> Assert.Fail (sprintf "expected the temporal refusal; got %A" other)
     | Ok _ -> Assert.Fail "expected the temporal refusal; the publish emitted"
 
+/// Family 4e (#669 EF-20) — inject one trigger into every kind of a
+/// references-cleared composite-target catalog, so the trigger gate is the
+/// only refusal in play.
+let private withTrigger (definition: string) : Catalog =
+    { compositeTargetCatalog with
+        Modules =
+            compositeTargetCatalog.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            { k with
+                                References = []
+                                Triggers =
+                                    [ Trigger.create (modKey (Name.value k.Name + "-trg")) (mkName "TRG_X") false definition
+                                      |> Result.value ] }) }) }
+
+[<Fact>]
+let ``trigger gate: a body that does not parse refuses the publish (family 4e; #669 EF-20)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER ON WHERE SELECT !!")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TriggerUnrewrittenRefused (_, trigger, reason)) ->
+        Assert.Equal("TRG_X", trigger)
+        Assert.Contains("line", reason)
+    | Error other -> Assert.Fail (sprintf "expected the trigger refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the trigger refusal; the publish emitted"
+
+[<Fact>]
+let ``trigger gate: an OSUSR residue after the logical passes refuses the publish (family 4e; #669 EF-20)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER [TRG_X] ON [dbo].[AKind] AFTER INSERT AS BEGIN UPDATE [dbo].[OSUSR_ABC_LEFTOVER] SET [X] = 1 END")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.TriggerUnrewrittenRefused (_, _, reason)) ->
+        Assert.Contains("OSUSR_ABC_LEFTOVER", reason)
+    | Error other -> Assert.Fail (sprintf "expected the residue refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the residue refusal; the publish emitted"
+
+[<Fact>]
+let ``trigger gate: a clean fully-logical trigger body publishes (the negative)`` () =
+    let enriched = enrich (withTrigger "CREATE TRIGGER [TRG_X] ON [dbo].[AKind] AFTER INSERT AS BEGIN SELECT 1 END")
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Ok _ -> ()
+    | Error e -> Assert.Fail (sprintf "expected the publish to emit; got %A" e)
+
 [<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =
     // Reconciliation slice 3 (DECISIONS 2026-06-13): per-table bodies
