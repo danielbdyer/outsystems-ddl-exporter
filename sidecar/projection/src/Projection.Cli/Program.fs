@@ -343,7 +343,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         Shell.execute
             { Shell.framed "projection check ready" with Register = Shell.ReadOnly }
             Shell.Bracket.SelfBracketed None runReadiness
-    | PlanAction.CheckShape (al, ar, confirm, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm asJson)
+    | PlanAction.CheckShape (al, ar, confirm, model, asJson) -> shellRun "projection check shape" Shell.ReadOnly (fun () -> runCheckShape al ar confirm model asJson)
     | PlanAction.CheckEstate args -> shellRun "projection check environments" Shell.ReadOnly (fun () -> runCheckEstate args)
     | PlanAction.CheckGo args -> shellRun "projection check go" Shell.ReadOnly (fun () -> runCheckGo (SnapshotScopeBinding.fromModel shaping.Model) args)
     | PlanAction.CheckPlan (flow, plan, asJson) -> shellRun "projection check plan" Shell.ReadOnly (fun () -> runTransferPlan flow plan asJson)

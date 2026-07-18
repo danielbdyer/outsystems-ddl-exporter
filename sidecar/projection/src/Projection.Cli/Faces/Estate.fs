@@ -77,9 +77,14 @@ let runCheckEstate (args: CheckEstateArgs) : int =
     let targetCatalog =
         match args.Target with
         | EstateTargetSource.AgreedEnv connRef ->
-            (Source.read (Source.ofOssys connRef)).GetAwaiter().GetResult()
+            // Scoped to `model.modules` (via `ScopedRead`) so the target shape
+            // is the declared cutover surface, not the whole OSSYS estate.
+            (ScopedRead.readOssysScoped args.Scope connRef).GetAwaiter().GetResult()
         | EstateTargetSource.AuthoredModel (modelOssys, modelFile) ->
+            // The authored model is scoped the same way — `resolveCatalog` does
+            // not apply the module filter itself, so scope its result here.
             (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult()
+            |> Result.bind (ScopedRead.applyScope args.Scope)
     match targetCatalog with
     | Error errs -> unreadable args.TargetLabel errs
     | Ok target ->
@@ -212,8 +217,11 @@ let runCheckEstate (args: CheckEstateArgs) : int =
         let resolveEnv
             (label: string, refStr: string)
             : string * Result<(string * Compare.Operand) * Estate.EvidenceProvenance> =
-            let source = Source.ofOssys refStr
-            match (Source.read source).GetAwaiter().GetResult() with
+            // The scoped `Source` (pushdown to `model.modules`) keeps the schema
+            // read AND the data-plane profile under ONE scope; the `ModuleFilter`
+            // backstop narrows the read catalog before it becomes an operand.
+            let source = ScopedRead.scopedOssysSource args.Scope refStr
+            match (Source.read source).GetAwaiter().GetResult() |> Result.bind (ScopedRead.applyScope args.Scope) with
             | Error errs -> label, Result.failure errs
             | Ok catalog ->
                 let profile, provenance = acquireEvidence label refStr source catalog

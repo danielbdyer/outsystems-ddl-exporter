@@ -79,7 +79,7 @@ let ``readiness.estate: a non-positive decisionFloor is a NAMED parse failure`` 
 let ``check shape: resolves to CheckShape with the agreed + confirm conn-refs`` () =
     let cfg = ProjectionConfig.parse estateJson |> mustOk
     match (Command.planCheck cfg [ "shape" ]).Action with
-    | PlanAction.CheckShape (agreedLabel, agreedRef, confirm, _) ->
+    | PlanAction.CheckShape (agreedLabel, agreedRef, confirm, _, _) ->
         Assert.Equal("cloud-dev", agreedLabel)
         Assert.Equal("env:CLOUD_DEV_CONN", agreedRef)
         Assert.Equal<string list>([ "cloud-dev"; "cloud-qa"; "cloud-uat" ], confirm |> List.map fst)

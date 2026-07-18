@@ -2359,12 +2359,16 @@ module Command =
                     let errors =
                         (match agreedR with Error es -> es | Ok _ -> [])
                         @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
-                    match errors with
-                    | e :: _ -> PlanAction.Refused (6, e)
-                    | [] ->
+                    // The module scope (`model.modules`) validated once here so a
+                    // bad module name refuses by name (exit 2) before any read;
+                    // the reads themselves route through `ScopedRead`.
+                    match errors, ModuleFilterBinding.fromConfig cfg.Shaping.Model with
+                    | e :: _, _ -> PlanAction.Refused (6, e)
+                    | [], Error (e :: _) -> PlanAction.Refused (2, e)
+                    | [], (Error [] | Ok _) ->
                         let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
-                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
+                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, cfg.Shaping.Model, (valueOf "--format" = Some "json"))
             | ("environments" | "estate") :: _ ->
                 // THE ENVIRONMENTS INSTRUMENT (CHAPTER_ESTATE_OPEN.md; DECISIONS
                 // 2026-07-15) — `environments` is the verb; `estate` stays a
@@ -2439,6 +2443,12 @@ module Command =
                             Result.success (Some (v.Substring 1))
                         | Some v ->
                             Result.failureOf (err "cli.check.estateSinceForm" (sprintf "projection check environments: --since takes a run reference in the @runId form; '%s' does not name one." v))
+                    // The module scope (`model.modules`) is validated once here
+                    // so a bad module name refuses by name (exit 2) before any
+                    // read; the reads route through `ScopedRead`.
+                    match ModuleFilterBinding.fromConfig cfg.Shaping.Model with
+                    | Error (e :: _) -> PlanAction.Refused (2, e)
+                    | Error [] | Ok _ ->
                     match target, confirmError, evidence, since with
                     // A missing authored model, a contradictory evidence
                     // flag, or a malformed baseline reference is a
@@ -2458,6 +2468,7 @@ module Command =
                             { TargetLabel = label
                               Target      = source
                               Confirm     = confirm
+                              Scope       = cfg.Shaping.Model
                               AsJson      = (valueOf "--format" = Some "json")
                               Evidence    = evidenceMode
                               RepairBand  = rs.RepairBand
