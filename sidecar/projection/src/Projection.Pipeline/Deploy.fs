@@ -737,6 +737,39 @@ module Deploy =
     /// The body's `SqlConnection` is open against the bootstrapped
     /// per-run database. The body is responsible for any exception
     /// handling; this primitive does no error wrapping.
+    /// Best-effort reap of one per-run database: evict the per-DB pool first
+    /// (an idle pooled session makes SINGLE_USER WITH ROLLBACK IMMEDIATE cost
+    /// ~3 s, measured; evicted, ~50 ms), then SINGLE_USER + DROP through the
+    /// master. A failure is swallowed — the scratch is discarded either way.
+    /// The one teardown definition `withBootstrappedDatabase` and
+    /// `withScratchDatabase` both stand on (the 2026-06-12 accumulation fix).
+    let private reapDatabase (masterConn: string) (perDbConn: string) (dbName: string) : unit =
+        try
+            let cnnEvict = new SqlConnection(perDbConn)
+            SqlConnection.ClearPool cnnEvict
+            cnnEvict.Dispose()
+            use cnnDrop = new SqlConnection(masterConn)
+            cnnDrop.OpenAsync().GetAwaiter().GetResult()
+            executeBatch cnnDrop
+                // LINT-ALLOW: terminal scratch-container teardown SQL.
+                //   (1) Why string, not typed AST? `SET SINGLE_USER WITH ROLLBACK
+                //       IMMEDIATE` has no clean typed node in ScriptDom 161
+                //       (`DatabaseOptionKind` omits the access-mode option). (Tier-3.4
+                //       typed the paired `CREATE DATABASE`; this teardown stays here.)
+                //   (2) Injection-safe? Yes — the only interpolation is `dbName` via
+                //       `Render.quote` (`Identifier.EncodeIdentifier`, `]` doubled); the
+                //       rest is fixed keywords.
+                //   (3) Terminal boundary? Yes — best-effort cleanup of a throwaway
+                //       per-run scratch DB, never the production emit→deploy path.
+                //   (4) Validated? By execution against the scratch master; a failure is
+                //       swallowed (`with _ -> ()`) — the container is discarded anyway.
+                (System.String.Concat(
+                    "ALTER DATABASE ", Render.quote dbName,
+                    " SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ",
+                    "DROP DATABASE ", Render.quote dbName, ";"))
+            |> fun t -> t.GetAwaiter().GetResult()
+        with _ -> ()
+
     let withBootstrappedDatabase
             (databaseLabel: string)
             (seedSql: string)
@@ -756,31 +789,30 @@ module Deploy =
                             do! executeBatch cnn seedSql
                             return! body cnn
                         finally
-                            try
-                                let cnnEvict = new SqlConnection(perDbConn)
-                                SqlConnection.ClearPool cnnEvict
-                                cnnEvict.Dispose()
-                                use cnnDrop = new SqlConnection(masterConn)
-                                cnnDrop.OpenAsync().GetAwaiter().GetResult()
-                                executeBatch cnnDrop
-                                    // LINT-ALLOW: terminal scratch-container teardown SQL.
-                                    //   (1) Why string, not typed AST? `SET SINGLE_USER WITH ROLLBACK
-                                    //       IMMEDIATE` has no clean typed node in ScriptDom 161
-                                    //       (`DatabaseOptionKind` omits the access-mode option). (Tier-3.4
-                                    //       typed the paired `CREATE DATABASE`; this teardown stays here.)
-                                    //   (2) Injection-safe? Yes — the only interpolation is `dbName` via
-                                    //       `Render.quote` (`Identifier.EncodeIdentifier`, `]` doubled); the
-                                    //       rest is fixed keywords.
-                                    //   (3) Terminal boundary? Yes — best-effort cleanup of a throwaway
-                                    //       per-test container DB, never the production emit→deploy path.
-                                    //   (4) Validated? By execution against the scratch master; a failure is
-                                    //       swallowed (`with _ -> ()`) — the container is discarded anyway.
-                                    (System.String.Concat(
-                                        "ALTER DATABASE ", Render.quote dbName,
-                                        " SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ",
-                                        "DROP DATABASE ", Render.quote dbName, ";"))
-                                |> fun t -> t.GetAwaiter().GetResult()
-                            with _ -> ()
+                            reapDatabase masterConn perDbConn dbName
+                    })
+        }
+
+    /// Wave B5 (the container proof) — a per-run scratch database handed to
+    /// the body AS A CONNECTION STRING: the fidelity proof's transfer sink
+    /// and row comparator bind their own connections from it (`Substrate` /
+    /// `SqlConnection` respectively), which an already-open connection cannot
+    /// serve. Created on the warm/ephemeral container exactly as
+    /// `withBootstrappedDatabase` creates, reaped on every exit path exactly
+    /// as it reaps. No seed batch — the body owns what lands on the scratch.
+    let withScratchDatabase (databaseLabel: string) (body: string -> Task<'a>) : Task<'a> =
+        task {
+            use _ = Bench.scope "deploy.withScratchDatabase"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let dbName = uniqueDatabaseName DatabaseNameGenerator.guidBased databaseLabel
+                        do! createDatabase masterConn dbName
+                        let perDbConn = buildPerDbConnectionString masterConn dbName
+                        try
+                            return! body perDbConn
+                        finally
+                            reapDatabase masterConn perDbConn dbName
                     })
         }
 

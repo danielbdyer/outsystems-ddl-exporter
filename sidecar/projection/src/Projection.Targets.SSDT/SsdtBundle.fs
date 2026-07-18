@@ -58,7 +58,14 @@ module SsdtBundle =
             |> Map.toSeq
             |> Seq.map (fun (_ssKey, file) -> file.RelativePath, file.Body)
         let manifestEntry = "manifest.json", ManifestEmitter.toJson manifest
-        Seq.append (Seq.ofList schemaFiles) (Seq.append perTableEntries (Seq.singleton manifestEntry))
+        // The cutover apply runbook (ideation §12 F7) — the operator's ordered
+        // checklist, a human projection of the same manifest the machine reads.
+        // It rides EVERY bundle (the A44-reachable consumer: the operator gets it
+        // when they emit the bundle), derived from the manifest's FK-safe batches.
+        let runbookEntry = ApplyRunbookEmitter.fileName, ApplyRunbookEmitter.render (List.length schemaFiles) manifest
+        Seq.append
+            (Seq.ofList schemaFiles)
+            (Seq.append perTableEntries (Seq.append (Seq.singleton manifestEntry) (Seq.singleton runbookEntry)))
         |> Map.ofSeq
 
     /// The schema-less form — the pre-G6 shape, byte-identical; callers

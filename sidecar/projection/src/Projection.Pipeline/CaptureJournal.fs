@@ -76,6 +76,36 @@ module CaptureJournal =
 
     let filePath (journal: CaptureJournal) : string = journal.FilePath
 
+    /// Read the digest back out of a journal file path (`transfer-<digest16>.ndjson`
+    /// — RI-7: the digest IS the filename). `None` for a path that does not carry
+    /// the journal naming rule. The inverse of `create`'s addressing, owned here
+    /// so the run aggregate's `JournalRef` and the file name can never disagree.
+    let digestOfFile (path: string) : string option =
+        match Path.GetFileName path with
+        | null -> None
+        | name when name.StartsWith "transfer-" && name.EndsWith ".ndjson" ->
+            let digest = name.Substring("transfer-".Length, name.Length - "transfer-".Length - ".ndjson".Length)
+            if digest.Length > 0 then Some digest else None
+        | _ -> None
+
+    /// Start the journal over — truncate the file to EMPTY (creating it when
+    /// absent) so the next `append` writes a fresh record stream. The
+    /// MATERIALIZED realization's opening move (wave B4a, DECISIONS 2026-07-15
+    /// "prove implies journal"): every materialized Execute loads into a
+    /// cleared/empty subset (WipeAndLoad wipes; the G10 envelope clears
+    /// FK-first before reloading; a plain Incremental refuses a populated
+    /// sink), so the sink's state after the run is THIS run's writes alone —
+    /// and the journal must describe exactly that run, or a prior attempt's
+    /// stale `(source → assigned)` pairs would win the replay fold's
+    /// keep-first dedupe and poison the fidelity proof. An EMPTY file (not a
+    /// deleted one) is the deliberate rest state: it says "the ledger was
+    /// kept and nothing was minted", which is a provable claim; a missing
+    /// file says only that no one was keeping records. The STREAMING
+    /// realization never calls this: its journal is the chunk-resume ledger
+    /// and at-least-once append is its contract.
+    let startFresh (journal: CaptureJournal) : unit =
+        File.WriteAllText(journal.FilePath, "")
+
     /// Open an EXISTING journal by its file path — the second consumer's
     /// door (2026-07-15, fidelity wave B4b): the row-fidelity comparator
     /// replays a journal the operator names directly (the transfer's

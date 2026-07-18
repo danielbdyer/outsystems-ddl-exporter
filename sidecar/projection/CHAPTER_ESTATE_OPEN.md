@@ -40,7 +40,7 @@ Five axes, in judgment order:
 ## 2 — The wave map (the plan of record)
 
 Track A (the instrument): A0 open → A1 the instrument (verb + findings model + the full board
-in rolled-up text + `estate.json`) → A2 consensus + honesty → A2.5 pay-once evidence → A3
+in rolled-up text + `environments.json`) → A2 consensus + honesty → A2.5 pay-once evidence → A3
 detectors, pure wave → A4 detectors, probe/static wave → A5 remediation artifacts → A6 the
 posture (relaxations · overlay · probes · the nullability-binder amendment) → A7 burndown +
 envelopes → A8 the live board + ease tail.
@@ -108,7 +108,7 @@ ACTION      the one next move — the top DECIDE item, else the top REPAIR, else
 Laws of the surface (each an acceptance test): one verdict vocabulary (`unified / converging /
 forked`; environment rows are factual, never a second verdict word) · decision-first grouping ·
 one lever per line · homogeneous lanes · impact-ranked, capped, remainder named · evidence
-provenance load-bearing · one substrate (`estate.json` ≡ the terminal) · the empty state is a
+provenance load-bearing · one substrate (`environments.json` ≡ the terminal) · the empty state is a
 full surface.
 
 ### A.2 The finding contract
@@ -121,16 +121,16 @@ full surface.
 | S3 | Nullability fork | DECIDE | "Customer.Email is NOT NULL in dev and NULL in uat; uat holds 4,120 NULL rows." | "Rule the target nullability — the repair or the relaxation follows the ruling." |
 | S4 | Identity/AutoNumber fork | DECIDE | "Status.Id is minted by the database in dev and declared explicitly in uat — key minting disagrees across the estate." | "Rule the minting; pinned seeds are the prepared path (overlay entry 5)." |
 | S5 | Delete-rule fork | DECIDE | "Order→Customer deletes cascade in qa and restricts elsewhere — a delete in qa removes rows the other environments keep." | "Rule the delete behavior." |
-| S6 | Index divergence | REPAIR / DECIDE | "IX_Customer_Email is unique in qa alone; dev holds 12 colliding pairs — the index promotes after the pairs resolve." | "Review block 4 of estate.remediation.dev.sql." |
+| S6 | Index divergence | REPAIR / DECIDE | "IX_Customer_Email is unique in qa alone; dev holds 12 colliding pairs — the index promotes after the pairs resolve." | "Review block 4 of environments.remediation.dev.sql." |
 | S7/O3 | Untrusted constraints | REPAIR | "FK_Order_Customer exists untrusted in qa (WITH NOCHECK); re-trusting scans 12,400,000 rows." | "Review block 12 — the re-trust statement and its cost, prepared." |
 | S9 | Active/inactive divergence | DECIDE | "Customer.LegacyFlag is inactive in dev and active with data in uat — the model and the estate disagree about its life." | "Rule the attribute's status." |
 | S10 | Static-modality divergence | DECIDE | "Country is a static entity in dev and a regular entity in uat — seeding and identity behave differently per environment." | "Rule the modality." |
-| D1 | NULLs under NOT NULL | REPAIR / RELAX | "Customer.Email declares NOT NULL; uat holds 4,120 NULL rows." | "Review block 2 of estate.remediation.uat.sql." |
+| D1 | NULLs under NOT NULL | REPAIR / RELAX | "Customer.Email declares NOT NULL; uat holds 4,120 NULL rows." | "Review block 2 of environments.remediation.uat.sql." |
 | D1×D5 | The empty-string interplay | REPAIR (refines D1) | "Customer.Email declares NOT NULL; uat holds 4,120 NULLs and 18,300 empty strings that normalize to NULL on publish — the constraint fails at 22,420 rows, and the NULL count alone understates it." | "Review block 2 — it locates both populations." |
 | D2 | Duplicates under UNIQUE/PK | REPAIR / DECIDE | "Customer.Code declares unique; dev holds 12 colliding pairs." | "Review block 4 — the pairs, and the re-key path, prepared." |
-| D3a | Sentinel-zero orphans | REPAIR | "Order.CustomerId in uat: 3,214,000 orphans, of which 3,101,000 are unset references (value 0). Block 7 clears the unset references to NULL; 113,000 true orphans remain." | "Review block 7 of estate.remediation.uat.sql." |
+| D3a | Sentinel-zero orphans | REPAIR | "Order.CustomerId in uat: 3,214,000 orphans, of which 3,101,000 are unset references (value 0). Block 7 clears the unset references to NULL; 113,000 true orphans remain." | "Review block 7 of environments.remediation.uat.sql." |
 | D3 | True orphans within band | REPAIR | "OrderLine.ProductId in qa: 4,200 rows reference absent products." | "Review block 9 — locate, re-point, or remove." |
-| D3′ | Orphans past the band | RELAX | "Sales.Order→Customer: 113,000 orphans in uat exceed the repair band. The interim relaxation keeps the relationship untracked; the reopen probe retires it at zero." | "Merge overlay entry 3 of estate.overlay.json." |
+| D3′ | Orphans past the band | RELAX | "Sales.Order→Customer: 113,000 orphans in uat exceed the repair band. The interim relaxation keeps the relationship untracked; the reopen probe retires it at zero." | "Merge overlay entry 3 of environments.overlay.json." |
 | D3b | Orphans in every environment | DECIDE | "Order.CustomerId orphans in every environment at similar ratios — the relationship has never held in the data." | "Rule the relationship: declare it optional in the model, or schedule the estate-wide repair." |
 | D4 | Length/type overflow | DECIDE | "Customer.Notes holds values to 4,812 characters against a declared 2,000; the 99th percentile is 1,940." | "Rule the width: widen to the envelope (overlay entry 6), or truncate (block 11)." |
 | D6 | Collation-sensitive duplicates | REPAIR | "Under the target collation, Customer.Code collapses 240 case-distinct pairs into duplicates — the unique index fails on unification." | "Review block 5 — the colliding pairs, located." |
@@ -185,7 +185,7 @@ overlay entry 3 can come out and the relationship can track WITH CHECK.").
 - Consensus — "'Customer.Email' tightens nowhere: uat holds 4,120 contradicting rows; dev and
   qa are clean." · "clean in dev (12 rows observed, evidence 2 days old) — advisory; the
   sample is below the decision floor."
-- Overlay — "Interim posture: 4 relaxations in estate.overlay.json — each carries the probe
+- Overlay — "Interim posture: 4 relaxations in environments.overlay.json — each carries the probe
   that retires it. The merge is an operator edit; the engine never applies it."
 - Fidelity proof — "Proof green: 17,431,882 rows byte-identical, 3,214 excepted — 3,101 user
   re-keys, 113 sink-minted keys, every exception citing its ledger record — 0 residual.

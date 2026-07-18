@@ -47,6 +47,7 @@
     <Compile Include="NavigatorTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="GoBoardViewTests.fs" />
+    <Compile Include="EstateBoardViewTests.fs" />
     <Compile Include="ProgressRendererTests.fs" />
     <Compile Include="TransferPlanTests.fs" />
     <Compile Include="TransferPlanViewTests.fs" />
@@ -193,7 +194,10 @@
     <Compile Include="EstateTests.fs" />
     <Compile Include="EstateRemediationTests.fs" />
     <Compile Include="EstatePostureTests.fs" />
+    <Compile Include="EstateHistoryTests.fs" />
     <Compile Include="EstateEvidenceStoreTests.fs" />
+    <Compile Include="FidelityProofCacheTests.fs" />
+    <Compile Include="ApplyRunbookEmitterTests.fs" />
     <Compile Include="RowDigestFoldTests.fs" />
     <Compile Include="RowFidelityTests.fs" />
     <Compile Include="ReadinessConfigTests.fs" />

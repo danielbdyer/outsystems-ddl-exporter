@@ -292,17 +292,183 @@ let ``loadReplayMaps: a missing path and an ambiguous directory refuse by name``
     finally
         if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
 
+// ---------------------------------------------------------------------------
+// Wave B4a — the `@runId` interventions operand: a stored run's recorded
+// `JournalRef` (digest + path) resolves to its journal file; every miss is a
+// NAMED refusal. The run store rides `PROJECTION_RUNS_DIR` (saved/restored
+// around each fact — the RunTests R1b pattern; `PROJECTION_LEDGER_DIR` is
+// never touched, so the concurrent bracket-capture facts stay undisturbed).
+// ---------------------------------------------------------------------------
+
+let private withRunStore (f: string -> unit) : unit =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-runstore-" + System.Guid.NewGuid().ToString "N")
+    let prior = System.Environment.GetEnvironmentVariable "PROJECTION_RUNS_DIR"
+    try
+        System.IO.Directory.CreateDirectory dir |> ignore
+        System.Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", dir)
+        f dir
+    finally
+        System.Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", prior)
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+let private storedRun (runId: string) (ledgers: Run.LedgerRef list) : Run.Run =
+    { RunId = runId; Ts = "2026-07-17T08:00:00Z"; Command = "projection move"
+      InputDigest = ""; Outcome = "succeeded"; Canary = None
+      Registered = 0; Applied = 0; Declined = 0
+      Events = []; Artifacts = Map.empty; Ledgers = ledgers; Bench = None }
+
 [<Fact>]
-let ``check data --rows: --interventions rides the args record; the run-reference form refuses by name until the envelope carries its ledger refs`` () =
+let ``interventions run reference: the stored run's JournalRef resolves to its journal file and the pairs fold (B4a)`` () =
+    withRunStore (fun store ->
+        let journalDir = System.IO.Path.Combine(store, "journals")
+        let journal = CaptureJournal.create journalDir "b4a-run-ref-witness"
+        CaptureJournal.append journal
+            { Kind = "Customer"; ChunkIx = 0; FirstPk = "1"; LastPk = "2"; RawCount = 2; WrittenCount = 2
+              Pairs = [| [| "1"; "901" |]; [| "2"; "902" |] |] }
+        let path = CaptureJournal.filePath journal
+        let digest =
+            match CaptureJournal.digestOfFile path with
+            | Some d -> d
+            | None -> failwith "the journal file name must carry its digest (RI-7)"
+        Run.save store (storedRun "01B4ARUN" [ Run.JournalRef (digest, path) ])
+        match FidelityCompareRun.loadReplayMaps "@01B4ARUN" with
+        | Ok maps ->
+            Assert.Equal("901", maps.["Customer"].["1"])
+            Assert.Equal("902", maps.["Customer"].["2"])
+        | Error es -> failwithf "expected the run ref to resolve: %A" es)
+
+[<Fact>]
+let ``interventions run reference: an unknown run, a run with no journal, a moved file, and a pathless pre-B4a record each refuse by name`` () =
+    withRunStore (fun store ->
+        // unknown run
+        (match FidelityCompareRun.loadReplayMaps "@01NOSUCH" with
+         | Error (e :: _) -> Assert.Equal("fidelity.rows.runNotFound", e.Code)
+         | other -> Assert.Fail(sprintf "expected runNotFound; got %A" other))
+        // a run that kept no ledger
+        Run.save store (storedRun "01NOLEDGER" [])
+        (match FidelityCompareRun.loadReplayMaps "@01NOLEDGER" with
+         | Error (e :: _) -> Assert.Equal("fidelity.rows.runNoJournal", e.Code)
+         | other -> Assert.Fail(sprintf "expected runNoJournal; got %A" other))
+        // a recorded file that is no longer there
+        Run.save store (storedRun "01MOVED" [ Run.JournalRef ("aaaa", System.IO.Path.Combine(store, "transfer-aaaa.ndjson")) ])
+        (match FidelityCompareRun.loadReplayMaps "@01MOVED" with
+         | Error (e :: _) -> Assert.Equal("fidelity.rows.journalMissing", e.Code)
+         | other -> Assert.Fail(sprintf "expected journalMissing; got %A" other))
+        // a pre-B4a record: digest without a path
+        Run.save store (storedRun "01OLDREC" [ Run.JournalRef ("bbbb", "") ])
+        (match FidelityCompareRun.loadReplayMaps "@01OLDREC" with
+         | Error (e :: _) -> Assert.Equal("fidelity.rows.journalMissing", e.Code)
+         | other -> Assert.Fail(sprintf "expected the pathless refusal; got %A" other)))
+
+[<Fact>]
+let ``journal addressing: digestOfFile reads the digest back out of the RI-7 file name; startFresh truncates to an honest empty`` () =
+    Assert.Equal(Some "a1b2c3d4e5f60718", CaptureJournal.digestOfFile "/journals/transfer-a1b2c3d4e5f60718.ndjson")
+    Assert.Equal(None, CaptureJournal.digestOfFile "/journals/notes.txt")
+    Assert.Equal(None, CaptureJournal.digestOfFile "/journals/transfer-.ndjson")
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-fresh-" + System.Guid.NewGuid().ToString "N")
+    try
+        let journal = CaptureJournal.create dir "b4a-fresh-witness"
+        CaptureJournal.append journal
+            { Kind = "Customer"; ChunkIx = 0; FirstPk = "1"; LastPk = "1"; RawCount = 1; WrittenCount = 1
+              Pairs = [| [| "1"; "901" |] |] }
+        CaptureJournal.startFresh journal
+        // the file EXISTS and is empty — "the ledger was kept, nothing was
+        // minted" is a provable claim; a deleted file would only say no one
+        // was keeping records.
+        Assert.True(System.IO.File.Exists (CaptureJournal.filePath journal))
+        match FidelityCompareRun.loadReplayMaps (CaptureJournal.filePath journal) with
+        | Ok maps -> Assert.True(Map.isEmpty maps)
+        | Error es -> failwithf "an empty journal must load as empty maps: %A" es
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+[<Fact>]
+let ``check data --rows: --interventions rides the args record — the path form and the run-reference form both pass through (B4a lifted the surface refusal)`` () =
     let cfg = ProjectionConfig.parse rowsJson |> mustOk
     match (Command.planCheck cfg [ "data"; "--rows"; "--before"; "cloud-dev"; "--after"; "cloud-qa"; "--model"; "m.json"; "--interventions"; "./journal" ]).Action with
     | PlanAction.CheckDataRows args -> Assert.Equal(Some "./journal", args.Interventions)
     | other -> Assert.Fail(sprintf "expected CheckDataRows; got %A" other)
+    // B4a — a stored run now carries its ledger refs, so the run-reference
+    // form plans through; the ENGINE resolves it (or refuses by name:
+    // runStoreMissing / runNotFound / runNoJournal — RowFidelity's own facts).
     match (Command.planCheck cfg [ "data"; "--rows"; "--before"; "cloud-dev"; "--after"; "cloud-qa"; "--model"; "m.json"; "--interventions"; "@01HXYZ" ]).Action with
-    | PlanAction.Refused (exit, e) ->
-        Assert.Equal(2, exit)
-        Assert.Equal("cli.check.dataRowsInterventionsRunRef", e.Code)
-    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+    | PlanAction.CheckDataRows args -> Assert.Equal(Some "@01HXYZ", args.Interventions)
+    | other -> Assert.Fail(sprintf "expected CheckDataRows with the run reference; got %A" other)
+
+// ---------------------------------------------------------------------------
+// Wave B5 — `check fidelity <flow>` routing (DECISIONS 2026-07-15 decision 4:
+// one fidelity concept, file-source and estate-source; flow-map membership is
+// tested BEFORE the `.sql`-path default arm, and every other reading refuses
+// by name).
+// ---------------------------------------------------------------------------
+
+let private fidelityFlowJson = """
+{
+  "model": "model.json",
+  "environments": {
+    "cloud-dev": { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
+    "cloud-qa":  { "access": "direct", "conn": "env:CLOUD_QA_CONN" }
+  },
+  "flows": {
+    "load-qa": { "from": "cloud-dev", "to": "cloud-qa" },
+    "publish": { "from": "model", "to": "cloud-qa" }
+  }
+}
+"""
+
+[<Fact>]
+let ``check fidelity flow: a flow from a live environment plans the container proof with the model and the twenty-row default cap`` () =
+    let cfg = ProjectionConfig.parse fidelityFlowJson |> mustOk
+    match (Command.planCheck cfg [ "fidelity"; "load-qa" ]).Action with
+    | PlanAction.CheckFidelityFlow (model, _, args) ->
+        Assert.Equal(ModelSource.ModelFile "model.json", model)
+        Assert.Equal("load-qa", args.Flow)
+        Assert.Equal("cloud-dev", args.FromLabel)
+        Assert.Equal(20, args.SampleCap)
+        Assert.False args.AsJson
+    | other -> Assert.Fail(sprintf "expected CheckFidelityFlow; got %A" other)
+    match (Command.planCheck cfg [ "fidelity"; "load-qa"; "--sample"; "5"; "--format"; "json" ]).Action with
+    | PlanAction.CheckFidelityFlow (_, _, args) ->
+        Assert.Equal(5, args.SampleCap)
+        Assert.True args.AsJson
+    | other -> Assert.Fail(sprintf "expected CheckFidelityFlow; got %A" other)
+
+[<Fact>]
+let ``check fidelity flow: every other reading refuses by name — model-sourced flow, unknown token, bare form, bad sample; a sql path keeps the canary`` () =
+    let cfg = ProjectionConfig.parse fidelityFlowJson |> mustOk
+    let codeOf (action: PlanAction) =
+        match action with
+        | PlanAction.Refused (exit, e) -> Some (exit, e.Code)
+        | _ -> None
+    // a flow that does not draw from a live environment
+    Assert.Equal(Some (2, "cli.check.fidelityFlowSource"), codeOf (Command.planCheck cfg [ "fidelity"; "publish" ]).Action)
+    // neither a flow nor a .sql path
+    Assert.Equal(Some (2, "cli.check.fidelityUnknownFlow"), codeOf (Command.planCheck cfg [ "fidelity"; "nope" ]).Action)
+    // the bare form names both readings
+    Assert.Equal(Some (2, "cli.check.fidelityArgs"), codeOf (Command.planCheck cfg [ "fidelity" ]).Action)
+    // a malformed sample cap
+    Assert.Equal(Some (2, "cli.check.fidelitySample"), codeOf (Command.planCheck cfg [ "fidelity"; "load-qa"; "--sample"; "many" ]).Action)
+    // the DDL round-trip canary's historical spelling is byte-identical
+    match (Command.planCheck cfg [ "fidelity"; "legacy.sql" ]).Action with
+    | PlanAction.CheckCanary ("legacy.sql", false) -> ()
+    | other -> Assert.Fail(sprintf "expected CheckCanary; got %A" other)
+    // and so is the bare `check <source.sql>` default arm
+    match (Command.planCheck cfg [ "source.sql" ]).Action with
+    | PlanAction.CheckCanary ("source.sql", false) -> ()
+    | other -> Assert.Fail(sprintf "expected CheckCanary; got %A" other)
+
+[<Fact>]
+let ``check fidelity flow: a config with no model refuses by name — the proof stands the model up`` () =
+    let cfg = ProjectionConfig.parse """
+{
+  "environments": { "cloud-dev": { "access": "direct", "conn": "env:CLOUD_DEV_CONN" }, "cloud-qa": { "access": "direct", "conn": "env:CLOUD_QA_CONN" } },
+  "flows": { "load-qa": { "from": "cloud-dev", "to": "cloud-qa" } }
+}
+"""
+              |> mustOk
+    match (Command.planCheck cfg [ "fidelity"; "load-qa" ]).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.check.fidelityNoModel", e.Code)
+    | other -> Assert.Fail(sprintf "expected the no-model refusal; got %A" other)
 
 [<Fact>]
 let ``the three canonical-form erasures are minted, named, and declared in force on the rows proof`` () =

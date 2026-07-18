@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Twin.Core</RootNamespace>
+    <AssemblyName>Twin.Core</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    THE TWIN — bounded-context boundary (THE_TWIN.md §kernel-manifest).
+    Twin.Core is the pure heart of the Twin context: coordinates, the
+    estate-definition model, evidence tiers + rebinding, the scenario
+    compiler, the fingerprint, and the twin.json IR + parser. It references
+    Projection.Core ONLY — the shared-kernel seam. Anything wider is a
+    boundary defect; the reference law is executable
+    (`Twin.Tests/BoundaryTests.fs`).
+
+    Purity law: same as Projection.Core — no clock, no Random, no I/O, no
+    Task/Async. JSON *parsing* (a pure string-to-IR function) lives here
+    deliberately, one layer below the projection precedent (Config.parse in
+    Pipeline): the Twin's config surface is a first-class domain object of
+    this context and its closed-schema law is property-tested in the pure
+    pool.
+  -->
+
+  <ItemGroup>
+    <Compile Include="Coordinate.fs" />
+    <Compile Include="EstateDefinition.fs" />
+    <Compile Include="Fingerprint.fs" />
+    <Compile Include="TwinIdentity.fs" />
+    <Compile Include="TwinConfig.fs" />
+    <Compile Include="ScenarioCompiler.fs" />
+    <Compile Include="Evidence.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
+  </ItemGroup>
+
+</Project>

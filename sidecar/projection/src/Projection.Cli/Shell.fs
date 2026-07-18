@@ -101,6 +101,21 @@ module Shell =
         | Bracketed
         | SelfBracketed
 
+    /// Wave B4a — the ledger refs the CURRENT bracketed run touched (the
+    /// transfer's capture-journal `JournalRef`, recorded by the face when the
+    /// report names the file). The same per-invocation-global pattern as
+    /// `currentFrame`: the bracket resets it before the body and its
+    /// `captureInputs` reads it in the `finally` — the per-verb side-channel
+    /// `RunEnvelope.bracket` documents, realized once for every shell-bracketed
+    /// verb instead of per-face bracket rewrites. A self-bracketed verb
+    /// (`FullExportRun`) supplies its own `captureInputs` and never reads this.
+    let private recordedLedgers : Run.LedgerRef list ref = ref []
+
+    /// Record one ledger ref for the current run's aggregate (`run.json`
+    /// `ledgers`). Appends — one run can extend several chains.
+    let recordLedgerRef (ledgerRef: Run.LedgerRef) : unit =
+        recordedLedgers.Value <- recordedLedgers.Value @ [ ledgerRef ]
+
     /// The box title: the flow route with its register for a flow frame
     /// ("publish: cloud-dev → on-prem-dev — preview"), the bare command
     /// otherwise. Feeds `watch.runTitle` through the Board's title seam.
@@ -120,8 +135,12 @@ module Shell =
         | Bracketed ->
             // R1b / RI-11 — a verb that mints envelopes runs bracketed: the
             // stream opens with `config.runStart` and closes with the §10
-            // terminal, crashed bodies included (the S4a law).
-            RunEnvelope.bracket command ignore Map.empty (fun () -> "", []) (fun () ->
+            // terminal, crashed bodies included (the S4a law). B4a — the
+            // captureInputs side-channel reads the ledger refs the body
+            // recorded (`recordLedgerRef`), reset here so one invocation's
+            // refs never leak into the next.
+            recordedLedgers.Value <- []
+            RunEnvelope.bracket command ignore Map.empty (fun () -> "", recordedLedgers.Value) (fun () ->
                 let code = body ()
                 code, (if code = 0 then LogSink.Succeeded else LogSink.Failed))
 

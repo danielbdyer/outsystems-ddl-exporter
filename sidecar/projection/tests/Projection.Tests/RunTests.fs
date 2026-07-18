@@ -127,7 +127,7 @@ let ``R1a: load(save run) = run over the completed aggregate — ledger refs and
     let completed =
         { sample with
             RunId = "01R1AAAA"
-            Ledgers = [ Run.JournalRef "a1b2c3d4e5f60718"; Run.EpisodeRef ("dev", 3) ]
+            Ledgers = [ Run.JournalRef ("a1b2c3d4e5f60718", "/journals/transfer-a1b2c3d4e5f60718.ndjson"); Run.EpisodeRef ("dev", 3) ]
             Bench =
                 Some ({ CapturedAtUtc = System.DateTime(2026, 6, 12, 15, 0, 0, System.DateTimeKind.Utc)
                         Tag = "publish"

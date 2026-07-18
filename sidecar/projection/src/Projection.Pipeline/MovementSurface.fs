@@ -260,7 +260,16 @@ type ReadinessSpec =
       RepairBand : int64 option
       /// Per-entity repair bands (`readiness.estate.repairBandByEntity`) —
       /// logical entity name → band, overriding `RepairBand` for that entity.
-      RepairBandByEntity : Map<string, int64> }
+      RepairBandByEntity : Map<string, int64>
+      /// The fidelity flow (`readiness.estate.fidelityFlow`, wave A4β/RT-10):
+      /// names the flow whose row-fidelity proof (`fidelity.rows.json`, from
+      /// `projection check fidelity <flow>`) the estate board folds into its
+      /// verdict. Configured ⇒ a missing / stale / diverged proof is an
+      /// ordinary DECIDE finding; absent ⇒ the masthead states the clause is
+      /// not configured and the verdict excludes it (RT-10 — a never-run proof
+      /// never holds the verdict hostage). Consumed in the same wave that
+      /// parses it (A44 — never an inert key).
+      FidelityFlow : string option }
 
 type ProjectionConfig =
     {
@@ -496,9 +505,20 @@ module ProjectionConfig =
                     | true, _ -> failwith "readiness.estate.repairBandByEntity must map each entity name to a 64-bit integer."
                     | _ -> Map.empty
                 | _ -> Map.empty
+            // The fidelity flow (`estate.fidelityFlow`, RT-10): a string naming
+            // the flow whose proof the board reads. Absent = None (the clause
+            // is not configured; the verdict excludes it).
+            let fidelityFlow =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty "fidelityFlow" with
+                    | true, v when v.ValueKind = JsonValueKind.String -> getString e "fidelityFlow"
+                    | true, _ -> failwith "readiness.estate.fidelityFlow must be a flow name (a string)."
+                    | _ -> None
+                | _ -> None
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1429,6 +1449,9 @@ module ProjectionConfig =
                   let m = JsonObject()
                   for KeyValue(entity, band) in rs.RepairBandByEntity do m.[entity] <- JsonValue.Create band
                   e.["repairBandByEntity"] <- m
+              (match rs.FidelityFlow with
+               | Some flow -> e.["fidelityFlow"] <- JsonValue.Create flow
+               | None -> ())
               if e.Count > 0 then o.["estate"] <- e)
              root.["readiness"] <- o
          | None -> ())
@@ -2152,16 +2175,12 @@ module Command =
                                       (match System.Int32.TryParse raw with
                                        | true, n when n > 0 -> Ok n
                                        | _ -> Error (err "cli.check.dataRowsSample" (sprintf "projection check data --rows: --sample needs a positive whole number; '%s' is not one." raw)))
-                              // `--interventions` names the transfer journal
-                              // (a file, or the --journal directory). The
-                              // `@runId` form waits on the run envelope's
-                              // ledger refs (the journal-promotion wave) —
-                              // refused by name, never a silent guess.
-                              let interventions =
-                                  match valueOf "--interventions" with
-                                  | Some r when r.StartsWith "@" ->
-                                      Error (err "cli.check.dataRowsInterventionsRunRef" (sprintf "projection check data --rows: --interventions %s — a stored run does not yet carry its ledger references; name the journal file itself (the transfer's --journal directory holds transfer-<digest>.ndjson)." r))
-                                  | other -> Ok other
+                              // `--interventions` names the transfer journal:
+                              // a file, the --journal directory, or `@runId`
+                              // (wave B4a — the run store's recorded
+                              // `JournalRef` resolves it; every miss is a
+                              // named engine refusal, never a silent guess).
+                              let interventions = Ok (valueOf "--interventions")
                               (match sampleCap, interventions with
                                | Error e, _ -> PlanAction.Refused (2, e)
                                | _, Error e -> PlanAction.Refused (2, e)
@@ -2363,17 +2382,31 @@ module Command =
                         | true, false, _ -> Result.success EstateEvidenceMode.Offline
                         | false, true, None -> Result.success (EstateEvidenceMode.Refresh refreshEnvs)
                         | false, false, _ -> Result.success EstateEvidenceMode.FingerprintGated
-                    match target, confirmError, evidence with
-                    // A missing authored model or a contradictory evidence
-                    // flag is a config-shape refusal (2); an unresolvable
-                    // environment is a connection-plane one (6).
-                    | _, _, Error (e :: _) -> PlanAction.Refused (2, e)
-                    | Error (e :: _), _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
-                    | Error (e :: _), _, _ -> PlanAction.Refused (6, e)
-                    | Error [], _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
-                    | _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
-                    | Ok _, Some e, _ -> PlanAction.Refused (6, e)
-                    | Ok (label, source), None, Ok evidenceMode ->
+                    // `--since @runId` (wave A7): the burndown's named
+                    // baseline. The @-form is the house run-reference
+                    // spelling; anything else is a refusal that names the
+                    // form, never a guess.
+                    let since : Result<string option> =
+                        match valueOf "--since" with
+                        | None -> Result.success None
+                        | Some v when v.StartsWith "@" && v.Length > 1 ->
+                            Result.success (Some (v.Substring 1))
+                        | Some v ->
+                            Result.failureOf (err "cli.check.estateSinceForm" (sprintf "projection check environments: --since takes a run reference in the @runId form; '%s' does not name one." v))
+                    match target, confirmError, evidence, since with
+                    // A missing authored model, a contradictory evidence
+                    // flag, or a malformed baseline reference is a
+                    // config-shape refusal (2); an unresolvable environment
+                    // is a connection-plane one (6).
+                    | _, _, Error (e :: _), _ -> PlanAction.Refused (2, e)
+                    | _, _, _, Error (e :: _) -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _, _ when e.Code = "cli.check.estateNoModel" -> PlanAction.Refused (2, e)
+                    | Error (e :: _), _, _, _ -> PlanAction.Refused (6, e)
+                    | Error [], _, _, _ -> PlanAction.Refused (6, err "cli.check.estateUnknownEnv" (sprintf "estate environment '%s' is not defined." rs.Schema))
+                    | _, _, Error [], _ -> PlanAction.Refused (2, err "cli.check.estateEvidenceConflict" "projection check environments: the evidence flags did not resolve.")
+                    | _, _, _, Error [] -> PlanAction.Refused (2, err "cli.check.estateSinceForm" "projection check environments: the --since reference did not resolve.")
+                    | Ok _, Some e, _, _ -> PlanAction.Refused (6, e)
+                    | Ok (label, source), None, Ok evidenceMode, Ok sinceRun ->
                         let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
                         PlanAction.CheckEstate
                             { TargetLabel = label
@@ -2383,9 +2416,70 @@ module Command =
                               Evidence    = evidenceMode
                               RepairBand  = rs.RepairBand
                               RepairBandByEntity = rs.RepairBandByEntity
+                              Since       = sinceRun
+                              FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }
+            | "fidelity" :: rest ->
+                // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15
+                // decision 4 — one fidelity concept, file-source and
+                // estate-source): flow-map membership is tested BEFORE the
+                // `.sql`-path default arm. A positional naming a flow runs the
+                // proof; a `.sql` path keeps the DDL round-trip canary
+                // byte-identically; anything else refuses naming both readings.
+                let positionals =
+                    let rec walk (a: string list) =
+                        match a with
+                        | [] -> []
+                        | f :: _ :: tl when f = "--format" || f = "--sample" -> walk tl
+                        | f :: tl when f.StartsWith "--" -> walk tl
+                        | f :: tl -> f :: walk tl
+                    walk rest
+                let sampleCap : Result<int> =
+                    match valueOf "--sample" with
+                    | None -> Result.success 20
+                    | Some raw ->
+                        (match System.Int32.TryParse raw with
+                         | true, n when n > 0 -> Result.success n
+                         | _ -> Result.failureOf (err "cli.check.fidelitySample" (sprintf "projection check fidelity: --sample needs a positive whole number; '%s' is not one." raw)))
+                (match positionals with
+                 | [ sub ] when Map.containsKey sub cfg.Flows ->
+                     let flow = Map.find sub cfg.Flows
+                     let modelOssys = cfg.Shaping.Model.Ossys
+                     let modelSource =
+                         match cfg.Shaping.Model.Path with
+                         | Some m -> ModelSource.ModelFile m
+                         | None   -> ModelSource.Unspecified
+                     if modelSource = ModelSource.Unspecified && Option.isNone modelOssys then
+                         PlanAction.Refused (2, err "cli.check.fidelityNoModel" "projection check fidelity: no model is configured (set `model` or `model.ossys` in projection.json) — the proof stands the authored model up as the container stand-in.")
+                     else
+                         (match flow.From with
+                          | FlowSource.Env envName ->
+                              (match resolveLiveConn cfg envName, sampleCap with
+                               | Ok conn, Ok cap ->
+                                   PlanAction.CheckFidelityFlow
+                                       (modelSource, modelOssys,
+                                        { Flow       = sub
+                                          FromLabel  = envName
+                                          SourceConn = conn
+                                          SampleCap  = cap
+                                          AsJson     = (valueOf "--format" = Some "json")
+                                          Refresh    = List.contains "--refresh" rest })
+                               | Error es, _ -> PlanAction.Refused (6, List.head es)
+                               | _, Error es -> PlanAction.Refused (2, List.head es))
+                          | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
+                              PlanAction.Refused (2, err "cli.check.fidelityFlowSource" (sprintf "projection check fidelity: flow '%s' does not draw from a live environment — the proof loads the flow's live source into the container stand-in. Name a flow whose `from` is an environment." sub)))
+                 | [ sub ] when sub.EndsWith ".sql" ->
+                     // the DDL round-trip canary's historical spelling
+                     // (`check fidelity <source.sql>`) — byte-identical routing.
+                     PlanAction.CheckCanary (sub, List.contains "--cdc-silence" rest)
+                 | [ sub ] ->
+                     PlanAction.Refused (2, err "cli.check.fidelityUnknownFlow" (sprintf "projection check fidelity: '%s' is neither a flow in projection.json nor a .sql source path." sub))
+                 | [] ->
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
+                 | _ ->
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--format json])."))
             | _ ->
-                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
                 | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
         { Notes = []; Action = action }

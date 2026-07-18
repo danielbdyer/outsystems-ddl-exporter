@@ -413,3 +413,147 @@ let ``H-072: intra-cluster generation is deterministic for a fixed seed`` () =
     let a = SyntheticData.generate catalog profile clustered 3UL
     let b = SyntheticData.generate catalog profile clustered 3UL
     Assert.Equal<Map<SsKey, StaticRow list>>(a, b)
+
+// ---------------------------------------------------------------------------
+// K1 (DECISIONS 2026-07-18, the Twin) — provided parent pools: a kind whose
+// rows the sink already holds (the estate's own seed data) is excluded from
+// generation, and child FKs draw from the provided PK values.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``K1: a provided kind emits zero rows`` () =
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, [ "1"; "2"; "3" ] ] }
+    let m = SyntheticData.generate catalog profile provided 5UL
+    Assert.False(Map.containsKey custKey m, "a provided kind must not appear in the generated dataset")
+    Assert.True(Map.containsKey ordKey m, "non-provided kinds still generate")
+
+[<Fact>]
+let ``K1: child FK values draw from the provided pool and no others`` () =
+    let pool = [ "101"; "202"; "303" ]
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, pool ] }
+    let m = SyntheticData.generate catalog profile provided 5UL
+    let poolSet = Set.ofList pool
+    let custFks = valuesOf m ordKey "CustomerId"
+    Assert.Equal(250, custFks.Length)
+    Assert.True(custFks |> List.forall (fun v -> Set.contains v poolSet),
+                "a mandatory FK drew a value outside the provided pool")
+    let optFks = valuesOf m ordKey "OptCustomerId"
+    Assert.True(optFks |> List.forall (fun v -> Set.contains v poolSet),
+                "an optional FK drew a value outside the provided pool")
+
+[<Fact>]
+let ``K1: empty provided pools are byte-identical to the default flow`` () =
+    let baseline = SyntheticData.generate catalog profile cfg 7UL
+    let explicitEmpty = { cfg with ProvidedPools = Map.empty }
+    let m = SyntheticData.generate catalog profile explicitEmpty 7UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(baseline, m)
+
+[<Fact>]
+let ``K1: provided-pool generation is deterministic for a fixed seed`` () =
+    let provided = { cfg with ProvidedPools = Map.ofList [ custKey, [ "9"; "8" ] ] }
+    let a = SyntheticData.generate catalog profile provided 3UL
+    let b = SyntheticData.generate catalog profile provided 3UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(a, b)
+
+// ---------------------------------------------------------------------------
+// K2 (DECISIONS 2026-07-18, the Twin) — chronological distribution evidence:
+// DateTime/Date columns carry tick-encoded NumericDistributions and σ renders
+// sampled ticks back through RawValueCodec.
+// ---------------------------------------------------------------------------
+
+module private K2Fixture =
+    let eventKey  = kindKey ["E"]
+    let eventId   = attrKey ["E"; "Id"]
+    let eventOn   = attrKey ["E"; "OccurredOn"]
+
+    let kind : Kind =
+        { Kind.create eventKey (name "Event") (mkTableId "dbo" "EVENT")
+            [ attr eventId "Id"         Integer  true  false
+              attr eventOn "OccurredOn" DateTime false false ] with
+            Modality = [] }
+
+    let catalog : Catalog =
+        Catalog.create [ mkModule (modKey "K2") (name "K2") [ kind ] ] [] |> mkOk
+
+    let lo = System.DateTime(2026, 1, 1)
+    let hi = System.DateTime(2026, 3, 31)
+
+    let ticksDist : NumericDistribution =
+        let t (d: System.DateTime) = decimal d.Ticks
+        let lerp (q: decimal) = t lo + (t hi - t lo) * q
+        NumericDistribution.create eventOn (t lo) (lerp 0.25M) (lerp 0.5M) (lerp 0.75M) (lerp 0.95M) (lerp 0.99M) (t hi) 100L (probe 100L) |> mkOk
+
+    let profile : Profile =
+        { Profile.empty with
+            Columns = [ col eventId 40L 0L; col eventOn 40L 0L ]
+            Distributions = [ AttributeDistribution.Numeric ticksDist ] }
+
+[<Fact>]
+let ``K2: a tick-encoded DateTime distribution samples to canonical raw datetimes within the window`` () =
+    let m = SyntheticData.generate K2Fixture.catalog K2Fixture.profile cfg 5UL
+    let values = valuesOf m K2Fixture.eventKey "OccurredOn"
+    Assert.Equal(40, values.Length)
+    for raw in values do
+        let parsed =
+            System.DateTime.ParseExact(
+                raw, "yyyy-MM-dd HH:mm:ss.fffffff", System.Globalization.CultureInfo.InvariantCulture)
+        Assert.InRange(parsed, K2Fixture.lo, K2Fixture.hi)
+
+[<Fact>]
+let ``K2: chronological sampling is deterministic for a fixed seed`` () =
+    let a = SyntheticData.generate K2Fixture.catalog K2Fixture.profile cfg 9UL
+    let b = SyntheticData.generate K2Fixture.catalog K2Fixture.profile cfg 9UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(a, b)
+
+[<Fact>]
+let ``K2: the derivation gate captures DateTime columns as tick decimals`` () =
+    let dto (d: System.DateTime) = System.DateTimeOffset(d, System.TimeSpan.Zero)
+    // Per-column value streams in attribute declaration order (Id, OccurredOn).
+    let idValues = System.Collections.Generic.List<CachedValue>()
+    let onValues = System.Collections.Generic.List<CachedValue>()
+    for i in 0 .. 9 do
+        idValues.Add(CachedValue.IntValue (int64 i))
+        onValues.Add(CachedValue.DateValue (dto (K2Fixture.lo.AddDays (float i))))
+    let cached =
+        EvidenceCache.cachedKindOfColumns Map.empty K2Fixture.kind 10L [| idValues; onValues |]
+        |> Option.defaultWith (fun () -> failwith "cachedKindOfColumns returned None for an attribute-bearing kind")
+    let cache : EvidenceCache = { Kinds = Map.ofList [ K2Fixture.eventKey, cached ] }
+    let dists = ProfileDerivation.deriveNumericDistributions cache K2Fixture.catalog
+    let d = dists |> List.find (fun d -> d.AttributeKey = K2Fixture.eventOn)
+    Assert.Equal(decimal K2Fixture.lo.Ticks, d.Min)
+    Assert.Equal(decimal (K2Fixture.lo.AddDays(9.0).Ticks), d.Max)
+
+// ---------------------------------------------------------------------------
+// K1b (DECISIONS 2026-07-18, the Twin) — pool augmentation: pinned keys ride
+// after the minted pool, referenceable by child FK draws, generation
+// untouched.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``K1b: with a zero-volume parent, child FKs draw exclusively from the augment pool`` () =
+    let zeroParent =
+        { cfg with
+            VolumeByKind = Map.ofList [ custKey, VolumeTarget.Absolute 0 ]
+            AugmentPools = Map.ofList [ custKey, [ "7" ] ] }
+    let m = SyntheticData.generate catalog profile zeroParent 5UL
+    Assert.True((valuesOf m custKey "Id").IsEmpty, "a zero-volume parent mints no rows")
+    let custFks = valuesOf m ordKey "CustomerId"
+    Assert.Equal(250, custFks.Length)
+    Assert.True(custFks |> List.forall (fun v -> v = "7"), "every mandatory FK draws the sole augmented key")
+
+[<Fact>]
+let ``K1b: an empty augment map is byte-identical to the default flow`` () =
+    let baseline = SyntheticData.generate catalog profile cfg 7UL
+    let explicitEmpty = { cfg with AugmentPools = Map.empty }
+    Assert.Equal<Map<SsKey, StaticRow list>>(baseline, SyntheticData.generate catalog profile explicitEmpty 7UL)
+
+[<Fact>]
+let ``K1b: augmented generation keeps its own rows' keys and stays deterministic`` () =
+    let augmented = { cfg with AugmentPools = Map.ofList [ custKey, [ "999" ] ] }
+    let a = SyntheticData.generate catalog profile augmented 3UL
+    let b = SyntheticData.generate catalog profile augmented 3UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(a, b)
+    // The parent's own 100 rows keep their minted keys — the augment rides
+    // beyond the row range.
+    let baseline = SyntheticData.generate catalog profile cfg 3UL
+    Assert.Equal<string list>(valuesOf baseline custKey "Id", valuesOf a custKey "Id")

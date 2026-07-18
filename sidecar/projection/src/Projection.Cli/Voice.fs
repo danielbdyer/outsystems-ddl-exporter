@@ -818,6 +818,27 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> Some(View.Action "Pass --allow-drops to accept the loss, or resolve the records.") }
 
+    /// `transfer.seedRowsSkipped` — wave B4a's de-silencing (DECISIONS
+    /// 2026-07-15 §5): the reference-seed insert-only-missing pre-filter's
+    /// untouched rows, counted and said. Not a loss — the seed inserts only
+    /// what is missing, by design; the silence was the defect. `detail`
+    /// carries the per-table counts beneath the statement.
+    let private transferSeedRowsSkipped : Copy =
+        { Code           = "transfer.seedRowsSkipped"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "skippedCount" p, text "tableCount" p with
+                | Some n, Some t ->
+                    View.Note (sprintf "%s seed row(s) across %s table(s) were already on the target and were left untouched — the seed inserts only what is missing." (humane n) (humane t))
+                | _ -> View.Note "Seed rows already on the target were left untouched — the seed inserts only what is missing."
+          Substantiation =
+            fun p ->
+                match text "detail" p with
+                | Some d -> [ View.Field ("already present", d, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
     /// `migrate.applied` — the §6 migrate execute verdict: the schema change ran
     /// and the round-trip read-back matched the model (`Ingest ∘ Project = id`).
     /// `detail` (statements applied / rows captured / record) is the proof beneath.
@@ -1211,6 +1232,7 @@ module Voice =
           transferPreviewPlan
           transferApplied
           transferRowsDropped
+          transferSeedRowsSkipped
           migrateApplied
           migrateVerificationFailed
           // §13 — lifecycle / Watch (the spine + the per-stage stream)

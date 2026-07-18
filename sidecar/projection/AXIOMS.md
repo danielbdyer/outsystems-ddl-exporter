@@ -2075,10 +2075,10 @@ opens.** Future chapters that surface new amendment candidates
 append to this section at chapter open with TBD bodies; the
 scaffolding grows monotonically with the chapter pre-scopes.
 
-## A45 candidate — espace invariance across the environment lattice (estate chapter open, 2026-07-15)
+## A45 — espace invariance across the environment lattice (estate chapter open, 2026-07-15; adopted 2026-07-17)
 
-*Status: candidate (proposed at the estate chapter open; promoted to law when its N-way witness
-holds).*
+*Status: LAW (adopted 2026-07-17 at the loop-closing chapter close — the N-way witness holds; the
+promotion trigger fired at wave A1).*
 
 **Statement.** For any authored model M and any set of OutSystems environment cells that carry M
 (the same logical model deployed under per-espace physical names), the OSSYS-read catalogs of
@@ -2093,14 +2093,16 @@ artifact. This lifts the shipped two-cell law (`CROSS_ENVIRONMENT_READINESS.md` 
 by the `OssysComprehensiveFixtureTests` two-DB canary) to the N-way estate the `check estate`
 verb compares.
 
-**Witness.** `AxiomTests.fs` — Skip-stub at chapter open; promoted to executable in wave A1
-(`EstateTests`: N espace cells of one model produce zero estate findings after
-`toLogicalShape`).
+**Witness.** LIVE — `EstateTests` (``A45: N espace cells of one model produce zero estate findings
+after toLogicalShape (espace invariance)``): three espace-variant cells + an espace-variant target
+through `Estate.compute` assert zero findings. `AxiomTests.fs` carries the axiom-file pointer to
+that fact.
 
-## T17 candidate — row fidelity: transfer is byte-faithful modulo named row interventions (fidelity chapter open, 2026-07-15)
+## T17 — row fidelity: transfer is byte-faithful modulo named row interventions (fidelity chapter open, 2026-07-15; adopted 2026-07-17)
 
-*Status: candidate (proposed at the fidelity chapter open; promotion trigger: wave B2's
-executable comparator witness).*
+*Status: LAW (adopted 2026-07-17 at the loop-closing chapter close — the promotion trigger fired:
+wave B2's comparator witness is live, B3's digest-plane agreement holds, B4b's ledger-modulated
+form landed, and B5's container proof runs the full triangle).*
 
 **Statement.** For a transfer run with recorded intervention ledger ι = (κ, ν, π, σ) — κ the
 keyed remaps (every PK/FK rewrite routes through one `SurrogateRemapContext`), ν the named
@@ -2176,3 +2178,10 @@ the same discriminant (`Estate.emissionDataLaneOrderFindings`).
 gate ⟺ board), certificate carried` (EstateTests — positive and negative arms);
 `v7 I3 refusal precision` + `A46 lemma — refusal invariance` (CycleResolutionTests,
 FsCheck); the certificate ctor refusals (Weak edge; open path).
+**Witness.** LIVE — `RowFidelityTests` (the pure comparator laws: identical streams name nothing;
+a flipped cell names its key and columns; the streaming lockstep's reference `compareOrdered` law)
++ `FidelityRowsDockerTests` (``T17 witness: two renditions of one estate prove byte-identical over
+live SQL; one flipped cell names its key and column``). The two digest planes (client-canonical
+SHA256 authoritative; server `HASHBYTES` fast-path) are projections of one canonical form; their
+agreement is property-tested per SQL type (wave B3). `AxiomTests.fs` carries the axiom-file pointer
+to those facts.

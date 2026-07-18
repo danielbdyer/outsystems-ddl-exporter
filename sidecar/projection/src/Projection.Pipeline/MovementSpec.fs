@@ -200,7 +200,10 @@ type MovementSpec =
         Resumable   : bool
         /// The streaming realization flag (reverse leg only; `--streaming`).
         Streaming   : bool
-        /// The chunk-resume journal directory (streaming only; `--journal`).
+        /// The journal directory (`--journal`): the streaming realization's
+        /// chunk-resume ledger, and — wave B4a, "prove implies journal" — the
+        /// materialized realization's provenance record of every captured
+        /// `(source → assigned)` pair (the fidelity proof's intervention ledger).
         Journal     : string option
         /// M22 — the RESOLVED atomic schema-deploy disposition (derived: ON for a
         /// direct full-access sink; env `atomicDeploy` + `--no-atomic` override).
@@ -652,6 +655,15 @@ type PlanAction =
     /// logical shape, and name every differing row by its key. Payload
     /// reified to a record from birth.
     | CheckDataRows of args: CheckDataRowsArgs
+    /// `check fidelity <flow>` — THE CONTAINER PROOF (T17, wave B5): scaffold
+    /// a per-run database on the local container, stand the model's physical
+    /// shape up on it, load it through the flow's transfer machinery
+    /// (journaled wipe-and-load, FKs re-trusted), prove the load row-faithful
+    /// against the flow's live source modulo the journal's recorded
+    /// interventions, and reap the stand-in. The model rides the
+    /// `needCatalog` seam (live-OSSYS primary, file fallback) like every
+    /// model-bearing action.
+    | CheckFidelityFlow of model: ModelSource * modelOssys: string option * args: CheckFidelityFlowArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -760,6 +772,17 @@ and CheckEstateArgs =
       /// `readiness.estate.repairBandByEntity` — per-entity band overrides
       /// (logical entity name → band). Empty = the default governs all.
       RepairBandByEntity : Map<string, int64>
+      /// `--since @runId` (wave A7): the burndown's NAMED baseline — a
+      /// recorded reading in the evidence store's history (never the run
+      /// ledger). `None` = the latest recorded reading.
+      Since       : string option
+      /// `readiness.estate.fidelityFlow` (wave A4β/RT-10): the flow whose
+      /// row-fidelity proof the board folds into its verdict. `Some flow` ⇒
+      /// the face reads `fidelity.rows.json`, mints `ProofMissing`/
+      /// `ProofStale`/`ProofDiverged` as needed, and the masthead states the
+      /// clause; `None` ⇒ the clause is not configured and the verdict
+      /// excludes it (RT-10).
+      FidelityFlow : string option
       /// The loaded config's tightening section (wave A6): the face binds
       /// it against the resolved target catalog to read the ACTIVE interim
       /// posture — the relaxation keys whose meter lines the board carries.
@@ -781,8 +804,27 @@ and CheckDataRowsArgs =
       AsJson      : bool
       /// The intervention ledger's path (`--interventions <journal>`, wave
       /// B4b) — a transfer journal file, or the `--journal` directory that
-      /// holds exactly one. `None` claims strict byte-identity.
+      /// holds exactly one; `@runId` resolves through the run store's
+      /// recorded `JournalRef` (wave B4a). `None` claims strict byte-identity.
       Interventions : string option }
+
+/// The container proof's operands (`check fidelity <flow>`, wave B5): the
+/// flow, its live source (the estate being proven), the named-difference cap,
+/// and the output form. The model arrives separately on the `PlanAction`
+/// (the `needCatalog` seam).
+and CheckFidelityFlowArgs =
+    { Flow       : string
+      /// The flow's `from` environment — the proof's source of truth.
+      FromLabel  : string
+      SourceConn : string
+      /// `--sample N` — the cap on NAMED differences per kind (the totals
+      /// stay exact); the `check data --rows` default.
+      SampleCap  : int
+      AsJson     : bool
+      /// `--refresh` — force a full re-prove, ignoring and clearing this flow's
+      /// cached proof (wave B6). The cache otherwise skips the expensive
+      /// container proof when the model + source fingerprints are unchanged.
+      Refresh    : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

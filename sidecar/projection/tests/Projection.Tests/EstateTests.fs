@@ -3,7 +3,9 @@ module Projection.Tests.EstateTests
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open Projection.Targets.OperationalDiagnostics
 open Projection.Tests.Fixtures
+open Projection.Tests.IRBuilders
 
 // ---------------------------------------------------------------------------
 // The estate instrument (`check estate` — CHAPTER_ESTATE_OPEN.md; DECISIONS
@@ -87,7 +89,13 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.False(lowered.Contains b, sprintf "%s's specimen breaks the banned list (THE_VOICE.md §2.2): contains '%s'" token b)
         match EstateFindingKind.leverFormOf kind, EstateFindingKind.laneOf kind with
         | EstateLeverForm.Ruling imperative, EstateLane.Decide ->
-            Assert.True(imperative.StartsWith "Rule ", sprintf "%s's ruling does not lead with the ruling: %s" token imperative)
+            // A DECIDE lever leads with the ruling ("Rule …") — or, for the
+            // proof family (RT-10, wave A4β), with the one run that resolves
+            // it ("Run …"): the §3 contract's own row gives ProofMissing/
+            // ProofStale the lever "Run: projection check fidelity <flow>".
+            Assert.True(
+                imperative.StartsWith "Rule " || imperative.StartsWith "Run ",
+                sprintf "%s's ruling does not lead with the ruling or the run imperative: %s" token imperative)
             Assert.True(imperative.EndsWith ".", sprintf "%s's ruling is a fragment: %s" token imperative)
         | EstateLeverForm.ReviewBlock, EstateLane.Repair -> ()
         | EstateLeverForm.MergeOverlayEntry, EstateLane.Relax -> ()
@@ -788,7 +796,7 @@ let ``the band knob: readiness.estate.repairBand moves the split (A44 — the ke
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
     let tight : Estate.Posture = { Estate.Posture.defaults with RepairBand = 100L }
     let report =
-        Estate.computeWith tight agreed sampleCatalog
+        Estate.computeWith tight Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
 
@@ -802,7 +810,7 @@ let ``the per-entity band: readiness.estate.repairBandByEntity overrides the def
             RepairBand = 1_000_000L
             RepairBandByEntity = Map.ofList [ "Customer", 100L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.exists (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand))
     // The override is scoped by entity: Customer's band is 100, every other
@@ -1226,7 +1234,7 @@ let ``the cutover ladder: green when nothing stands in the way; the one outstand
     let posture : Estate.Posture =
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let relaxed =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
         |> Estate.cutoverLadder
     Assert.True(relaxed.Green)
@@ -1259,7 +1267,7 @@ let ``the active posture: a relaxed relationship renders its meter and absorbs t
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Equal(EstateLane.Relax, active.Lane)
@@ -1273,7 +1281,7 @@ let ``the active posture: an unevidenced environment reads unobserved — the me
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-qa",  operand "cloud-qa" sampleCatalog ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
@@ -1285,7 +1293,7 @@ let ``the retirement notice: a relaxation whose probe reads zero everywhere beco
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some cleanNow } ]
     let retirable = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureRetirable)
     Assert.Equal(EstateLane.Repair, retirable.Lane)
@@ -1301,7 +1309,7 @@ let ``the retirement notice: one dirty environment keeps the relaxation active e
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let dirty    = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 40L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some cleanNow }
               "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.PostureRetirable))
@@ -1315,7 +1323,7 @@ let ``the active posture: a kept-nullable column renders its meter and absorbs t
         { Estate.Posture.defaults with RelaxedAttributes = Set.singleton customerNameKey }
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5_000L 4_120L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Contains("Customer.Name is left nullable for now; 4,120 row(s) are still NULL in cloud-uat", active.Statement)
@@ -1377,7 +1385,9 @@ let ``the masthead names the unconfigured fidelity clause — never silent (RT-1
     Assert.Contains(
         Estate.render report,
         fun (l: string) -> l.Contains "The fidelity clause is not configured")
-    Assert.Contains("\"fidelityClause\": \"notConfigured\"", Estate.toJsonString report)
+    // The clause is a state object now (RT-10) — a CI reader branches on its
+    // token; an unstamped report defaults to the unconfigured state.
+    Assert.Contains("\"state\": \"notConfigured\"", Estate.toJsonString report)
 
 [<Fact>]
 let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` () =
@@ -1504,3 +1514,254 @@ let ``one Voice copy: the certificate narration on the gate and the board adviso
     // The imperative names a concrete column on both surfaces.
     Assert.Contains("nullable", gateText)
     Assert.Contains("nullable", boardText)
+// -- the burndown (wave A7): memory, movement, the streak ----------------------
+
+[<Fact>]
+let ``the burndown renders the movement line from the stamped baseline — closed, opened, remaining, the oldest age`` () =
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+        |> Estate.withHistory
+            (Some { SinceRunId = "01ABC"; SinceAgeDays = 5; Closed = 8; Opened = 1; Remaining = 4; OldestDays = Some 12 })
+            0
+    Assert.Contains(
+        Estate.render report,
+        fun (l: string) -> l = "BURNDOWN — since run 01ABC (5 day(s) ago): 8 closed, 1 opened, 4 remain — the oldest open finding is 12 day(s) old.")
+    let json = Estate.toJsonString report
+    Assert.Contains("\"sinceRunId\": \"01ABC\"", json)
+    Assert.Contains("\"closed\": 8", json)
+    Assert.Contains("\"oldestDays\": 12", json)
+
+[<Fact>]
+let ``the burndown's three honest states: movement, a first recorded reading, and no store — never implied`` () =
+    let bare = Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+    Assert.Contains(
+        Estate.render bare,
+        fun (l: string) -> l.StartsWith "BURNDOWN — the estate keeps no memory without a store")
+    let stored = bare |> Estate.withEvidence (Estate.EvidenceStoreBasis.Enabled "/tmp/store") Map.empty
+    Assert.Contains(
+        Estate.render stored,
+        fun (l: string) -> l.StartsWith "BURNDOWN — this run is the estate's first recorded reading")
+
+[<Fact>]
+let ``the streak rides the board and the action line once the estate holds`` () =
+    let report =
+        Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+        |> Estate.withHistory None 3
+    let lines = Estate.render report
+    Assert.Contains(lines, fun (l: string) -> l.Contains "The estate has read unified for 3 consecutive run(s).")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "Next: the estate holds — 3 consecutive unified run(s)")
+    Assert.Contains("\"streak\": 3", Estate.toJsonString report)
+
+[<Fact>]
+let ``check environments: --since takes the run-reference form onto the args record`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "environments"; "--since"; "@01HXYZ" ]).Action with
+    | PlanAction.CheckEstate args -> Assert.Equal(Some "01HXYZ", args.Since)
+    | other -> Assert.Fail(sprintf "expected CheckEstate; got %A" other)
+
+[<Fact>]
+let ``check environments: a --since value outside the run-reference form is refused by name, exit 2`` () =
+    let cfg = ProjectionConfig.parse estateJson |> mustOk
+    match (Command.planCheck cfg [ "environments"; "--since"; "yesterday" ]).Action with
+    | PlanAction.Refused (exit, e) ->
+        Assert.Equal(2, exit)
+        Assert.Equal("cli.check.estateSinceForm", e.Code)
+    | other -> Assert.Fail(sprintf "expected Refused; got %A" other)
+
+// ---------------------------------------------------------------------------
+// The fidelity clause (RT-10, wave A4β — the verdict closes). The laws:
+//   - The clause folds through `withFidelity`: NotConfigured / Green add no
+//     finding (the masthead only); Missing / Stale / Diverged each mint one
+//     DECIDE finding keyed on the flow AND turn Unified to Converging (the
+//     verdict formula includes the configured proof — RT-10's whole point).
+//   - The masthead line and the JSON `fidelityClause` render each state.
+//   - The proof reader is fail-closed: absent / torn reads as no proof.
+// ---------------------------------------------------------------------------
+
+let private unifiedBase () : Estate.EstateReport =
+    // sampleCatalog against itself with no divergences → Unified.
+    Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
+
+[<Fact>]
+let ``withFidelity: NotConfigured and Green add no finding — a unified estate stays unified, the clause rides the masthead only`` () =
+    let baseR = unifiedBase ()
+    Assert.Equal(Estate.Verdict.Unified, baseR.Verdict)
+    let notConfigured = baseR |> Estate.withFidelity Estate.FidelityClause.NotConfigured
+    Assert.Equal(Estate.Verdict.Unified, notConfigured.Verdict)
+    Assert.Equal(baseR.Findings.Length, notConfigured.Findings.Length)
+    let green = baseR |> Estate.withFidelity (Estate.FidelityClause.Green ("uat-load", 2))
+    Assert.Equal(Estate.Verdict.Unified, green.Verdict)
+    Assert.Equal(baseR.Findings.Length, green.Findings.Length)
+    // The masthead names the green proof and its age.
+    Assert.Contains(
+        Estate.render green,
+        fun (l: string) -> l.Contains "flow 'uat-load' is green" && l.Contains "2 day(s) old")
+
+[<Fact>]
+let ``withFidelity: Missing turns a unified estate to converging with one ProofMissing DECIDE finding, keyed on the flow, levered to the run`` () =
+    let baseR = unifiedBase ()
+    let missing = baseR |> Estate.withFidelity (Estate.FidelityClause.Missing "uat-load")
+    Assert.Equal(Estate.Verdict.Converging, missing.Verdict)
+    let proof =
+        missing.Findings
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.ProofMissing)
+    Assert.Equal(1, List.length proof)
+    let f = List.head proof
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Operational, f.Plane)
+    Assert.Equal(Some "Run: projection check fidelity uat-load.", f.Lever)
+    Assert.Contains("uat-load", f.Statement)
+
+[<Fact>]
+let ``withFidelity: Stale and Diverged each mint their DECIDE finding and turn the verdict converging`` () =
+    let baseR = unifiedBase ()
+    let stale = baseR |> Estate.withFidelity (Estate.FidelityClause.Stale ("uat-load", 9))
+    Assert.Equal(Estate.Verdict.Converging, stale.Verdict)
+    Assert.Contains(stale.Findings, fun f -> f.Kind = EstateFindingKind.ProofStale)
+    Assert.Contains(Estate.render stale, fun (l: string) -> l.Contains "9 day(s) old and predates")
+    let diverged = baseR |> Estate.withFidelity (Estate.FidelityClause.Diverged ("uat-load", 3L))
+    Assert.Equal(Estate.Verdict.Converging, diverged.Verdict)
+    Assert.Contains(diverged.Findings, fun f -> f.Kind = EstateFindingKind.ProofDiverged)
+    Assert.Contains(Estate.render diverged, fun (l: string) -> l.Contains "3 differing row(s)")
+
+[<Fact>]
+let ``withFidelity: the JSON carries the clause state and its coordinates (the one-substrate law)`` () =
+    let baseR = unifiedBase ()
+    Assert.Contains("\"state\": \"notConfigured\"", Estate.toJsonString (baseR |> Estate.withFidelity Estate.FidelityClause.NotConfigured))
+    let greenJson = Estate.toJsonString (baseR |> Estate.withFidelity (Estate.FidelityClause.Green ("uat-load", 2)))
+    Assert.Contains("\"state\": \"green\"", greenJson)
+    Assert.Contains("\"flow\": \"uat-load\"", greenJson)
+    Assert.Contains("\"state\": \"diverged\"", Estate.toJsonString (baseR |> Estate.withFidelity (Estate.FidelityClause.Diverged ("uat-load", 3L))))
+
+[<Fact>]
+let ``tryReadProof: an absent or torn proof reads as no proof (fail-closed); a valid one carries agrees, differenceTotal, and its write time`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fid-proof-" + System.Guid.NewGuid().ToString "N")
+    try
+        System.IO.Directory.CreateDirectory dir |> ignore
+        // absent
+        Assert.Equal(None, FidelityCompareRun.tryReadProof (System.IO.Path.Combine(dir, "none.json")))
+        // torn (missing the load-bearing fields)
+        let torn = System.IO.Path.Combine(dir, "torn.json")
+        System.IO.File.WriteAllText(torn, "{ \"before\": \"a\" }")
+        Assert.Equal(None, FidelityCompareRun.tryReadProof torn)
+        // valid — a diverged proof with three differences
+        let ok = System.IO.Path.Combine(dir, "fidelity.rows.json")
+        System.IO.File.WriteAllText(ok, "{ \"agrees\": false, \"rowsCompared\": 100, \"differenceTotal\": 3 }")
+        match FidelityCompareRun.tryReadProof ok with
+        | Some s ->
+            Assert.False s.Agrees
+            Assert.Equal(100L, s.RowsCompared)
+            Assert.Equal(3L, s.DifferenceTotal)
+        | None -> Assert.Fail "expected the valid proof to read"
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
+// ---------------------------------------------------------------------------
+// D10 / D11 — static-entity content + identity (wave A4β; the original ask's
+// third named divergence). The laws:
+//   - D11 (`DataStaticIdentity`): an AutoNumber static entity numbering the
+//     SAME business rows differently across environments is a DECIDE fork.
+//   - D10 (`DataStaticContent`): an environment's static rows differing from
+//     the seed (missing/extra/drift by business key) is a REPAIR finding with
+//     a remediation block.
+//   - `compute` (empty static content) mints neither; the coverage line then
+//     keeps "static-entity content" as not-inspected.
+// ---------------------------------------------------------------------------
+
+let private statusKey       = kindKey ["Status"]
+let private statusIdKey     = attrKey ["Status"; "Id"]
+let private statusLabelKey  = attrKey ["Status"; "Label"]
+
+/// An AUTONUMBER static entity: Id is an IDENTITY PK; Label is the mandatory
+/// TEXT business key. Marked static (empty populations — the row content is
+/// threaded as `StaticContent`, mirroring the live OSSYS read).
+let private statusCatalog : Catalog =
+    let statusKind : Kind =
+        { Kind.create statusKey (mkName "Status") (mkTableId "dbo" "OSUSR_X_STATUS")
+            [ { Attribute.create statusIdKey (mkName "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsIdentity = true; IsMandatory = true }
+              { Attribute.create statusLabelKey (mkName "Label") Text with
+                  Column = ColumnRealization.create "LABEL" false |> Result.value
+                  IsMandatory = true } ]
+            with Modality = [ Static [] ] }
+    mkCatalog [ mkModule (modKey "Ref") (mkName "Ref") [ statusKind ] ]
+
+let private statusRow (label: string) (id: string) : StaticRow =
+    { Identifier = rowKey ("Status_" + label + "_" + id)
+      Values = StaticRow.presentValues [ mkName "Label", label; mkName "Id", id ] }
+
+let private statusEnvs =
+    [ "cloud-dev", operand "cloud-dev" statusCatalog
+      "cloud-qa",  operand "cloud-qa"  statusCatalog ]
+
+[<Fact>]
+let ``D11: an AutoNumber static entity numbered differently across environments is a DECIDE fork — the verdict forks`` () =
+    // 'Approved' is 3 in cloud-dev and 7 in cloud-qa; 'Pending' agrees.
+    let content : Estate.StaticContent =
+        { Seed = Map.empty
+          ByEnv =
+            Map.ofList
+                [ "cloud-dev", Map.ofList [ statusKey, [ statusRow "Approved" "3"; statusRow "Pending" "1" ] ]
+                  "cloud-qa",  Map.ofList [ statusKey, [ statusRow "Approved" "7"; statusRow "Pending" "1" ] ] ] }
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog statusEnvs
+    let d11 = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.DataStaticIdentity)
+    Assert.Equal(1, List.length d11)
+    let f = List.head d11
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Identity, f.Plane)
+    Assert.True(f.Fork, "the environments number the same rows differently — a fork")
+    Assert.Equal(Estate.Verdict.Forked, report.Verdict)
+    Assert.Contains("Approved", f.Statement)
+
+[<Fact>]
+let ``D11: an AutoNumber static entity numbering rows identically across environments mints no finding`` () =
+    let content : Estate.StaticContent =
+        { Seed = Map.empty
+          ByEnv =
+            Map.ofList
+                [ "cloud-dev", Map.ofList [ statusKey, [ statusRow "Approved" "3" ] ]
+                  "cloud-qa",  Map.ofList [ statusKey, [ statusRow "Approved" "3" ] ] ] }
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog statusEnvs
+    Assert.DoesNotContain(report.Findings, fun f -> f.Kind = EstateFindingKind.DataStaticIdentity)
+
+[<Fact>]
+let ``D10: an environment's static rows missing a seed row is a REPAIR finding with a remediation block matched by business key`` () =
+    // The seed declares US/CA/MX; cloud-qa is missing MX.
+    let content : Estate.StaticContent =
+        { Seed = Map.ofList [ statusKey, [ statusRow "US" "1"; statusRow "CA" "2"; statusRow "MX" "3" ] ]
+          ByEnv = Map.ofList [ "cloud-qa", Map.ofList [ statusKey, [ statusRow "US" "1"; statusRow "CA" "2" ] ] ] }
+    let envs = [ "cloud-qa", operand "cloud-qa" statusCatalog ]
+    let report = Estate.computeWith Estate.Posture.defaults content agreed statusCatalog envs
+    let d10 = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.DataStaticContent)
+    Assert.Equal(1, List.length d10)
+    let f = List.head d10
+    Assert.Equal(EstateLane.Repair, f.Lane)
+    Assert.Contains("differs from the seed", f.Statement)
+    // The REPAIR lever is backed by a real block matched by the business key,
+    // never rewriting the surrogate.
+    let blocks =
+        EstateRemediation.blocksFor "cloud-qa" statusCatalog None content.Seed report
+    Assert.Contains(blocks, fun (b: RemediationEmitter.EstateBlock) -> b.BlockId.StartsWith "data.staticContent:")
+    let block = blocks |> List.find (fun b -> b.BlockId.StartsWith "data.staticContent:")
+    Assert.Contains("[LABEL]", block.Locate)
+    Assert.Contains(block.Repairs, fun (r: string) -> r.Contains "business key")
+    // The block carries a REAL executable alignment MERGE (not a comment stub):
+    // it matches on the business-key column and — the D10/D11 law — never writes
+    // the surrogate PK (the sink mints its own key on INSERT).
+    let merge = block.Repairs |> List.tryFind (fun (r: string) -> r.Contains "MERGE")
+    Assert.True(Option.isSome merge, "the D10 block carries an executable alignment MERGE")
+    let mergeText = Option.get merge
+    Assert.Contains("[LABEL]", mergeText)
+    Assert.DoesNotContain("[ID]", mergeText)
+    // The MERGE inserts the missing seed row (MX) — the seed's business key is in
+    // the USING source.
+    Assert.Contains("MX", mergeText)
+
+[<Fact>]
+let ``static content: compute (empty static content) mints no D10/D11 and leaves static content not-inspected`` () =
+    let report = Estate.compute agreed statusCatalog statusEnvs
+    Assert.DoesNotContain(report.Findings, fun f -> f.Kind = EstateFindingKind.DataStaticContent || f.Kind = EstateFindingKind.DataStaticIdentity)
+    Assert.False report.StaticInspected
+    Assert.Contains(Estate.render report, fun (l: string) -> l.Contains "static-entity content")
+    Assert.Contains("\"staticContentInspected\": false", Estate.toJsonString report)

@@ -67,6 +67,7 @@ bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
 | `projection.json` / flows / verbs | `THE_CONFIG_CONTROL_PLANE.md` (A44: expressible ⇔ reachable) |
 | cloud insertion / data producers | `THE_DATA_PRODUCERS.md` + `PREFLIGHT_CLOUD_INSERTION.md` |
 | synthetic data | `THE_SYNTHETIC_DATA_DESIGN.md` (σ: Profile → Data; π ∘ σ ≈ id) |
+| the Twin (`Twin.*` — the post-eject SSDT synthetic-data sidecar) | `THE_TWIN.md` (the charter: mission, laws, kernel manifest, ejection) |
 | architecture beyond the current program | `CONSTELLATION.md` — the architectural-future thesis: the eight stars, the holonic grain tower, the calculus and thermodynamics of the change-accounting, the adjudicated streaming question, R1–R5 with their reification in F#, and the pattern corpus. Read §10 (migration path) before §§1–9 if you only want the build order. |
 | opening or closing a chapter | `V2_DRIVER.md` (the destination KPI; per-axis stakes) + `BACKLOG.md` (the operational ledger) + the chapter-rhythm entries in `DECISIONS.md` (strategic-frame axis-naming at open; chapter-mid-audit; the eight-item close ritual) |
 | reaching for a name or a string/text primitive | `PLAYBOOK.md` decision trees — the executable form of pillars 7/8 |
@@ -155,6 +156,15 @@ within their first session. Everything not on this list, this file only points t
     9830 ms across three captures as concurrent load grew; the quiet re-run was clean on
     the same tree). Re-run solo before believing a regression — and especially before
     reaching for `PERF_GATE_RECORD=1`.
+14. **The estate evidence fingerprint `(RowCount, MaxPk)` is blind to in-place UPDATEs** — a
+    row changed but not added/removed keeps the fingerprint clean, so cached evidence is reused
+    over stale reality. This is a *named, default-gated* caveat (`--refresh` forces re-capture;
+    the masthead states the basis), never a silent one. And the row-fidelity digest is a
+    *stricter-than-`=`* comparator: `''` and `NULL` are DISTINCT bytes (a real difference the
+    plain `=` would fold), and the canonical hash is collation-blind — so a "clean" `=` and a
+    "diverged" digest can both be right about the same two rows. When a proof reds on a cell that
+    "looks equal", suspect the empty-string/NULL split or a collation fold before the code.
+    (`DECISIONS 2026-07-17` chapter close; the estate/fidelity chapter.)
 
 ## 5 — The load-bearing commitments (standing law, one line each)
 

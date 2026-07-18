@@ -11,8 +11,10 @@ module Projection.Cli.Faces.Fidelity
 // rows, named) / 6 (the model or an environment could not be read).
 
 open System
+open System.Threading.Tasks
 open Projection.Core
 open Projection.Pipeline
+open Projection.Targets.SSDT
 open Projection.Cli
 open Projection.Cli.OperatorConsole
 
@@ -59,3 +61,208 @@ let runCheckDataRows (args: CheckDataRowsArgs) : int =
                 FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
             tryWriteArtifact "fidelity.rows.json" artifact
             if RowFidelityReport.agrees report then 0 else 5
+
+/// `check fidelity <flow>` — THE CONTAINER PROOF (T17, wave B5; DECISIONS
+/// 2026-07-17, the loop-closing program's phase 2). One command: scaffold a
+/// per-run database on the local container, stand the TARGET's shape up on
+/// it (the model's logical rendition — what the cutover would deploy), load
+/// it through the transfer machinery exactly as a cutover load runs
+/// (journaled wipe-and-load across the rendition gap, FKs re-trusted —
+/// "after applying the FKs"), then prove the load row-faithful against the
+/// flow's live source modulo the journal's recorded interventions — and
+/// reap the stand-in.
+/// The write target is the verb's OWN scratch (created and dropped here), so
+/// the run rides the ReadOnly register and no operator gate applies; the
+/// Replace greenlight below is the verb's, never the flow's. Exits:
+/// 0 proof green · 5 differing rows, named · 6 the model / source / scaffold
+/// could not be read or refused · 4 Docker absent.
+let private humaneRows (n: int64) : string =
+    n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+
+let private ageText (days: int) : string =
+    if days <= 0 then "today" else sprintf "%d day(s) ago" days
+
+let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
+    // ONE model, two renditions — exactly the comparator's alignment package:
+    // the flow's live source carries the PHYSICAL rendition (the estate's
+    // OSUSR shape), the stand-in carries the LOGICAL rendition (the target's
+    // shape — the model as the cutover would deploy it), and the compare
+    // re-bases the physical stream onto the logical names (T17's triangle).
+    // Model-rendered contracts on BOTH sides are the proof's precondition:
+    // the SsKeys the journal records are the model's own (rendition-
+    // invariant), so the ledger-modulated compare can translate them — a
+    // live-read contract would synthesize keys the replay could never match.
+    let physical = CatalogRendition.physical model
+    let logical = CatalogRendition.logical model
+    // The proof's journal is an operator artifact — the intervention ledger
+    // the verdict cites, and the run's recorded `JournalRef` (so
+    // `--interventions @runId` can replay this exact proof later). It lives
+    // beside fidelity.rows.json, never inside the reaped scratch.
+    let journalDir = IO.Path.Combine("fidelity-proof", args.Flow)
+    // The clock, read ONCE at the boundary and threaded (the estate face's idiom).
+    let nowUtc = DateTimeOffset.UtcNow
+    // -- the incremental proof cache (wave B6) --------------------------------
+    // A cached GREEN proof, still valid — the model's shape digest AND the
+    // source's per-kind fingerprints unchanged since it ran — skips the
+    // EXPENSIVE container proof entirely (no scaffold, no transfer, no Docker).
+    // `--refresh` clears this flow's entry and forces a full re-prove. The cache
+    // lives under the estate store root (`proofs/<flow>.proof.json`); it is
+    // DISABLED — nothing cached, nothing to clear — when no store is configured.
+    // Fingerprint honesty: the (row-count, max-key, schema-shape) fingerprint is
+    // BLIND to an in-place UPDATE (the estate evidence store's named caveat), so
+    // `--refresh` is the certain re-prove.
+    // The estate store root, resolved ONCE (`None` = disabled → no cache).
+    let storeRoot = EstateEvidenceStore.storeDir ()
+    if args.Refresh then storeRoot |> Option.iter (fun root -> FidelityProofCache.clear root args.Flow |> ignore)
+    let currentModelHash = FidelityProofCache.modelHash model
+    // Probe the source's fingerprints as the proof reads the source (the
+    // physical rendition's kinds, the resolved source connection). A probe
+    // failure is a cache miss — the proof runs and names its own read.
+    let sourceFps : KindFingerprint list option =
+        if Option.isNone storeRoot then None
+        else
+            match (EstateEvidenceStore.probeLive args.SourceConn physical).GetAwaiter().GetResult() with
+            | Ok fps -> Some fps
+            | Error _ -> None
+    let cacheHit : CachedProof option =
+        match storeRoot, sourceFps with
+        | Some root, Some fps when not args.Refresh ->
+            match FidelityProofCache.tryRead root args.Flow with
+            | Some cached when FidelityProofCache.isFresh cached currentModelHash fps -> Some cached
+            | _ -> None
+        | _ -> None
+    // The container proof — run only on a cache miss (or `--refresh`).
+    let runProof () : int =
+      if not (Deploy.Docker.isAvailable ()) then
+        // §14 required-and-missing, voiced by code (the deploy face's shape).
+        TtyRenderer.renderVoicedTo Console.Error "docker.unavailable"
+            (Map.ofList [ "purpose", box "fidelity proof" ])
+        4
+      else
+      TtyRenderer.renderVoicedTo Console.Out "container.starting"
+        (Map.ofList [ "purpose", box "fidelity proof" ])
+      let work () : Task<Result<Transfer.TransferReport * RowFidelityReport>> =
+        Deploy.withScratchDatabase "ProjectionFidelity" (fun scratchConn ->
+            task {
+                // 1 — THE SCAFFOLD: the target-shape DDL (the logical
+                //     rendition), applied whole to the per-run scratch.
+                use standIn = new Microsoft.Data.SqlClient.SqlConnection(scratchConn)
+                do! standIn.OpenAsync()
+                do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
+                // 2 — THE LOAD: the transfer machinery, journaled wipe-and-load
+                //     across the rendition gap (reads with the source's physical
+                //     names, writes with the stand-in's logical names — the
+                //     rename-aware leg the LE-3 canaries prove, mirrored).
+                let srcSub : Substrate =
+                    { Environment = Projection.Core.Environment.Named args.FromLabel
+                      Role = SubstrateRole.Source
+                      ConnectionRef = ConnectionRef.Raw args.SourceConn }
+                let sinkSub : Substrate =
+                    { Environment = Projection.Core.Environment.Named "container stand-in"
+                      Role = SubstrateRole.Sink
+                      ConnectionRef = ConnectionRef.Raw scratchConn }
+                match TransferConnections.create srcSub sinkSub false with
+                | Error es -> return Result.failure es
+                | Ok connections ->
+                    let! transferR =
+                        Transfer.runReverseLegThroughConnectionsWith
+                            IdentityPolicy.Structural Transfer.Execute EmissionMode.WipeAndLoad false false false []
+                            connections physical logical Map.empty Set.empty Set.empty Set.empty
+                            [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None (Some journalDir)
+                    match transferR with
+                    | Error es -> return Result.failure es
+                    | Ok transferReport ->
+                        // 3 — THE PROOF: the flow's live source against the
+                        //     loaded stand-in, aligned by the model, modulo
+                        //     the journal's recorded interventions.
+                        let! proof =
+                            FidelityCompareRun.run
+                                args.FromLabel args.SourceConn
+                                (sprintf "%s stand-in" args.Flow) scratchConn
+                                "the authored model" model
+                                None None args.SampleCap transferReport.JournalPath
+                        return proof |> Result.map (fun report -> transferReport, report)
+            })
+      match (work ()).GetAwaiter().GetResult() with
+      | Error errs ->
+          printErrors Console.Error errs
+          6
+      | Ok (transferReport, report) ->
+          // The run aggregate records WHERE the proof's ledger lives (wave B4a).
+          transferReport.JournalPath
+          |> Option.iter (fun p ->
+              match CaptureJournal.digestOfFile p with
+              | Some digest -> Shell.recordLedgerRef (Run.JournalRef (digest, p))
+              | None -> ())
+          let artifact = FidelityCompareRun.toJsonString report
+          if args.AsJson then
+              printfn "%s" artifact
+          else
+              let payload : Voice.Payload =
+                  Map.ofList
+                      [ "rows",  box (RowFidelityReport.rowsCompared report)
+                        "kinds", box (List.length report.Kinds)
+                        "diffs", box (RowFidelityReport.differenceTotal report)
+                        "ledger", box (report.Interventions |> Option.defaultValue "")
+                        "tolerances", box (String.concat ", " report.TolerancesInForce)
+                        "artifactPath", box "fidelity.rows.json" ]
+              let verdictCode =
+                  if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"
+              TtyRenderer.renderVoicedTo Console.Out verdictCode payload
+              printfn ""
+              printfn "  The stand-in: a per-run container database carrying the target's shape (the model's logical rendition), loaded by the transfer machinery (wipe-and-load, journaled, FKs re-trusted), reaped after the proof."
+              // The load's own named erasures — each dropped row surfaces in
+              // the compare as a missing row; the WHY is said here.
+              if not (List.isEmpty transferReport.SkippedReferences) then
+                  printfn "  The load dropped %d row(s) (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (List.length transferReport.SkippedReferences)
+              FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
+          tryWriteArtifact "fidelity.rows.json" artifact
+          // RT-10 — a FLOW-SCOPED copy beside the journal, so the estate board
+          // (readiness.estate.fidelityFlow) reads THIS flow's proof
+          // unambiguously (the cwd copy is overwritten by whichever flow last
+          // ran; the scoped copy is this flow's, and its mtime is its age).
+          (try IO.Directory.CreateDirectory journalDir |> ignore with _ -> ())
+          tryWriteArtifact (IO.Path.Combine(journalDir, "fidelity.rows.json")) artifact
+          // Cache the GREEN proof (wave B6) — the source fingerprints from the
+          // pre-probe + the model hash; a non-green result CLEARS any prior entry
+          // so a residual never short-circuits a future run.
+          (match storeRoot with
+           | Some root ->
+               if RowFidelityReport.agrees report then
+                   match sourceFps with
+                   | Some fps ->
+                       FidelityProofCache.write root args.Flow
+                           { ModelHash = currentModelHash
+                             Fingerprints = fps
+                             RowsCompared = RowFidelityReport.rowsCompared report
+                             DifferenceTotal = RowFidelityReport.differenceTotal report
+                             WrittenAtUtc = nowUtc }
+                   | None -> ()
+               else FidelityProofCache.clear root args.Flow |> ignore
+           | None -> ())
+          if RowFidelityReport.agrees report then 0 else 5
+    // The verb: a fresh cached proof short-circuits the container; else it runs.
+    match cacheHit with
+    | Some cached ->
+        // CACHE HIT — the last proof stands; the container proof (and Docker) is
+        // skipped. Touch the flow-scoped proof so the estate board reads this
+        // still-valid proof as current (RT-10 staleness = proof mtime vs age).
+        let ageDays = max 0 (int (nowUtc - cached.WrittenAtUtc).TotalDays)
+        let cachePathText = storeRoot |> Option.map (fun root -> FidelityProofCache.cachePath root args.Flow) |> Option.defaultValue "(disabled)"
+        let scoped = IO.Path.Combine(journalDir, "fidelity.rows.json")
+        (try (if IO.File.Exists scoped then IO.File.SetLastWriteTimeUtc(scoped, nowUtc.UtcDateTime)) with _ -> ())
+        if args.AsJson then
+            let o = System.Text.Json.Nodes.JsonObject()
+            o.["cached"] <- System.Text.Json.Nodes.JsonValue.Create true
+            o.["flow"] <- System.Text.Json.Nodes.JsonValue.Create args.Flow
+            o.["agrees"] <- System.Text.Json.Nodes.JsonValue.Create true
+            o.["rowsCompared"] <- System.Text.Json.Nodes.JsonValue.Create cached.RowsCompared
+            o.["differenceTotal"] <- System.Text.Json.Nodes.JsonValue.Create cached.DifferenceTotal
+            o.["provenAtUtc"] <- System.Text.Json.Nodes.JsonValue.Create(cached.WrittenAtUtc.ToString "O")
+            printfn "%s" (o.ToJsonString(System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
+        else
+            printfn "  Fidelity proof for flow '%s' — CACHED GREEN: %s row(s) proven byte-identical, unchanged since %s." args.Flow (humaneRows cached.RowsCompared) (ageText ageDays)
+            printfn "  The model shape and the source's per-kind fingerprints have not moved since the proof ran; the container proof is skipped (an in-place edit is invisible to that check — re-prove with --refresh to be certain)."
+            printfn "  Proof cache: %s — clear with --refresh, or delete the file." cachePathText
+        0
+    | None -> runProof ()

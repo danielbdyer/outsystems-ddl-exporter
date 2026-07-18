@@ -132,6 +132,16 @@ let narrateTransferReportWithScope (report: Transfer.TransferReport) (scopeGroup
           if not (List.isEmpty scopeGroups) then
               yield GoBoardView.scopeTree "supporting scope — the invariants that held" View.Ok scopeGroups [] ]
     GoBoardView.writeView Console.Out (View.Doc blocks)
+    // B4a — the de-silenced seed pre-filter (DECISIONS 2026-07-15 §5): the
+    // rows insert-only-missing left untouched, voiced with the per-kind
+    // detail beneath. Working as designed; the silence was the defect.
+    if not (List.isEmpty report.SeedRowsSkipped) then
+        let payload : Voice.Payload =
+            Map.ofList
+                [ "skippedCount", box (report.SeedRowsSkipped |> List.sumBy snd)
+                  "tableCount", box (List.length report.SeedRowsSkipped)
+                  "detail", box (report.SeedRowsSkipped |> List.map (fun (k, n) -> sprintf "%s: %d" (nm k) n) |> String.concat "; ") ]
+        TtyRenderer.renderVoicedTo Console.Out "transfer.seedRowsSkipped" payload
 
 /// The live-run report for the generic `transfer` verb (no declared supporting
 /// scope) — the historical one-argument entry point every caller and test still
@@ -514,10 +524,23 @@ let runContractPairTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.StaticLookupKinds signoff revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff actSignoff enforceActConsent resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut)
+                // B4a ("prove implies journal") — the journal directory now
+                // rides the materialized arm too: every captured
+                // (source → assigned) pair is recorded, and the report names
+                // the file.
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnoreSet resolvedScope.SeedKinds resolvedScope.AcknowledgedExclusions signoff actSignoff enforceActConsent resolvedScope.StaticLookupKinds (Set.ofList foreignRefs) revertAuto revertOut journalDirectory)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
+            // B4a — the run aggregate records WHERE the journal lives (digest
+            // = the filename, RI-7, plus the path); the shell bracket's
+            // captureInputs reads it in the finally, so `--interventions
+            // @runId` can resolve this run later.
+            report.JournalPath
+            |> Option.iter (fun p ->
+                match CaptureJournal.digestOfFile p with
+                | Some digest -> Shell.recordLedgerRef (Run.JournalRef (digest, p))
+                | None -> ())
             // The guarantee tree for a declared-scope flow — the same References /
             // Dependents hierarchy `check go` shows, now closing the run report
             // (the invariants that held). Empty when no `supportingScope` was
@@ -1303,7 +1326,7 @@ let runCheckGo
                         opts.SinkCapability.IdentityPolicy Transfer.DryRun opts.Emission false true false
                         effectiveTables connections sourceContract sinkContract reconciliation ignoreSet
                         boardScope.SeedKinds boardScope.AcknowledgedExclusions [] opts.ActSignoff true boardScope.StaticLookupKinds
-                        (Set.ofList opts.ForeignRefs) false None)
+                        (Set.ofList opts.ForeignRefs) false None None)
                         .GetAwaiter().GetResult()
             match dryRun () with
             | Error errors ->

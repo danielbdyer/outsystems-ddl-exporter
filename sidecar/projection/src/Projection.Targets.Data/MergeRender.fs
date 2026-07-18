@@ -136,6 +136,80 @@ module MergeRender =
             System.String.Concat(  // LINT-ALLOW: terminal guard-batch prefix (NM-73); the guard is the typed-AST parse-template render of V1's symmetric-EXCEPT THROW, framed as its own GO batch ahead of the MERGE; the V1 `GO` batch separator is the terminal-text literal; BCL `String.Concat` is the right primitive at this terminal-text boundary
                 guardText, "\nGO\n", mergeBatch)
 
+    /// Render the D10 static-content ALIGNMENT MERGE for `check environments`
+    /// remediation — bring one environment's static table into agreement with
+    /// the model's declared seed, **matched by the business key**. This is the
+    /// estate's reconciliation, NOT the deploy lane, and it differs from
+    /// `renderMerge` in the three ways the D10/D11 split demands:
+    ///   - the ON clause joins on the BUSINESS KEY (`businessKey`), never the
+    ///     surrogate PK — the environments each mint their own surrogate (that
+    ///     disagreement is D11's ruling, ruled elsewhere), so the surrogate is
+    ///     meaningless across the estate and is EXCLUDED from ON / INSERT /
+    ///     UPDATE entirely;
+    ///   - WHEN NOT MATCHED BY TARGET INSERT writes every writable column
+    ///     EXCEPT the surrogate — so the sink mints its own key for the new row
+    ///     (no `SET IDENTITY_INSERT`, ever);
+    ///   - WHEN MATCHED UPDATE sets every writable non-key column (the business
+    ///     key is the match column, never a SET target).
+    /// There is deliberately NO `WHEN NOT MATCHED BY SOURCE DELETE`: the seed is
+    /// authoritative for what the table SHOULD contain, but a row present in the
+    /// environment and absent from the seed may be referenced, so its removal is
+    /// a separate operator ruling (the block's note names it) — and the
+    /// `DeleteScope` smart constructor rightly refuses an unscoped table-wide
+    /// delete. `CdcAware = false`: this is operator-run remediation, not a
+    /// CDC-silent redeploy. The whole batch renders through the shared
+    /// `ScriptDomGenerate.renderDataBatch` — a real MERGE, not a comment stub —
+    /// and the emitter comments it line-by-line (the operator-safety contract).
+    /// Empty string when the kind carries no business-key column among its
+    /// writables (the caller already skips these by name) or the seed is empty.
+    let renderAlignmentMerge
+        (bench: string)
+        (businessKey: Name)
+        (surrogatePk: Name)
+        (k: Kind)
+        (seedRows: StaticRow list)
+        : string =
+        use _ = Bench.scope (System.String.Concat(bench, ".renderAlignmentMerge"))  // LINT-ALLOW: terminal Bench telemetry-label composition; a label IS a string primitive
+        let colOf (a: Attribute) : string = ColumnRealization.columnNameText a.Column
+        // Writable columns MINUS the surrogate PK — the alignment never writes
+        // or matches on the surrogate (each environment mints its own; D11's
+        // concern). `writableAttributes` already drops computed columns.
+        let writable =
+            KindColumns.writableAttributes k
+            |> List.filter (fun a -> a.Name <> surrogatePk)
+        match writable |> List.tryFind (fun a -> a.Name = businessKey) with
+        | None -> ""
+        | Some _ when List.isEmpty seedRows -> ""
+        | Some bkAttr ->
+            let bkCol = colOf bkAttr
+            let allColumns = writable |> List.map colOf
+            // UPDATE targets: every writable non-surrogate column that is NOT the
+            // business key (the ON column is never a SET target). Empty ⇒ the
+            // builder emits no WHEN-MATCHED arm (a two-column static entity —
+            // surrogate + business key — only ever needs the INSERT arm).
+            let updColumns =
+                writable
+                |> List.filter (fun a -> a.Name <> businessKey)
+                |> List.map colOf
+            let typeLookup = KindColumns.columnTypeLookup k
+            let args : MergeBuildArgs =
+                {
+                    Target      = TableId.withoutCatalog k.Physical
+                    AllColumns  = allColumns
+                    PkColumns   = [ bkCol ]
+                    UpdColumns  = updColumns
+                    Rows        =
+                        seedRows
+                        |> List.map (
+                            KindColumns.rowToTypedValues typeLookup writable
+                            >> KindColumns.typedValuesToSqlLiterals Set.empty writable)
+                    CdcAware    = false
+                    DeleteScope = None
+                    RowSource   = MergeRowSource.InlineValues
+                    CastCompareColumns = Map.empty
+                }
+            ScriptDomGenerate.renderDataBatch [ Statement.Merge args ]
+
     /// Render Phase-2 UPDATEs for rows whose Phase-1 MERGE deferred their
     /// same-SCC FK columns to NULL. The UPDATE scopes by the row's PK
     /// (`whereCells`) and SETs each deferred column to its original value. Per the

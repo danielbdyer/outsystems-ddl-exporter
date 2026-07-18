@@ -77,6 +77,8 @@ let ``transfer load-plan narration names the table by Name (the report's Names i
           StaticLookupDivergences  = []
           CaptureLaneDescents      = []
           ReplayedPriorDrops       = None
+          SeedRowsSkipped          = []
+          JournalPath              = None
           Plan                     = None
           SyntheticUnsatisfiableFks = []
           Names                    = Map.ofList [ kindK, "Orders" ] }

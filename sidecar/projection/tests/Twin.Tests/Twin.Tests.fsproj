@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateProgramFile>true</GenerateProgramFile>
+    <RootNamespace>Twin.Tests</RootNamespace>
+    <AssemblyName>Twin.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    THE TWIN — the pure test pool. Laws 1-4 (convergence, coordinate
+    totality, shape-tier literal-freedom, collision refusal), the scenario
+    compiler, evidence rebinding, the fingerprint, and the boundary test
+    that keeps the context's reference arrows one-way. Run via
+    `scripts/twin-test.sh fast`; never concurrently with a Docker pool.
+  -->
+
+  <ItemGroup>
+    <Compile Include="BoundaryTests.fs" />
+    <Compile Include="CoordinateTests.fs" />
+    <Compile Include="FingerprintTests.fs" />
+    <Compile Include="TwinConfigTests.fs" />
+    <Compile Include="TwinIdentityTests.fs" />
+    <Compile Include="ScenarioCompilerTests.fs" />
+    <Compile Include="EvidenceTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Twin.Core/Twin.Core.fsproj" />
+    <ProjectReference Include="../../src/Twin.Runtime/Twin.Runtime.fsproj" />
+    <ProjectReference Include="../../src/Twin.Cli/Twin.Cli.fsproj" />
+    <!-- Fixture builders only (kindKey / attrKey / mkTableId / mkModule).
+         At ejection the handful of builders used here get duplicated into
+         this project (THE_TWIN.md ejection checklist). -->
+    <ProjectReference Include="../Projection.Tests.Support/Projection.Tests.Support.fsproj" />
+  </ItemGroup>
+
+</Project>
