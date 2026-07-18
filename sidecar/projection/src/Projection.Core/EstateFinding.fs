@@ -211,9 +211,11 @@ type EstateFindingKind =
     /// — publishing the model's shape drops the constraint (#669 M-3 /
     /// EF-18; deployed-schema over model, operator decision 2).
     | EmissionDeployedNotNullLoosened
-    /// Entities that reference each other in a cycle — the data load defers
-    /// enforcement inside the cycle and re-checks after the members load
-    /// (#669 B-1; advisory once the acyclic-majority ordering ships).
+    /// Entities in a reference cycle with no deferrable (nullable) relationship
+    /// — the two-phase load cannot NULL a column to break it, so the live
+    /// transfer refuses (`transfer.unbreakableCycleFk` /
+    /// `transfer.loadOrderUnproven`). A ruling, aligned with that refusal:
+    /// break the cycle before cutover (#669 B-1; DECISIONS 2026-07-18).
     | EmissionDataLaneOrder
     /// A system-versioned (temporal) source table the emission carries as a
     /// plain table — period columns, versioning, and the history table are
@@ -445,15 +447,17 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionLongName        -> EstateLane.Decide
         // The cutover-board population wave (DECISIONS 2026-07-18; the #669
         // audit → CUTOVER_BOARD_POPULATION_PLAN.md §3). Deploy-blocking or
-        // intent-dropping emission facts are rulings; the two advisories
-        // (an index option the emission does not carry; a handled reference
-        // cycle) watch, by design.
+        // intent-dropping emission facts are rulings — including an
+        // unbreakable reference cycle: the live transfer refuses it
+        // (`transfer.unbreakableCycleFk` / `transfer.loadOrderUnproven`), so
+        // the board rules on it too, the same fact (DECISIONS 2026-07-18, the
+        // load-order gate).
         | EstateFindingKind.EmissionAuthoredDefault
         | EstateFindingKind.EmissionComputedExprIdentifiers
         | EstateFindingKind.EmissionTriggerUnrewritten
         | EstateFindingKind.EmissionDeployedNotNullLoosened
-        | EstateFindingKind.EmissionTemporalDropped -> EstateLane.Decide
-        | EstateFindingKind.EmissionDataLaneOrder   -> EstateLane.Watch
+        | EstateFindingKind.EmissionTemporalDropped
+        | EstateFindingKind.EmissionDataLaneOrder   -> EstateLane.Decide
         // D10 — the alignment MERGE is a prepared repair; D11 needs the seed
         // RULED (pin explicit keys) before any repair can run; the proof
         // findings each end on the one imperative that resolves them.
@@ -562,6 +566,8 @@ module EstateFindingKind =
             EstateLeverForm.Ruling "Rule the column: declare it mandatory in the model, or approve the loosening before publishing."
         | EstateFindingKind.EmissionTemporalDropped ->
             EstateLeverForm.Ruling "Rule the table: hand-author its system-versioning in the deploy repository, or approve the plain-table emission."
+        | EstateFindingKind.EmissionDataLaneOrder ->
+            EstateLeverForm.Ruling "Rule the cycle: make one relationship in it optional (nullable) so the load can defer it, or drop a relationship before the transfer runs."
         | EstateFindingKind.DataStaticIdentity ->
             EstateLeverForm.Ruling "Rule the seed: pin explicit key values in the model — the alignment repair follows the ruling."
         | EstateFindingKind.ProofMissing
@@ -588,8 +594,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized
         | EstateFindingKind.EmissionNoPrimaryKey
         | EstateFindingKind.EmissionLossyScalar
-        | EstateFindingKind.EmissionNonDefaultOnUpdate
-        | EstateFindingKind.EmissionDataLaneOrder ->
+        | EstateFindingKind.EmissionNonDefaultOnUpdate ->
             EstateLeverForm.NoLever
 
     /// The presentation contract's statement specimen per kind (Appendix

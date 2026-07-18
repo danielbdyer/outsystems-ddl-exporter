@@ -1140,10 +1140,10 @@ let ``emission: a computed expression referencing an unknown identifier is a rul
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionComputedExprIdentifiers))
 
 [<Fact>]
-let ``emission: an unresolvable reference cycle is a WATCH advisory naming its members (#669 B-1)`` () =
+let ``emission: an unresolvable reference cycle is a DECIDE ruling, aligned with the transfer's refusal (#669 B-1)`` () =
     // Add the reverse reference Customer → Order (non-nullable source, no
-    // deferrable edge) — a hard 2-cycle. The board names the members; the
-    // v6 ordering keeps every other kind in dependency position.
+    // deferrable edge) — a hard 2-cycle the two-phase load cannot break, so
+    // the live transfer refuses. The board rules on it, the same fact.
     let backRef =
         Reference.create (refKey ["Customer"; "Order"; "back"]) (mkName "OrderBack") customerTenantKey orderKey
     let cyclic =
@@ -1161,10 +1161,14 @@ let ``emission: an unresolvable reference cycle is a WATCH advisory naming its m
     let f =
         Estate.emissionFindingsFor cyclic
         |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
-    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Equal(EstateLane.Decide, f.Lane)
     Assert.Contains("Customer and Order", f.Statement)
     Assert.Contains("cycle", f.Statement)
-    // The clean acyclic fixture carries no cycle advisory.
+    // A ruling carries its imperative — the operator's next move.
+    match f.Lever with
+    | Some imperative -> Assert.StartsWith("Rule the cycle", imperative)
+    | None -> Assert.Fail "an unresolvable-cycle ruling must carry its lever"
+    // The clean acyclic fixture carries no cycle finding.
     Assert.True(
         Estate.emissionFindingsFor sampleCatalog
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))

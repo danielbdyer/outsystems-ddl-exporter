@@ -29486,3 +29486,24 @@ satisfied-but-semantically-empty — a data-quality signal parallel to the date-
 (`DataDateSentinel`). An empty-text advisory (a new WATCH kind, categorical-evidence-gated to
 avoid flooding on OutSystems' optional-but-physically-NOT-NULL text defaults) is the valuable
 new direction WP-3 enables; it is recorded here as a candidate, not built in this change.
+
+---
+
+## 2026-07-18 — The unbreakable-cycle finding is a ruling, aligned with the transfer's refusal (the load-order gate)
+
+**Context.** `EmissionDataLaneOrder` fires when the topological-order pass leaves a reference
+cycle with no deferrable (nullable) edge — the two-phase load cannot NULL a column to break it.
+It was a WATCH advisory. But the live transfer *refuses* exactly this shape:
+`Transfer.orderedLoadGate` returns `transfer.loadOrderUnproven`, and `TransferRun`'s
+`transfer.unbreakableCycleFk` names "non-deferrable cycle FK(s) — cannot execute a clean
+two-phase load." So the board advised where the load hard-refuses — the same
+downgrades-never-silent inconsistency the emission-refusal wiring closed for authored defaults
+and computed expressions.
+
+**Decision.** Promote `EmissionDataLaneOrder` to the DECIDE lane with a ruling lever ("Rule the
+cycle: make one relationship in it optional (nullable) so the load can defer it, or drop a
+relationship before the transfer runs"), so a red board line and the transfer's refusal are the
+same fact, and the cutover ladder counts it (an unbreakable cycle now blocks green — it must,
+since the load cannot run). The detector, its `CycleNarration` statement, and the negative
+(weaken one edge → all surfaces go quiet together) are unchanged; only the lane, the lever, and
+the pinning test move. The presentation-totality coherence (DECIDE ⇔ a ruling) holds.
