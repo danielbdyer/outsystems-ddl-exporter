@@ -29381,24 +29381,30 @@ first-class defect by the same logic that retired the one in `CLAUDE.md`.
 
 **Decision.** The coverage line is **derived** from a total `EstateFindingKind.detectionStatus`
 classifier (Core), rendered by both boards (`Estate.render` + `EstateBoardView`). A kind
-cannot land without declaring its status — `Active` (a detector produces it),
-`CarriedByEmission` (the emitter owns the property; no runtime gap), or `NotYetDetected` (a
-named follow-on). The line therefore cannot advertise a check that does not run, nor omit
-one that does. A property test (`EstateTests`) holds the two coherence laws: only
-Emission-plane kinds carry a non-`Active` status, and the `CarriedByEmission` set is exactly
-the three closed-gap kinds.
+cannot land without declaring its status — `Active` (a detector produces it) or
+`NotYetDetected` (a named follow-on, the forward guard). The line therefore cannot advertise
+a check that does not run, nor omit one that does. A property test (`EstateTests`) holds the
+coherence law: a non-`Active` status names an Emission-plane kind.
 
-**The `CarriedByEmission` finding — a retirement recommendation.** The audit found three
+**Three closed-gap kinds retired (operator sign-off 2026-07-18).** The audit found three
 "inert" emission finding kinds (`EmissionIndexOptionDropped`, `EmissionSequenceDropped`,
-`EmissionPersistedDropped`) that carry full contract rows but have no detector — because the
+`EmissionPersistedDropped`) that carried full contract rows but had no detector — because the
 emission gap each was scoped for has since closed: index `DATA_COMPRESSION`
 (`SsdtDdlEmitter` `dataCompressionSql`), sequences (`sequenceStatements`), and PERSISTED
 computed columns (`ScriptDomBuild` `col.IsPersisted`) are all emitted faithfully today.
 Writing detectors for them would produce false reds; their `phrase` text ("…the emission
-does not carry") is itself stale. They are named `CarriedByEmission` for now (the honest
-board line), and flagged here as **retirement candidates** — the removal from the DU and its
-totality tables is deferred pending operator sign-off (they are harmless dead taxonomy in the
-interim, never produced). The fourth inert kind, `EmissionDeployedNotNullLoosened`, is a
-genuine uncovered check (model nullable where the deployed database is NOT NULL); its
-evidence exists (`Profile.AttributeRealities.IsNullableInDatabase`, populated by
-`LiveProfiler`), and its detector is a named follow-on (`NotYetDetected`).
+does not carry") was itself stale. Per the dead-algebra-retirement precedent they are
+**removed** from the DU and its totality tables — the board's vocabulary no longer advertises
+a check the engine cannot perform.
+
+**`EmissionDeployedNotNullLoosened` landed (decision 2).** The fourth once-inert kind is a
+genuine uncovered check: a column the AGREED shape would emit nullable that a deployed
+environment enforces NOT NULL — publishing the model loosens that environment's constraint
+(principle `deployed-schema > model > data-evidence`). Its detector (`Estate.deployedNotNullFindings`)
+reads the per-environment deployed nullability from each live profile's
+`AttributeReality.IsNullableInDatabase` and folds into `EmissionFindings` (Emission plane,
+DECIDE lane) so the cutover ladder counts it. The predicate fires only where the model would
+actually emit nullable (logical-optional, non-PK, physically nullable in the model) — the
+physical-nullable guard keeps it from flooding on OutSystems' optional-but-physically-NOT-NULL
+columns. The engine fix (consult physical `is_nullable` at emission) retires it; the board
+carries it until then.

@@ -213,9 +213,7 @@ let ofReport (report: Estate.EstateReport) : View =
           | ps -> yield Note (sprintf "Runs today, each catching one hazard: %s." (String.concat "; " ps))
           match emissionPhrasesBy DetectionStatus.NotYetDetected with
           | [] -> ()
-          | ps -> yield Note (sprintf "Named follow-ons, not yet checked: %s." (String.concat "; " ps))
-          if EstateFindingKind.all |> List.exists (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission) then
-              yield Note "Index compression, sequences, and PERSISTED computed columns are carried faithfully by the emitter itself — no board check is owed." ]
+          | ps -> yield Note (sprintf "Named follow-ons, not yet checked: %s." (String.concat "; " ps)) ]
     let matrix =
         [ yield Rule (Some "MATRIX — findings by environment and plane", Neutral)
           if List.isEmpty report.Findings then yield Note "No findings; the matrix is empty."

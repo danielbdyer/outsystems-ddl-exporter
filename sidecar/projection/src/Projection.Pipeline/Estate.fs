@@ -1297,6 +1297,63 @@ module Estate =
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
+    /// EF-18 / M-3 (operator decision 2; DECISIONS 2026-07-18): a column the
+    /// AGREED shape would emit nullable that a deployed environment enforces
+    /// NOT NULL — publishing the model's shape drops that environment's
+    /// constraint. The governing principle is `deployed-schema > model >
+    /// data-evidence` (CUTOVER_BOARD_POPULATION_PLAN.md §3, decision 2): the
+    /// engine fix consults the physical `is_nullable` at emission; until it
+    /// ships, the board surfaces the silent constraint drop.
+    ///
+    /// Unlike the Phase-1 emission findings (properties of the target shape,
+    /// `Envs = []`), this one carries PER-ENVIRONMENT evidence — the deployed
+    /// nullability from each live profile's `AttributeReality.IsNullableInDatabase`.
+    /// It stays on the Emission plane / DECIDE lane so the cutover ladder
+    /// counts it (the ladder reads `EmissionFindings`), and folds into the
+    /// EMISSION section beside the target-shape findings.
+    ///
+    /// The predicate fires only when the agreed shape would ACTUALLY emit the
+    /// column nullable — logical-optional (`not IsMandatory`, decision 2's
+    /// `Is_Mandatory=0`), not a primary key, and physically nullable in the
+    /// model (`Column.IsNullable`). The physical-nullable guard is what keeps
+    /// it from flooding on the OutSystems platform's optional-but-physically-
+    /// NOT-NULL columns: where the model already carries NOT NULL, the emitter
+    /// preserves it and there is nothing to loosen.
+    let deployedNotNullFindings (target: Catalog) (profilesByEnv: (string * Profile) list) : Finding list =
+        let kind = EstateFindingKind.EmissionDeployedNotNullLoosened
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Attributes
+            |> List.choose (fun a ->
+                if a.IsMandatory || a.IsPrimaryKey || not a.Column.IsNullable then None
+                else
+                    let deployedNotNullEnvs =
+                        profilesByEnv
+                        |> List.choose (fun (env, profile) ->
+                            profile.AttributeRealities
+                            |> List.tryFind (fun r -> r.AttributeKey = a.SsKey)
+                            |> Option.filter (fun r -> not r.IsNullableInDatabase)
+                            |> Option.map (fun _ -> env))
+                    match deployedNotNullEnvs with
+                    | [] -> None
+                    | envs ->
+                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                        Some
+                            { Key       = FindingKey.create kind subject
+                              Kind      = kind
+                              Lane      = EstateFindingKind.laneOf kind
+                              Plane     = EstateFindingKind.planeOf kind
+                              Envs      = envs |> List.map (fun e -> e, 1L)
+                              Statement =
+                                sprintf "%s is NOT NULL in the deployed database(s) %s and nullable in the model — publishing the model's shape drops the constraint there."
+                                    subject (envListText envs)
+                              Lever     =
+                                match EstateFindingKind.leverFormOf kind with
+                                | EstateLeverForm.Ruling imperative -> Some imperative
+                                | _ -> None
+                              Fork      = false }))
+        |> List.sortBy (fun f -> FindingKey.text f.Key)
+
     // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
 
     /// The business key of a static entity — the label convention: the first
@@ -1661,7 +1718,10 @@ module Estate =
           Evidence = EvidenceStoreBasis.Disabled
           Remediation = []
           OverlayEntries = None
-          EmissionFindings = emissionFindingsFor logicalTarget
+          EmissionFindings =
+            emissionFindingsFor logicalTarget
+            @ deployedNotNullFindings logicalTarget (Map.toList profileByEnv)
+            |> List.sortBy (fun f -> FindingKey.text f.Key)
           Burndown = None
           Streak = 0
           Fidelity = FidelityClause.NotConfigured
@@ -2003,8 +2063,6 @@ module Estate =
           match emissionPhrasesBy DetectionStatus.NotYetDetected with
           | [] -> ()
           | ps -> yield sprintf "  Named follow-ons, not yet checked: %s." (String.concat "; " ps)
-          if EstateFindingKind.all |> List.exists (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission) then
-              yield "  Index compression, sequences, and PERSISTED computed columns are carried faithfully by the emitter itself — no board check is owed."
           yield ""
 
           // MATRIX — environment × plane counts (the drill-down door).

@@ -82,18 +82,12 @@ type EstateLeverForm =
 type DetectionStatus =
     /// A detector produces this kind today.
     | Active
-    /// No runtime detector, and none is owed: the SSDT emitter already
-    /// carries the property faithfully (index DATA_COMPRESSION via
-    /// `SsdtDdlEmitter.dataCompressionSql`; sequences via `sequenceStatements`;
-    /// PERSISTED computed columns via `ScriptDomBuild` `col.IsPersisted`), so
-    /// there is no runtime gap for the board to detect — the carriage is
-    /// guarded by the emitter's own emission tests. These kinds are
-    /// retirement candidates: each was scoped for an emission gap that has
-    /// since closed (their `phrase` text — "…the emission does not carry" —
-    /// is itself stale and must not be rendered as coverage).
-    | CarriedByEmission
     /// Named in the vocabulary, no detector yet — the evidence plumbing or
-    /// emission work the kind needs is a named follow-on.
+    /// emission work the kind needs is a named follow-on. (Currently vacant:
+    /// the three closed-gap kinds this once held — index compression,
+    /// sequences, PERSISTED — were retired 2026-07-18 once confirmed the
+    /// emitter carries them faithfully; the case stays as the forward guard,
+    /// so a future vocabulary-first kind cannot render as "runs today".)
     | NotYetDetected
 
 /// The closed set of finding kinds the estate check produces today. Grows
@@ -213,10 +207,6 @@ type EstateFindingKind =
     /// logical rewrite — the emitted trigger would name objects absent from
     /// the published schema (#669 EF-7; operator decision 9).
     | EmissionTriggerUnrewritten
-    /// An index option the source carries that the emission does not
-    /// (data compression) — the deployed copy silently stores without it
-    /// (#669 EF-15 / M-2).
-    | EmissionIndexOptionDropped
     /// A column NOT NULL in the deployed database and nullable in the model
     /// — publishing the model's shape drops the constraint (#669 M-3 /
     /// EF-18; deployed-schema over model, operator decision 2).
@@ -230,13 +220,6 @@ type EstateFindingKind =
     /// absent from the published schema (#669 EF-20; operator decision 12:
     /// present means red until hand-authored).
     | EmissionTemporalDropped
-    /// A PERSISTED computed column the emission carries as non-persisted —
-    /// storage and indexability change (#669 EF-21; operator decision 12).
-    | EmissionPersistedDropped
-    /// A sequence object at the source that the published schema does not
-    /// carry — the first insert that calls NEXT VALUE FOR fails (#669
-    /// EF-22; operator decision 12).
-    | EmissionSequenceDropped
     /// A static entity whose rows in an environment differ from the model's
     /// declared seed — missing rows, extra rows, or label drift, matched by
     /// business key (D10, wave A4β; the alignment MERGE is the prepared repair).
@@ -298,12 +281,9 @@ module EstateFindingKind =
           EstateFindingKind.EmissionAuthoredDefault
           EstateFindingKind.EmissionComputedExprIdentifiers
           EstateFindingKind.EmissionTriggerUnrewritten
-          EstateFindingKind.EmissionIndexOptionDropped
           EstateFindingKind.EmissionDeployedNotNullLoosened
           EstateFindingKind.EmissionDataLaneOrder
           EstateFindingKind.EmissionTemporalDropped
-          EstateFindingKind.EmissionPersistedDropped
-          EstateFindingKind.EmissionSequenceDropped
           EstateFindingKind.DataStaticContent
           EstateFindingKind.DataStaticIdentity
           EstateFindingKind.ProofMissing
@@ -349,12 +329,9 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionAuthoredDefault  -> "emission.authoredDefault"
         | EstateFindingKind.EmissionComputedExprIdentifiers -> "emission.computedExprIdentifiers"
         | EstateFindingKind.EmissionTriggerUnrewritten -> "emission.triggerUnrewritten"
-        | EstateFindingKind.EmissionIndexOptionDropped -> "emission.indexOptionDropped"
         | EstateFindingKind.EmissionDeployedNotNullLoosened -> "emission.deployedNotNullLoosened"
         | EstateFindingKind.EmissionDataLaneOrder    -> "emission.dataLaneOrder"
         | EstateFindingKind.EmissionTemporalDropped  -> "emission.temporalDropped"
-        | EstateFindingKind.EmissionPersistedDropped -> "emission.persistedDropped"
-        | EstateFindingKind.EmissionSequenceDropped  -> "emission.sequenceDropped"
         | EstateFindingKind.DataStaticContent        -> "data.staticContent"
         | EstateFindingKind.DataStaticIdentity       -> "data.staticIdentity"
         | EstateFindingKind.ProofMissing             -> "proof.missing"
@@ -411,12 +388,9 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionAuthoredDefault  -> "an authored default that does not parse"
         | EstateFindingKind.EmissionComputedExprIdentifiers -> "a computed expression that cannot be rewritten"
         | EstateFindingKind.EmissionTriggerUnrewritten -> "a trigger that cannot be rewritten"
-        | EstateFindingKind.EmissionIndexOptionDropped -> "an index setting the emission does not carry"
         | EstateFindingKind.EmissionDeployedNotNullLoosened -> "deployed NOT NULL, model nullable"
         | EstateFindingKind.EmissionDataLaneOrder    -> "a reference cycle in the load order"
         | EstateFindingKind.EmissionTemporalDropped  -> "system-versioning the emission does not carry"
-        | EstateFindingKind.EmissionPersistedDropped -> "a PERSISTED marking the emission does not carry"
-        | EstateFindingKind.EmissionSequenceDropped  -> "a sequence the emission does not carry"
         | EstateFindingKind.DataStaticContent        -> "reference rows differ from the seed"
         | EstateFindingKind.DataStaticIdentity       -> "reference keys numbered differently per environment"
         | EstateFindingKind.ProofMissing             -> "the fidelity proof has not run"
@@ -478,10 +452,7 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionComputedExprIdentifiers
         | EstateFindingKind.EmissionTriggerUnrewritten
         | EstateFindingKind.EmissionDeployedNotNullLoosened
-        | EstateFindingKind.EmissionTemporalDropped
-        | EstateFindingKind.EmissionPersistedDropped
-        | EstateFindingKind.EmissionSequenceDropped -> EstateLane.Decide
-        | EstateFindingKind.EmissionIndexOptionDropped
+        | EstateFindingKind.EmissionTemporalDropped -> EstateLane.Decide
         | EstateFindingKind.EmissionDataLaneOrder   -> EstateLane.Watch
         // D10 — the alignment MERGE is a prepared repair; D11 needs the seed
         // RULED (pin explicit keys) before any repair can run; the proof
@@ -530,12 +501,9 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionAuthoredDefault
         | EstateFindingKind.EmissionComputedExprIdentifiers
         | EstateFindingKind.EmissionTriggerUnrewritten
-        | EstateFindingKind.EmissionIndexOptionDropped
         | EstateFindingKind.EmissionDeployedNotNullLoosened
         | EstateFindingKind.EmissionDataLaneOrder
-        | EstateFindingKind.EmissionTemporalDropped
-        | EstateFindingKind.EmissionPersistedDropped
-        | EstateFindingKind.EmissionSequenceDropped -> EstatePlane.Emission
+        | EstateFindingKind.EmissionTemporalDropped -> EstatePlane.Emission
         // D10 is a data-content fact; D11 is a key-minting fact (the identity
         // plane — inbound references mean differently per environment); the
         // proof findings are the run's operational evidence basis.
@@ -594,10 +562,6 @@ module EstateFindingKind =
             EstateLeverForm.Ruling "Rule the column: declare it mandatory in the model, or approve the loosening before publishing."
         | EstateFindingKind.EmissionTemporalDropped ->
             EstateLeverForm.Ruling "Rule the table: hand-author its system-versioning in the deploy repository, or approve the plain-table emission."
-        | EstateFindingKind.EmissionPersistedDropped ->
-            EstateLeverForm.Ruling "Rule the column: hand-author the PERSISTED marking in the deploy repository, or approve its removal."
-        | EstateFindingKind.EmissionSequenceDropped ->
-            EstateLeverForm.Ruling "Rule the sequence: hand-author it in the deploy repository, or approve its absence."
         | EstateFindingKind.DataStaticIdentity ->
             EstateLeverForm.Ruling "Rule the seed: pin explicit key values in the model — the alignment repair follows the ruling."
         | EstateFindingKind.ProofMissing
@@ -625,7 +589,6 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionNoPrimaryKey
         | EstateFindingKind.EmissionLossyScalar
         | EstateFindingKind.EmissionNonDefaultOnUpdate
-        | EstateFindingKind.EmissionIndexOptionDropped
         | EstateFindingKind.EmissionDataLaneOrder ->
             EstateLeverForm.NoLever
 
@@ -708,18 +671,12 @@ module EstateFindingKind =
             "Product.DisplayLabel is computed from [SKU_OLD], which resolves to no column of Product — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
         | EstateFindingKind.EmissionTriggerUnrewritten ->
             "The trigger TRG_ORDER_AUDIT on Order references a table with no logical rewrite — the emitted trigger would name an object absent from the published schema."
-        | EstateFindingKind.EmissionIndexOptionDropped ->
-            "The index IX_Order_PlacedAt on Order is compressed (PAGE) at the source — the emitted index carries no compression setting, so the deployed copy stores uncompressed."
         | EstateFindingKind.EmissionDeployedNotNullLoosened ->
             "Customer.Email is NOT NULL in the deployed database and nullable in the model — publishing the model's shape drops the constraint."
         | EstateFindingKind.EmissionDataLaneOrder ->
             "Customer and Order reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced."
         | EstateFindingKind.EmissionTemporalDropped ->
             "Order is system-versioned at the source, with history in Order_History — the emitted table carries no system-versioning, so version history stops at cutover."
-        | EstateFindingKind.EmissionPersistedDropped ->
-            "Product.TotalWithTax is a PERSISTED computed column at the source — the emitted column is not persisted, which changes storage and indexability."
-        | EstateFindingKind.EmissionSequenceDropped ->
-            "The sequence OrderNumberSeq exists at the source — the published schema does not carry it, and the first insert that calls NEXT VALUE FOR fails."
         | EstateFindingKind.DataStaticContent ->
             "Country's rows in cloud-uat differ from the model's seed: 2 row(s) missing, 1 extra, 3 value difference(s) — matched by business key."
         | EstateFindingKind.DataStaticIdentity ->
@@ -734,21 +691,15 @@ module EstateFindingKind =
     /// Whether the estate check runs a detector for a kind today (Appendix
     /// A, DECISIONS 2026-07-18 — the derived coverage line). Total, so the
     /// board's coverage sentence is generated, never restated: a kind added
-    /// without a detector must be declared `NotYetDetected` here (or
-    /// `CarriedByEmission` when the emitter owns the property), and the line
-    /// re-derives. The three `CarriedByEmission` kinds are the retirement
-    /// candidates the 2026-07-18 audit surfaced — the emission gap they were
-    /// scoped for has closed (see `DetectionStatus.CarriedByEmission`).
+    /// without a detector must be declared `NotYetDetected` here, and the
+    /// line re-derives. Every kind is `Active` today — the three closed-gap
+    /// kinds this once split out (index compression, sequences, PERSISTED)
+    /// were retired 2026-07-18, and `EmissionDeployedNotNullLoosened` landed
+    /// its live detector (`deployedNotNullFindings`, the reality plane).
     let detectionStatus (kind: EstateFindingKind) : DetectionStatus =
         match kind with
-        // The emitter carries these faithfully today; no runtime gap remains.
-        | EstateFindingKind.EmissionIndexOptionDropped
-        | EstateFindingKind.EmissionSequenceDropped
-        | EstateFindingKind.EmissionPersistedDropped -> DetectionStatus.CarriedByEmission
-        // Needs per-environment deployed-nullability evidence (the reality
-        // plane) — the named follow-on.
-        | EstateFindingKind.EmissionDeployedNotNullLoosened -> DetectionStatus.NotYetDetected
-        // Every other kind is produced by a live detector today.
+        // Every kind is produced by a live detector today.
+        | EstateFindingKind.EmissionDeployedNotNullLoosened
         | EstateFindingKind.SchemaPresence
         | EstateFindingKind.SchemaLag
         | EstateFindingKind.SchemaRename

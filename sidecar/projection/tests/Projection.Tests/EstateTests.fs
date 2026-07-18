@@ -105,35 +105,70 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.Fail(sprintf "%s's lever form %A is incoherent with its lane %A" token form lane)
 
 [<Fact>]
-let ``coverage: the emission coverage line is derived from the detector set — non-Active status is emission-plane only, and the carried set is exactly the closed-gap kinds (no drift)`` () =
+let ``coverage: the emission coverage line is derived from the detector set — NotYetDetected is emission-plane only, and the three closed-gap kinds are retired (no drift)`` () =
     // DECISIONS 2026-07-18 — the derived coverage line. The predecessor copy
     // was hand-maintained and drifted (it promised temporal tables + sequences
     // as "coming" after both shipped, and never named authored-default /
     // computed-expression). Deriving the line from `detectionStatus` closes
-    // that drift class. Two laws hold it: (1) only Emission-plane kinds carry
-    // a non-Active status (carriage/gaps are emission facts); (2) the
-    // CarriedByEmission set is exactly the three closed-gap kinds the audit
-    // found the emitter already carries.
+    // that drift class. Law: a non-Active status names an Emission-plane kind
+    // (a gap is an emission fact) — held vacuously today (every kind is Active),
+    // but the guard holds for any future vocabulary-first kind.
     for kind in EstateFindingKind.all do
         match EstateFindingKind.detectionStatus kind with
         | DetectionStatus.Active -> ()
-        | DetectionStatus.CarriedByEmission
         | DetectionStatus.NotYetDetected ->
             Assert.Equal(EstatePlane.Emission, EstateFindingKind.planeOf kind)
-    let carriedTokens =
-        EstateFindingKind.all
-        |> List.filter (fun k -> EstateFindingKind.detectionStatus k = DetectionStatus.CarriedByEmission)
-        |> List.map EstateFindingKind.token
-        |> List.sort
-    Assert.Equal<string list>(
-        [ "emission.indexOptionDropped"; "emission.persistedDropped"; "emission.sequenceDropped" ],
-        carriedTokens)
+    // The three closed-gap kinds (the emitter carries compression, sequences,
+    // and PERSISTED) are retired from the vocabulary — their tokens resolve to
+    // no kind.
+    for token in [ "emission.indexOptionDropped"; "emission.persistedDropped"; "emission.sequenceDropped" ] do
+        Assert.True((EstateFindingKind.ofToken token).IsNone, sprintf "%s should be retired" token)
     // The run list is non-empty — the board always names what it checks.
     Assert.NotEmpty(
         EstateFindingKind.all
         |> List.filter (fun k ->
             EstateFindingKind.planeOf k = EstatePlane.Emission
             && EstateFindingKind.detectionStatus k = DetectionStatus.Active))
+
+[<Fact>]
+let ``emission: a column the model emits nullable but a deployed environment enforces NOT NULL is a deployed-NOT-NULL-loosened ruling (decision 2 / EF-18)`` () =
+    // deployed-schema > model > data-evidence. The agreed shape would emit
+    // Widget.Notes nullable (logical-optional, non-PK, physically nullable in
+    // the model); cloud-uat's deployed DB has it NOT NULL, so publishing the
+    // model's shape loosens the constraint there. The engine fix (consult
+    // physical is_nullable at emission) retires it; the board carries it.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let idKey = attrKey ["Widget"; "Id"]
+    let notesKey = attrKey ["Widget"; "Notes"]
+    let widget (notesNullableInModel: bool) (notesMandatory: bool) : Kind =
+        Kind.create (kindKey ["Widget"]) (nm "Widget") (TableId.create "dbo" "OSUSR_X_WIDGET" |> Result.value)
+            [ { Attribute.create idKey (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create notesKey (nm "Notes") Text with
+                  Column = ColumnRealization.create "NOTES" notesNullableInModel |> Result.value
+                  IsMandatory = notesMandatory } ]
+    let target notesNullableInModel notesMandatory =
+        mkCatalog [ mkModule (kindKey ["M"]) (nm "M") [ widget notesNullableInModel notesMandatory ] ]
+    let profileWith (deployedNullable: bool) : Profile =
+        { Profile.empty with
+            AttributeRealities = [ { AttributeReality.create notesKey with IsNullableInDatabase = deployedNullable } ] }
+    // Positive: model nullable, deployed NOT NULL → one Emission·DECIDE finding.
+    let findings = Estate.deployedNotNullFindings (target true false) [ "cloud-uat", profileWith false ]
+    let f = Assert.Single findings
+    Assert.Equal(EstateFindingKind.EmissionDeployedNotNullLoosened, f.Kind)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("Widget.Notes", FindingKey.text f.Key)
+    Assert.Contains("cloud-uat", f.Envs |> List.map fst)
+    Assert.True(f.Lever.IsSome, "a deployed-NOT-NULL ruling carries its imperative")
+    // Negative 1 — deployed column is also nullable: nothing loosened.
+    Assert.Empty(Estate.deployedNotNullFindings (target true false) [ "cloud-uat", profileWith true ])
+    // Negative 2 — the model marks it mandatory: it would emit NOT NULL anyway.
+    Assert.Empty(Estate.deployedNotNullFindings (target true true) [ "cloud-uat", profileWith false ])
+    // Negative 3 — the model is physically NOT NULL: the emitter preserves it
+    // (the flood guard against OutSystems' optional-but-physically-NOT-NULL columns).
+    Assert.Empty(Estate.deployedNotNullFindings (target false false) [ "cloud-uat", profileWith false ])
 
 [<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
