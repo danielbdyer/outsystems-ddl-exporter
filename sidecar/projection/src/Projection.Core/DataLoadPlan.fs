@@ -295,9 +295,9 @@ module DataLoadPlan =
               TransformSite.dataIntent "dispositionClassification"
                 "Classify each kind's `IdentityDisposition` via `IdentityDisposition.ofKind` (PreservedFromSource for business PKs; AssignedBySink for IDENTITY PKs). Pure over Catalog evidence."
               TransformSite.dataIntent "deferredFkSelection"
-                "Select cycle-deferred FK columns per kind via `TopologicalOrder.deferredFkColumns` (in-cycle + same-cycle target + nullable). Structural cycle-break."
+                "Select cycle-deferred FK columns per kind via `TopologicalOrder.deferredFkColumns` (same-COMPONENT target; a resolved component defers its broken edges only, an unresolved one every nullable intra-component edge — v7 slices 3+5). Structural cycle-break."
               TransformSite.dataIntent "unbreakableCycleDiagnostics"
-                "Surface non-nullable same-cycle FKs as `UnbreakableCycleFk` so realizations refuse to execute an unsatisfiable plan. Structural; total decisions, named skips."
+                "Surface non-nullable same-COMPONENT FKs (unresolved components only — v7 slice 3) as `UnbreakableCycleFk` so realizations refuse to execute an unsatisfiable plan. Structural; total decisions, named skips."
               TransformSite.operatorIntent "identitySubstitution" Insertion
                 "Apply the operator-supplied `SurrogateRemapContext` to FK values in raw rows, producing post-substitution rows in target identity space. Every FK column whose target is in the remap is re-pointed (Source surrogate → assigned-side surrogate); rows whose targeted FK has no matched assigned counterpart are dropped (skip-and-diagnose). This is the canonical OperatorIntent Insertion site for the entire data-load family — realizations (StaticSeedsEmitter, MigrationDependenciesEmitter, BootstrapEmitter, Transfer.runReconciling) consume the post-substitution plan and classify entirely DataIntent. Empty remap → identity over rows (skeleton-purity preserved)." ]
           Status = Active }
