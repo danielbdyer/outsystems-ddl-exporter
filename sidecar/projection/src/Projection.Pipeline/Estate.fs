@@ -302,6 +302,11 @@ module Estate =
             /// — the ratio past which the small side's evidence is advisory.
             /// Defaults to `asymmetryFactor`.
             AsymmetryFactor : int64
+            /// The operator's declared promotion lattice
+            /// (`readiness.estate.promotionOrder`), most-upstream first —
+            /// enables the deployed↔deployed regime. Empty (the default) ⇒ the
+            /// tool makes no promotion-order assumption and the regime is silent.
+            PromotionOrder : string list
             /// Reference keys the loaded posture keeps untracked
             /// (`referenceOverrides` + `keepUntracked`).
             RelaxedReferences : Set<SsKey>
@@ -318,6 +323,7 @@ module Estate =
               RepairBandByEntity = Map.empty
               DecisionFloor     = decisionFloor
               AsymmetryFactor   = asymmetryFactor
+              PromotionOrder    = []
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
 
@@ -883,6 +889,47 @@ module Estate =
                       Weight = int64 mismatched
                       Signature = None }
             else None)
+
+    /// The fourth comparison regime (DECISIONS 2026-07-18): deployed↔deployed
+    /// across the promotion lattice. The estate compares each environment to
+    /// the TARGET; this compares each environment to its UPSTREAM promotion
+    /// SOURCE — the adjacent pair in the `readiness.confirm` order, read
+    /// most-upstream first (Dev → QA → UAT → PROD). A kind a DOWNSTREAM
+    /// environment carries that its upstream source LACKS reached the
+    /// downstream without passing through its source — a change that bypassed
+    /// the promotion path (a hotfix applied straight to the downstream).
+    /// Advisory (a bypass may be a sanctioned emergency change); the operator
+    /// confirms the order is intended. This is drift the target-anchored
+    /// per-environment diff cannot express — it names each environment's delta
+    /// from the target, never the promotion CHAIN's own monotonicity.
+    /// The promotion order is the operator's declared lattice
+    /// (`readiness.estate.promotionOrder`), NOT the environment-list order —
+    /// the tool never guesses which environment is upstream. Absent ⇒ no
+    /// assumption, and the regime is silent (an empty chain).
+    let private promotionOrderContributions
+        (promotionOrder: string list)
+        (logicalEnvByEnv: Map<string, Catalog>)
+        : EnvContribution list =
+        let kindNames (c: Catalog) =
+            Catalog.allKinds c |> List.map (fun k -> Name.value k.Name) |> Set.ofList
+        // The declared chain, restricted to the environments actually read.
+        promotionOrder
+        |> List.choose (fun env -> Map.tryFind env logicalEnvByEnv |> Option.map (fun c -> env, c))
+        |> List.pairwise
+        |> List.collect (fun ((upstream, uCat), (downstream, dCat)) ->
+            Set.difference (kindNames dCat) (kindNames uCat)
+            |> Set.toList
+            |> List.sort
+            |> List.map (fun kindName ->
+                { Kind = EstateFindingKind.SchemaPromotionOrder
+                  Subject = kindName
+                  Reference = None
+                  Env = downstream
+                  Fragment =
+                    sprintf "%s exists in %s but not in %s, its upstream promotion source — a change reached %s without passing through %s"
+                        kindName downstream upstream downstream upstream
+                  Weight = 1L
+                  Signature = None }))
 
     /// O1 (wave A4): CDC parity — a kind tracked in some environments and
     /// not in other evidenced ones; a cutover write feeds live consumers
@@ -1610,6 +1657,7 @@ module Estate =
             @ dateSentinelContributions logicalTarget profilesByEnv
             @ collationCollisionContributions logicalTarget profilesByEnv
             @ synthesizedIdentityContributions logicalTarget logicalEnvs
+            @ promotionOrderContributions posture.PromotionOrder (Map.ofList logicalEnvs)
             @ cdcParityContributions logicalTarget profilesByEnv
             @ postureContributions logicalTarget posture (envs |> List.map fst) profilesByEnv
             // D10 / D11 (wave A4β): the static-entity content + identity

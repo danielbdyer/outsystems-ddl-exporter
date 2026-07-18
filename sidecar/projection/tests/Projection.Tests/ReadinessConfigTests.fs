@@ -55,7 +55,7 @@ let ``readiness.estate: the A44 tuning knobs parse and round-trip (decisionFloor
     let json = """
     {
       "environments": { "cloud-dev": { "access": "direct", "conn": "env:C", "rendition": "physical", "archetype": "managed-dml" } },
-      "readiness": { "schema": "cloud-dev", "confirm": ["cloud-dev"], "estate": { "decisionFloor": 250, "asymmetryFactor": 10 } }
+      "readiness": { "schema": "cloud-dev", "confirm": ["cloud-dev"], "estate": { "decisionFloor": 250, "asymmetryFactor": 10, "promotionOrder": ["cloud-dev", "cloud-qa", "cloud-uat"] } }
     }
     """
     let cfg = ProjectionConfig.parse json |> mustOk
@@ -63,6 +63,7 @@ let ``readiness.estate: the A44 tuning knobs parse and round-trip (decisionFloor
     | Some rs ->
         Assert.Equal(Some 250L, rs.DecisionFloor)
         Assert.Equal(Some 10L, rs.AsymmetryFactor)
+        Assert.Equal<string list>([ "cloud-dev"; "cloud-qa"; "cloud-uat" ], rs.PromotionOrder)
     | None -> Assert.Fail "expected a readiness block"
     let round = ProjectionConfig.parse (ProjectionConfig.render cfg) |> mustOk
     Assert.Equal<ReadinessSpec option>(cfg.Readiness, round.Readiness)

@@ -217,6 +217,42 @@ let ``A44 knobs: a lowered asymmetryFactor makes an otherwise-quiet rowcount gap
     Assert.True(asymmetryFires { Estate.Posture.defaults with AsymmetryFactor = 2L })
 
 [<Fact>]
+let ``deployed↔deployed: a downstream env carrying a kind its upstream source lacks is a SchemaPromotionOrder advisory (the fourth regime)`` () =
+    // Promotion order dev → qa → uat (the confirm order). uat carries Coupon
+    // that its upstream source qa lacks — a change that bypassed the path.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let coupon =
+        Kind.create (kindKey ["Coupon"]) (nm "Coupon") (TableId.create "dbo" "OSUSR_X_COUPON" |> Result.value)
+            [ { Attribute.create (attrKey ["Coupon"; "Id"]) (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true } ]
+    let withCoupon =
+        { sampleCatalog with
+            Modules =
+                match sampleCatalog.Modules with
+                | m :: rest -> { m with Kinds = coupon :: m.Kinds } :: rest
+                | [] -> [] }
+    let posture = { Estate.Posture.defaults with PromotionOrder = [ "cloud-dev"; "cloud-qa"; "cloud-uat" ] }
+    let report =
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" sampleCatalog
+              "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" withCoupon ]
+    let promo = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.SchemaPromotionOrder)
+    let f = Assert.Single promo
+    Assert.Contains("Coupon", FindingKey.text f.Key)
+    Assert.Contains("cloud-uat", f.Envs |> List.map fst)
+    Assert.Contains("without passing through cloud-qa", f.Statement)
+    // Without a declared promotion order the regime is silent — the tool never
+    // guesses which environment is upstream.
+    let unordered =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" sampleCatalog
+              "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" withCoupon ]
+    Assert.True(unordered.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.SchemaPromotionOrder))
+
+[<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
     let a = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
     let b = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"

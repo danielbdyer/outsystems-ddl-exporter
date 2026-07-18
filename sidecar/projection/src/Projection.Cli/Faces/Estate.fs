@@ -96,6 +96,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                    RepairBandByEntity = args.RepairBandByEntity
                    DecisionFloor = args.DecisionFloor |> Option.defaultValue Estate.decisionFloor
                    AsymmetryFactor = args.AsymmetryFactor |> Option.defaultValue Estate.asymmetryFactor
+                   PromotionOrder = args.PromotionOrder
                    RelaxedReferences = relaxedRefs
                    RelaxedAttributes = relaxedAttrs } : Estate.Posture))
         let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []

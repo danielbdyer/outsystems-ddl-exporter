@@ -777,6 +777,10 @@ and CheckEstateArgs =
       /// engine's named defaults.
       DecisionFloor : int64 option
       AsymmetryFactor : int64 option
+      /// `readiness.estate.promotionOrder` (DECISIONS 2026-07-18) — the
+      /// declared promotion lattice, most-upstream first. Empty ⇒ the
+      /// deployed↔deployed regime is silent (no order assumed).
+      PromotionOrder : string list
       /// `--since @runId` (wave A7): the burndown's NAMED baseline — a
       /// recorded reading in the evidence store's history (never the run
       /// ledger). `None` = the latest recorded reading.

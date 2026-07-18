@@ -270,6 +270,11 @@ type ReadinessSpec =
       /// them (A44 — never an inert key).
       DecisionFloor : int64 option
       AsymmetryFactor : int64 option
+      /// The declared promotion lattice (`readiness.estate.promotionOrder`,
+      /// DECISIONS 2026-07-18) — the environments most-upstream first, enabling
+      /// the deployed↔deployed regime. Empty ⇒ the tool makes no
+      /// promotion-order assumption and the regime is silent.
+      PromotionOrder : string list
       /// The fidelity flow (`readiness.estate.fidelityFlow`, wave A4β/RT-10):
       /// names the flow whose row-fidelity proof (`fidelity.rows.json`, from
       /// `projection check fidelity <flow>`) the estate board folds into its
@@ -540,9 +545,16 @@ module ProjectionConfig =
                 | _ -> None
             let decisionFloor = estateInt64 "decisionFloor"
             let asymmetryFactor = estateInt64 "asymmetryFactor"
+            // The promotion lattice (`estate.promotionOrder`): an array of
+            // environment names, most-upstream first. Absent = empty (the
+            // deployed↔deployed regime stays silent — no order is assumed).
+            let promotionOrder =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object -> getStringArray e "promotionOrder"
+                | _ -> []
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; FidelityFlow = fidelityFlow }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; FidelityFlow = fidelityFlow }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; PromotionOrder = promotionOrder; FidelityFlow = fidelityFlow }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; PromotionOrder = promotionOrder; FidelityFlow = fidelityFlow }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1479,6 +1491,10 @@ module ProjectionConfig =
               (match rs.AsymmetryFactor with
                | Some n -> e.["asymmetryFactor"] <- JsonValue.Create n
                | None -> ())
+              (if not (List.isEmpty rs.PromotionOrder) then
+                  let a = JsonArray()
+                  for env in rs.PromotionOrder do a.Add(JsonValue.Create env)
+                  e.["promotionOrder"] <- a)
               (match rs.FidelityFlow with
                | Some flow -> e.["fidelityFlow"] <- JsonValue.Create flow
                | None -> ())
@@ -2448,6 +2464,7 @@ module Command =
                               RepairBandByEntity = rs.RepairBandByEntity
                               DecisionFloor = rs.DecisionFloor
                               AsymmetryFactor = rs.AsymmetryFactor
+                              PromotionOrder = rs.PromotionOrder
                               Since       = sinceRun
                               FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }

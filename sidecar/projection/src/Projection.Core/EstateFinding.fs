@@ -103,6 +103,14 @@ type EstateFindingKind =
     /// promotion lag; the ordinary publish resolves it (the direction
     /// classifier's WATCH arm, wave A3).
     | SchemaLag
+    /// A kind a DOWNSTREAM environment carries that its UPSTREAM promotion
+    /// source lacks — the change reached the downstream without passing
+    /// through its source (a hotfix that bypassed the promotion path). The
+    /// deployed↔deployed comparison across the operator-declared promotion
+    /// lattice (`readiness.estate.promotionOrder`); advisory, since a bypass
+    /// may be a sanctioned emergency change (DECISIONS 2026-07-18, the fourth
+    /// regime).
+    | SchemaPromotionOrder
     /// A kind carrying a different logical name than the target shape declares.
     | SchemaRename
     /// A kind whose attribute channel (columns) differs from the target shape.
@@ -250,6 +258,7 @@ module EstateFindingKind =
     let all : EstateFindingKind list =
         [ EstateFindingKind.SchemaPresence
           EstateFindingKind.SchemaLag
+          EstateFindingKind.SchemaPromotionOrder
           EstateFindingKind.SchemaRename
           EstateFindingKind.SchemaAttributes
           EstateFindingKind.SchemaReferences
@@ -298,6 +307,7 @@ module EstateFindingKind =
         match kind with
         | EstateFindingKind.SchemaPresence           -> "schema.presence"
         | EstateFindingKind.SchemaLag                -> "schema.lag"
+        | EstateFindingKind.SchemaPromotionOrder     -> "schema.promotionOrder"
         | EstateFindingKind.SchemaRename             -> "schema.rename"
         | EstateFindingKind.SchemaAttributes         -> "schema.attributes"
         | EstateFindingKind.SchemaReferences         -> "schema.references"
@@ -357,6 +367,7 @@ module EstateFindingKind =
         match kind with
         | EstateFindingKind.SchemaPresence           -> "an extra object"
         | EstateFindingKind.SchemaLag                -> "not yet promoted here"
+        | EstateFindingKind.SchemaPromotionOrder     -> "ahead of its promotion source"
         | EstateFindingKind.SchemaRename             -> "name differs"
         | EstateFindingKind.SchemaAttributes         -> "columns differ"
         | EstateFindingKind.SchemaReferences         -> "relationships differ"
@@ -422,7 +433,8 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaCheck
         | EstateFindingKind.SchemaModality
         | EstateFindingKind.SchemaActivity          -> EstateLane.Decide
-        | EstateFindingKind.SchemaLag               -> EstateLane.Watch
+        | EstateFindingKind.SchemaLag
+        | EstateFindingKind.SchemaPromotionOrder    -> EstateLane.Watch
         | EstateFindingKind.SchemaTrust             -> EstateLane.Repair
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
@@ -472,6 +484,7 @@ module EstateFindingKind =
         match kind with
         | EstateFindingKind.SchemaPresence
         | EstateFindingKind.SchemaLag
+        | EstateFindingKind.SchemaPromotionOrder
         | EstateFindingKind.SchemaRename
         | EstateFindingKind.SchemaAttributes
         | EstateFindingKind.SchemaReferences
@@ -586,6 +599,7 @@ module EstateFindingKind =
         | EstateFindingKind.DataNotNullPastBand ->
             EstateLeverForm.MergeOverlayEntry
         | EstateFindingKind.SchemaLag
+        | EstateFindingKind.SchemaPromotionOrder
         | EstateFindingKind.DataAsymmetry
         | EstateFindingKind.DataUniquenessCandidate
         | EstateFindingKind.DataHeadroom
@@ -610,6 +624,8 @@ module EstateFindingKind =
             "Customer.TaxCode exists in cloud-uat but is missing from cloud-dev, the promotion source — no promotion added it."
         | EstateFindingKind.SchemaLag ->
             "cloud-dev declares Invoice.ExternalRef and cloud-qa has not received it — the ordinary publish promotes it."
+        | EstateFindingKind.SchemaPromotionOrder ->
+            "Coupon exists in cloud-uat but not in cloud-qa, its upstream promotion source — a change reached cloud-uat without passing through cloud-qa."
         | EstateFindingKind.SchemaRename ->
             "Customer is named CustomerAccount in cloud-uat."
         | EstateFindingKind.SchemaAttributes ->
@@ -707,6 +723,7 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionDeployedNotNullLoosened
         | EstateFindingKind.SchemaPresence
         | EstateFindingKind.SchemaLag
+        | EstateFindingKind.SchemaPromotionOrder
         | EstateFindingKind.SchemaRename
         | EstateFindingKind.SchemaAttributes
         | EstateFindingKind.SchemaReferences

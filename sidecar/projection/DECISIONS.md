@@ -29550,3 +29550,33 @@ content-hash work above, the Cached provenance clause is refreshed to name what 
 covers — row count, max key, AND content hash — so a cache reads as content-verified fresh, not
 UPDATE-blind. Board tests hold the firm-all and the offline-advisory rollups. The rest of the
 confidence machinery already existed; this is the summary that ties it together.
+
+---
+
+## 2026-07-18 — The fourth comparison regime: deployed↔deployed across the promotion lattice
+
+**Context.** The estate check compared each environment to the TARGET (the agreed shape), which
+names each environment's delta from the target but never the promotion CHAIN's own
+monotonicity. The gap: a change that reached a downstream environment without passing through
+its upstream promotion source — a hotfix applied straight to UAT that skipped QA — reads as an
+ordinary per-environment delta, and the chain anomaly is invisible.
+
+**Decision.** Add `promotionOrderContributions` — the deployed↔deployed regime. The lattice is
+an EXPLICIT operator declaration, `readiness.estate.promotionOrder` (an array of environment
+names, most-upstream first) — the tool never guesses which environment is upstream from the
+environment-list order (that order is arbitrary, as the existing grouping tests show). Absent,
+the regime is silent (no assumption). For each adjacent (upstream, downstream) pair in the
+declared chain, a kind the downstream carries that its upstream source lacks is a
+`SchemaPromotionOrder` finding on the downstream — the change bypassed the path. It is a WATCH
+advisory (a bypass may be a sanctioned emergency change; the operator confirms the order is
+intended), on the Schema plane, keyed by the downstream environment. It reuses the environment
+catalogs the estate already reads — no new evidence axis. The promotion order threads as a
+`Posture` field via the #4 config-knob path (`ReadinessSpec` → `CheckEstateArgs` → the bind);
+the new kind lands with its full contract row and its totality holds. Pure tests drive the
+bypass case, the no-order-declared silence, and the config parse.
+
+**Redundancy, named.** When the target IS the most-upstream environment, a downstream-ahead kind
+also reads as a target-anchored `SchemaPresence` (DECIDE). The two are not duplicates: the
+presence finding says "beyond the target"; the promotion-order finding says "beyond your
+SOURCE, out of order" — the chain story the target-anchored diff cannot tell. The advisory lane
+and the WATCH cap keep the overlap low-noise.
