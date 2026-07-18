@@ -1035,7 +1035,7 @@ let ``BootstrapLane: Prerendered drain-time scripts compose the SAME bundle as t
     // batch build folds + the same `renderLoad`, under the bootstrap
     // lane's delete-scope-suppressed posture (what
     // `Hydration.collectBootstrapRenderedUsing` runs per kind at drain).
-    let cycleMembers = TopologicalOrder.cycleMembers topo
+    let cycleMembers = TopologicalOrder.cycleScopes topo
     let opts =
         DataEmitOptions.withDeleteScope None
             (DataEmitOptions.ofEmissionPolicy policy.Emission)

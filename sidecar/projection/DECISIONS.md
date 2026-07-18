@@ -28643,3 +28643,24 @@ the display projections.
 **Named residuals.** The certificate's narration on the three operator surfaces (board
 advisory, load gate, go board) is the arc's surface slice; the relaxation list is carried but
 not yet prosed there.
+
+## 2026-07-18 — Cycle scopes: deferral and unsatisfiability judge per component; two cross-cycle near-misses retired
+
+**Context.** `deferredFkColumns` and the plan's unbreakable computation consumed the flat UNION
+of all cycles' members. Two near-misses followed: a nullable FK between members of two DISTINCT
+cycles deferred though the condensation order proves it (wasted Phase-2 norm), and — live — a
+non-nullable FK between two distinct unresolved cycles was flagged `UnbreakableCycleFk`: a
+FALSE REFUSAL of a load the re-run order satisfies.
+
+**The decision.** `TopologicalOrder.cycleScopes` / `unresolvedCycleScopes` — one member set per
+component. "Same cycle" now means "same component" at both judges: `deferredFkColumns` defers
+only when source and target share a scope; `DataLoadPlan.buildWith` flags unbreakable only
+within one unresolved scope. The per-kind seam (`loadForWith`/`loadFor`) and the drain-time
+prerender thread scopes (the batch/drain equivalence stays by construction — one core).
+
+**Witness.** `DataLoadPlanTests` — the F1(c) pin (a non-nullable bridge between two unresolved
+components does not refuse; the same-component strong edge still does) and the deferral-scope
+pin (the bridge never defers; each component's own nullable edge does).
+
+**Named residuals.** Resolved-scope deferral still spans the whole component; the exact
+repair set (broken-edge columns only) is the arc's slice 5.

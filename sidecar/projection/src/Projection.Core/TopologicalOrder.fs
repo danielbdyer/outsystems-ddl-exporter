@@ -315,6 +315,25 @@ module TopologicalOrder =
         |> List.collect CycleDiagnostic.members
         |> Set.ofList
 
+    /// The per-COMPONENT member sets (v7 slice 3; DECISIONS 2026-07-18) —
+    /// one set per diagnostic, resolved and unresolved alike. "Same
+    /// cycle" means "same component": the flat union (`cycleMembers`)
+    /// deferred columns BETWEEN distinct cycles though the condensation
+    /// order proves them, and — worse — flagged a non-nullable FK
+    /// between two DISTINCT unresolved cycles as unbreakable: a false
+    /// refusal the actual order satisfies. Scope-judged consumers
+    /// (`deferredFkColumns`, the plan's unsatisfiability) take THIS.
+    let cycleScopes (t: TopologicalOrder) : Set<SsKey> list =
+        t.Cycles
+        |> List.map (CycleDiagnostic.members >> Set.ofList)
+
+    /// The unresolved components' member sets only — the
+    /// unsatisfiability input, per component.
+    let unresolvedCycleScopes (t: TopologicalOrder) : Set<SsKey> list =
+        t.Cycles
+        |> List.filter (CycleDiagnostic.isResolved >> not)
+        |> List.map (CycleDiagnostic.members >> Set.ofList)
+
     /// The set of kinds participating in an UNRESOLVED cycle only —
     /// `BreakableEdges = []` is the resolved/unresolved discriminant
     /// (a resolved SCC records the edges it broke). The
@@ -332,18 +351,21 @@ module TopologicalOrder =
         |> Set.ofList
 
     /// The FK columns of `k` that must be deferred across the two-phase
-    /// nulls-then-FKs load: `k` is in a cycle, the FK targets a same-cycle
-    /// kind, and the source column is nullable (so phase 1 can NULL it and
-    /// phase 2 re-points it). A non-nullable cycle FK cannot defer — that
-    /// is the consuming layer's diagnostic, not represented here. Shared
-    /// by the forward data emitters (`StaticSeedsEmitter` /
-    /// `MigrationDependenciesEmitter`) and the Transfer plan.
-    let deferredFkColumns (cycleMembers: Set<SsKey>) (k: Kind) : Set<Name> =
-        if not (Set.contains k.SsKey cycleMembers) then Set.empty
+    /// nulls-then-FKs load: `k` and the FK's target share ONE component
+    /// (v7 slice 3 — "same cycle" means "same component", never the
+    /// union of all cycles), and the source column is nullable (so
+    /// phase 1 can NULL it and phase 2 re-points it). A non-nullable
+    /// cycle FK cannot defer — that is the consuming layer's diagnostic,
+    /// not represented here. Shared by the forward data emitters
+    /// (`StaticSeedsEmitter` / `MigrationDependenciesEmitter`) and the
+    /// Transfer plan.
+    let deferredFkColumns (cycleScopes: Set<SsKey> list) (k: Kind) : Set<Name> =
+        let owningScopes = cycleScopes |> List.filter (Set.contains k.SsKey)
+        if List.isEmpty owningScopes then Set.empty
         else
             k.References
             |> List.choose (fun r ->
-                if Set.contains r.TargetKind cycleMembers then
+                if owningScopes |> List.exists (Set.contains r.TargetKind) then
                     Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.bind (fun a ->
                         if a.Column.IsNullable then Some a.Name else None)

@@ -2211,7 +2211,7 @@ module Compose =
             match stateA.TopologicalOrder with
             | Some t -> t
             | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle stateA.Catalog).Value
-        let cycleMembers = TopologicalOrder.cycleMembers topoPrime
+        let cycleScopes = TopologicalOrder.cycleScopes topoPrime
         // The bootstrap lane's posture: the composer suppresses the
         // delete arm on this lane regardless of `opts.DeleteScope`
         // (the additive upsert lane) — mirror it at drain time.
@@ -2226,7 +2226,7 @@ module Compose =
         let drain (nullability: Map<string, Map<string, bool>>) =
             Hydration.collectBootstrapRenderedUsing
                 (max 1 cfg.Emission.DataReadConcurrency)
-                connSpec eligible hydrated targetKinds cycleMembers
+                connSpec eligible hydrated targetKinds cycleScopes
                 opts cdc nullability evidenceKinds retainRows sourceTopo
         evidenceKinds, drain
 

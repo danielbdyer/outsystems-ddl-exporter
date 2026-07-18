@@ -204,7 +204,7 @@ let ``DataLoadPlan.loadForWith ≡ buildWith per kind: the per-kind unit reprodu
               invoiceKey,  [ rowOf "i1" [ "ID", "10" ] ]
               aKey,        [ rowOf "a1" [ "ID", "1"; "B_ID", "2" ] ]
               bKey,        [ rowOf "b1" [ "ID", "2"; "A_ID", "1" ] ] ]
-    let members = TopologicalOrder.cycleMembers topo
+    let members = TopologicalOrder.cycleScopes topo
     for policy in [ IdentityPolicy.Structural; IdentityPolicy.PreferPreservedKeys ] do
         let plan = DataLoadPlan.buildWith policy catalog topo rows SurrogateRemapContext.empty
         for load in plan.Loads do
@@ -223,8 +223,70 @@ let ``DataLoadPlan.loadForWith ≡ buildWith per kind: the per-kind unit reprodu
 [<Fact>]
 let ``DataLoadPlan.loadFor: the Structural per-kind default mirrors build (deferred columns included)`` () =
     let plan = build Map.empty
-    let members = TopologicalOrder.cycleMembers topo
+    let members = TopologicalOrder.cycleScopes topo
     for load in plan.Loads do
         let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
         let perKind, _ = DataLoadPlan.loadFor members SurrogateRemapContext.empty kind []
         Assert.Equal<DataLoadKind>(load, perKind)
+
+// ---------------------------------------------------------------------------
+// v7 slice 3 — per-SCC precision (DECISIONS 2026-07-18). "Same cycle" means
+// "same COMPONENT": deferral and unsatisfiability judge per scope, never
+// against the flat union of all cycles' members.
+// ---------------------------------------------------------------------------
+
+// A second, DISJOINT cycle C<->D plus a bridge FK from A (cycle 1) to C
+// (cycle 2). The bridge crosses two distinct components — the condensation
+// order proves it, so it must neither defer nor refuse.
+let private cKey = mkKey ["C"]
+let private dKey = mkKey ["D"]
+let private cDRef = { Reference.create (mkKey ["C"; "DRef"]) (mkName "DRef") (mkKey ["C"; "D_ID"]) dKey with ConstraintState = ConstraintState.TrustedConstraint }
+let private dCRef = { Reference.create (mkKey ["D"; "CRef"]) (mkName "CRef") (mkKey ["D"; "C_ID"]) cKey with ConstraintState = ConstraintState.TrustedConstraint }
+let private kindC = kindOf ["C"] "OSUSR_C" [ pk ["C"] "ID" false; fkAttr ["C"] "D_ID" true ]  [ cDRef ]
+let private kindD = kindOf ["D"] "OSUSR_D" [ pk ["D"] "ID" false; fkAttr ["D"] "C_ID" true ] [ dCRef ]
+
+// The bridge: A carries a NON-NULLABLE FK to C. Under the flat union
+// {A,B,C,D} this was flagged unbreakable (the F1(c) false refusal); per
+// component it is proven by the order between the two condensed cycles.
+let private aCRef = { Reference.create (mkKey ["A"; "CRef"]) (mkName "CRef") (mkKey ["A"; "C_ID"]) cKey with ConstraintState = ConstraintState.TrustedConstraint }
+let private kindABridged =
+    kindOf ["A"] "OSUSR_A"
+        [ pk ["A"] "ID" false; fkAttr ["A"] "B_ID" true; fkAttr ["A"] "C_ID" false ]
+        [ aBRef; aCRef ]
+
+let private bridgedCatalog : Catalog =
+    IRBuilders.mkCatalog [ IRBuilders.mkModule (mkKey ["Module"]) (mkName "M") [ customer; invoice; kindABridged; kindB; kindC; kindD ] ]
+
+let private bridgedTopo (cycles: CycleDiagnostic list) : TopologicalOrder =
+    { Mode         = OrderingMode.PartialTopological
+      Order        = [ customerKey; invoiceKey; cKey; dKey; aKey; bKey ]
+      Edges        = [ (aKey, bKey); (bKey, aKey); (cKey, dKey); (dKey, cKey); (aKey, cKey) ]
+      MissingEdges = []
+      Cycles       = cycles
+      Diagnostics  = [] }
+
+[<Fact>]
+let ``scope: a non-nullable FK between two DISTINCT unresolved cycles does not refuse — the condensation order proves it (the F1(c) pin)`` () =
+    let cycles =
+        [ CycleDiagnostic.Anomalous ([ aKey; bKey ], "unresolved 1")
+          CycleDiagnostic.Anomalous ([ cKey; dKey ], "unresolved 2") ]
+    let plan = DataLoadPlan.build bridgedCatalog (bridgedTopo cycles) Map.empty SurrogateRemapContext.empty
+    // B's non-nullable FK to A stays unbreakable (SAME component)...
+    Assert.Contains(plan.UnbreakableCycleFks, fun (u: UnbreakableCycleFk) -> u.Kind = bKey && u.Target = aKey)
+    // ...but A's non-nullable bridge to C (a DIFFERENT component) does not.
+    Assert.DoesNotContain(plan.UnbreakableCycleFks, fun (u: UnbreakableCycleFk) -> u.Kind = aKey && u.Target = cKey)
+
+[<Fact>]
+let ``scope: a nullable FK between two DISTINCT cycles is NOT deferred — only same-component columns defer`` () =
+    let cycles =
+        [ CycleDiagnostic.Resolved ([ aKey; bKey ], [ (aKey, bKey) ], CycleResolution.BreakObjective.GreedyWalk)
+          CycleDiagnostic.Resolved ([ cKey; dKey ], [ (cKey, dKey) ], CycleResolution.BreakObjective.GreedyWalk) ]
+    let scopes = TopologicalOrder.cycleScopes (bridgedTopo cycles)
+    // A's nullable B_ID (same component as B) defers; C_ID targets the
+    // OTHER component — under the old flat union a nullable bridge would
+    // wrongly defer. (A's C_ID here is non-nullable so it can never defer;
+    // assert the deferral set is exactly {B_ID}.)
+    let deferred = TopologicalOrder.deferredFkColumns scopes kindABridged
+    Assert.Equal<Set<Name>>(Set.ofList [ mkName "B_ID" ], deferred)
+    // And C's nullable D_ID defers within its own component.
+    Assert.Equal<Set<Name>>(Set.ofList [ mkName "D_ID" ], TopologicalOrder.deferredFkColumns scopes kindC)

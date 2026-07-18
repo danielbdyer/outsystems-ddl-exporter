@@ -356,7 +356,7 @@ module Hydration =
     /// per-kind cost the drain gate bounds is named in one place.
     let private renderKindAtDrain
         (targetKinds: Map<SsKey, Kind>)
-        (cycleMembers: Set<SsKey>)
+        (cycleScopes: Set<SsKey> list)
         (opts: DataEmitOptions)
         (cdc: CdcAwareness)
         (nullability: Map<string, Map<string, bool>>)
@@ -379,7 +379,7 @@ module Hydration =
         // `SurrogateRemapContext.empty`), so the drain-time script equals
         // the batch-built one by construction.
         let load, _skipped =
-            DataLoadPlan.loadFor cycleMembers SurrogateRemapContext.empty tgt rows
+            DataLoadPlan.loadFor cycleScopes SurrogateRemapContext.empty tgt rows
         let script =
             Projection.Targets.Data.StaticSeedsEmitter.renderLoad opts cdc tgt load
         // Evidence derives from the SOURCE kind over the same landed rows
@@ -419,8 +419,8 @@ module Hydration =
     /// same delete-scope-suppressed `opts` (the CALLER passes the
     /// bootstrap-lane posture: `DataEmitOptions.withDeleteScope None`) —
     /// and the returned evidence equals `captureEvidenceCacheDerived`'s
-    /// per-kind derivation. `cycleMembers` MUST be the RENDER catalog's
-    /// (`TopologicalOrder.cycleMembers` of the post-prefix-chain topo);
+    /// per-kind derivation. `cycleScopes` MUST be the RENDER catalog's
+    /// (`TopologicalOrder.cycleScopes` of the post-prefix-chain topo);
     /// `sourceTopo` only schedules the drain over the source catalog.
     /// `retainRows` (PL-2) — kinds whose landed rows the projection returns
     /// alongside the script (the AllData static graft rides this one drain);
@@ -431,7 +431,7 @@ module Hydration =
         (eligible: Set<SsKey>)
         (sourceCatalog: Catalog)
         (targetKinds: Map<SsKey, Kind>)
-        (cycleMembers: Set<SsKey>)
+        (cycleScopes: Set<SsKey> list)
         (opts: DataEmitOptions)
         (cdc: CdcAwareness)
         (nullability: Map<string, Map<string, bool>>)
@@ -451,7 +451,7 @@ module Hydration =
                 | Ok openConnection ->
                     return!
                         Ingestion.collectInOrderForConcurrentWith
-                            (renderKindAtDrain targetKinds cycleMembers opts cdc nullability evidenceKinds retainRows)
+                            (renderKindAtDrain targetKinds cycleScopes opts cdc nullability evidenceKinds retainRows)
                             (max 1 concurrency)
                             openConnection
                             eligible
