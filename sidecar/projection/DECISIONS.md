@@ -29751,7 +29751,14 @@ document. The double-configuration the operator hit is removed.
 unit test); the gated `dotnet build` sqlproj tests 4/4 with a populated
 remediation script.
 
-**Named residual.** The advise-only promotion candidate is surfaced in the
-summary and as an Info diagnostic, but there is not yet a machine-readable
-"candidate list" artifact an operator could review-then-apply in bulk; the
-`suggest-config` vocabulary is the natural home when a consumer demands it.
+**The advise-only candidate flows to `suggest-config.json`.** Each
+`PromotionAdvisedNotApplied` diagnostic carries a `SuggestedConfig` proposing
+the ONE edit that applies it — `applyUniquePromotions: true` on its
+intervention (`$.tightening.interventions[?(@.id=="<id>")].applyUniquePromotions`,
+the sibling-pass path convention). Every candidate on one intervention shares
+that Path, so `SuggestConfigEmitter` dedupes them into a SINGLE reviewable
+bulk-apply suggestion (the operator reviews the `promotionAdvised` findings,
+then applies all with one edit — or declares the intended indexes UNIQUE in the
+model). The other keep-reasons stay non-config-actionable (duplicates need a
+data fix; missing evidence needs profiling; policy-disabled is the operator's
+own toggle). Closes the machine-readable-candidate-list residual named above.

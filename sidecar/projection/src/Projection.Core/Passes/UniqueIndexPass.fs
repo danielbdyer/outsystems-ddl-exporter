@@ -131,6 +131,24 @@ module UniqueIndexPass =
                     // it unique, so it is surfaced, not applied (Info, not Warning).
                     "tightening.uniqueIndex.promotionAdvised", DiagnosticSeverity.Info,
                     "Unique-index promotion candidate: the data shows no duplicates, but the index is not declared UNIQUE in the model. Enforcement is advised, not applied — set applyUniquePromotions to apply it, or declare it unique in the model."
+            // The advise-only candidate carries the ONE config edit that applies
+            // it (and every sibling candidate on the same intervention) —
+            // `applyUniquePromotions: true`. Sibling candidates share this Path,
+            // so `suggest-config.json` dedupes them into ONE reviewable
+            // bulk-apply suggestion. No other keep-reason is config-actionable
+            // (duplicates need a data fix; missing evidence needs profiling;
+            // policy-disabled is the operator's own toggle).
+            let suggestedConfig =
+                match reason with
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                    Some {
+                        Path  = sprintf "$.tightening.interventions[?(@.id==\"%s\")].applyUniquePromotions" decision.InterventionId
+                        Value = "true"
+                        Note  =
+                            "Profile evidence shows no duplicates for one or more indexes not declared UNIQUE in the model. Applying promotes EVERY such candidate on this intervention to an enforced UNIQUE — a tightening BEYOND the source's declared indexes. Review the promotionAdvised findings before applying, or declare the intended indexes UNIQUE in the model instead."
+                            |> Some
+                    }
+                | _ -> None
             Some {
                 Source   = passName
                 Severity = severity
@@ -144,7 +162,7 @@ module UniqueIndexPass =
                     Map.ofList [
                         "interventionId", decision.InterventionId
                     ]
-                SuggestedConfig = None
+                SuggestedConfig = suggestedConfig
             }
 
     /// Run the UniqueIndexPass.

@@ -6,6 +6,7 @@ open FsCheck
 open FsCheck.Xunit
 open Projection.Core
 open Projection.Core.Passes
+open Projection.Targets.OperationalDiagnostics
 open Projection.Tests.Fixtures
 
 // Chapter A.4.7' slice η — `UniqueIndexPass.run` is private; the
@@ -444,3 +445,65 @@ let ``V1 UniqueIndex: opportunity-stream entries follow decision order`` () =
         |> List.choose (fun e -> e.SsKey)
 
     Assert.Equal<SsKey list>(doNotEnforceKeys, entryKeys)
+
+// ---------------------------------------------------------------------------
+// Advise-only promotion candidates flow to suggest-config.json (2026-07-18):
+// each PromotionAdvisedNotApplied diagnostic carries the ONE config edit that
+// applies it (applyUniquePromotions: true on its intervention); sibling
+// candidates share the Path, so SuggestConfigEmitter dedupes them into ONE
+// reviewable bulk-apply suggestion.
+// ---------------------------------------------------------------------------
+
+let private cleanSingleCandidate (attrKey: SsKey) : UniqueCandidateProfile =
+    { AttributeKey = attrKey
+      HasDuplicate = false
+      ProbeStatus  = ProbeStatus.create System.DateTimeOffset.UnixEpoch 100L Succeeded |> Result.value }
+
+[<Fact>]
+let ``advise-only: promotionAdvised entries carry the applyUniquePromotions suggestion, deduped to ONE in suggest-config`` () =
+    // Single-column advise-only (createWith … false): the two non-unique
+    // single-column indexes (orderSingle, countrySingle) with clean profile
+    // candidates become PromotionAdvisedNotApplied — advisory, each carrying
+    // the same intervention's bulk-apply edit.
+    let config = UniqueIndexTighteningConfig.createWith true false false
+    let policy = policyWithIntervention "u-advise" config
+    let profile =
+        { Profile.empty with
+            UniqueCandidates =
+                [ cleanSingleCandidate orderCustomerFkKey
+                  cleanSingleCandidate countryCodeKey ] }
+    let lineage = uiRun indexedCatalog policy profile
+    let entries = lineage.Value.Entries
+    let advised =
+        entries |> List.filter (fun e -> e.Code = "tightening.uniqueIndex.promotionAdvised")
+    // Two candidates surfaced (Info, not Warning), each with the apply suggestion.
+    Assert.Equal(2, advised.Length)
+    Assert.All(advised, fun e ->
+        Assert.Equal(DiagnosticSeverity.Info, e.Severity)
+        match e.SuggestedConfig with
+        | Some sc ->
+            Assert.Contains("applyUniquePromotions", sc.Path)
+            Assert.Contains("u-advise", sc.Path)
+            Assert.Equal("true", sc.Value)
+        | None -> Assert.Fail "expected a SuggestedConfig on a promotionAdvised entry")
+    // suggest-config.json dedupes the two candidates into ONE bulk-apply edit.
+    let node = SuggestConfigEmitter.emit entries
+    let edits =
+        match node.["suggestedEdits"] with
+        | null -> failwith "no suggestedEdits array in suggest-config output"
+        | n -> n.AsArray()
+    Assert.Equal(1, edits.Count)
+
+[<Fact>]
+let ``apply: with applyUniquePromotions set, a clean candidate enforces and emits NO advisory suggestion`` () =
+    // The explicit opt-in path: apply=true promotes (EnforceUnique), which is
+    // structurally clean — no diagnostic, no suggest-config entry.
+    let config = UniqueIndexTighteningConfig.createWith true false true
+    let policy = policyWithIntervention "u-apply" config
+    let profile =
+        { Profile.empty with UniqueCandidates = [ cleanSingleCandidate orderCustomerFkKey ] }
+    let lineage = uiRun indexedCatalog policy profile
+    let advised =
+        lineage.Value.Entries
+        |> List.filter (fun e -> e.Code = "tightening.uniqueIndex.promotionAdvised")
+    Assert.Empty(advised)
