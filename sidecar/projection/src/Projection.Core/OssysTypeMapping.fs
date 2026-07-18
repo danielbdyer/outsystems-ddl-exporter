@@ -71,11 +71,28 @@ module OssysTypeMapping =
         // arrives intact via the deployed-reflection lane.
         | "date"           -> Some (DateTime, SqlStorageType.DateTime)
         | "time"           -> Some (DateTime, SqlStorageType.DateTime)
+        // Decimal — the platform's own storage contract (Database Data Types,
+        // OutSystems 11): "precision and scale match the Length and Decimals
+        // properties", with Service-Studio defaults Length = 37, Decimals = 8.
+        // OSSYS estates carry the digit budget in `Length` (there is no
+        // `Precision` column on a standard `ossys_Entity_Attr`; the rowset
+        // reader surfaces `Decimals` through the `scale` slot) — so a positive
+        // declared Length IS the precision, and the absent-metadata fallback is
+        // the platform default (37, 8), not an invented (18, 0). Before this
+        // read (2026-07-18), a standard Decimal attribute resolved to
+        // decimal(18, 8) against a deployed decimal(37, 8) — a per-column
+        // storage-divergence notice on every Decimal of the estate, rooted in
+        // the reader, not the estate. An explicit `Precision` (estates that
+        // carry the column, external overrides) still wins verbatim.
         | "decimal"        ->
+            let digits =
+                match precision, length with
+                | Some p, _              -> p
+                | None, Some n when n > 0 -> n
+                | _                      -> 37
             Some
                 (Decimal,
-                 SqlStorageType.Decimal
-                    (Option.defaultValue 18 precision, Option.defaultValue 0 scale))
+                 SqlStorageType.Decimal (digits, Option.defaultValue 8 scale))
         | "currency"       -> Some (Decimal, SqlStorageType.Decimal (37, 8))
         | "double" | "float" -> Some (Decimal, SqlStorageType.Float)
         | "real"           -> Some (Decimal, SqlStorageType.Real)

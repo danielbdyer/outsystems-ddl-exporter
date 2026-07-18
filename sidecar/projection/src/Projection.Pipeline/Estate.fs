@@ -275,8 +275,12 @@ module Estate =
     /// 113,000-orphan UPDATE/DELETE is not an operator's afternoon; the
     /// posture (untrack / keep nullable) with its reopen probe is the
     /// honest interim. The default; `readiness.estate.repairBand` overrides
-    /// it (consumed in this wave — A44, never an inert key).
-    let repairBandDefault : int64 = 100_000L
+    /// it (consumed in this wave — A44, never an inert key). Source of truth
+    /// moved to `ModelFidelity.repairBandDefault` (2026-07-18, the
+    /// fidelity-recommendation program): the fidelity report's per-violation
+    /// recommendations split on the SAME band this board's lanes split on,
+    /// so the two surfaces cannot disagree about fix-vs-relax.
+    let repairBandDefault : int64 = ModelFidelity.repairBandDefault
 
     /// The operator-controlled inputs `computeWith` reads beside the
     /// resolved operands (wave A6): the repair band, and the loaded

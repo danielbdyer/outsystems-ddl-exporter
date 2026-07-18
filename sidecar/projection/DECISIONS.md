@@ -29608,3 +29608,77 @@ safely requires first confirming where the estate captures operational evidence 
 wiring `GrantAwareness` into that same path — a focused evidence-plumbing slice that deserves
 its own session rather than the tail of a long one. The design above is the whole of it; only
 the capture wiring is open.
+
+## 2026-07-18 — The fidelity recommendation layer: violations carry the decision they open; two metadata-interpretation corrections land with it
+
+**Status:** ADOPTED (operator assignment 2026-07-18 — "turn those facts into operator
+decisions … evidence → interpretation → suggested action → config knob or cleanup path";
+online references adjudicate the model-vs-deployed authority question).
+
+**Context.** A dev-estate publish read `fidelity.json` and found it stating facts without
+moves: 131 duplicate findings across 60 entities, 13 required-column NULL violations, 2 FK
+orphan findings, and length-overflow findings of the shape "observed 5, declared 0". The
+model-read notices separately named nullability / text-width / Unicode / decimal-precision
+divergences between the logical model and the deployed schema, each ending at "the engine
+emits the X value" with no reading of what the operator should do about it.
+
+**The platform ground (researched, cited in code comments).** Four OutSystems 11 references
+resolve what is drift and what is the platform's own contract: (1) *Is Mandatory is a
+run-time validation only* — database constraints are created for primary keys and reference
+attributes, so mandatory-over-nullable is the deployment shape of every estate, not drift;
+(2) *an Ignore delete rule creates no foreign-key constraint* — orphans under an Ignore
+reference accumulate by design; (3) *Decimal storage takes precision and scale from the
+Length and Decimals properties* (Service-Studio defaults 37 and 8) — the digit budget lives
+in OSSYS `Length`; (4) *Text ≤ 2000 deploys bounded, above it `nvarchar(max)`*. A fifth,
+Microsoft-side: a narrowing publish is blocked at deploy while data exceeds the declared
+shape (the DacFx data-loss gate) — the reason deployed-authoritative is the standing default
+before cutover, and model-authority is a tightening RULING taken with profile evidence.
+
+**Decision.**
+1. **Every `fidelity.json` data violation carries a typed `Recommendation`** —
+   interpretation (stative, grounded), action (bare imperative), lever (a closed DU:
+   `ReviewRemediation` → the `manifest.remediation.sql` block; `EditConfig` → a
+   `SuggestedConfig` carrying the overlay vocabulary verbatim
+   (`$.policy.tightening.interventions[+]`, `keepNullable` / `keepUntracked` entries the
+   tightening binder accepts — A44 both ways); `ReviewModel`; `ReviewConstraint`). Per-kind
+   dispositions: NOT-NULL → backfill at or below the repair band, `keepNullable` above it;
+   uniqueness → constraint review, never automatic cleanup; orphans → cleanup at or below
+   the band with the interpretation split by `ConstraintState` (`NoDbConstraint` = the
+   Ignore shape), `keepUntracked` above it; overflow → the width ruling (widen or truncate —
+   the D4 discipline). The render states each non-clean category's interpretation and ends
+   on its move; the codec round-trips the nodes; a legacy document parses with
+   `Recommendation = None` and the render falls back to the generic both-arm imperative.
+2. **The repair band's source of truth moves to `ModelFidelity.repairBandDefault`**
+   (Estate aliases it), so the fidelity report's fix-vs-relax arms and the estate board's
+   lanes split on ONE threshold. `composeWithBand` is the full form; `compose` keeps the
+   standing signature under the default.
+3. **Interpretation correction (overflow):** a non-positive declared `Length` declares NO
+   width — the storage lane already read it so (`OssysTypeMapping` treats only positive
+   lengths as `Bounded`); the fidelity overflow gate now agrees. "Observed 5, declared 0"
+   findings were rooted in the reader, not the data.
+4. **Interpretation correction (decimal):** `OssysTypeMapping.tryParse "decimal"` reads
+   precision ← explicit `Precision`, else positive `Length`, else 37; scale defaults to 8 —
+   the platform's own storage contract. The prior invented `(18, 0)` fallback made every
+   standard Decimal diverge from its deployed `decimal(37,8)`, which is exactly the
+   "decimal(18,\*) vs decimal(37,\*)" drift the estate reported. Those storage-divergence
+   notices now fire only on GENUINE divergence.
+5. **Detector-altitude correction (uniqueness):** only single-column unique indexes and a
+   SOLE primary-key attribute are singly unique-backed. Per-column duplicate evidence
+   cannot witness a composite-key violation (each member column may duplicate while the
+   tuple stays distinct) — the column-by-column reading of composite business keys was the
+   131-finding flood. Tuple-grain evidence for DECLARED-unique composite indexes is a named
+   follow-on (`deriveCompositeUniqueCandidates` probes non-unique candidates only today).
+6. **The model-read notices state the authority choice explicitly.** The storage-divergence
+   notice appends the per-posture recommendation (deployed-wins: why, and the tightening
+   path that would change it; forced-BIGINT and cross-category arms name their own moves) in
+   message + metadata; the nullability aggregate grounds itself in the run-time-only
+   contract and points at the fidelity report's per-column recommendations. Emission
+   behavior is UNCHANGED — deployed-authoritative for same-category refinements stands
+   (decision 2 / WP-4b); what changed is that the posture is now stated with its reason.
+
+**Named residuals.** `SqlStorageType.ofPrimitiveType Decimal` still falls back to
+`Decimal (18, 0)` on the storage-evidence-less DDL lane — aligning it to the platform
+default `(37, 8)` re-blesses goldens and is deferred with this trigger: the first
+storage-evidence-less catalog whose emitted decimal width is observed wrong in review.
+Tuple-grain declared-unique composite evidence (point 5) fires when an estate's composite
+duplicates must block a cutover rather than inform a review.

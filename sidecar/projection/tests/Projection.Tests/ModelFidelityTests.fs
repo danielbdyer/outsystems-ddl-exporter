@@ -370,3 +370,253 @@ let ``ModelFidelity: a clean report yields NO rollup payload (no envelope to emi
     let report = ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] } []
     Assert.Empty(report.DataViolations)
     Assert.True((ModelFidelity.dataViolationsPayload "r" "f" report).IsNone)
+
+// ---------------------------------------------------------------------------
+// The recommendation layer (2026-07-18): evidence → interpretation → move →
+// lever. Each violation carries the decision it opens; the copy holds
+// THE_VOICE's register; the band splits fix-vs-relax on the SAME threshold
+// the estate board's lanes split on.
+// ---------------------------------------------------------------------------
+
+let private violationsOf (report: ModelFidelity.ModelFidelityReport) = report.DataViolations
+
+let private recommendationOf (v: ModelFidelity.DataViolation) : ModelFidelity.Recommendation =
+    match v.Recommendation with
+    | Some r -> r
+    | None -> failwithf "expected a recommendation on %s" (ModelFidelity.entityColumnText v.Reference)
+
+// Null-safe JsonNode navigation (F#9 nullness: the BCL indexers surface
+// `JsonNode | null`; the fixture fails loud on an absent node).
+let private parsedJson (text: string) : System.Text.Json.Nodes.JsonNode =
+    match Option.ofObj (System.Text.Json.Nodes.JsonNode.Parse text) with
+    | Some n -> n
+    | None -> failwith "fixture: JSON parsed to null"
+
+let private childOf (name: string) (node: System.Text.Json.Nodes.JsonNode) : System.Text.Json.Nodes.JsonNode =
+    match Option.ofObj node.[name] with
+    | Some n -> n
+    | None -> failwithf "fixture: missing JSON node '%s'" name
+
+let private itemOf (i: int) (node: System.Text.Json.Nodes.JsonNode) : System.Text.Json.Nodes.JsonNode =
+    match Option.ofObj node.[i] with
+    | Some n -> n
+    | None -> failwithf "fixture: missing JSON item %d" i
+
+[<Fact>]
+let ``Recommendation: a NOT-NULL violation at or below the band ends on the remediation block`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let v =
+        violationsOf report
+        |> List.find (fun v -> match v.Kind with ModelFidelity.NotNullButNullsPresent _ -> true | _ -> false)
+    let r = recommendationOf v
+    Assert.Equal(ModelFidelity.ReviewRemediation, r.Lever)
+    Assert.Contains("manifest.remediation.sql", r.Action)
+    Assert.Contains("run time only", r.Interpretation)
+
+[<Fact>]
+let ``Recommendation: a NOT-NULL violation past the band ends on a keepNullable config edit with the 3-part reference`` () =
+    // Band of 3: the 4 NULL rows exceed it — the interim relaxation leads.
+    let report = ModelFidelity.composeWithBand 3L "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let v =
+        violationsOf report
+        |> List.find (fun v -> match v.Kind with ModelFidelity.NotNullButNullsPresent _ -> true | _ -> false)
+    match (recommendationOf v).Lever with
+    | ModelFidelity.EditConfig sc ->
+        Assert.Equal("$.policy.tightening.interventions[+]", sc.Path)
+        // The entry is the overlay vocabulary the tightening binder accepts.
+        let value = parsedJson sc.Value
+        Assert.Equal("nullability", (childOf "kind" value).GetValue<string>())
+        let entry = value |> childOf "overrides" |> itemOf 0
+        Assert.Equal("Sales.Customer.Email", (childOf "attributeRef" entry).GetValue<string>())
+        Assert.Equal("keepNullable", (childOf "action" entry).GetValue<string>())
+        Assert.True(sc.Note.IsSome, "the edit carries its evidence note")
+    | other -> Assert.Fail(sprintf "expected EditConfig keepNullable, got %A" other)
+
+[<Fact>]
+let ``Recommendation: a uniqueness violation ends on a constraint review, never a cleanup`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let v = violationsOf report |> List.find (fun v -> v.Kind = ModelFidelity.UniqueButDuplicatesPresent)
+    let r = recommendationOf v
+    Assert.Equal(ModelFidelity.ReviewConstraint, r.Lever)
+    Assert.Contains("Review the declared key before any cleanup", r.Action)
+    Assert.Contains("business key", r.Interpretation)
+
+[<Fact>]
+let ``Recommendation: an orphan violation on a constraint-less reference names the platform's Ignore design`` () =
+    // The fixture reference is `Reference.create`'s default — NoDbConstraint,
+    // the shape an Ignore delete rule deploys (no FK constraint is created).
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let v =
+        violationsOf report
+        |> List.find (fun v -> match v.Kind with ModelFidelity.ForeignKeyOrphans _ -> true | _ -> false)
+    let r = recommendationOf v
+    Assert.Equal(ModelFidelity.ReviewRemediation, r.Lever)
+    Assert.Contains("no database constraint", r.Interpretation)
+    Assert.Contains("Ignore", r.Interpretation)
+    Assert.Contains("manifest.remediation.sql", r.Action)
+
+[<Fact>]
+let ``Recommendation: an orphan violation past the band ends on a keepUntracked config edit`` () =
+    // Band of 5: the 7 orphans exceed it.
+    let report = ModelFidelity.composeWithBand 5L "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let v =
+        violationsOf report
+        |> List.find (fun v -> match v.Kind with ModelFidelity.ForeignKeyOrphans _ -> true | _ -> false)
+    match (recommendationOf v).Lever with
+    | ModelFidelity.EditConfig sc ->
+        let value = parsedJson sc.Value
+        Assert.Equal("foreignKey", (childOf "kind" value).GetValue<string>())
+        let entry = value |> childOf "referenceOverrides" |> itemOf 0
+        Assert.Equal("Sales.Order.CustomerId", (childOf "referenceRef" entry).GetValue<string>())
+        Assert.Equal("keepUntracked", (childOf "action" entry).GetValue<string>())
+    | other -> Assert.Fail(sprintf "expected EditConfig keepUntracked, got %A" other)
+
+[<Fact>]
+let ``Recommendation: an overflow violation ends on the width ruling (model review)`` () =
+    let catalog = cappedCatalog 50
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 80 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let v =
+        violationsOf report
+        |> List.find (fun v -> match v.Kind with ModelFidelity.LengthOrTypeOverflow _ -> true | _ -> false)
+    let r = recommendationOf v
+    Assert.Equal(ModelFidelity.ReviewModel, r.Lever)
+    Assert.Contains("Rule the width", r.Action)
+
+[<Fact>]
+let ``Recommendation: the register holds — no pronouns, complete sentences ending on a period`` () =
+    let report = ModelFidelity.composeWithBand 3L "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    for v in violationsOf report do
+        let r = recommendationOf v
+        for text in [ r.Interpretation; r.Action ] do
+            let lowered = text.ToLowerInvariant()
+            // THE_VOICE rule 1 — no first or second person on the surface.
+            for banned in [ " you "; " your "; " we "; " i " ] do
+                Assert.DoesNotContain(banned, lowered)
+            Assert.EndsWith(".", text)
+
+// -- The metadata-interpretation corrections (2026-07-18) --------------------
+
+[<Fact>]
+let ``Overflow: a declared length of 0 carries no cap — no violation regardless of observed length`` () =
+    // OSSYS metadata carries `Length = 0` where no width is declared; the
+    // storage lane reads only a POSITIVE length as bounded
+    // (`OssysTypeMapping`), and the platform mapping has no zero-width type.
+    // The prior gate read 0 as a cap and fired "observed 5, declared 0" —
+    // a finding rooted in the reader, not the data.
+    let catalog = cappedCatalog 0
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 5 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let overflows =
+        violationsOf report
+        |> List.filter (fun v ->
+            match v.Kind with ModelFidelity.LengthOrTypeOverflow _ -> true | _ -> false)
+    Assert.Empty(overflows)
+
+[<Fact>]
+let ``Unique altitude: the columns of a COMPOSITE unique index are not singly unique-backed`` () =
+    // A composite unique declaration constrains the TUPLE; each member column
+    // can carry duplicates while the tuple stays distinct — per-column
+    // duplicate evidence cannot witness a composite violation. The prior
+    // reading fired one finding per member column of every composite business
+    // key (the column-by-column reading), flooding real estates.
+    let compositeCustomer : Kind =
+        { Kind.create customerKey (name "Customer") (tableId "OSUSR_CUSTOMER")
+            [ mkAttr custIdKey "Id" Integer true false
+              mkAttr custEmailKey "Email" Text false false
+              mkAttr custNoteKey "Note" Text false false ]
+            with
+            Indexes =
+                [ { Index.create (idxKey "UX_Customer_Email_Note") (name "UX_Customer_Email_Note")
+                      [ IndexColumn.create custEmailKey IndexColumnDirection.Ascending
+                        IndexColumn.create custNoteKey IndexColumnDirection.Ascending ]
+                      with Uniqueness = IndexUniqueness.Unique } ] }
+    let salesModule = Module.create (modKey "Sales") (name "Sales") [ compositeCustomer ] true [] |> mustOk
+    let catalog = Catalog.create [ salesModule ] [] |> mustOk
+    let profile =
+        { Profile.empty with
+            AttributeRealities =
+                [ { AttributeReality.create custEmailKey with HasDuplicates = true }
+                  { AttributeReality.create custNoteKey with HasDuplicates = true } ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let unique =
+        violationsOf report |> List.filter (fun v -> v.Kind = ModelFidelity.UniqueButDuplicatesPresent)
+    Assert.Empty(unique)
+
+[<Fact>]
+let ``Unique altitude: a single-column unique index still witnesses its violation`` () =
+    // The fixture catalog's UX_Customer_Email is single-column — the
+    // per-column duplicate evidence IS the declared grain; the violation
+    // stands (the altitude fix narrows, it does not blind).
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let unique =
+        violationsOf report |> List.filter (fun v -> v.Kind = ModelFidelity.UniqueButDuplicatesPresent)
+    Assert.Equal(1, List.length unique)
+
+[<Fact>]
+let ``Unique altitude: the attributes of a composite primary key are not singly unique-backed`` () =
+    let compositePkKind : Kind =
+        { Kind.create customerKey (name "CustomerRole") (tableId "OSUSR_CUSTOMER_ROLE")
+            [ mkAttr custIdKey "CustomerId" Integer true false
+              mkAttr custEmailKey "RoleId" Integer true false ]
+            with Indexes = [] }
+    let salesModule = Module.create (modKey "Sales") (name "Sales") [ compositePkKind ] true [] |> mustOk
+    let catalog = Catalog.create [ salesModule ] [] |> mustOk
+    let profile =
+        { Profile.empty with
+            AttributeRealities =
+                [ { AttributeReality.create custIdKey with HasDuplicates = true }
+                  { AttributeReality.create custEmailKey with HasDuplicates = true } ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let unique =
+        violationsOf report |> List.filter (fun v -> v.Kind = ModelFidelity.UniqueButDuplicatesPresent)
+    Assert.Empty(unique)
+
+[<Fact>]
+let ``Render: each non-clean category states its interpretation and ends on the move`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let lines = ModelFidelity.render report
+    // The NOT-NULL category carries the platform grounding.
+    Assert.Contains(lines, fun l -> l.Contains "run time only")
+    // Every non-clean category ends on a "Next:" move line.
+    Assert.Contains(lines, fun l -> l.Trim().StartsWith "Next:" && l.Contains "manifest.remediation.sql")
+    Assert.Contains(lines, fun l -> l.Trim().StartsWith "Next:" && l.Contains "Review each declared key")
+    // Register: no second person anywhere.
+    for line in lines do
+        Assert.DoesNotContain(" your ", line.ToLowerInvariant())
+
+[<Fact>]
+let ``Codec: recommendations round-trip through fidelity.json — lever, config path, and value survive`` () =
+    let report = ModelFidelity.composeWithBand 3L "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let json = ModelFidelity.toJsonString report
+    match ModelFidelity.fromJson json with
+    | None -> Assert.Fail "fidelity.json failed to parse back"
+    | Some restored ->
+        let recsOf (r: ModelFidelity.ModelFidelityReport) =
+            r.DataViolations |> List.map (fun v -> v.Recommendation)
+        Assert.Equal<ModelFidelity.Recommendation option list>(recsOf report, recsOf restored)
+        // The render — recommendation lines included — is identical across
+        // the round-trip.
+        Assert.Equal<string list>(ModelFidelity.render report, ModelFidelity.render restored)
+
+[<Fact>]
+let ``Codec: a legacy fidelity.json without recommendation nodes parses with Recommendation = None`` () =
+    // A pre-recommendation document (the shape earlier runs recorded).
+    let legacy =
+        """{ "estate": "ACME", "moduleCount": 1, "entityCount": 2,
+             "dataViolations": { "total": 1, "entities": 1, "categories": [
+               { "category": "NOT NULL declared, NULLs present", "count": 1, "entities": 1,
+                 "violations": [ { "entity": "Customer", "column": "Email",
+                                   "kind": { "axis": "notNullButNullsPresent", "nullCount": 4 } } ] } ] },
+             "acceptedDivergences": [], "uniquenessCandidates": [] }"""
+    match ModelFidelity.fromJson legacy with
+    | None -> Assert.Fail "legacy document failed to parse"
+    | Some restored ->
+        match restored.DataViolations with
+        | [ v ] ->
+            Assert.Equal<ModelFidelity.Recommendation option>(None, v.Recommendation)
+            // The render stays total — the category falls back to its
+            // generic both-arm imperative.
+            let lines = ModelFidelity.render restored
+            Assert.Contains(lines, fun l -> l.Trim().StartsWith "Next:")
+        | other -> Assert.Fail(sprintf "expected one violation, got %A" other)

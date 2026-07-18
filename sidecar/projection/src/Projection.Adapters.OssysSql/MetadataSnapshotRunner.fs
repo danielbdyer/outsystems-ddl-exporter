@@ -1261,10 +1261,23 @@ module MetadataSnapshotRunner =
                 let sampleMeta =
                     sample
                     |> List.mapi (fun i col -> sprintf "sample.%d" i, col)
+                // The recommendation layer (2026-07-18): the divergence is
+                // grounded in the platform's own contract — a mandatory
+                // attribute is validated at run time only; database
+                // constraints are created for primary keys and reference
+                // attributes (OutSystems 11, entity-attribute properties /
+                // database constraints) — so mandatory-over-nullable is the
+                // platform's deployment shape on every estate, not drift.
+                // The emitted NOT NULL is therefore a TIGHTENING, and its
+                // data evidence + per-column recommendation live in
+                // fidelity.json (backfill at or below the repair band,
+                // keepNullable above it).
+                let recommendation =
+                    "Publish the tightenings with their fidelity evidence: backfill at or below the repair band, keep the column nullable (keepNullable) above it."
                 [ { DiagnosticEntry.create
                       "adapter:OSSYS" DiagnosticSeverity.Info
                       "adapter.ossys.columnReality.nullabilityDivergence"
-                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model, and rows that violate it are itemized separately in the data-fidelity diagnostics."
+                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A mandatory attribute is validated by the platform at run time only (database constraints are created for primary keys and references), so logical-mandatory over deployed-nullable is the platform's own deployment shape. A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model — a tightening — and the rows that contradict it are itemized in fidelity.json with per-column recommendations (the backfill block, or a keepNullable entry past the repair band)."
                           (List.length diverged)
                           (List.length mandatoryButNullable)
                           (List.length nullableButNotNull)
@@ -1273,7 +1286,8 @@ module MetadataSnapshotRunner =
                           Map.ofList
                               ([ "count", string (List.length diverged)
                                  "logicalMandatoryDeployedNullable", string (List.length mandatoryButNullable)
-                                 "logicalNullableDeployedNotNull", string (List.length nullableButNotNull) ]
+                                 "logicalNullableDeployedNotNull", string (List.length nullableButNotNull)
+                                 "recommendation", recommendation ]
                                @ sampleMeta) } ]
         identityDivergences @ nullabilitySummary
 
@@ -1313,13 +1327,32 @@ module MetadataSnapshotRunner =
                             | _ -> false
                         let sameCategory = SqlStorageType.toPrimitiveType deployed = logicalPt
                         let emitsDeployed = (not isForced) && sameCategory
+                        // The recommendation layer (2026-07-18): the posture
+                        // is stated WITH its reason and the move that would
+                        // change it, so the model-vs-deployed authority
+                        // choice is explicit, never implicit in a bare
+                        // "emits X". Deployed-authoritative is the standing
+                        // default before cutover: live data already occupies
+                        // the deployed shape, and a narrowing publish is
+                        // blocked at deploy while data exceeds the declared
+                        // shape (the data-loss gate) — so model-authority is
+                        // a tightening RULING taken with profile evidence,
+                        // not a drift repair.
+                        let recommendation =
+                            if emitsDeployed then
+                                "Live data already occupies the deployed shape, and a narrowing publish is blocked while the data exceeds the declared shape. Treat the model as authoritative only as a tightening ruling — schedule it with profile evidence — or leave the deployed shape standing."
+                            elif isForced then
+                                "The BIGINT identifier family is a deliberate estate decision; align the deployed column with it, or amend the decision before publishing."
+                            else
+                                "A deployed type outside the declared category is never adopted silently; correct the declared type in the model, or align the deployed column — the divergence stands until one side moves."
                         Some
                             { DiagnosticEntry.create
                                 "adapter:OSSYS" DiagnosticSeverity.Warning
                                 "adapter.ossys.columnReality.storageDivergence"
-                                (sprintf "Column %s (attr %d): the logical OSSYS model maps type '%s' to %A but the deployed schema has %A. The engine emits the %s value."
+                                (sprintf "Column %s (attr %d): the logical OSSYS model maps type '%s' to %A but the deployed schema has %A. The engine emits the %s value. %s"
                                     a.PhysicalCol a.AttrId rawType logicalStorage deployed
-                                    (if emitsDeployed then "DEPLOYED (on-disk precedence)" else "LOGICAL"))
+                                    (if emitsDeployed then "DEPLOYED (on-disk precedence)" else "LOGICAL")
+                                    recommendation)
                               with Metadata =
                                     Map.ofList
                                         [ "attrId", string a.AttrId
@@ -1327,7 +1360,8 @@ module MetadataSnapshotRunner =
                                           "logicalType", rawType
                                           "logicalStorage", sprintf "%A" logicalStorage
                                           "deployedStorage", sprintf "%A" deployed
-                                          "emits", (if emitsDeployed then "deployed" else "logical") ] }
+                                          "emits", (if emitsDeployed then "deployed" else "logical")
+                                          "recommendation", recommendation ] }
                     | _ -> None
                 | _ -> None
             | _ -> None)
