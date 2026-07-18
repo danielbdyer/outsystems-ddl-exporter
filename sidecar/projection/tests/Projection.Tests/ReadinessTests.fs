@@ -40,7 +40,7 @@ let private mkReport
 
 let private aDealbreaker : ModelFidelity.DataViolation =
     let ec : ModelFidelity.EntityColumn = { Entity = "User"; Column = "Email" }
-    { Reference = ec; Kind = ModelFidelity.NotNullButNullsPresent 3L }
+    { Reference = ec; Kind = ModelFidelity.NotNullButNullsPresent 3L; Recommendation = None }
 
 // -- Per-env verdict ---------------------------------------------------------
 

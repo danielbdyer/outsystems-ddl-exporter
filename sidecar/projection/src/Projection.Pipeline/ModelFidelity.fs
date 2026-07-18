@@ -49,6 +49,58 @@ module ModelFidelity =
     let entityColumnText (ec: EntityColumn) : string =
         System.String.Concat(ec.Entity, ".", ec.Column)
 
+    // -- The recommendation layer (evidence → interpretation → move) --------
+    //
+    // 2026-07-18 (the fidelity-recommendation program): a violation is a
+    // FACT; the operator needs the DECISION it opens. Each violation carries
+    // a typed recommendation — the interpretation its evidence supports, the
+    // next move as a bare imperative, and the lever the move ends on (the
+    // prepared remediation block, a config edit in the overlay vocabulary, a
+    // model correction, or a constraint review). The copy holds THE_VOICE's
+    // twelve rules: stative interpretation, imperative move, no pronouns,
+    // hedged only where genuinely interpretive (rule 4). The platform facts
+    // the interpretations rest on are the OutSystems 11 references: a
+    // mandatory attribute is validated at run time only (database
+    // constraints exist for primary keys and references); an Ignore delete
+    // rule creates no foreign-key constraint; Decimal storage takes its
+    // precision and scale from the Length and Decimals properties.
+
+    /// The lever a recommendation's move ends on. `EditConfig` reuses the
+    /// Core `SuggestedConfig` triple (path + serialized value + note) — the
+    /// same §12 shape the overlay and `suggest-config.json` speak, so the
+    /// config-edit vocabulary stays one vocabulary across artifacts.
+    type RecommendationLever =
+        /// Review the prepared per-finding block in `manifest.remediation.sql`.
+        | ReviewRemediation
+        /// Merge a config edit (the overlay vocabulary: the intervention
+        /// entry the tightening binder accepts, at the interventions path).
+        | EditConfig of SuggestedConfig
+        /// Correct the declaration in the model (the metadata side).
+        | ReviewModel
+        /// Review the declared key itself before touching any data.
+        | ReviewConstraint
+
+    /// One violation's recommendation: what the evidence most plausibly
+    /// means, the next move, and the lever it ends on.
+    type Recommendation =
+        {
+            /// The interpretation the evidence supports — stative, grounded.
+            Interpretation : string
+            /// The next move — a bare imperative (THE_VOICE rule 2).
+            Action         : string
+            /// The lever the move ends on.
+            Lever          : RecommendationLever
+        }
+
+    /// The fix-vs-relax threshold for a data violation: at or below the band
+    /// the prepared repair leads (backfill / cleanup, then the declaration
+    /// deploys); above it the interim relaxation leads (`keepNullable` /
+    /// `keepUntracked`) until the data clears. ONE source of truth for both
+    /// consumers — the per-violation recommendation here and the estate
+    /// board's lane split (`Estate.dataFindingOf`, which aliases this);
+    /// `readiness.estate.repairBand` overrides at the estate surface.
+    let repairBandDefault : int64 = 100_000L
+
     // -- Data violations (the headline section) ----------------------------
 
     /// The four declared-constraint axes the source data can contradict. A
@@ -71,6 +123,11 @@ module ModelFidelity =
         {
             Reference  : EntityColumn
             Kind       : ViolationKind
+            /// The decision this violation opens (the recommendation layer,
+            /// 2026-07-18). Minted at `compose` from the violation's own
+            /// evidence + catalog context; `None` only on a legacy
+            /// `fidelity.json` parsed without recommendation nodes.
+            Recommendation : Recommendation option
         }
 
     /// The four-way rollup category a violation rolls up into (the renderer's
@@ -173,22 +230,31 @@ module ModelFidelity =
     // Aggregation — from a declared Catalog × the profiled evidence.
     // ----------------------------------------------------------------------
 
-    /// Every attribute that backs a UNIQUE index or the PK of its kind — the
-    /// set whose `HasDuplicates` evidence is a real violation (a duplicate in a
-    /// non-unique column is expected, not a contradiction).
+    /// Every attribute whose per-column duplicate evidence WITNESSES a
+    /// uniqueness violation: the sole column of a single-column UNIQUE index /
+    /// PK, or the sole PK attribute of its kind. **Single-column only, by
+    /// altitude** (2026-07-18): a composite unique declaration constrains the
+    /// TUPLE — each member column can carry duplicates while the tuple stays
+    /// distinct — so per-column `HasDuplicates` can never witness a composite
+    /// violation, and reading it as one flooded real estates with findings
+    /// rooted in the detector, not the data (the column-by-column reading of
+    /// a composite business key). Tuple-grain evidence for DECLARED-unique
+    /// composite indexes is a named follow-on (`deriveCompositeUniqueCandidates`
+    /// probes non-unique candidates only today).
     let private uniqueBackedAttributeKeys (kind: Kind) : Set<SsKey> =
         let fromIndexes =
             kind.Indexes
             |> List.filter (fun ix ->
-                IndexUniqueness.isUnique ix.Uniqueness || IndexUniqueness.isPrimaryKey ix.Uniqueness)
+                (IndexUniqueness.isUnique ix.Uniqueness || IndexUniqueness.isPrimaryKey ix.Uniqueness)
+                && List.length ix.Columns = 1)
             |> List.collect (fun ix -> ix.Columns |> List.map (fun ic -> ic.Attribute))
             |> Set.ofList
-        // PK attributes are always unique-backed even absent an explicit index row.
+        // A SOLE PK attribute is unique-backed even absent an explicit index
+        // row; the attributes of a composite PK are not singly backed.
         let fromPk =
-            kind.Attributes
-            |> List.filter (fun a -> a.IsPrimaryKey)
-            |> List.map (fun a -> a.SsKey)
-            |> Set.ofList
+            match kind.Attributes |> List.filter (fun a -> a.IsPrimaryKey) with
+            | [ sole ] -> Set.singleton sole.SsKey
+            | _        -> Set.empty
         Set.union fromIndexes fromPk
 
     let private entityColumnOf (kind: Kind) (attr: Attribute) : EntityColumn =
@@ -198,6 +264,138 @@ module ModelFidelity =
     let private realityFor (attrKey: SsKey) (profile: Profile) : AttributeReality option =
         profile.AttributeRealities |> List.tryFind (fun r -> r.AttributeKey = attrKey)
 
+    // -- Recommendation minting (per-category, evidence-driven) -------------
+
+    let private humaneBand (band: int64) : string =
+        band.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+
+    /// The 3-part `Module.Entity.Attribute` reference the tightening binder
+    /// resolves (`TighteningBinding.resolveAttributeRef`) — the overlay
+    /// vocabulary's addressing form.
+    let private attributeRef3 (moduleName: string) (ec: EntityColumn) : string =
+        System.String.Concat(moduleName, ".", ec.Entity, ".", ec.Column) // LINT-ALLOW: the tightening binder's 3-part dotted addressing form, minted once at the recommendation boundary from validated name segments
+
+    /// The `keepNullable` intervention entry as the overlay vocabulary's
+    /// suggested edit — the EXACT shape `TighteningBinding` binds (A44:
+    /// every emitted key binds and reaches emission), at the interventions
+    /// path. Mirrors `EstateOverlayEmitter.entryOf`'s nullability arm.
+    let private keepNullableEdit (moduleName: string) (ec: EntityColumn) (nullCount: int64) : SuggestedConfig =
+        let value = JsonObject()
+        value.["id"] <- JsonValue.Create (System.String.Concat("fidelity.notNull:", entityColumnText ec)) // LINT-ALLOW: stable intervention id token — the fidelity category discriminator + the operator-facing reference, joined once at the config-edit boundary
+        value.["kind"] <- JsonValue.Create "nullability"
+        let overrides = JsonArray()
+        let o = JsonObject()
+        o.["attributeRef"] <- JsonValue.Create (attributeRef3 moduleName ec)
+        o.["action"] <- JsonValue.Create "keepNullable"
+        overrides.Add o
+        value.["overrides"] <- overrides
+        { Path  = "$.policy.tightening.interventions[+]"
+          Value = value.ToJsonString()
+          Note  =
+            Some (
+                sprintf "Interim relaxation; the NULL count that forced it: %s. Retire the entry once the backfill lands."
+                    (humaneBand nullCount)) }
+
+    /// The `keepUntracked` intervention entry — the overlay vocabulary's
+    /// foreign-key arm, same contract as `keepNullableEdit`.
+    let private keepUntrackedEdit (moduleName: string) (ec: EntityColumn) (orphanCount: int64) : SuggestedConfig =
+        let value = JsonObject()
+        value.["id"] <- JsonValue.Create (System.String.Concat("fidelity.orphans:", entityColumnText ec)) // LINT-ALLOW: stable intervention id token — the fidelity category discriminator + the operator-facing reference, joined once at the config-edit boundary
+        value.["kind"] <- JsonValue.Create "foreignKey"
+        let overrides = JsonArray()
+        let o = JsonObject()
+        o.["referenceRef"] <- JsonValue.Create (attributeRef3 moduleName ec)
+        o.["action"] <- JsonValue.Create "keepUntracked"
+        overrides.Add o
+        value.["referenceOverrides"] <- overrides
+        { Path  = "$.policy.tightening.interventions[+]"
+          Value = value.ToJsonString()
+          Note  =
+            Some (
+                sprintf "Interim relaxation; the orphan count that forced it: %s. Retire the entry once the references clear."
+                    (humaneBand orphanCount)) }
+
+    /// The NOT-NULL recommendation: the platform validates a mandatory
+    /// attribute at run time only (no database constraint), so NULL rows
+    /// under a mandatory declaration are a tightening decision, not
+    /// corruption. At or below the band the backfill leads; above it the
+    /// interim `keepNullable` relaxation leads.
+    let private recommendNotNull
+        (band: int64)
+        (moduleName: string)
+        (ec: EntityColumn)
+        (nullCount: int64)
+        : Recommendation =
+        let interpretation =
+            "A mandatory attribute is validated by the platform at run time only; the deployed column allows NULL, and the NOT NULL declaration cannot deploy while the rows remain."
+        if nullCount > band then
+            { Interpretation = interpretation
+              Action =
+                sprintf "Keep the column nullable until the backfill — %s NULL row(s) exceed the repair band (%s). Merge the keepNullable entry for %s."
+                    (humaneBand nullCount) (humaneBand band) (attributeRef3 moduleName ec)
+              Lever = EditConfig (keepNullableEdit moduleName ec nullCount) }
+        else
+            { Interpretation = interpretation
+              Action =
+                "Review the backfill block in manifest.remediation.sql, or keep the column nullable (keepNullable) until the backfill."
+              Lever = ReviewRemediation }
+
+    /// The uniqueness recommendation: a constraint review, never an
+    /// automatic cleanup — duplicates under a single-column unique
+    /// declaration frequently mean the declared key is narrower than the
+    /// real business key, or the declaration is stale (rule 4: a genuine
+    /// interpretation, hedged).
+    let private recommendUnique : Recommendation =
+        { Interpretation =
+            "Duplicates under a single-column unique declaration frequently mean the declared key is narrower than the real business key, or the declaration is stale — a data cleanup cannot settle which."
+          Action =
+            "Review the declared key before any cleanup: confirm the business key, then correct the declaration or schedule the deduplication."
+          Lever = ReviewConstraint }
+
+    /// The FK-orphan recommendation, split by the reference's constraint
+    /// state: an Ignore delete rule creates no database constraint (orphans
+    /// accumulate by the platform's own design); WITH NOCHECK never
+    /// validated the existing rows; a trusted constraint with observed
+    /// orphans is a disagreement worth naming. At or below the band the
+    /// prepared cleanup leads; above it `keepUntracked` leads.
+    let private recommendOrphans
+        (band: int64)
+        (moduleName: string)
+        (ec: EntityColumn)
+        (state: ConstraintState)
+        (orphanCount: int64)
+        : Recommendation =
+        let interpretation =
+            match state with
+            | ConstraintState.NoDbConstraint ->
+                "The relationship carries no database constraint (an Ignore delete rule creates none), so rows referencing absent targets accumulate by the platform's own design."
+            | ConstraintState.UntrustedConstraint ->
+                "The relationship's constraint is enforced WITH NOCHECK (untrusted), so the existing rows were never validated against it."
+            | ConstraintState.TrustedConstraint ->
+                "The relationship's constraint is trusted, yet the profile observed orphan rows — the two readings disagree, and the evidence basis merits review."
+        if orphanCount > band then
+            { Interpretation = interpretation
+              Action =
+                sprintf "Keep the relationship untracked until the references clear — %s orphan row(s) exceed the repair band (%s). Merge the keepUntracked entry for %s."
+                    (humaneBand orphanCount) (humaneBand band) (attributeRef3 moduleName ec)
+              Lever = EditConfig (keepUntrackedEdit moduleName ec orphanCount) }
+        else
+            { Interpretation = interpretation
+              Action =
+                "Review the block in manifest.remediation.sql: point the row(s) at existing targets, clear the reference, or delete them."
+              Lever = ReviewRemediation }
+
+    /// The overflow recommendation: a width RULING (the estate board's D4
+    /// discipline) — widen the declaration or truncate the rows; the ruling
+    /// precedes any repair, because a prepared truncation would read as a
+    /// default path and there is none.
+    let private recommendOverflow : Recommendation =
+        { Interpretation =
+            "Values past the declared width are already present, so the declared width cannot deploy without loss and the load cannot carry the rows."
+          Action =
+            "Rule the width: declare the wider envelope in the model, or truncate the rows to the declaration — the ruling precedes any repair."
+          Lever = ReviewModel }
+
     /// NOT-NULL declared but NULLs present — generalizes
     /// `Preflight.dataViolatesTightening` beyond the `EnforceNotNull` overlay:
     /// EVERY attribute the model declares non-nullable (a PK, or a column with
@@ -205,7 +403,12 @@ module ModelFidelity =
     /// Exact `NullCount` carried from `Profile.Columns` when present; otherwise
     /// the boolean `HasNulls` reality witnesses the violation with an unknown
     /// count (carried as 0, which the renderer reads as "present").
-    let private notNullViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
+    let private notNullViolations
+        (moduleOf: Kind -> string)
+        (band: int64)
+        (catalog: Catalog)
+        (profile: Profile)
+        : DataViolation list =
         catalog
         |> Catalog.allKinds
         |> List.collect (fun kind ->
@@ -221,16 +424,20 @@ module ModelFidelity =
                         realityFor attr.SsKey profile
                         |> Option.map (fun r -> r.HasNulls)
                         |> Option.defaultValue false
+                    let violation (n: int64) : DataViolation =
+                        let reference = entityColumnOf kind attr
+                        { Reference = reference
+                          Kind = NotNullButNullsPresent n
+                          Recommendation = Some (recommendNotNull band (moduleOf kind) reference n) }
                     match exactCount with
-                    | Some n when n > 0L ->
-                        Some { Reference = entityColumnOf kind attr; Kind = NotNullButNullsPresent n }
+                    | Some n when n > 0L -> Some (violation n)
                     | Some _ -> None
-                    | None when realityHasNulls ->
-                        Some { Reference = entityColumnOf kind attr; Kind = NotNullButNullsPresent 0L }
+                    | None when realityHasNulls -> Some (violation 0L)
                     | None -> None))
 
-    /// UNIQUE / PK declared but duplicates present — every unique-backed
-    /// attribute whose `AttributeReality.HasDuplicates = true`.
+    /// UNIQUE / PK declared but duplicates present — every SINGLY
+    /// unique-backed attribute whose `AttributeReality.HasDuplicates = true`
+    /// (the single-column altitude; see `uniqueBackedAttributeKeys`).
     let private uniqueViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
         catalog
         |> Catalog.allKinds
@@ -245,14 +452,22 @@ module ModelFidelity =
                         |> Option.map (fun r -> r.HasDuplicates)
                         |> Option.defaultValue false
                     if hasDuplicates then
-                        Some { Reference = entityColumnOf kind attr; Kind = UniqueButDuplicatesPresent }
+                        Some
+                            { Reference = entityColumnOf kind attr
+                              Kind = UniqueButDuplicatesPresent
+                              Recommendation = Some recommendUnique }
                     else None))
 
     /// FK orphans — reuse the profiler's per-Reference orphan evidence
     /// (`ForeignKeyReality.HasOrphan` + `OrphanCount`). The orphan is reported
     /// against the FK's SOURCE attribute (the column whose values fail to
     /// resolve), so the operator sees `Entity.ForeignKeyColumn`.
-    let private orphanViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
+    let private orphanViolations
+        (moduleOf: Kind -> string)
+        (band: int64)
+        (catalog: Catalog)
+        (profile: Profile)
+        : DataViolation list =
         catalog
         |> Catalog.allKinds
         |> List.collect (fun kind ->
@@ -264,20 +479,30 @@ module ModelFidelity =
                         Kind.tryFindAttribute reference.SourceAttribute kind
                         |> Option.map (fun a -> Name.value a.Name)
                         |> Option.defaultValue (Name.value reference.Name)
+                    let ec = { Entity = Name.value kind.Name; Column = column }
                     Some
-                        { Reference = { Entity = Name.value kind.Name; Column = column }
-                          Kind = ForeignKeyOrphans fk.OrphanCount }
+                        { Reference = ec
+                          Kind = ForeignKeyOrphans fk.OrphanCount
+                          Recommendation =
+                            Some (recommendOrphans band (moduleOf kind) ec reference.ConstraintState fk.OrphanCount) }
                 | _ -> None))
 
     /// Length / type overflow — declared `Attribute.Length` vs the profiled
     /// `ColumnProfile.MaxObservedLength`. A violation fires when the source
     /// carries a value LONGER than the declared cap: the declared model
     /// asserts a width the data exceeds, so the declaration cannot hold the
-    /// reality. Scoped to attributes that declare a finite `Length` (a `None`
-    /// declared length is MAX / open-ended — no cap to overflow) and that
-    /// carry a probed `MaxObservedLength` (a non-text/binary column, or an
-    /// unprobed one, surfaces no length axis → no violation). The `observed`
-    /// / `declared` tokens render the proof beside the finding.
+    /// reality. Scoped to attributes that declare a POSITIVE `Length` — an
+    /// absent length is MAX / open-ended, and a `0` (or negative) carried
+    /// from OSSYS metadata declares NO width, not a width of zero: the
+    /// storage lane already reads it so (`OssysTypeMapping.textLength` /
+    /// `boundedOr` treat only a positive length as `Bounded`), and the
+    /// platform's own mapping has no zero-width bounded type. Before this
+    /// gate aligned (2026-07-18), a metadata `Length = 0` under any observed
+    /// value fired "observed 5, declared 0" findings rooted in the reader,
+    /// not the data. Also scoped to attributes carrying a probed
+    /// `MaxObservedLength` (a non-text/binary column, or an unprobed one,
+    /// surfaces no length axis → no violation). The `observed` / `declared`
+    /// tokens render the proof beside the finding.
     let private overflowViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
         catalog
         |> Catalog.allKinds
@@ -285,8 +510,7 @@ module ModelFidelity =
             kind.Attributes
             |> List.choose (fun attr ->
                 match attr.Length with
-                | None -> None  // MAX / not-length-applicable — no cap to overflow.
-                | Some declared ->
+                | Some declared when declared > 0 ->
                     Profile.tryFindColumn attr.SsKey profile
                     |> Option.bind (fun c -> c.MaxObservedLength)
                     |> Option.bind (fun observed ->
@@ -296,16 +520,30 @@ module ModelFidelity =
                                   Kind =
                                     LengthOrTypeOverflow (
                                         observed = string observed,
-                                        declared = string declared) }
-                        else None)))
+                                        declared = string declared)
+                                  Recommendation = Some recommendOverflow }
+                        else None)
+                | _ -> None))  // Absent or non-positive — no declared cap to overflow.
 
     /// Aggregate the data-violation section from a declared catalog × profiled
     /// evidence. Deterministic — sorted by category then operator-facing
-    /// reference (T1), so the rollup is byte-stable across runs.
-    let private aggregateDataViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
-        [ notNullViolations catalog profile
+    /// reference (T1), so the rollup is byte-stable across runs. The
+    /// kind→module index resolves each violation's 3-part config reference
+    /// (`Module.Entity.Attribute`) once, for the recommendation layer.
+    let private aggregateDataViolations (band: int64) (catalog: Catalog) (profile: Profile) : DataViolation list =
+        let moduleByKind : Map<SsKey, string> =
+            catalog.Modules
+            |> List.collect (fun m ->
+                m.Kinds |> List.map (fun k -> k.SsKey, Name.value m.Name))
+            |> Map.ofList
+        let moduleOf (kind: Kind) : string =
+            // Total by construction — every catalog kind belongs to a module;
+            // the defensive arm keeps the resolver total over a hand-built
+            // catalog fragment.
+            Map.tryFind kind.SsKey moduleByKind |> Option.defaultValue "Model"
+        [ notNullViolations moduleOf band catalog profile
           uniqueViolations catalog profile
-          orphanViolations catalog profile
+          orphanViolations moduleOf band catalog profile
           overflowViolations catalog profile ]
         |> List.concat
         |> List.sortBy (fun v -> categoryOrdinal (categoryOf v), entityColumnText v.Reference)
@@ -348,8 +586,11 @@ module ModelFidelity =
 
     /// Compose the full report from a declared catalog, the profiled evidence,
     /// the categorical-uniqueness decision set, and the run's accepted-tolerance
-    /// residual. The estate masthead counts modules + entities from the catalog.
-    let compose
+    /// residual, under an explicit fix-vs-relax band (the recommendation
+    /// layer's threshold). The estate masthead counts modules + entities from
+    /// the catalog.
+    let composeWithBand
+        (band: int64)
         (estate: string)
         (catalog: Catalog)
         (profile: Profile)
@@ -359,9 +600,20 @@ module ModelFidelity =
         { Estate               = estate
           ModuleCount          = List.length catalog.Modules
           EntityCount          = catalog |> Catalog.allKinds |> List.length
-          DataViolations       = aggregateDataViolations catalog profile
+          DataViolations       = aggregateDataViolations band catalog profile
           AcceptedDivergences  = acceptedDivergences |> List.map (fun d -> { Divergence = d })
           UniquenessCandidates = aggregateUniquenessCandidates catalog categoricalDecisions }
+
+    /// `composeWithBand` under the default repair band — the standing
+    /// signature every existing caller keeps.
+    let compose
+        (estate: string)
+        (catalog: Catalog)
+        (profile: Profile)
+        (categoricalDecisions: CategoricalUniquenessDecisionSet)
+        (acceptedDivergences: ToleratedDivergence list)
+        : ModelFidelityReport =
+        composeWithBand repairBandDefault estate catalog profile categoricalDecisions acceptedDivergences
 
     // ----------------------------------------------------------------------
     // Rollups — count-first totals the renderer + codec both read.
@@ -507,6 +759,64 @@ module ModelFidelity =
         | OrphanCategory   -> "FK orphans"
         | OverflowCategory -> "Length / type overflow"
 
+    /// The category-level interpretation the render states beneath each
+    /// non-clean category line — total over the category vocabulary, so a
+    /// new axis cannot land without its reading. The per-violation
+    /// interpretations in `fidelity.json` refine these (the orphan split by
+    /// constraint state); the category line carries the shared mechanism.
+    let private categoryInterpretation (c: ViolationCategory) : string =
+        match c with
+        | NotNullCategory ->
+            "A mandatory attribute is validated by the platform at run time only; the deployed columns allow NULL, and the NOT NULL declarations cannot deploy while the rows remain."
+        | UniqueCategory ->
+            "Duplicates under a single-column unique declaration frequently mean the declared key is narrower than the real business key, or the declaration is stale — a data cleanup cannot settle which."
+        | OrphanCategory ->
+            "A relationship without a database constraint (an Ignore delete rule creates none), or one enforced WITH NOCHECK, accumulates rows that reference absent targets."
+        | OverflowCategory ->
+            "Values past a declared width are already present, so the declared width cannot deploy without loss and the load cannot carry the rows."
+
+    /// Join the per-arm fragments into one imperative sentence — sentence
+    /// case on the lead, "; " between arms, terminal period. The fallback
+    /// carries the category's generic both-arm imperative when no violation
+    /// carries a lever (a legacy `fidelity.json` parsed without
+    /// recommendation nodes).
+    let private joinArms (fallback: string) (parts: string list) : string =
+        match parts with
+        | [] -> fallback
+        | _ ->
+            let sentence = String.concat "; " parts
+            let lead =
+                System.String.Concat(
+                    string (System.Char.ToUpperInvariant sentence.[0]),
+                    sentence.Substring 1)
+            System.String.Concat(lead, ".")
+
+    /// The category-level next-move line, aggregated from the per-violation
+    /// arms: the count on the prepared-repair arm (the remediation block)
+    /// beside the count on the relax arm (past-band `keepNullable` /
+    /// `keepUntracked` config entries).
+    let private categoryActionLine (c: ViolationCategory) (violations: DataViolation list) : string =
+        let levers = violations |> List.choose (fun v -> v.Recommendation |> Option.map (fun r -> r.Lever))
+        let repairs = levers |> List.filter (function ReviewRemediation -> true | _ -> false) |> List.length
+        let relaxes = levers |> List.filter (function EditConfig _ -> true | _ -> false) |> List.length
+        match c with
+        | NotNullCategory ->
+            [ if repairs > 0 then
+                yield sprintf "review the backfill block(s) in manifest.remediation.sql (%s column(s))" (humane repairs)
+              if relaxes > 0 then
+                yield sprintf "keep %s column(s) nullable via keepNullable entries (past the repair band)" (humane relaxes) ]
+            |> joinArms "Review the backfill blocks in manifest.remediation.sql, or keep past-band columns nullable via keepNullable entries."
+        | UniqueCategory ->
+            "Review each declared key before any cleanup: confirm the business key, then correct the declaration or schedule the deduplication."
+        | OrphanCategory ->
+            [ if repairs > 0 then
+                yield sprintf "review the orphan block(s) in manifest.remediation.sql (%s relationship(s))" (humane repairs)
+              if relaxes > 0 then
+                yield sprintf "keep %s relationship(s) untracked via keepUntracked entries (past the repair band)" (humane relaxes) ]
+            |> joinArms "Review the orphan blocks in manifest.remediation.sql, or keep past-band relationships untracked via keepUntracked entries."
+        | OverflowCategory ->
+            "Rule each width: declare the wider envelope in the model, or truncate the rows to the declaration — the ruling precedes any repair."
+
     /// Render the full report as the operator-facing rolled-up text — totals at
     /// the top, per-entity breakdown beneath (the operator's "eminently useful
     /// at first glance" requirement). THE_VOICE: stative, agentless, neutral
@@ -532,6 +842,13 @@ module ModelFidelity =
                       yield
                           sprintf "      %-36s %s   %s   %s"
                               (categoryLabel cat.Category) (humane cat.Count) entities offenders
+                      // The recommendation layer (2026-07-18): the finding on
+                      // top, the interpretation beneath it, the next move
+                      // last — every category ends on its move (THE_VOICE:
+                      // end on the move; the statement on top, the proof and
+                      // the reading one level beneath).
+                      yield sprintf "          %s" (categoryInterpretation cat.Category)
+                      yield sprintf "          Next: %s" (categoryActionLine cat.Category cat.Violations)
 
           // Section 2 — accepted divergences (the per-run tolerance residual).
           match report.AcceptedDivergences with
@@ -581,12 +898,38 @@ module ModelFidelity =
             o.["declared"] <- JsonValue.Create declared
         o
 
+    /// The lever's stable machine token (the `fidelity.json` discriminator).
+    let private leverToken (lever: RecommendationLever) : string =
+        match lever with
+        | ReviewRemediation -> "reviewRemediation"
+        | EditConfig _      -> "editConfig"
+        | ReviewModel       -> "reviewModel"
+        | ReviewConstraint  -> "reviewConstraint"
+
+    let private recommendationNode (r: Recommendation) : JsonObject =
+        let o = JsonObject()
+        o.["interpretation"] <- JsonValue.Create r.Interpretation
+        o.["action"] <- JsonValue.Create r.Action
+        o.["lever"] <- JsonValue.Create (leverToken r.Lever)
+        (match r.Lever with
+         | EditConfig sc ->
+             o.["configPath"] <- JsonValue.Create sc.Path
+             o.["configValue"] <- JsonValue.Create sc.Value
+             match sc.Note with
+             | Some note -> o.["configNote"] <- JsonValue.Create note
+             | None -> ()
+         | _ -> ())
+        o
+
     let private violationNode (v: DataViolation) : JsonObject =
         let o = JsonObject()
         o.["entity"] <- JsonValue.Create v.Reference.Entity
         o.["column"] <- JsonValue.Create v.Reference.Column
         o.["reference"] <- JsonValue.Create (entityColumnText v.Reference)
         o.["kind"] <- violationKindNode v.Kind
+        match v.Recommendation with
+        | Some r -> o.["recommendation"] <- recommendationNode r
+        | None -> ()
         o
 
     /// Serialize the report to its `fidelity.json` document — the structured,
@@ -609,6 +952,15 @@ module ModelFidelity =
             c.["category"] <- JsonValue.Create (categoryLabel cat.Category)
             c.["count"] <- JsonValue.Create cat.Count
             c.["entities"] <- JsonValue.Create cat.Entities
+            // The category-grain recommendation (2026-07-18) — pre-computed
+            // like the rollups, so a downstream reader gets the
+            // interpretation + next move without re-aggregating; the
+            // per-violation nodes beneath carry the refined per-finding arms.
+            if cat.Count > 0 then
+                let recNode = JsonObject()
+                recNode.["interpretation"] <- JsonValue.Create (categoryInterpretation cat.Category)
+                recNode.["action"] <- JsonValue.Create (categoryActionLine cat.Category cat.Violations)
+                c.["recommendation"] <- recNode
             let items = JsonArray()
             for v in cat.Violations do items.Add(violationNode v)
             c.["violations"] <- items
@@ -686,6 +1038,29 @@ module ModelFidelity =
             Some (LengthOrTypeOverflow (tryStr o "observed" |> Option.defaultValue "", tryStr o "declared" |> Option.defaultValue ""))
         | _ -> None
 
+    /// Parse a violation's recommendation node back — verbatim carry (the
+    /// recommendation was minted at compose time; a reader re-derives
+    /// nothing). `None` on an absent node (a legacy document) or an unknown
+    /// lever token (fail-closed to no recommendation, never a crash).
+    let private recommendationFromNode (o: JsonObject) : Recommendation option =
+        match tryStr o "interpretation", tryStr o "action", tryStr o "lever" with
+        | Some interpretation, Some action, Some lever ->
+            let leverValue =
+                match lever with
+                | "reviewRemediation" -> Some ReviewRemediation
+                | "reviewModel"       -> Some ReviewModel
+                | "reviewConstraint"  -> Some ReviewConstraint
+                | "editConfig" ->
+                    match tryStr o "configPath", tryStr o "configValue" with
+                    | Some path, Some value ->
+                        Some (EditConfig { Path = path; Value = value; Note = tryStr o "configNote" })
+                    | _ -> None
+                | _ -> None
+            leverValue
+            |> Option.map (fun l ->
+                { Interpretation = interpretation; Action = action; Lever = l })
+        | _ -> None
+
     /// Parse a `fidelity.json` document back into a `ModelFidelityReport`.
     /// `None` on a malformed document (fail-closed). Reconstructs the
     /// data-violation list from the per-category arrays + the candidate /
@@ -720,7 +1095,14 @@ module ModelFidelity =
                                                   | Some entity, Some column, Some k ->
                                                       match kindFromNode k with
                                                       | Some kind ->
-                                                          yield { Reference = { Entity = entity; Column = column }; Kind = kind }
+                                                          let recommendation =
+                                                              tryNode v "recommendation"
+                                                              |> Option.bind asObject
+                                                              |> Option.bind recommendationFromNode
+                                                          yield
+                                                              { Reference = { Entity = entity; Column = column }
+                                                                Kind = kind
+                                                                Recommendation = recommendation }
                                                       | None -> ()
                                                   | _ -> () ]
                 let accepted =

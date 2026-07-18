@@ -24,10 +24,25 @@ let ``tryParse: date-only and time-only store as DATETIME, the platform mapping 
     Assert.Equal(Some (DateTime, SqlStorageType.DateTime), OssysTypeMapping.tryParse "time" None None None)
 
 [<Fact>]
-let ``tryParse: currency is the imposed DECIMAL(37,8); decimal defaults to (18,0)`` () =
+let ``tryParse: currency is the imposed DECIMAL(37,8); decimal reads precision from the Length property, defaulting to the platform (37,8)`` () =
+    // Database Data Types (OutSystems 11): Decimal deploys as decimal() whose
+    // "precision and scale match the Length and Decimals properties"; the
+    // Service-Studio defaults are Length = 37, Decimals = 8. OSSYS carries the
+    // digit budget in `Length` (standard estates have no `Precision` column),
+    // so the reader takes precision ← explicit precision, else positive
+    // Length, else 37 — retiring the invented (18, 0) fallback that made every
+    // standard Decimal diverge from its deployed decimal(37, 8).
     Assert.Equal(Some (Decimal, SqlStorageType.Decimal (37, 8)), OssysTypeMapping.tryParse "currency" None None None)
-    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (18, 0)), OssysTypeMapping.tryParse "decimal" None None None)
-    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (12, 4)), OssysTypeMapping.tryParse "decimal" None (Some 12) (Some 4))
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (37, 8)), OssysTypeMapping.tryParse "decimal" None None None)
+    // The standard estate shape: digits in Length, fraction via Decimals→scale.
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (37, 8)), OssysTypeMapping.tryParse "decimal" (Some 37) None (Some 8))
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (20, 2)), OssysTypeMapping.tryParse "decimal" (Some 20) None (Some 2))
+    // An explicit Precision column (or external override) wins over Length.
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (12, 4)), OssysTypeMapping.tryParse "decimal" (Some 37) (Some 12) (Some 4))
+    // A non-positive Length carries no digit budget — the platform default applies.
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (37, 8)), OssysTypeMapping.tryParse "decimal" (Some 0) None None)
+    // An explicit zero scale (an integer-valued decimal) is preserved, never defaulted.
+    Assert.Equal(Some (Decimal, SqlStorageType.Decimal (18, 0)), OssysTypeMapping.tryParse "decimal" (Some 18) None (Some 0))
 
 [<Fact>]
 let ``email/phone map to the OutSystems 11 platform VARCHAR(250)/(20), with the default width overridden by a declared length (DECISIONS 2026-07-18)`` () =
