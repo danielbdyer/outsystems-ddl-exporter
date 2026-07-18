@@ -1603,37 +1603,36 @@ static product algebra (Pass.product / `&&&`) once anticipated this but was \
 retired 2026-06-04 (unused); rebuild it when the trigger eventually fires.")>]
 let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
 
-[<Fact(Skip = "A45 candidate — espace invariance across the environment lattice \
-(estate chapter open, 2026-07-15). For any authored model deployed at N espace \
-cells, the OSSYS-read catalogs normalized to logical shape are pairwise \
-CatalogDiff-empty; a residue is a REAL estate divergence, never an espace \
-artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS §2; the \
-OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check estate` \
-compares. EXECUTABLE WITNESS LIVE (wave A1, same date): `EstateTests` — ``A45: N \
-espace cells of one model produce zero estate findings after toLogicalShape \
-(espace invariance)`` runs three espace-variant cells + an espace-variant target \
-through Estate.compute and asserts zero findings. This entry stays as the \
-axiom-file pointer; the witness is the EstateTests fact.")>]
-let ``A45 candidate: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
+[<Fact(Skip = "A45 LAW (adopted 2026-07-17 at the loop-closing chapter close) — espace \
+invariance across the environment lattice (estate chapter open, 2026-07-15). For any \
+authored model deployed at N espace cells, the OSSYS-read catalogs normalized to \
+logical shape are pairwise CatalogDiff-empty; a residue is a REAL estate divergence, \
+never an espace artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS \
+§2; the OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check \
+environments` compares. The promotion trigger fired at wave A1: the EXECUTABLE WITNESS \
+is LIVE — `EstateTests` — ``A45: N espace cells of one model produce zero estate \
+findings after toLogicalShape (espace invariance)`` runs three espace-variant cells + \
+an espace-variant target through Estate.compute and asserts zero findings. This entry \
+is the axiom-file pointer to that fact.")>]
+let ``A45: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
 
-[<Fact(Skip = "T17 candidate — row fidelity: Ingest_rows ∘ Transfer = ι modulo \
-named row interventions, residual zero (fidelity chapter open, 2026-07-15). \
-Every source row not removed by the row-set ledger satisfies \
-canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the canonical \
-row form over an SsKey/logical basis; every target row outside image(κ) ∪ adds \
-is a violation; every exception cites its ledger record. The data-plane sibling \
-of the soul adjunction. EXECUTABLE WITNESSES LIVE (wave B2, same date): \
-`RowFidelityTests` carries the pure comparator laws (identical streams name \
-nothing; a flipped cell names its key and columns; the streaming lockstep's \
-reference `compareOrdered` law) and `FidelityRowsDockerTests` runs the live \
-triangle — two seeded databases in the two renditions prove byte-identity \
-across the physical-to-logical gap via `check data --rows`' run path, and one \
-flipped cell names its key. The strict form (no intervention ledger) is what \
-B2 proves; the ledger-modulated form promotes at B4b, and the two digest \
-planes (client-canonical SHA256 authoritative; server HASHBYTES fast-path) \
-agree per SQL type at wave B3. This entry stays as the axiom-file pointer; \
-the witnesses are those test facts.")>]
-let ``T17 candidate: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
+[<Fact(Skip = "T17 LAW (adopted 2026-07-17 at the loop-closing chapter close) — row \
+fidelity: Ingest_rows ∘ Transfer = ι modulo named row interventions, residual zero \
+(fidelity chapter open, 2026-07-15). Every source row not removed by the row-set \
+ledger satisfies canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the \
+canonical row form over an SsKey/logical basis; every target row outside image(κ) ∪ \
+adds is a violation; every exception cites its ledger record. The data-plane sibling \
+of the soul adjunction. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — \
+`RowFidelityTests` carries the pure comparator laws (identical streams name nothing; a \
+flipped cell names its key and columns; the streaming lockstep's reference \
+`compareOrdered` law) and `FidelityRowsDockerTests` runs the live triangle — two \
+seeded databases in the two renditions prove byte-identity across the \
+physical-to-logical gap, and one flipped cell names its key. The strict form (no \
+intervention ledger) is B2's; the ledger-modulated form landed at B4b; the two digest \
+planes (client-canonical SHA256 authoritative; server HASHBYTES fast-path) agree per \
+SQL type at B3; B5's container proof runs the full triangle. This entry is the \
+axiom-file pointer to those facts.")>]
+let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
 
 // ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)

@@ -9,6 +9,7 @@ namespace Projection.Pipeline
 
 open System
 open Projection.Core
+open Projection.Targets.Data
 open Projection.Targets.OperationalDiagnostics
 
 /// The per-environment remediation blocks for `check estate` (wave A5):
@@ -58,6 +59,7 @@ module EstateRemediation =
     let private blockFor
         (catalog: Catalog)
         (profile: Profile option)
+        (seed: Map<SsKey, StaticRow list>)
         (finding: Estate.Finding)
         : RemediationEmitter.EstateBlock option =
         let keyText = FindingKey.text finding.Key
@@ -137,6 +139,35 @@ module EstateRemediation =
                 blockOf
                     (sprintf "SELECT [name], [is_not_trusted] FROM sys.foreign_keys WHERE [parent_object_id] = OBJECT_ID(N'%s');" t)
                     [ sprintf "ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL; -- re-trusts every constraint on the kind; scans the table" t ])
+        | EstateFindingKind.DataStaticContent ->
+            // D10 (wave A4β) — the subject is the static KIND (not
+            // Entity.Column), so resolve the kind by name and align its
+            // content to the model's declared seed, MATCHED BY BUSINESS KEY,
+            // never rewriting the surrogate (that is D11's ruling). The
+            // located SELECT shows the environment's current reference data;
+            // the alignment MERGE — a REAL executable batch, rendered through
+            // the shared MERGE engine and commented line-by-line by the emitter
+            // — is the prepared repair: the surrogate PK stays out of the ON /
+            // INSERT (the sink mints its own key), and there is no
+            // delete-by-source (removing rows the seed omits is a separate
+            // ruling, because they may be referenced).
+            findKind catalog subject
+            |> Option.bind (fun k ->
+                match Estate.staticBusinessKey k, Estate.staticPk k, Map.tryFind k.SsKey seed with
+                | Some bkAttr, Some pkAttr, Some seedRows when not (List.isEmpty seedRows) ->
+                    let t = tableOf k
+                    let bkCol = columnOf bkAttr
+                    let merge =
+                        MergeRender.renderAlignmentMerge
+                            "emit.estateAlignment" bkAttr.Name pkAttr.Name k seedRows
+                    if merge = "" then None
+                    else
+                        blockOf
+                            (sprintf "SELECT * FROM %s ORDER BY %s;" t bkCol)
+                            [ sprintf "align %s to the model's declared static seed, matched by %s (the business key); the surrogate primary key is never rewritten — the sink mints its own." t bkCol
+                              merge
+                              sprintf "rows present in %s but absent from the seed are visible in the SELECT above; removing them is a separate ruling — confirm no inbound references first." t ]
+                | _ -> None)
         | EstateFindingKind.PostureRetirable ->
             // The retirement repair (wave A6): the reopen probe reads zero
             // in every evidenced environment. An FK-anchored subject earns
@@ -162,17 +193,21 @@ module EstateRemediation =
 
     /// One environment's blocks: every REPAIR-lane finding naming the
     /// environment, resolved against ITS catalog (physical realizations
-    /// retained through the logical normalization).
+    /// retained through the logical normalization). `seed` carries the model's
+    /// declared static rows per kind (`StaticContent.Seed`) so the D10 block
+    /// renders a real alignment MERGE; `Map.empty` (offline / no static probe)
+    /// simply mints no D10 block.
     let blocksFor
         (env: string)
         (logicalEnvCatalog: Catalog)
         (profile: Profile option)
+        (seed: Map<SsKey, StaticRow list>)
         (report: Estate.EstateReport)
         : RemediationEmitter.EstateBlock list =
         report.Findings
         |> List.filter (fun f ->
             f.Lane = EstateLane.Repair && f.Envs |> List.exists (fun (e, _) -> e = env))
-        |> List.choose (blockFor logicalEnvCatalog profile)
+        |> List.choose (blockFor logicalEnvCatalog profile seed)
 
     /// The artifact file name — one convention, minted here and read by the
     /// lever copy and the board index alike.

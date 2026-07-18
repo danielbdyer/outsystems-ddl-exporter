@@ -729,14 +729,14 @@ let ``L3-S10: Catalog = None FK emission stays two-part (additive)`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``Slice 10: SsdtBundle.compose produces N+1 entries (N SsdtFile per kind + 1 manifest)`` () =
+let ``Slice 10: SsdtBundle.compose produces N+2 entries (N SsdtFile per kind + manifest + apply-runbook)`` () =
     let enriched = enrich sampleCatalog
     let ssdtFiles = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let manifest = ManifestEmitter.emit enriched
     let bundle = SsdtBundle.compose ssdtFiles manifest
     let allKinds = Catalog.allKinds enriched
-    // N SsdtFile entries + 1 manifest.json entry.
-    Assert.Equal (List.length allKinds + 1, Map.count bundle)
+    // N SsdtFile entries + manifest.json + apply-runbook.md (wave B6, ideation §12 F7).
+    Assert.Equal (List.length allKinds + 2, Map.count bundle)
 
 [<Fact>]
 let ``Slice 10: SsdtBundle.compose bundle contains manifest.json at directory root`` () =

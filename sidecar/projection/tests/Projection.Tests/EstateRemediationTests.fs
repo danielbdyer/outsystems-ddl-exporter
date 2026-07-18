@@ -51,7 +51,7 @@ let private reportFor (profile: Profile) : Estate.EstateReport =
         [ "cloud-uat", operand "cloud-uat" sampleCatalog (Some profile) ]
 
 let private blocksFor (profile: Profile) (report: Estate.EstateReport) : RemediationEmitter.EstateBlock list =
-    EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some profile) report
+    EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some profile) Map.empty report
 
 [<Fact>]
 let ``block ⇔ lever: a NOT-NULL repair earns its block (id = the finding's key) and the finding's lever names it`` () =
@@ -154,10 +154,10 @@ let ``the retirement block: a zero-probe relaxation earns the re-trust candidate
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
     let cleanNow = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 0L ] }
     let report =
-        Estate.computeWith posture agreed sampleCatalog
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", operand "cloud-uat" sampleCatalog (Some cleanNow) ]
     let block =
-        EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some cleanNow) report
+        EstateRemediation.blocksFor "cloud-uat" (Readiness.toLogicalShape sampleCatalog) (Some cleanNow) Map.empty report
         |> List.find (fun b -> b.BlockId = "posture.retirable:Order.CustomerId")
     Assert.Contains("sys.foreign_keys", block.Locate)
     Assert.Contains(block.Repairs, fun (r: string) ->

@@ -71,11 +71,53 @@ module FidelityCompareRun =
     // already last-write-wins per (kind, chunk).
     // ------------------------------------------------------------------
 
-    /// Resolve the operand to a journal FILE: a file path is itself; a
-    /// directory must hold exactly one `transfer-*.ndjson` (a second one is
-    /// an ambiguity, refused by name — the operator picks).
+    /// Resolve an `@runId` operand through the run store (wave B4a — the
+    /// refusal that stood at the CLI seam is lifted; a stored run now carries
+    /// its `JournalRef`s, digest + path). Every miss is a NAMED refusal: no
+    /// store, no such run, a run that kept no ledger, a recorded file that
+    /// moved — never a guess.
+    let private resolveRunJournal (runRef: string) : Result<string> =
+        let runId = runRef.Substring 1
+        match Run.storeDir () with
+        | None ->
+            Result.failureOf
+                (ValidationError.create "fidelity.rows.runStoreMissing"
+                    (sprintf "'%s' names a stored run, but no run store is configured — set PROJECTION_RUNS_DIR (or PROJECTION_LEDGER_DIR) to where the runs live, or name the journal file itself." runRef))
+        | Some dir ->
+            match Run.load dir runId with
+            | None ->
+                Result.failureOf
+                    (ValidationError.create "fidelity.rows.runNotFound"
+                        (sprintf "run '%s' is not in the run store at '%s' — `projection inspect` walks what is." runId dir))
+            | Some r ->
+                match r.Ledgers |> List.choose (function Run.JournalRef (digest, path) -> Some (digest, path) | _ -> None) with
+                | [] ->
+                    Result.failureOf
+                        (ValidationError.create "fidelity.rows.runNoJournal"
+                            (sprintf "run '%s' recorded no transfer journal — it ran without --journal, or predates the journal promotion. Re-run the transfer with --journal <dir>, or name the journal file itself." runId))
+                | [ (_, path) ] when path <> "" ->
+                    if IO.File.Exists path then Result.success path
+                    else
+                        Result.failureOf
+                            (ValidationError.create "fidelity.rows.journalMissing"
+                                (sprintf "run '%s' recorded its journal at '%s', but no file is there now." runId path))
+                | [ (digest, _) ] ->
+                    Result.failureOf
+                        (ValidationError.create "fidelity.rows.journalMissing"
+                            (sprintf "run '%s' recorded journal digest %s without a path (a pre-B4a record) — name the journal file itself (transfer-%s.ndjson under the transfer's --journal directory)." runId digest digest))
+                | several ->
+                    Result.failureOf
+                        (ValidationError.create "fidelity.rows.journalAmbiguous"
+                            (sprintf "run '%s' recorded %d journals — name the file itself: %s."
+                                runId several.Length (several |> List.map snd |> List.filter (fun p -> p <> "") |> String.concat ", ")))
+
+    /// Resolve the operand to a journal FILE: an `@runId` reads the run
+    /// store's recorded `JournalRef`; a file path is itself; a directory must
+    /// hold exactly one `transfer-*.ndjson` (a second one is an ambiguity,
+    /// refused by name — the operator picks).
     let private resolveJournalFile (path: string) : Result<string> =
-        if IO.File.Exists path then Result.success path
+        if path.StartsWith "@" && path.Length > 1 then resolveRunJournal path
+        elif IO.File.Exists path then Result.success path
         elif IO.Directory.Exists path then
             match IO.Directory.GetFiles(path, "transfer-*.ndjson") |> Array.sort with
             | [| one |] -> Result.success one
@@ -649,3 +691,53 @@ module FidelityCompareRun =
     let toJsonString (report: RowFidelityReport) : string =
         let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         (toJson report).ToJsonString(opts)
+
+    // ------------------------------------------------------------------
+    // The proof reader (RT-10, wave A4β) — the estate board reads back a
+    // `fidelity.rows.json` artifact to fold its verdict into the estate's.
+    // The proof carries no timestamp of its own, so its AGE comes from the
+    // file's last-write time (the boundary supplies the clock). Fail-closed:
+    // an absent or torn artifact reads as `None`, never a half-truth — the
+    // board then treats the proof as missing. The read shape is the codec's
+    // top-level `agrees` / `differenceTotal` / `rowsCompared` (the digests
+    // and per-kind detail are not needed for the clause).
+    // ------------------------------------------------------------------
+
+    /// The read-back summary of one proof artifact — what the estate's
+    /// fidelity clause reads.
+    type ProofSummary =
+        { Agrees          : bool
+          RowsCompared    : int64
+          DifferenceTotal : int64
+          WrittenAtUtc    : DateTimeOffset }
+
+    /// Read a `fidelity.rows.json` artifact at `path`, or `None` when it is
+    /// absent or unreadable (fail-closed — a torn proof is no proof). The
+    /// write time is the artifact file's `LastWriteTimeUtc` (the proof's age
+    /// basis; the codec writes no timestamp).
+    let tryReadProof (path: string) : ProofSummary option =
+        if not (IO.File.Exists path) then None
+        else
+            try
+                use doc = System.Text.Json.JsonDocument.Parse(IO.File.ReadAllText path)
+                let root = doc.RootElement
+                let boolOf (name: string) =
+                    let mutable v = Unchecked.defaultof<System.Text.Json.JsonElement>
+                    if root.TryGetProperty(name, &v) && (v.ValueKind = System.Text.Json.JsonValueKind.True || v.ValueKind = System.Text.Json.JsonValueKind.False)
+                    then Some (v.GetBoolean()) else None
+                let i64Of (name: string) =
+                    let mutable v = Unchecked.defaultof<System.Text.Json.JsonElement>
+                    if root.TryGetProperty(name, &v) && v.ValueKind = System.Text.Json.JsonValueKind.Number
+                    then let mutable n = 0L in (if v.TryGetInt64(&n) then Some n else None)
+                    else None
+                // `agrees` and `differenceTotal` are the load-bearing fields; a
+                // proof missing either is torn (fail-closed).
+                match boolOf "agrees", i64Of "differenceTotal" with
+                | Some agrees, Some diffs ->
+                    Some
+                        { Agrees          = agrees
+                          RowsCompared    = i64Of "rowsCompared" |> Option.defaultValue 0L
+                          DifferenceTotal = diffs
+                          WrittenAtUtc    = DateTimeOffset(IO.File.GetLastWriteTimeUtc path, TimeSpan.Zero) }
+                | _ -> None
+            with _ -> None

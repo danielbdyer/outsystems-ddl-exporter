@@ -424,8 +424,15 @@ module RemediationEmitter =
                 sb.AppendLine(System.String.Concat("-- key: ", block.BlockId)) |> ignore
                 sb.AppendLine(System.String.Concat("-- ", block.Statement)) |> ignore
                 sb.AppendLine(block.Locate) |> ignore
+                // A repair candidate may be MULTI-LINE (the D10 alignment MERGE
+                // renders as a real multi-statement batch): comment EVERY line,
+                // never just the first — an uncommented destructive line inside a
+                // "commented repairs" block would break the operator-safety
+                // contract. Split on `\n` and trim any `\r` so `\r\n`-framed
+                // ScriptDom output and `\n`-framed statement joins comment alike.
                 for repair in block.Repairs do
-                    sb.AppendLine(System.String.Concat("-- ", repair)) |> ignore
+                    for line in repair.Split('\n') do
+                        sb.AppendLine(System.String.Concat("-- ", line.TrimEnd('\r'))) |> ignore
                 sb.AppendLine() |> ignore
         sb.ToString()
 

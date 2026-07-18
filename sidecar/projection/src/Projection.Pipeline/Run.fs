@@ -27,12 +27,16 @@ module Run =
     /// R1a — a reference to a durable ledger the run touched. The run
     /// aggregate carries WHERE its ledgers live, never their content: the
     /// capture journal by its digest (the digest IS the filename,
-    /// `transfer-<digest16>.ndjson` — RI-7), the episode by its timeline
-    /// coordinate. `LedgerRef` is the run-side name for the R3 contract's
-    /// instances (L1–L4): a stored run can answer "which chains did this
-    /// run extend?" offline.
+    /// `transfer-<digest16>.ndjson` — RI-7) AND the file path the run wrote
+    /// it at (wave B4a: the digest names the file, the path names the
+    /// directory — without it a stored run could not answer "where is the
+    /// journal?", which is exactly what `--interventions @runId` asks); the
+    /// episode by its timeline coordinate. `LedgerRef` is the run-side name
+    /// for the R3 contract's instances (L1–L4): a stored run can answer
+    /// "which chains did this run extend?" offline. A pre-B4a record loads
+    /// with an empty path — named at resolution, never guessed.
     type LedgerRef =
-        | JournalRef of digest: string
+        | JournalRef of digest: string * path: string
         | EpisodeRef of timeline: string * ordinal: int
 
     type Run = {
@@ -97,9 +101,10 @@ module Run =
         for l in r.Ledgers do
             let lo = JsonObject()
             (match l with
-             | JournalRef digest ->
+             | JournalRef (digest, path) ->
                  lo.["kind"]   <- JsonValue.Create "journal"
                  lo.["digest"] <- JsonValue.Create digest
+                 lo.["path"]   <- JsonValue.Create path
              | EpisodeRef (timeline, ordinal) ->
                  lo.["kind"]     <- JsonValue.Create "episode"
                  lo.["timeline"] <- JsonValue.Create timeline
@@ -162,7 +167,9 @@ module Run =
                 if root.TryGetProperty("ledgers", &v) && v.ValueKind = JsonValueKind.Array then
                     [ for el in v.EnumerateArray() do
                         match estr el "kind" with
-                        | "journal" -> yield JournalRef (estr el "digest")
+                        // A pre-B4a record has no 'path' — loads as "" (named
+                        // at @runId resolution, never guessed).
+                        | "journal" -> yield JournalRef (estr el "digest", estr el "path")
                         | "episode" ->
                             let mutable ov = Unchecked.defaultof<JsonElement>
                             let ordinal = if el.TryGetProperty("ordinal", &ov) && ov.ValueKind = JsonValueKind.Number then ov.GetInt32() else 0

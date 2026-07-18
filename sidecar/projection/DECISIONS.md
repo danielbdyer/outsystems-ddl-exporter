@@ -28311,6 +28311,460 @@ fast paths fall back to the fixed generic arm for the exotic field types). `Smal
 carriage keeps the offset-less DateTime form (finer than the column; server rounds — witnessed).
 DECISIONS 2026-07-16 — WP-17(a–c,f).
 
+## 2026-07-17 — The loop-closing program opens: the programs collapse, `check environments` named for the record, and the burndown lands (wave A7)
+
+**Context.** PR #668 (the estate chapter through A6, squash `d7f4566`) merged carrying a
+final usability overhaul (`89466db`) that landed WITHOUT its decisions entry; the SSDT
+remediation campaign (#669/#671) then landed WP-1..4b/8/16/17 + G3/G6 on a parallel axis.
+The operator's direction (2026-07-17): **collapse the programs and close the loop on the
+original request** — the daily convergence loop and the provable row fidelity.
+
+**Decisions:**
+
+1. **The rename, recorded** (retroactive — the overhaul shipped it): the verb's canonical
+   face is `projection check environments`; `check estate` remains an accepted spelling
+   (`("environments" | "estate")` in the planCheck arm — both parse, one face string). The
+   artifacts follow: `environments.json` / `environments.remediation.<env>.sql` /
+   `environments.overlay.json` / `environments.probes.sql`. The overhaul also added
+   `FindingKey.readableLabel` (the plain-words face beside the machine token),
+   `readiness.estate.repairBandByEntity` (per-entity bands over the default), artifact-write
+   safety (`tryWriteArtifact`), and the emission-audit board dimension
+   (`EstateReport.EmissionFindings`, the #669 bridge). Chapter docs are synced to the
+   `environments.*` names in this entry's commit; internal store paths and the `estate.*`
+   Voice/refusal code namespaces are UNRENAMED (machine tokens, not operator surfaces).
+2. **The loop-closing program** (the collapse): one sequence to the original request's
+   terminus — Phase 1 the burndown (A7, this entry) → Phase 2 the container proof (B5, with
+   B4a folded in: prove-implies-journal goes real on every transfer path, and
+   `--interventions @runId` stops refusing; plus WP-12/13/15 exactly where the proof's
+   apply/transfer path stands on them) → Phase 3 the verdict closes (A4β's D10/D11 static
+   alignment — the original ask's third named divergence — + the RT-10 fidelity clause:
+   `ProofMissing`/`ProofStale` as DECIDE findings once `readiness.estate` names a flow) →
+   Phase 4 the ease tail (A8 live board + B6 proof cache/runbook) → the operator walk and
+   the chapter close. The remaining emission-polish WPs (2, 5, 6, 7, 9, 10, 11, 1e) stay on
+   the SSDT campaign's own handoff, sequenced after.
+3. **The burndown (wave A7).** The estate's memory lives in the evidence store's history —
+   `estate/<runId>.estate.json` + `estate/latest.json` (the entry-4 layout; the pointer IS a
+   byte-copy, so a torn pointer never orphans a record). Each run records its reading:
+   findings by `FindingKey` with FIRST-SEEN CARRIED across readings (a finding's age belongs
+   to the finding, never to the file), the verdict, and the unified-run streak (O(1) read;
+   resets on any diverged reading). The board's BURNDOWN region has three honest states —
+   movement against a named baseline ("since run <id> (N day(s) ago): X closed, Y opened, Z
+   remain — the oldest open finding is D day(s) old"), a first recorded reading, and
+   no-store-no-memory — never implied. `--since @runId` names the baseline (the estate
+   history, NEVER the run ledger; the @-form is required, refused by name otherwise;
+   `--since` with no store or an unrecorded run refuses by name, exit 2). The displayed
+   movement diffs against the operator's baseline; the RECORDED reading always chains from
+   latest (first-seen carry and the streak are chain facts, not display choices). One
+   machine envelope per run — `summary.environments` (the `summary.readiness` precedent):
+   verdict, lane counts, forks, closed/opened/remaining, streak — so CI branches on the
+   estate without parsing the board. History writes are atomic + advisory; reads
+   fail-closed.
+
+## 2026-07-17 — B4a lands: prove-implies-journal on the materialized path, the seed pre-filter de-silenced, and `--interventions @runId` resolves
+
+**Context.** Phase 2 of the loop-closing program opens with wave B4a (the 2026-07-15 fidelity
+entry's decision 2, "prove implies journal", cashed out). Before this entry the capture
+journal existed only on the streaming realization (its chunk-resume ledger); the materialized
+path computed the identical `(source → assigned)` pairs and discarded them with the in-memory
+remap at run end — a transfer whose fidelity could never be proven after the fact.
+
+**Decisions:**
+
+1. **The journal is lawful on EVERY realization — the selector refusal is RETIRED.**
+   `transfer.reverseLeg.journalRequiresStreaming` ("--journal is the streaming realization's
+   chunk-resume ledger") no longer exists: a table subset, a wipe, or `--resumable` no longer
+   costs the run its intervention record. On the streaming path the journal remains the
+   chunk-resume ledger (write-ahead INTENT + COMPLETE, at-least-once); on the materialized
+   path it is PROVENANCE — COMPLETE records only, one per captured chunk, threading
+   `WriteOptions.Journal` → `runCore` → `writePlan` → the capture ladder. The deliberate
+   asymmetry is named in `captureChunks`' docstring: the materialized path never resumes from
+   this journal (the G10 envelope owns resume), so the INTENT protocol would imply semantics
+   it does not have.
+2. **The truncation law (`CaptureJournal.startFresh`).** Every materialized Execute loads
+   into a cleared/empty subset (WipeAndLoad wipes; G10 clears FK-first before reloading;
+   plain Incremental refuses a populated sink — T1.8), so the sink's state after the run is
+   THIS run's writes alone — and the journal must describe exactly that run, or a prior
+   attempt's stale pairs would win the replay fold's keep-first dedupe and poison the proof.
+   `writePlan` starts the file fresh at every real load; the G10 NO-OP replay arm leaves it
+   untouched (the state-producing run's record still describes the sink). The rest state is
+   an EMPTY FILE, never a deleted one: "the ledger was kept and nothing was minted" is a
+   provable claim; a missing file says only that no one was keeping records.
+3. **The minted-bulk fast lane stands down under a journal.** An `AssignedBySink` kind no FK
+   targets normally skips capture (its minted surrogates have no consumer). Under a journal
+   the capture lane runs anyway: "prove implies journal" means every minted key is recorded —
+   an unrecorded mint would be a row the fidelity replay cannot translate. The lane choice is
+   the journal's presence, structural, never a silent config.
+4. **`Run.LedgerRef.JournalRef` carries digest AND path.** The LedgerRef's stated purpose is
+   WHERE the ledger lives; a digest names the file (RI-7) but not the directory. The codec
+   writes both; a pre-B4a record loads with an empty path and REFUSES BY NAME at resolution
+   (never guessed). `TransferReport` gains `JournalPath` (the streaming digest never left
+   `writePlanStreaming` before) and the contract-pair face records the `JournalRef` through
+   the shell's per-invocation side-channel (`Shell.recordLedgerRef` — the NM-34b
+   `captureInputs` seam realized once for every shell-bracketed verb).
+5. **`--interventions @runId` resolves.** The CLI-seam refusal
+   (`cli.check.dataRowsInterventionsRunRef`) is retired; the ENGINE resolves the run
+   reference (`FidelityCompareRun.resolveRunJournal`): run store via `Run.storeDir()`, every
+   miss a named refusal — `fidelity.rows.runStoreMissing` / `runNotFound` / `runNoJournal` /
+   `journalMissing` (moved file, or a pathless pre-B4a record) / `journalAmbiguous` (a run
+   recording several journals).
+6. **The seed pre-filter is de-silenced (`transfer.seedRowsSkipped`).** `TransferReport`
+   gains `SeedRowsSkipped : (SsKey * int) list` (the rows insert-only-missing left untouched,
+   per kind); the face voices it (`Voice` entry, §3 register — a working-as-designed fact,
+   not a warning) with the per-table counts beneath. A DryRun and a no-seed run stay empty.
+
+**Witnesses.** Pure: the selector's new law (journal admitted on Materialized, wipe included);
+`digestOfFile`/`startFresh`; the run-reference resolution's happy path + four named refusals;
+the Run codec round-trip with the path field. Docker: the LE-3 apparatus canary now runs its
+WipeAndLoad leg JOURNALED — every kind's pairs recorded (the no-FK-target kind included, the
+fast-lane stand-down), `loadReplayMaps` folds them, and the re-run's truncated journal carries
+only the second run's fresh mints (counts hold, assigned-key sets disjoint).
+
+## 2026-07-17 — B5 lands: `check fidelity <flow>`, the container proof — T17 executable at the operator's fingertips
+
+**Context.** Phase 2 of the loop-closing program closes. The original request's second half —
+"the entire data migration will be provable … every row in the target database after applying
+the FKs [is] byte-identical, excepting and removing for where it's a known row intervention" —
+now has its one-command vehicle beside the manual two-connection check (`check data --rows`).
+
+**Decisions:**
+
+1. **The verb.** `projection check fidelity <flow>` — flow-map membership tested BEFORE the
+   `.sql`-path default arm (the 2026-07-15 decision-4 law): a flow runs the proof; a `.sql`
+   path keeps the DDL round-trip canary byte-identically; anything else refuses naming both
+   readings (`cli.check.fidelityUnknownFlow`). A flow not drawing from a live environment
+   refuses (`cli.check.fidelityFlowSource`); a model-less config refuses
+   (`cli.check.fidelityNoModel`); `--sample N` / `--format json` ride as on the manual check.
+   Exits: 0 proof green · 5 differing rows, named · 6 unreadable/refused scaffold · 4 Docker
+   absent (the deploy face's gate, `docker.unavailable`).
+2. **The walk.** `Deploy.withScratchDatabase` (NEW — the per-run scratch handed as a
+   CONNECTION STRING; `withBootstrappedDatabase`'s creation and reap, one teardown definition
+   `reapDatabase` under both): stand the TARGET's shape up on the scratch — the model's
+   LOGICAL rendition, what the cutover would deploy (the comparator's after-side contract) →
+   load it through the transfer machinery — journaled WipeAndLoad ACROSS the rendition gap
+   (source contract = the physical rendition, sink contract = the logical; the rename-aware
+   leg the LE-3 canaries prove, mirrored), FKs re-trusted ("after applying the FKs") →
+   `FidelityCompareRun.run` source-vs-stand-in, aligned by the model, modulo the journal's
+   recorded interventions → reap. Model-rendered contracts on BOTH sides are the proof's
+   precondition: the journal's SsKeys are the model's own (rendition-invariant), so the
+   replay translates; a live-read contract would synthesize keys the replay could never
+   match.
+3. **The register.** The proof writes only to its OWN reaped scratch and its artifacts
+   (`fidelity.rows.json`; the journal under `fidelity-proof/<flow>/`), so it rides ReadOnly —
+   the check family's no-ledger-append contract holds — and calls the transfer ENGINE
+   directly with the verb's own Replace greenlight (the operator gate guards operator
+   substrates; a stand-in the verb creates and drops is not one). The run aggregate records
+   the proof's `JournalRef` (B4a), so `--interventions @runId` can replay the exact proof.
+4. **Named simplifications (v1), each with its trigger.** (a) The stand-in carries the
+   model's DECLARED physical shape — config shaping (renames / policy overlay) is not
+   projected onto it; the trigger is the first estate whose flow-target shape diverges from
+   the declared rendition. (b) The leveled-seed leg does not run: the proof's wipe-and-load
+   replaces every seeded row with the source's, so the seed's state contribution is void
+   here; the seed-executes-cleanly proof belongs to the publish rehearsal (deploy-docker /
+   migrate), and `executeLeveledSeed` joins when the proof grows the flow's merge posture.
+   (c) The flow's reconcile/subset posture is not exercised — the proof runs the full
+   straight load; reconcile re-keys prove against the LIVE sink via `check data --rows`.
+5. **WP-15 lands (materialized parity).** The streaming and synthetic realizations now
+   snapshot-and-restore FK trust exactly as the materialized Option C does — the
+   `FkTrustNotRestoredOnBulkLoad` tolerance is no longer exhibited unconditionally on those
+   paths. Always on (the materialized default); the throughput opt-out lever arrives with its
+   first caller.
+6. **WP-12 and WP-13 defer BACK to the SSDT campaign's handoff, by evidence.** Both sit on
+   the emission plane and both fail LOUD today on the proof's path, so the proof cannot lie:
+   an unresolved dependency cycle refuses the load by name (`transfer.loadOrderUnproven`)
+   and fails the scaffold's linear apply with the server's own missing-referent error (the
+   emitted stream is topo-ordered with inline FKs; under the alphabetical fallback the
+   in-cycle members forward-reference — the WP-13 fix needs BOTH the SCC-condensation order
+   and the in-cycle FK split into trailing ALTERs); a composite-PK FK target is named
+   (`CompositePkFkUnreflected` + the estate's `emission.compositePkFk` finding) before any
+   silent first-leg emission matters to a proof run. Trigger: the terminus operator walk on
+   the fixture estate — if the walk trips either, it lands then; otherwise they stay
+   sequenced on SSDT_REMEDIATION_HANDOFF Tier 4 where they originated.
+
+**Witnesses.** Pure: the routing facts (flow → proof with model + default cap; model-sourced
+flow / unknown token / bare form / bad sample each refused by name; `.sql` keeps the canary on
+both spellings). Docker: the B5 engine walk on the LE-3 estate (every PK sink-minted, an FK
+chain + diamond, colliding key spaces — a compare that ignored the journal would mismatch
+every key and FK cell): GREEN end to end, the artifact written, exactly one intervention
+ledger recorded; then an FK-orphan source row reads exit 5 with the dropped row named missing
+— never a silent pass.
+
+## 2026-07-17 — Preflight.all takes thunks: the hot-gate race the container proof caught
+
+**Context.** The B5 witness ran the first Execute in the suite's history with
+`allowCdc = false` against a live sink — and deterministically read "endpoint is not
+reachable" on a database it had just written schema into. The cause is the F# `task { }` CE
+being HOT: `Preflight.all` took `Task<Result<unit>> list`, so every gate STARTED at
+construction, and `runCore`'s CDC gate raced its spanning gate on the one shared sink
+`SqlConnection` (SqlClient forbids concurrent commands). Every prior Execute witness passed
+`allowCdc = true`, which left the CDC gate inert and the race unobserved; the migrate face had
+even hand-sequenced around the same hazard ("the permission gate sequences on the connection
+gate's task … so the two probes never run concurrently").
+
+**The decision.** `Preflight.all` and `allReporting` take `(unit -> Task<Result<unit>>) list`
+— gate N starts only after gate N−1 completes; "runs them in order" is structural now, not a
+comment. The three call sites (runCore, the streaming realization, the migrate face) convert
+their gates to thunks; the migrate face's hand-sequencing is deleted (the contract carries
+it). The G0 law tests simplify with it: a thunk's trace entry records at INVOCATION, so the
+short-circuit witness no longer needs the TaskCompletionSource release harness the hot-task
+contract forced. Composition semantics (in-order, first-refusal short-circuit, the
+`code → (exit, label)` reporting) are byte-identical.
+
+## 2026-07-17 — Phase 3 (A4β/RT-10) opens: the fidelity clause closes the verdict; the five static/proof finding kinds join the registries
+
+**Context.** Phase 3 of the loop-closing program — "the verdict closes." The estate board
+(`check environments`) learns to read the container proof (`check fidelity <flow>`, Phase 2),
+and the original ask's third named divergence (AutoNumber static entities) gets its finding
+kinds. Two slices: 3b (RT-10, the fidelity clause) SHIPPED this entry; 3a (D10/D11 static
+content) is the named next slice, its design recorded below.
+
+**Slice 3b — RT-10, the fidelity clause (SHIPPED):**
+
+1. **Five new `EstateFindingKind`s join every registry** (the foundation): `DataStaticContent`
+   (D10, REPAIR/Data/ReviewBlock), `DataStaticIdentity` (D11, DECIDE/Identity/Ruling),
+   `ProofMissing`/`ProofStale`/`ProofDiverged` (RT-10, DECIDE/Operational/Ruling). All join
+   the DU + the seven total registries (all/token/phrase/laneOf/planeOf/leverFormOf/
+   specimenOf). The lever⇔lane coherence law gains the run-imperative arm for the proof family
+   ("Run: projection check fidelity <flow>" — the §3 contract's own row; the law predated it).
+2. **`readiness.estate.fidelityFlow`** — the config key naming the flow whose proof the board
+   reads (the repairBand chain: parse + ReadinessSpec + render round-trip + CheckEstateArgs;
+   A44 — consumed in the same wave). `None` ⇒ the clause is not configured and the verdict
+   excludes it (a never-run proof never holds the verdict hostage — RT-10's whole point).
+3. **`Estate.FidelityClause`** (NotConfigured | Green | Missing | Stale | Diverged) + the
+   `Fidelity` field + `Estate.withFidelity`: Missing/Stale/Diverged each mint ONE DECIDE
+   finding keyed on the flow and RE-COMPUTE the verdict, so a non-green proof turns Unified to
+   Converging. NotConfigured/Green add no finding (masthead only). Stamped BEFORE `withHistory`
+   so a missing proof resets the streak and the proof finding rides the burndown.
+4. **`FidelityCompareRun.tryReadProof`** — a fail-closed reader of `fidelity.rows.json`
+   (`agrees`/`differenceTotal`/`rowsCompared` + file mtime for age; a torn or absent proof is
+   no proof). The B5 face writes a FLOW-SCOPED copy (`fidelity-proof/<flow>/fidelity.rows.json`
+   beside the journal) so the board reads THIS flow's proof unambiguously (the cwd copy is
+   clobbered by whichever flow last ran).
+5. **Staleness is honest, not trivial.** The face computes the clause at the boundary; a proof
+   is STALE only when the estate's evidence was captured-and-stored (or re-fingerprinted)
+   AFTER the proof — a bare live re-read (no store, or a first capture) is not evidence the
+   estate moved, so it never staleness-trips a proof. Staleness outranks the (untrustworthy)
+   old agrees/diverged reading. The masthead clause goes live (five states) + the JSON
+   `fidelityClause` becomes a state object + the `summary.environments` envelope carries the
+   token + the coverage-honesty tail joins the row-fidelity proof to the covered set when
+   configured.
+
+**Slice 3a — D10/D11 static content (the NAMED next slice; its A44 obligation spelled out).**
+The finding kinds are already registered (slice 3b), so the discipline now REQUIRES their live
+feed before the next commit — an inert detector is the NM-69 class A44 forbids. The design:
+
+- **The probe (new I/O).** The OSSYS read marks a static entity `Modality.Static` but its
+  ROW CONTENT rides a skipped result set (`MetadataSnapshotRunner` parses the first 5 of 22),
+  so `Kind.staticPopulations` on an env catalog is empty. D10/D11 need a BOUNDED per-env,
+  per-static-kind row read (`ReadSide.readRows (cnn) (k) (maxRows)`, ReadSide.fs:1030 — static
+  tables are small reference data). The estate face reads them for the reference basis (the
+  target's declared seed — `Kind.staticPopulations targetCatalog` when the target is the
+  authored model, else the agreed env's read) and for each confirm env; `--offline` skips the
+  probe (the coverage line stays honest).
+- **The detector (pure, inside Estate.fs beside the other cross-env detectors).** A new
+  `computeWith` parameter carries the static content (`{ Seed; ByEnv }`); `compute` passes the
+  empty content (byte-identical). D10 (`DataStaticContent`): each env's rows vs the seed via
+  `Reconciliation.staticLookupIdentity` (Reconciliation.fs:384 — bidirectional column drift +
+  membership by business key), producing REPAIR-lane `EnvContribution` rows through the
+  standard grouping/lever mint (so D10 gets its ReviewBlock lever). D11 (`DataStaticIdentity`):
+  for AutoNumber static kinds (PK `IsIdentity` ⇒ `IdentityDisposition.ofKind = AssignedBySink`,
+  SurrogateRemap.fs:118), the business-key→surrogate map compared ACROSS envs — the same label
+  numbered differently is a DECIDE-lane fork (staticLookupIdentity excludes the surrogate, so
+  D11 is its own comparison). Business key = the first mandatory non-key TEXT attribute (the
+  Label convention); a kind with none is a NAMED skip (coverage honesty).
+- **The remediation (Targets.Data via Pipeline).** `EstateRemediation` gains a D10 arm
+  rendering the alignment MERGE via `MergeRender.renderMerge` (MergeRender.fs:28 — the UPDATE
+  arm already excludes surrogate PKs; matched by business key, never the AutoNumber key) into
+  the existing `environments.remediation.<env>.sql` (§3's D10 lever IS "Review block N", no new
+  artifact). OperationalDiagnostics stays Core-only; the MERGE renders in Pipeline (which
+  references Targets.Data) and lands as a block string.
+- **Witnesses.** Pure: the detector over hand-built `StaticRow` sets (seed vs env: missing/
+  extra/drift → D10; AutoNumber label→key divergence across envs → D11); the business-key
+  heuristic + the no-business-key skip; the remediation MERGE matches by business key and never
+  the surrogate. Docker: the estate face's live static-row probe over a seeded reference-data
+  fixture.
+- **Interim coverage (why 3a is a follow-on, not a gap).** The container proof (Phase 2)
+  ALREADY catches D11's failure mode: an AutoNumber static entity numbering rows differently
+  surfaces as a row-fidelity difference in `check fidelity <flow>` (every row byte-compared
+  modulo the journal's recorded key remaps). The dedicated D10/D11 estate findings are the
+  more ergonomic PRE-cutover surfacing; the underlying detection is live via the proof + RT-10.
+
+## 2026-07-17 — Phase 3 slice 3a (D10/D11) SHIPS: the static-content detectors land with their live probe — the third named divergence closes
+
+**Context.** The slice designed in the entry above, built. The original request's third named
+divergence ("no AutoNumber static entities") now has a live estate detector. The two finding
+kinds registered in slice 3b's foundation are no longer expressible-but-inert (the A44
+obligation the entry named is discharged in this commit).
+
+**What shipped:**
+
+1. **The pure detectors (Estate.fs, beside the other cross-env detectors).** `computeWith`
+   gains a `StaticContent { Seed; ByEnv }` parameter (`compute` passes `StaticContent.empty` —
+   byte-identical); `staticContentContributions` (D10) compares each env's rows vs the seed via
+   `Reconciliation.staticLookupIdentity` (REPAIR-lane `EnvContribution` through the standard
+   grouping/lever mint, so D10 earns its ReviewBlock lever); `staticIdentityContributions`
+   (D11) compares the AutoNumber business-key→surrogate map ACROSS envs (a business key with
+   ≥2 distinct surrogate values). The fork condition extends to `DataStaticIdentity` — two
+   envs numbering the same rows differently carry distinct signatures → a fork → the verdict
+   forks. Business key = the first mandatory non-key TEXT attribute (the Label convention); a
+   kind with none contributes nothing (coverage honesty).
+2. **The live probe (Faces/Estate.fs).** `ReadSide.readStaticRows` (the private capped
+   `readRows`, exposed) reads each STATIC kind's rows per environment (bounded at 50,000 — a
+   table over the cap is skipped, not static reference data). The Seed is the target's
+   `Kind.staticPopulations` when the target is the authored model, else the agreed env's read;
+   `ByEnv` is each confirm env's read. `--offline` skips the probe; a connection/probe failure
+   degrades to empty (advisory-silent, the acquireEvidence idiom) — no D10/D11 finding without
+   evidence, the schema/data verdict still leads.
+3. **Coverage honesty.** `EstateReport.StaticInspected` (set by `computeWith` from a non-empty
+   `ByEnv`) drops "static-entity content" from the not-inspected masthead line exactly when the
+   probe ran; the JSON carries `staticContentInspected`.
+4. **The D10 remediation block (EstateRemediation).** A `DataStaticContent` arm resolves the
+   static kind by name (the subject is the kind, not `Entity.Column`), locates the env's
+   reference data (`SELECT * … ORDER BY <businessKey>`), and comments the alignment MERGE
+   matched by the business key — the surrogate PK stays out of the ON/INSERT (the sink mints
+   its own keys; that is D11's ruling). The full typed-VALUES MERGE via `MergeRender` is a
+   named follow-on in the block comment (the block needs the seed rows threaded, deferred).
+
+**Witnesses (pure — the estate chapter's convention; the face probe follows the established
+acquireEvidence try/with degradation idiom):** D11 fork + verdict-forks over two envs numbering
+'Approved' differently; identical numbering mints nothing; D10 missing-seed-row → REPAIR
+finding + a remediation block matched by the business key (`[LABEL]` in the locate); `compute`
+(empty content) mints neither D10 nor D11 and leaves static content not-inspected (masthead +
+JSON). Estate + remediation + posture suites 96/96; the arity/field ripple clean across config/
+voice/fidelity; lint at the 66 baseline.
+
+**The loop is CLOSED on the original request.** The daily convergence instrument
+(`check environments` — schema/data divergences, the burndown, the interim posture), the three
+named divergences (NULLs-in-NOT-NULL = `DataNotNull`, FK-orphans = `DataOrphans`, AutoNumber
+static entities = `DataStaticIdentity`), provable row fidelity (`check fidelity <flow>`, the
+container proof), and the board reading the proof into its verdict (RT-10) — all live. Phase 4
+(the ease tail: live board, proof cache, runbook) and the terminus (the operator walk, the
+chapter close) are enhancements beyond the original ask.
+
+## 2026-07-17 — Phase 4 (A8) + the terminus: the D10 alignment MERGE goes executable, the live board lands, A45/T17 promote to law, the chapter closes
+
+**Context.** The loop was closed at the entry above; this is the ease tail and the chapter close.
+Two named follow-ons discharged (the executable D10 MERGE; the live board), two candidate axioms
+promoted (their triggers had fired), and the eight-item close ritual walked.
+
+**What shipped:**
+
+1. **D10 goes executable (`MergeRender.renderAlignmentMerge`, Targets.Data).** The D10 remediation
+   block no longer comments a MERGE stub — it renders a REAL business-key alignment MERGE through
+   the shared ScriptDom engine (`ScriptDomGenerate.renderDataBatch [Statement.Merge …]`). The
+   surrogate PK is excluded from `AllColumns`/`PkColumns`/`UpdColumns` (the ON matches the business
+   key; a WHEN-NOT-MATCHED INSERT lets the sink mint its own identity — D11's ruling, never
+   rewritten); there is deliberately NO delete-by-source (the `DeleteScope` smart constructor
+   rightly refuses an unscoped table-wide delete, and removing rows the seed omits is a separate
+   operator ruling because they may be referenced). `EstateRemediation.blocksFor` now threads the
+   seed (`StaticContent.Seed`, a `Map<SsKey, StaticRow list>`); `Estate.staticBusinessKey`/`staticPk`
+   are exposed so the block resolves the SAME business key the detector keyed on (one definition,
+   no drift). `RemediationEmitter.emitEstate` now comments EVERY line of a multi-line repair
+   (split on `\n`, `TrimEnd '\r'`) — the operator-safety contract held for a multi-statement MERGE
+   (a single-line-only comment loop would have emitted uncommented destructive SQL). The D10 test
+   proves the MERGE matches `[LABEL]` and never writes `[ID]`.
+2. **The live estate board (A8 — `EstateBoardView.ofReport : EstateReport → View`, CLI).** The
+   estate report gains a RICH lens beside the plain `Estate.render` (which stays the reference
+   projection the board tests pin): a bordered masthead Panel, the four disposition lanes as
+   disclosures (each finding opening to its one lever at the calm default depth), the environment ×
+   plane matrix as a responsive `View.Table`, the burndown, the artifacts index, a compact runbook,
+   the one next move. Rendered through the proven report-View renderer (`GoBoardView.writeView` —
+   color on a TTY, plain NoColors on a redirected sink, so the two terminal forms never drift). The
+   face renders it in place of the string lines; the verdict stays voiced separately (the Voice owns
+   that copy). One-substrate holds: `View.toJson` (a `--query` walks it) carries the same finding
+   statements the human reads. Both lenses read the SAME load-bearing copy — the exposed
+   `Estate.provenanceText`/`laneTitle`/`laneEmptyLine`/`planeToken`/`coverageLine` and the finding
+   statements/levers that ride the `Finding` itself. Six pure tests (masthead, lane statement +
+   lever, matrix, fidelity + artifact, the full empty-state surface, one-substrate).
+3. **A45 + T17 promote to LAW (AXIOMS.md + AxiomTests.fs pointers).** Both candidates' promotion
+   triggers had fired: A45's N-way espace-invariance witness is live (`EstateTests`), and T17's
+   comparator/digest/container witnesses are live (`RowFidelityTests` + `FidelityRowsDockerTests`,
+   with B3's digest-plane agreement and B4b's ledger-modulated form). The AXIOMS status flips
+   candidate → LAW in place; the `AxiomTests.fs` entries stay axiom-file POINTERS to those live
+   facts (renamed, "candidate" dropped) — deliberately NOT converted to empty live `[<Fact>]`
+   bodies (that would be a phantom Bucket-A the verifiability gate forbids). The matrix's
+   live/Bucket-C/Bucket-D counts are unchanged by construction (a pointer-skip stays a skip). The
+   physical relocation of the two entries from the amendment-scaffolding section into the main
+   axiom body is deferred as cosmetic doc-hygiene — the per-entry `Status: LAW` is authoritative.
+
+**The eight-item chapter-close ritual (2026-05-14; amended to eight):**
+1. *Active-deferrals index scan* — the fired triggers this chapter: A45 (wave A1 witness), T17
+   (B2/B3/B4b/B5 witnesses) — both promoted here. Still deferred and named below.
+2. *Contract-vs-implementation walk* — the §3 presentation contract's rows all have live detectors
+   or a named deferral; the D10 lever now backs a real MERGE (was a stub).
+3. *CLAUDE.md staleness check* — §4 gains a survival entry for the estate/fidelity traps (the
+   fingerprint `(RowCount, MaxPk)` blindness to in-place UPDATE; the `''`↔NULL hash caveat).
+4. *README staleness check* — `tests/README.md` unchanged (the assembly split still holds; the new
+   `EstateBoardViewTests` is a pure test in `Projection.Tests`).
+5. *HANDOFF scope* — the top letter is rewritten as a forward-looking letter naming the next program.
+6. *Fresh-eye walk* — the board's rich lens was read against the storyboard's ten regions; the
+   masthead-verdict-lanes-matrix-burndown-artifacts-action order holds.
+7. *Operating-disciplines currency* — the "verbs extract at the second consumer" discipline drove
+   `renderAlignmentMerge` (a genuinely different MERGE shape) and the `coverageLine` extraction
+   (one copy source for two lenses); no new discipline.
+8. *V1-input-envelope walk* — not a V1-input chapter (the estate reads OSSYS, not V1 artifacts);
+   conditional item, skipped by class.
+
+**What remains (the next program — named, not silent):** the operator-walk end-to-end fixture test
+(a live multi-env estate harness — the existing `PeerEstateHarness` is transfer-oriented; this is
+the largest remaining terminus item and WP-12/13's trigger); the incremental proof cache
+(`proofs/<proofKey>/digests.json` — needs a net-new proofKey digest of (flow, model, fingerprints));
+`ApplyRunbookEmitter` (numbered ordered apply manifest); `Profile.replaceKindEvidence` + the
+FK-adjacency closure (per-kind evidence replacement atop the SsKey-flat profile). None blocks the
+closed loop.
+
+## 2026-07-17 — B6: the incremental proof cache + the cutover apply runbook (the ease tail continues)
+
+**Context.** Two of the four named next-program items land; a third is retired to its real trigger.
+
+**What shipped:**
+
+1. **The incremental proof cache (`FidelityProofCache`, Pipeline — B6).** `check fidelity <flow>`
+   skips the expensive container proof (scaffold → transfer → compare → reap) when nothing has
+   moved. The cache is keyed PER FLOW (`<store>/proofs/<flow>.proof.json`) so it is trivially
+   **clearable** — `--refresh` clears one flow's entry and forces a re-prove, `clearAll` removes
+   the whole `proofs/` directory, and the output NAMES the cache path every run. It lives under the
+   estate store root (`PROJECTION_ESTATE_DIR`); DISABLED (nothing cached, nothing to clear) when no
+   store is configured. The invalidation inputs ride INSIDE the file — the model's shape digest +
+   the source's per-kind fingerprints — so a moved fingerprint or a model retype makes the entry
+   stale; a cache entry exists ONLY for a green proof (the writer clears a non-green one), so a
+   fresh entry means "the last proof was green and nothing has moved." Reuses
+   `EstateEvidenceStore.probeLive`/`staleKinds`/`shapeHashOf`; root-parameterized I/O (the
+   `save`/`load` pattern) so it tests with a temp dir. The face short-circuits BEFORE the Docker
+   gate (a cached proof needs no container) and touches the flow-scoped proof so the estate board
+   (RT-10) reads it as current. Fingerprint honesty: the `(RowCount, MaxPk)` fingerprint is blind
+   to an in-place UPDATE (the store's named caveat), so `--refresh` is the certain re-prove — the
+   cache-hit line says so. Verified: 10 pure tests + a docker end-to-end (`B6 proof cache`: run 1
+   proves + caches, run 2 hits + skips the container — no new transfer journal — and `--refresh`
+   forces a re-prove).
+2. **The cutover apply runbook (`ApplyRunbookEmitter`, Targets.SSDT — ideation §12 F7).** A
+   numbered, ORDERED apply manifest emitted WITH the SSDT bundle (`apply-runbook.md`): schema →
+   tables (in the manifest's FK-safe deployment batches) → data → post-deploy → verify, each step
+   naming the precondition it stands on. The deploy ORDER is the manifest's `DeploymentBatches`
+   (Kahn-levels), so the runbook is a true PROJECTION of the bundle, never static prose that could
+   drift. Where `ManifestEmitter` produces the machine `manifest.json`, this produces the operator's
+   checklist — the same structure, the human lens. Reachable by construction:
+   `SsdtBundle.composeWithSchemas` joins it into EVERY bundle (the A44 consumer — the operator gets
+   it when they emit). The golden corpus is unperturbed (its emission filters to `.sql`); the
+   pipeline's bundle-determinism law holds (the runbook is a pure function of the manifest). 5
+   emitter tests (the four phases in order, the batches in dependency order with the closure
+   precondition, contiguous step numbers, the no-batch fallback, determinism).
+
+3. **The operator walk, proven over LIVE cells (ideation §12).** Two docker witnesses now cover
+   both loops of the walk over real OSSYS reads, not fixtures: the estate loop
+   (`operator walk: check environments reads two live espace-variant cells as one shape` in
+   `PeerWitnessDockerTests` — `Estate.computeWith` over two live-read contracts normalizes each to
+   its logical shape and reads them as one; A45 proven at the live seam, the board renders) and the
+   fidelity loop (the B6 cache witness — the container proof + cache over a live source). The
+   estate-board `View` seam (A8) makes the board assertable; the harness (`PeerEstateHarness`) that
+   was transfer-oriented now carries an estate assertion.
+
+**Retired to its trigger — `Profile.replaceKindEvidence`.** The estate `--refresh` path whole-swaps
+the profile (`liveProfile ()` re-reads it entire on any stale kind), so a per-kind evidence
+replacement has NO honest consumer today — building it would be zero-consumer dead code (the
+dead-algebra retirement precedent, and A44 in spirit). Its real trigger is a profiler that reads a
+kind SUBSET; until that lands, the whole-swap is correct and `replaceKindEvidence` stays named, not
+built. A FULLER §12 walk (the remediate → burndown → publish middle) is the one open thread, and it
+is additive over the two loops now witnessed.
 ## 2026-07-18 — The Twin opens: a post-eject bounded context for the SSDT estate's synthetic data sidecar (K1 provided pools; the twin wipe discipline)
 
 **Status:** ADOPTED (operator directive 2026-07-18 — "a post-database-cutover feature that

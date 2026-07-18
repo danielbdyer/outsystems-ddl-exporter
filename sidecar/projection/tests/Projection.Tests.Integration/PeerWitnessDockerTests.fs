@@ -42,6 +42,35 @@ type PeerWitnessDockerTests(fixture: EphemeralContainerFixture) =
                 Assert.Equal(1, cities)
             })
 
+    /// The operator-walk estate loop (ideation §12) over LIVE cells: the daily
+    /// convergence instrument (`check environments`) reads two espace-variant
+    /// cells of one model and finds ONE shape — A45 (espace invariance) proven
+    /// over real OSSYS reads, not fixtures. `computeWith` normalizes each cell to
+    /// its logical shape, so the per-espace physical names fall away and the
+    /// estate is unified; the board renders over the live-read report.
+    [<Fact>]
+    member _.``operator walk: check environments reads two live espace-variant cells as one shape — unified (A45 over live reads), the board renders`` () =
+        if not (skipIfNoDocker "PeerEstateWalk") then () else
+        run2Cell fixture "PeerEstateWalk" (fun _src _sink _srcConnStr _sinkConnStr srcContract sinkContract ->
+            task {
+                // Cell A is the agreed target; cell B is the confirm environment.
+                // Both are live-read contracts of one model, espace-shifted
+                // (SsKey-aligned) — `toLogicalShape` normalizes the physical names.
+                let operandB : Compare.Operand = { Label = "cell-b"; Catalog = sinkContract; Profile = None }
+                let report =
+                    Estate.computeWith Estate.Posture.defaults Estate.StaticContent.empty
+                        (Estate.TargetOperand.AgreedEnv "cell-a") srcContract [ "cell-b", operandB ]
+                // The espace-invariance law over LIVE reads: one shape, no findings.
+                Assert.True(Estate.isUnified report,
+                            sprintf "two espace-variant live cells must read as one shape; findings: %A"
+                                (report.Findings |> List.map (fun f -> f.Statement)))
+                Assert.Empty(report.Findings)
+                // The daily instrument's board renders over the live reads.
+                let board = Estate.render report
+                Assert.Contains(board, fun (l: string) -> l.StartsWith "ENVIRONMENTS")
+                return ()
+            })
+
     /// `transfer.incremental.populatedSink` (T1.8) — a second merge/Incremental
     /// Execute into a populated sink refuses (it would re-mint every AssignedBySink
     /// row, duplicating them), on the peer path.

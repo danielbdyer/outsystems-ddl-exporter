@@ -140,6 +140,26 @@ module Estate =
         | Converging
         | Forked
 
+    /// The row-fidelity clause's state on this run (RT-10, wave A4β). The
+    /// estate config's `fidelityFlow` decides whether the clause is part of
+    /// the verdict at all: unconfigured, it is named and excluded (a never-run
+    /// proof never holds the verdict hostage); configured, a green proof rides
+    /// the masthead and the three non-green states each mint a DECIDE finding.
+    /// The face computes it (reading `fidelity.rows.json` + its mtime); the
+    /// engine folds it (`withFidelity`).
+    [<RequireQualifiedAccess>]
+    type FidelityClause =
+        /// No `readiness.estate.fidelityFlow` — the clause is out of the verdict.
+        | NotConfigured
+        /// A proof exists, agrees, and is no older than this run's evidence.
+        | Green of flow: string * ageDays: int
+        /// The config names a flow but no proof artifact was found.
+        | Missing of flow: string
+        /// The proof predates this run's freshest evidence — the world moved.
+        | Stale of flow: string * ageDays: int
+        /// The proof reports differing rows — the load is not byte-faithful.
+        | Diverged of flow: string * differingRows: int64
+
     /// The assembled estate report — the one value the board, the JSON, and
     /// the exit code project.
     type EstateReport =
@@ -163,6 +183,46 @@ module Estate =
             /// does it model reality), not cross-environment divergences, so
             /// they carry their own list and their own board section.
             EmissionFindings : Finding list
+            /// The movement since a recorded baseline (the burndown, wave A7)
+            /// — the face stamps it from the evidence store's history;
+            /// `compute` stays store-blind. `None` = no baseline (a first
+            /// recorded reading, or no store).
+            Burndown : Burndown option
+            /// Consecutive UNIFIED runs, this one included (0 while the
+            /// estate diverges) — the gate streak. Stamped with the burndown.
+            Streak : int
+            /// The row-fidelity clause's state (RT-10, wave A4β) — the face
+            /// stamps it from `fidelity.rows.json` + the configured flow;
+            /// `compute` stays proof-blind (I/O lives at the boundary).
+            /// `NotConfigured` until stamped.
+            Fidelity : FidelityClause
+            /// Whether the static-content probe (D10/D11, wave A4β) ran this
+            /// run — true when per-env static rows were threaded (the face's
+            /// live probe), false on `compute` / `--offline`. Drives the
+            /// coverage-honesty line (a clean verdict covers static content
+            /// only when it was inspected).
+            StaticInspected : bool
+        }
+
+    /// The movement between a recorded baseline reading and this run —
+    /// findings keyed by `FindingKey`, so the burndown, the block ids, and
+    /// the overlay entries all say one name (wave A7).
+    and Burndown =
+        {
+            /// The baseline reading's run identity (`--since @runId`, or the
+            /// latest recorded reading by default).
+            SinceRunId   : string
+            /// The baseline reading's age at this run, whole days.
+            SinceAgeDays : int
+            /// Findings present at the baseline and absent now — closed.
+            Closed       : int
+            /// Findings absent at the baseline and present now — opened.
+            Opened       : int
+            /// Findings present in both readings — remaining.
+            Remaining    : int
+            /// The oldest open finding's age in whole days (first-seen
+            /// carried across readings); `None` when nothing is open.
+            OldestDays   : int option
         }
 
     // ----------------------------------------------------------------------
@@ -250,6 +310,28 @@ module Estate =
               RepairBandByEntity = Map.empty
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
+
+    /// The per-run STATIC ROW content the D10/D11 detectors read (wave A4β).
+    /// The estate carries only statistical `Profile` in its operands, and the
+    /// OSSYS read marks a static entity `Modality.Static` WITHOUT its row
+    /// content (the records ride a skipped metamodel result set) — so the face
+    /// reads the actual rows (bounded; static tables are small reference data)
+    /// and threads them here. `Seed` is the reference basis (the target's
+    /// declared static content); `ByEnv` is each confirm environment's actual
+    /// rows, per static kind (keyed by SsKey — espace-stable). `empty` is
+    /// `compute`'s basis and the offline / no-static-kind case (no D10/D11
+    /// findings; the coverage line stays honest).
+    type StaticContent =
+        {
+            Seed  : Map<SsKey, StaticRow list>
+            ByEnv : Map<string, Map<SsKey, StaticRow list>>
+        }
+
+    [<RequireQualifiedAccess>]
+    module StaticContent =
+        /// No static-row evidence — `compute`'s basis; the D10/D11 detectors
+        /// produce nothing.
+        let empty : StaticContent = { Seed = Map.empty; ByEnv = Map.empty }
 
     /// The logical entity a finding's subject names (the part before the
     /// first `.` in `Entity.Column`, or the whole token for an entity).
@@ -1067,6 +1149,132 @@ module Estate =
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
+    // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
+
+    /// The business key of a static entity — the label convention: the first
+    /// mandatory, non-key, TEXT attribute (a Country's Name, a Status's
+    /// Label). `None` when the kind has none; the detectors then skip the kind
+    /// by name (coverage honesty), never guessing a key.
+    /// Exposed (not `private`) so `EstateRemediation`'s D10 block resolves the
+    /// SAME business key the detector keyed on — one definition, no drift
+    /// between the finding and its alignment MERGE's ON clause.
+    let staticBusinessKey (k: Kind) : Attribute option =
+        k.Attributes
+        |> List.tryFind (fun a -> a.IsMandatory && not a.IsPrimaryKey && a.Type = Text)
+
+    /// The static entity's primary-key attribute (the surrogate whose minting
+    /// D11 watches). Exposed alongside `staticBusinessKey` so the remediation
+    /// excludes exactly the surrogate the detector ignored.
+    let staticPk (k: Kind) : Attribute option =
+        k.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey)
+
+    /// D10 (`DataStaticContent`): each environment's static rows compared
+    /// against the SEED (the target's declared static content) by business
+    /// key — missing rows, extra rows, or column drift, via
+    /// `Reconciliation.staticLookupIdentity`. A REPAIR-lane finding (the
+    /// alignment MERGE is the prepared repair). The surrogate PK is EXCLUDED
+    /// from the compare (the environments mint their own keys; that is D11's
+    /// concern). A kind absent from the seed, or with no business key,
+    /// contributes nothing.
+    let private staticContentContributions
+        (logicalTarget: Catalog)
+        (content: StaticContent)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            match Map.tryFind kind.SsKey content.Seed, staticBusinessKey kind, staticPk kind with
+            | Some seedRows, Some bk, Some pk when not (List.isEmpty seedRows) ->
+                content.ByEnv
+                |> Map.toList
+                |> List.choose (fun (env, byKind) ->
+                    match Map.tryFind kind.SsKey byKind with
+                    | None -> None
+                    | Some envRows ->
+                        let div =
+                            Reconciliation.staticLookupIdentity Set.empty kind.SsKey bk.Name pk.Name seedRows envRows
+                        if div.IsClean then None
+                        else
+                            let missing = List.length div.MissingOnTarget
+                            let extra = List.length div.ExtraOnTarget
+                            let drift = div.ColumnDrifts |> List.sumBy (fun d -> d.DifferingPairs)
+                            let name = Name.value kind.Name
+                            Some
+                                { Kind = EstateFindingKind.DataStaticContent
+                                  Subject = name
+                                  Reference = None
+                                  Env = env
+                                  Fragment =
+                                    sprintf "%s in %s differs from the seed — %s row(s) missing, %s extra, %s value difference(s)"
+                                        name env (humane missing) (humane extra) (humane drift)
+                                  Weight = int64 (missing + extra + drift)
+                                  Signature = None })
+            | _ -> [])
+
+    /// D11 (`DataStaticIdentity`): an AUTONUMBER static entity (its PK an
+    /// IDENTITY — `SurrogateRemap.IdentityDisposition.ofKind = AssignedBySink`)
+    /// that numbers the SAME business rows differently across environments —
+    /// every inbound reference means something different per environment. A
+    /// DECIDE-lane fork (rule the seed; pin explicit keys). The comparison is
+    /// the business-key→surrogate map ACROSS environments — the surrogate the
+    /// content compare (D10) deliberately excludes. Emits only when a shared
+    /// business key carries at least two distinct surrogate values.
+    let private staticIdentityContributions
+        (logicalTarget: Catalog)
+        (content: StaticContent)
+        : EnvContribution list =
+        Catalog.allKinds logicalTarget
+        |> List.collect (fun kind ->
+            match staticBusinessKey kind, staticPk kind with
+            | Some bk, Some pk when pk.IsIdentity ->
+                let mapByEnv =
+                    content.ByEnv
+                    |> Map.toList
+                    |> List.choose (fun (env, byKind) ->
+                        Map.tryFind kind.SsKey byKind
+                        |> Option.map (fun rows ->
+                            let m =
+                                rows
+                                |> List.choose (fun r ->
+                                    match StaticRow.value bk.Name r, StaticRow.value pk.Name r with
+                                    | Some bkv, Some pkv when bkv <> "" -> Some (bkv, pkv)
+                                    | _ -> None)
+                                |> List.distinctBy fst
+                                |> Map.ofList
+                            env, m))
+                if List.length mapByEnv < 2 then []
+                else
+                    // A business key present in >= 2 envs with >= 2 distinct
+                    // surrogate values is the divergence.
+                    let sharedKeys =
+                        mapByEnv
+                        |> List.map (fun (_, m) -> m |> Map.toList |> List.map fst |> Set.ofList)
+                        |> List.reduce Set.intersect
+                    let diverging =
+                        sharedKeys
+                        |> Set.filter (fun bkv ->
+                            mapByEnv
+                            |> List.choose (fun (_, m) -> Map.tryFind bkv m)
+                            |> List.distinct
+                            |> List.length >= 2)
+                    if Set.isEmpty diverging then []
+                    else
+                        let name = Name.value kind.Name
+                        let example = diverging |> Set.toList |> List.sort |> List.head
+                        mapByEnv
+                        |> List.map (fun (env, m) ->
+                            let ev = Map.tryFind example m |> Option.defaultValue "?"
+                            { Kind = EstateFindingKind.DataStaticIdentity
+                              Subject = name
+                              Reference = None
+                              Env = env
+                              Fragment = sprintf "%s numbers '%s' as %s in %s" name example ev env
+                              Weight = int64 (Set.count diverging)
+                              // The surrogate map is the fork signature: two envs
+                              // with different maps numbered the same rows
+                              // differently — no single adoption resolves it.
+                              Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",") })
+            | _ -> [])
+
     /// Compute the estate report from the resolved target and confirm
     /// operands, under the operator's posture (the repair band + the loaded
     /// config's active relaxations — wave A6). Every catalog is normalized
@@ -1078,6 +1286,7 @@ module Estate =
     /// environments, may be the one behind).
     let computeWith
         (posture: Posture)
+        (staticContent: StaticContent)
         (target: TargetOperand)
         (targetCatalog: Catalog)
         (envs: (string * Compare.Operand) list)
@@ -1216,6 +1425,11 @@ module Estate =
             @ synthesizedIdentityContributions logicalTarget logicalEnvs
             @ cdcParityContributions logicalTarget profilesByEnv
             @ postureContributions logicalTarget posture (envs |> List.map fst) profilesByEnv
+            // D10 / D11 (wave A4β): the static-entity content + identity
+            // detectors over the per-env static rows the face read (empty on
+            // `compute` / offline — no findings, the coverage line honest).
+            @ staticContentContributions logicalTarget staticContent
+            @ staticIdentityContributions logicalTarget staticContent
         let findings =
             (perEnv |> List.collect (fun (_, _, contributions) -> contributions)) @ crossEnv
             |> List.groupBy (fun c -> c.Kind, c.Subject)
@@ -1246,8 +1460,13 @@ module Estate =
                 // changed, differently — no promotion order explains it,
                 // and no single adoption resolves it.
                 let fork =
-                    plane = EstatePlane.Schema
-                    && EstateFindingKind.laneOf kind = EstateLane.Decide
+                    // A schema Decide finding forks when the environments
+                    // carry distinct divergence signatures; D11 (identity
+                    // plane) forks the same way over the surrogate maps — the
+                    // same rows numbered differently, no single adoption
+                    // resolving it (wave A4β).
+                    (plane = EstatePlane.Schema && EstateFindingKind.laneOf kind = EstateLane.Decide
+                     || kind = EstateFindingKind.DataStaticIdentity)
                     && (perEnvRows |> List.choose (fun c -> c.Signature) |> List.distinct |> List.length) >= 2
                 let forkNote =
                     if fork then
@@ -1294,7 +1513,11 @@ module Estate =
           Evidence = EvidenceStoreBasis.Disabled
           Remediation = []
           OverlayEntries = None
-          EmissionFindings = emissionFindingsFor logicalTarget }
+          EmissionFindings = emissionFindingsFor logicalTarget
+          Burndown = None
+          Streak = 0
+          Fidelity = FidelityClause.NotConfigured
+          StaticInspected = not (Map.isEmpty staticContent.ByEnv) }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -1303,7 +1526,7 @@ module Estate =
         (targetCatalog: Catalog)
         (envs: (string * Compare.Operand) list)
         : EstateReport =
-        computeWith Posture.defaults target targetCatalog envs
+        computeWith Posture.defaults StaticContent.empty target targetCatalog envs
 
     /// The face's remediation stamp: the artifacts it wrote this run —
     /// (file, block count) per environment (`compute` stays file-blind;
@@ -1316,6 +1539,57 @@ module Estate =
     /// ARTIFACTS index and the JSON read it; `compute` stays file-blind.
     let withOverlay (entries: int) (report: EstateReport) : EstateReport =
         { report with OverlayEntries = Some entries }
+
+    /// The face's history stamp (wave A7): the movement against the recorded
+    /// baseline and the unified-run streak, read from the evidence store's
+    /// history — `compute` stays store-blind; the boundary owns clocks and
+    /// directories.
+    let withHistory (burndown: Burndown option) (streak: int) (report: EstateReport) : EstateReport =
+        { report with Burndown = burndown; Streak = streak }
+
+    /// The face's fidelity stamp (RT-10, wave A4β): fold the row-fidelity
+    /// clause into the report. A configured-but-non-green proof mints its
+    /// DECIDE finding (ProofMissing / ProofStale / ProofDiverged, keyed on the
+    /// flow) and RE-COMPUTES the verdict over the widened finding set — so a
+    /// missing or stale proof turns Unified to Converging (the verdict formula
+    /// includes the configured proof, RT-10's whole point). `NotConfigured`
+    /// and `Green` add no finding: the clause rides the masthead only, and the
+    /// verdict stands on the schema/data findings alone. Apply BEFORE
+    /// `withHistory` so the proof finding participates in the burndown and the
+    /// streak reset (a run whose proof is missing is not a unified run).
+    let withFidelity (clause: FidelityClause) (report: EstateReport) : EstateReport =
+        let proofFinding (kind: EstateFindingKind) (flow: string) (statement: string) : Finding =
+            { Key = FindingKey.create kind flow
+              Kind = kind
+              Lane = EstateFindingKind.laneOf kind
+              Plane = EstateFindingKind.planeOf kind
+              // Estate-wide (a property of the proof artifact, not a
+              // per-environment divergence) — no per-env weight rows.
+              Envs = []
+              Statement = statement
+              // The one lever names the flow to run — the §3 contract's row
+              // (the registry's generic Ruling is the form; the flow rides here).
+              Lever = Some (sprintf "Run: projection check fidelity %s." flow)
+              Fork = false }
+        let extra =
+            match clause with
+            | FidelityClause.NotConfigured
+            | FidelityClause.Green _ -> []
+            | FidelityClause.Missing flow ->
+                [ proofFinding EstateFindingKind.ProofMissing flow
+                    (sprintf "The fidelity proof for flow '%s' has not run against the current estate." flow) ]
+            | FidelityClause.Stale (flow, ageDays) ->
+                [ proofFinding EstateFindingKind.ProofStale flow
+                    (sprintf "The fidelity proof for flow '%s' is %s day(s) old and the estate's evidence has moved since — the proof predates what this run can see." flow (humane ageDays)) ]
+            | FidelityClause.Diverged (flow, diffs) ->
+                [ proofFinding EstateFindingKind.ProofDiverged flow
+                    (sprintf "The fidelity proof for flow '%s' reports %s differing row(s) — the load is not yet byte-faithful." flow (humane64 diffs)) ]
+        let findings = report.Findings @ extra
+        let verdict =
+            if List.isEmpty findings then Verdict.Unified
+            elif findings |> List.exists (fun f -> f.Fork) then Verdict.Forked
+            else Verdict.Converging
+        { report with Findings = findings; Verdict = verdict; Fidelity = clause }
 
     /// The face's evidence stamp: the resolved store basis and each
     /// environment's actual acquisition path, applied onto a computed report
@@ -1357,21 +1631,25 @@ module Estate =
     // projects (one substrate).
     // ----------------------------------------------------------------------
 
-    let private laneTitle (lane: EstateLane) : string =
+    // The lane/plane/provenance formatters are exposed (not `private`) so the
+    // rich board lens (`EstateBoardView.ofReport`, the CLI's live board) presents
+    // the SAME load-bearing copy the plain lens does — one report value, two
+    // lenses, no drift on the words the operator reads.
+    let laneTitle (lane: EstateLane) : string =
         match lane with
         | EstateLane.Decide -> "DECIDE — the ruling queue"
         | EstateLane.Repair -> "REPAIR — prepared repairs"
         | EstateLane.Relax  -> "RELAX — interim changes to carry through cutover"
         | EstateLane.Watch  -> "WATCH — advisories"
 
-    let private laneEmptyLine (lane: EstateLane) : string =
+    let laneEmptyLine (lane: EstateLane) : string =
         match lane with
         | EstateLane.Decide -> "  Nothing awaits a ruling."
         | EstateLane.Repair -> "  Nothing carries a repair."
         | EstateLane.Relax  -> "  No interim changes are needed."
         | EstateLane.Watch  -> "  Nothing is under watch."
 
-    let private planeToken (p: EstatePlane) : string =
+    let planeToken (p: EstatePlane) : string =
         match p with
         | EstatePlane.Schema -> "schema"
         | EstatePlane.Data -> "data"
@@ -1382,7 +1660,7 @@ module Estate =
     /// The per-lane cap — the top consequences are named; the remainder is
     /// counted (THE_VOICE §12: cap the breadth, name the remainder; the full
     /// list is `environments.json`'s, searchable, never scrollable).
-    let private laneCap : int = 8
+    let laneCap : int = 8
 
     /// The humane capture-age clause ("today" / "N day(s) ago").
     let private ageText (ageDays: int) : string =
@@ -1399,7 +1677,7 @@ module Estate =
 
     /// One environment's masthead evidence clause — the provenance made
     /// legible (RT-7: capture age and fingerprint status ride the masthead).
-    let private provenanceText (basis: EnvBasis) : string =
+    let provenanceText (basis: EnvBasis) : string =
         match basis.Provenance with
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
@@ -1412,6 +1690,23 @@ module Estate =
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
             "no data evidence this run — the data plane is advisory-silent"
+
+    /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
+    /// yet check, so "one shape" never reads as "everything is clean". The
+    /// row-fidelity proof joins the covered set exactly when it is configured;
+    /// the static-content probe (D10/D11) drops from the not-inspected list
+    /// exactly when it ran. Exposed (not inlined in `render`) so the rich board
+    /// lens presents the SAME coverage sentence — one source, no drift.
+    let coverageLine (report: EstateReport) : string =
+        let coveredTail =
+            match report.Fidelity with
+            | FidelityClause.NotConfigured -> "A clean verdict covers schema and data convergence only."
+            | _ -> "A clean verdict covers schema convergence, data convergence, and the row-fidelity proof."
+        let notInspected =
+            [ if not report.StaticInspected then "static-entity content"
+              "user references"; "grants"; "computed columns"
+              "emission fidelity (clustering, temporal tables, sequences)" ]
+        sprintf "Not inspected this run: %s. %s" (String.concat ", " notInspected) coveredTail
 
     /// Render the board regions BELOW the verdict (the masthead through the
     /// action), from the one report value. The face renders the verdict Hero
@@ -1428,15 +1723,28 @@ module Estate =
                    sprintf "  Evidence store: %s." dir
                | EvidenceStoreBasis.Disabled ->
                    "  Evidence reads live this run — no store is configured (PROJECTION_ESTATE_DIR, or the ledger directory's estate child, enables pay-once evidence).")
-          // The fidelity clause, named (RT-10): the estate config cannot
-          // name a fidelity flow yet (the container-proof wave brings it),
-          // so the clause is not configured — said, never silent, and the
-          // verdict formula excludes it.
-          yield "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
+          // The fidelity clause, named (RT-10, wave A4β): the estate config's
+          // `fidelityFlow` decides whether the row-fidelity proof is part of
+          // the verdict. Unconfigured, it is named and excluded (a never-run
+          // proof never holds the verdict hostage); configured, a green proof
+          // rides here and each non-green state is a DECIDE finding below.
+          yield
+              (match report.Fidelity with
+               | FidelityClause.NotConfigured ->
+                   "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
+               | FidelityClause.Green (flow, ageDays) ->
+                   let age = if ageDays <= 0 then "captured today" else sprintf "%s day(s) old" (humane ageDays)
+                   sprintf "  The fidelity proof for flow '%s' is green — every row byte-identical (%s)." flow age
+               | FidelityClause.Missing flow ->
+                   sprintf "  The fidelity proof for flow '%s' has not run — it stands as a ruling below." flow
+               | FidelityClause.Stale (flow, ageDays) ->
+                   sprintf "  The fidelity proof for flow '%s' is %s day(s) old and predates this run's evidence — it stands as a ruling below." flow (humane ageDays)
+               | FidelityClause.Diverged (flow, diffs) ->
+                   sprintf "  The fidelity proof for flow '%s' reports %s differing row(s) — it stands as a ruling below." flow (humane64 diffs))
           // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
-          // what it inspected): the classes this run does not yet check are
-          // named, so "one shape" cannot read as "everything is clean".
-          yield "  Not inspected this run: static-entity content, user references, grants, computed columns, and emission fidelity (clustering, temporal tables, sequences). A clean verdict covers schema and data convergence only."
+          // what it inspected), the one source `coverageLine` (the rich board
+          // lens reads the same sentence).
+          yield sprintf "  %s" (coverageLine report)
           yield ""
 
           // The lanes — DECIDE → REPAIR → RELAX → WATCH, impact-ranked, capped.
@@ -1492,8 +1800,27 @@ module Estate =
                   yield sprintf "  %-14s %s" basis.Env cells
           yield ""
 
-          // BURNDOWN — joins at the history wave; the first run says so.
-          yield "BURNDOWN — this run is the estate's first recorded reading; movement renders from the next run."
+          // BURNDOWN — the movement since the recorded baseline (wave A7).
+          // Three honest states: movement against a named baseline; a first
+          // recorded reading; no store, no memory — said, never implied.
+          match report.Burndown, report.Evidence with
+          | Some b, _ ->
+              let sinceClause =
+                  if b.SinceAgeDays <= 0 then "earlier today"
+                  else sprintf "%s day(s) ago" (humane b.SinceAgeDays)
+              let oldestClause =
+                  match b.OldestDays with
+                  | Some days when b.Remaining + b.Opened > 0 ->
+                      sprintf " — the oldest open finding is %s day(s) old" (humane days)
+                  | _ -> ""
+              yield sprintf "BURNDOWN — since run %s (%s): %s closed, %s opened, %s remain%s."
+                        b.SinceRunId sinceClause (humane b.Closed) (humane b.Opened) (humane b.Remaining) oldestClause
+          | None, EvidenceStoreBasis.Enabled _ ->
+              yield "BURNDOWN — this run is the estate's first recorded reading; movement renders from the next run."
+          | None, EvidenceStoreBasis.Disabled ->
+              yield "BURNDOWN — the estate keeps no memory without a store; PROJECTION_ESTATE_DIR (or the ledger directory's estate child) enables the burndown."
+          if report.Streak > 0 then
+              yield sprintf "  The estate has read unified for %s consecutive run(s)." (humane report.Streak)
           yield ""
 
           // ARTIFACTS — the index: one line per artifact naming its role.
@@ -1520,13 +1847,15 @@ module Estate =
           yield "  is not yet proven."
           yield ""
 
-          // ACTION — the one next move.
+          // ACTION — the one next move; a holding estate names its streak.
           let action =
               match laneFindings EstateLane.Decide report with
               | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
               | [] ->
                   match laneFindings EstateLane.Repair report with
                   | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
+                  | [] when report.Streak > 1 ->
+                      sprintf "Next: the estate holds — %s consecutive unified run(s); re-run on the publish cadence." (humane report.Streak)
                   | [] -> "Next: the estate holds; re-run on the publish cadence."
           yield action ]
 
@@ -1594,6 +1923,7 @@ module Estate =
         for lane, count in laneCounts report do
             lanes.[laneToken lane] <- JsonValue.Create count
         root.["lanes"] <- lanes
+        root.["staticContentInspected"] <- JsonValue.Create report.StaticInspected
         let remediation = JsonArray()
         for file, blocks in report.Remediation do
             let o = JsonObject()
@@ -1609,7 +1939,42 @@ module Estate =
              o.["entries"] <- JsonValue.Create entries
              root.["overlay"] <- o
          | None -> ())
-        root.["fidelityClause"] <- JsonValue.Create "notConfigured"
+        // The fidelity clause (RT-10) — the state token plus its coordinates,
+        // so a CI reader branches on the proof without parsing the board.
+        (let fc = JsonObject()
+         (match report.Fidelity with
+          | FidelityClause.NotConfigured ->
+              fc.["state"] <- JsonValue.Create "notConfigured"
+          | FidelityClause.Green (flow, ageDays) ->
+              fc.["state"] <- JsonValue.Create "green"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["ageDays"] <- JsonValue.Create ageDays
+          | FidelityClause.Missing flow ->
+              fc.["state"] <- JsonValue.Create "missing"
+              fc.["flow"] <- JsonValue.Create flow
+          | FidelityClause.Stale (flow, ageDays) ->
+              fc.["state"] <- JsonValue.Create "stale"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["ageDays"] <- JsonValue.Create ageDays
+          | FidelityClause.Diverged (flow, diffs) ->
+              fc.["state"] <- JsonValue.Create "diverged"
+              fc.["flow"] <- JsonValue.Create flow
+              fc.["differingRows"] <- JsonValue.Create diffs)
+         root.["fidelityClause"] <- fc)
+        (match report.Burndown with
+         | Some b ->
+             let o = JsonObject()
+             o.["sinceRunId"] <- JsonValue.Create b.SinceRunId
+             o.["sinceAgeDays"] <- JsonValue.Create b.SinceAgeDays
+             o.["closed"] <- JsonValue.Create b.Closed
+             o.["opened"] <- JsonValue.Create b.Opened
+             o.["remaining"] <- JsonValue.Create b.Remaining
+             (match b.OldestDays with
+              | Some days -> o.["oldestDays"] <- JsonValue.Create days
+              | None -> ())
+             root.["burndown"] <- o
+         | None -> ())
+        root.["streak"] <- JsonValue.Create report.Streak
         let findings = JsonArray()
         for f in report.Findings do
             let o = JsonObject()

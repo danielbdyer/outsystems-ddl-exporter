@@ -254,19 +254,18 @@ let migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnecti
         Error refusal.ExitCode
     task {
         // G0 (AC-G0) — the migrate pre-flights compose through the ONE mandatory
-        // `Preflight.all`, mirroring the transfer Execute path (`runCore`). The
-        // permission gate sequences on the connection gate's task (a hot task is
-        // awaitable more than once) so the two probes never run concurrently on
-        // the one `cnn` — SqlClient forbids concurrent commands on a connection.
-        let connectionGate : System.Threading.Tasks.Task<Result<unit>> = Preflight.connectionPreflight cnn cnn
-        let permissionGate : System.Threading.Tasks.Task<Result<unit>> =
+        // `Preflight.all`, mirroring the transfer Execute path (`runCore`).
+        // 2026-07-17 — `Preflight.all` takes THUNKS now, so gate N starts only
+        // after gate N-1 completes: the hand-sequencing this site carried
+        // ("SqlClient forbids concurrent commands on a connection" — the
+        // permission gate awaited the connection gate's hot task) is the
+        // structural contract, not a local workaround.
+        let connectionGate () : System.Threading.Tasks.Task<Result<unit>> = Preflight.connectionPreflight cnn cnn
+        let permissionGate () : System.Threading.Tasks.Task<Result<unit>> =
             task {
-                match! connectionGate with
-                | Error es -> return Error es   // never observed: `all` short-circuits on the connection gate first.
-                | Ok () ->
-                    match! Preflight.captureGrantEvidence cnn with
-                    | Error es -> return Error es
-                    | Ok grant -> return Preflight.permissionPreflight grant planned
+                match! Preflight.captureGrantEvidence cnn with
+                | Error es -> return Error es
+                | Ok grant -> return Preflight.permissionPreflight grant planned
             }
         match! Preflight.all [ connectionGate; permissionGate ] with
         | Error es -> return refuse es

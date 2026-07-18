@@ -85,10 +85,13 @@ module ReverseLegRealization =
             Result.failureOf
                 (ValidationError.create "transfer.reverseLeg.streamingWipeUnsupported"
                     "the streaming reverse leg is Incremental; the wipe-and-load refresh stays on the materialized path (the wipe must invalidate the journal — the named follow-on).")
-        elif Option.isSome journalDirectory && not admissible then
-            Result.failureOf
-                (ValidationError.create "transfer.reverseLeg.journalRequiresStreaming"
-                    "--journal is the streaming realization's chunk-resume ledger; the request's table subset / --resumable / wipe forces the materialized path. Remove those to stream, or drop --journal.")
+        // Wave B4a (DECISIONS 2026-07-15, "prove implies journal"): --journal is
+        // lawful on EVERY realization. On the streaming path it is the
+        // chunk-resume ledger; on the materialized path it is the provenance
+        // record of every captured (source → assigned) pair — the intervention
+        // ledger the fidelity proof replays. The refusal that stood here
+        // ("--journal requires streaming") is lifted: the materialized arms
+        // thread the directory through `WriteOptions.Journal`.
         elif resumable && not sinkResidentResumeAvailable then
             // 2026-07-06 (the phase-2 permission audit): the MATERIALIZED
             // resumable envelope hosts its G10 marker in a sink-resident
@@ -236,6 +239,21 @@ module Transfer =
             /// structure rather than letting σ's NULL pass silently. Empty for
             /// an ingested Transfer (only the σ path can raise it).
             SyntheticUnsatisfiableFks : SyntheticDiagnostic list
+            /// Wave B4a (de-silencing; DECISIONS 2026-07-15 §5) — per-kind rows
+            /// the reference-seed insert-only-missing pre-filter LEFT UNTOUCHED
+            /// because the target already held their PK. Not a loss (the seed
+            /// inserts only what is missing, by design); the silence was the
+            /// defect. Only kinds with a non-zero count appear; empty for a
+            /// DryRun (the filter runs at write time) and for a run declaring
+            /// no seed kinds.
+            SeedRowsSkipped     : (SsKey * int) list
+            /// Wave B4a ("prove implies journal") — the capture-journal FILE
+            /// this Execute wrote, when a journal directory was in hand: the
+            /// per-row `(source → assigned)` intervention ledger the fidelity
+            /// proof replays (`--interventions`), and the digest the run
+            /// aggregate records as its `JournalRef`. `None` on a DryRun, on a
+            /// journal-less run, and on the report sites that never write.
+            JournalPath         : string option
             /// Display-name index (`SsKey -> Name`) for the kinds/columns this
             /// report names — built from the contract catalog at construction, so a
             /// consumer (the CLI narration) reads tables by `Name`, not the GUID
@@ -263,10 +281,14 @@ module Transfer =
     /// the report.
     let rec private captureChunksOn
         (capture: CaptureLane -> StaticRow list -> Task<(string * string) list * CaptureLane * LaneDescent list>)
+        // B4a — the per-chunk journal record `(chunkIx, chunk, pairs)`; the
+        // caller supplies the no-op when no journal rides the run.
+        (record: int -> StaticRow list -> (string * string) list -> unit)
         (kindKey: SsKey)
         (remap: PackedSurrogateRemap)
         (lane: CaptureLane)
         (descents: LaneDescent list)
+        (chunkIx: int)
         (chunks: StaticRow list list)
         : Task<LaneDescent list> =
         task {
@@ -286,7 +308,8 @@ module Transfer =
                 let! outcome = pending
                 let pairs, succeededLane, newDescents = outcome
                 pairs |> List.iter (fun (srcVal, assignedVal) -> PackedSurrogateRemap.capture kindKey srcVal assignedVal remap)
-                return! captureChunksOn capture kindKey remap succeededLane (List.rev newDescents @ descents) rest
+                record chunkIx chunk pairs
+                return! captureChunksOn capture record kindKey remap succeededLane (List.rev newDescents @ descents) (chunkIx + 1) rest
         }
 
     /// Stage-and-capture every chunk of one kind's rows through the capture
@@ -301,6 +324,7 @@ module Transfer =
     // A `rec` binding is never inlined.
     let rec private captureChunks
         (sink: SqlConnection)
+        (journal: CaptureJournal option)
         (kind: Kind)
         (identityAttr: Attribute)
         (deferred: Set<Name>)
@@ -310,6 +334,27 @@ module Transfer =
         (descents: LaneDescent list)
         (chunks: StaticRow list list)
         : Task<LaneDescent list> =
+        // B4a ("prove implies journal") — one COMPLETE `ChunkRecord` per captured
+        // chunk, pairs included: the streaming realization's record shape, minus
+        // the write-ahead INTENT protocol. Deliberate asymmetry, not an omission:
+        // the materialized path never resumes from this journal (the G10 envelope
+        // owns resume, clearing FK-first before any reload) and `writePlan`
+        // starts the file fresh, so an in-doubt-chunk probe has nothing to probe
+        // — the journal here is provenance for the fidelity replay, not a resume
+        // ledger.
+        let record (chunkIx: int) (chunk: StaticRow list) (pairs: (string * string) list) : unit =
+            match journal with
+            | None -> ()
+            | Some j ->
+                let pkOf (row: StaticRow) = StaticRow.value identityAttr.Name row |> Option.defaultValue ""
+                CaptureJournal.append j
+                    { Kind = SsKey.rootOriginal kindKey
+                      ChunkIx = chunkIx
+                      FirstPk = chunk |> List.tryHead |> Option.map pkOf |> Option.defaultValue ""
+                      LastPk = chunk |> List.tryLast |> Option.map pkOf |> Option.defaultValue ""
+                      RawCount = List.length chunk
+                      WrittenCount = List.length chunk
+                      Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray }
         task {
             return!
                 captureChunksOn
@@ -317,7 +362,7 @@ module Transfer =
                         (fun (a: Attribute) -> StaticRow.value a.Name)
                         identityAttr deferred
                         (SurrogateCapture.stageKind kind identityAttr))
-                    kindKey remap lane descents chunks
+                    record kindKey remap lane descents 0 chunks
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -428,7 +473,7 @@ module Transfer =
                         else return! scanInboundOrphans sink acknowledged rest acc
         }
 
-    let private writePlan (sink: SqlConnection) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
+    let private writePlan (sink: SqlConnection) (journal: CaptureJournal option) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * (SsKey * int) list> =
         task {
             let assignedBySinkKinds =
                 plan.Loads
@@ -479,6 +524,21 @@ module Transfer =
             // reference-seed insert-only-missing: pre-filter every seed kind's
             // rows ONCE (empty map when no seeds — the byte-identical default).
             let! seedFilter = buildSeedFilter sink catalog seedKinds plan.Loads Map.empty
+            // B4a — the de-silenced seed pre-filter (DECISIONS 2026-07-15 §5):
+            // count what insert-only-missing left untouched, per kind. Working
+            // as designed, but no longer silently.
+            let seedRowsSkipped =
+                plan.Loads
+                |> List.choose (fun l ->
+                    seedFilter
+                    |> Map.tryFind l.Kind
+                    |> Option.bind (fun filtered ->
+                        let skipped = List.length l.Rows - List.length filtered
+                        if skipped > 0 then Some (l.Kind, skipped) else None))
+            // B4a — the journal describes THIS run alone: every materialized
+            // load starts from a cleared/empty subset, so the file starts
+            // fresh here (see `CaptureJournal.startFresh` for the law).
+            journal |> Option.iter CaptureJournal.startFresh
             // Card S4c — the load bracket is the `staged { }` CE's
             // (`Spines.transfer`): an exception mid-load now CLOSES the stage
             // `aborted` on the wire (the board line goes Halted) instead of
@@ -500,19 +560,24 @@ module Transfer =
                             match load.Disposition with
                             | IdentityDisposition.AssignedBySink ->
                                 match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
-                                | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                | Some _ when not (Set.contains load.Kind fkTargetKinds) && Option.isNone journal ->
                                     // No FK anywhere targets this kind, so its minted
                                     // surrogates have no consumer: skip capture and
                                     // bulk-insert with the identity column excluded —
                                     // the Sink mints, nothing needs the mapping. (A
                                     // cycle member is always FK-targeted by its cycle
                                     // predecessor, so this lane never carries
-                                    // deferred columns.)
+                                    // deferred columns.) B4a: a JOURNALED run stands
+                                    // this fast lane down — "prove implies journal"
+                                    // means every minted key is recorded, and the
+                                    // capture lane IS the record; an unrecorded mint
+                                    // would be a row the fidelity replay cannot
+                                    // translate.
                                     do! Bulk.copyRowsSinkMinted sink kind.Physical
                                             (TransferCellShaping.toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                                 | Some idAttr ->
                                     let! descents =
-                                        captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
+                                        captureChunks sink journal kind idAttr load.DeferredFkColumns load.Kind remap
                                             CaptureLane.StagedMergeOutput []
                                             (remapped.Rows |> List.chunkBySize CaptureChunkSize)
                                     laneDescents.Value <- laneDescents.Value @ descents
@@ -589,7 +654,7 @@ module Transfer =
                 // the undo removes what this run MINTED; rows the wipe
                 // deleted are gone (named in the runbook).
                 writeUndoArtifact sink revertArtifactDir (TransferRevert.buildRevertScript catalog plan remap)
-                return writeSkips.Value, laneDescents.Value
+                return writeSkips.Value, laneDescents.Value, seedRowsSkipped
             | RunStopped _ ->
                 // The body never returns Error; total match, named.
                 return invalidOp "writePlan: the load body cannot stop"
@@ -631,7 +696,7 @@ module Transfer =
     /// drop-set — re-listing the exact `UnresolvedReference`s would need a codec
     /// that ripples too far; the count replays the VERDICT, and the report marks
     /// it as a replay, not as freshly-observed drops).
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
+    let private writePlanResumable (sink: SqlConnection) (journal: CaptureJournal option) (catalog: Catalog) (seedKinds: Set<SsKey>) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * (SsKey * int) list * int option> =
         task {
             // PL-6 (S14): a fixed GO-free DDL literal — one pre-split segment.
             do! Deploy.executeSegments sink [ TransferResume.progressTableSql ]
@@ -641,15 +706,17 @@ module Transfer =
             | Some priorDrops ->
                 // Completed already: no-op the write, but REPLAY the prior drop
                 // verdict so a re-run does not silently report a clean exit-0.
-                return [], [], Some priorDrops
+                // B4a: the journal stands UNTOUCHED here — the state-producing
+                // run wrote it, and the sink's rows are still that run's.
+                return [], [], [], Some priorDrops
             | None ->
                 do! TransferResume.wipeFkOrdered sink catalog plan topo loadSet
-                let! (writeSkips, laneDescents) = writePlan sink catalog seedKinds plan autoRevert revertArtifactDir
+                let! (writeSkips, laneDescents, seedSkips) = writePlan sink journal catalog seedKinds plan autoRevert revertArtifactDir
                 // The drop count = plan-build drops + this write's drops; the same
                 // sum `SkippedReferences` (and thus `hasDrops`) sees this run.
                 let dropCount = plan.SkippedReferences.Length + writeSkips.Length
                 do! TransferResume.markComplete sink marker dropCount
-                return writeSkips, laneDescents, None
+                return writeSkips, laneDescents, seedSkips, None
         }
 
     // -- 6.A.3: surrogate-capture refusal (fail-loud, not silent) -------------
@@ -1119,6 +1186,17 @@ module Transfer =
           /// child-first `DELETE`-by-captured-key script lands at
           /// `<dir>/transfer-revert.sql` on a failed load.
           RevertArtifactDir : string option
+          /// Wave B4a ("prove implies journal", DECISIONS 2026-07-15) — the
+          /// journal DIRECTORY for the MATERIALIZED realization. Under an
+          /// Execute, `runCore` opens `transfer-<digest>.ndjson` here
+          /// (plan-marker addressed, RI-7 — the same rule as the streaming
+          /// realization's) and `writePlan` records every captured
+          /// `(source → assigned)` pair, starting the file fresh each real
+          /// load. `None` (the `def` default) keeps every pre-B4a caller
+          /// byte-identical: no journal, and the no-consumer minted-bulk fast
+          /// lane stays available. The STREAMING realization does not read
+          /// this — its journal threads through its own entry points.
+          Journal : string option
           /// 2026-07-08 (the board-clarity program) — attribute names the
           /// matched-pair column diff IGNORES on reconciled kinds (the
           /// operator's audit fields: CreatedOn / UpdatedOn). Sourced from
@@ -1175,7 +1253,7 @@ module Transfer =
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; ActSignoffs = []; ActConsentEnforced = false; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None; Journal = None; ReconcileIgnore = Set.empty; SeedKinds = Set.empty; AcknowledgedExclusions = Set.empty; Signoffs = []; ActSignoffs = []; ActConsentEnforced = false; StaticLookupKinds = Set.empty; ForeignRefsAcknowledged = Set.empty }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1309,7 +1387,10 @@ module Transfer =
             // cannot join this pre-plan list, but they refuse through the same
             // `ValidationError` / `Preflight.refusalOf` seam. Only an Execute run
             // mutates the sink; DryRun previews without writing, so both gates skip.
-            let cdcGate : Task<Result<unit>> =
+            // The gates are THUNKS (2026-07-17, the Preflight.all amendment):
+            // a hot task list started both gates at construction and they
+            // raced the shared sink connection (CDC probe vs SUSER_SNAME).
+            let cdcGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
                         // NM-54 — an unverifiable CDC state is UNSAFE: a probe
@@ -1340,7 +1421,7 @@ module Transfer =
             // evaluation). The go board builds the SAME value.
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             let scope = TransferScope.create catalog writeOpts.LoadSet reconciledKinds
-            let spanningGate : Task<Result<unit>> =
+            let spanningGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute then
                         return! spanningPreflight source sink (plannedTransferWrites scope writeOpts.Emission catalog)
@@ -1554,6 +1635,14 @@ module Transfer =
             | _, _, _, _, _, Some refusal, _ -> return Result.failureOf refusal
             | _, _, _, _, _, _, Some refusal -> return Result.failureOf refusal
             | None, None, None, None, None, None, None ->
+                // B4a ("prove implies journal") — open the journal when the run
+                // writes and a directory is in hand, addressed by the plan
+                // marker exactly as the streaming realization's (RI-7). A
+                // DryRun writes nothing, so it keeps no ledger.
+                let journal =
+                    match mode, writeOpts.Journal with
+                    | Execute, Some dir -> Some (CaptureJournal.create dir (TransferResume.planMarker catalog plan))
+                    | _ -> None
                 // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
                 // the post-load restore re-validates only the FKs the bulk load
                 // strips (a NoCheckFk decision — untrusted as-deployed — is absent
@@ -1565,9 +1654,9 @@ module Transfer =
                         then return! TransferFkTrust.trustedFksOnLoadedTables sink catalog plan
                         else return []
                     }
-                let! writeSkips, laneDescents, replayedPriorDrops =
+                let! writeSkips, laneDescents, seedRowsSkipped, replayedPriorDrops =
                     task {
-                        if mode <> Execute then return [], [], None
+                        if mode <> Execute then return [], [], [], None
                         else
                             match writeOpts.Emission, writeOpts.Resumable with
                             | EmissionMode.WipeAndLoad, _ ->
@@ -1576,16 +1665,16 @@ module Transfer =
                                 // Restricted to the LoadSet so an excluded family
                                 // (golden user-exclusion) is untouched, not wiped.
                                 do! TransferResume.wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
-                                let! (skips, descents) = writePlan sink catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
-                                return skips, descents, None
+                                let! (skips, descents, seedSkips) = writePlan sink journal catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                return skips, descents, seedSkips, None
                             | EmissionMode.Incremental, true ->
                                 // G10 — resumable/idempotent envelope. NM-53 — the
-                                // third component REPLAYS a prior no-op run's drop
+                                // last component REPLAYS a prior no-op run's drop
                                 // count so exit-9 is not silently lost on re-run.
-                                return! writePlanResumable sink catalog writeOpts.SeedKinds plan topo writeOpts.LoadSet writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                return! writePlanResumable sink journal catalog writeOpts.SeedKinds plan topo writeOpts.LoadSet writeOpts.AutoRevert writeOpts.RevertArtifactDir
                             | EmissionMode.Incremental, false ->
-                                let! (skips, descents) = writePlan sink catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
-                                return skips, descents, None
+                                let! (skips, descents, seedSkips) = writePlan sink journal catalog writeOpts.SeedKinds plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
+                                return skips, descents, seedSkips, None
                     }
                 // Option C — restore the trust the bulk load stripped (exactly the
                 // pre-load snapshot, so NoCheckFk decisions are preserved). A
@@ -1609,6 +1698,12 @@ module Transfer =
                           StaticLookupDivergences = staticLookupDivs
                           CaptureLaneDescents = laneDescents
                           ReplayedPriorDrops  = replayedPriorDrops
+                          SeedRowsSkipped     = seedRowsSkipped
+                          // B4a — the path is reported iff the file is real (a
+                          // G10 no-op replay under a journal directory whose
+                          // first run kept no ledger would otherwise name a
+                          // phantom file).
+                          JournalPath         = journal |> Option.map CaptureJournal.filePath |> Option.filter System.IO.File.Exists
                           // NM-21 — only the σ path can raise these; ingested
                           // Transfer never draws against a synthetic pool.
                           Plan                = (match mode with DryRun -> Some plan | Execute -> None)
@@ -1789,9 +1884,17 @@ module Transfer =
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
-                    let! writeSkips, laneDescents =
+                    // WP-15 (2026-07-17, materialized parity) — the synthetic
+                    // leg's bulk load strips FK trust exactly as the ingested
+                    // one's does; snapshot before, restore after (Option C).
+                    let! preTrustedFks =
                         task {
-                            if mode <> Execute then return [], []
+                            if mode = Execute then return! TransferFkTrust.trustedFksOnLoadedTables sink catalog plan
+                            else return []
+                        }
+                    let! writeOutcome =
+                        task {
+                            if mode <> Execute then return [], [], []
                             else
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
@@ -1809,10 +1912,16 @@ module Transfer =
                                             |> Set.ofList
                                             |> Some
                                     do! TransferResume.wipeFkOrdered sink catalog plan topo wipeScope
-                                    return! writePlan sink catalog Set.empty plan false None
+                                    // B4a — the journal directory threads through as
+                                    // `writePlan`'s arg 2 (`None` on the σ path; no journal
+                                    // rides synthetic generation).
+                                    return! writePlan sink None catalog Set.empty plan false None
                                 | EmissionMode.Incremental ->
-                                    return! writePlan sink catalog Set.empty plan false None
+                                    return! writePlan sink None catalog Set.empty plan false None
                         }
+                    let writeSkips, laneDescents, _ = writeOutcome
+                    if mode = Execute then
+                        do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                     return
                         Result.success
                             { Mode                = mode
@@ -1829,6 +1938,9 @@ module Transfer =
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
+                              // σ declares no seed kinds and keeps no journal.
+                              SeedRowsSkipped     = []
+                              JournalPath         = None
                               // NM-21 — σ's named unsatisfiable-FK lineage.
                               Plan                = (match mode with DryRun -> Some plan | Execute -> None)
                               SyntheticUnsatisfiableFks = syntheticDiags
@@ -1916,11 +2028,12 @@ module Transfer =
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
-                    let! writeSkips, laneDescents =
+                    let! writeOutcome =
                         task {
-                            if mode <> Execute then return [], []
-                            else return! writePlan sink catalog Set.empty plan false None
+                            if mode <> Execute then return [], [], []
+                            else return! writePlan sink None catalog Set.empty plan false None
                         }
+                    let writeSkips, laneDescents, _ = writeOutcome
                     return
                         Result.success
                             { Mode                = mode
@@ -1936,6 +2049,9 @@ module Transfer =
                               StaticLookupDivergences = []
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
+                              // The golden apply declares no seed kinds and keeps no journal.
+                              SeedRowsSkipped     = []
+                              JournalPath         = None
                               Plan                = (match mode with DryRun -> Some plan | Execute -> None)
                               SyntheticUnsatisfiableFks = []
                               Names = Catalog.nameIndex catalog }
@@ -2582,7 +2698,10 @@ module Transfer =
         task {
             let diff = CatalogDiff.between sourceContract sinkContract
             let renamesByKind = RenameProjection.renames diff |> RenameProjection.renameMapByKind
-            let cdcGate : Task<Result<unit>> =
+            // The gates are THUNKS (2026-07-17, the Preflight.all amendment):
+            // a hot task list started both gates at construction and they
+            // raced the shared sink connection (CDC probe vs SUSER_SNAME).
+            let cdcGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
                         // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
@@ -2608,7 +2727,7 @@ module Transfer =
             // streaming arm never wipes, so Incremental verbs.
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             let scope = TransferScope.create sinkContract None reconciledKinds
-            let spanningGate : Task<Result<unit>> =
+            let spanningGate () : Task<Result<unit>> =
                 task {
                     if mode = Execute then
                         return! spanningPreflight source sink (plannedTransferWrites scope EmissionMode.Incremental sinkContract)
@@ -2741,6 +2860,9 @@ module Transfer =
                                   CaptureLaneDescents = []
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
+                                  // A preview filters no seeds and writes no journal.
+                                  SeedRowsSkipped     = []
+                                  JournalPath         = None
                                   // NM-21 — streaming Transfer ingests source rows, not σ.
                                   Plan                = None   // streaming plan carries no rows
                                   SyntheticUnsatisfiableFks = []
@@ -2780,6 +2902,14 @@ module Transfer =
                         // that run only skipped/replayed journaled chunks and wrote
                         // nothing new, so deleting by captured key would destroy
                         // PRIOR-run committed rows — the one thing the undo must never do.
+                        // WP-15 (2026-07-17, materialized parity) — snapshot the
+                        // AS-DEPLOYED FK trust BEFORE the stream, exactly as the
+                        // materialized Option C does: the post-load restore
+                        // re-validates only the FKs the bulk load strips, so a
+                        // NoCheckFk decision (untrusted as-deployed) stays
+                        // preserved. Always on (the materialized default); the
+                        // throughput opt-out lever arrives with its first caller.
+                        let! preTrustedFks = TransferFkTrust.trustedFksOnLoadedTables sink sinkContract plan
                         let! streamed =
                             task {
                                 try
@@ -2793,6 +2923,13 @@ module Transfer =
                         match streamed with
                         | Error es -> return Result.failure es
                         | Ok (totals, skips, descents) ->
+                            // WP-15 — restore the trust the bulk load stripped
+                            // (`WITH CHECK CHECK CONSTRAINT`, one semi-join per
+                            // FK); a failed re-validation is a LOUD integrity
+                            // signal, never silent. The streaming realization no
+                            // longer exhibits `FkTrustNotRestoredOnBulkLoad`
+                            // unconditionally.
+                            do! TransferFkTrust.restoreFkTrust sink preTrustedFks
                             let kinds =
                                 plan.Loads
                                 |> List.map (fun l ->
@@ -2821,6 +2958,13 @@ module Transfer =
                                       // design (the journaled run reported its
                                       // own drops); no G10 marker replay here.
                                       ReplayedPriorDrops  = None
+                                      // The streaming load has no seed pre-filter.
+                                      SeedRowsSkipped     = []
+                                      // B4a — the chunk-resume journal doubles as
+                                      // the intervention ledger; the report now
+                                      // says where it is (the digest never left
+                                      // `writePlanStreaming` before).
+                                      JournalPath         = journal |> Option.map CaptureJournal.filePath |> Option.filter System.IO.File.Exists
                                       // NM-21 — streaming Transfer ingests source rows, not σ.
                                       Plan                = None   // streaming plan carries no rows
                                       SyntheticUnsatisfiableFks = []
@@ -3115,6 +3259,11 @@ module Transfer =
         (foreignRefsAck: Set<string>)
         (autoRevert: bool)
         (revertDir: string option)
+        // B4a ("prove implies journal") — the journal directory for the
+        // MATERIALIZED realization: every captured (source → assigned) pair is
+        // recorded to `transfer-<digest>.ndjson` here, and the report carries
+        // the file for the run aggregate's `JournalRef` + the fidelity replay.
+        (journalDirectory: string option)
         : Task<Result<TransferReport>> =
         task {
             let diff = CatalogDiff.between logicalSourceContract physicalSinkContract
@@ -3131,7 +3280,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; ActSignoffs = actSignoffs; ActConsentEnforced = enforceActConsent; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renamesByKind)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir; Journal = journalDirectory; ReconcileIgnore = reconcileIgnore; SeedKinds = seedKinds; AcknowledgedExclusions = acknowledgedExclusions; Signoffs = signoffs; ActSignoffs = actSignoffs; ActConsentEnforced = enforceActConsent; StaticLookupKinds = staticLookupKinds; ForeignRefsAcknowledged = foreignRefsAck }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -3163,7 +3312,7 @@ module Transfer =
         // board reds on a diverged lookup; a straight load passes `Set.empty`).
         (staticLookupKinds: Set<SsKey>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs actSignoffs true staticLookupKinds Set.empty false None
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation reconcileIgnore Set.empty Set.empty signoffs actSignoffs true staticLookupKinds Set.empty false None None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

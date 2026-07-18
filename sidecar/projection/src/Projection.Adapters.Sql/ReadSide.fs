@@ -1036,6 +1036,14 @@ module ReadSide =
             else return Some rows
         }
 
+    /// The capped static-row read (wave A4β — the estate's D10/D11 probe): the
+    /// private `readRows`, exposed for the estate face's per-static-kind read.
+    /// `None` when the table exceeds `maxRows` (not static reference data —
+    /// the estate skips it by name, coverage honest); `Some rows` for a table
+    /// at or under the cap, its row identities the shared `READSIDE_ROW` mint.
+    let readStaticRows (cnn: SqlConnection) (kind: Kind) (maxRows: int) : Task<StaticRow list option> =
+        readRows cnn kind maxRows
+
     /// Recover a kind's SsKey from the persisted `V2.SsKey` extended
     /// property when present (Wave 4.1; A1: identity survives rename), else
     /// the `READSIDE_KIND` synthesis (pre-V2-emission / non-V2 schemas, or a

@@ -106,6 +106,29 @@ let runCheckEstate (args: CheckEstateArgs) : int =
             match postureBinding with
             | Ok p -> p
             | Error _ -> Estate.Posture.defaults   // unreachable behind the guard above
+        // The burndown's NAMED baseline (`--since @runId`, wave A7): a
+        // recorded reading in the store's history. A `--since` with no
+        // store, or naming a run never recorded here, refuses by name
+        // (exit 2) — the movement is never diffed against a guess.
+        let sinceBaseline : Result<HistoryRecord option> =
+            match args.Since, store with
+            | None, _ -> Result.success None
+            | Some _, None ->
+                Result.failureOf
+                    (ValidationError.create "estate.history.sinceNoStore"
+                        "projection check environments --since: no evidence store is configured — PROJECTION_ESTATE_DIR (or the ledger directory's estate child) holds the recorded readings.")
+            | Some runId, Some root ->
+                match EstateHistory.loadRun root runId with
+                | Some r -> Result.success (Some r)
+                | None ->
+                    Result.failureOf
+                        (ValidationError.create "estate.history.sinceNotFound"
+                            (sprintf "run %s has no recorded reading in the estate history." runId))
+        let sinceErrors = match sinceBaseline with Error errs -> errs | Ok _ -> []
+        if not (List.isEmpty sinceErrors) then
+            printErrors Console.Error sinceErrors
+            2
+        else
         // One environment's data-plane evidence under the store discipline.
         // A store/probe failure prints as an advisory and the run proceeds
         // live — the evidence stays fresh; only the pay-once saving is lost.
@@ -207,8 +230,48 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 match store with
                 | Some dir -> Estate.EvidenceStoreBasis.Enabled dir
                 | None -> Estate.EvidenceStoreBasis.Disabled
+            // D10 / D11 (wave A4β): the per-env static-row probe. Static
+            // entities' ROW CONTENT is not in the OSSYS-read catalog (the
+            // records ride a skipped metamodel result set), so the face reads
+            // it live — bounded (reference tables are small). `--offline`
+            // skips the probe (the coverage line stays honest); a connection /
+            // probe failure degrades to empty (no D10/D11 finding without
+            // evidence — advisory-silent, the schema/data verdict still leads).
+            let staticContent : Estate.StaticContent =
+                let staticMaxRows = 50_000
+                let isStaticKind (k: Kind) =
+                    k.Modality |> List.exists (function ModalityMark.Static _ -> true | _ -> false)
+                let readStaticRowsFor (refStr: string) (catalog: Catalog) : Map<SsKey, StaticRow list> =
+                    try
+                        use cnn = new Microsoft.Data.SqlClient.SqlConnection(Source.resolveConn refStr)
+                        cnn.OpenAsync().GetAwaiter().GetResult()
+                        Catalog.allKinds catalog
+                        |> List.filter isStaticKind
+                        |> List.choose (fun k ->
+                            match (Projection.Adapters.Sql.ReadSide.readStaticRows cnn k staticMaxRows).GetAwaiter().GetResult() with
+                            | Some rows when not (List.isEmpty rows) -> Some (k.SsKey, rows)
+                            | _ -> None)
+                        |> Map.ofList
+                    with _ -> Map.empty
+                match args.Evidence with
+                | EstateEvidenceMode.Offline -> Estate.StaticContent.empty
+                | _ ->
+                    let seed =
+                        match args.Target with
+                        | EstateTargetSource.AuthoredModel _ ->
+                            Catalog.allKinds target
+                            |> List.choose (fun k -> match Kind.staticPopulations k with [] -> None | rows -> Some (k.SsKey, rows))
+                            |> Map.ofList
+                        | EstateTargetSource.AgreedEnv connRef -> readStaticRowsFor connRef target
+                    let byEnv =
+                        outcomes
+                        |> List.map (fun ((label, operandValue), _) ->
+                            let refStr = args.Confirm |> List.tryFind (fun (l, _) -> l = label) |> Option.map snd |> Option.defaultValue ""
+                            label, readStaticRowsFor refStr operandValue.Catalog)
+                        |> Map.ofList
+                    { Seed = seed; ByEnv = byEnv }
             let computed =
-                Estate.computeWith posture targetOperand target envs
+                Estate.computeWith posture staticContent targetOperand target envs
                 |> Estate.withEvidence storeBasis provenanceByEnv
             // The remediation artifacts (wave A5): one file per environment
             // carrying REPAIR-lane blocks — written BEFORE the report is
@@ -222,7 +285,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     let blocks =
                         EstateRemediation.blocksFor label
                             (Readiness.toLogicalShape operandValue.Catalog)
-                            operandValue.Profile computed
+                            operandValue.Profile staticContent.Seed computed
                     if List.isEmpty blocks then None
                     else
                         let headerLines =
@@ -249,12 +312,100 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     (EstateOverlayEmitter.emitProbes
                         [ sprintf "-- projection:environments-probes generated=%s target=%s" (nowUtc.ToString "o") args.TargetLabel ]
                         relaxations)
-            let report =
+            let stampedArtifacts =
                 computed
                 |> Estate.withRemediation remediationArtifacts
                 |> (fun r ->
                     if List.isEmpty relaxations then r
                     else Estate.withOverlay (List.length relaxations) r)
+            // The fidelity clause (RT-10, wave A4β): when the config names a
+            // flow, read THAT flow's proof — the flow-scoped copy the
+            // container proof writes beside its journal
+            // (`fidelity-proof/<flow>/fidelity.rows.json`) — and fold its
+            // verdict into the estate's. The clause is computed at the
+            // boundary (the proof is a file; its age is the file's mtime),
+            // then stamped onto the pure report. A proof is STALE when the
+            // estate's evidence was captured-and-stored (or re-fingerprinted)
+            // AFTER the proof was written — a bare live re-read is not
+            // evidence the estate moved, so it never staleness-trips a proof.
+            let fidelityClause : Estate.FidelityClause =
+                match args.FidelityFlow with
+                | None -> Estate.FidelityClause.NotConfigured
+                | Some flow ->
+                    let proofPath = System.IO.Path.Combine("fidelity-proof", flow, "fidelity.rows.json")
+                    match FidelityCompareRun.tryReadProof proofPath with
+                    | None -> Estate.FidelityClause.Missing flow
+                    | Some proof ->
+                        let ageDays = max 0 (int (nowUtc - proof.WrittenAtUtc).TotalDays)
+                        let estateMovedAfterProof =
+                            provenanceByEnv
+                            |> Map.exists (fun _ p ->
+                                match p with
+                                | Estate.EvidenceProvenance.Refreshed _ -> true
+                                | Estate.EvidenceProvenance.Cached (captured, _, _) -> captured > proof.WrittenAtUtc
+                                | Estate.EvidenceProvenance.Offline (captured, _) -> captured > proof.WrittenAtUtc
+                                | Estate.EvidenceProvenance.Live
+                                | Estate.EvidenceProvenance.Absent -> false)
+                        // A stale proof's verdict is untrustworthy either way —
+                        // staleness outranks the (old) agrees/diverged reading.
+                        if estateMovedAfterProof then Estate.FidelityClause.Stale (flow, ageDays)
+                        elif not proof.Agrees then Estate.FidelityClause.Diverged (flow, proof.DifferenceTotal)
+                        else Estate.FidelityClause.Green (flow, ageDays)
+            let stamped = stampedArtifacts |> Estate.withFidelity fidelityClause
+            // The burndown (wave A7): this run's reading chains from the
+            // LATEST recorded one (first-seen carry + the streak), while the
+            // displayed movement diffs against the operator's baseline — the
+            // named `--since` run when given, else that same latest. The
+            // reading is recorded before the board renders, so the next run
+            // diffs against exactly what this one showed.
+            let latest = store |> Option.bind EstateHistory.loadLatest
+            let baseline =
+                match sinceBaseline with
+                | Ok (Some named) -> Some named
+                | _ -> latest
+            let record = EstateHistory.recordOf nowUtc (LogSink.runId ()) latest stamped
+            let burndown = baseline |> Option.map (fun b -> EstateHistory.burndownOf nowUtc b stamped)
+            let report = stamped |> Estate.withHistory burndown record.Streak
+            (match store with
+             | Some root ->
+                 match EstateHistory.save root record with
+                 | Ok () -> ()
+                 | Error errs -> printErrors Console.Error errs
+             | None -> ())
+            // The machine sibling of the verdict (the `summary.readiness`
+            // precedent): one structured envelope on channel 1, so CI and
+            // the ledger can branch on the estate without parsing the board.
+            let envelopePayload : Map<string, objnull> =
+                let laneCount lane =
+                    Estate.laneCounts report
+                    |> List.tryFind (fun (l, _) -> l = lane)
+                    |> Option.map snd
+                    |> Option.defaultValue 0
+                Map.ofList
+                    [ "verdict",  box (match report.Verdict with
+                                       | Estate.Verdict.Unified -> "unified"
+                                       | Estate.Verdict.Converging -> "converging"
+                                       | Estate.Verdict.Forked -> "forked")
+                      "environments", box (List.length report.Bases)
+                      "findings", box (List.length report.Findings)
+                      "decide",   box (laneCount EstateLane.Decide)
+                      "repair",   box (laneCount EstateLane.Repair)
+                      "relax",    box (laneCount EstateLane.Relax)
+                      "watch",    box (laneCount EstateLane.Watch)
+                      "forks",    box (report.Findings |> List.filter (fun f -> f.Fork) |> List.length)
+                      "closed",   box (report.Burndown |> Option.map (fun b -> b.Closed) |> Option.defaultValue 0)
+                      "opened",   box (report.Burndown |> Option.map (fun b -> b.Opened) |> Option.defaultValue 0)
+                      "remaining", box (report.Burndown |> Option.map (fun b -> b.Remaining) |> Option.defaultValue (List.length report.Findings))
+                      "streak",   box report.Streak
+                      "fidelity", box (match report.Fidelity with
+                                       | Estate.FidelityClause.NotConfigured -> "notConfigured"
+                                       | Estate.FidelityClause.Green _ -> "green"
+                                       | Estate.FidelityClause.Missing _ -> "missing"
+                                       | Estate.FidelityClause.Stale _ -> "stale"
+                                       | Estate.FidelityClause.Diverged _ -> "diverged") ]
+            LogSink.emit
+                { LogSink.envelope LogSink.Info LogSink.Summary "summary.environments" envelopePayload with
+                    Phase = LogSink.End }
             let artifact = Estate.toJsonString report
             if args.AsJson then
                 printfn "%s" artifact
@@ -294,6 +445,13 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     | Estate.Verdict.Forked -> "estate.forked"
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
-                Estate.render report |> List.iter (fun line -> printfn "%s" line)
+                // The board renders through the rich `View` lens (wave A8) — a
+                // Spectre-backed, terminal-responsive projection on a TTY, the plain
+                // NoColors lens on a redirected sink (`EstateBoardView.write` routes
+                // both through the shared report-View renderer). The verdict above is
+                // voiced separately (the Voice owns that copy); this is the regions
+                // beneath it. The plain `Estate.render` stays the reference projection
+                // the board tests pin.
+                EstateBoardView.write Console.Out report
             tryWriteArtifact "environments.json" artifact
             if Estate.isUnified report then 0 else 5
