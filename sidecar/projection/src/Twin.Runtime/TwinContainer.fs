@@ -1,4 +1,11 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE-MUTATION: the Twin's Docker container lifecycle driver —
+//   start / stop / poll-until-ready over the `docker` CLI. The mutable locals
+//   ARE the imperative bring-up loop's state (elapsed stopwatch, readiness
+//   flag, retry counter); the operation is inherently sequential side-effecting
+//   I/O against an external daemon whose state is not a value we own, so there
+//   is no pure-functional equivalent — the reified-boundary posture Deploy.fs's
+//   warm-container driver already carries. Mutation is confined to this module.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

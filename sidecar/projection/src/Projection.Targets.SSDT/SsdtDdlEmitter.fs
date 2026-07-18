@@ -430,11 +430,11 @@ module SsdtDdlEmitter =
                     |> Option.map (fun n ->
                         let physicalTable = (TableId.tableText k.Physical).ToUpperInvariant()
                         if n.ToUpperInvariant().Contains physicalTable then
-                            System.Text.RegularExpressions.Regex.Replace(
+                            System.Text.RegularExpressions.Regex.Replace(  // LINT-ALLOW: CHECK-constraint name rewrite — Regex is the gold-standard primitive for a case-insensitive physical→logical identifier substitution; considered a manual replace, rejected (no case-insensitive substring swap in the BCL string API without allocation-heavy manual casing)
                                 n,
-                                System.Text.RegularExpressions.Regex.Escape (TableId.tableText k.Physical),
+                                System.Text.RegularExpressions.Regex.Escape (TableId.tableText k.Physical),  // LINT-ALLOW: Regex.Escape neutralizes regex metacharacters in the physical table token — the escape primitive itself, no alternative
                                 kindName,
-                                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase)  // LINT-ALLOW: case-insensitive flag for the identifier match (SQL Server identifiers are case-insensitive) — the option enum, terminal
                             |> IdentifierBudget.fit
                         else n)
                 { chk with Definition = definition; Name = name })
@@ -1191,7 +1191,7 @@ module SsdtDdlEmitter =
                     | [] -> None
                     | tokens ->
                         Some (EmitError.ComputedExpressionRefused (
-                                Name.value k.Name, Name.value a.Name, String.concat ", " tokens))))
+                                Name.value k.Name, Name.value a.Name, String.concat ", " tokens))))  // LINT-ALLOW: terminal comma-joined token list inside the ComputedExpressionRefused error payload — a free-text list of the unresolved identifiers for the operator; no typed AST applies to the refusal's human-readable token enumeration
         match
             compositeKeyRefusal
             |> Option.orElse temporalRefusal

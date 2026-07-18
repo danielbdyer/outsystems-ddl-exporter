@@ -1,4 +1,11 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE: the Twin's ADO.NET database driver — connection open / exec /
+//   reader loops against SQL Server. The mutable locals carry the imperative
+//   read/exec state; box/unbox crosses the `SqlParameter.Value` / reader-ordinal
+//   boundary where the ADO.NET API is `obj`-typed by contract (no typed
+//   alternative exists at the driver seam — considered a typed wrapper, rejected
+//   as re-boxing at the same boundary); terminal SQL text is composed at the
+//   command boundary. All boundary-confined; nothing escapes the module.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

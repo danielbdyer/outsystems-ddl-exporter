@@ -1,4 +1,8 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE-MUTATION: the Twin's evidence-import driver — a single mutable
+//   accumulator over the imported coordinate-keyed evidence pack (an imperative
+//   fold at the file-read boundary; isolated, no escape). No pure equivalent for
+//   the sequential import walk.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

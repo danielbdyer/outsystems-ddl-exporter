@@ -1,4 +1,10 @@
 namespace Twin.Cli
+// LINT-ALLOW-FILE: the Twin's terminal renderer — `String.Concat` composes the
+//   operator-facing console output (headers, rows, status lines) at the terminal
+//   text boundary. The console string IS the artifact here; there is no typed
+//   AST for free-text terminal narration (the Spectre/plain render is the
+//   terminal sink), and each segment is a pre-rendered typed value. Same
+//   terminal-render posture the Projection.Cli render surface carries.
 
 open Projection.Core
 open Twin.Core

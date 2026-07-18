@@ -1,4 +1,9 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: cross-environment name alignment — the ResizeArrays are
+//   single-pass accumulators pairing source↔sink modules/entities (an imperative
+//   fold building the match set, isolated and pure-pool-tested); `String.concat`
+//   composes a terminal facet-name list inside a divergence error message. No
+//   pure equivalent for the paired accumulation; no AST for the error prose.
 
 open Projection.Core
 

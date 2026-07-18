@@ -1,4 +1,11 @@
 namespace Twin.Core
+// LINT-ALLOW-FILE: the Twin's config parse/render surface — `String.concat` and
+//   interpolation compose terminal operator-facing config text (paths, section
+//   headers, defaults narration) at the read/write boundary; no typed AST
+//   applies to free-text config prose, and the values are validated before they
+//   reach the boundary. (The one wide tuple is a local parse intermediate; a
+//   named record is a worthwhile follow-up, flagged, but touches the parse
+//   call sites this PR does not otherwise change.)
 
 open System.Text.Json
 open Projection.Core

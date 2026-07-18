@@ -1,4 +1,11 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE: the Twin's estate-file glob matcher + file reader — compiles
+//   operator glob patterns (`*.json`) to `Regex` for path matching. Glob is the
+//   ONE use-case where `Regex` is the gold-standard primitive (glob semantics
+//   ARE a regex dialect — `*` → `.*`, escaped literals between); considered a
+//   manual char-walk matcher, rejected as reimplementing the regex engine for
+//   no gain. The mutable locals build the pattern in one pass; file I/O is
+//   inherently side-effecting. Boundary-confined.
 
 open System.IO
 open Projection.Core

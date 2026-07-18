@@ -1,4 +1,11 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE: the topological-order algorithm — cycle-aware ordering over the
+//   reference graph. The mutable locals ARE the imperative algorithm's working
+//   state (in-degree / queue / visited — the reified-algorithm exception
+//   ProfileDerivation carries); `sprintf` / `String.concat` compose the
+//   cycle-path diagnostic prose ("A -> B -> A") at the report boundary. Pure (no
+//   I/O, no clock), deterministic, pure-pool-tested — the imperativeness IS the
+//   algorithm, not a shortcut, and the prose has no typed-AST equivalent.
 
 /// The observable outcome of running the topological-order pass.
 ///
