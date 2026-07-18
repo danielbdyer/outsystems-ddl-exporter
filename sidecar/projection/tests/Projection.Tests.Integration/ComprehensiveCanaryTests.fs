@@ -488,7 +488,7 @@ module ComprehensiveCanaryTests =
                   Description = None; OriginalName = None
                   ExternalDatabaseType = None
                   IsComputed = false; ComputedDefinition = None
-                  DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None; DeployedIsNullable = None }
+                  DefaultConstraintName = None; Order = None; Collation = None; DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false }
             let checkRow : OssysRowsetTypes.ColumnCheckRow =
                 { AttrId = suppAttrId
                   ConstraintName = "CHK_SUPP"

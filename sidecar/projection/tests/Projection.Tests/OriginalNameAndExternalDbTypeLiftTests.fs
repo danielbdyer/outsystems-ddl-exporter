@@ -216,7 +216,7 @@ let private mkAttrRow
         IsComputed           = false
         ComputedDefinition   = None
         DefaultConstraintName = None
-        DeployedStorage = None; DeployedIsNullable = None
+        DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false
         Order                = None
     }
 

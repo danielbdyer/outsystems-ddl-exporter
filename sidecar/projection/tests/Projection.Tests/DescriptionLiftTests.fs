@@ -276,7 +276,7 @@ let private idAttrRowWith (description: string option) : OssysRowsetTypes.Attrib
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
-        DeployedStorage = None; DeployedIsNullable = None
+        DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false
         Order = None
     }
 

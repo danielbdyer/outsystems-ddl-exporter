@@ -101,7 +101,7 @@ let private customerIdAttrRow : OssysRowsetTypes.AttributeRow =
       IsComputed           = false
       ComputedDefinition   = None
       DefaultConstraintName = None
-      DeployedStorage = None; DeployedIsNullable = None
+      DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false
       Order                = None
       Collation            = None }
 
@@ -131,7 +131,7 @@ let private orderCustomerFkAttrRow : OssysRowsetTypes.AttributeRow =
       IsComputed           = false
       ComputedDefinition   = None
       DefaultConstraintName = None
-      DeployedStorage = None; DeployedIsNullable = None
+      DeployedStorage = None; DeployedIsNullable = None; IsPersisted = false
       Order                = None
       Collation            = None }
 

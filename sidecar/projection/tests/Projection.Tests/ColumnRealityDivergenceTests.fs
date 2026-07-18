@@ -25,7 +25,7 @@ let private reality (attrId: int) (col: string) (isNullable: bool) (isIdentity: 
     { AttrId = attrId; IsNullable = isNullable; SqlType = Some "nvarchar"
       MaxLength = None; Precision = None; Scale = None; CollationName = None
       IsIdentity = isIdentity; IsComputed = false; ComputedDefinition = None
-      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col }
+      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col; IsPersisted = false }
 
 let private snapshotOf
     (attrs: MetadataSnapshotRunner.OssysAttributeRow list)
@@ -244,7 +244,7 @@ let private realityT (attrId: int) (col: string) (sqlType: string) (maxLen: int 
     { AttrId = attrId; IsNullable = true; SqlType = Some sqlType
       MaxLength = maxLen; Precision = None; Scale = None; CollationName = None
       IsIdentity = false; IsComputed = false; ComputedDefinition = None
-      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col }
+      DefaultConstraintName = None; DefaultDefinition = None; PhysicalColumn = Some col; IsPersisted = false }
 
 let private storageDivergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnStorageDivergences s

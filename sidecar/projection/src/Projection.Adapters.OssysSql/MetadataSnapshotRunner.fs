@@ -232,7 +232,12 @@ module MetadataSnapshotRunner =
           ComputedDefinition    : string option
           DefaultConstraintName : string option
           DefaultDefinition     : string option
-          PhysicalColumn        : string option }
+          PhysicalColumn        : string option
+          /// DECISIONS 2026-07-18 (#669 EF-21) — `sys.computed_columns
+          /// .is_persisted`. Appended LAST per the append-only column
+          /// contract; threads to `ComputedColumnConfig.IsPersisted`,
+          /// whose emission already renders the PERSISTED keyword.
+          IsPersisted           : bool }
 
     /// `#ColumnCheckReality` rowset (matrix row 12). Per-column CHECK
     /// constraint reflection. V2's `Kind.ColumnChecks` IR exists per
@@ -591,7 +596,11 @@ module MetadataSnapshotRunner =
           ComputedDefinition    = readStringOpt  r 9
           DefaultConstraintName = readStringOpt  r 10
           DefaultDefinition     = readStringOpt  r 11
-          PhysicalColumn        = readStringOpt  r 12 }
+          PhysicalColumn        = readStringOpt  r 12
+          // DECISIONS 2026-07-18 (#669 EF-21) — appended column 13. The
+          // SQL and this reader ship together (one resource, one
+          // assembly); the result-set contract check guards drift.
+          IsPersisted           = readBool       r 13 }
 
     let private mapColumnCheckRow (r: RowAtRest) : OssysColumnCheckRow =
         // V1 SELECT at outsystems_metadata_rowsets.sql:1042-1048
@@ -1401,6 +1410,12 @@ module MetadataSnapshotRunner =
                     DeployedIsNullable    =
                         Map.tryFind a.AttrId columnRealityByAttrId
                         |> Option.map (fun cr -> cr.IsNullable)
+                    // #669 EF-21 — carry the PERSISTED marking; the reader
+                    // threads it into the computed-column configuration.
+                    IsPersisted           =
+                        Map.tryFind a.AttrId columnRealityByAttrId
+                        |> Option.map (fun cr -> cr.IsPersisted)
+                        |> Option.defaultValue false
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

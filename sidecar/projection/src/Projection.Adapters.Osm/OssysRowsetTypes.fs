@@ -187,6 +187,12 @@ module OssysRowsetTypes =
             /// never drive a DBA-tightened column back to NULL. `Some
             /// true` and `None` leave the model's declaration in charge.
             DeployedIsNullable : bool option
+            /// DECISIONS 2026-07-18 (#669 EF-21) — the deployed PERSISTED
+            /// marking of a computed column (`sys.computed_columns
+            /// .is_persisted`). Threads into `ComputedColumnConfig
+            /// .IsPersisted`; the emission already renders the PERSISTED
+            /// keyword, so carrying the fact closes the round-trip.
+            IsPersisted : bool
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

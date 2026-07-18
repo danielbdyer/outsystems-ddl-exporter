@@ -422,7 +422,10 @@ SELECT
     cc.definition AS ComputedDefinition,
     dc.name AS DefaultConstraintName,
     dc.definition AS DefaultDefinition,
-    c.[name] AS PhysicalColumn
+    c.[name] AS PhysicalColumn,
+    -- DECISIONS 2026-07-18 (#669 EF-21): the PERSISTED marking of a
+    -- computed column. Appended LAST (append-only column contract).
+    CAST(ISNULL(cc.is_persisted, 0) AS bit) AS IsPersisted
 INTO #ColumnReality
 FROM #Attr a
 JOIN #PhysTbls pt ON pt.EntityId = a.EntityId
@@ -1104,7 +1107,8 @@ SELECT
   cr.ComputedDefinition,
   cr.DefaultConstraintName,
   cr.DefaultDefinition,
-  cr.PhysicalColumn
+  cr.PhysicalColumn,
+  cr.IsPersisted
 FROM #ColumnReality AS cr
 ORDER BY cr.AttrId;
 

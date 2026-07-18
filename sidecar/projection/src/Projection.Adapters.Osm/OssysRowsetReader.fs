@@ -143,7 +143,11 @@ module OssysRowsetReader =
                       if row.IsComputed then
                           row.ComputedDefinition
                           |> Option.bind (fun expr ->
-                              ComputedColumnConfig.create expr false
+                              // #669 EF-21 (DECISIONS 2026-07-18): the
+                              // deployed PERSISTED marking carries; the
+                              // emission renders the keyword, closing the
+                              // round-trip the audit proved dropped.
+                              ComputedColumnConfig.create expr row.IsPersisted
                               |> Result.toOption)
                       else
                           None

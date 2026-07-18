@@ -80,7 +80,7 @@ let private attrRow
       DefaultConstraintName = defaultConstraintName
       Order                = None
       Collation            = None
-      DeployedStorage      = None; DeployedIsNullable = None }
+      DeployedStorage      = None; DeployedIsNullable = None; IsPersisted = false }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with
@@ -113,11 +113,21 @@ let ``A.4.7'-prelude.row53-source-side: rowset path populates Attribute.Computed
     match computed.Computed with
     | Some config ->
         Assert.Equal("([BASE] * 2)", config.Expression)
-        // V1's #ColumnReality doesn't surface sys.computed_columns
-        // .is_persisted; default to false.
+        // The row carried IsPersisted = false; the config mirrors it.
         Assert.False(config.IsPersisted)
     | None ->
         Assert.Fail("expected Attribute.Computed = Some when IsComputed = true")
+
+[<Fact>]
+let ``#669 EF-21: the deployed PERSISTED marking threads into the computed configuration (DECISIONS 2026-07-18)`` () =
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let persisted =
+        { attrRow 101 "Total" "Integer" true (Some "([BASE] * 2)") None with
+            IsPersisted = true }
+    let cat = parseToCatalog (buildBundle [ idAttr; persisted ])
+    match (findAttribute cat "Total").Computed with
+    | Some config -> Assert.True(config.IsPersisted)
+    | None -> Assert.Fail("expected Attribute.Computed = Some when IsComputed = true")
 
 [<Fact>]
 let ``A.4.7'-prelude.row53-source-side: rowset path leaves Attribute.Computed = None when IsComputed = false`` () =
