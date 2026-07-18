@@ -523,6 +523,43 @@ let ``K2: the derivation gate captures DateTime columns as tick decimals`` () =
     Assert.Equal(decimal K2Fixture.lo.Ticks, d.Min)
     Assert.Equal(decimal (K2Fixture.lo.AddDays(9.0).Ticks), d.Max)
 
+[<Fact>]
+let ``K2: a multi-decade DateTime column derives σ in double instead of overflowing decimal`` () =
+    // Regression (profiler temporal-decimal overflow): the K2 gate encodes
+    // DateTime as tick decimals, and the variance step squares deviations.
+    // A tick deviation of ~1 year (≈3.2e14) squares to ≈1e29 — past
+    // decimal's ≈7.9e28 ceiling — so any estate whose dates span more than
+    // ~a year threw "Value was either too large or too small for a Decimal."
+    // during profiling, before any artifact was emitted. The second moment
+    // now accumulates in double; the VALUES stay decimal-exact.
+    let dto (d: System.DateTime) = System.DateTimeOffset(d, System.TimeSpan.Zero)
+    let minDt = System.DateTime(1985, 6, 15)
+    let maxDt = System.DateTime(2024, 6, 15)
+    let idValues = System.Collections.Generic.List<CachedValue>()
+    let onValues = System.Collections.Generic.List<CachedValue>()
+    // 40 rows, one per year 1985..2024: deviations of ~2 decades in ticks,
+    // whose squares (and their sum) far exceed decimal's range but sit
+    // comfortably inside double's.
+    for i in 0 .. 39 do
+        idValues.Add(CachedValue.IntValue (int64 i))
+        onValues.Add(CachedValue.DateValue (dto (System.DateTime(1985 + i, 6, 15))))
+    let cached =
+        EvidenceCache.cachedKindOfColumns Map.empty K2Fixture.kind 40L [| idValues; onValues |]
+        |> Option.defaultWith (fun () -> failwith "cachedKindOfColumns returned None for an attribute-bearing kind")
+    let cache : EvidenceCache = { Kinds = Map.ofList [ K2Fixture.eventKey, cached ] }
+    // The all-decimal variance path raised OverflowException here.
+    let dists = ProfileDerivation.deriveNumericDistributions cache K2Fixture.catalog
+    let d = dists |> List.find (fun d -> d.AttributeKey = K2Fixture.eventOn)
+    Assert.Equal(decimal minDt.Ticks, d.Min)
+    Assert.Equal(decimal maxDt.Ticks, d.Max)
+    match d.Moments with
+    | Some m ->
+        // σ populated, positive, and fits back into decimal (bounded by the
+        // value range — nowhere near decimal's ceiling).
+        Assert.True(m.StdDev > 0M, "a multi-decade span has positive standard deviation")
+        Assert.True(m.StdDev < decimal System.DateTime.MaxValue.Ticks, "σ fits within decimal")
+    | None -> Assert.Fail "Expected Moments populated for a 40-row DateTime column"
+
 // ---------------------------------------------------------------------------
 // K1b (DECISIONS 2026-07-18, the Twin) — pool augmentation: pinned keys ride
 // after the minted pool, referenceable by child FK draws, generation

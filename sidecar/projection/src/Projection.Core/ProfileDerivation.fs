@@ -169,6 +169,74 @@ module ProfileDerivation =
                         HasDuplicates        = hasDuplicates
                         IsPresentButInactive = isPresentButInactive }))
 
+    /// Build a moments-enriched `NumericDistribution` from a `decimal`
+    /// sample. **The second moment is accumulated in `double`, not
+    /// `decimal`, deliberately.** Variance sums SQUARED deviations, and a
+    /// squared large-magnitude scalar overflows `decimal` (max ≈7.9e28)
+    /// long before `double` (max ≈1.8e308): a `DateTime` tick deviation of
+    /// ~1 year (≈3.2e14) squares to ≈1e29 and threw `Value was either too
+    /// large or too small for a Decimal.` in the all-decimal path once K2
+    /// widened the numeric gate to tick-encoded temporal evidence
+    /// (DECISIONS 2026-07-18, the Twin). Any large-magnitude column
+    /// (e.g. a wide `BigInt`) has the same latent overflow; ticks merely
+    /// exposed it. The VALUES — Min/Max/percentiles/Mean — stay
+    /// `decimal`-exact (every single value fits `decimal` with room to
+    /// spare; only the squared AGGREGATE needs the wider domain), and σ
+    /// (bounded by the value range) fits back into `decimal`. StdDev
+    /// already flowed through `sqrt (float …)`, so no new nondeterminism
+    /// is introduced. Shared by `deriveNumericDistributions` and
+    /// `deriveForeignKeyCardinalities` (single-axis-divergent → one
+    /// parameterized algorithm, A40); callers apply the sample-size floor
+    /// before calling.
+    let private buildNumericDistribution
+        (key: SsKey)
+        (values: decimal[])
+        : NumericDistribution option =
+        if Array.isEmpty values then None
+        else
+            let sorted = values |> Array.sort
+            let min_  = sorted.[0]
+            let max_  = sorted.[sorted.Length - 1]
+            let mean  = (values |> Array.sum) / decimal values.Length
+            // Population standard deviation: sqrt(mean of squared
+            // deviations), accumulated in `double` — see the docstring:
+            // squaring tick-scale deviations overflows `decimal`; `double`
+            // carries the aggregate and σ fits back into `decimal`.
+            let meanF = float mean
+            let variance =
+                values
+                |> Array.sumBy (fun v ->
+                    let d = float v - meanF
+                    d * d)
+                |> fun s -> s / float values.Length
+            let stdDev = decimal (sqrt variance)
+            let sampleSize = int64 values.Length
+            let probeStatus = ProbeStatus.observed sampleSize
+            let baseResult =
+                NumericDistribution.create
+                    key
+                    min_
+                    (Statistics.percentileCont sorted 0.25M)
+                    (Statistics.percentileCont sorted 0.50M)
+                    (Statistics.percentileCont sorted 0.75M)
+                    (Statistics.percentileCont sorted 0.95M)
+                    (Statistics.percentileCont sorted 0.99M)
+                    max_ sampleSize probeStatus
+            let momentsResult =
+                StatisticalMoments.create mean stdDev
+            let enriched =
+                baseResult
+                |> Result.bind (fun dist ->
+                    momentsResult
+                    |> Result.bind (fun m ->
+                        NumericDistribution.withMoments m dist))
+            match enriched with
+            | Ok d    -> Some d
+            | Error _ ->
+                match baseResult with
+                | Ok d    -> Some d
+                | Error _ -> None
+
     /// Derive `NumericDistribution` per numeric attribute. Pure
     /// F# computation over cached column values:
     ///   - Min/Max/Mean via Array.min/max/average (decimal)
@@ -222,48 +290,7 @@ module ProfileDerivation =
                         // `NumericDistribution.sampleSizeFloor` (Profile.fs), not a
                         // re-inlined `5L`.
                         if sampleSize < NumericDistribution.sampleSizeFloor then None
-                        else
-                            let sorted = nonNullValues |> Array.sort
-                            let min_  = sorted.[0]
-                            let max_  = sorted.[sorted.Length - 1]
-                            let mean  =
-                                (nonNullValues |> Array.sum)
-                                    / decimal nonNullValues.Length
-                            // Population standard deviation:
-                            // sqrt(mean of squared deviations).
-                            let variance =
-                                nonNullValues
-                                |> Array.sumBy (fun v ->
-                                    let d = v - mean
-                                    d * d)
-                                |> fun s -> s / decimal nonNullValues.Length
-                            let stdDev =
-                                decimal (sqrt (float variance))
-                            let probeStatus = ProbeStatus.observed sampleSize
-                            let baseResult =
-                                NumericDistribution.create
-                                    attr.SsKey
-                                    min_
-                                    (Statistics.percentileCont sorted 0.25M)
-                                    (Statistics.percentileCont sorted 0.50M)
-                                    (Statistics.percentileCont sorted 0.75M)
-                                    (Statistics.percentileCont sorted 0.95M)
-                                    (Statistics.percentileCont sorted 0.99M)
-                                    max_ sampleSize probeStatus
-                            let momentsResult =
-                                StatisticalMoments.create mean stdDev
-                            let enriched =
-                                baseResult
-                                |> Result.bind (fun dist ->
-                                    momentsResult
-                                    |> Result.bind (fun m ->
-                                        NumericDistribution.withMoments m dist))
-                            match enriched with
-                            | Ok d    -> Some d
-                            | Error _ ->
-                                match baseResult with
-                                | Ok d -> Some d
-                                | Error _ -> None))
+                        else buildNumericDistribution attr.SsKey nonNullValues))
 
     /// Default vocabulary cap for categorical distributions
     /// derived from the cache. Slice 7 wires this through
@@ -843,48 +870,10 @@ module ProfileDerivation =
                     | None -> None
                     | Some sCol ->
                         let nonNullCount, countsPerParent = nonNullGroupCounts sCol.Values
-                        if nonNullCount < 5 then None
+                        if nonNullCount < 5 || countsPerParent.Length < 5 then None
                         else
-                            if countsPerParent.Length < 5 then None
-                            else
-                                let sorted = countsPerParent |> Array.sort
-                                let min_ = sorted.[0]
-                                let max_ = sorted.[sorted.Length - 1]
-                                let mean =
-                                    (countsPerParent |> Array.sum) / decimal countsPerParent.Length
-                                let variance =
-                                    countsPerParent
-                                    |> Array.sumBy (fun v ->
-                                        let d = v - mean
-                                        d * d)
-                                    |> fun s -> s / decimal countsPerParent.Length
-                                let stdDev = decimal (sqrt (float variance))
-                                let sampleSize = int64 countsPerParent.Length
-                                let probeStatus = ProbeStatus.observed sampleSize
-                                let baseResult =
-                                    NumericDistribution.create
-                                        reference.SsKey
-                                        min_
-                                        (Statistics.percentileCont sorted 0.25M)
-                                        (Statistics.percentileCont sorted 0.50M)
-                                        (Statistics.percentileCont sorted 0.75M)
-                                        (Statistics.percentileCont sorted 0.95M)
-                                        (Statistics.percentileCont sorted 0.99M)
-                                        max_ sampleSize probeStatus
-                                let momentsResult =
-                                    StatisticalMoments.create mean stdDev
-                                let enriched =
-                                    baseResult
-                                    |> Result.bind (fun dist ->
-                                        momentsResult
-                                        |> Result.bind (fun m ->
-                                            NumericDistribution.withMoments m dist))
-                                match enriched with
-                                | Ok dist -> Some (ForeignKeyCardinality.create reference.SsKey dist)
-                                | Error _ ->
-                                    match baseResult with
-                                    | Ok dist -> Some (ForeignKeyCardinality.create reference.SsKey dist)
-                                    | Error _ -> None))
+                            buildNumericDistribution reference.SsKey countsPerParent
+                            |> Option.map (ForeignKeyCardinality.create reference.SsKey)))
 
     [<Literal>]
     let private defaultFkSelectivityVocabularyLimit = 50
