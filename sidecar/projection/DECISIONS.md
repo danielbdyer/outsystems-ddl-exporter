@@ -29460,3 +29460,29 @@ vanishingly-rare checksum collision) keep `--refresh` the override. A pure test 
 staleness + round-trip wiring; a Docker probe test holds the end-to-end fact (an UPDATE at
 identical row count and MAX(pk) moves the content hash). Survival rule 14 and its masthead
 basis are updated in the same change.
+
+---
+
+## 2026-07-18 — The estate board's empty-text handling aligns with WP-3 (the stale D1×D5 clause retires)
+
+**Context.** The estate `check`'s NOT-NULL data finding appended "(the count includes empty
+text, which normalizes to NULL on publish)" for Text columns, and cited NM-18 — the universal
+`''`-as-NULL sentinel. That reflected the pre-WP-3 world, where `ReadSide` erased `''` to NULL
+on every write path, so an empty-string Text value both folded into the profiler's NULL count
+and normalized to NULL at publish. **WP-3 (DECISIONS 2026-07-16) retired that erasure**: `''`
+now survives distinct from NULL end-to-end (option-grain cells), and the profiler counts
+genuine NULLs only. The board's clause therefore misstated the publish behavior — a stale
+operator claim, the drift class this readiness-checker audit exists to catch.
+
+**Decision.** Per the latest-first rule, the board follows WP-3. The NOT-NULL finding now
+reports genuine NULLs only, with no empty-text clause; the `isTextTyped` parameter (and its
+`typeOf` lookup) that fed the clause are removed. The finding statement is accurate again: an
+empty string is a valid non-NULL value that does not violate NOT NULL and is preserved on
+publish. The test that pinned the stale clause is rewritten to assert the WP-3 behavior.
+
+**A flagged follow-on (not taken here).** WP-3 makes the empty string *visible* to the profiler
+for the first time (distinct from NULL). A NOT-NULL Text column that is mostly empty strings is
+satisfied-but-semantically-empty — a data-quality signal parallel to the date-sentinel census
+(`DataDateSentinel`). An empty-text advisory (a new WATCH kind, categorical-evidence-gated to
+avoid flooding on OutSystems' optional-but-physically-NOT-NULL text defaults) is the valuable
+new direction WP-3 enables; it is recorded here as a candidate, not built in this change.

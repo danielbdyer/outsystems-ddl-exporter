@@ -477,10 +477,7 @@ module Estate =
     /// `sentinelZeroOf` answers how many of a coordinate's observed values
     /// are the unset reference `0` (the categorical distribution's witness,
     /// D3a — `None` when the evidence does not carry it; the split is never
-    /// fabricated). `isTextTyped` answers whether the coordinate is a Text
-    /// column (D1×D5 — empty text folds into the NULL count at ingestion,
-    /// NM-18, and normalizes to NULL on publish; the statement says so).
-    /// `attrKeyFor` / `refKeyFor` resolve the coordinate to its logical
+    /// fabricated). `attrKeyFor` / `refKeyFor` resolve the coordinate to its logical
     /// keys (wave A6): a violation whose coordinate the ACTIVE posture
     /// already relaxes returns `None` — the posture's own line owns that
     /// fact (its meter), and one fact never renders twice. A violation
@@ -490,7 +487,6 @@ module Estate =
         (env: string)
         (posture: Posture)
         (sentinelZeroOf: ModelFidelity.EntityColumn -> int64 option)
-        (isTextTyped: ModelFidelity.EntityColumn -> bool)
         (attrKeyFor: ModelFidelity.EntityColumn -> SsKey option)
         (refKeyFor: ModelFidelity.EntityColumn -> SsKey option)
         (v: ModelFidelity.DataViolation)
@@ -515,13 +511,14 @@ module Estate =
                 (sprintf "%s is required (NOT NULL); %s NULL row(s) in %s exceed the repair band — leave the column nullable until they are backfilled"
                     subject (humane64 n) env) n
         | ModelFidelity.NotNullButNullsPresent n ->
+            // Post-WP-3 (DECISIONS 2026-07-16): the empty string survives
+            // distinct from NULL on every write path — it no longer folds into
+            // the NULL count at ingestion, nor normalizes to NULL on publish.
+            // The count is genuine NULLs only; the pre-WP-3 "includes empty
+            // text" clause is retired with the erasure it described.
             let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
-            let emptyTextClause =
-                if n > 0L && isTextTyped v.Reference
-                then " (the count includes empty text, which normalizes to NULL on publish)"
-                else ""
             contribution EstateFindingKind.DataNotNull
-                (sprintf "%s is required (NOT NULL); %s holds %s%s" subject env count emptyTextClause) (max n 1L)
+                (sprintf "%s is required (NOT NULL); %s holds %s" subject env count) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
             contribution EstateFindingKind.DataUnique
                 (sprintf "%s must be unique; %s holds duplicate values" subject env) 1L
@@ -1502,11 +1499,6 @@ module Estate =
                     Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.map (fun a -> (Name.value k.Name, Name.value a.Name), r.SsKey)))
             |> Map.ofList
-        let typeOf : Map<SsKey, PrimitiveType> =
-            logicalTarget
-            |> Catalog.allKinds
-            |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey, a.Type))
-            |> Map.ofList
         let perEnv =
             envs
             |> List.map (fun (env, operand) ->
@@ -1521,8 +1513,7 @@ module Estate =
                     | None -> []
                 // The coordinate lookups the data-plane refinements read
                 // (wave A3): the zero-sentinel witness from this env's
-                // categorical evidence, and the Text-typing of the target's
-                // declared column.
+                // categorical evidence.
                 let sentinelZeroFor (ec: ModelFidelity.EntityColumn) : int64 option =
                     operand.Profile
                     |> Option.bind (fun p ->
@@ -1532,18 +1523,13 @@ module Estate =
                             c.Frequencies
                             |> List.tryFind (fun (value, _) -> value = "0")
                             |> Option.map snd))
-                let isTextTyped (ec: ModelFidelity.EntityColumn) : bool =
-                    Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
-                    |> Option.bind (fun key -> Map.tryFind key typeOf)
-                    |> Option.map (fun t -> t = Text)
-                    |> Option.defaultValue false
                 let attrKeyFor (ec: ModelFidelity.EntityColumn) : SsKey option =
                     Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
                 let refKeyFor (ec: ModelFidelity.EntityColumn) : SsKey option =
                     Map.tryFind (ec.Entity, ec.Column) referenceKeyOf
                 let data =
                     compare.DataDealbreakers
-                    |> List.choose (dataFindingOf env posture sentinelZeroFor isTextTyped attrKeyFor refKeyFor)
+                    |> List.choose (dataFindingOf env posture sentinelZeroFor attrKeyFor refKeyFor)
                 let trust =
                     match operand.Profile with
                     | Some p -> trustFindingsOf env logicalEnv p

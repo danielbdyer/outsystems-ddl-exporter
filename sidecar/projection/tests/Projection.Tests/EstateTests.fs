@@ -444,7 +444,11 @@ let ``D3a: an orphan finding without categorical evidence keeps the plain statem
     Assert.DoesNotContain("unset value", finding.Statement)
 
 [<Fact>]
-let ``D1×D5: a Text column's NOT-NULL finding names the empty-text basis; an integer column's does not`` () =
+let ``WP-3: a NOT-NULL finding counts genuine NULLs only — empty text survives distinct from NULL, not folded in`` () =
+    // Post-WP-3 (DECISIONS 2026-07-16) the empty string is preserved distinct
+    // from NULL on every write path; it no longer folds into the NULL count nor
+    // normalizes to NULL on publish, so no NOT-NULL finding names an empty-text
+    // basis (the pre-WP-3 clause is retired with the erasure it described).
     let dirty =
         { Profile.empty with
             Columns =
@@ -456,7 +460,8 @@ let ``D1×D5: a Text column's NOT-NULL finding names the empty-text basis; an in
     let name =
         report.Findings
         |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.Name")
-    Assert.Contains("the count includes empty text, which normalizes to NULL on publish", name.Statement)
+    Assert.Contains("NULL row(s)", name.Statement)
+    Assert.DoesNotContain("empty text", name.Statement)
     let tenant =
         report.Findings
         |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.TenantId")
