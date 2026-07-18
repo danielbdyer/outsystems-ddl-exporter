@@ -29408,3 +29408,28 @@ actually emit nullable (logical-optional, non-PK, physically nullable in the mod
 physical-nullable guard keeps it from flooding on OutSystems' optional-but-physically-NOT-NULL
 columns. The engine fix (consult physical `is_nullable` at emission) retires it; the board
 carries it until then.
+
+---
+
+## 2026-07-18 — Detection joined to emission refusal: authored defaults + computed expressions (downgrades-never-silent, extended)
+
+**Context.** The `EmitError` refusal chain already refused the publish on three board
+dealbreakers — composite-PK foreign keys (`Msg 1776`), temporal tables (EF-23), and
+unrewritten triggers (EF-20) — so "a red board finding and a refused publish are the same
+fact." Two board dealbreakers were NOT yet joined: `EmissionAuthoredDefault` (a DEFAULT whose
+literal is not a parseable value of its type — `Msg 241` at first insert) and
+`EmissionComputedExprIdentifiers` (a computed expression referencing identifiers that resolve
+to no column — `Msg 207` on a case-sensitive target). The board reddened; the publish emitted
+them and exited clean — a silent downgrade.
+
+**Decision.** Both dealbreakers now refuse the publish, and the predicate is **shared** so
+detection and refusal cannot drift. `SqlLiteral.unparsableValueReason` (Core) is the one
+authored-default parse-check; `Kind.unresolvedComputedIdentifiers` (Core) is the one
+computed-identifier resolver. The board's `emissionAuthoredDefaultFindings` /
+`emissionComputedExprFindings` and the emitter's new `EmitError.AuthoredDefaultRefused` /
+`EmitError.ComputedExpressionRefused` both call the same function — the "same predicate" is
+now literal, not merely parallel. Emitter tests inject each case into a references-cleared
+catalog and assert the refusal; the golden emission corpus is unaffected (it carries no
+unparseable default or unresolvable computed expression). The engine fixes that make these
+cases emittable (M-1 default classification, M-8 computed-expression rewrite) retire the
+refusals; until then the publish fails loud instead of shipping a DDL that deploys and breaks.

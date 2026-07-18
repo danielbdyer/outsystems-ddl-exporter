@@ -1266,6 +1266,48 @@ let ``trigger gate: a clean fully-logical trigger body publishes (the negative)`
     | Ok _ -> ()
     | Error e -> Assert.Fail (sprintf "expected the publish to emit; got %A" e)
 
+/// #669 M-1 / M-8 — the downgrades-never-silent law: an emission dealbreaker
+/// the board reds on must also make the publish refuse loudly. Inject a value
+/// into every non-PK attribute of a references-cleared composite-target
+/// catalog, so the authored-default / computed-expression gate is the only
+/// refusal in play. The predicates are SHARED with the board
+/// (`SqlLiteral.unparsableValueReason`, `Kind.unresolvedComputedIdentifiers`),
+/// so a red board line and a refused publish are the same fact by construction.
+let private withEveryNonPkAttribute (f: Attribute -> Attribute) : Catalog =
+    { compositeTargetCatalog with
+        Modules =
+            compositeTargetCatalog.Modules
+            |> List.map (fun m ->
+                { m with
+                    Kinds =
+                        m.Kinds
+                        |> List.map (fun k ->
+                            { k with
+                                References = []
+                                Attributes =
+                                    k.Attributes |> List.map (fun a -> if a.IsPrimaryKey then a else f a) }) }) }
+
+[<Fact>]
+let ``authored-default gate: an unparseable authored DEFAULT refuses the publish (#669 M-1)`` () =
+    let enriched =
+        enrich (withEveryNonPkAttribute (fun a -> { a with DefaultValue = Some (SqlLiteral.IntegerLit "not-an-int") }))
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.AuthoredDefaultRefused (_, _, reason)) ->
+        Assert.Contains("not-an-int", reason)
+    | Error other -> Assert.Fail (sprintf "expected the authored-default refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the authored-default refusal; the publish emitted"
+
+[<Fact>]
+let ``computed-expression gate: an identifier resolving to no column refuses the publish (#669 M-8 / EF-19)`` () =
+    let enriched =
+        enrich (withEveryNonPkAttribute (fun a ->
+            { a with Computed = Some (ComputedColumnConfig.create "[NoSuchColumn] + 1" false |> Result.value) }))
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.ComputedExpressionRefused (_, _, tokens)) ->
+        Assert.Contains("NoSuchColumn", tokens)
+    | Error other -> Assert.Fail (sprintf "expected the computed-expression refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the computed-expression refusal; the publish emitted"
+
 [<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =
     // Reconciliation slice 3 (DECISIONS 2026-06-13): per-table bodies

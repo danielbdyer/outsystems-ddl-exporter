@@ -1146,30 +1146,12 @@ module Estate =
     /// SQL-shaped (invariant TryParse), not canonical-format-strict, so a
     /// legitimate authored `2024-01-01` date-time passes.
     let private emissionAuthoredDefaultFindings (target: Catalog) : Finding list =
-        let inv = System.Globalization.CultureInfo.InvariantCulture
-        let unparsable (lit: SqlLiteral) : string option =
-            match lit with
-            | SqlLiteral.IntegerLit raw when not (fst (System.Int64.TryParse(raw, System.Globalization.NumberStyles.Integer, inv))) ->
-                Some (sprintf "'%s' does not parse as an integer value" raw)
-            | SqlLiteral.DecimalLit raw when not (fst (System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, inv))) ->
-                Some (sprintf "'%s' does not parse as a decimal value" raw)
-            | SqlLiteral.DateTimeLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as a date-time value" raw)
-            | SqlLiteral.DateLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as a date value" raw)
-            | SqlLiteral.TimeLit raw when not (fst (System.TimeSpan.TryParse(raw, inv))) ->
-                Some (sprintf "'%s' does not parse as a time value" raw)
-            | SqlLiteral.DateTimeOffsetLit raw when not (fst (System.DateTimeOffset.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as an offset-bearing date-time value" raw)
-            | SqlLiteral.GuidLit raw when not (fst (System.Guid.TryParse raw)) ->
-                Some (sprintf "'%s' does not parse as a GUID value" raw)
-            | _ -> None
         Catalog.allKinds target
         |> List.collect (fun k ->
             k.Attributes
             |> List.choose (fun a ->
                 a.DefaultValue
-                |> Option.bind unparsable
+                |> Option.bind SqlLiteral.unparsableValueReason
                 |> Option.map (fun problem ->
                     let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
                     emissionFinding EstateFindingKind.EmissionAuthoredDefault subject
@@ -1215,29 +1197,15 @@ module Estate =
     let private emissionComputedExprFindings (target: Catalog) : Finding list =
         Catalog.allKinds target
         |> List.collect (fun k ->
-            let known =
-                k.Attributes
-                |> List.collect (fun a ->
-                    [ (ColumnRealization.columnNameText a.Column).ToUpperInvariant()
-                      (Name.value a.Name).ToUpperInvariant() ])
-                |> Set.ofList
             k.Attributes
             |> List.choose (fun a ->
-                a.Computed
-                |> Option.bind (fun cfg ->
-                    let unresolved =
-                        System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
-                        |> Seq.map (fun m -> m.Groups.[1].Value)
-                        |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
-                        |> Seq.distinct
-                        |> List.ofSeq
-                    match unresolved with
-                    | [] -> None
-                    | tokens ->
-                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
-                        Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
-                                (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
-                                    subject (String.concat "], [" tokens) (Name.value k.Name))))))
+                match Kind.unresolvedComputedIdentifiers k a with
+                | [] -> None
+                | tokens ->
+                    let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                    Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
+                            (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
+                                subject (String.concat "], [" tokens) (Name.value k.Name)))))
 
     /// EF-23 (DECISIONS 2026-07-18): a system-versioned kind. The emission
     /// cannot yet deploy its period columns (GENERATED ALWAYS is the named

@@ -1647,6 +1647,32 @@ module Kind =
     let tryFindAttribute (ssKey: SsKey) (k: Kind) : Attribute option =
         Map.tryFind ssKey (attributeIndex k)
 
+    /// The bracketed `[identifier]` tokens in a computed column's expression
+    /// that resolve to NO column of the owning kind — physical or logical.
+    /// `[]` when the attribute is not computed, or every token resolves. The
+    /// emitter rewrites physical identifiers to logical names; a token
+    /// matching neither cannot be rewritten, and a case-sensitive target
+    /// rejects the emitted expression at deploy (#669 M-8 / EF-19). The ONE
+    /// predicate shared by the board's `EmissionComputedExprIdentifiers`
+    /// finding and the emitter's `ComputedExpressionRefused` refusal, so a red
+    /// board line and a refused publish are the same fact (DECISIONS
+    /// 2026-07-18, the downgrades-never-silent law).
+    let unresolvedComputedIdentifiers (k: Kind) (attribute: Attribute) : string list =
+        match attribute.Computed with
+        | None -> []
+        | Some cfg ->
+            let known =
+                k.Attributes
+                |> List.collect (fun a ->
+                    [ (ColumnRealization.columnNameText a.Column).ToUpperInvariant()
+                      (Name.value a.Name).ToUpperInvariant() ])
+                |> Set.ofList
+            System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
+            |> Seq.map (fun m -> m.Groups.[1].Value)
+            |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
+            |> Seq.distinct
+            |> List.ofSeq
+
 
 [<RequireQualifiedAccess>]
 module Module =
