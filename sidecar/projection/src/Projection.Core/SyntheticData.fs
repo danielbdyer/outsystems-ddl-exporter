@@ -89,6 +89,23 @@ type SyntheticConfig = {
     /// a generic clustering (the `from:synthetic` composition derives it from
     /// `BoundedContextDiscovery`; Core stays decoupled from that source type).
     FkLocalityClusters     : Map<SsKey, SsKey>
+    /// K1 (DECISIONS 2026-07-18, the Twin) — pre-seeded parent pools. A kind
+    /// listed here already holds real rows at the sink (the estate's own
+    /// static reference data, seeded outside σ); σ does NOT generate rows for
+    /// it, and child FK columns draw from the PK values listed here exactly as
+    /// they would from a minted pool. The listed kinds are likewise excluded
+    /// from the synthetic load's wipe scope (`Transfer.runSynthetic`) — their
+    /// rows are the sink's own. Empty (the default) is byte-identical to the
+    /// pre-K1 flow.
+    ProvidedPools          : Map<SsKey, string list>
+    /// K1b (DECISIONS 2026-07-18, the Twin) — pool AUGMENTATION. PK values
+    /// appended to a kind's pool AFTER its own minted (or provided) entries:
+    /// the kind still generates its full volume (row i keeps pool entry i —
+    /// the augment rides beyond the row range), and child FK draws see the
+    /// widened pool. Consumer: pinned operator-authored rows, whose keys
+    /// must be referenceable by the synthetic mass. Empty (the default) is
+    /// byte-identical.
+    AugmentPools           : Map<SsKey, string list>
 }
 
 [<RequireQualifiedAccess>]
@@ -102,7 +119,9 @@ module SyntheticConfig =
           SynthesizeColumns      = Set.empty
           Scale                  = 1M
           VolumeByKind           = Map.empty
-          FkLocalityClusters     = Map.empty }
+          FkLocalityClusters     = Map.empty
+          ProvidedPools          = Map.empty
+          AugmentPools           = Map.empty }
 
 
 /// NM-21 — a named lineage event σ emits when a **non-nullable** FK column
@@ -336,9 +355,20 @@ module SyntheticData =
         let fracNum, r2 = drawBelow 1000UL r1
         let value = lo + (hi - lo) * decimal fracNum / 1000M
         let clamped = max nd.Min (min nd.Max value)
+        // K2 (DECISIONS 2026-07-18, the Twin) — chronological evidence is
+        // tick-encoded decimal (see `ProfileDerivation`); render it back
+        // through `RawValueCodec` so the load's literal path accepts it.
+        // The prior fall-through emitted a bare invariant decimal for a
+        // DateTime/Date column — an invalid raw form, unreachable via
+        // standard capture until the gate widened.
+        let ticksOf (d: decimal) : int64 =
+            let t = int64 (System.Decimal.Truncate d)
+            max 0L (min System.DateTime.MaxValue.Ticks t)
         let raw =
             match ptype with
             | Integer -> inv (int64 (System.Decimal.Truncate clamped))
+            | PrimitiveType.DateTime -> RawValueCodec.formatDateTime (System.DateTime(ticksOf clamped))
+            | PrimitiveType.Date -> RawValueCodec.formatDate (System.DateTime(ticksOf clamped))
             | _       -> inv clamped
         raw, r2
 
@@ -635,13 +665,19 @@ module SyntheticData =
         : Map<SsKey, string list> =
         Catalog.allKinds catalog
         |> List.map (fun kind ->
-            let n = rowCountFor profile config kind
-            let kindHash = fnv1a (SsKey.serialize kind.SsKey)
-            let pool =
-                match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey) with
-                | None -> List.replicate n ""   // PK-less kind: no FK-referenceable pool.
-                | Some pk -> [ for i in 0 .. n - 1 -> surrogateRaw pk.Type kindHash i ]
-            kind.SsKey, pool)
+            // K1 — a provided pool IS the kind's pool: the sink already holds
+            // the rows (the estate's own seed data); child FKs draw from the
+            // provided PK values and no fresh surrogates are minted.
+            match Map.tryFind kind.SsKey config.ProvidedPools with
+            | Some provided -> kind.SsKey, provided
+            | None ->
+                let n = rowCountFor profile config kind
+                let kindHash = fnv1a (SsKey.serialize kind.SsKey)
+                let pool =
+                    match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey) with
+                    | None -> List.replicate n ""   // PK-less kind: no FK-referenceable pool.
+                    | Some pk -> [ for i in 0 .. n - 1 -> surrogateRaw pk.Type kindHash i ]
+                kind.SsKey, pool)
         |> Map.ofList
 
     /// `σ` with its lineage — generate the synthetic dataset (design §8, slice
@@ -663,10 +699,31 @@ module SyntheticData =
         (seed: uint64)
         : Map<SsKey, StaticRow list> * SyntheticDiagnostic list =
         let pkPools = mintPkPools catalog profile config seed
+        // K1b — the FK-draw VIEW of the pools: augment entries ride after
+        // each base pool so pinned keys are referenceable by other kinds'
+        // draws. A kind's OWN row minting always sees its unaugmented pool
+        // (the pool length is the row range — an augmented own-pool would
+        // grow generation). Named boundary: a self-referencing FK therefore
+        // draws from the unaugmented own pool.
+        let augmentedPools =
+            if Map.isEmpty config.AugmentPools then pkPools
+            else
+                pkPools
+                |> Map.map (fun key pool ->
+                    match Map.tryFind key config.AugmentPools with
+                    | Some extra when not (List.isEmpty extra) -> pool @ extra
+                    | _ -> pool)
         let perKind =
             Catalog.allKinds catalog
+            // K1 — a provided kind is not generated: the sink's own rows stand,
+            // and the dataset carries no entry for it (so the load plan carries
+            // zero rows and the synthetic wipe scope excludes it).
+            |> List.filter (fun kind -> not (Map.containsKey kind.SsKey config.ProvidedPools))
             |> List.map (fun kind ->
-                let rows, diags = generateKindRows catalog profile config seed pkPools kind
+                let drawPools =
+                    if Map.isEmpty config.AugmentPools then pkPools
+                    else Map.add kind.SsKey (Map.find kind.SsKey pkPools) augmentedPools
+                let rows, diags = generateKindRows catalog profile config seed drawPools kind
                 kind.SsKey, rows, diags)
         let dataset = perKind |> List.map (fun (k, rows, _) -> k, rows) |> Map.ofList
         let diagnostics = perKind |> List.collect (fun (_, _, diags) -> diags)

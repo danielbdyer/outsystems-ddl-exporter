@@ -228,5 +228,7 @@ module SyntheticLoadRun =
                         | Ok sink ->
                             use sink = sink
                             let mode = if execute then Transfer.Execute else Transfer.DryRun
-                            return! Transfer.runSynthetic mode emission allowCdc sink catalog profile effectiveConfig seed realize
+                            // K1c — the flow path keeps the pre-K1c identity
+                            // disposition (byte-identical).
+                            return! Transfer.runSynthetic mode emission allowCdc IdentityPolicy.Structural sink catalog profile effectiveConfig seed realize
             }

@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateProgramFile>true</GenerateProgramFile>
+    <RootNamespace>Twin.Tests.Integration</RootNamespace>
+    <AssemblyName>Twin.Tests.Integration</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    THE TWIN — the Docker pool. Every test here touches a SQL Server
+    container (the warm dev-loop container when PROJECTION_MSSQL_CONN_STR
+    is set, ephemeral Testcontainers otherwise — the same warm-honoring
+    choice the projection Integration pool makes). Collection
+    "Twin-Docker" serializes the pool; never run concurrently with the
+    pure pool (the OOM survival rule). Run via `scripts/twin-test.sh docker`.
+  -->
+
+  <ItemGroup>
+    <Compile Include="TwinCollections.fs" />
+    <Compile Include="TwinEstateFixture.fs" />
+    <Compile Include="TwinSchemaLoopTests.fs" />
+    <Compile Include="TwinMintLoopTests.fs" />
+    <Compile Include="TwinEvidenceLoopTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Twin.Core/Twin.Core.fsproj" />
+    <ProjectReference Include="../../src/Twin.Runtime/Twin.Runtime.fsproj" />
+    <ProjectReference Include="../../src/Twin.Cli/Twin.Cli.fsproj" />
+    <ProjectReference Include="../../src/Projection.Core/Projection.Core.fsproj" />
+    <ProjectReference Include="../../src/Projection.Pipeline/Projection.Pipeline.fsproj" />
+    <ProjectReference Include="../../src/Projection.Adapters.Sql/Projection.Adapters.Sql.fsproj" />
+    <ProjectReference Include="../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj" />
+    <ProjectReference Include="../Projection.Tests.Support/Projection.Tests.Support.fsproj" />
+  </ItemGroup>
+
+</Project>

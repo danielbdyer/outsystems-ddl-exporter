@@ -1704,6 +1704,13 @@ module Transfer =
         (mode: Mode)
         (emission: EmissionMode)
         (allowCdc: bool)
+        // K1c (DECISIONS 2026-07-18, the Twin) — the identity disposition of
+        // the generated rows. `Structural` (every prior caller) keeps the
+        // byte-identical AssignedBySink path for identity kinds; a
+        // FullRights sink may pass `PreferPreservedKeys` so σ's minted keys
+        // land verbatim (IDENTITY_INSERT bracketing) — pinned keys are
+        // honored and a re-mint is byte-identical without counter hygiene.
+        (policy: IdentityPolicy)
         (sink: SqlConnection)
         (catalog: Catalog)
         (profile: Profile)
@@ -1772,7 +1779,7 @@ module Transfer =
                 // tokens σ emitted) BEFORE planning the load. Identity when the
                 // correction is empty (byte-identical to the pre-F0c load).
                 let realizedRows = realize rows
-                let plan = DataLoadPlan.build catalog topo realizedRows SurrogateRemapContext.empty
+                let plan = DataLoadPlan.buildWith policy catalog topo realizedRows SurrogateRemapContext.empty
                 let preWrite =
                     if mode = Execute then
                         match executeGate catalog plan with
@@ -1788,8 +1795,20 @@ module Transfer =
                             else
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
-                                    // σ generation has no declared subset — wipe all.
-                                    do! TransferResume.wipeFkOrdered sink catalog plan topo None
+                                    // K1 — a provided-pool kind's rows are the sink's OWN
+                                    // (the estate's seed data, loaded outside σ); the wipe
+                                    // must not touch them. With no provided pools the scope
+                                    // stays None — wipe every loaded kind, byte-identical to
+                                    // the pre-K1 flow.
+                                    let wipeScope =
+                                        if Map.isEmpty config.ProvidedPools then None
+                                        else
+                                            Catalog.allKinds catalog
+                                            |> List.map (fun k -> k.SsKey)
+                                            |> List.filter (fun k -> not (Map.containsKey k config.ProvidedPools))
+                                            |> Set.ofList
+                                            |> Some
+                                    do! TransferResume.wipeFkOrdered sink catalog plan topo wipeScope
                                     return! writePlan sink catalog Set.empty plan false None
                                 | EmissionMode.Incremental ->
                                     return! writePlan sink catalog Set.empty plan false None
