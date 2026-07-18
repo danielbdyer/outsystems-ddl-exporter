@@ -100,7 +100,7 @@ These are our standards. Deviate only with good reason.
 | Integer identifiers | `INT` | 2.1 billion max; sufficient for most cases |
 | Large identifiers | `BIGINT` | When INT is insufficient |
 | Small integers | `TINYINT` or `SMALLINT` | Status codes, flags (save space) |
-| Currency/financial | `DECIMAL(18,2)` | Exact precision; never use MONEY |
+| Currency/financial | `DECIMAL(37,8)` | Exact precision; never use MONEY |
 | Percentages | `DECIMAL(5,2)` | 0.00 to 100.00 |
 | High-precision | `DECIMAL(p,s)` | Specify precision and scale |
 | Floating point | `FLOAT` | Only for scientific data; imprecise |
@@ -111,12 +111,12 @@ These are our standards. Deviate only with good reason.
 
 | Use Case | Type | Notes |
 |----------|------|-------|
-| Date and time | `DATETIME2(7)` | Preferred over DATETIME |
+| Date and time | `DATETIME` | OutSystems `rtDateTime`; `rtDateTime2` maps to `DATETIME2(7)` |
 | Date only | `DATE` | When time doesn't matter |
 | Time only | `TIME` | Rare |
 | Legacy compatibility | `DATETIME` | Only for existing systems |
 
-**Use DATETIME2.** Higher precision, larger range, 6-8 bytes (same as DATETIME).
+**OutSystems `DateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`.**
 
 ### Other
 

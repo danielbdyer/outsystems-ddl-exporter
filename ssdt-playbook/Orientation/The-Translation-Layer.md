@@ -48,16 +48,16 @@ This section is your translation guide. It won't make SSDT feel like OutSystems 
 |-----------------|-----------------|-------|
 | Integer | INT | Exact match. |
 | Long Integer | BIGINT | For values > 2.1 billion. |
-| Decimal | DECIMAL(p,s) | You specify precision (p) and scale (s). e.g., `DECIMAL(18,2)` for currency. |
+| Decimal | DECIMAL(p,s) | You specify precision (p) and scale (s). e.g., `DECIMAL(37,8)` for currency. |
 | Boolean | BIT | 0 = false, 1 = true. |
 | Text | NVARCHAR(n) or NVARCHAR(MAX) | We use NVARCHAR (Unicode) by default. Specify length. |
 | Date | DATE | Date only, no time component. |
 | Time | TIME | Time only, no date component. |
-| Date Time | DATETIME2(7) | Preferred over DATETIME. Higher precision, wider range. |
+| Date Time | DATETIME | `rtDateTime` maps to `DATETIME`; `rtDateTime2` maps to `DATETIME2(7)`. |
 | Binary Data | VARBINARY(n) or VARBINARY(MAX) | For files, images, etc. |
-| Email, Phone Number | NVARCHAR(n) | No special type — just text with appropriate length. |
-| Currency | DECIMAL(18,2) | We use DECIMAL, not the MONEY type. |
-| Entity Identifier (FK) | INT (or match parent PK type) | Type must match the referenced primary key. |
+| Email, Phone Number | VARCHAR(n) | ANSI `VARCHAR` — Email `VARCHAR(250)`, Phone `VARCHAR(20)`. |
+| Currency | DECIMAL(37,8) | We use DECIMAL, not the MONEY type. |
+| Entity Identifier (FK) | BIGINT | Must match the referenced primary key's type. |
 
 ### Structural Concepts
 
