@@ -294,6 +294,19 @@ module Estate =
             /// in a billion-row fact table, so the threshold is set per entity
             /// (by logical entity name), falling back to `RepairBand`.
             RepairBandByEntity : Map<string, int64>
+            /// The decision floor (`readiness.estate.decisionFloor`) — the
+            /// minimum observation an estate-grade conclusion needs. Defaults
+            /// to `decisionFloor`; A44-tunable per estate (DECISIONS 2026-07-18).
+            DecisionFloor : int64
+            /// The rowcount-asymmetry factor (`readiness.estate.asymmetryFactor`)
+            /// — the ratio past which the small side's evidence is advisory.
+            /// Defaults to `asymmetryFactor`.
+            AsymmetryFactor : int64
+            /// The operator's declared promotion lattice
+            /// (`readiness.estate.promotionOrder`), most-upstream first —
+            /// enables the deployed↔deployed regime. Empty (the default) ⇒ the
+            /// tool makes no promotion-order assumption and the regime is silent.
+            PromotionOrder : string list
             /// Reference keys the loaded posture keeps untracked
             /// (`referenceOverrides` + `keepUntracked`).
             RelaxedReferences : Set<SsKey>
@@ -304,10 +317,13 @@ module Estate =
 
     [<RequireQualifiedAccess>]
     module Posture =
-        /// No active posture, the default band — `compute`'s basis.
+        /// No active posture, the default band and thresholds — `compute`'s basis.
         let defaults : Posture =
             { RepairBand        = repairBandDefault
               RepairBandByEntity = Map.empty
+              DecisionFloor     = decisionFloor
+              AsymmetryFactor   = asymmetryFactor
+              PromotionOrder    = []
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
 
@@ -477,10 +493,7 @@ module Estate =
     /// `sentinelZeroOf` answers how many of a coordinate's observed values
     /// are the unset reference `0` (the categorical distribution's witness,
     /// D3a — `None` when the evidence does not carry it; the split is never
-    /// fabricated). `isTextTyped` answers whether the coordinate is a Text
-    /// column (D1×D5 — empty text folds into the NULL count at ingestion,
-    /// NM-18, and normalizes to NULL on publish; the statement says so).
-    /// `attrKeyFor` / `refKeyFor` resolve the coordinate to its logical
+    /// fabricated). `attrKeyFor` / `refKeyFor` resolve the coordinate to its logical
     /// keys (wave A6): a violation whose coordinate the ACTIVE posture
     /// already relaxes returns `None` — the posture's own line owns that
     /// fact (its meter), and one fact never renders twice. A violation
@@ -490,7 +503,6 @@ module Estate =
         (env: string)
         (posture: Posture)
         (sentinelZeroOf: ModelFidelity.EntityColumn -> int64 option)
-        (isTextTyped: ModelFidelity.EntityColumn -> bool)
         (attrKeyFor: ModelFidelity.EntityColumn -> SsKey option)
         (refKeyFor: ModelFidelity.EntityColumn -> SsKey option)
         (v: ModelFidelity.DataViolation)
@@ -515,13 +527,14 @@ module Estate =
                 (sprintf "%s is required (NOT NULL); %s NULL row(s) in %s exceed the repair band — leave the column nullable until they are backfilled"
                     subject (humane64 n) env) n
         | ModelFidelity.NotNullButNullsPresent n ->
+            // Post-WP-3 (DECISIONS 2026-07-16): the empty string survives
+            // distinct from NULL on every write path — it no longer folds into
+            // the NULL count at ingestion, nor normalizes to NULL on publish.
+            // The count is genuine NULLs only; the pre-WP-3 "includes empty
+            // text" clause is retired with the erasure it described.
             let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
-            let emptyTextClause =
-                if n > 0L && isTextTyped v.Reference
-                then " (the count includes empty text, which normalizes to NULL on publish)"
-                else ""
             contribution EstateFindingKind.DataNotNull
-                (sprintf "%s is required (NOT NULL); %s holds %s%s" subject env count emptyTextClause) (max n 1L)
+                (sprintf "%s is required (NOT NULL); %s holds %s" subject env count) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
             contribution EstateFindingKind.DataUnique
                 (sprintf "%s must be unique; %s holds duplicate values" subject env) 1L
@@ -619,6 +632,8 @@ module Estate =
     /// carries a WATCH finding naming both ends — verdicts drawn on the
     /// small side's evidence are advisory. No lever, by design.
     let private asymmetryContributions
+        (decisionFloor: int64)
+        (asymmetryFactor: int64)
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
         : EnvContribution list =
@@ -658,6 +673,7 @@ module Estate =
     /// environment legitimately shares), over at least the decision floor
     /// of summed observations. Advisory; WATCH.
     let private uniquenessCandidateContributions
+        (decisionFloor: int64)
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
         : EnvContribution list =
@@ -743,9 +759,15 @@ module Estate =
                                       Signature = None }
                             else None))))
 
-    /// D8 (wave A4): the platform's empty-date convention — a date column's
-    /// categorical evidence carrying 1900-01-01 values reads as satisfied
-    /// NOT NULL, empty of meaning. Witnessed or silent, never guessed.
+    /// D8 (wave A4): a date column's empty-of-meaning sentinels — a value that
+    /// satisfies a NOT-NULL reading but carries no real date. The census
+    /// covers the OutSystems platform's stand-in `1900-01-01` AND the SQL
+    /// Server `datetime` floor `1753-01-01` (a column pinned at its type's
+    /// minimum reads the same way). Witnessed by categorical evidence, or
+    /// silent — never guessed. The `9999-12-31` "far future" is deliberately
+    /// NOT a sentinel here: it usually carries real intent ("never expires").
+    let private dateSentinels : string list = [ "1900-01-01"; "1753-01-01" ]
+
     let private dateSentinelContributions
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
@@ -759,11 +781,20 @@ module Estate =
                 |> List.choose (fun (env, p) ->
                     Profile.tryFindCategorical a.SsKey p
                     |> Option.bind (fun c ->
-                        let sentinelCount =
-                            c.Frequencies
-                            |> List.filter (fun (value, _) -> value.StartsWith "1900-01-01")
-                            |> List.sumBy snd
+                        // Sum every row sitting on a sentinel, and name the
+                        // sentinel that carries the most (the one the operator
+                        // sees first) so the statement stays concrete.
+                        let hits =
+                            dateSentinels
+                            |> List.choose (fun s ->
+                                let n =
+                                    c.Frequencies
+                                    |> List.filter (fun (value, _) -> value.StartsWith s)
+                                    |> List.sumBy snd
+                                if n > 0L then Some (s, n) else None)
+                        let sentinelCount = hits |> List.sumBy snd
                         if sentinelCount > 0L then
+                            let leadSentinel = hits |> List.maxBy snd |> fst
                             let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value a.Name)
                             Some
                                 { Kind = EstateFindingKind.DataDateSentinel
@@ -771,8 +802,8 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s holds %s row(s) set to 1900-01-01 in %s — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
-                                        subject (humane64 sentinelCount) env
+                                    sprintf "%s holds %s row(s) set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
+                                        subject (humane64 sentinelCount) leadSentinel env
                                   Weight = sentinelCount
                                   Signature = None }
                         else None))))
@@ -858,6 +889,47 @@ module Estate =
                       Weight = int64 mismatched
                       Signature = None }
             else None)
+
+    /// The fourth comparison regime (DECISIONS 2026-07-18): deployed↔deployed
+    /// across the promotion lattice. The estate compares each environment to
+    /// the TARGET; this compares each environment to its UPSTREAM promotion
+    /// SOURCE — the adjacent pair in the `readiness.confirm` order, read
+    /// most-upstream first (Dev → QA → UAT → PROD). A kind a DOWNSTREAM
+    /// environment carries that its upstream source LACKS reached the
+    /// downstream without passing through its source — a change that bypassed
+    /// the promotion path (a hotfix applied straight to the downstream).
+    /// Advisory (a bypass may be a sanctioned emergency change); the operator
+    /// confirms the order is intended. This is drift the target-anchored
+    /// per-environment diff cannot express — it names each environment's delta
+    /// from the target, never the promotion CHAIN's own monotonicity.
+    /// The promotion order is the operator's declared lattice
+    /// (`readiness.estate.promotionOrder`), NOT the environment-list order —
+    /// the tool never guesses which environment is upstream. Absent ⇒ no
+    /// assumption, and the regime is silent (an empty chain).
+    let private promotionOrderContributions
+        (promotionOrder: string list)
+        (logicalEnvByEnv: Map<string, Catalog>)
+        : EnvContribution list =
+        let kindNames (c: Catalog) =
+            Catalog.allKinds c |> List.map (fun k -> Name.value k.Name) |> Set.ofList
+        // The declared chain, restricted to the environments actually read.
+        promotionOrder
+        |> List.choose (fun env -> Map.tryFind env logicalEnvByEnv |> Option.map (fun c -> env, c))
+        |> List.pairwise
+        |> List.collect (fun ((upstream, uCat), (downstream, dCat)) ->
+            Set.difference (kindNames dCat) (kindNames uCat)
+            |> Set.toList
+            |> List.sort
+            |> List.map (fun kindName ->
+                { Kind = EstateFindingKind.SchemaPromotionOrder
+                  Subject = kindName
+                  Reference = None
+                  Env = downstream
+                  Fragment =
+                    sprintf "%s exists in %s but not in %s, its upstream promotion source — a change reached %s without passing through %s"
+                        kindName downstream upstream downstream upstream
+                  Weight = 1L
+                  Signature = None }))
 
     /// O1 (wave A4): CDC parity — a kind tracked in some environments and
     /// not in other evidenced ones; a cutover write feeds live consumers
@@ -1146,30 +1218,12 @@ module Estate =
     /// SQL-shaped (invariant TryParse), not canonical-format-strict, so a
     /// legitimate authored `2024-01-01` date-time passes.
     let private emissionAuthoredDefaultFindings (target: Catalog) : Finding list =
-        let inv = System.Globalization.CultureInfo.InvariantCulture
-        let unparsable (lit: SqlLiteral) : string option =
-            match lit with
-            | SqlLiteral.IntegerLit raw when not (fst (System.Int64.TryParse(raw, System.Globalization.NumberStyles.Integer, inv))) ->
-                Some (sprintf "'%s' does not parse as an integer value" raw)
-            | SqlLiteral.DecimalLit raw when not (fst (System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, inv))) ->
-                Some (sprintf "'%s' does not parse as a decimal value" raw)
-            | SqlLiteral.DateTimeLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as a date-time value" raw)
-            | SqlLiteral.DateLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as a date value" raw)
-            | SqlLiteral.TimeLit raw when not (fst (System.TimeSpan.TryParse(raw, inv))) ->
-                Some (sprintf "'%s' does not parse as a time value" raw)
-            | SqlLiteral.DateTimeOffsetLit raw when not (fst (System.DateTimeOffset.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
-                Some (sprintf "'%s' does not parse as an offset-bearing date-time value" raw)
-            | SqlLiteral.GuidLit raw when not (fst (System.Guid.TryParse raw)) ->
-                Some (sprintf "'%s' does not parse as a GUID value" raw)
-            | _ -> None
         Catalog.allKinds target
         |> List.collect (fun k ->
             k.Attributes
             |> List.choose (fun a ->
                 a.DefaultValue
-                |> Option.bind unparsable
+                |> Option.bind SqlLiteral.unparsableValueReason
                 |> Option.map (fun problem ->
                     let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
                     emissionFinding EstateFindingKind.EmissionAuthoredDefault subject
@@ -1215,29 +1269,15 @@ module Estate =
     let private emissionComputedExprFindings (target: Catalog) : Finding list =
         Catalog.allKinds target
         |> List.collect (fun k ->
-            let known =
-                k.Attributes
-                |> List.collect (fun a ->
-                    [ (ColumnRealization.columnNameText a.Column).ToUpperInvariant()
-                      (Name.value a.Name).ToUpperInvariant() ])
-                |> Set.ofList
             k.Attributes
             |> List.choose (fun a ->
-                a.Computed
-                |> Option.bind (fun cfg ->
-                    let unresolved =
-                        System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
-                        |> Seq.map (fun m -> m.Groups.[1].Value)
-                        |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
-                        |> Seq.distinct
-                        |> List.ofSeq
-                    match unresolved with
-                    | [] -> None
-                    | tokens ->
-                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
-                        Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
-                                (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
-                                    subject (String.concat "], [" tokens) (Name.value k.Name))))))
+                match Kind.unresolvedComputedIdentifiers k a with
+                | [] -> None
+                | tokens ->
+                    let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                    Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
+                            (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
+                                subject (String.concat "], [" tokens) (Name.value k.Name)))))
 
     /// EF-23 (DECISIONS 2026-07-18): a system-versioned kind. The emission
     /// cannot yet deploy its period columns (GENERATED ALWAYS is the named
@@ -1295,6 +1335,63 @@ module Estate =
           emissionTemporalFindings target
           emissionTriggerFindings target ]
         |> List.concat
+        |> List.sortBy (fun f -> FindingKey.text f.Key)
+
+    /// EF-18 / M-3 (operator decision 2; DECISIONS 2026-07-18): a column the
+    /// AGREED shape would emit nullable that a deployed environment enforces
+    /// NOT NULL — publishing the model's shape drops that environment's
+    /// constraint. The governing principle is `deployed-schema > model >
+    /// data-evidence` (CUTOVER_BOARD_POPULATION_PLAN.md §3, decision 2): the
+    /// engine fix consults the physical `is_nullable` at emission; until it
+    /// ships, the board surfaces the silent constraint drop.
+    ///
+    /// Unlike the Phase-1 emission findings (properties of the target shape,
+    /// `Envs = []`), this one carries PER-ENVIRONMENT evidence — the deployed
+    /// nullability from each live profile's `AttributeReality.IsNullableInDatabase`.
+    /// It stays on the Emission plane / DECIDE lane so the cutover ladder
+    /// counts it (the ladder reads `EmissionFindings`), and folds into the
+    /// EMISSION section beside the target-shape findings.
+    ///
+    /// The predicate fires only when the agreed shape would ACTUALLY emit the
+    /// column nullable — logical-optional (`not IsMandatory`, decision 2's
+    /// `Is_Mandatory=0`), not a primary key, and physically nullable in the
+    /// model (`Column.IsNullable`). The physical-nullable guard is what keeps
+    /// it from flooding on the OutSystems platform's optional-but-physically-
+    /// NOT-NULL columns: where the model already carries NOT NULL, the emitter
+    /// preserves it and there is nothing to loosen.
+    let deployedNotNullFindings (target: Catalog) (profilesByEnv: (string * Profile) list) : Finding list =
+        let kind = EstateFindingKind.EmissionDeployedNotNullLoosened
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.Attributes
+            |> List.choose (fun a ->
+                if a.IsMandatory || a.IsPrimaryKey || not a.Column.IsNullable then None
+                else
+                    let deployedNotNullEnvs =
+                        profilesByEnv
+                        |> List.choose (fun (env, profile) ->
+                            profile.AttributeRealities
+                            |> List.tryFind (fun r -> r.AttributeKey = a.SsKey)
+                            |> Option.filter (fun r -> not r.IsNullableInDatabase)
+                            |> Option.map (fun _ -> env))
+                    match deployedNotNullEnvs with
+                    | [] -> None
+                    | envs ->
+                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                        Some
+                            { Key       = FindingKey.create kind subject
+                              Kind      = kind
+                              Lane      = EstateFindingKind.laneOf kind
+                              Plane     = EstateFindingKind.planeOf kind
+                              Envs      = envs |> List.map (fun e -> e, 1L)
+                              Statement =
+                                sprintf "%s is NOT NULL in the deployed database(s) %s and nullable in the model — publishing the model's shape drops the constraint there."
+                                    subject (envListText envs)
+                              Lever     =
+                                match EstateFindingKind.leverFormOf kind with
+                                | EstateLeverForm.Ruling imperative -> Some imperative
+                                | _ -> None
+                              Fork      = false }))
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
     // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
@@ -1462,11 +1559,6 @@ module Estate =
                     Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.map (fun a -> (Name.value k.Name, Name.value a.Name), r.SsKey)))
             |> Map.ofList
-        let typeOf : Map<SsKey, PrimitiveType> =
-            logicalTarget
-            |> Catalog.allKinds
-            |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey, a.Type))
-            |> Map.ofList
         let perEnv =
             envs
             |> List.map (fun (env, operand) ->
@@ -1481,8 +1573,7 @@ module Estate =
                     | None -> []
                 // The coordinate lookups the data-plane refinements read
                 // (wave A3): the zero-sentinel witness from this env's
-                // categorical evidence, and the Text-typing of the target's
-                // declared column.
+                // categorical evidence.
                 let sentinelZeroFor (ec: ModelFidelity.EntityColumn) : int64 option =
                     operand.Profile
                     |> Option.bind (fun p ->
@@ -1492,18 +1583,13 @@ module Estate =
                             c.Frequencies
                             |> List.tryFind (fun (value, _) -> value = "0")
                             |> Option.map snd))
-                let isTextTyped (ec: ModelFidelity.EntityColumn) : bool =
-                    Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
-                    |> Option.bind (fun key -> Map.tryFind key typeOf)
-                    |> Option.map (fun t -> t = Text)
-                    |> Option.defaultValue false
                 let attrKeyFor (ec: ModelFidelity.EntityColumn) : SsKey option =
                     Map.tryFind (ec.Entity, ec.Column) attributeKeyOf
                 let refKeyFor (ec: ModelFidelity.EntityColumn) : SsKey option =
                     Map.tryFind (ec.Entity, ec.Column) referenceKeyOf
                 let data =
                     compare.DataDealbreakers
-                    |> List.choose (dataFindingOf env posture sentinelZeroFor isTextTyped attrKeyFor refKeyFor)
+                    |> List.choose (dataFindingOf env posture sentinelZeroFor attrKeyFor refKeyFor)
                 let trust =
                     match operand.Profile with
                     | Some p -> trustFindingsOf env logicalEnv p
@@ -1545,7 +1631,7 @@ module Estate =
                             Map.tryFind coordinate attributeKeyOf
                             |> Option.bind (fun key -> Profile.tryFindColumn key profile)
                             |> Option.map (fun c ->
-                                if c.RowCount < decisionFloor then
+                                if c.RowCount < posture.DecisionFloor then
                                     sprintf "clean in %s (%s row(s) observed — advisory; the sample is below the decision floor)"
                                         env (humane64 c.RowCount)
                                 else
@@ -1565,12 +1651,13 @@ module Estate =
             let profilesByEnv = Map.toList profileByEnv
             let logicalEnvs =
                 envs |> List.map (fun (env, operand) -> env, Readiness.toLogicalShape operand.Catalog)
-            asymmetryContributions logicalTarget profilesByEnv
-            @ uniquenessCandidateContributions logicalTarget profilesByEnv
+            asymmetryContributions posture.DecisionFloor posture.AsymmetryFactor logicalTarget profilesByEnv
+            @ uniquenessCandidateContributions posture.DecisionFloor logicalTarget profilesByEnv
             @ headroomContributions logicalTarget profilesByEnv
             @ dateSentinelContributions logicalTarget profilesByEnv
             @ collationCollisionContributions logicalTarget profilesByEnv
             @ synthesizedIdentityContributions logicalTarget logicalEnvs
+            @ promotionOrderContributions posture.PromotionOrder (Map.ofList logicalEnvs)
             @ cdcParityContributions logicalTarget profilesByEnv
             @ postureContributions logicalTarget posture (envs |> List.map fst) profilesByEnv
             // D10 / D11 (wave A4β): the static-entity content + identity
@@ -1661,7 +1748,10 @@ module Estate =
           Evidence = EvidenceStoreBasis.Disabled
           Remediation = []
           OverlayEntries = None
-          EmissionFindings = emissionFindingsFor logicalTarget
+          EmissionFindings =
+            emissionFindingsFor logicalTarget
+            @ deployedNotNullFindings logicalTarget (Map.toList profileByEnv)
+            |> List.sortBy (fun f -> FindingKey.text f.Key)
           Burndown = None
           Streak = 0
           Fidelity = FidelityClause.NotConfigured
@@ -1891,7 +1981,7 @@ module Estate =
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
         | EvidenceProvenance.Cached (_, age, kinds) ->
-            sprintf "evidence captured %s; fingerprints clean across %s kind(s)" (ageText age) (humane kinds)
+            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s kind(s) — the cache is content-verified fresh" (ageText age) (humane kinds)
         | EvidenceProvenance.Refreshed moved ->
             sprintf "%s kind(s) moved since capture (%s) — re-profiled this run"
                 (humane (List.length moved)) (movedKindsText moved)
@@ -1899,6 +1989,31 @@ module Estate =
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
             "no data evidence this run — the data plane is advisory-silent"
+
+    /// The rolled-up evidence-confidence footing (DECISIONS 2026-07-18): how
+    /// much of the verdict stands on FIRM evidence (live, re-profiled, or a
+    /// content-verified cache) versus ADVISORY (offline / absent). The per-env
+    /// provenance lines say WHICH environment is on what; this says HOW MUCH of
+    /// the estate the verdict firmly rests on. Exposed so the text board and
+    /// the rich board render one line from one source.
+    let evidenceConfidenceLine (report: EstateReport) : string =
+        let firm, advisory =
+            report.Bases
+            |> List.partition (fun b ->
+                match b.Provenance with
+                | EvidenceProvenance.Live
+                | EvidenceProvenance.Cached _
+                | EvidenceProvenance.Refreshed _ -> true
+                | EvidenceProvenance.Offline _
+                | EvidenceProvenance.Absent -> false)
+        match advisory with
+        | [] ->
+            sprintf "Evidence confidence: all %s environment(s) stand on firm evidence (live, re-profiled, or content-verified cache)."
+                (humane (List.length firm))
+        | _ ->
+            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on the advisory environment(s) are advisory too."
+                (humane (List.length firm)) (humane (List.length advisory))
+                (advisory |> List.map (fun b -> b.Env) |> String.concat ", ")
 
     /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
     /// yet check, so "one shape" never reads as "everything is clean". The
@@ -1926,6 +2041,7 @@ module Estate =
                     (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
           for basis in report.Bases do
               yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
+          yield sprintf "  %s" (evidenceConfidenceLine report)
           yield
               (match report.Evidence with
                | EvidenceStoreBasis.Enabled dir ->
@@ -1987,7 +2103,22 @@ module Estate =
               yield sprintf "  … and %s more — environments.json carries every finding." (humane emissionExtra)
           if List.isEmpty report.EmissionFindings then
               yield "  No emission hazards in the checks that run today."
-          yield "  Checks run today: composite-PK foreign keys, duplicate table names, over-long identifiers, missing primary keys (heaps), lossy-carriage column types, non-default ON UPDATE. Coming (need extraction/emission work): FK trust regime, delete-rule reality, type authority, UNIQUE flattening, clustering, temporal tables, sequences, faithful scalar carriage."
+          // The coverage line is DERIVED from the detector set (the
+          // `DetectionStatus` classifier), never restated — the predecessor
+          // was hand-maintained and drifted (it promised temporal tables and
+          // sequences as "coming" after both shipped). One source, no drift.
+          let emissionPhrasesBy status =
+              EstateFindingKind.all
+              |> List.filter (fun k ->
+                  EstateFindingKind.planeOf k = EstatePlane.Emission
+                  && EstateFindingKind.detectionStatus k = status)
+              |> List.map EstateFindingKind.phrase
+          match emissionPhrasesBy DetectionStatus.Active with
+          | [] -> ()
+          | ps -> yield sprintf "  Runs today, each catching one hazard: %s." (String.concat "; " ps)
+          match emissionPhrasesBy DetectionStatus.NotYetDetected with
+          | [] -> ()
+          | ps -> yield sprintf "  Named follow-ons, not yet checked: %s." (String.concat "; " ps)
           yield ""
 
           // MATRIX — environment × plane counts (the drill-down door).

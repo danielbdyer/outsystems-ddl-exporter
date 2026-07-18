@@ -77,6 +77,23 @@ type EmitError =
     /// unrewritten body. Carries the owning kind, the trigger, and the
     /// parser's first error.
     | TriggerUnrewrittenRefused of kind: string * trigger: string * reason: string
+    /// DECISIONS 2026-07-18 (#669 M-1; the downgrades-never-silent law joined
+    /// to the board's `EmissionAuthoredDefault` finding) — a column carries an
+    /// authored DEFAULT whose raw literal is not a parseable value of its type
+    /// (`SqlLiteral.unparsableValueReason`, the SHARED predicate). The DEFAULT
+    /// deploys and then fails at the first insert that relies on it; before
+    /// this refusal the publish emitted it and exited clean. The publish now
+    /// refuses. Carries the owning kind, the column, and the parse reason.
+    | AuthoredDefaultRefused of kind: string * column: string * reason: string
+    /// DECISIONS 2026-07-18 (#669 M-8 / EF-19; joined to the board's
+    /// `EmissionComputedExprIdentifiers` finding) — a computed column's
+    /// expression references bracketed identifiers that resolve to no column
+    /// of the kind (`Kind.unresolvedComputedIdentifiers`, the SHARED
+    /// predicate), so the physical→logical rewrite cannot complete and a
+    /// case-sensitive target rejects the emitted expression at deploy. The
+    /// publish refuses rather than shipping the unrewritable expression.
+    /// Carries the owning kind, the column, and the unresolved tokens.
+    | ComputedExpressionRefused of kind: string * column: string * tokens: string
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

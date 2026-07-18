@@ -29365,3 +29365,246 @@ its property tests in the same commit, and named here first per the standing law
 witness pools at close: kernel fast pool green; kernel synthetic Docker suites green under
 K1c; Twin pure pool 65 green; Twin Docker pool 6 green (schema, mint, scenario, evidence,
 proof).
+
+---
+
+## 2026-07-18 — The estate board's emission-coverage line is derived, not restated (a readiness-checker audit)
+
+**Context.** A readiness-checker audit (against `CUTOVER_BOARD_POPULATION_PLAN.md`) found
+the EMISSION section's coverage sentence (`Estate.render`, the "Checks run today / Coming"
+line) had drifted against the detector set — the predecessor's documented failure mode
+applied to operator copy. It still promised *temporal tables* and *sequences* as "coming"
+after both had shipped (`emissionTemporalFindings`; sequence emission via
+`SsdtDdlEmitter.sequenceStatements`), and it never named the authored-default or
+computed-expression checks that had landed. A hand-maintained feature list on the board is a
+first-class defect by the same logic that retired the one in `CLAUDE.md`.
+
+**Decision.** The coverage line is **derived** from a total `EstateFindingKind.detectionStatus`
+classifier (Core), rendered by both boards (`Estate.render` + `EstateBoardView`). A kind
+cannot land without declaring its status — `Active` (a detector produces it) or
+`NotYetDetected` (a named follow-on, the forward guard). The line therefore cannot advertise
+a check that does not run, nor omit one that does. A property test (`EstateTests`) holds the
+coherence law: a non-`Active` status names an Emission-plane kind.
+
+**Three closed-gap kinds retired (operator sign-off 2026-07-18).** The audit found three
+"inert" emission finding kinds (`EmissionIndexOptionDropped`, `EmissionSequenceDropped`,
+`EmissionPersistedDropped`) that carried full contract rows but had no detector — because the
+emission gap each was scoped for has since closed: index `DATA_COMPRESSION`
+(`SsdtDdlEmitter` `dataCompressionSql`), sequences (`sequenceStatements`), and PERSISTED
+computed columns (`ScriptDomBuild` `col.IsPersisted`) are all emitted faithfully today.
+Writing detectors for them would produce false reds; their `phrase` text ("…the emission
+does not carry") was itself stale. Per the dead-algebra-retirement precedent they are
+**removed** from the DU and its totality tables — the board's vocabulary no longer advertises
+a check the engine cannot perform.
+
+**`EmissionDeployedNotNullLoosened` landed (decision 2).** The fourth once-inert kind is a
+genuine uncovered check: a column the AGREED shape would emit nullable that a deployed
+environment enforces NOT NULL — publishing the model loosens that environment's constraint
+(principle `deployed-schema > model > data-evidence`). Its detector (`Estate.deployedNotNullFindings`)
+reads the per-environment deployed nullability from each live profile's
+`AttributeReality.IsNullableInDatabase` and folds into `EmissionFindings` (Emission plane,
+DECIDE lane) so the cutover ladder counts it. The predicate fires only where the model would
+actually emit nullable (logical-optional, non-PK, physically nullable in the model) — the
+physical-nullable guard keeps it from flooding on OutSystems' optional-but-physically-NOT-NULL
+columns. The engine fix (consult physical `is_nullable` at emission) retires it; the board
+carries it until then.
+
+---
+
+## 2026-07-18 — Detection joined to emission refusal: authored defaults + computed expressions (downgrades-never-silent, extended)
+
+**Context.** The `EmitError` refusal chain already refused the publish on three board
+dealbreakers — composite-PK foreign keys (`Msg 1776`), temporal tables (EF-23), and
+unrewritten triggers (EF-20) — so "a red board finding and a refused publish are the same
+fact." Two board dealbreakers were NOT yet joined: `EmissionAuthoredDefault` (a DEFAULT whose
+literal is not a parseable value of its type — `Msg 241` at first insert) and
+`EmissionComputedExprIdentifiers` (a computed expression referencing identifiers that resolve
+to no column — `Msg 207` on a case-sensitive target). The board reddened; the publish emitted
+them and exited clean — a silent downgrade.
+
+**Decision.** Both dealbreakers now refuse the publish, and the predicate is **shared** so
+detection and refusal cannot drift. `SqlLiteral.unparsableValueReason` (Core) is the one
+authored-default parse-check; `Kind.unresolvedComputedIdentifiers` (Core) is the one
+computed-identifier resolver. The board's `emissionAuthoredDefaultFindings` /
+`emissionComputedExprFindings` and the emitter's new `EmitError.AuthoredDefaultRefused` /
+`EmitError.ComputedExpressionRefused` both call the same function — the "same predicate" is
+now literal, not merely parallel. Emitter tests inject each case into a references-cleared
+catalog and assert the refusal; the golden emission corpus is unaffected (it carries no
+unparseable default or unresolvable computed expression). The engine fixes that make these
+cases emittable (M-1 default classification, M-8 computed-expression rewrite) retire the
+refusals; until then the publish fails loud instead of shipping a DDL that deploys and breaks.
+
+---
+
+## 2026-07-18 — The estate fingerprint carries a content hash: in-place UPDATE blindness closed (survival rule 14)
+
+**Context.** The estate evidence store gated cache reuse on a per-kind `(RowCount, MaxPk)`
+fingerprint plus the pure `SchemaShapeHash`. Survival rule 14 named the residual blindness: an
+in-place UPDATE that changes a value but neither the row count nor the max PK kept the
+fingerprint clean, so stale cached evidence was reused over changed reality. The caveat was
+default-gated (`--refresh`) and stated on the masthead, but it was a real correctness gap — a
+board could read a phantom-clean off an updated environment.
+
+**Decision.** The probe now carries a content term: `CHECKSUM_AGG(BINARY_CHECKSUM(<columns>))`
+over every checksummable column, added as `FingerprintReading.Content` /
+`KindFingerprint.ContentHash`. `staleKinds` already compares fingerprints by structural
+equality, so the field participates in staleness with no further wiring — an UPDATE moves the
+content hash, the record inequality reads as movement, and the kind re-profiles. XML columns
+are excluded from the checksum (`BINARY_CHECKSUM` rejects them, and a rejected column would
+fail the whole batch); a kind left with no checksummable column emits NULL and degrades to the
+row/PK signal — movement detection degrades only in the safe direction. The sidecar codec (and
+the shared `FidelityProofCache` codec) serialize `contentHash`; an older sidecar without it
+parses as `None`, so a live probe's `Some` reads as movement and re-profiles —
+backward-compatible in the safe direction. Residual caveats (XML-only kinds; a
+vanishingly-rare checksum collision) keep `--refresh` the override. A pure test holds the
+staleness + round-trip wiring; a Docker probe test holds the end-to-end fact (an UPDATE at
+identical row count and MAX(pk) moves the content hash). Survival rule 14 and its masthead
+basis are updated in the same change.
+
+---
+
+## 2026-07-18 — The estate board's empty-text handling aligns with WP-3 (the stale D1×D5 clause retires)
+
+**Context.** The estate `check`'s NOT-NULL data finding appended "(the count includes empty
+text, which normalizes to NULL on publish)" for Text columns, and cited NM-18 — the universal
+`''`-as-NULL sentinel. That reflected the pre-WP-3 world, where `ReadSide` erased `''` to NULL
+on every write path, so an empty-string Text value both folded into the profiler's NULL count
+and normalized to NULL at publish. **WP-3 (DECISIONS 2026-07-16) retired that erasure**: `''`
+now survives distinct from NULL end-to-end (option-grain cells), and the profiler counts
+genuine NULLs only. The board's clause therefore misstated the publish behavior — a stale
+operator claim, the drift class this readiness-checker audit exists to catch.
+
+**Decision.** Per the latest-first rule, the board follows WP-3. The NOT-NULL finding now
+reports genuine NULLs only, with no empty-text clause; the `isTextTyped` parameter (and its
+`typeOf` lookup) that fed the clause are removed. The finding statement is accurate again: an
+empty string is a valid non-NULL value that does not violate NOT NULL and is preserved on
+publish. The test that pinned the stale clause is rewritten to assert the WP-3 behavior.
+
+**A flagged follow-on (not taken here).** WP-3 makes the empty string *visible* to the profiler
+for the first time (distinct from NULL). A NOT-NULL Text column that is mostly empty strings is
+satisfied-but-semantically-empty — a data-quality signal parallel to the date-sentinel census
+(`DataDateSentinel`). An empty-text advisory (a new WATCH kind, categorical-evidence-gated to
+avoid flooding on OutSystems' optional-but-physically-NOT-NULL text defaults) is the valuable
+new direction WP-3 enables; it is recorded here as a candidate, not built in this change.
+
+---
+
+## 2026-07-18 — The unbreakable-cycle finding is a ruling, aligned with the transfer's refusal (the load-order gate)
+
+**Context.** `EmissionDataLaneOrder` fires when the topological-order pass leaves a reference
+cycle with no deferrable (nullable) edge — the two-phase load cannot NULL a column to break it.
+It was a WATCH advisory. But the live transfer *refuses* exactly this shape:
+`Transfer.orderedLoadGate` returns `transfer.loadOrderUnproven`, and `TransferRun`'s
+`transfer.unbreakableCycleFk` names "non-deferrable cycle FK(s) — cannot execute a clean
+two-phase load." So the board advised where the load hard-refuses — the same
+downgrades-never-silent inconsistency the emission-refusal wiring closed for authored defaults
+and computed expressions.
+
+**Decision.** Promote `EmissionDataLaneOrder` to the DECIDE lane with a ruling lever ("Rule the
+cycle: make one relationship in it optional (nullable) so the load can defer it, or drop a
+relationship before the transfer runs"), so a red board line and the transfer's refusal are the
+same fact, and the cutover ladder counts it (an unbreakable cycle now blocks green — it must,
+since the load cannot run). The detector, its `CycleNarration` statement, and the negative
+(weaken one edge → all surfaces go quiet together) are unchanged; only the lane, the lever, and
+the pinning test move. The presentation-totality coherence (DECIDE ⇔ a ruling) holds.
+
+---
+
+## 2026-07-18 — The estate decision-floor and asymmetry-factor become config knobs (A44)
+
+**Context.** Two estate thresholds carried the standing A44 comment "a named constant until the
+estate config knobs land with their consumer wave — never an expressible-but-inert key before
+its consumer": the decision floor (the minimum observation an estate-grade conclusion needs,
+100) and the asymmetry factor (the rowcount ratio past which the small side is advisory, 100×).
+The repair band already had its config consumer (`readiness.estate.repairBand`); these two did
+not.
+
+**Decision.** Both land as optional config knobs — `readiness.estate.decisionFloor` and
+`readiness.estate.asymmetryFactor` — parsed in `MovementSurface.parseReadiness` (a positive
+int64, or a NAMED parse failure), round-tripped by the renderer (parse ∘ render = id), carried
+through `ReadinessSpec` → `CheckEstateArgs`, and bound onto `Estate.Posture` at the face
+(`None` rides the engine's named default). The `Posture` gains `DecisionFloor` / `AsymmetryFactor`
+fields (defaulting to the constants), threaded into the three consumers (`asymmetryContributions`,
+`uniquenessCandidateContributions`, the clean-clause below-floor note). A behavior test proves
+the knob is *reachable*, not merely expressible (a lowered asymmetry factor fires a finding the
+default keeps quiet); parse + round-trip + non-positive-refusal tests cover the config surface.
+The constants stay as the defaults, so every existing run is byte-identical.
+
+---
+
+## 2026-07-18 — The estate masthead rolls up an evidence-confidence footing
+
+**Context.** The per-finding evidence-confidence the readiness audit called for is largely
+already present: the masthead states each environment's provenance with its consequence (offline
+→ "every verdict standing on it is advisory"; absent → "advisory-silent"), the clean-clause
+carries the below-decision-floor sample note beside a finding, the counts are exact (not
+sampled), and `toJson` projects the per-env provenance a machine consumer joins to. The genuine
+gap was a *rollup*: the operator read provenance environment-by-environment but had no
+at-a-glance sense of how much of the whole verdict stood on firm evidence.
+
+**Decision.** Add `Estate.evidenceConfidenceLine` — one line, one source, both boards — that
+partitions the environments into FIRM (live, re-profiled, or a content-verified cache) and
+ADVISORY (offline / absent) and states the split ("all N stand on firm evidence" or "N firm, M
+advisory (…) — verdicts leaning on the advisory environment(s) are advisory too"). Tied to the
+content-hash work above, the Cached provenance clause is refreshed to name what "clean" now
+covers — row count, max key, AND content hash — so a cache reads as content-verified fresh, not
+UPDATE-blind. Board tests hold the firm-all and the offline-advisory rollups. The rest of the
+confidence machinery already existed; this is the summary that ties it together.
+
+---
+
+## 2026-07-18 — The fourth comparison regime: deployed↔deployed across the promotion lattice
+
+**Context.** The estate check compared each environment to the TARGET (the agreed shape), which
+names each environment's delta from the target but never the promotion CHAIN's own
+monotonicity. The gap: a change that reached a downstream environment without passing through
+its upstream promotion source — a hotfix applied straight to UAT that skipped QA — reads as an
+ordinary per-environment delta, and the chain anomaly is invisible.
+
+**Decision.** Add `promotionOrderContributions` — the deployed↔deployed regime. The lattice is
+an EXPLICIT operator declaration, `readiness.estate.promotionOrder` (an array of environment
+names, most-upstream first) — the tool never guesses which environment is upstream from the
+environment-list order (that order is arbitrary, as the existing grouping tests show). Absent,
+the regime is silent (no assumption). For each adjacent (upstream, downstream) pair in the
+declared chain, a kind the downstream carries that its upstream source lacks is a
+`SchemaPromotionOrder` finding on the downstream — the change bypassed the path. It is a WATCH
+advisory (a bypass may be a sanctioned emergency change; the operator confirms the order is
+intended), on the Schema plane, keyed by the downstream environment. It reuses the environment
+catalogs the estate already reads — no new evidence axis. The promotion order threads as a
+`Posture` field via the #4 config-knob path (`ReadinessSpec` → `CheckEstateArgs` → the bind);
+the new kind lands with its full contract row and its totality holds. Pure tests drive the
+bypass case, the no-order-declared silence, and the config parse.
+
+**Redundancy, named.** When the target IS the most-upstream environment, a downstream-ahead kind
+also reads as a target-anchored `SchemaPresence` (DECIDE). The two are not duplicates: the
+presence finding says "beyond the target"; the promotion-order finding says "beyond your
+SOURCE, out of order" — the chain story the target-anchored diff cannot tell. The advisory lane
+and the WATCH cap keep the overlap low-noise.
+
+---
+
+## 2026-07-18 — Grant / capability parity (the readiness audit's #10): deferred, with an open evidence question
+
+**Status.** Designed, not built — the single item of the readiness-checker program that a
+same-session build would not land safely. Recorded here so it is pickup-ready.
+
+**The check.** A database-level grant a cutover expects (a login, a role membership, an
+object permission the app relies on) present in some evidenced environments and absent in
+others — a cutover that succeeds on schema + data can still fail at runtime for want of a
+grant. The natural shape is a sibling of `OperationalCdc` (Operational plane, WATCH): a new
+`Profile` axis `GrantAwareness` (a set of `principal|permission` tokens), a `LiveProfiler`
+probe over `sys.database_permissions` ⋈ `sys.database_principals`, a cross-environment
+`grantParityContributions` detector, a new `OperationalGrant` finding kind with its full
+contract row, and a Docker probe test that grants a permission in one bootstrapped database and
+asserts the parity finding.
+
+**Why it did not land this session.** The blocker is an *evidence-path* question, not the
+detector. `OperationalCdc`'s own live evidence (`Profile.CdcAwareness`) is populated at the
+codec/ReadSide boundary, and the estate's live profile (`Source.profile` → the profiler)
+does not obviously set it — so the operational plane's LIVE capture is thin, and a grant axis
+modeled on it risks landing INERT (the exact defect three emission kinds were retired for at
+the top of this program: a board that advertises a check it cannot perform). Building it
+safely requires first confirming where the estate captures operational evidence live, then
+wiring `GrantAwareness` into that same path — a focused evidence-plumbing slice that deserves
+its own session rather than the tail of a long one. The design above is the whole of it; only
+the capture wiring is open.

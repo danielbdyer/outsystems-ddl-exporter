@@ -136,6 +136,35 @@ module SqlLiteral =
             flush ()
             List.ofSeq segments
 
+    /// The reason an authored DEFAULT literal is NOT a parseable value of
+    /// its own type — `None` when it parses (or is a form with no value to
+    /// validate: Text / Boolean / Binary). A `Some reason` literal deploys as
+    /// a DEFAULT and then fails at the first insert that relies on it (#669
+    /// M-1). The check is SQL-shaped (invariant `TryParse`), not
+    /// canonical-format-strict, so a legitimate authored `2024-01-01` passes.
+    /// The ONE predicate shared by the board's `EmissionAuthoredDefault`
+    /// finding and the emitter's `AuthoredDefaultRefused` refusal, so a red
+    /// board line and a refused publish are the same fact (the
+    /// downgrades-never-silent law; DECISIONS 2026-07-18).
+    let unparsableValueReason (lit: SqlLiteral) : string option =
+        let inv = System.Globalization.CultureInfo.InvariantCulture
+        match lit with
+        | IntegerLit raw when not (fst (System.Int64.TryParse(raw, System.Globalization.NumberStyles.Integer, inv))) ->
+            Some (sprintf "'%s' does not parse as an integer value" raw)
+        | DecimalLit raw when not (fst (System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, inv))) ->
+            Some (sprintf "'%s' does not parse as a decimal value" raw)
+        | DateTimeLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+            Some (sprintf "'%s' does not parse as a date-time value" raw)
+        | DateLit raw when not (fst (System.DateTime.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+            Some (sprintf "'%s' does not parse as a date value" raw)
+        | TimeLit raw when not (fst (System.TimeSpan.TryParse(raw, inv))) ->
+            Some (sprintf "'%s' does not parse as a time value" raw)
+        | DateTimeOffsetLit raw when not (fst (System.DateTimeOffset.TryParse(raw, inv, System.Globalization.DateTimeStyles.None))) ->
+            Some (sprintf "'%s' does not parse as an offset-bearing date-time value" raw)
+        | GuidLit raw when not (fst (System.Guid.TryParse raw)) ->
+            Some (sprintf "'%s' does not parse as a GUID value" raw)
+        | _ -> None
+
     /// Project an IR `(PrimitiveType, raw)` cell into a typed
     /// `SqlLiteral`. WP-3 (F11): NULL is carried OUT-OF-BAND as `None`
     /// — the retired NM-18 universal `""`-as-NULL sentinel is gone.

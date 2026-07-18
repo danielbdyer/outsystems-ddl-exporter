@@ -116,7 +116,7 @@ collisions are the two `model` ones — folded into one `model` namespace.
   "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
   "policy":    { "tightening": { "interventions": [ { "kind": "foreignKey", "id": "fk1", "enableCreation": true } ] } },
   "emission":  { "ssdt": true, "dacpac": true },
-  "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },
+  "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"], "estate": { "repairBand": 100000, "decisionFloor": 100, "asymmetryFactor": 100, "promotionOrder": ["cloud-dev", "cloud-qa", "cloud-uat"], "fidelityFlow": "uat-load" } },
   "flows": {
     "golden":   { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer"], "rekey": "file:./secrets/users.csv" },
     "audit":    { "from": "cloud-dev", "to": "docker", "scope": "schema", "shaping": { "model": { "modules": ["Ops"] } } },
@@ -141,6 +141,19 @@ MAY carry an opt-in `shaping: {…}` that deep-overrides the global blocks for t
 names the canonical schema source **once** by reference into `environments` (here `cloud-dev`);
 `readiness.schema` defaults to it — so the unified example above restates no connection
 (DECIDED 2026-06-22).
+
+**The `readiness.estate` knobs (`check environments`).** All optional; each rides the engine's
+named default when omitted, and every key is *consumed* the moment it is expressible (A44 — no
+inert keys):
+
+| Key | Default | Effect |
+|---|---|---|
+| `repairBand` | `100000` | The fix-vs-relax threshold: past this many contradicting rows (NULLs, orphans), a prepared repair defers to a *named interim relaxation* with a reopen probe, rather than a 113,000-row `UPDATE` no operator will run by hand. |
+| `repairBandByEntity` | `{}` | Per-entity band overrides (logical entity name → band). 100,000 orphans means one thing in a 200-row lookup and another in a billion-row fact table. |
+| `decisionFloor` | `100` | The minimum observation an estate-grade conclusion needs; findings drawn below it read advisory. |
+| `asymmetryFactor` | `100` | The rowcount ratio past which the smaller environment's evidence is advisory (a 12-row cell cannot license a verdict over a 10-million-row peer). |
+| `promotionOrder` | `[]` | The promotion lattice, **most-upstream first** (e.g. `["cloud-dev","cloud-qa","cloud-uat"]`). Enables the deployed↔deployed regime: a kind a downstream environment carries that its upstream source lacks is flagged as a change that skipped a promotion stage. Omitted, the regime is silent — the tool never guesses which environment is upstream. |
+| `fidelityFlow` | *(none)* | The flow whose byte-fidelity proof (`fidelity.rows.json`, from `projection check fidelity <flow>`) folds into the verdict. Configured, a missing / stale / diverged proof is a DECIDE finding; absent, the masthead states the clause is not configured and the verdict excludes it. |
 
 ### Collision reconciliation (the only two)
 

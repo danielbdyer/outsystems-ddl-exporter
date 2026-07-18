@@ -71,7 +71,7 @@ let ``ofReport: the masthead names each environment and its evidence provenance`
     Assert.Contains("cloud-dev", out)
     Assert.Contains("live data evidence, profiled this run", out)
     Assert.Contains("cloud-uat", out)
-    Assert.Contains("evidence captured 2 day(s) ago; fingerprints clean across 214 kind(s)", out)
+    Assert.Contains("fingerprints (row count, max key, and content hash) clean across 214 kind(s)", out)
 
 [<Fact>]
 let ``ofReport: the DECIDE fork's statement and the REPAIR finding's lever both render`` () =

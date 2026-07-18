@@ -86,6 +86,7 @@ module FidelityProofCache =
             o.["kind"] <- JsonValue.Create(SsKey.serialize fp.Kind)
             o.["rowCount"] <- JsonValue.Create fp.RowCount
             (match fp.MaxPk with Some pk -> o.["maxPk"] <- JsonValue.Create pk | None -> ())
+            (match fp.ContentHash with Some h -> o.["contentHash"] <- JsonValue.Create h | None -> ())
             o.["schemaShapeHash"] <- JsonValue.Create fp.SchemaShapeHash
             kinds.Add o
         root.["fingerprints"] <- kinds
@@ -111,7 +112,7 @@ module FidelityProofCache =
                   tryI64 o "rowCount",
                   tryStr o "schemaShapeHash" with
             | Some kind, Some rows, Some hash ->
-                Some { Kind = kind; RowCount = rows; MaxPk = tryStr o "maxPk"; SchemaShapeHash = hash }
+                Some { Kind = kind; RowCount = rows; MaxPk = tryStr o "maxPk"; ContentHash = tryStr o "contentHash"; SchemaShapeHash = hash }
             | _ -> None
         | _ -> None
 

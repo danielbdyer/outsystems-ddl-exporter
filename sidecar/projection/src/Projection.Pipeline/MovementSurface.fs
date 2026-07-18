@@ -261,6 +261,20 @@ type ReadinessSpec =
       /// Per-entity repair bands (`readiness.estate.repairBandByEntity`) —
       /// logical entity name → band, overriding `RepairBand` for that entity.
       RepairBandByEntity : Map<string, int64>
+      /// The A44 tuning knobs (`readiness.estate.decisionFloor` /
+      /// `readiness.estate.asymmetryFactor`; DECISIONS 2026-07-18): the
+      /// decision floor — the minimum observation an estate-grade conclusion
+      /// needs — and the asymmetry factor — the rowcount ratio past which the
+      /// small side's evidence is advisory. `None` rides the engine's named
+      /// defaults; consumed by `check estate` in the same change that parses
+      /// them (A44 — never an inert key).
+      DecisionFloor : int64 option
+      AsymmetryFactor : int64 option
+      /// The declared promotion lattice (`readiness.estate.promotionOrder`,
+      /// DECISIONS 2026-07-18) — the environments most-upstream first, enabling
+      /// the deployed↔deployed regime. Empty ⇒ the tool makes no
+      /// promotion-order assumption and the regime is silent.
+      PromotionOrder : string list
       /// The fidelity flow (`readiness.estate.fidelityFlow`, wave A4β/RT-10):
       /// names the flow whose row-fidelity proof (`fidelity.rows.json`, from
       /// `projection check fidelity <flow>`) the estate board folds into its
@@ -516,9 +530,31 @@ module ProjectionConfig =
                     | true, _ -> failwith "readiness.estate.fidelityFlow must be a flow name (a string)."
                     | _ -> None
                 | _ -> None
+            // The A44 tuning knobs (DECISIONS 2026-07-18): each an optional
+            // positive int64 under `estate`. Absent = the engine default governs.
+            let estateInt64 (name: string) : int64 option =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object ->
+                    match e.TryGetProperty name with
+                    | true, v when v.ValueKind = JsonValueKind.Number ->
+                        let mutable n = 0L
+                        if v.TryGetInt64(&n) && n > 0L then Some n
+                        else failwith (sprintf "readiness.estate.%s must be a positive 64-bit integer." name)
+                    | true, _ -> failwith (sprintf "readiness.estate.%s must be a positive 64-bit integer." name)
+                    | _ -> None
+                | _ -> None
+            let decisionFloor = estateInt64 "decisionFloor"
+            let asymmetryFactor = estateInt64 "asymmetryFactor"
+            // The promotion lattice (`estate.promotionOrder`): an array of
+            // environment names, most-upstream first. Absent = empty (the
+            // deployed↔deployed regime stays silent — no order is assumed).
+            let promotionOrder =
+                match r.TryGetProperty "estate" with
+                | true, e when e.ValueKind = JsonValueKind.Object -> getStringArray e "promotionOrder"
+                | _ -> []
             match getString r "schema", defaultSchema with
-            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
-            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; FidelityFlow = fidelityFlow }
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; PromotionOrder = promotionOrder; FidelityFlow = fidelityFlow }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm"; RepairBand = repairBand; RepairBandByEntity = repairBandByEntity; DecisionFloor = decisionFloor; AsymmetryFactor = asymmetryFactor; PromotionOrder = promotionOrder; FidelityFlow = fidelityFlow }
             | None, None ->
                 failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
         | _ -> None
@@ -1449,6 +1485,16 @@ module ProjectionConfig =
                   let m = JsonObject()
                   for KeyValue(entity, band) in rs.RepairBandByEntity do m.[entity] <- JsonValue.Create band
                   e.["repairBandByEntity"] <- m
+              (match rs.DecisionFloor with
+               | Some n -> e.["decisionFloor"] <- JsonValue.Create n
+               | None -> ())
+              (match rs.AsymmetryFactor with
+               | Some n -> e.["asymmetryFactor"] <- JsonValue.Create n
+               | None -> ())
+              (if not (List.isEmpty rs.PromotionOrder) then
+                  let a = JsonArray()
+                  for env in rs.PromotionOrder do a.Add(JsonValue.Create env)
+                  e.["promotionOrder"] <- a)
               (match rs.FidelityFlow with
                | Some flow -> e.["fidelityFlow"] <- JsonValue.Create flow
                | None -> ())
@@ -2416,6 +2462,9 @@ module Command =
                               Evidence    = evidenceMode
                               RepairBand  = rs.RepairBand
                               RepairBandByEntity = rs.RepairBandByEntity
+                              DecisionFloor = rs.DecisionFloor
+                              AsymmetryFactor = rs.AsymmetryFactor
+                              PromotionOrder = rs.PromotionOrder
                               Since       = sinceRun
                               FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }

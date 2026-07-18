@@ -26,7 +26,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 let private fp (kind: SsKey) (rows: int64) (maxPk: string option) (hash: string) : KindFingerprint =
-    { Kind = kind; RowCount = rows; MaxPk = maxPk; SchemaShapeHash = hash }
+    { Kind = kind; RowCount = rows; MaxPk = maxPk; ContentHash = None; SchemaShapeHash = hash }
 
 let private withTempRoot (f: string -> unit) : unit =
     let root = Path.Combine(Path.GetTempPath(), "proof-cache-" + Guid.NewGuid().ToString "N")

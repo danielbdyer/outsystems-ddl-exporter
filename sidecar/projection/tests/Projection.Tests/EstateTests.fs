@@ -105,6 +105,154 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.Fail(sprintf "%s's lever form %A is incoherent with its lane %A" token form lane)
 
 [<Fact>]
+let ``coverage: the emission coverage line is derived from the detector set — NotYetDetected is emission-plane only, and the three closed-gap kinds are retired (no drift)`` () =
+    // DECISIONS 2026-07-18 — the derived coverage line. The predecessor copy
+    // was hand-maintained and drifted (it promised temporal tables + sequences
+    // as "coming" after both shipped, and never named authored-default /
+    // computed-expression). Deriving the line from `detectionStatus` closes
+    // that drift class. Law: a non-Active status names an Emission-plane kind
+    // (a gap is an emission fact) — held vacuously today (every kind is Active),
+    // but the guard holds for any future vocabulary-first kind.
+    for kind in EstateFindingKind.all do
+        match EstateFindingKind.detectionStatus kind with
+        | DetectionStatus.Active -> ()
+        | DetectionStatus.NotYetDetected ->
+            Assert.Equal(EstatePlane.Emission, EstateFindingKind.planeOf kind)
+    // The three closed-gap kinds (the emitter carries compression, sequences,
+    // and PERSISTED) are retired from the vocabulary — their tokens resolve to
+    // no kind.
+    for token in [ "emission.indexOptionDropped"; "emission.persistedDropped"; "emission.sequenceDropped" ] do
+        Assert.True((EstateFindingKind.ofToken token).IsNone, sprintf "%s should be retired" token)
+    // The run list is non-empty — the board always names what it checks.
+    Assert.NotEmpty(
+        EstateFindingKind.all
+        |> List.filter (fun k ->
+            EstateFindingKind.planeOf k = EstatePlane.Emission
+            && EstateFindingKind.detectionStatus k = DetectionStatus.Active))
+
+[<Fact>]
+let ``emission: a column the model emits nullable but a deployed environment enforces NOT NULL is a deployed-NOT-NULL-loosened ruling (decision 2 / EF-18)`` () =
+    // deployed-schema > model > data-evidence. The agreed shape would emit
+    // Widget.Notes nullable (logical-optional, non-PK, physically nullable in
+    // the model); cloud-uat's deployed DB has it NOT NULL, so publishing the
+    // model's shape loosens the constraint there. The engine fix (consult
+    // physical is_nullable at emission) retires it; the board carries it.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let idKey = attrKey ["Widget"; "Id"]
+    let notesKey = attrKey ["Widget"; "Notes"]
+    let widget (notesNullableInModel: bool) (notesMandatory: bool) : Kind =
+        Kind.create (kindKey ["Widget"]) (nm "Widget") (TableId.create "dbo" "OSUSR_X_WIDGET" |> Result.value)
+            [ { Attribute.create idKey (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create notesKey (nm "Notes") Text with
+                  Column = ColumnRealization.create "NOTES" notesNullableInModel |> Result.value
+                  IsMandatory = notesMandatory } ]
+    let target notesNullableInModel notesMandatory =
+        mkCatalog [ mkModule (kindKey ["M"]) (nm "M") [ widget notesNullableInModel notesMandatory ] ]
+    let profileWith (deployedNullable: bool) : Profile =
+        { Profile.empty with
+            AttributeRealities = [ { AttributeReality.create notesKey with IsNullableInDatabase = deployedNullable } ] }
+    // Positive: model nullable, deployed NOT NULL → one Emission·DECIDE finding.
+    let findings = Estate.deployedNotNullFindings (target true false) [ "cloud-uat", profileWith false ]
+    let f = Assert.Single findings
+    Assert.Equal(EstateFindingKind.EmissionDeployedNotNullLoosened, f.Kind)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("Widget.Notes", FindingKey.text f.Key)
+    Assert.Contains("cloud-uat", f.Envs |> List.map fst)
+    Assert.True(f.Lever.IsSome, "a deployed-NOT-NULL ruling carries its imperative")
+    // Negative 1 — deployed column is also nullable: nothing loosened.
+    Assert.Empty(Estate.deployedNotNullFindings (target true false) [ "cloud-uat", profileWith true ])
+    // Negative 2 — the model marks it mandatory: it would emit NOT NULL anyway.
+    Assert.Empty(Estate.deployedNotNullFindings (target true true) [ "cloud-uat", profileWith false ])
+    // Negative 3 — the model is physically NOT NULL: the emitter preserves it
+    // (the flood guard against OutSystems' optional-but-physically-NOT-NULL columns).
+    Assert.Empty(Estate.deployedNotNullFindings (target false false) [ "cloud-uat", profileWith false ])
+
+[<Fact>]
+let ``sentinel census: a DateTime column pinned at the SQL datetime floor (1753-01-01) reads as an empty-date sentinel (D8, widened)`` () =
+    // The census covers the OutSystems 1900-01-01 stand-in AND the SQL Server
+    // datetime floor 1753-01-01 — a column pinned at its type's minimum reads
+    // as satisfied-but-empty the same way. WATCH, witnessed by categorical
+    // evidence.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let idKey = attrKey ["Log"; "Id"]
+    let dateKey = attrKey ["Log"; "ClosedOn"]
+    let logKind =
+        Kind.create (kindKey ["Log"]) (nm "Log") (TableId.create "dbo" "OSUSR_X_LOG" |> Result.value)
+            [ { Attribute.create idKey (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create dateKey (nm "ClosedOn") DateTime with
+                  Column = ColumnRealization.create "CLOSED_ON" false |> Result.value } ]
+    let cat = mkCatalog [ mkModule (kindKey ["M"]) (nm "M") [ logKind ] ]
+    let categorical =
+        AttributeDistribution.Categorical
+            (CategoricalDistribution.create dateKey [ "1753-01-01 00:00:00", 800L; "2024-06-01", 200L ] 2L false (ProbeStatus.observed 1000L)
+             |> Result.value)
+    let env : Compare.Operand = { Label = "cloud-uat"; Catalog = cat; Profile = Some { Profile.empty with Distributions = [ categorical ] } }
+    let report = Estate.compute agreed cat [ "cloud-uat", env ]
+    let sentinel = report.Findings |> List.tryFind (fun f -> f.Kind = EstateFindingKind.DataDateSentinel)
+    Assert.True(sentinel.IsSome, "the 1753-01-01 floor should register as a date sentinel")
+    Assert.Contains("1753-01-01", sentinel.Value.Statement)
+    Assert.Contains("800", sentinel.Value.Statement)
+
+[<Fact>]
+let ``A44 knobs: a lowered asymmetryFactor makes an otherwise-quiet rowcount gap a DataAsymmetry finding (the config knob is consumed)`` () =
+    // The knob must be reachable, not just expressible (A44). With the default
+    // 100x factor, a 300-vs-100 gap is not asymmetric; tuned to 2x, the same
+    // evidence fires the finding — proof the Posture threshold flows to the
+    // detector.
+    let col (rows: int64) : ColumnProfile =
+        { AttributeKey = customerNameKey; RowCount = rows; NullCount = 0L
+          MaxObservedLength = None; NullCountProbeStatus = ProbeStatus.observed rows }
+    let envs =
+        [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some { Profile.empty with Columns = [ col 300L ] } }
+          "cloud-qa",  { operand "cloud-qa"  sampleCatalog with Profile = Some { Profile.empty with Columns = [ col 100L ] } } ]
+    let asymmetryFires (posture: Estate.Posture) =
+        (Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog envs).Findings
+        |> List.exists (fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
+    Assert.False(asymmetryFires Estate.Posture.defaults)
+    Assert.True(asymmetryFires { Estate.Posture.defaults with AsymmetryFactor = 2L })
+
+[<Fact>]
+let ``deployed↔deployed: a downstream env carrying a kind its upstream source lacks is a SchemaPromotionOrder advisory (the fourth regime)`` () =
+    // Promotion order dev → qa → uat (the confirm order). uat carries Coupon
+    // that its upstream source qa lacks — a change that bypassed the path.
+    let nm (s: string) : Name = Name.create s |> Result.value
+    let coupon =
+        Kind.create (kindKey ["Coupon"]) (nm "Coupon") (TableId.create "dbo" "OSUSR_X_COUPON" |> Result.value)
+            [ { Attribute.create (attrKey ["Coupon"; "Id"]) (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true } ]
+    let withCoupon =
+        { sampleCatalog with
+            Modules =
+                match sampleCatalog.Modules with
+                | m :: rest -> { m with Kinds = coupon :: m.Kinds } :: rest
+                | [] -> [] }
+    let posture = { Estate.Posture.defaults with PromotionOrder = [ "cloud-dev"; "cloud-qa"; "cloud-uat" ] }
+    let report =
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" sampleCatalog
+              "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" withCoupon ]
+    let promo = report.Findings |> List.filter (fun f -> f.Kind = EstateFindingKind.SchemaPromotionOrder)
+    let f = Assert.Single promo
+    Assert.Contains("Coupon", FindingKey.text f.Key)
+    Assert.Contains("cloud-uat", f.Envs |> List.map fst)
+    Assert.Contains("without passing through cloud-qa", f.Statement)
+    // Without a declared promotion order the regime is silent — the tool never
+    // guesses which environment is upstream.
+    let unordered =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-dev", operand "cloud-dev" sampleCatalog
+              "cloud-qa",  operand "cloud-qa"  sampleCatalog
+              "cloud-uat", operand "cloud-uat" withCoupon ]
+    Assert.True(unordered.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.SchemaPromotionOrder))
+
+[<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
     let a = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
     let b = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
@@ -350,7 +498,11 @@ let ``D3a: an orphan finding without categorical evidence keeps the plain statem
     Assert.DoesNotContain("unset value", finding.Statement)
 
 [<Fact>]
-let ``D1×D5: a Text column's NOT-NULL finding names the empty-text basis; an integer column's does not`` () =
+let ``WP-3: a NOT-NULL finding counts genuine NULLs only — empty text survives distinct from NULL, not folded in`` () =
+    // Post-WP-3 (DECISIONS 2026-07-16) the empty string is preserved distinct
+    // from NULL on every write path; it no longer folds into the NULL count nor
+    // normalizes to NULL on publish, so no NOT-NULL finding names an empty-text
+    // basis (the pre-WP-3 clause is retired with the erasure it described).
     let dirty =
         { Profile.empty with
             Columns =
@@ -362,7 +514,8 @@ let ``D1×D5: a Text column's NOT-NULL finding names the empty-text basis; an in
     let name =
         report.Findings
         |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.Name")
-    Assert.Contains("the count includes empty text, which normalizes to NULL on publish", name.Statement)
+    Assert.Contains("NULL row(s)", name.Statement)
+    Assert.DoesNotContain("empty text", name.Statement)
     let tenant =
         report.Findings
         |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.TenantId")
@@ -532,11 +685,19 @@ let private singleEnvReport (provenance: Estate.EvidenceProvenance) : Estate.Est
         (Map.ofList [ "cloud-uat", provenance ])
 
 [<Fact>]
-let ``provenance: cached evidence renders its capture age and clean-fingerprint count on the masthead (RT-7)`` () =
+let ``provenance: cached evidence renders its capture age and content-verified clean-fingerprint count on the masthead (RT-7)`` () =
     let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "cloud-uat" && l.Contains "evidence captured 2 day(s) ago; fingerprints clean across 214 kind(s)")
+        l.Contains "cloud-uat" && l.Contains "fingerprints (row count, max key, and content hash) clean across 214 kind(s)")
     Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence store: /var/projection/estate.")
+    // The rolled-up confidence footing: a content-verified cache is firm evidence.
+    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence confidence: all 1 environment(s) stand on firm evidence")
+
+[<Fact>]
+let ``evidence confidence: an offline environment lands in the advisory rollup on the masthead`` () =
+    let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Offline (capturedTwoDaysBack, 9)))
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "Evidence confidence:" && l.Contains "1 advisory (cloud-uat)")
 
 [<Fact>]
 let ``provenance: a refreshed environment names its moved kinds, capped at three with the remainder counted`` () =
@@ -1041,10 +1202,10 @@ let ``emission: a computed expression referencing an unknown identifier is a rul
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionComputedExprIdentifiers))
 
 [<Fact>]
-let ``emission: an unresolvable reference cycle is a WATCH advisory naming its members (#669 B-1)`` () =
+let ``emission: an unresolvable reference cycle is a DECIDE ruling, aligned with the transfer's refusal (#669 B-1)`` () =
     // Add the reverse reference Customer → Order (non-nullable source, no
-    // deferrable edge) — a hard 2-cycle. The board names the members; the
-    // v6 ordering keeps every other kind in dependency position.
+    // deferrable edge) — a hard 2-cycle the two-phase load cannot break, so
+    // the live transfer refuses. The board rules on it, the same fact.
     let backRef =
         Reference.create (refKey ["Customer"; "Order"; "back"]) (mkName "OrderBack") customerTenantKey orderKey
     let cyclic =
@@ -1062,10 +1223,14 @@ let ``emission: an unresolvable reference cycle is a WATCH advisory naming its m
     let f =
         Estate.emissionFindingsFor cyclic
         |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
-    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Equal(EstateLane.Decide, f.Lane)
     Assert.Contains("Customer and Order", f.Statement)
     Assert.Contains("cycle", f.Statement)
-    // The clean acyclic fixture carries no cycle advisory.
+    // A ruling carries its imperative — the operator's next move.
+    match f.Lever with
+    | Some imperative -> Assert.StartsWith("Rule the cycle", imperative)
+    | None -> Assert.Fail "an unresolvable-cycle ruling must carry its lever"
+    // The clean acyclic fixture carries no cycle finding.
     Assert.True(
         Estate.emissionFindingsFor sampleCatalog
         |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))

@@ -167,7 +167,17 @@ The full worked file is `examples/projection.sample.json` (six environments, ann
     "on-prem-qa":  { "access": "bundle", "out": "dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
     "on-prem-uat": { "access": "bundle", "out": "dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }  // bundle write + conn = the reverse-leg read source
   },
-  "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },             // the cutover-readiness gate (check shape); 'schema' defaults to model.env (cloud-dev)
+  "readiness": {                                                                  // the cutover-readiness gate (check environments / check shape); 'schema' defaults to model.env (cloud-dev)
+    "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"],                            // every environment the estate verdict needs (each must be readable)
+    "estate": {                                                                   // check environments knobs — all optional; each rides the engine default when omitted
+      "repairBand": 100000,                                                       // fix-vs-relax threshold: past this many contradicting rows, a repair defers to a named interim relaxation
+      "repairBandByEntity": { "AuditLog": 50000000 },                             // per-entity band overrides (a billion-row fact table tolerates more than a 200-row lookup)
+      "decisionFloor": 100,                                                       // minimum observations for an estate-grade conclusion — findings below it read advisory
+      "asymmetryFactor": 100,                                                     // rowcount ratio past which the smaller environment's evidence is advisory
+      "promotionOrder": ["cloud-dev", "cloud-qa", "cloud-uat"],                   // the promotion lattice, MOST-UPSTREAM first — enables the deployed↔deployed check (a change that skipped a stage); omit to keep it silent
+      "fidelityFlow": "uat-load"                                                  // the flow whose byte-fidelity proof folds into the verdict
+    }
+  },
   "flows": {
     "publish": { "from": "cloud-dev",   "to": "on-prem-dev" },                                                       // SSDT bundle (schema + seeds + bootstrap)
     "golden":  { "from": "cloud-qa",    "to": "cloud-uat",  "scope": "data", "tables": ["Customer","Order"], "rekey": "file:./secrets/uat-users.csv" },  // peer cell → cloud; users re-keyed by email (THE_DATA_PRODUCERS §2)
@@ -275,6 +285,14 @@ check data  <flow>            # row-count + null-count integrity
 check ready                   # the run-ledger readiness gauge
 check shape                   # the CROSS-ENVIRONMENT readiness gate: the `readiness` set resolves
                               #   to one espace-safe shape + zero data dealbreakers (CROSS_ENVIRONMENT_READINESS.md)
+check environments            # THE ESTATE READINESS BOARD: every environment against the agreed shape,
+                              #   findings grouped DECIDE/REPAIR/RELAX/WATCH across the schema, data,
+                              #   identity, operational, and emission planes — the cutover monitor. Writes
+                              #   environments.json + remediation/overlay/probe artifacts (read-only; the
+                              #   engine never mutates a source). Exit 0 unified · 5 diverged · 6 unreadable.
+                              #   Tune it via readiness.estate (repairBand · decisionFloor · asymmetryFactor
+                              #   · promotionOrder · fidelityFlow); --refresh forces re-profiling, --offline
+                              #   reuses cached evidence (advisory), --since @runId sets the burndown baseline.
 
 explain <flow>                # the dry-run plan: what B ⊖ A would change, before it lands
 explain diff <a> <b>          # the change between two models

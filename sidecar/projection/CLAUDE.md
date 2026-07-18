@@ -156,10 +156,14 @@ within their first session. Everything not on this list, this file only points t
     9830 ms across three captures as concurrent load grew; the quiet re-run was clean on
     the same tree). Re-run solo before believing a regression — and especially before
     reaching for `PERF_GATE_RECORD=1`.
-14. **The estate evidence fingerprint `(RowCount, MaxPk)` is blind to in-place UPDATEs** — a
-    row changed but not added/removed keeps the fingerprint clean, so cached evidence is reused
-    over stale reality. This is a *named, default-gated* caveat (`--refresh` forces re-capture;
-    the masthead states the basis), never a silent one. And the row-fidelity digest is a
+14. **The estate evidence fingerprint carries a content hash — residual caveats only.** The
+    `(RowCount, MaxPk)` pair catches inserts/deletes; a `CHECKSUM_AGG(BINARY_CHECKSUM(...))`
+    content term (added 2026-07-18) catches the in-place UPDATEs a row-count-and-MAX(pk) reading
+    misses, so cached evidence is no longer reused over an update. The residual blind spots stay
+    *named, default-gated* caveats (`--refresh` forces re-capture; the masthead states the basis),
+    never silent: a kind with only an XML column carries no content hash (XML is not
+    checksummable) and falls back to the row/PK signal, and a checksum collision is a
+    vanishingly-rare stale reuse. And the row-fidelity digest is a
     *stricter-than-`=`* comparator: `''` and `NULL` are DISTINCT bytes (a real difference the
     plain `=` would fold), and the canonical hash is collation-blind — so a "clean" `=` and a
     "diverged" digest can both be right about the same two rows. When a proof reds on a cell that

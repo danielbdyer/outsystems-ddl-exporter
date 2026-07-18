@@ -1163,7 +1163,41 @@ module SsdtDdlEmitter =
                                     Name.value k.Name, Name.value t.Name,
                                     sprintf "physical identifier '%s' survives in the body" token))
                         | None -> None))
-        match compositeKeyRefusal |> Option.orElse temporalRefusal |> Option.orElse triggerRefusal with
+        // #669 M-1 (joined to the board's `EmissionAuthoredDefault`) — an
+        // authored DEFAULT whose raw is not a parseable value of its type
+        // deploys and then fails at the first insert. `SqlLiteral
+        // .unparsableValueReason` is the SAME predicate the board reds on;
+        // detection and refusal cannot drift.
+        let authoredDefaultRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Attributes
+                |> List.tryPick (fun a ->
+                    a.DefaultValue
+                    |> Option.bind SqlLiteral.unparsableValueReason
+                    |> Option.map (fun reason ->
+                        EmitError.AuthoredDefaultRefused (Name.value k.Name, Name.value a.Name, reason))))
+        // #669 M-8 / EF-19 (joined to the board's `EmissionComputedExprIdentifiers`)
+        // — a computed expression referencing identifiers that resolve to no
+        // column of the kind cannot be rewritten to logical names, and a
+        // case-sensitive target rejects it. `Kind.unresolvedComputedIdentifiers`
+        // is the SAME predicate the board reds on.
+        let computedExprRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.Attributes
+                |> List.tryPick (fun a ->
+                    match Kind.unresolvedComputedIdentifiers k a with
+                    | [] -> None
+                    | tokens ->
+                        Some (EmitError.ComputedExpressionRefused (
+                                Name.value k.Name, Name.value a.Name, String.concat ", " tokens))))
+        match
+            compositeKeyRefusal
+            |> Option.orElse temporalRefusal
+            |> Option.orElse triggerRefusal
+            |> Option.orElse authoredDefaultRefusal
+            |> Option.orElse computedExprRefusal with
         | Some refusal -> Error refusal
         | None ->
             // PL-4 (S54) — the per-(module, schema) first-kind decision derives
