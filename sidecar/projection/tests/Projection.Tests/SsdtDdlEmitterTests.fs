@@ -1642,3 +1642,29 @@ let ``WP-17e: an InsertRow Text cell with control chars renders CHAR() concatena
     Assert.DoesNotContain("line1\r", sql)
     Assert.DoesNotContain("\nline2", sql)
     Assert.DoesNotContain("line2\t", sql)
+
+// ---------------------------------------------------------------------------
+// Task 14 (the board plan) — the JSON lane's targeted fixture: an AUTHORED
+// model carrying a disabled index + IGNORE_DUP_KEY travels codec → parse →
+// emission with both facets landing in the DDL. The rowset lane was proven
+// at the deployed level (EF-11/EF-12); this pins the authored lane's leg.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``JSON lane: disabled + IGNORE_DUP_KEY index facets survive serialize → deserialize → emission (task 14)`` () =
+    let authored = idxFeaturesCatalog true true None
+    // The wire form names both facets (the codec's contract)...
+    let json = Projection.Targets.Json.CatalogCodec.serialize authored
+    Assert.Contains("\"ignoreDuplicateKey\": true", json)
+    Assert.Contains("\"isDisabled\": true", json)
+    // ...and the parsed catalog emits both: IGNORE_DUP_KEY = ON inside the
+    // CREATE INDEX options, ALTER INDEX ... DISABLE after it.
+    let parsed =
+        match Projection.Targets.Json.CatalogCodec.deserialize json with
+        | Ok c -> c
+        | Error e -> failwithf "deserialize failed: %A" e
+    let body =
+        (ArtifactByKind.toMap (SsdtDdlEmitter.emitSlices (enrich parsed) |> mustOk)
+         |> Map.find idxFeaturesKindKey).Body
+    Assert.Contains("IGNORE_DUP_KEY = ON", body)
+    Assert.Contains("DISABLE", body)
