@@ -31,10 +31,14 @@ name: analyzers-projection
 # ubuntu-latest — adding it here would be a flaky gate, not a fitness signal.
 
 on:
+  # Runs on EVERY pull request (no `paths:` filter) so it is safe to make this
+  # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
+  # leaves its required check pending forever and blocks the merge. With no
+  # filter the check always reports — and passes trivially when
+  # `sidecar/projection/Projection.Core` is unchanged (the analyzer finds
+  # nothing new), so it only ever blocks a real determinism-spine violation.
+  # (This gate runs `dotnet`, ~3 min; the trade for guaranteed blocking.)
   pull_request:
-    paths:
-      - 'sidecar/projection/**'
-      - '.github/workflows/analyzers-projection.yml'
   push:
     branches:
       - main
