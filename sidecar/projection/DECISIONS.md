@@ -29529,3 +29529,24 @@ fields (defaulting to the constants), threaded into the three consumers (`asymme
 the knob is *reachable*, not merely expressible (a lowered asymmetry factor fires a finding the
 default keeps quiet); parse + round-trip + non-positive-refusal tests cover the config surface.
 The constants stay as the defaults, so every existing run is byte-identical.
+
+---
+
+## 2026-07-18 — The estate masthead rolls up an evidence-confidence footing
+
+**Context.** The per-finding evidence-confidence the readiness audit called for is largely
+already present: the masthead states each environment's provenance with its consequence (offline
+→ "every verdict standing on it is advisory"; absent → "advisory-silent"), the clean-clause
+carries the below-decision-floor sample note beside a finding, the counts are exact (not
+sampled), and `toJson` projects the per-env provenance a machine consumer joins to. The genuine
+gap was a *rollup*: the operator read provenance environment-by-environment but had no
+at-a-glance sense of how much of the whole verdict stood on firm evidence.
+
+**Decision.** Add `Estate.evidenceConfidenceLine` — one line, one source, both boards — that
+partitions the environments into FIRM (live, re-profiled, or a content-verified cache) and
+ADVISORY (offline / absent) and states the split ("all N stand on firm evidence" or "N firm, M
+advisory (…) — verdicts leaning on the advisory environment(s) are advisory too"). Tied to the
+content-hash work above, the Cached provenance clause is refreshed to name what "clean" now
+covers — row count, max key, AND content hash — so a cache reads as content-verified fresh, not
+UPDATE-blind. Board tests hold the firm-all and the offline-advisory rollups. The rest of the
+confidence machinery already existed; this is the summary that ties it together.

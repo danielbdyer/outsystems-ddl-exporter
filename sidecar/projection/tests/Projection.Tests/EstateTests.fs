@@ -649,11 +649,19 @@ let private singleEnvReport (provenance: Estate.EvidenceProvenance) : Estate.Est
         (Map.ofList [ "cloud-uat", provenance ])
 
 [<Fact>]
-let ``provenance: cached evidence renders its capture age and clean-fingerprint count on the masthead (RT-7)`` () =
+let ``provenance: cached evidence renders its capture age and content-verified clean-fingerprint count on the masthead (RT-7)`` () =
     let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "cloud-uat" && l.Contains "evidence captured 2 day(s) ago; fingerprints clean across 214 kind(s)")
+        l.Contains "cloud-uat" && l.Contains "fingerprints (row count, max key, and content hash) clean across 214 kind(s)")
     Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence store: /var/projection/estate.")
+    // The rolled-up confidence footing: a content-verified cache is firm evidence.
+    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence confidence: all 1 environment(s) stand on firm evidence")
+
+[<Fact>]
+let ``evidence confidence: an offline environment lands in the advisory rollup on the masthead`` () =
+    let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Offline (capturedTwoDaysBack, 9)))
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "Evidence confidence:" && l.Contains "1 advisory (cloud-uat)")
 
 [<Fact>]
 let ``provenance: a refreshed environment names its moved kinds, capped at three with the remainder counted`` () =

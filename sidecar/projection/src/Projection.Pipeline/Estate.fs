@@ -1933,7 +1933,7 @@ module Estate =
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
         | EvidenceProvenance.Cached (_, age, kinds) ->
-            sprintf "evidence captured %s; fingerprints clean across %s kind(s)" (ageText age) (humane kinds)
+            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s kind(s) — the cache is content-verified fresh" (ageText age) (humane kinds)
         | EvidenceProvenance.Refreshed moved ->
             sprintf "%s kind(s) moved since capture (%s) — re-profiled this run"
                 (humane (List.length moved)) (movedKindsText moved)
@@ -1941,6 +1941,31 @@ module Estate =
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
             "no data evidence this run — the data plane is advisory-silent"
+
+    /// The rolled-up evidence-confidence footing (DECISIONS 2026-07-18): how
+    /// much of the verdict stands on FIRM evidence (live, re-profiled, or a
+    /// content-verified cache) versus ADVISORY (offline / absent). The per-env
+    /// provenance lines say WHICH environment is on what; this says HOW MUCH of
+    /// the estate the verdict firmly rests on. Exposed so the text board and
+    /// the rich board render one line from one source.
+    let evidenceConfidenceLine (report: EstateReport) : string =
+        let firm, advisory =
+            report.Bases
+            |> List.partition (fun b ->
+                match b.Provenance with
+                | EvidenceProvenance.Live
+                | EvidenceProvenance.Cached _
+                | EvidenceProvenance.Refreshed _ -> true
+                | EvidenceProvenance.Offline _
+                | EvidenceProvenance.Absent -> false)
+        match advisory with
+        | [] ->
+            sprintf "Evidence confidence: all %s environment(s) stand on firm evidence (live, re-profiled, or content-verified cache)."
+                (humane (List.length firm))
+        | _ ->
+            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on the advisory environment(s) are advisory too."
+                (humane (List.length firm)) (humane (List.length advisory))
+                (advisory |> List.map (fun b -> b.Env) |> String.concat ", ")
 
     /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
     /// yet check, so "one shape" never reads as "everything is clean". The
@@ -1968,6 +1993,7 @@ module Estate =
                     (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
           for basis in report.Bases do
               yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
+          yield sprintf "  %s" (evidenceConfidenceLine report)
           yield
               (match report.Evidence with
                | EvidenceStoreBasis.Enabled dir ->

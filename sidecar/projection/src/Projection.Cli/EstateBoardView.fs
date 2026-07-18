@@ -182,6 +182,7 @@ let ofReport (report: Estate.EstateReport) : View =
             [ PanelRow.Labeled ("against", Estate.TargetOperand.basisText report.Target, Neutral)
               for basis in report.Bases do
                   PanelRow.Labeled (basis.Env, Estate.provenanceText basis, provenanceStatus basis)
+              PanelRow.Labeled ("confidence", Estate.evidenceConfidenceLine report, Neutral)
               PanelRow.Labeled ("evidence", storeLine report.Evidence, Neutral)
               PanelRow.Labeled ("fidelity", fidelityLine report.Fidelity, fidelityStatus report.Fidelity) ])
     let lanes =
