@@ -987,7 +987,17 @@ module Compose =
     let read (jsonPath: string) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "compose.read"
-            return! readStep.Read (CatalogReader.SnapshotFile jsonPath)
+            // Faithful- and directory-aware model-file read (`Source.ofFile`):
+            // a `catalog.snapshot.json` (CatalogCodec — top-level `codecVersion`)
+            // reads losslessly through the codec, so `model.path` accepts a
+            // FROZEN model snapshot (the exact emitted shape a full-export wrote)
+            // as a first-class model source — the file-sourced model the cutover
+            // pins its gates against (`check … --against model`), independent of
+            // any live connection. Any other file keeps the `osm_model.json`
+            // reader (the registered `CatalogReader.parse`, byte-identical to the
+            // prior `readStep.Read (SnapshotFile …)`); a directory resolves to its
+            // bundle `catalog.snapshot.json` inside. (operator directive 2026-07-18.)
+            return! Source.read (Source.ofFile jsonPath)
         }
 
     /// Read a V1 `osm_model.json` from an in-memory string and parse
@@ -1547,22 +1557,36 @@ module Compose =
             | Config.ProfilerProvider.Fixture ->
                 return Result.success Profile.empty
             | Config.ProfilerProvider.Live ->
-                // Coalesce the nullable env read to a non-null string (F#9
-                // nullness) so the non-empty branch passes a non-null value.
-                let connectionString =
+                // The profiling connection string, resolved in precedence:
+                //   1. PROJECTION_MSSQL_CONN_STR — the explicit override / back-compat.
+                //   2. model.ossys — when the model is read live from an OSSYS
+                //      connection ref, the SAME database holds the data to profile,
+                //      so the profiler DERIVES its connection from the model's ref
+                //      (one source, both uses — no double-configuration). D9-
+                //      preserving: model.ossys is an out-of-band `env:`/`file:`
+                //      reference, so the secret is still never in the config
+                //      document (operator directive 2026-07-18).
+                let envConn =
                     System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
                     |> Option.ofObj
-                    |> Option.defaultValue ""
-                if connectionString = "" then
-                    return
-                        Result.failureOf
-                            (ValidationError.create
-                                "pipeline.profiler.connectionMissing"
-                                (sprintf
-                                    "profiler.provider = \"%s\" requires the %s environment variable (D9: connection sources are out-of-band)."
-                                    Config.LiveProfilerProvider
-                                    Config.SourceConnectionStringEnvVar))
-                else
+                    |> Option.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
+                let resolved : Result<string> =
+                    match envConn with
+                    | Some c -> Result.success c
+                    | None ->
+                        match cfg.Model.Ossys with
+                        | Some ossysSpec -> ConnectionSpec.resolveSpec "profiler-source" ossysSpec
+                        | None ->
+                            Result.failureOf
+                                (ValidationError.create
+                                    "pipeline.profiler.connectionMissing"
+                                    (sprintf
+                                        "profiler.provider = \"%s\" needs a source connection: set the %s environment variable, or configure model.ossys (the live OSSYS connection the profiler derives from). D9: connection sources are out-of-band."
+                                        Config.LiveProfilerProvider
+                                        Config.SourceConnectionStringEnvVar))
+                match resolved with
+                | Error es -> return Result.failure es
+                | Ok connectionString ->
                     return! profileFromLiveConnection cfg.Profiler.MaxConcurrency hydratedRows connectionString catalog
         }
 
@@ -1680,7 +1704,13 @@ module Compose =
                                 if List.isEmpty postDeployLanes then None
                                 else Some (PostDeployEmitter.renderIncludes postDeployLanes)
                             let sqlproj =
-                                SqlprojEmitter.emit dataLanes (Option.isSome postDeploy) (Option.isSome refactorLog)
+                                // The remediation script (`manifest.remediation.sql`) is a
+                                // bundle-root sibling the SDK's `**/*.sql` glob would compile
+                                // as schema — excluded from the Build so DacFx does not parse
+                                // its data-cleanup DML as a schema object (it is always emitted
+                                // to `outputDir`, so always excluded here).
+                                SqlprojEmitter.emit dataLanes [ ArtifactPath.remediation ]
+                                    (Option.isSome postDeploy) (Option.isSome refactorLog)
                             { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
                     // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
                     // per-reference resolutions, and the decision overlay

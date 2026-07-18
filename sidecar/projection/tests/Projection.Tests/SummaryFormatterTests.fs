@@ -175,6 +175,81 @@ let ``5.13.summary: UniqueIndexOutcome.DoNotEnforce DataHasDuplicates classifies
     Assert.Contains("[Remediation ]    1 decision(s)", text)
 
 // ----------------------------------------------------------------------
+// The unique-index split (2026-07-18): carried-from-source vs promoted vs
+// the three withheld reasons — the fidelity-vs-tightening precision.
+// ----------------------------------------------------------------------
+
+/// The count on the split sub-line whose label the given fragment names —
+/// spacing-robust (finds the line, reads its first integer token).
+let private splitCount (labelFragment: string) (lines: string list) : int =
+    let line =
+        lines
+        |> List.find (fun l -> l.Contains labelFragment && not (l.Contains "["))
+    line.Split([| ' '; '\t' |], System.StringSplitOptions.RemoveEmptyEntries)
+    |> Array.pick (fun tok -> match System.Int32.TryParse tok with true, n -> Some n | _ -> None)
+
+[<Fact>]
+let ``unique-split: a declared-unique index is 'carried from source', never 'promoted'`` () =
+    let ui : UniqueIndexDecisionSet = {
+        Decisions = [ uiDecision customerIdAttrKey (UniqueIndexOutcome.EnforceUnique AlreadyUnique) ]
+    }
+    let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
+    // The enforced-total bucket line is unchanged (carried counts as enforced).
+    Assert.Contains("[Unique      ]    1 decision(s)", joined lines)
+    Assert.Equal(1, splitCount "carried from source" lines)
+    Assert.Equal(0, splitCount "promoted from profile evidence" lines)
+
+[<Fact>]
+let ``unique-split: a profile-driven promotion is 'promoted from profile evidence', labeled a tightening beyond source`` () =
+    let ui : UniqueIndexDecisionSet = {
+        Decisions =
+            [ uiDecision customerIdAttrKey (UniqueIndexOutcome.EnforceUnique (SingleColumnNoDuplicates 100L))
+              uiDecision customerNameKey   (UniqueIndexOutcome.EnforceUnique CompositeNoDuplicates) ]
+    }
+    let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
+    Assert.Equal(0, splitCount "carried from source" lines)
+    Assert.Equal(2, splitCount "promoted from profile evidence" lines)
+    // The gloss makes the tightening-beyond-source nature explicit.
+    Assert.Contains("a tightening BEYOND the source", joined lines)
+
+[<Fact>]
+let ``unique-split: an advise-only candidate is 'advised — could be promoted', not 'promoted'`` () =
+    // The advise-only default: a clean candidate is surfaced as advisory
+    // (DoNotEnforce PromotionAdvisedNotApplied), NOT applied — so 'promoted'
+    // stays zero and the operator sees the opportunity without a silent tightening.
+    let ui : UniqueIndexDecisionSet = {
+        Decisions =
+            [ uiDecision customerIdAttrKey (UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied)
+              uiDecision customerNameKey   (UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied) ]
+    }
+    let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
+    Assert.Equal(2, splitCount "advised — could be promoted" lines)
+    Assert.Equal(0, splitCount "promoted from profile evidence" lines)
+    Assert.Equal(0, splitCount "carried from source" lines)
+
+[<Fact>]
+let ``unique-split: the three withheld reasons each carry their own count`` () =
+    let ui : UniqueIndexDecisionSet = {
+        Decisions =
+            [ uiDecision customerIdAttrKey (UniqueIndexOutcome.DoNotEnforce DataHasDuplicates)
+              uiDecision customerNameKey   (UniqueIndexOutcome.DoNotEnforce EvidenceMissing)
+              uiDecision customerTenantKey (UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled)
+              uiDecision orderIdAttrKey    (UniqueIndexOutcome.DoNotEnforce PolicyDisabled) ]
+    }
+    let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
+    Assert.Equal(1, splitCount "withheld — duplicates" lines)
+    // EvidenceMissing + NoCandidateProfiled fold into one 'missing evidence' count.
+    Assert.Equal(2, splitCount "withheld — missing evidence" lines)
+    Assert.Equal(1, splitCount "withheld — policy disabled" lines)
+
+[<Fact>]
+let ``unique-split: an empty unique decision set reads all-zero (a default publish promotes nothing)`` () =
+    let lines = SummaryFormatter.format emptyNullability emptyUniqueIndex emptyForeignKey
+    Assert.Contains("[Unique      ]    0 decision(s)", joined lines)
+    Assert.Equal(0, splitCount "carried from source" lines)
+    Assert.Equal(0, splitCount "promoted from profile evidence" lines)
+
+// ----------------------------------------------------------------------
 // Multi-axis rollup + ordering invariant
 // ----------------------------------------------------------------------
 

@@ -36,6 +36,14 @@ type UniqueIndexKeepReason =
     /// uniqueness intent is declared but not empirically tested.
     /// Treated as missing evidence; tightening withheld.
     | NoCandidateProfiled
+    /// The index is NOT declared unique, but its data shows no duplicates
+    /// — a valid promotion CANDIDATE. Enforcement is withheld because the
+    /// intervention runs advise-only (`ApplyProfilePromotions = false`, the
+    /// operator default): the dev team's declared indexes are authoritative,
+    /// so a profile-driven tightening is surfaced as advice and NOT applied
+    /// unless the operator opts in with `applyUniquePromotions: true`
+    /// (operator directive 2026-07-18).
+    | PromotionAdvisedNotApplied
 
 
 /// The outcome of a single (index, intervention) decision.
@@ -115,6 +123,7 @@ module UniqueIndexKeepReason =
         | DataHasDuplicates -> StructuredString.tag "DataHasDuplicates"
         | EvidenceMissing -> StructuredString.tag "EvidenceMissing"
         | NoCandidateProfiled -> StructuredString.tag "NoCandidateProfiled"
+        | PromotionAdvisedNotApplied -> StructuredString.tag "PromotionAdvisedNotApplied"
 
     let toDiagnosticString (r: UniqueIndexKeepReason) : string =
         toStructured r |> StructuredString.render
@@ -223,12 +232,19 @@ module UniqueIndexRules =
             if not toggle then
                 mkDecision (UniqueIndexOutcome.DoNotEnforce PolicyDisabled)
             else
-                // 3. Profile-driven decision.
+                // 3. Profile-driven decision. A no-duplicate candidate is a
+                // PROMOTION beyond the source's declaration; it is APPLIED
+                // (EnforceUnique) only when `ApplyProfilePromotions` is set,
+                // else surfaced ADVISE-ONLY (`PromotionAdvisedNotApplied`) so
+                // the dev team's declared indexes stay authoritative.
+                let promoteOrAdvise (evidence: UniqueIndexEvidence) : UniqueIndexOutcome =
+                    if config.ApplyProfilePromotions then UniqueIndexOutcome.EnforceUnique evidence
+                    else UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied
                 let columnKeys = index.Columns |> List.map (fun c -> c.Attribute)
                 if isComposite index then
                     match compositeProbe kind.SsKey columnKeys profile with
                     | Some true ->
-                        mkDecision (UniqueIndexOutcome.EnforceUnique CompositeNoDuplicates)
+                        mkDecision (promoteOrAdvise CompositeNoDuplicates)
                     | Some false ->
                         mkDecision (UniqueIndexOutcome.DoNotEnforce DataHasDuplicates)
                     | None ->
@@ -243,9 +259,7 @@ module UniqueIndexRules =
                     | columnKey :: _ ->
                         match singleColumnProbe columnKey profile with
                         | Some (true, rowCount) ->
-                            mkDecision
-                                (UniqueIndexOutcome.EnforceUnique
-                                    (SingleColumnNoDuplicates rowCount))
+                            mkDecision (promoteOrAdvise (SingleColumnNoDuplicates rowCount))
                         | Some (false, _) ->
                             mkDecision (UniqueIndexOutcome.DoNotEnforce DataHasDuplicates)
                         | None ->

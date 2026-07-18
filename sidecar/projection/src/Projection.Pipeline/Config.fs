@@ -423,6 +423,13 @@ module Config =
         // UniqueIndex fields
         EnforceSingleColumnUnique    : bool option
         EnforceMultiColumnUnique     : bool option
+        /// Whether a profile-driven uniqueness promotion (an index the model
+        /// does NOT declare unique, whose data shows no duplicates) is APPLIED
+        /// to emission or only ADVISED. `None`/`false` (advise-only, the
+        /// default) keeps the dev team's declared indexes authoritative and
+        /// surfaces the candidate as advice; `true` applies the tightening.
+        /// (operator directive 2026-07-18 — no silent promotion beyond source.)
+        ApplyUniquePromotions        : bool option
         // ForeignKey fields (WP-1d: `allowCrossCatalog` /
         // `treatMissingDeleteRuleAsIgnore` retired — inert knobs)
         EnableCreation               : bool option
@@ -1465,6 +1472,7 @@ module Config =
             let! overrides = parseTighteningOverrides element
             let! ensSc = getOptionalBool element "enforceSingleColumnUnique"
             let! ensMc = getOptionalBool element "enforceMultiColumnUnique"
+            let! applyUniquePromotions = getOptionalBool element "applyUniquePromotions"
             let! enable = getOptionalBool element "enableCreation"
             let! crossSchema = getOptionalBool element "allowCrossSchema"
             // WP-1d: `allowCrossCatalog` / `treatMissingDeleteRuleAsIgnore`
@@ -1480,6 +1488,7 @@ module Config =
                 NullabilityOverrides = overrides
                 EnforceSingleColumnUnique = ensSc
                 EnforceMultiColumnUnique = ensMc
+                ApplyUniquePromotions = applyUniquePromotions
                 EnableCreation = enable
                 AllowCrossSchema = crossSchema
                 AllowNoCheckCreation = nocheck

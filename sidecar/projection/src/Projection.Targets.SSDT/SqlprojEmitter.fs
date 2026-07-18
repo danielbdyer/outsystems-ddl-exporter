@@ -52,14 +52,30 @@ module SqlprojEmitter =
 
     /// Emit the `.sqlproj` XML. `dataLaneRelPaths` are the bundle-relative
     /// `Data/*.sql` paths (re-classified `None`, `:r`-included by the
-    /// post-deploy); `hasPostDeploy` adds the `Script.PostDeployment.sql`
+    /// post-deploy); `auxiliaryScriptRelPaths` are bundle-scope NON-SCHEMA
+    /// `.sql` the SDK's default `**/*.sql` glob would otherwise compile as
+    /// schema objects — today `manifest.remediation.sql`, the operator's
+    /// data-cleanup UPDATE/DELETE/SELECT script (a sibling of this project at
+    /// the bundle root). Left in the Build glob, DacFx parses it as a schema
+    /// object and the `dotnet build` / `sqlpackage` deploy check fails on the
+    /// non-declarative statements — the exact blocking error a populated
+    /// remediation script produces under `emission.dacpac`/`sqlproj`. These
+    /// are `Build Remove`d (excluded from the schema model); they are NOT
+    /// re-added as `None` — unlike the data lanes they are not `:r`-included
+    /// and need not be project items, and `Build Remove` is a safe no-op when
+    /// the file is absent. `hasPostDeploy` adds the `Script.PostDeployment.sql`
     /// `PostDeploy` item; `hasRefactorLog` adds the `<RefactorLog>` item
     /// for the bundle's accumulated `ProjectionCatalog.refactorlog` (G3 —
     /// present exactly when the run was store-threaded, so DacFx converts
     /// renames into `sp_rename` instead of DROP+CREATE on incremental
     /// publish). The schema `.sql` under `Modules/**` ride the SDK's
     /// default `Build` glob and are intentionally not enumerated.
-    let emit (dataLaneRelPaths: string list) (hasPostDeploy: bool) (hasRefactorLog: bool) : string =
+    let emit
+        (dataLaneRelPaths: string list)
+        (auxiliaryScriptRelPaths: string list)
+        (hasPostDeploy: bool)
+        (hasRefactorLog: bool)
+        : string =
         let settings =
             XmlWriterSettings(
                 Indent = true,
@@ -93,6 +109,11 @@ module SqlprojEmitter =
             for p in dataLaneRelPaths do
                 elem "Build" "Remove" p
                 elem "None" "Include" p
+            // Non-schema auxiliary scripts (e.g. manifest.remediation.sql) are
+            // excluded from the schema Build so DacFx never parses their
+            // imperative statements — Remove only, never a schema/None item.
+            for p in auxiliaryScriptRelPaths do
+                elem "Build" "Remove" p
             // G3 — the accumulated refactorlog rides the project as an
             // explicit `RefactorLog` item so `dotnet build` embeds it into
             // the `.dacpac` (refactor.xml) and incremental publish renames

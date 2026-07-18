@@ -298,6 +298,65 @@ let ``composite: no candidate ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
         decision.Outcome)
 
 // ---------------------------------------------------------------------------
+// Advise-only default (operator directive 2026-07-18): a profile-driven
+// promotion is APPLIED only when ApplyProfilePromotions is set; otherwise the
+// candidate is surfaced as PromotionAdvisedNotApplied and emission stays
+// faithful to the model's declared uniqueness. `create` defaults apply=true
+// (the historical low-level behavior); `createWith … false` is advise-only.
+// ---------------------------------------------------------------------------
+
+let private mkAdvise (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
+    UniqueIndexTighteningConfig.createWith single composite false
+
+[<Fact>]
+let ``advise-only: a clean single-column candidate is PromotionAdvisedNotApplied, not enforced`` () =
+    let index = indexFixture "OS_IDX_Single_Advise" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
+    let decision = decide (mkAdvise true false) customer index profile
+    Assert.Equal(
+        UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied,
+        decision.Outcome)
+    // Crucially, it does NOT enforce — emission stays faithful to the model.
+    Assert.False(UniqueIndexRules.enforces decision)
+
+[<Fact>]
+let ``advise-only: a clean composite candidate is PromotionAdvisedNotApplied, not enforced`` () =
+    let index = indexFixture "OS_IDX_Comp_Advise" [ customerNameKey; customerTenantKey ] false
+    let profile =
+        { Profile.empty with
+            CompositeUniqueCandidates =
+                [ mkCompositeCandidate customerKey [ customerNameKey; customerTenantKey ] false ] }
+    let decision = decide (mkAdvise false true) customer index profile
+    Assert.Equal(
+        UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied,
+        decision.Outcome)
+
+[<Fact>]
+let ``advise-only: a declared-unique index still enforces (carried is authoritative, unaffected by the flag)`` () =
+    let index = indexFixture "OS_IDX_Declared" [ customerNameKey ] true
+    let decision = decide (mkAdvise true true) customer index Profile.empty
+    Assert.Equal(UniqueIndexOutcome.EnforceUnique AlreadyUnique, decision.Outcome)
+
+[<Fact>]
+let ``advise-only: duplicates still block regardless of the apply flag`` () =
+    let index = indexFixture "OS_IDX_Single_Dup_Advise" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with UniqueCandidates = [ mkSingleCandidate customerNameKey true 100L ] }
+    let decision = decide (mkAdvise true false) customer index profile
+    Assert.Equal(UniqueIndexOutcome.DoNotEnforce DataHasDuplicates, decision.Outcome)
+
+[<Fact>]
+let ``apply: with ApplyProfilePromotions a clean candidate IS enforced (the explicit opt-in)`` () =
+    let index = indexFixture "OS_IDX_Single_Apply" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
+    let decision = decide (UniqueIndexTighteningConfig.createWith true false true) customer index profile
+    Assert.Equal(
+        UniqueIndexOutcome.EnforceUnique (SingleColumnNoDuplicates 250L),
+        decision.Outcome)
+
+// ---------------------------------------------------------------------------
 // Decision metadata — every decision carries its index SsKey and the
 // intervention id that produced it.
 // ---------------------------------------------------------------------------
@@ -385,6 +444,7 @@ let ``outcome: UniqueIndexKeepReason variants round-trip`` () =
     Assert.Equal<UniqueIndexKeepReason>(DataHasDuplicates, DataHasDuplicates)
     Assert.Equal<UniqueIndexKeepReason>(EvidenceMissing, EvidenceMissing)
     Assert.Equal<UniqueIndexKeepReason>(NoCandidateProfiled, NoCandidateProfiled)
+    Assert.Equal<UniqueIndexKeepReason>(PromotionAdvisedNotApplied, PromotionAdvisedNotApplied)
 
 [<Fact>]
 let ``outcome: UniqueIndexOutcome variants round-trip`` () =

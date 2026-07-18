@@ -236,6 +236,7 @@
     <Compile Include="DataIntegrityCheckerTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
     <Compile Include="SqlprojWireTests.fs" />
+    <Compile Include="ModelSourceTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />

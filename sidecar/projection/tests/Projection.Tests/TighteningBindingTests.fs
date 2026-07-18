@@ -106,6 +106,7 @@ let private emptyEntry (kind: string) (id: string) : Config.TighteningInterventi
         NullabilityOverrides            = []
         EnforceSingleColumnUnique       = None
         EnforceMultiColumnUnique        = None
+        ApplyUniquePromotions           = None
         EnableCreation                  = None
         AllowCrossSchema                = None
         AllowNoCheckCreation            = None

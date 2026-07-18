@@ -111,23 +111,29 @@ module UniqueIndexPass =
         | UniqueIndexOutcome.EnforceUnique _ ->
             None
         | UniqueIndexOutcome.DoNotEnforce reason ->
-            let code, message =
+            let code, severity, message =
                 match reason with
                 | UniqueIndexKeepReason.PolicyDisabled ->
-                    "tightening.uniqueIndex.policyDisabled",
+                    "tightening.uniqueIndex.policyDisabled", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Enable policy support before enforcement can proceed."
                 | UniqueIndexKeepReason.DataHasDuplicates ->
-                    "tightening.uniqueIndex.duplicates",
+                    "tightening.uniqueIndex.duplicates", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Resolve duplicate values before enforcement can proceed."
                 | UniqueIndexKeepReason.EvidenceMissing ->
-                    "tightening.uniqueIndex.evidenceMissing",
+                    "tightening.uniqueIndex.evidenceMissing", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. Collect profiling evidence before enforcement can proceed."
                 | UniqueIndexKeepReason.NoCandidateProfiled ->
-                    "tightening.uniqueIndex.noCandidate",
+                    "tightening.uniqueIndex.noCandidate", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. No profile candidate exists; collect profiling evidence before enforcement can proceed."
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                    // Advisory, not a problem: the index is a valid promotion
+                    // candidate (no duplicates) but the dev team did not declare
+                    // it unique, so it is surfaced, not applied (Info, not Warning).
+                    "tightening.uniqueIndex.promotionAdvised", DiagnosticSeverity.Info,
+                    "Unique-index promotion candidate: the data shows no duplicates, but the index is not declared UNIQUE in the model. Enforcement is advised, not applied — set applyUniquePromotions to apply it, or declare it unique in the model."
             Some {
                 Source   = passName
-                Severity = DiagnosticSeverity.Warning
+                Severity = severity
                 Code     = code
                 Message  = message
                 SsKey    = Some decision.IndexKey

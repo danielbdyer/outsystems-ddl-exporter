@@ -50,7 +50,7 @@ let private mustOk (r: Result<'a>) : 'a =
 let private ejectFkIntervention : Config.TighteningInterventionEntry =
     { Kind = "foreignKey"; Id = "eject-fks"
       NullBudget = None; AllowMandatoryRelaxation = None; NullabilityOverrides = []
-      EnforceSingleColumnUnique = None; EnforceMultiColumnUnique = None
+      EnforceSingleColumnUnique = None; EnforceMultiColumnUnique = None; ApplyUniquePromotions = None
       EnableCreation = Some true; AllowCrossSchema = None; AllowNoCheckCreation = Some false
       ForeignKeyOverrides = []; MinDistinctCountForUniqueness = None }
 

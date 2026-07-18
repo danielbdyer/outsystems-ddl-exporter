@@ -67,13 +67,13 @@ let ``PostDeploy: renderInlined concatenates lane SQL under banners and skips em
 
 [<Fact>]
 let ``Sqlproj: emit is well-formed XML pinning the Microsoft.Build.Sql SDK`` () =
-    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true false)
+    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] [] true false)
     Assert.Equal("Project", root.Name.LocalName)
     Assert.Equal("Microsoft.Build.Sql/" + SqlprojEmitter.sdkVersion, attrVal root "Sdk")
 
 [<Fact>]
 let ``Sqlproj: data lanes are None + removed from the Build glob; post-deploy is PostDeploy; schema .sql not enumerated`` () =
-    let xml = SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] true false
+    let xml = SqlprojEmitter.emit [ "Data/StaticSeeds.sql"; "Data/MigrationData.sql" ] [] true false
     let root = rootOf xml
     // post-deploy script is the conventional PostDeploy item
     Assert.Equal<string list>([ PostDeployEmitter.fileName ], includeValues root "PostDeploy" "Include")
@@ -92,8 +92,31 @@ let ``Sqlproj: data lanes are None + removed from the Build glob; post-deploy is
     Assert.DoesNotContain("Modules/", xml)
 
 [<Fact>]
+let ``Sqlproj: an auxiliary non-schema script is Build-removed but never a schema or None item`` () =
+    // manifest.remediation.sql is a bundle-root sibling the SDK glob would
+    // otherwise compile as schema; the emitter excludes it from the Build so
+    // DacFx never parses its data-cleanup DML.
+    let xml = SqlprojEmitter.emit [ "Data/StaticSeeds.sql" ] [ "manifest.remediation.sql" ] true false
+    let root = rootOf xml
+    let removes =
+        root.Descendants(XName.Get "Build")
+        |> Seq.choose (fun (e: XElement) ->
+            match e.Attribute(XName.Get "Remove") with null -> None | a -> Some a.Value)
+        |> Set.ofSeq
+    Assert.Contains("manifest.remediation.sql", removes)
+    // NOT a schema Build Include, and NOT a None item (it is not :r-included).
+    let nones = includeValues root "None" "Include" |> Set.ofList
+    Assert.DoesNotContain("manifest.remediation.sql", nones)
+    let buildIncludes =
+        root.Descendants(XName.Get "Build")
+        |> Seq.choose (fun (e: XElement) ->
+            match e.Attribute(XName.Get "Include") with null -> None | a -> Some a.Value)
+        |> Set.ofSeq
+    Assert.DoesNotContain("manifest.remediation.sql", buildIncludes)
+
+[<Fact>]
 let ``Sqlproj: emit without a post-deploy omits the PostDeploy item`` () =
-    let root = rootOf (SqlprojEmitter.emit [] false false)
+    let root = rootOf (SqlprojEmitter.emit [] [] false false)
     Assert.Empty(root.Descendants(XName.Get "PostDeploy"))
 
 // G3 (DECISIONS 2026-07-16) — the store-threaded run's `.sqlproj` carries the
@@ -102,12 +125,12 @@ let ``Sqlproj: emit without a post-deploy omits the PostDeploy item`` () =
 
 [<Fact>]
 let ``Sqlproj: with a refactorlog the project carries the RefactorLog item (G3)`` () =
-    let root = rootOf (SqlprojEmitter.emit [] false true)
+    let root = rootOf (SqlprojEmitter.emit [] [] false true)
     Assert.Equal<string list>(
         [ SqlprojEmitter.refactorLogFileName ],
         includeValues root "RefactorLog" "Include")
 
 [<Fact>]
 let ``Sqlproj: without a refactorlog the project carries NO RefactorLog item`` () =
-    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql" ] true false)
+    let root = rootOf (SqlprojEmitter.emit [ "Data/StaticSeeds.sql" ] [] true false)
     Assert.Empty(root.Descendants(XName.Get "RefactorLog"))

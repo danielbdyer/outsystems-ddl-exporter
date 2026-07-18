@@ -433,6 +433,18 @@ type UniqueIndexTighteningConfig = {
     /// Should composite (multi-column) unique constraints be enforced?
     /// V1's `UniquenessOptions.EnforceMultiColumnUnique`.
     EnforceMultiColumnUnique  : bool
+    /// Whether a profile-driven promotion (an index NOT declared UNIQUE
+    /// whose data shows no duplicates) is **APPLIED** to emission, or only
+    /// **advised**. `false` (advise-only) surfaces the candidate as an
+    /// advisory finding and leaves emission faithful to the source's
+    /// declared uniqueness; `true` promotes it to an enforced UNIQUE.
+    /// **The dev team's declared indexes are always authoritative** — a
+    /// promotion is a tightening BEYOND the model, so the operator-facing
+    /// binder (`TighteningBinding.bindUniqueIndex`) defaults this OFF and
+    /// requires an explicit `applyUniquePromotions: true` to apply (operator
+    /// directive 2026-07-18). `AlreadyUnique` (carried) is unaffected — a
+    /// declared unique always enforces regardless of this flag.
+    ApplyProfilePromotions : bool
 }
 
 
@@ -954,18 +966,34 @@ module UniqueIndexTighteningConfig =
     /// intervention chooses the toggles explicitly.
     let empty : UniqueIndexTighteningConfig =
         { EnforceSingleColumnUnique = false
-          EnforceMultiColumnUnique  = false }
+          EnforceMultiColumnUnique  = false
+          ApplyProfilePromotions    = false }
 
     /// Construct a `UniqueIndexTighteningConfig`. No validation
-    /// required — both fields are booleans with no out-of-range
-    /// possibility.
+    /// required — the fields are booleans with no out-of-range
+    /// possibility. `ApplyProfilePromotions` defaults to `true` here (the
+    /// historical behavior these low-level callers exercise); the
+    /// OPERATOR-facing binder chooses the advise-only default. Use
+    /// `createWith` to set the flag explicitly.
     let create
         (enforceSingleColumnUnique: bool)
         (enforceMultiColumnUnique: bool)
         : UniqueIndexTighteningConfig =
         use _ = Bench.scope "ir.policy.uniqueIndex.create"
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
-          EnforceMultiColumnUnique  = enforceMultiColumnUnique }
+          EnforceMultiColumnUnique  = enforceMultiColumnUnique
+          ApplyProfilePromotions    = true }
+
+    /// Construct with an explicit `ApplyProfilePromotions` — the form the
+    /// operator binder uses (advise-only by default; apply on opt-in).
+    let createWith
+        (enforceSingleColumnUnique: bool)
+        (enforceMultiColumnUnique: bool)
+        (applyProfilePromotions: bool)
+        : UniqueIndexTighteningConfig =
+        { EnforceSingleColumnUnique = enforceSingleColumnUnique
+          EnforceMultiColumnUnique  = enforceMultiColumnUnique
+          ApplyProfilePromotions    = applyProfilePromotions }
 
 
 [<RequireQualifiedAccess>]
