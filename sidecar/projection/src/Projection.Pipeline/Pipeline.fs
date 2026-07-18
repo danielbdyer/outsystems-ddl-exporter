@@ -855,14 +855,22 @@ module Compose =
                 // migration kinds (`hydrateBootstrapRowsExcluding`), so the
                 // composer's `OverlappingEmitterCoverage` partition law holds.
                 // The chain's `TopologicalOrderPass` already ran Kahn/Tarjan
-                // over this exact catalog and stored the order. v7 slice 4:
-                // this is the flow's ONE render-topo binding — with row
-                // evidence present, the break choice upgrades to the
-                // EVIDENCE-WEIGHTED family member (repair-norm-minimal); the
-                // weighted topo threads to the composer via `...Using`, so
-                // every break-choice consumer downstream reads one value.
+                // over this exact catalog and stored the order. v7 slices
+                // 4+5: this is the flow's ONE render-topo binding, decided
+                // BY LANE — a Rows-lane publish upgrades the break choice to
+                // the EVIDENCE-WEIGHTED family member (repair-norm-minimal);
+                // a Prerendered-lane publish stays schema-minimal END TO END,
+                // because its bootstrap scripts were drain-rendered before
+                // evidence existed and the batch must agree with them by
+                // construction (one resolution value per flow — the
+                // pipelined publish's break choice is schema-only, NAMED).
                 let composed =
-                    let topo = renderTopologyFor profile finalState.Catalog finalState.TopologicalOrder
+                    let topo =
+                        match bootstrapLane with
+                        | DataComposer.BootstrapLane.Prerendered _ ->
+                            renderTopologyFor Profile.empty finalState.Catalog finalState.TopologicalOrder
+                        | DataComposer.BootstrapLane.Rows _ ->
+                            renderTopologyFor profile finalState.Catalog finalState.TopologicalOrder
                     DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
                 match composed with
                 | Ok bundle ->
@@ -2238,7 +2246,7 @@ module Compose =
             match stateA.TopologicalOrder with
             | Some t -> t
             | None -> (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle stateA.Catalog).Value
-        let cycleScopes = TopologicalOrder.cycleScopes topoPrime
+        let deferralScopes = TopologicalOrder.deferralScopes topoPrime
         // The bootstrap lane's posture: the composer suppresses the
         // delete arm on this lane regardless of `opts.DeleteScope`
         // (the additive upsert lane) — mirror it at drain time.
@@ -2253,7 +2261,7 @@ module Compose =
         let drain (nullability: Map<string, Map<string, bool>>) =
             Hydration.collectBootstrapRenderedUsing
                 (max 1 cfg.Emission.DataReadConcurrency)
-                connSpec eligible hydrated targetKinds cycleScopes
+                connSpec eligible hydrated targetKinds deferralScopes
                 opts cdc nullability evidenceKinds retainRows sourceTopo
         evidenceKinds, drain
 

@@ -28695,3 +28695,35 @@ the brute-force optimum of (Σ cost, cardinality, lex)); permutation invariance 
 **Named residuals.** The weighted choice changes emitted bytes only on evidence-bearing cyclic
 publishes (multi-weak resolved components); the exact repair set (slice 5) makes the norm the
 choice minimizes equal the norm the emission spends.
+
+## 2026-07-18 — The repair set is exact: edge-derived deferral + non-NULL Phase-2 rows; T18's ledger becomes an equality
+
+**Context.** Two norm inflations rode the two-phase load. Deferral was member-derived: a
+RESOLVED component deferred every nullable intra-component column though the re-run order
+proves every non-broken edge. And Phase-2 rendered an UPDATE for EVERY row of a deferred kind,
+re-setting NULL over NULL for rows whose deferred values were all NULL. Under T15 (the CDC
+capture count is the norm) both were measurable waste — and they made the break⊕repair ledger
+an inequality.
+
+**The decision.** `TopologicalOrder.DeferralScope` — per component: a Resolved scope carries
+its BROKEN edges and defers exactly those edges' columns; a Refused/Anomalous scope carries
+`BrokenEdges = None` and keeps the blanket nullable-intra-component rule (its internal order
+proves nothing — the best-effort lane). `deferredFkColumns` consumes `deferralScopes`; the
+whole chain threads it (plan build, per-kind seam, drain prerender, perf lanes). Phase-2
+renders ONLY the repair set — rows with ≥1 non-NULL deferred value — in all four lanes:
+static seeds and migration (row filter + staged `#fk` rows), and both transfer renderers
+(the staged/quantum closures return None on an all-NULL row). The staging ROUTE still judges
+by Phase-1's row count (one threshold treats a kind coherently); the staged rows are the
+repair set. The pipelined (Prerendered-lane) publish's render binding stays SCHEMA-MINIMAL
+end to end — its bootstrap scripts were drain-rendered before evidence existed, and the batch
+must agree with them by construction (one resolution value per flow; the Rows-lane publish is
+where the weighted upgrade lives). Consequence, named: `‖phase2‖ = |repairRows|` exactly —
+the ledger T18 states as an equality.
+
+**Witness.** `StaticSeedsEmitterTests` — the all-NULL row renders no UPDATE (repair set of
+exactly one on the two-row self-reference); the symmetric weak 2-cycle now defers on exactly
+ONE side (the broken edge) with Phase-2 only there — the pre-v7 both-sides expectation
+updated to the sharper truth. Slice-3's scope pins carry the cross-component negatives.
+
+**Named residuals.** The transfer per-row lane's repair filtering rides the closure seam
+(None on all-NULL) — its live-path witness is the T18 canary (next slice).

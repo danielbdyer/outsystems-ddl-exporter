@@ -350,6 +350,32 @@ module TopologicalOrder =
         |> List.filter (CycleDiagnostic.isResolved >> not)
         |> List.map (CycleDiagnostic.members >> Set.ofList)
 
+    /// v7 slice 5 — one component's DEFERRAL input. A RESOLVED component
+    /// defers exactly its BROKEN edges' columns: the re-run order proves
+    /// every unbroken edge, so deferring a non-broken column was pure
+    /// Phase-2 norm inflation. A Refused/Anomalous component carries
+    /// `BrokenEdges = None` — its internal order proves nothing, so the
+    /// blanket rule stands: every nullable intra-component edge defers
+    /// (the best-effort load inside an unproven component).
+    type DeferralScope = {
+        Members     : Set<SsKey>
+        BrokenEdges : Set<SsKey * SsKey> option
+    }
+
+    /// The per-component deferral inputs (v7 slice 5) — the exact repair
+    /// set's carrier. Replaces the member-set list at every DEFERRAL
+    /// judge; the UNSATISFIABILITY judge keeps `unresolvedCycleScopes`
+    /// (membership is its whole question).
+    let deferralScopes (t: TopologicalOrder) : DeferralScope list =
+        t.Cycles
+        |> List.map (fun c ->
+            match c with
+            | CycleDiagnostic.Resolved (members, broken, _) ->
+                { Members = Set.ofList members; BrokenEdges = Some (Set.ofList broken) }
+            | CycleDiagnostic.Refused (members, _, _)
+            | CycleDiagnostic.Anomalous (members, _) ->
+                { Members = Set.ofList members; BrokenEdges = None })
+
     /// The set of kinds participating in an UNRESOLVED cycle only —
     /// `BreakableEdges = []` is the resolved/unresolved discriminant
     /// (a resolved SCC records the edges it broke). The
@@ -375,13 +401,22 @@ module TopologicalOrder =
     /// not represented here. Shared by the forward data emitters
     /// (`StaticSeedsEmitter` / `MigrationDependenciesEmitter`) and the
     /// Transfer plan.
-    let deferredFkColumns (cycleScopes: Set<SsKey> list) (k: Kind) : Set<Name> =
-        let owningScopes = cycleScopes |> List.filter (Set.contains k.SsKey)
+    let deferredFkColumns (scopes: DeferralScope list) (k: Kind) : Set<Name> =
+        let owningScopes = scopes |> List.filter (fun s -> Set.contains k.SsKey s.Members)
         if List.isEmpty owningScopes then Set.empty
         else
             k.References
             |> List.choose (fun r ->
-                if owningScopes |> List.exists (Set.contains r.TargetKind) then
+                let deferredByScope (s: DeferralScope) : bool =
+                    if not (Set.contains r.TargetKind s.Members) then false
+                    else
+                        match s.BrokenEdges with
+                        // v7 slice 5 — resolved: ONLY a broken edge's column
+                        // defers; the proven order carries the rest.
+                        | Some broken -> Set.contains (k.SsKey, r.TargetKind) broken
+                        // Unresolved: the blanket intra-component rule.
+                        | None -> true
+                if owningScopes |> List.exists deferredByScope then
                     Kind.tryFindAttribute r.SourceAttribute k
                     |> Option.bind (fun a ->
                         if a.Column.IsNullable then Some a.Name else None)

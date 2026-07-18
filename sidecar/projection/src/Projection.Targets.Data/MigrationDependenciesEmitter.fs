@@ -231,17 +231,30 @@ module MigrationDependenciesEmitter =
             let rowCount = List.length typedRows
             let renderedPhase1 =
                 MergeRender.renderMerge "emit.migrationDeps" verification staging scopeForKind cdcAware deferred bracketIdentity kind valueRows
+            // v7 slice 5 — the exact repair set (mirror of
+            // StaticSeedsEmitter): Phase-2 touches only rows carrying a
+            // non-NULL deferred value.
+            let repairRows =
+                if Set.isEmpty deferred then []
+                else
+                    typedRows
+                    |> List.filter (fun (_, vs) ->
+                        deferred
+                        |> Set.exists (fun c ->
+                            match Map.tryFind c vs with
+                            | Some SqlLiteral.NullLit | None -> false
+                            | Some _ -> true))
             let renderedPhase2 =
-                if Set.isEmpty deferred then ""
+                if List.isEmpty repairRows then ""
                 elif DataStagingPolicy.shouldStage staging rowCount then
                     // Set-based escalation above the SAME staging threshold (mirror
                     // of StaticSeedsEmitter): the N per-row UPDATEs collapse to ONE
                     // `UPDATE … FROM target JOIN #fk` via the shared StagedMerge.
-                    StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred valueRows
+                    StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware (TableId.withoutCatalog kind.Physical) kind deferred (repairRows |> List.map snd)
                 else
                     // PL-3 (S27/S57) — per-kind constants prebound once.
                     let renderRow = MergeRender.renderUpdateForKind "emit.migrationDeps" cdcAware kind deferred
-                    typedRows
+                    repairRows
                     |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderRow vs)
                     |> System.String.Concat  // LINT-ALLOW: terminal Phase-2 cross-row UPDATE concatenation (chapter 4.1.B slice ι; mirror of StaticSeedsEmitter); each segment is the ScriptDom-rendered + GO-batched UPDATE for one row; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary
             let rendered =
@@ -252,10 +265,9 @@ module MigrationDependenciesEmitter =
                   Values        = values
                   DeferredFkSet = deferred }
             let phase1Rows = typedRows |> List.map (fun (id, vs) -> mkRow id vs)
-            // PL-3 (S18) — Phase-2's row list IS Phase-1's (mirror).
+            // v7 slice 5 — Phase-2's row list is the repair set (mirror).
             let phase2Rows =
-                if Set.isEmpty deferred then []
-                else phase1Rows
+                repairRows |> List.map (fun (id, vs) -> mkRow id vs)
             { Phase1Merges   = phase1Rows
               Phase2Updates  = phase2Rows
               RenderedPhase1 = renderedPhase1

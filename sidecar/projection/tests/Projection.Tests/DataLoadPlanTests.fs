@@ -204,7 +204,7 @@ let ``DataLoadPlan.loadForWith ≡ buildWith per kind: the per-kind unit reprodu
               invoiceKey,  [ rowOf "i1" [ "ID", "10" ] ]
               aKey,        [ rowOf "a1" [ "ID", "1"; "B_ID", "2" ] ]
               bKey,        [ rowOf "b1" [ "ID", "2"; "A_ID", "1" ] ] ]
-    let members = TopologicalOrder.cycleScopes topo
+    let members = TopologicalOrder.deferralScopes topo
     for policy in [ IdentityPolicy.Structural; IdentityPolicy.PreferPreservedKeys ] do
         let plan = DataLoadPlan.buildWith policy catalog topo rows SurrogateRemapContext.empty
         for load in plan.Loads do
@@ -223,7 +223,7 @@ let ``DataLoadPlan.loadForWith ≡ buildWith per kind: the per-kind unit reprodu
 [<Fact>]
 let ``DataLoadPlan.loadFor: the Structural per-kind default mirrors build (deferred columns included)`` () =
     let plan = build Map.empty
-    let members = TopologicalOrder.cycleScopes topo
+    let members = TopologicalOrder.deferralScopes topo
     for load in plan.Loads do
         let kind = Catalog.tryFindKind load.Kind catalog |> Option.get
         let perKind, _ = DataLoadPlan.loadFor members SurrogateRemapContext.empty kind []
@@ -281,7 +281,7 @@ let ``scope: a nullable FK between two DISTINCT cycles is NOT deferred — only 
     let cycles =
         [ CycleDiagnostic.Resolved ([ aKey; bKey ], [ (aKey, bKey) ], CycleResolution.BreakObjective.GreedyWalk)
           CycleDiagnostic.Resolved ([ cKey; dKey ], [ (cKey, dKey) ], CycleResolution.BreakObjective.GreedyWalk) ]
-    let scopes = TopologicalOrder.cycleScopes (bridgedTopo cycles)
+    let scopes = TopologicalOrder.deferralScopes (bridgedTopo cycles)
     // A's nullable B_ID (same component as B) defers; C_ID targets the
     // OTHER component — under the old flat union a nullable bridge would
     // wrongly defer. (A's C_ID here is non-nullable so it can never defer;

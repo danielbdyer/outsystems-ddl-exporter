@@ -486,7 +486,7 @@ type PerfCorpusMeasurementTests(fixture: EphemeralContainerFixture, output: ITes
                         match emitted with
                         | Ok artifact -> ArtifactByKind.toMap artifact
                         | Error e -> failwithf "emit leg failed: %A" e
-                    let cycleMembers = TopologicalOrder.cycleScopes topo
+                    let cycleMembers = TopologicalOrder.deferralScopes topo
                     let! nullabilityR = LiveProfiler.reflectNullability openConnection
                     let nullability = PerfCorpus.mustOk nullabilityR
                     let swPipe = System.Diagnostics.Stopwatch.StartNew()

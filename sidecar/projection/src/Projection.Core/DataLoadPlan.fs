@@ -113,7 +113,7 @@ module DataLoadPlan =
 
     let private loadForCore
         (policy: IdentityPolicy)
-        (cycleScopes: Set<SsKey> list)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remapTargets: Set<SsKey>)
         (remap: SurrogateRemapContext)
         (k: Kind)
@@ -123,7 +123,7 @@ module DataLoadPlan =
         let load =
             { Kind              = k.SsKey
               Disposition       = IdentityDisposition.byPolicy policy k
-              DeferredFkColumns = TopologicalOrder.deferredFkColumns cycleScopes k
+              DeferredFkColumns = TopologicalOrder.deferredFkColumns deferralScopes k
               Rows              = remapped.Rows }
         load, (remapped.Skipped |> List.map (fun u -> k.SsKey, u))
 
@@ -134,26 +134,26 @@ module DataLoadPlan =
     /// depends on another kind's rows — order, cycle membership, and the
     /// remap are all fixed before acquisition). Equivalence with the batch
     /// build is BY CONSTRUCTION: `buildWith` folds the same core this
-    /// function wraps. `cycleScopes` is `TopologicalOrder.cycleScopes
+    /// function wraps. `deferralScopes` is `TopologicalOrder.deferralScopes
     /// topo`, hoisted by the caller (once per plan, not once per kind).
     let loadForWith
         (policy: IdentityPolicy)
-        (cycleScopes: Set<SsKey> list)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remap: SurrogateRemapContext)
         (k: Kind)
         (raw: StaticRow list)
         : DataLoadKind * (SsKey * UnresolvedReference) list =
-        loadForCore policy cycleScopes (remapTargetsOf remap) remap k raw
+        loadForCore policy deferralScopes (remapTargetsOf remap) remap k raw
 
     /// The structural-policy per-kind build — `loadForWith` under
     /// `IdentityPolicy.Structural`, mirroring the `build`/`buildWith` pair.
     let loadFor
-        (cycleScopes: Set<SsKey> list)
+        (deferralScopes: TopologicalOrder.DeferralScope list)
         (remap: SurrogateRemapContext)
         (k: Kind)
         (raw: StaticRow list)
         : DataLoadKind * (SsKey * UnresolvedReference) list =
-        loadForWith IdentityPolicy.Structural cycleScopes remap k raw
+        loadForWith IdentityPolicy.Structural deferralScopes remap k raw
 
     let buildWith
         (policy: IdentityPolicy)
@@ -162,7 +162,7 @@ module DataLoadPlan =
         (rawRowsByKind: Map<SsKey, StaticRow list>)
         (remap: SurrogateRemapContext)
         : DataLoadPlan =
-        let scopes = TopologicalOrder.cycleScopes topo
+        let scopes = TopologicalOrder.deferralScopes topo
         let remapTargets = remapTargetsOf remap
 
         let loadAndSkipped =
