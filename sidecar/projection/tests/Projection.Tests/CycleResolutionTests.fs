@@ -356,3 +356,137 @@ let ``I5 frugality: the resolver never breaks more Weak edges than the graph has
         |> List.map (fun i -> (pKey i, pKey ((i + 1) % size)), EdgeStrength.Weak)
     let step = CycleResolution.weakFeedbackStrategy members edges
     step.EdgesToBreak.Length = 1
+
+// ---------------------------------------------------------------------------
+// v7 — the minimal weak feedback set (`minimalFeedbackStrategy` /
+// `defaultStrategy`; DECISIONS 2026-07-18, the measured-minimality program).
+// I1–I4 restated over the new default; I5′/I6/I7 are the exact-path laws.
+// ---------------------------------------------------------------------------
+
+/// Test-side independent optimum: brute-force every weak subset, keep the
+/// feasible minimum of (cardinality, lexicographic). Mirrors nothing of the
+/// production enumeration beyond the objective's definition.
+let private bruteForceMinimum
+    (edges: ((SsKey * SsKey) * EdgeStrength) list)
+    : (SsKey * SsKey) list option =
+    let strong = edges |> List.choose (fun (e, s) -> if s <> EdgeStrength.Weak then Some e else None)
+    let weak = edges |> List.choose (fun (e, s) -> if s = EdgeStrength.Weak then Some e else None) |> List.sort
+    let n = List.length weak
+    let weakArr = List.toArray weak
+    let mutable best : (int * (SsKey * SsKey) list) option = None
+    for mask in 0 .. (1 <<< n) - 1 do
+        let subset = [ for i in 0 .. n - 1 do if mask &&& (1 <<< i) <> 0 then yield weakArr.[i] ]
+        let remaining = strong @ (weak |> List.except subset)
+        if isAcyclic remaining then
+            let candidate = (List.length subset, List.sort subset)
+            match best with
+            | None -> best <- Some candidate
+            | Some cur -> if compare candidate cur < 0 then best <- Some candidate
+    best |> Option.map snd
+
+[<Property>]
+let ``v7 I1 soundness: every edge the exact resolver breaks is Weak`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.defaultStrategy members edges
+    let strengths = Map.ofList edges
+    step.EdgesToBreak
+    |> List.forall (fun e -> Map.tryFind e strengths = Some EdgeStrength.Weak)
+
+[<Property>]
+let ``v7 I2 acyclicity: when the exact resolver resolves, the SCC minus the broken edges is acyclic`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.defaultStrategy members edges
+    List.isEmpty step.EdgesToBreak
+    || isAcyclic (edges |> List.map fst |> List.filter (fun e -> not (List.contains e step.EdgesToBreak)))
+
+[<Property>]
+let ``v7 I3 refusal precision: the exact resolver refuses exactly when the strong-only subgraph is cyclic`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.defaultStrategy members edges
+    let allEdges = edges |> List.map fst
+    let strongOnly =
+        edges |> List.choose (fun (e, st) -> if st <> EdgeStrength.Weak then Some e else None)
+    if isAcyclic allEdges then List.isEmpty step.EdgesToBreak
+    elif isAcyclic strongOnly then not (List.isEmpty step.EdgesToBreak)
+    else List.isEmpty step.EdgesToBreak && step.Reason.Contains "non-deferrable"
+
+[<Property>]
+let ``v7 I4 determinism: the exact break set is independent of input edge order`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let forward = CycleResolution.defaultStrategy members edges
+    let reversed = CycleResolution.defaultStrategy (List.rev members) (List.rev edges)
+    forward.EdgesToBreak = reversed.EdgesToBreak
+
+[<Property>]
+let ``v7 I5′+I6: the exact break set IS the brute-force minimum (cardinality, then lexicographic) among feasible weak subsets`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let step = CycleResolution.defaultStrategy members edges
+    let allEdges = edges |> List.map fst
+    let strongOnly =
+        edges |> List.choose (fun (e, st) -> if st <> EdgeStrength.Weak then Some e else None)
+    // Only the resolution arm makes a minimality claim.
+    if isAcyclic allEdges || not (isAcyclic strongOnly) then true
+    else
+        match bruteForceMinimum edges with
+        | Some expected -> step.EdgesToBreak = expected
+        | None -> false
+
+[<Property>]
+let ``v7 I7: the exact break set is never larger than greedy's on the same graph`` (raw: (byte * byte * byte) list) =
+    let edges = edgesFrom raw
+    let members = [ 0 .. 3 ] |> List.map pKey
+    let exact = CycleResolution.defaultStrategy members edges
+    let greedy = CycleResolution.weakFeedbackStrategy members edges
+    exact.EdgesToBreak.Length <= greedy.EdgesToBreak.Length
+
+[<Fact>]
+let ``v7: exact beats greedy — one shared weak edge breaks both cycles where greedy broke two`` () =
+    // Edges (a,b),(b,c),(c,a) and (b,c),(c,d),(d,b): two rings sharing
+    // (b,c). Greedy walks the first found cycle and breaks its smallest
+    // weak edge, then the second ring's — two breaks. The exact solver
+    // finds the singleton {(b,c)} feasible and minimal.
+    let k (s: string) = SsKey.synthesized "V7" s |> Result.value
+    let a, b, c, d = k "a", k "b", k "c", k "d"
+    let edges =
+        [ (a, b); (b, c); (c, a); (c, d); (d, b) ]
+        |> List.map (fun e -> e, EdgeStrength.Weak)
+    let step = CycleResolution.defaultStrategy [ a; b; c; d ] edges
+    Assert.Equal<(SsKey * SsKey) list>([ (b, c) ], step.EdgesToBreak)
+    Assert.Contains("auto-resolved: 1 weak", step.Reason)
+
+[<Fact>]
+let ``v7: above the exact threshold the greedy walk runs and the downgrade is named`` () =
+    // A 13-edge pure weak ring exceeds exactWeakEdgeThreshold = 12; the
+    // greedy engine resolves it (one break) and the reason names the
+    // downgrade (downgrades never silent).
+    let size = CycleResolution.exactWeakEdgeThreshold + 1
+    let k (i: int) = SsKey.synthesized "V7T" (sprintf "n%02d" i) |> Result.value
+    let members = [ 0 .. size - 1 ] |> List.map k
+    let edges =
+        [ 0 .. size - 1 ]
+        |> List.map (fun i -> (k i, k ((i + 1) % size)), EdgeStrength.Weak)
+    let step = CycleResolution.defaultStrategy members edges
+    Assert.Equal(1, step.EdgesToBreak.Length)
+    Assert.Contains("greedy above the exact threshold", step.Reason)
+
+[<Fact>]
+let ``v7: the weighted family member prefers the cheap edge — cost breaks the tie cardinality cannot`` () =
+    // A symmetric weak 2-cycle: both singletons feasible, equal
+    // cardinality. Zero cost picks lexicographically; a cost function
+    // making the lexicographically-first edge EXPENSIVE flips the choice
+    // — the objective's first component dominates.
+    let k (s: string) = SsKey.synthesized "V7W" s |> Result.value
+    let x, y = k "x", k "y"
+    let edges = [ ((x, y), EdgeStrength.Weak); ((y, x), EdgeStrength.Weak) ]
+    let zeroCost = CycleResolution.defaultStrategy [ x; y ] edges
+    let costOf (e: SsKey * SsKey) : int64 = if e = List.min [ (x, y); (y, x) ] then 1000L else 1L
+    let weighted = CycleResolution.minimalFeedbackStrategy costOf [ x; y ] edges
+    Assert.Equal(1, zeroCost.EdgesToBreak.Length)
+    Assert.Equal(1, weighted.EdgesToBreak.Length)
+    Assert.Equal<(SsKey * SsKey) list>([ List.max [ (x, y); (y, x) ] ], weighted.EdgesToBreak)
+    Assert.NotEqual<(SsKey * SsKey) list>(zeroCost.EdgesToBreak, weighted.EdgesToBreak)

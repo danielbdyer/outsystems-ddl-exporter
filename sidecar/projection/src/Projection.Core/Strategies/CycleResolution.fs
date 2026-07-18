@@ -224,3 +224,148 @@ module CycleResolution =
               Reason       =
                 sprintf "SCC of size %d; resolver disabled (neverResolve)"
                     members.Length }
+
+    // -----------------------------------------------------------------------
+    // v7 (DECISIONS 2026-07-18) — the MINIMAL weak feedback set. The break
+    // choice becomes measured: one resolver family over one cost axis.
+    // -----------------------------------------------------------------------
+
+    /// Cost of breaking an FK edge — ‖repair(e)‖ (the Phase-2 UPDATE's row
+    /// count, which is its CDC capture count — T15's norm) when evidence is
+    /// present; 0 when absent. At zero cost everywhere the objective
+    /// `(Σ cost, cardinality, lexicographic)` degenerates to
+    /// `(cardinality, lexicographic)`: the schema-only exact strategy IS
+    /// this family at the zero cost function (A40 — one parameterized
+    /// algorithm, not two strategies).
+    type EdgeCost = (SsKey * SsKey) -> int64
+
+    /// The exact solver enumerates weak-edge subsets: 2^12 = 4096
+    /// candidates at most, each checked by one O(V+E) cycle search over
+    /// an SCC's internal edges — bounded and Bench-labeled. Above the
+    /// threshold the greedy walk runs and the downgrade is NAMED in the
+    /// reason (downgrades never silent).
+    [<Literal>]
+    let exactWeakEdgeThreshold : int = 12
+
+    /// The v7 resolver — the minimal weak feedback set (DECISIONS
+    /// 2026-07-18; #669 the measured-minimality program).
+    ///
+    /// Per SCC:
+    ///   1. The strong-only subgraph (every non-Weak internal edge) is
+    ///      cycle-checked DIRECTLY: a cycle there IS an all-strong cycle
+    ///      of the original — I3's refusal predicate computed in one
+    ///      step rather than discovered by greedy descent. Refusal names
+    ///      the cycle's members (same operator phrasing as v5).
+    ///   2. Otherwise every cycle carries a Weak edge, so a weak feedback
+    ///      set exists. With |Weak| ≤ `exactWeakEdgeThreshold` the solver
+    ///      enumerates subsets in deterministic order (sorted edges,
+    ///      ascending bitmask) and keeps the feasible subset minimizing
+    ///      `(Σ cost, cardinality, lexicographic edge list)` — a TOTAL
+    ///      order, so the choice is deterministic and permutation-
+    ///      invariant. Feasibility = the SCC minus the subset is acyclic.
+    ///   3. Above the threshold the v5 greedy walk resolves (it cannot
+    ///      refuse here — step 1 already proved every cycle carries a
+    ///      Weak edge) and the reason NAMES the downgrade.
+    ///
+    /// **Invariants** (property-tested in `CycleResolutionTests`):
+    ///   I1 soundness  — broken ⊆ Weak (only weak subsets are enumerated;
+    ///                   the greedy fallback preserves its own I1).
+    ///   I2 acyclicity — feasibility is checked against the full internal
+    ///                   edge set, exactly.
+    ///   I3 refusal precision — refuses ⟺ the strong-only subgraph is
+    ///                   cyclic ⟺ an all-strong cycle exists.
+    ///   I4 determinism — sorted enumeration + a total objective.
+    ///   I5′ minimality — on the exact path the break set has minimum
+    ///                   cardinality (at zero cost) among ALL feasible
+    ///                   weak subsets; ties resolve lexicographically.
+    ///                   v5's I5 frugality (one break per residual cycle)
+    ///                   survives as a corollary: the minimum is never
+    ///                   larger than greedy's set.
+    ///   I6 exact optimality — no feasible weak subset with a strictly
+    ///                   smaller objective exists (test-side independent
+    ///                   enumeration).
+    ///   I7 exact ≤ greedy — |exact| ≤ |greedy| on the same graph.
+    let minimalFeedbackStrategy (cost: EdgeCost) : Resolver =
+        fun members internalEdges ->
+            let memberSet = Set.ofList members
+            // Same prelude as the greedy engine: dedupe, combine parallel
+            // strengths, sort — input-order independence.
+            let edges =
+                internalEdges
+                |> List.filter (fun ((s, t), _) -> Set.contains s memberSet && Set.contains t memberSet)
+                |> List.groupBy fst
+                |> List.map (fun (e, xs) -> e, xs |> List.map snd |> List.reduce combineStrength)
+                |> List.sortBy fst
+            let strongEdges =
+                edges |> List.choose (fun (e, s) -> if s <> EdgeStrength.Weak then Some e else None)
+            let weakEdges =
+                edges |> List.choose (fun (e, s) -> if s = EdgeStrength.Weak then Some e else None)
+            match findCycle strongEdges with
+            | Some strongCycle ->
+                // I3, computed directly: the strong-only subgraph carries a
+                // cycle — no weak subset can break it. Same phrasing as v5's
+                // refusal (operator copy + substring pins preserved).
+                let cycleMembers =
+                    strongCycle |> List.map fst |> List.distinct |> List.sort
+                { EdgesToBreak = []
+                  Reason       =
+                    sprintf "unresolvable: a cycle of non-deferrable FK edges among [%s] — every edge on it is non-nullable or cascade; make one of its FK columns nullable (it then defers to phase 2 automatically), or transfer without these kinds"
+                        (cycleMembers |> List.map SsKey.rootOriginal |> String.concat ", ") }
+            | None ->
+                let n = List.length weakEdges
+                if n = 0 then
+                    // No weak edges and the strong subgraph is acyclic —
+                    // the whole SCC is acyclic. Unreachable for a genuine
+                    // Tarjan component; degrade legibly (v5's arm).
+                    { EdgesToBreak = []
+                      Reason       = "no cycle found among the SCC's internal edges; please report" }
+                elif n <= exactWeakEdgeThreshold then
+                    use _ = Bench.scope "pass.topologicalOrder.exactSolver"
+                    let weakArr = weakEdges |> List.sort |> List.toArray
+                    // Enumerate subsets ascending-bitmask over the SORTED
+                    // weak edges; keep the feasible minimum of the TOTAL
+                    // objective (Σ cost, |S|, lexicographic edge list).
+                    let mutable best : (int64 * int * (SsKey * SsKey) list) option = None
+                    for mask in 0 .. (1 <<< n) - 1 do
+                        let subset =
+                            [ for i in 0 .. n - 1 do
+                                if mask &&& (1 <<< i) <> 0 then yield weakArr.[i] ]
+                        let remaining =
+                            strongEdges @ (weakArr |> Array.toList |> List.except subset)
+                        if Option.isNone (findCycle remaining) then
+                            let candidate =
+                                (subset |> List.sumBy cost, List.length subset, List.sort subset)
+                            match best with
+                            | None -> best <- Some candidate
+                            | Some current -> if compare candidate current < 0 then best <- Some candidate
+                    match best with
+                    | Some (_, _, chosen) when not (List.isEmpty chosen) ->
+                        { EdgesToBreak = chosen
+                          Reason       =
+                            sprintf "auto-resolved: %d weak (nullable) FK edge(s) deferred to phase 2 (%s)"
+                                chosen.Length
+                                (chosen |> List.truncate 3 |> List.map edgeText |> String.concat "; ") }
+                    | _ ->
+                        // The empty subset feasible would mean the SCC was
+                        // acyclic (handled above); no feasible subset at all
+                        // cannot happen (every cycle carries a Weak edge, so
+                        // the full weak set is feasible). Degrade legibly.
+                        { EdgesToBreak = []
+                          Reason       = "no cycle found among the SCC's internal edges; please report" }
+                else
+                    // Above the exact threshold: the greedy walk resolves
+                    // (refusal is impossible here — step 1 proved every
+                    // cycle carries a Weak edge) and the downgrade is NAMED.
+                    let greedy = weakFeedbackStrategy members internalEdges
+                    { greedy with
+                        Reason =
+                            sprintf "%s [greedy above the exact threshold: %d weak edges > %d]"
+                                greedy.Reason n exactWeakEdgeThreshold }
+
+    /// The v7 default: the exact minimal feedback set at ZERO cost —
+    /// schema-only, minimum cardinality, lexicographic ties. The
+    /// evidence-weighted member of the family is the same function at
+    /// `repairCostOf` (the render-plane binding supplies it; A18 keeps
+    /// the chain prefix schema-only).
+    let defaultStrategy : Resolver =
+        minimalFeedbackStrategy (fun _ -> 0L)

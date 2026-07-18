@@ -28577,3 +28577,37 @@ probe carries the re-tighten); a composite-key target → red naming the emissio
 **Named residuals.** The face wiring (`check estate` printing the ladder beneath the board) and
 the `Readiness.isReady` composition line are the surface half, landing with the M-7 report
 alignment; the derivation and its law are what this entry fixes.
+
+## 2026-07-18 — The minimal weak feedback set (v7): the break choice becomes measured; the second strategy fires the family
+
+**Context.** v5's `weakFeedbackStrategy` walks the first cycle found and breaks its smallest weak
+edge, one break per residual cycle — frugal (I5) but not minimal: two rings sharing a weak edge
+break twice where once suffices, and every unnecessary break is a real Phase-2 UPDATE against
+real rows. The measured-minimality program (T15 — minimality is measured, the CDC capture count
+is the norm) reaches the break choice itself.
+
+**The decision.** `CycleResolution.minimalFeedbackStrategy : EdgeCost -> Resolver` — ONE
+resolver family over ONE cost axis (A40). Per SCC: the strong-only subgraph is cycle-checked
+DIRECTLY (a cycle there IS an all-strong cycle — I3's refusal predicate computed in one step,
+refusal phrasing unchanged); otherwise, with |Weak| ≤ `exactWeakEdgeThreshold` (12; ≤ 4096
+candidates, Bench label `pass.topologicalOrder.exactSolver`), the solver enumerates weak subsets
+in deterministic order and keeps the feasible minimum of the TOTAL objective
+`(Σ cost, cardinality, lexicographic)`; above the threshold the v5 greedy walk resolves (refusal
+is impossible past step 1) and the reason NAMES the downgrade. `defaultStrategy` =
+`minimalFeedbackStrategy (fun _ -> 0L)`: at zero cost the objective degenerates to
+(cardinality, lex) — the schema-only exact strategy IS the family's zero point, and the
+evidence-weighted member is the same function at the repair-cost function (the render-plane
+binding, its own slice). The pass (v6 → v7) takes the resolver as a parameter (default
+`defaultStrategy`); `weakFeedbackStrategy` stays public as the named fallback engine.
+
+**Witness.** `CycleResolutionTests` — I1–I4 restated verbatim over `defaultStrategy`; I5′+I6
+(the exact set IS the brute-force minimum, independent test-side enumeration); I7 (exact ≤
+greedy, always); the named-delta fixture (two weak rings sharing (b,c): greedy broke two, exact
+breaks exactly {(b,c)}); the above-threshold downgrade named; the weighted member flipping a
+symmetric 2-cycle's choice when cost dominates cardinality's tie.
+
+**Named residuals.** The second strategy has now ARRIVED — the deferral triggers on
+`ResolutionStep.Reason` (free-form → structured DU) and resolver-as-pass-parameter dispatch have
+FIRED; both cash out in this arc's next slices. The evidence-weighted binding (`repairCostOf`,
+the ONE weighted site per flow at the render-topo binding, A18-clean) is the family's second
+member, landing with its conservative-extension and refusal-invariance laws.

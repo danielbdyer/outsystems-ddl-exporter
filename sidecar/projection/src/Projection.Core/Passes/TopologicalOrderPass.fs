@@ -74,8 +74,18 @@ module TopologicalOrderPass =
     ///       cycles keeps its true dependency position — `Mode =
     ///       PartialTopological`. Whole-catalog `Alphabetical` remains
     ///       only as the defensive residue arm.
+    /// v7 — The minimal weak feedback set (2026-07-18, the measured-
+    ///       minimality program): the resolver becomes a parameter
+    ///       (default `CycleResolution.defaultStrategy`) and the default
+    ///       break choice becomes EXACT — per SCC, the feasible weak
+    ///       subset minimizing `(Σ cost, cardinality, lexicographic)`,
+    ///       enumerated when |Weak| ≤ `exactWeakEdgeThreshold`, greedy
+    ///       above it with the downgrade named. Refusal is computed
+    ///       directly on the strong-only subgraph (I3 in one step).
+    ///       The cost axis admits the evidence-weighted member of the
+    ///       family (`repairCostOf` — the render-plane binding).
     [<Literal>]
-    let version : int = 6
+    let version : int = 7
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -485,7 +495,7 @@ module TopologicalOrderPass =
     /// syntax allows inline self-FK constraints see the kind in
     /// topological position. Same algorithm, two projections — replaces
     /// the `RawTextEmitter.emissionOrder` duplicate (Agent 4 #6).
-    let private orderOf (graph: Graph) : TopologicalOrder =
+    let private orderOf (resolver: CycleResolution.Resolver) (graph: Graph) : TopologicalOrder =
         let sorted, unprocessed = kahnSort graph
 
         if List.isEmpty unprocessed then
@@ -505,7 +515,7 @@ module TopologicalOrderPass =
             // edges it's willing to break.
             let sccs = tarjanScc unprocessed graph.Adjacency
             let resolution =
-                applyResolver CycleResolution.weakFeedbackStrategy graph sccs
+                applyResolver resolver graph sccs
 
             if List.isEmpty resolution.UnresolvedDiagnostics then
                 // Every SCC resolved. Re-run Kahn on the reduced graph.
@@ -600,7 +610,11 @@ module TopologicalOrderPass =
 
     let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
         let events = graph.Nodes |> List.map touchedEvent
-        Lineage.ofValueAndEvents events (orderOf graph)
+        // v7: the default resolver is the exact minimal weak feedback set
+        // at zero cost (schema-only). Slice 4 threads the caller-chosen
+        // resolver (evidence-weighted at the render binding) through the
+        // OrderingConfig axis; every entry below inherits this default.
+        Lineage.ofValueAndEvents events (orderOf CycleResolution.defaultStrategy graph)
 
     let runWith (selfLoops: SelfLoopPolicy) (c: Catalog) : Lineage<TopologicalOrder> =
         lineageOf (buildGraphWithin selfLoops None c)
