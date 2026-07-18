@@ -288,7 +288,7 @@ let ``witness loadOrder: an alphabetical-degraded order refuses transfer.loadOrd
     let degraded =
         { TopologicalOrder.empty with
             Mode   = Alphabetical
-            Cycles = [ { Members = [ singleKey; compositeKey ]; BreakableEdges = []; Reason = "every edge non-nullable (an all-strong cycle)" } ] }
+            Cycles = [ CycleDiagnostic.Anomalous ([ singleKey; compositeKey ], "every edge non-nullable (an all-strong cycle)") ] }
     match Transfer.orderedLoadGate degraded with
     | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
     | None   -> Assert.Fail "an unproven (degraded) load order must refuse by name"

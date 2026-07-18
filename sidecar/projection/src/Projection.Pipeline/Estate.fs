@@ -1104,10 +1104,10 @@ module Estate =
     let private emissionDataLaneOrderFindings (target: Catalog) : Finding list =
         let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle target).Value
         topo.Cycles
-        |> List.filter (fun c -> List.isEmpty c.BreakableEdges)
+        |> List.filter (CycleDiagnostic.isResolved >> not)
         |> List.map (fun c ->
             let names =
-                c.Members
+                CycleDiagnostic.members c
                 |> List.map (fun key ->
                     Catalog.tryFindKind key target
                     |> Option.map (fun kind -> Name.value kind.Name)

@@ -28611,3 +28611,35 @@ symmetric 2-cycle's choice when cost dominates cardinality's tie.
 FIRED; both cash out in this arc's next slices. The evidence-weighted binding (`repairCostOf`,
 the ONE weighted site per flow at the render-topo binding, A18-clean) is the family's second
 member, landing with its conservative-extension and refusal-invariance laws.
+
+## 2026-07-18 — The typed rationale + the refusal certificate: the Reason-DU deferral cashes out
+
+**Context.** The 2026-07-07 deferral "`ResolutionStep.Reason` migration to structured DU" named
+its trigger: a second resolver strategy. Slice 1's `minimalFeedbackStrategy` is that strategy —
+the trigger has fired.
+
+**The decision.** `ResolutionStep.Reason` becomes `ResolutionReason` (closed DU: `AutoResolved
+of BreakObjective | Refused of certificate * relaxation | NoCycleFound | Disabled`), and
+`CycleDiagnostic` becomes a closed DU (`Resolved | Refused | Anomalous`) — the
+resolved/unresolved discriminant is the CONSTRUCTOR, not the `BreakableEdges = []` sentinel.
+`StrongCycleCertificate` is a private-constructor type: a value cannot exist unless its edge
+list forms a closed cycle carrying zero Weak edges — I3's refusal half made unforgeable at the
+diagnostic surface (the ArtifactByKind pattern). The refusal now CARRIES its certificate plus
+the cheapest relaxation: the minimal strong-edge set (Other preferred over Cascade, 1 vs 10^6)
+whose columns, made nullable, admit automatic resolution — computed by the same exact-subset
+solver over the strong-only subgraph (A40: one solver, two consumers). Display is one owner
+(`CycleResolution.describe` / `CycleDiagnostic.reasonText`) preserving the pre-DU operator
+phrases byte-for-byte. Migration exposed and fixed a latent imprecision: the transfer load
+gate counted and named RESOLVED cycles in its "unproven" message — it now filters to the
+unresolved components its claim is about. Compile-order: `CycleResolution.fs` now precedes
+`TopologicalOrder.fs` (the diagnostic carries domain-typed rationale; the algebra/domain split
+holds — the PASS still never applies domain rules itself).
+
+**Witness.** `CycleResolutionTests` — the two ctor refusals (Weak edge; open path); the
+certified refusal carrying edges + strengths; the relaxation admitting resolution when
+weakened; Other-before-Cascade preference. All pre-DU substring pins pass unchanged through
+the display projections.
+
+**Named residuals.** The certificate's narration on the three operator surfaces (board
+advisory, load gate, go board) is the arc's surface slice; the relaxation list is carried but
+not yet prosed there.

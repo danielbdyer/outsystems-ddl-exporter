@@ -432,19 +432,31 @@ module TopologicalOrderPass =
             let internalEdges = internalEdgesOf scc graph.ClassifiedEdges
             let step = resolver scc internalEdges
             if List.isEmpty step.EdgesToBreak then
-                unresolved.Add(
-                    { Members        = scc
-                      BreakableEdges = []
-                      Reason         = step.Reason })
+                // v7 — the typed rationale routes each empty-break outcome
+                // to its own diagnostic constructor: a certified refusal
+                // keeps its certificate; the degenerate/disabled arms are
+                // Anomalous with the legible note.
+                match step.Reason with
+                | CycleResolution.ResolutionReason.Refused (certificate, relaxation) ->
+                    unresolved.Add(CycleDiagnostic.Refused (scc, certificate, relaxation))
+                | CycleResolution.ResolutionReason.NoCycleFound
+                | CycleResolution.ResolutionReason.Disabled _
+                | CycleResolution.ResolutionReason.AutoResolved _ ->
+                    unresolved.Add(CycleDiagnostic.Anomalous (scc, CycleResolution.describe step))
             else
                 for (source, target) in step.EdgesToBreak do
                     // Translate FK orientation (source, target) to
                     // precedence orientation (parent=target, child=source).
                     removed <- Set.add (target, source) removed
-                resolved.Add(
-                    { Members        = scc
-                      BreakableEdges = step.EdgesToBreak
-                      Reason         = step.Reason }))
+                let objective =
+                    match step.Reason with
+                    | CycleResolution.ResolutionReason.AutoResolved o -> o
+                    | _ ->
+                        // A resolver returning breaks with a non-resolved
+                        // reason is malformed; record the walk as greedy so
+                        // the break set still rides the audit surface.
+                        CycleResolution.BreakObjective.GreedyWalk
+                resolved.Add(CycleDiagnostic.Resolved (scc, step.EdgesToBreak, objective)))
 
         { RemovedPrecedenceEdges = removed
           ResolvedDiagnostics    = resolved |> List.ofSeq
@@ -543,9 +555,7 @@ module TopologicalOrderPass =
                     let leftoverDiagnostics =
                         leftover
                         |> List.map (fun members ->
-                            { Members        = members
-                              BreakableEdges = []
-                              Reason         = "residual SCC after resolver; please report" })
+                            CycleDiagnostic.Anomalous (members, "residual SCC after resolver; please report"))
                     { Mode         = Alphabetical
                       Order        = graph.Nodes
                       Edges        = graph.Edges
@@ -569,7 +579,7 @@ module TopologicalOrderPass =
                 let unresolvedInternalPrecedence =
                     resolution.UnresolvedDiagnostics
                     |> List.collect (fun d ->
-                        internalEdgesOf d.Members graph.ClassifiedEdges
+                        internalEdgesOf (CycleDiagnostic.members d) graph.ClassifiedEdges
                         |> List.map (fun ((source, target), _) ->
                             // FK orientation → precedence orientation
                             // (parent = target, child = source), mirroring

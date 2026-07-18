@@ -126,11 +126,8 @@ let ``C.2: ignored unreferenced missing-PK kinds — scan only fires on referenc
 // Unresolved cycles
 // ----------------------------------------------------------------------
 
-let private mkCycleDiag (members: SsKey list) (reason: string) : CycleDiagnostic = {
-    Members        = members
-    BreakableEdges = []
-    Reason         = reason
-}
+let private mkCycleDiag (members: SsKey list) (reason: string) : CycleDiagnostic =
+    CycleDiagnostic.Anomalous (members, reason)
 
 let private mkTopo (cycles: CycleDiagnostic list) : TopologicalOrder = {
     Mode         = Alphabetical

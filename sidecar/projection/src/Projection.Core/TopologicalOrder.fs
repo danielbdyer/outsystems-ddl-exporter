@@ -102,15 +102,63 @@ module OrderingConfig =
           JunctionDeferral = EmitInTopologicalOrder }
 
 
-/// Diagnostic for a strongly-connected component the resolver could not
-/// break. Members and breakable-edges are keyed by `SsKey` (strongly
-/// typed; no name lookup required). The `Reason` field is human-readable
-/// — emit it to operator diagnostics, never parse it.
-type CycleDiagnostic = {
-    Members        : SsKey list
-    BreakableEdges : (SsKey * SsKey) list
-    Reason         : string
-}
+/// Per-SCC outcome of cycle resolution — a CLOSED DU (v7; DECISIONS
+/// 2026-07-18). The resolved/refused discriminant is the constructor,
+/// not a `BreakableEdges = []` convention: the type theorem replaces the
+/// sentinel. Members and edges are keyed by `SsKey`; display goes
+/// through `CycleDiagnostic.reasonText` — emit it, never parse it.
+[<RequireQualifiedAccess>]
+type CycleDiagnostic =
+    /// The resolver broke a weak feedback set; the SCC's load order is
+    /// proven by the re-run. `broken` are FK-orientation edges;
+    /// `objective` names HOW the set was chosen (exact minimum, greedy
+    /// walk, or the named above-threshold downgrade).
+    | Resolved of members: SsKey list * broken: (SsKey * SsKey) list * objective: CycleResolution.BreakObjective
+    /// An all-strong cycle exists — `certificate` carries it (unforgeable:
+    /// closed + zero Weak by construction) and `relaxation` names the
+    /// cheapest strong edges whose columns, made nullable, admit
+    /// automatic resolution.
+    | Refused of members: SsKey list * certificate: CycleResolution.StrongCycleCertificate * relaxation: (SsKey * SsKey) list
+    /// The defensive residue arms (resolver disabled; no cycle found in
+    /// a supposed SCC) — unresolved for every consumer, with the note
+    /// carrying the legible degradation.
+    | Anomalous of members: SsKey list * note: string
+
+[<RequireQualifiedAccess>]
+module CycleDiagnostic =
+
+    let members (c: CycleDiagnostic) : SsKey list =
+        match c with
+        | CycleDiagnostic.Resolved (m, _, _) -> m
+        | CycleDiagnostic.Refused (m, _, _) -> m
+        | CycleDiagnostic.Anomalous (m, _) -> m
+
+    /// The broken edges — `[]` for `Refused`/`Anomalous` (nothing was
+    /// broken; the component's internal order is unproven).
+    let breakableEdges (c: CycleDiagnostic) : (SsKey * SsKey) list =
+        match c with
+        | CycleDiagnostic.Resolved (_, broken, _) -> broken
+        | CycleDiagnostic.Refused _ | CycleDiagnostic.Anomalous _ -> []
+
+    let isResolved (c: CycleDiagnostic) : bool =
+        match c with
+        | CycleDiagnostic.Resolved _ -> true
+        | CycleDiagnostic.Refused _ | CycleDiagnostic.Anomalous _ -> false
+
+    /// The display projection — one owner of the diagnostic copy,
+    /// delegating to `CycleResolution.describe`'s phrases so the DU
+    /// migration changed no operator-visible text.
+    let reasonText (c: CycleDiagnostic) : string =
+        match c with
+        | CycleDiagnostic.Resolved (_, broken, objective) ->
+            CycleResolution.describe
+                { EdgesToBreak = broken
+                  Reason       = CycleResolution.ResolutionReason.AutoResolved objective }
+        | CycleDiagnostic.Refused (_, certificate, relaxation) ->
+            CycleResolution.describe
+                { EdgesToBreak = []
+                  Reason       = CycleResolution.ResolutionReason.Refused (certificate, relaxation) }
+        | CycleDiagnostic.Anomalous (_, note) -> note
 
 
 /// The output of the topological-order pass — an emitter-consumable
@@ -264,7 +312,7 @@ module TopologicalOrder =
     /// Compute once, then pass to `deferredFkColumns` per kind.
     let cycleMembers (t: TopologicalOrder) : Set<SsKey> =
         t.Cycles
-        |> List.collect (fun c -> c.Members)
+        |> List.collect CycleDiagnostic.members
         |> Set.ofList
 
     /// The set of kinds participating in an UNRESOLVED cycle only —
@@ -279,8 +327,8 @@ module TopologicalOrder =
     /// edge as unbreakable and refused a load the order satisfies.
     let unresolvedCycleMembers (t: TopologicalOrder) : Set<SsKey> =
         t.Cycles
-        |> List.filter (fun c -> List.isEmpty c.BreakableEdges)
-        |> List.collect (fun c -> c.Members)
+        |> List.filter (CycleDiagnostic.isResolved >> not)
+        |> List.collect CycleDiagnostic.members
         |> Set.ofList
 
     /// The FK columns of `k` that must be deferred across the two-phase

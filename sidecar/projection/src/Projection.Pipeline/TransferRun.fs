@@ -777,17 +777,23 @@ module Transfer =
         match topo.Mode with
         | Topological -> None
         | _ ->
+            // v7 — the DU discriminant replaces the sentinel, and fixes a
+            // latent imprecision: `Cycles` carries RESOLVED components for
+            // audit; the gate's "unproven" claim is about the UNRESOLVED
+            // ones only, so only those are counted and named.
+            let unresolvedCycles =
+                topo.Cycles |> List.filter (CycleDiagnostic.isResolved >> not)
             let cycleText =
-                topo.Cycles
+                unresolvedCycles
                 |> List.truncate 3
                 |> List.map (fun c ->
-                    sprintf "[%s]" (c.Members |> List.map SsKey.rootOriginal |> String.concat ", "))
+                    sprintf "[%s]" (CycleDiagnostic.members c |> List.map SsKey.rootOriginal |> String.concat ", "))
                 |> String.concat "; "
             Some (ValidationError.create
                     "transfer.loadOrderUnproven"
                     (sprintf
                         "the load order is unproven inside %d unresolved dependency cycle(s): %s — a live load could land children before their parents within a cycle. Make a cycle relationship's column nullable (it then defers to phase 2 automatically), or transfer without the affected kinds."
-                        topo.Cycles.Length cycleText))
+                        unresolvedCycles.Length cycleText))
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface

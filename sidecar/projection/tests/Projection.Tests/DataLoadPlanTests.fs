@@ -60,7 +60,7 @@ let private topo : TopologicalOrder =
       Order        = [ customerKey; invoiceKey; aKey; bKey ]
       Edges        = [ (aKey, bKey); (bKey, aKey) ]
       MissingEdges = []
-      Cycles       = [ { Members = [ aKey; bKey ]; BreakableEdges = [ (aKey, bKey) ]; Reason = "test 2-cycle" } ]
+      Cycles       = [ CycleDiagnostic.Resolved ([ aKey; bKey ], [ (aKey, bKey) ], CycleResolution.BreakObjective.GreedyWalk) ]
       Diagnostics  = [] }
 
 let private rowOf (ident: string) (values: (string * string) list) : StaticRow =
@@ -128,7 +128,7 @@ let ``DataLoadPlan: a RESOLVED cycle's non-nullable FK is satisfied by the prove
 let private unresolvedTopo : TopologicalOrder =
     { topo with
         Mode   = OrderingMode.Alphabetical
-        Cycles = [ { Members = [ aKey; bKey ]; BreakableEdges = []; Reason = "test unresolved 2-cycle" } ] }
+        Cycles = [ CycleDiagnostic.Anomalous ([ aKey; bKey ], "test unresolved 2-cycle") ] }
 
 [<Fact>]
 let ``DataLoadPlan: an UNRESOLVED cycle's non-nullable FK surfaces as the unbreakable diagnostic (the nullable side does not)`` () =
