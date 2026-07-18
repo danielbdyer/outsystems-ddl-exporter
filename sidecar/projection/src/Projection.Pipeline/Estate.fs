@@ -294,6 +294,14 @@ module Estate =
             /// in a billion-row fact table, so the threshold is set per entity
             /// (by logical entity name), falling back to `RepairBand`.
             RepairBandByEntity : Map<string, int64>
+            /// The decision floor (`readiness.estate.decisionFloor`) — the
+            /// minimum observation an estate-grade conclusion needs. Defaults
+            /// to `decisionFloor`; A44-tunable per estate (DECISIONS 2026-07-18).
+            DecisionFloor : int64
+            /// The rowcount-asymmetry factor (`readiness.estate.asymmetryFactor`)
+            /// — the ratio past which the small side's evidence is advisory.
+            /// Defaults to `asymmetryFactor`.
+            AsymmetryFactor : int64
             /// Reference keys the loaded posture keeps untracked
             /// (`referenceOverrides` + `keepUntracked`).
             RelaxedReferences : Set<SsKey>
@@ -304,10 +312,12 @@ module Estate =
 
     [<RequireQualifiedAccess>]
     module Posture =
-        /// No active posture, the default band — `compute`'s basis.
+        /// No active posture, the default band and thresholds — `compute`'s basis.
         let defaults : Posture =
             { RepairBand        = repairBandDefault
               RepairBandByEntity = Map.empty
+              DecisionFloor     = decisionFloor
+              AsymmetryFactor   = asymmetryFactor
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty }
 
@@ -616,6 +626,8 @@ module Estate =
     /// carries a WATCH finding naming both ends — verdicts drawn on the
     /// small side's evidence are advisory. No lever, by design.
     let private asymmetryContributions
+        (decisionFloor: int64)
+        (asymmetryFactor: int64)
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
         : EnvContribution list =
@@ -655,6 +667,7 @@ module Estate =
     /// environment legitimately shares), over at least the decision floor
     /// of summed observations. Advisory; WATCH.
     let private uniquenessCandidateContributions
+        (decisionFloor: int64)
         (logicalTarget: Catalog)
         (profilesByEnv: (string * Profile) list)
         : EnvContribution list =
@@ -1571,7 +1584,7 @@ module Estate =
                             Map.tryFind coordinate attributeKeyOf
                             |> Option.bind (fun key -> Profile.tryFindColumn key profile)
                             |> Option.map (fun c ->
-                                if c.RowCount < decisionFloor then
+                                if c.RowCount < posture.DecisionFloor then
                                     sprintf "clean in %s (%s row(s) observed — advisory; the sample is below the decision floor)"
                                         env (humane64 c.RowCount)
                                 else
@@ -1591,8 +1604,8 @@ module Estate =
             let profilesByEnv = Map.toList profileByEnv
             let logicalEnvs =
                 envs |> List.map (fun (env, operand) -> env, Readiness.toLogicalShape operand.Catalog)
-            asymmetryContributions logicalTarget profilesByEnv
-            @ uniquenessCandidateContributions logicalTarget profilesByEnv
+            asymmetryContributions posture.DecisionFloor posture.AsymmetryFactor logicalTarget profilesByEnv
+            @ uniquenessCandidateContributions posture.DecisionFloor logicalTarget profilesByEnv
             @ headroomContributions logicalTarget profilesByEnv
             @ dateSentinelContributions logicalTarget profilesByEnv
             @ collationCollisionContributions logicalTarget profilesByEnv

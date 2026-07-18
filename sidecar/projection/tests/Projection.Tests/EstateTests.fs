@@ -199,6 +199,24 @@ let ``sentinel census: a DateTime column pinned at the SQL datetime floor (1753-
     Assert.Contains("800", sentinel.Value.Statement)
 
 [<Fact>]
+let ``A44 knobs: a lowered asymmetryFactor makes an otherwise-quiet rowcount gap a DataAsymmetry finding (the config knob is consumed)`` () =
+    // The knob must be reachable, not just expressible (A44). With the default
+    // 100x factor, a 300-vs-100 gap is not asymmetric; tuned to 2x, the same
+    // evidence fires the finding — proof the Posture threshold flows to the
+    // detector.
+    let col (rows: int64) : ColumnProfile =
+        { AttributeKey = customerNameKey; RowCount = rows; NullCount = 0L
+          MaxObservedLength = None; NullCountProbeStatus = ProbeStatus.observed rows }
+    let envs =
+        [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some { Profile.empty with Columns = [ col 300L ] } }
+          "cloud-qa",  { operand "cloud-qa"  sampleCatalog with Profile = Some { Profile.empty with Columns = [ col 100L ] } } ]
+    let asymmetryFires (posture: Estate.Posture) =
+        (Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog envs).Findings
+        |> List.exists (fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
+    Assert.False(asymmetryFires Estate.Posture.defaults)
+    Assert.True(asymmetryFires { Estate.Posture.defaults with AsymmetryFactor = 2L })
+
+[<Fact>]
 let ``presentation: a finding key is stable across mints and carries the kind's token`` () =
     let a = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
     let b = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"

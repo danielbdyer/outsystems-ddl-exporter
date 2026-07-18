@@ -29507,3 +29507,25 @@ same fact, and the cutover ladder counts it (an unbreakable cycle now blocks gre
 since the load cannot run). The detector, its `CycleNarration` statement, and the negative
 (weaken one edge → all surfaces go quiet together) are unchanged; only the lane, the lever, and
 the pinning test move. The presentation-totality coherence (DECIDE ⇔ a ruling) holds.
+
+---
+
+## 2026-07-18 — The estate decision-floor and asymmetry-factor become config knobs (A44)
+
+**Context.** Two estate thresholds carried the standing A44 comment "a named constant until the
+estate config knobs land with their consumer wave — never an expressible-but-inert key before
+its consumer": the decision floor (the minimum observation an estate-grade conclusion needs,
+100) and the asymmetry factor (the rowcount ratio past which the small side is advisory, 100×).
+The repair band already had its config consumer (`readiness.estate.repairBand`); these two did
+not.
+
+**Decision.** Both land as optional config knobs — `readiness.estate.decisionFloor` and
+`readiness.estate.asymmetryFactor` — parsed in `MovementSurface.parseReadiness` (a positive
+int64, or a NAMED parse failure), round-tripped by the renderer (parse ∘ render = id), carried
+through `ReadinessSpec` → `CheckEstateArgs`, and bound onto `Estate.Posture` at the face
+(`None` rides the engine's named default). The `Posture` gains `DecisionFloor` / `AsymmetryFactor`
+fields (defaulting to the constants), threaded into the three consumers (`asymmetryContributions`,
+`uniquenessCandidateContributions`, the clean-clause below-floor note). A behavior test proves
+the knob is *reachable*, not merely expressible (a lowered asymmetry factor fires a finding the
+default keeps quiet); parse + round-trip + non-positive-refusal tests cover the config surface.
+The constants stay as the defaults, so every existing run is byte-identical.

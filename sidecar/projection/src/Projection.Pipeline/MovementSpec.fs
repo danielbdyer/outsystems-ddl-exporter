@@ -772,6 +772,11 @@ and CheckEstateArgs =
       /// `readiness.estate.repairBandByEntity` — per-entity band overrides
       /// (logical entity name → band). Empty = the default governs all.
       RepairBandByEntity : Map<string, int64>
+      /// `readiness.estate.decisionFloor` / `readiness.estate.asymmetryFactor`
+      /// (DECISIONS 2026-07-18) — the A44 tuning knobs; `None` rides the
+      /// engine's named defaults.
+      DecisionFloor : int64 option
+      AsymmetryFactor : int64 option
       /// `--since @runId` (wave A7): the burndown's NAMED baseline — a
       /// recorded reading in the evidence store's history (never the run
       /// ledger). `None` = the latest recorded reading.
