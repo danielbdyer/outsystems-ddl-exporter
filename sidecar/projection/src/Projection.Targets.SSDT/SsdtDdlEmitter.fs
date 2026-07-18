@@ -383,19 +383,32 @@ module SsdtDdlEmitter =
                 (ColumnRealization.columnNameText a.Column).ToUpperInvariant(), Name.value a.Name)
             |> Map.ofList
         let rewriteExpr = ScriptDomGenerate.rewritePhysicalIdentifiers physicalToLogical
+        let kindName = Name.value k.Name
         let columns =
             k.Attributes
-            |> List.map (columnDef overlay)
-            |> List.map (fun c ->
-                match c.Computed with
-                | Some cfg ->
-                    let rewritten = rewriteExpr cfg.Expression
-                    if rewritten = cfg.Expression then c
-                    else
-                        match ComputedColumnConfig.create rewritten cfg.IsPersisted with
-                        | Ok cfg' -> { c with Computed = Some cfg' }
-                        | Error _ -> c
-                | None -> c)
+            |> List.map (fun a -> a, columnDef overlay a)
+            |> List.map (fun (a, c) ->
+                let c =
+                    match c.Computed with
+                    | Some cfg ->
+                        let rewritten = rewriteExpr cfg.Expression
+                        if rewritten = cfg.Expression then c
+                        else
+                            match ComputedColumnConfig.create rewritten cfg.IsPersisted with
+                            | Ok cfg' -> { c with Computed = Some cfg' }
+                            | Error _ -> c
+                    | None -> c
+                // DECISIONS 2026-07-18 (the operator's proper-case lock):
+                // a DEFAULT constraint's emitted name derives from the
+                // LOGICAL table + column (`DF_<Table>_<Column>`), never
+                // from the source's physical-derived name — the emitted
+                // schema is logical everywhere its names are.
+                if c.DefaultValue.IsSome then
+                    { c with
+                        DefaultName =
+                            Some (IdentifierBudget.fit
+                                    (System.String.Concat("DF_", kindName, "_", Name.value a.Name))) }  // LINT-ALLOW: constraint-name convention mirror at the emission boundary; segments are typed (logical kind + attribute names); same discipline as the FK naming site
+                else c)
         let pk = pkDef k
         let fks = resolvedFks |> List.map snd
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
@@ -406,9 +419,25 @@ module SsdtDdlEmitter =
             k.ColumnChecks
             |> List.map columnCheckDef
             |> List.map (fun chk ->
-                let rewritten = rewriteExpr chk.Definition
-                if rewritten = chk.Definition then chk
-                else { chk with Definition = rewritten })
+                let definition =
+                    let rewritten = rewriteExpr chk.Definition
+                    if rewritten = chk.Definition then chk.Definition else rewritten
+                // The proper-case lock, CHECK arm: a carried name that
+                // embeds the physical table token re-states it as the
+                // logical name; an absent name stays server-named.
+                let name =
+                    chk.Name
+                    |> Option.map (fun n ->
+                        let physicalTable = (TableId.tableText k.Physical).ToUpperInvariant()
+                        if n.ToUpperInvariant().Contains physicalTable then
+                            System.Text.RegularExpressions.Regex.Replace(
+                                n,
+                                System.Text.RegularExpressions.Regex.Escape (TableId.tableText k.Physical),
+                                kindName,
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                            |> IdentifierBudget.fit
+                        else n)
+                { chk with Definition = definition; Name = name })
         // H-022: extract TemporalConfig from Kind.Modality if the kind is
         // a system-versioned temporal table. `tryPick` returns None for
         // non-temporal kinds; None is the `TemporalConfig option` default.

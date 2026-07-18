@@ -28517,3 +28517,36 @@ partition law and the singleton-mint degrade hold under the new mode unchanged.
 intra-cycle precedence — loading them in one pass with both relationships enforced fails; the
 deferred-enforcement emission for hard cycles (NOCHECK around the cycle's load, re-trust after)
 is the named follow-up that would retire the advisory entirely.
+
+## 2026-07-18 — Expressions rename with their columns (M-8), and constraint names go logical proper-case (the operator's lock)
+
+**Context.** #669 M-8 / EF-19: the emitted table renames every column to its logical name, but
+computed-column and CHECK expressions kept the source's physical identifiers
+(`[TotalValue] AS ([WAREHOUSEQTY] * [AVGCOST])`) — latent on a case-insensitive collation, a hard
+deploy failure (`Msg 207`) on a case-sensitive one. And the operator's proper-case lock
+(2026-07-17): emitted DEFAULT/CHECK constraint names derive from logical names, never from the
+source's physical-derived forms.
+
+**The decision.** `ScriptDomGenerate.rewritePhysicalIdentifiers` — AST-level: parse through the
+pinned parser (scalar first, boolean predicate second), rename each column reference whose last
+identifier part matches a physical column (case-insensitive), re-render through the pinned
+generator. The ORIGINAL text returns verbatim when nothing matched (byte-stability) and when the
+parse fails (the board names the unrewritable residue; emission never guesses). Applied at
+`createTableStatementUsing` to both computed expressions and CHECK definitions. DEFAULT names:
+always synthesized `DF_<Table>_<Column>` from LOGICAL names through the identifier budget — the
+carried physical-derived name is not emitted (the espace-varying artifact the estate check already
+normalizes away). CHECK names: a carried name embedding the physical table token re-states it as
+the logical name; an absent name stays server-named. The board's
+`EmissionComputedExprIdentifiers` detector names the residue: a bracketed identifier resolving to
+no column of the entity, physical or logical.
+
+**Witness.** `SsdtDdlEmitterTests` — the rewrite (physical spellings absent from the body, logical
+present, CHECK included); `EstateTests` — the unresolvable-token ruling and the resolvable
+negative. Goldens carrying defaults re-record under the blessing protocol (the named-DF delta).
+
+**Named residuals.** The migration emitter's ALTER/ADD column path shares `columnDefOfAttribute`
+WITHOUT kind context — an ADD of a computed column stays unrewritten there (the CREATE TABLE
+surface is the cutover artifact; the migration path is the named follow-up). Cross-kind column
+references in expressions rewrite only against the owning kind's map. CHECK-expression residue
+rides the computed-expression finding's family; a dedicated check-token detector lands with the
+trigger family (4e), whose rewriter shares the same machinery.

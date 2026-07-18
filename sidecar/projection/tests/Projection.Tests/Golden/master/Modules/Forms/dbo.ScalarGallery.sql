@@ -3,27 +3,27 @@ CREATE TABLE [dbo].[ScalarGallery] (
         CONSTRAINT [PK_ScalarGallery_Id]
             PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
-        DEFAULT CAST ('08:30:00' AS TIME (7)),
+        CONSTRAINT [DF_ScalarGallery_AlarmAt] DEFAULT CAST ('08:30:00' AS TIME (7)),
     [Amount]      DECIMAL (18, 4)  NULL
-        DEFAULT 3.1400
+        CONSTRAINT [DF_ScalarGallery_Amount] DEFAULT 3.1400
         CHECK (([Amount] <= (1000000.0000))),
     [Code]        NVARCHAR (20)    NOT NULL
         CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
     [DueDate]     DATE             NULL
-        DEFAULT CAST ('2020-01-01' AS DATE),
+        CONSTRAINT [DF_ScalarGallery_DueDate] DEFAULT CAST ('2020-01-01' AS DATE),
     [ExternalKey] UNIQUEIDENTIFIER NULL
-        DEFAULT '00000000-0000-0000-0000-000000000000',
+        CONSTRAINT [DF_ScalarGallery_ExternalKey] DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
     [IsActive]    BIT              NOT NULL
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
-        DEFAULT N'',
+        CONSTRAINT [DF_ScalarGallery_Notes] DEFAULT N'',
     [OccurredOn]  DATETIME         NULL
-        DEFAULT CAST ('2020-01-01 00:00:00' AS DATETIME2 (7)),
+        CONSTRAINT [DF_ScalarGallery_OccurredOn] DEFAULT CAST ('2020-01-01 00:00:00' AS DATETIME2 (7)),
     [Payload]     VARBINARY (512)  NULL
-        DEFAULT 0x00,
+        CONSTRAINT [DF_ScalarGallery_Payload] DEFAULT 0x00,
     [Tally]       INT              NULL
-        DEFAULT 42
+        CONSTRAINT [DF_ScalarGallery_Tally] DEFAULT 42
         CONSTRAINT [CK_ScalarGallery_Tally] CHECK (([Tally] >= (0))),
     CONSTRAINT [CK_ScalarGallery_TallyWithinAmount]
         CHECK (([Tally] <= [Amount]))
