@@ -1038,6 +1038,44 @@ let private authoredDefaultsKind : Kind =
         [ idAttr; createdOn; note ]
 
 [<Fact>]
+let ``computed expressions rewrite physical identifiers to logical names (#669 M-8)`` () =
+    // The source's computed definition references physical columns
+    // ([WAREHOUSEQTY] * [AVGCOST]); the emitted table's columns are
+    // logical (WarehouseQty, AvgCost) — the expression renames with them.
+    // The CHECK constraint's definition rewrites through the same map.
+    let mkAttr key label typ isPk =
+        { Attribute.create (attrKey ["Stock"; key]) (mkName label) typ
+            with Column = ColumnRealization.create (label.ToUpperInvariant()) (not isPk) |> Result.value
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr  = mkAttr "Id" "Id" Integer true
+    let qty     = mkAttr "WarehouseQty" "WarehouseQty" Integer false
+    let cost    = mkAttr "AvgCost" "AvgCost" Integer false
+    let total =
+        { mkAttr "TotalValue" "TotalValue" Integer false with
+            Computed = ComputedColumnConfig.create "([WAREHOUSEQTY] * [AVGCOST])" false |> Result.toOption }
+    let check =
+        ColumnCheck.create
+            (attrKey ["Stock"; "CK_Qty"])
+            (Name.create "CK_Stock_QtyPositive" |> Result.toOption)
+            "([WAREHOUSEQTY] >= 0)"
+            false
+        |> Result.value
+    let kind =
+        { Kind.create (kindKey ["Stock"]) (mkName "Stock") (mkTableId "dbo" "OSUSR_S_STOCK")
+            [ idAttr; qty; cost; total ]
+          with ColumnChecks = [ check ] }
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "StockModule") (mkName "StockModule") [ kind ] ]
+          Sequences = [] }
+    let artifact = SsdtDdlEmitter.emitSlices (enrich catalog) |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find kind.SsKey).Body
+    Assert.Contains ("[WarehouseQty]", body)
+    Assert.Contains ("[AvgCost]", body)
+    Assert.DoesNotContain ("[WAREHOUSEQTY] * [AVGCOST]", body)
+    Assert.DoesNotContain ("[WAREHOUSEQTY] >= 0", body)
+
+[<Fact>]
 let ``authored defaults: a niladic call renders callable and the quoted empty string renders N'' (#669 M-1)`` () =
     let catalog : Catalog =
         { Modules = [ IRBuilders.mkModule (modKey "JobModule") (mkName "JobModule") [ authoredDefaultsKind ] ]

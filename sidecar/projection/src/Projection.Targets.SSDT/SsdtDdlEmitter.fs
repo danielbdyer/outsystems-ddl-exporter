@@ -371,14 +371,44 @@ module SsdtDdlEmitter =
         (resolvedFks: (Reference * ForeignKeyDef) list)
         (k: Kind)
         : Statement =
-        let columns = k.Attributes |> List.map (columnDef overlay)
+        // DECISIONS 2026-07-18 (#669 M-8 / EF-19) — the emitted table
+        // renames every column to its logical name, so computed-column
+        // and CHECK expressions must rename WITH them: the kind's
+        // physical→logical map drives an AST-level identifier rewrite.
+        // An expression the rewriter cannot parse stays verbatim (the
+        // estate board names the unrewritable residue).
+        let physicalToLogical =
+            k.Attributes
+            |> List.map (fun a ->
+                (ColumnRealization.columnNameText a.Column).ToUpperInvariant(), Name.value a.Name)
+            |> Map.ofList
+        let rewriteExpr = ScriptDomGenerate.rewritePhysicalIdentifiers physicalToLogical
+        let columns =
+            k.Attributes
+            |> List.map (columnDef overlay)
+            |> List.map (fun c ->
+                match c.Computed with
+                | Some cfg ->
+                    let rewritten = rewriteExpr cfg.Expression
+                    if rewritten = cfg.Expression then c
+                    else
+                        match ComputedColumnConfig.create rewritten cfg.IsPersisted with
+                        | Ok cfg' -> { c with Computed = Some cfg' }
+                        | Error _ -> c
+                | None -> c)
         let pk = pkDef k
         let fks = resolvedFks |> List.map snd
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
         // (chapter A.0' slice ε IR; now populated via cluster A1's
         // rowset path lifting #ColumnCheckReality) through the
         // realization layer's CHECK-constraint emission.
-        let checks = k.ColumnChecks |> List.map columnCheckDef
+        let checks =
+            k.ColumnChecks
+            |> List.map columnCheckDef
+            |> List.map (fun chk ->
+                let rewritten = rewriteExpr chk.Definition
+                if rewritten = chk.Definition then chk
+                else { chk with Definition = rewritten })
         // H-022: extract TemporalConfig from Kind.Modality if the kind is
         // a system-versioned temporal table. `tryPick` returns None for
         // non-temporal kinds; None is the `TemporalConfig option` default.

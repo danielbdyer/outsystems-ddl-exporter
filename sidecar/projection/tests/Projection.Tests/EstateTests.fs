@@ -980,6 +980,59 @@ let ``emission: a non-default ON UPDATE reference is a WATCH advisory`` () =
     Assert.Contains("ON UPDATE CASCADE", f.Statement)
 
 [<Fact>]
+let ``emission: a computed expression referencing an unknown identifier is a ruling (#669 M-8 residue)`` () =
+    // [SKU_OLD] resolves to no column of Customer — physical or logical —
+    // so the emitter's rewrite cannot complete; the board names it before
+    // a case-sensitive deploy rejects it.
+    let withComputed =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey
+                                                then { a with Computed = ComputedColumnConfig.create "([SKU_OLD] * 2)" false |> Result.toOption }
+                                                else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor withComputed
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionComputedExprIdentifiers)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Contains("[SKU_OLD]", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the expression"))
+    // An expression over the entity's own columns (physical or logical
+    // spelling) carries no finding — the rewrite completes.
+    let resolvable =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey
+                                                then { a with Computed = ComputedColumnConfig.create "([NAME] + [Name])" false |> Result.toOption }
+                                                else a) }
+                                else k) }) }
+    Assert.True(
+        Estate.emissionFindingsFor resolvable
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionComputedExprIdentifiers))
+
+[<Fact>]
 let ``emission: an unresolvable reference cycle is a WATCH advisory naming its members (#669 B-1)`` () =
     // Add the reverse reference Customer → Order (non-nullable source, no
     // deferrable edge) — a hard 2-cycle. The board names the members; the

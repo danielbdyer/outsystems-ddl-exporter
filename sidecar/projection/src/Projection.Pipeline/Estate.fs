@@ -1117,6 +1117,40 @@ module Estate =
                 (sprintf "%s reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced."
                     (envListText names)))
 
+    /// #669 M-8 / EF-19 (DECISIONS 2026-07-18): a computed column whose
+    /// expression references an identifier resolving to NO column of the
+    /// entity — physical or logical. The emitter rewrites physical
+    /// identifiers to logical; a token matching neither cannot be
+    /// rewritten, and a case-sensitive target rejects the emitted
+    /// expression at deploy. Bracketed identifiers only (`sys`
+    /// definitions arrive bracket-normalized).
+    let private emissionComputedExprFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            let known =
+                k.Attributes
+                |> List.collect (fun a ->
+                    [ (ColumnRealization.columnNameText a.Column).ToUpperInvariant()
+                      (Name.value a.Name).ToUpperInvariant() ])
+                |> Set.ofList
+            k.Attributes
+            |> List.choose (fun a ->
+                a.Computed
+                |> Option.bind (fun cfg ->
+                    let unresolved =
+                        System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
+                        |> Seq.map (fun m -> m.Groups.[1].Value)
+                        |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
+                        |> Seq.distinct
+                        |> List.ofSeq
+                    match unresolved with
+                    | [] -> None
+                    | tokens ->
+                        let subject = sprintf "%s.%s" (Name.value k.Name) (Name.value a.Name)
+                        Some (emissionFinding EstateFindingKind.EmissionComputedExprIdentifiers subject
+                                (sprintf "%s is computed from [%s], which resolves to no column of %s — the expression cannot be rewritten to logical names, and a case-sensitive database rejects it at deploy."
+                                    subject (String.concat "], [" tokens) (Name.value k.Name))))))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1127,7 +1161,8 @@ module Estate =
           emissionLossyScalarFindings target
           emissionNonDefaultOnUpdateFindings target
           emissionAuthoredDefaultFindings target
-          emissionDataLaneOrderFindings target ]
+          emissionDataLaneOrderFindings target
+          emissionComputedExprFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
