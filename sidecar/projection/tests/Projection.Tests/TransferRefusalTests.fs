@@ -289,10 +289,10 @@ let ``witness loadOrder: an alphabetical-degraded order refuses transfer.loadOrd
         { TopologicalOrder.empty with
             Mode   = Alphabetical
             Cycles = [ CycleDiagnostic.Anomalous ([ singleKey; compositeKey ], "every edge non-nullable (an all-strong cycle)") ] }
-    match Transfer.orderedLoadGate degraded with
+    match Transfer.orderedLoadGate (Catalog.create [] [] |> Result.value) degraded with
     | Some e -> Assert.Equal("transfer.loadOrderUnproven", e.Code)
     | None   -> Assert.Fail "an unproven (degraded) load order must refuse by name"
-    Assert.True((Transfer.orderedLoadGate TopologicalOrder.empty).IsNone)
+    Assert.True((Transfer.orderedLoadGate (Catalog.create [] [] |> Result.value) TopologicalOrder.empty).IsNone)
 
 // --- T0.3: the out-of-contract foreign-reference gate ---------------------
 // An in-subset FK to a NON-User kind ABSENT from the acquired contract loads the

@@ -360,6 +360,73 @@ module Condensation =
         |> List.map (fun (_, pairs) ->
             pairs |> List.map (fun (h, _) -> Map.find h nodeByHead) |> List.sortBy List.head)
 
+/// v7 slice 8 (DECISIONS 2026-07-18) — the certificate's ONE Voice copy.
+/// A refused component's narration joins the certificate's edges to the
+/// catalog (column name, nullability, delete rule) and closes with the
+/// cheapest relaxation as an imperative. Three surfaces consume this one
+/// projection — the estate board's advisory, the transfer load gate, and
+/// the go board — so the operator reads the same sentence everywhere.
+[<RequireQualifiedAccess>]
+module CycleNarration =
+
+    let private actionText (a: ReferenceAction) : string =
+        match a with
+        | NoAction -> "no action"
+        | Cascade -> "cascade"
+        | SetNull -> "set null"
+        | Restrict -> "restrict"
+
+    let certificateText (catalog: Catalog) (diagnostic: CycleDiagnostic) : string option =
+        match diagnostic with
+        | CycleDiagnostic.Resolved _ -> None
+        | CycleDiagnostic.Anomalous _ -> None
+        | CycleDiagnostic.Refused (_, certificate, relaxation) ->
+            let kindIndex = Catalog.kindIndex catalog
+            let kindNameOf (key: SsKey) : string =
+                Map.tryFind key kindIndex
+                |> Option.map (fun k -> Name.value k.Name)
+                |> Option.defaultValue (SsKey.rootOriginal key)
+            let edgeDetail ((s, t): SsKey * SsKey) : string =
+                Map.tryFind s kindIndex
+                |> Option.bind (fun k ->
+                    k.References
+                    |> List.tryPick (fun r ->
+                        if r.TargetKind = t then
+                            Kind.tryFindAttribute r.SourceAttribute k
+                            |> Option.map (fun a ->
+                                sprintf "%s.%s (%s, on delete %s) -> %s"
+                                    (kindNameOf s) (Name.value a.Name)
+                                    (if a.Column.IsNullable then "nullable" else "NOT NULL")
+                                    (actionText r.OnDelete)
+                                    (kindNameOf t))
+                        else None))
+                |> Option.defaultValue (sprintf "%s -> %s" (kindNameOf s) (kindNameOf t))
+            let certLine =
+                CycleResolution.StrongCycleCertificate.edges certificate
+                |> List.map (fst >> edgeDetail)
+                |> String.concat "; "
+            let relaxationLine =
+                match relaxation with
+                | [] -> "make one of its FK columns nullable — it then defers to phase 2 automatically"
+                | edges ->
+                    let columns =
+                        edges
+                        |> List.choose (fun (s, t) ->
+                            Map.tryFind s kindIndex
+                            |> Option.bind (fun k ->
+                                k.References
+                                |> List.tryPick (fun r ->
+                                    if r.TargetKind = t then
+                                        Kind.tryFindAttribute r.SourceAttribute k
+                                        |> Option.map (fun a -> sprintf "%s.%s" (kindNameOf s) (Name.value a.Name))
+                                    else None)))
+                    match columns with
+                    | [] -> "make one of its FK columns nullable — it then defers to phase 2 automatically"
+                    | cols ->
+                        sprintf "make %s nullable — it then defers to phase 2 automatically"
+                            (String.concat " and " cols)
+            Some (sprintf "the cycle's edges: %s. Cheapest fix: %s." certLine relaxationLine)
+
 [<RequireQualifiedAccess>]
 module TopologicalOrder =
 

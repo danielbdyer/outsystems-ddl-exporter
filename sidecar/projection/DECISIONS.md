@@ -28780,3 +28780,29 @@ carries both ends of an FK edge) under every mode; the leveled ≡ fused partiti
 unchanged over the new grouping.
 
 **Named residuals.** None — the levels upgrade was the carrier's landing consumer.
+
+## 2026-07-18 — The certificate reaches the three surfaces; the board lever upgrade consciously deferred
+
+**Context.** Slice 2 gave every refusal its certificate and cheapest relaxation; the operator
+surfaces still spoke in member lists.
+
+**The decision.** `CycleNarration.certificateText` (Core, beside the carrier) — ONE Voice copy:
+the certificate's edges joined to the catalog (column, nullability, delete rule) and the
+imperative close ("make X.Col nullable — it then defers to phase 2 automatically"). Three
+consumers: the transfer load gate (`orderedLoadGate` gains the catalog parameter and appends
+the narration), the estate board's `EmissionDataLaneOrder` advisory statement, and the go
+board's Red load-order item (which rides the gate's message). The finding's LANE AND LEVER
+are untouched: `EstateFinding.leverFormOf`'s law is explicit — WATCH ⇔ no lever, by design —
+and the same-day #669 B-1 decision deliberately made the advisory a Watch line once the
+acyclic majority ordering shipped. Upgrading to a Ruling lever would move the lane to DECIDE
+and re-red every estate carrying a hard cycle whether or not anyone transfers those kinds — a
+silent reversal of a dated decision. **Deferral added to the Active-deferrals index:**
+"EmissionDataLaneOrder Ruling-lever upgrade (Watch → Decide); trigger: an operator asks to
+rule the cycle from the board."
+
+**Witness.** `EstateTests` — the one-copy pin (both surfaces carry "the cycle's edges:" +
+"Cheapest fix:" + a concrete nullable column); the A46 triple-surface fact continues to pin
+predicate identity.
+
+**Named residuals.** None on the narration; the lever deferral row is the consciously-open
+item.

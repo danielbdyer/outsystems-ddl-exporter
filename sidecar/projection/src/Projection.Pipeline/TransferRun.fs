@@ -773,7 +773,7 @@ module Transfer =
     /// write). v6 (2026-07-18, #669 B-1): under `PartialTopological` the
     /// unproven region is exactly the unresolved cycles' members — the
     /// refusal names them; the rest of the order is dependency-true.
-    let orderedLoadGate (topo: TopologicalOrder) : ValidationError option =
+    let orderedLoadGate (catalog: Catalog) (topo: TopologicalOrder) : ValidationError option =
         match topo.Mode with
         | Topological -> None
         | _ ->
@@ -789,11 +789,20 @@ module Transfer =
                 |> List.map (fun c ->
                     sprintf "[%s]" (CycleDiagnostic.members c |> List.map SsKey.rootOriginal |> String.concat ", "))
                 |> String.concat "; "
+            // v7 slice 8 — the certificate's narration (one Voice copy,
+            // `CycleNarration.certificateText`) rides the refusal so the
+            // operator reads the exact edges and the cheapest fix here,
+            // on the board, and on the estate advisory identically.
+            let narration =
+                unresolvedCycles
+                |> List.tryPick (CycleNarration.certificateText catalog)
+                |> Option.map (sprintf " %s")
+                |> Option.defaultValue ""
             Some (ValidationError.create
                     "transfer.loadOrderUnproven"
                     (sprintf
-                        "the load order is unproven inside %d unresolved dependency cycle(s): %s — a live load could land children before their parents within a cycle. Make a cycle relationship's column nullable (it then defers to phase 2 automatically), or transfer without the affected kinds."
-                        unresolvedCycles.Length cycleText))
+                        "the load order is unproven inside %d unresolved dependency cycle(s): %s — a live load could land children before their parents within a cycle.%s"
+                        unresolvedCycles.Length cycleText narration))
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface
@@ -1408,7 +1417,7 @@ module Transfer =
                     match executeGate catalog plan with
                     | Some refusal -> Some refusal
                     | None ->
-                        match orderedLoadGate topo with
+                        match orderedLoadGate catalog topo with
                         | Some refusal -> Some refusal
                         | None ->
                             match subsetEscapeGate catalog writeOpts.LoadSet reconciledKinds with
@@ -1785,7 +1794,7 @@ module Transfer =
                     if mode = Execute then
                         match executeGate catalog plan with
                         | Some r -> Some r
-                        | None -> orderedLoadGate topo
+                        | None -> orderedLoadGate catalog topo
                     else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
@@ -1900,7 +1909,7 @@ module Transfer =
                     if mode = Execute then
                         match executeGate catalog plan with
                         | Some r -> Some r
-                        | None -> orderedLoadGate topo
+                        | None -> orderedLoadGate catalog topo
                     else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
@@ -2646,7 +2655,7 @@ module Transfer =
                         match executeGate sinkContract plan with
                         | Some refusal -> Some refusal
                         | None ->
-                            match orderedLoadGate topo with
+                            match orderedLoadGate sinkContract topo with
                             | Some refusal -> Some refusal
                             | None ->
                                 match validatePinnedOwners reconciled with

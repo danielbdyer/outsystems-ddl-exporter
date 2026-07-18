@@ -1113,9 +1113,15 @@ module Estate =
                     |> Option.map (fun kind -> Name.value kind.Name)
                     |> Option.defaultValue (SsKey.rootOriginal key))
             let subject = String.concat "+" names
+            // v7 slice 8 — the certificate narration (one Voice copy with
+            // the gate and the go board).
+            let narration =
+                CycleNarration.certificateText target c
+                |> Option.map (sprintf " %s")
+                |> Option.defaultValue ""
             emissionFinding EstateFindingKind.EmissionDataLaneOrder subject
-                (sprintf "%s reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced."
-                    (envListText names)))
+                (sprintf "%s reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced.%s"
+                    (envListText names) narration))
 
     /// #669 M-8 / EF-19 (DECISIONS 2026-07-18): a computed column whose
     /// expression references an identifier resolving to NO column of the
