@@ -28727,3 +28727,29 @@ updated to the sharper truth. Slice-3's scope pins carry the cross-component neg
 
 **Named residuals.** The transfer per-row lane's repair filtering rides the closure seam
 (None on all-NULL) — its live-path witness is the T18 canary (next slice).
+
+## 2026-07-18 — T18 + A46 land: the break⊕repair factorization and refusal completeness become law
+
+**Context.** The v7 arc's algebra needed its named laws: the two-phase load was correct by
+tests but unstated as an equation; the refusal's three surfaces (resolver, gate, board) were
+kept aligned by discipline, not by a law with a witness.
+
+**The decision.** AXIOMS.md gains **T18 — cycle-break factorization**: `A ⊕ δ_load =
+(A ⊕ δ_phase1) ⊕ δ_phase2` (a W2/Chasles instance), residue-free, with the norm ledger AS AN
+EQUALITY — `‖phase1‖ + ‖phase2‖ = ‖load‖ + Σ|repairRows|` — and the v7 objective minimizing
+exactly that inflation; deferral is the minimal non-isometry admissibility forces (T15's
+fallback reading, measured). And **A46 — refusal completeness for ordering**: one predicate
+(a refused component exists), three surfaces (live gate ⟺ board advisory ⟺ certified
+resolver diagnostic), resolver-invariant across the family, every refusal carrying its
+unforgeable certificate and cheapest relaxation. Both land as LAW (not candidates): the live
+half shipped in the same arc — `T18CycleBreakCanaryTests` deploys the weak 2-cycle's composed
+two-phase load against real SQL Server and proves row-equality with every FK trusted.
+
+**Witness.** AxiomTests T18 + A46 entries (citationOf: the Docker canary, the exact-repair
+pin, the weighted-minimality property; the triple-surface Fact, I3, and the invariance lemma).
+M16 gate green over the grown corpus; Bucket A rises to 17 axioms + 4 theorems.
+
+**Named residuals.** T18's symbolic ledger is stated at count grain (the CDC-capture
+instrument reads it live through the CdcMeasure weight table); a per-edge ‖repair(e)‖
+decomposition property over generated multi-edge components is admissible follow-on if the
+count form ever proves too coarse.
