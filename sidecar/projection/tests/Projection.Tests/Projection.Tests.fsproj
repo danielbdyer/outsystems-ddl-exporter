@@ -193,6 +193,7 @@
     <Compile Include="ReadinessTests.fs" />
     <Compile Include="EstateTests.fs" />
     <Compile Include="EstateRemediationTests.fs" />
+    <Compile Include="EstateScopeGovernanceTests.fs" />
     <Compile Include="EstatePostureTests.fs" />
     <Compile Include="EstateHistoryTests.fs" />
     <Compile Include="EstateEvidenceStoreTests.fs" />

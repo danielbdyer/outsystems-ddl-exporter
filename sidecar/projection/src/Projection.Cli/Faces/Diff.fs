@@ -121,13 +121,16 @@ let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
 
 /// `projection check shape` — the espace-safe cross-environment readiness gate
 /// (CROSS_ENVIRONMENT_READINESS.md §4/§5). Reads the agreed shape + every
-/// `confirm` environment via OSSYS (`Source.ofOssys` → native GUID identity, so
-/// the comparison is espace-safe), profiles each env's data, rolls a
-/// `Readiness.ReadinessReport`, prints the roll-up (or `--format json`), writes
-/// `readiness.json`, and exits 0 (estate ready) / 5 (not ready — a real schema
-/// divergence or a data dealbreaker) / 6 (an env could not be read). Read-only.
-let runCheckShape (agreedLabel: string) (agreedRef: string) (confirm: (string * string) list) (asJson: bool) : int =
-    let readCatalog (refStr: string) = (Source.read (Source.ofOssys refStr)).GetAwaiter().GetResult()
+/// `confirm` environment via OSSYS (native GUID identity, stable across
+/// environments, so the comparison is espace-safe), SCOPED to `model.modules`
+/// (via `ScopedRead` — excludes clone / deleted / test / system eSpaces whose
+/// cloned entities would otherwise duplicate the cutover module's SS_Keys),
+/// profiles each env's data, rolls a `Readiness.ReadinessReport`, prints the
+/// roll-up (or `--format json`), writes `readiness.json`, and exits 0 (estate
+/// ready) / 5 (not ready — a real schema divergence or a data dealbreaker) / 6
+/// (an env could not be read). Read-only.
+let runCheckShape (agreedLabel: string) (agreedRef: string) (confirm: (string * string) list) (model: Config.ModelSection) (asJson: bool) : int =
+    let readCatalog (refStr: string) = (ScopedRead.readOssysScoped model refStr).GetAwaiter().GetResult()
     match readCatalog agreedRef with
     | Error errs ->
         Console.Error.WriteLine(sprintf "projection check shape: could not read the agreed shape '%s':" agreedLabel)
@@ -135,12 +138,13 @@ let runCheckShape (agreedLabel: string) (agreedRef: string) (confirm: (string * 
         6
     | Ok agreedCatalog ->
         let agreedOperand : Compare.Operand = { Label = agreedLabel; Catalog = agreedCatalog; Profile = None }
-        // Each confirm env: its OSSYS catalog (schema) + a profile of its live
-        // data (the dealbreaker evidence). A profile failure degrades to
-        // advisory-silent (the schema verdict still leads), never aborts.
+        // Each confirm env: its OSSYS catalog (schema, scoped to `model.modules`)
+        // + a profile of its live data (the dealbreaker evidence). A profile
+        // failure degrades to advisory-silent (the schema verdict still leads),
+        // never aborts. The scoped `Source` keeps read + profile under ONE scope.
         let resolveEnv (label: string, refStr: string) : Result<string * Compare.Operand> =
-            let src = Source.ofOssys refStr
-            match (Source.read src).GetAwaiter().GetResult() with
+            let src = ScopedRead.scopedOssysSource model refStr
+            match (Source.read src).GetAwaiter().GetResult() |> Result.bind (ScopedRead.applyScope model) with
             | Error errs -> Result.failure errs
             | Ok catalog ->
                 let profile =

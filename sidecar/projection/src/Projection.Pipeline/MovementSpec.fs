@@ -639,7 +639,10 @@ type PlanAction =
     /// (CROSS_ENVIRONMENT_READINESS.md). The agreed shape (an env's OSSYS model)
     /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
     /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
-    | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
+    /// `model` is the `model` section whose `modules` selection scopes each
+    /// OSSYS read to the cutover module surface (excluding clone / deleted /
+    /// test / system eSpaces) — the reads route through `ScopedRead`.
+    | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * model: Config.ModelSection * asJson: bool
     /// `check estate` — the estate-convergence instrument
     /// (CHAPTER_ESTATE_OPEN.md; DECISIONS 2026-07-15). The unification target
     /// (the readiness block's agreed environment by default; the authored
@@ -764,6 +767,15 @@ and CheckEstateArgs =
     { TargetLabel : string
       Target      : EstateTargetSource
       Confirm     : (string * string) list
+      /// The `model` section whose `modules` selection scopes every OSSYS read
+      /// (target + each confirm env) to the declared cutover module surface —
+      /// excluding clone / deleted / test / system eSpaces, whose cloned
+      /// entities would otherwise duplicate the cutover module's SS_Keys and
+      /// fail the estate read (`catalog.kinds.duplicateKey`). The reads route
+      /// through `ScopedRead` (pushdown + `ModuleFilter` backstop). An empty
+      /// `model.modules` is the show-everything identity (byte-identical
+      /// default).
+      Scope       : Config.ModelSection
       AsJson      : bool
       Evidence    : EstateEvidenceMode
       /// `readiness.estate.repairBand` (wave A6) — `None` rides the
