@@ -29580,3 +29580,31 @@ also reads as a target-anchored `SchemaPresence` (DECIDE). The two are not dupli
 presence finding says "beyond the target"; the promotion-order finding says "beyond your
 SOURCE, out of order" — the chain story the target-anchored diff cannot tell. The advisory lane
 and the WATCH cap keep the overlap low-noise.
+
+---
+
+## 2026-07-18 — Grant / capability parity (the readiness audit's #10): deferred, with an open evidence question
+
+**Status.** Designed, not built — the single item of the readiness-checker program that a
+same-session build would not land safely. Recorded here so it is pickup-ready.
+
+**The check.** A database-level grant a cutover expects (a login, a role membership, an
+object permission the app relies on) present in some evidenced environments and absent in
+others — a cutover that succeeds on schema + data can still fail at runtime for want of a
+grant. The natural shape is a sibling of `OperationalCdc` (Operational plane, WATCH): a new
+`Profile` axis `GrantAwareness` (a set of `principal|permission` tokens), a `LiveProfiler`
+probe over `sys.database_permissions` ⋈ `sys.database_principals`, a cross-environment
+`grantParityContributions` detector, a new `OperationalGrant` finding kind with its full
+contract row, and a Docker probe test that grants a permission in one bootstrapped database and
+asserts the parity finding.
+
+**Why it did not land this session.** The blocker is an *evidence-path* question, not the
+detector. `OperationalCdc`'s own live evidence (`Profile.CdcAwareness`) is populated at the
+codec/ReadSide boundary, and the estate's live profile (`Source.profile` → the profiler)
+does not obviously set it — so the operational plane's LIVE capture is thin, and a grant axis
+modeled on it risks landing INERT (the exact defect three emission kinds were retired for at
+the top of this program: a board that advertises a check it cannot perform). Building it
+safely requires first confirming where the estate captures operational evidence live, then
+wiring `GrantAwareness` into that same path — a focused evidence-plumbing slice that deserves
+its own session rather than the tail of a long one. The design above is the whole of it; only
+the capture wiring is open.
