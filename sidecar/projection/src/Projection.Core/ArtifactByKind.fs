@@ -48,6 +48,18 @@ type EmitError =
     /// impossible state so the refusal surfaces loudly. `reason` is
     /// human-readable; never parse it.
     | NonComposableLifecycleChain of reason: string
+    /// DECISIONS 2026-07-18 (#669 B-3 / EF-17; the downgrades-never-silent
+    /// law joined to the board's `EmissionCompositePkFk` finding) — a
+    /// reference targets a kind whose primary key is composite. The
+    /// `Reference` IR carries one source column, so the emitted foreign key
+    /// would reference only the target's first key column — SQL Server
+    /// rejects that at deploy (`Msg 1776`), and before this refusal the
+    /// publish truncated the key silently and exited clean. The publish now
+    /// refuses unless the operator overlay drops the reference
+    /// (`overlay.DropFk` — the board ruling's second arm). Carries the
+    /// owner kind's name, the reference's name, the target kind's name,
+    /// and the target key's column count.
+    | CompositeKeyReferenceRefused of owner: string * reference: string * target: string * keyColumns: int
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

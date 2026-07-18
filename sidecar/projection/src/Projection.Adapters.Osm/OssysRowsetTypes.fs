@@ -178,6 +178,15 @@ module OssysRowsetTypes =
             /// reflection didn't fire or the deployed type is
             /// unrecognized.
             DeployedStorage : SqlStorageType option
+            /// DECISIONS 2026-07-18 (decision 2; #669 M-3 / EF-18) — the
+            /// DEPLOYED nullability (`#ColumnReality.IsNullable`,
+            /// `sys.columns.is_nullable`). `Some false` (deployed NOT
+            /// NULL) is PRESERVED at the lift: the emitted column stays
+            /// NOT NULL even when the model marks the attribute optional
+            /// — deployed-schema over model; an incremental apply can
+            /// never drive a DBA-tightened column back to NULL. `Some
+            /// true` and `None` leave the model's declaration in charge.
+            DeployedIsNullable : bool option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

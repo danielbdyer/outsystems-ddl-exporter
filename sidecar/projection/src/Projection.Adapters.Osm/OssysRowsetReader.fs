@@ -76,7 +76,15 @@ module OssysRowsetReader =
                   // F10: the rowset path does not yet read a non-default identity
                   // seed (OS-native autonumbers are (1,1)) — None = default.
                   Column       = { ColumnName = physicalColumnName
-                                   IsNullable = not row.IsMandatory
+                                   // Decision 2 (DECISIONS 2026-07-18; #669
+                                   // M-3 / EF-18): a deployed NOT NULL is
+                                   // preserved over a model-optional
+                                   // declaration — deployed-schema over
+                                   // model. Otherwise the model decides.
+                                   IsNullable =
+                                       match row.DeployedIsNullable with
+                                       | Some false -> false
+                                       | _          -> not row.IsMandatory
                                    Collation  = row.Collation
                                    Identity   = None }
                   IsPrimaryKey = row.IsIdentifier || matchesEntityPrimaryKey

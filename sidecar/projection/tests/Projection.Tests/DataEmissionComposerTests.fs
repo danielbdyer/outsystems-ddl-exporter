@@ -817,9 +817,11 @@ let private mkStaticMutualCycleKind (name: string) (table: string) (otherName: s
         }
 
 /// The same graph PLUS an unresolvable cycle. The unresolved SCC puts the
-/// WHOLE order into `Mode = Alphabetical` — the mint's degraded arm
-/// (singleton groups; no parallelism licensed) and the Phase-2 surface
-/// (the deferred cycle FKs re-point by UPDATE).
+/// order into `Mode = PartialTopological` (v6, 2026-07-18 — the acyclic
+/// majority keeps dependency position; before v6 the WHOLE order degraded
+/// to Alphabetical) — the mint's degenerate arm either way (singleton
+/// groups; no parallelism licensed) and the Phase-2 surface (the deferred
+/// cycle FKs re-point by UPDATE).
 ///
 /// Until 2026-07-06 the fixture was ONE nullable self-FK kind — the
 /// self-loop resolver rule (the peer-canary finding) now RESOLVES that
@@ -857,7 +859,7 @@ let private leveledSegmentsOf (leveled: DataEmissionComposer.LeveledDeploymentTe
 [<Fact>]
 let ``P2: composeRenderedLeveled PARTITIONS composeRenderedFull — segment multiset equality (faithful split, never a re-render)`` () =
     // The law holds in EVERY mode: the Topological catalog (real levels),
-    // the unresolvable-cycle one (Alphabetical fallback, singleton groups),
+    // the unresolvable-cycle one (PartialTopological, singleton groups),
     // and the resolved-self-loop one (Topological since 2026-07-06 — the
     // self-loop rule — with a Phase-2 surface).
     for kinds in
@@ -891,15 +893,14 @@ let ``P2: the leveled plan deploys FK parents at earlier Phase-1 levels; FK-inde
     Assert.Empty leveled.Phase2Levels
 
 [<Fact>]
-let ``P2: an unresolved cycle anywhere degrades the plan to singleton groups — parallelism is never licensed on an alphabetical order`` () =
-    // One UNRESOLVABLE cycle (the mutual-weak-FK pair — the resolver
-    // refuses to choose between two Weak edges) puts the WHOLE catalog
-    // into Mode = Alphabetical; under it "parents precede children" no
-    // longer holds, so the mint refuses multi-member groups — the leveled
-    // deploy degrades to exactly the fused sequential order, never to
-    // unproven concurrency. (The P2-wire finding: before the mode guard,
-    // this catalog collapsed the real Root←Mid←Leaf FK chain into ONE
-    // concurrent group.)
+let ``P2: an unresolved cycle anywhere degrades the plan to singleton groups — parallelism is never licensed on an unproven order`` () =
+    // One UNRESOLVABLE cycle (the static mutual pair) puts the catalog
+    // into Mode = PartialTopological (v6); the members of the cycle carry
+    // no intra-cycle precedence proof, so the mint refuses multi-member
+    // groups — the leveled deploy degrades to exactly the fused
+    // sequential order, never to unproven concurrency. (The P2-wire
+    // finding: before the mode guard, this catalog collapsed the real
+    // Root←Mid←Leaf FK chain into ONE concurrent group.)
     let _, leveled = composeBoth (mkCycleBearingCatalog ())
     for level in leveled.Phase1Levels @ leveled.Phase2Levels do
         Assert.Equal(1, ParallelSafe.members level |> List.length)

@@ -69,7 +69,7 @@ let private subsetScope : TransferScope =
 [<Fact>]
 let ``an unrelated unresolvable estate cycle degrades the WHOLE-estate order (the pre-scope behavior, kept for full transfers)`` () =
     let whole = (TopologicalOrderPass.runWith TreatAsCycle estateWithUnrelatedCycle).Value
-    Assert.Equal(Alphabetical, whole.Mode)
+    Assert.Equal(PartialTopological, whole.Mode)
     Assert.True(Option.isSome (Transfer.orderedLoadGate whole))
 
 [<Fact>]

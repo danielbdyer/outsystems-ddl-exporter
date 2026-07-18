@@ -629,7 +629,7 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionDeployedNotNullLoosened ->
             "Customer.Email is NOT NULL in the deployed database and nullable in the model — publishing the model's shape drops the constraint."
         | EstateFindingKind.EmissionDataLaneOrder ->
-            "Customer and Order reference each other in a cycle — the data load defers enforcement inside the cycle and re-checks it after both tables load."
+            "Customer and Order reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced."
         | EstateFindingKind.EmissionTemporalDropped ->
             "Order is system-versioned at the source, with history in Order_History — the emitted table carries no system-versioning, so version history stops at cutover."
         | EstateFindingKind.EmissionPersistedDropped ->

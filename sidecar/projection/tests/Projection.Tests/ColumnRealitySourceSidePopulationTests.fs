@@ -80,7 +80,7 @@ let private attrRow
       DefaultConstraintName = defaultConstraintName
       Order                = None
       Collation            = None
-      DeployedStorage      = None }
+      DeployedStorage      = None; DeployedIsNullable = None }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with
@@ -236,6 +236,26 @@ let ``deployed storage: an explicit external database type wins over deployed ev
     // (Type, SqlStorage) pair stays consistent.
     Assert.Equal(Text, attr.Type)
     Assert.Equal(Some (SqlStorageType.VarChar (Bounded 20)), attr.SqlStorage)
+
+[<Fact>]
+let ``decision 2: a deployed NOT NULL is preserved over a model-optional declaration (#669 EF-18)`` () =
+    // A DBA-tightened column: the model says optional, the deployed schema
+    // says NOT NULL. The emitted column stays NOT NULL — deployed-schema
+    // over model — and the model's own declaration (IsMandatory) is
+    // untouched. A deployed-nullable column leaves the model in charge.
+    let idAttr = attrRow 100 "Id" "Identifier" false None None
+    let tightened =
+        { attrRow 101 "Email" "Text" false None None with
+            DeployedIsNullable = Some false }
+    let cat = parseToCatalog (buildBundle [ idAttr; tightened ])
+    let attr = findAttribute cat "Email"
+    Assert.False(attr.Column.IsNullable)
+    Assert.False(attr.IsMandatory)
+    let loose =
+        { attrRow 102 "Phone" "Text" false None None with
+            DeployedIsNullable = Some true }
+    let cat2 = parseToCatalog (buildBundle [ idAttr; loose ])
+    Assert.True((findAttribute cat2 "Phone").Column.IsNullable)
 
 [<Fact>]
 let ``deployed storage: a CROSS-category deployed type never reclassifies an ordinary scalar (rtDate stays DATETIME)`` () =

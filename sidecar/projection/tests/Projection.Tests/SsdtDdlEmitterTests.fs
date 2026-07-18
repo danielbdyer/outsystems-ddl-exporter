@@ -1014,6 +1014,42 @@ let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + 
     Assert.Equal (b1, b2)
 
 // ---------------------------------------------------------------------------
+// DECISIONS 2026-07-18 (#669 M-1) — the classified authored defaults render
+// faithfully: a niladic call is the callable expression (never a quoted
+// string that fails at first insert), and the authored empty string is
+// `DEFAULT N''` (never the doubled `N''''''`).
+// ---------------------------------------------------------------------------
+
+let private authoredDefaultsKind : Kind =
+    let mkAttr key label typ isPk =
+        { Attribute.create (attrKey ["Job"; key]) (mkName label) typ
+            with Column = ColumnRealization.create (label.ToUpperInvariant()) (not isPk) |> Result.value
+                 IsPrimaryKey = isPk
+                 IsMandatory  = isPk }
+    let idAttr = mkAttr "Id" "Id" Integer true
+    let createdOn =
+        { mkAttr "CreatedOn" "CreatedOn" DateTime false with
+            DefaultValue = SqlLiteral.ofAuthoredDefault DateTime "getutcdate()" }
+    let note =
+        { mkAttr "Note" "Note" Text false with
+            Length = Some 50
+            DefaultValue = SqlLiteral.ofAuthoredDefault Text "''" }
+    Kind.create (kindKey ["Job"]) (mkName "Job") (mkTableId "dbo" "OSUSR_J_JOB")
+        [ idAttr; createdOn; note ]
+
+[<Fact>]
+let ``authored defaults: a niladic call renders callable and the quoted empty string renders N'' (#669 M-1)`` () =
+    let catalog : Catalog =
+        { Modules = [ IRBuilders.mkModule (modKey "JobModule") (mkName "JobModule") [ authoredDefaultsKind ] ]
+          Sequences = [] }
+    let artifact = SsdtDdlEmitter.emitSlices (enrich catalog) |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find authoredDefaultsKind.SsKey).Body
+    Assert.Contains ("getutcdate()", body)
+    Assert.DoesNotContain ("'getutcdate()'", body)
+    Assert.Contains ("DEFAULT N''", body)
+    Assert.DoesNotContain ("N''''''", body)
+
+// ---------------------------------------------------------------------------
 // Slice 5.13.fk-features-emit — ON UPDATE referential action + WITH NOCHECK
 // FK trust-state preservation through the SSDT realization. Mirrors the
 // column-features-emit pattern on the FK axis (matrix rows 58 + 59).
@@ -1064,6 +1100,58 @@ let private fkFeaturesCatalog (onUpdate: ReferenceAction option) (trusted: bool)
               { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind onUpdate trusted ]; IsActive = true; ExtendedProperties = [] } ]
         Sequences = []
     }
+
+// ---------------------------------------------------------------------------
+// DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate. A
+// reference targeting a composite primary key refuses the publish (before
+// this, the emitted foreign key silently referenced only the first key
+// column and the deploy rejected it). The overlay's DropFk is the ruling's
+// second arm: a dropped reference emits no constraint and the publish
+// proceeds.
+// ---------------------------------------------------------------------------
+
+let private compositeTargetAKind : Kind =
+    let secondPk = attrKey ["A"; "AKind"; "Tenant"]
+    { Kind.create
+        fkFeaturesAKey
+        (mkName "AKind")
+        (mkTableId "dbo" "OSUSR_A_AKIND")
+        [ { Attribute.create fkFeaturesAIdAttr (mkName "Id") Integer with
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
+                IsPrimaryKey = true
+                IsMandatory  = true }
+          { Attribute.create secondPk (mkName "Tenant") Integer with
+                Column = ColumnRealization.create ("TENANT") (false) |> Result.value
+                IsPrimaryKey = true
+                IsMandatory  = true } ]
+      with References = []; Indexes = [] }
+
+let private compositeTargetCatalog : Catalog =
+    {
+        Modules =
+            [ { SsKey = modKey "A"; Name = mkName "A"; Kinds = [ compositeTargetAKind ]; IsActive = true; ExtendedProperties = [] }
+              { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ fkFeaturesBKind None true ]; IsActive = true; ExtendedProperties = [] } ]
+        Sequences = []
+    }
+
+[<Fact>]
+let ``composite-key gate: a reference targeting a composite primary key refuses the publish (#669 B-3)`` () =
+    let enriched = enrich compositeTargetCatalog
+    match SsdtDdlEmitter.emitSlices enriched with
+    | Error (EmitError.CompositeKeyReferenceRefused (owner, _, target, keyColumns)) ->
+        Assert.Equal("BKind", owner)
+        Assert.Equal("AKind", target)
+        Assert.Equal(2, keyColumns)
+    | Error other -> Assert.Fail (sprintf "expected the composite-key refusal; got %A" other)
+    | Ok _ -> Assert.Fail "expected the composite-key refusal; the publish emitted"
+
+[<Fact>]
+let ``composite-key gate: the overlay's dropped reference passes, and no foreign key emits (the ruling's second arm)`` () =
+    let enriched = enrich compositeTargetCatalog
+    let overlay = { DecisionOverlay.empty with DropFk = Set.singleton fkFeaturesCrossRef }
+    let artifact = SsdtDdlEmitter.emitSlicesWith overlay enriched |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    Assert.DoesNotContain ("FOREIGN KEY", body)
 
 [<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =

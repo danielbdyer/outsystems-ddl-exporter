@@ -277,7 +277,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let! contractsR = PeerTransfer.acquireContracts src.EngineConnStr snk.EngineConnStr
                         let (_, sinkContract) = GoBoardFixtures.value contractsR
                         let whole = (Projection.Core.Passes.TopologicalOrderPass.runWith Projection.Core.TreatAsCycle sinkContract).Value
-                        Assert.Equal(Projection.Core.Alphabetical, whole.Mode)
+                        Assert.Equal(Projection.Core.PartialTopological, whole.Mode)
                         // ...and the board still goes GREEN for the subset.
                         let planned opts = PlanAction.TransferPeer (src.EngineConnStr, snk.EngineConnStr, opts, false)
                         let green = GoBoardFixtures.checkGo false false false (planned (GoBoardFixtures.optsWith [ "Customer" ] [ "AppCore.City:Name" ]))

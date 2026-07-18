@@ -1172,7 +1172,7 @@ module MetadataSnapshotRunner =
                 [ { DiagnosticEntry.create
                       "adapter:OSSYS" DiagnosticSeverity.Info
                       "adapter.ossys.columnReality.nullabilityDivergence"
-                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). The engine carries the LOGICAL value for emitted schema; rows that actually violate the logical model are itemized separately in the data-fidelity diagnostics."
+                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model, and rows that violate it are itemized separately in the data-fidelity diagnostics."
                           (List.length diverged)
                           (List.length mandatoryButNullable)
                           (List.length nullableButNotNull)
@@ -1395,6 +1395,12 @@ module MetadataSnapshotRunner =
                     // F1 (audit 2026-06-17) — carry the deployed collation.
                     Collation             = realityCollation
                     DeployedStorage       = realityStorage
+                    // Decision 2 (DECISIONS 2026-07-18; #669 M-3 / EF-18) —
+                    // carry the deployed nullability; the reader preserves
+                    // a deployed NOT NULL over a model-optional declaration.
+                    DeployedIsNullable    =
+                        Map.tryFind a.AttrId columnRealityByAttrId
+                        |> Option.map (fun cr -> cr.IsNullable)
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

@@ -1094,6 +1094,29 @@ module Estate =
                         (sprintf "%s carries an authored default that %s — the DEFAULT deploys, and the first insert that relies on it fails."
                             subject problem))))
 
+    /// #669 B-1 (DECISIONS 2026-07-18): entities that reference each other
+    /// in a cycle that nullable-column deferral cannot break. The v6
+    /// ordering keeps every other kind in true dependency position; the
+    /// cycle's members are the load-order residue — the live transfer
+    /// refuses, and the cycle's own rows cannot load in one pass while its
+    /// relationships are enforced. Advisory, one finding per cycle, the
+    /// members named.
+    let private emissionDataLaneOrderFindings (target: Catalog) : Finding list =
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle target).Value
+        topo.Cycles
+        |> List.filter (fun c -> List.isEmpty c.BreakableEdges)
+        |> List.map (fun c ->
+            let names =
+                c.Members
+                |> List.map (fun key ->
+                    Catalog.tryFindKind key target
+                    |> Option.map (fun kind -> Name.value kind.Name)
+                    |> Option.defaultValue (SsKey.rootOriginal key))
+            let subject = String.concat "+" names
+            emissionFinding EstateFindingKind.EmissionDataLaneOrder subject
+                (sprintf "%s reference each other in a cycle with no deferrable relationship — every other table keeps its dependency position, and the cycle's own rows cannot load in one pass while its relationships are enforced."
+                    (envListText names)))
+
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsFor (target: Catalog) : Finding list =
@@ -1103,7 +1126,8 @@ module Estate =
           emissionNoPrimaryKeyFindings target
           emissionLossyScalarFindings target
           emissionNonDefaultOnUpdateFindings target
-          emissionAuthoredDefaultFindings target ]
+          emissionAuthoredDefaultFindings target
+          emissionDataLaneOrderFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 

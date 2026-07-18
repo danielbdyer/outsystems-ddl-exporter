@@ -764,13 +764,15 @@ module Transfer =
         ActConsent.identityInsertTables catalog plan
 
     /// 2026-07-06 (the phase-2 adversarial review, MEDIUM #10): an Execute
-    /// whose load order fell back to the ALPHABETICAL degrade (an
-    /// unresolvable dependency cycle anywhere in the estate) would load
-    /// children before their parents estate-wide — mass FK-remap drops for
-    /// `AssignedBySink` kinds, silent cross-environment orphans for
-    /// preserved-key loads. Refuse a live run by name; a DryRun still
-    /// previews the degraded plan (the operator sees the order and the
-    /// cycle diagnostics without a write).
+    /// whose load order is unproven anywhere (an unresolvable dependency
+    /// cycle in the estate) could load children before their parents —
+    /// mass FK-remap drops for `AssignedBySink` kinds, silent
+    /// cross-environment orphans for preserved-key loads. Refuse a live
+    /// run by name; a DryRun still previews the degraded plan (the
+    /// operator sees the order and the cycle diagnostics without a
+    /// write). v6 (2026-07-18, #669 B-1): under `PartialTopological` the
+    /// unproven region is exactly the unresolved cycles' members — the
+    /// refusal names them; the rest of the order is dependency-true.
     let orderedLoadGate (topo: TopologicalOrder) : ValidationError option =
         match topo.Mode with
         | Topological -> None
@@ -784,7 +786,7 @@ module Transfer =
             Some (ValidationError.create
                     "transfer.loadOrderUnproven"
                     (sprintf
-                        "the load order degraded to the alphabetical fallback (%d unresolved dependency cycle(s): %s) — a live load would land children before their parents. Make the cycle's FK columns nullable (they then defer to phase 2 automatically), or transfer without the affected kinds."
+                        "the load order is unproven inside %d unresolved dependency cycle(s): %s — a live load could land children before their parents within a cycle. Make a cycle relationship's column nullable (it then defers to phase 2 automatically), or transfer without the affected kinds."
                         topo.Cycles.Length cycleText))
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose

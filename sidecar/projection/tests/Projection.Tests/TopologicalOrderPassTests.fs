@@ -180,17 +180,17 @@ let private addReference (sourceKey: SsKey) (targetKey: SsKey) (refKey: SsKey) (
       Sequences = c.Sequences }
 
 [<Fact>]
-let ``cycle: Mode is Alphabetical when input contains a cycle`` () =
+let ``cycle: Mode is PartialTopological when input contains an unresolvable cycle (v6 — the whole-catalog degrade is retired)`` () =
     // Add a reverse reference Customer → Order so we have a 2-cycle.
     let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
         |> addReference customerKey orderKey backRefKey "Order_back" customerNameKey
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
 
 [<Fact>]
-let ``cycle: every kind still appears in Order under alphabetical fallback`` () =
+let ``cycle: every kind still appears in Order under the partial-topological outcome`` () =
     let backRefKey = refKey ["Customer"; "Order"; "back"]
     let cyclic =
         sampleCatalog
@@ -502,7 +502,7 @@ let ``resolver: 2-cycle with no Weak edges remains unresolved`` () =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
     Assert.Contains("non-deferrable", diag.Reason)
@@ -552,7 +552,7 @@ let ``resolver v5: a 3-cycle whose every edge is STRONG refuses, naming the cycl
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ a; b; c ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
     Assert.Contains("non-deferrable", diag.Reason)
@@ -568,9 +568,29 @@ let ``resolver: Cascade edges are never broken`` () =
         { Modules = [
             { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
     let result = topoRun cyclic
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    Assert.Equal(PartialTopological, result.Value.Mode)
     let diag = result.Value.Cycles |> List.head
     Assert.Empty(diag.BreakableEdges)
+
+[<Fact>]
+let ``v6: an unresolved cycle keeps the acyclic majority in dependency position (#669 B-1 — the whole-catalog degrade is retired)`` () =
+    // A hard 2-cycle {Parent, Audit} plus a downstream Child referencing
+    // Parent and an independent Lone kind. The cycle's members lose only
+    // their intra-cycle precedence; Child still loads AFTER both cycle
+    // members (the condensed cycle's dependency position), and every kind
+    // appears exactly once.
+    let parent = kindWithRef "Parent" "ParentRef" (mkKey "Audit") false NoAction
+    let audit  = kindWithRef "Audit"  "AuditRef"  (mkKey "Parent") false NoAction
+    let child  = kindWithRef "Child"  "ChildRef"  (mkKey "Parent") false NoAction
+    let lone   = noRefKind "Lone"
+    let cyclic : Catalog =
+        { Modules = [
+            { SsKey = mkKey "M"; Name = mkName "M"; Kinds = [ parent; audit; child; lone ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+    let result = topoRun cyclic
+    Assert.Equal(PartialTopological, result.Value.Mode)
+    Assert.Equal(4, List.length result.Value.Order)
+    Assert.True(TopologicalOrder.precedes (mkKey "Parent") (mkKey "Child") result.Value)
+    Assert.True(TopologicalOrder.precedes (mkKey "Audit") (mkKey "Child") result.Value)
 
 [<Fact>]
 let ``resolver: resolved cycles still appear in Cycles for audit`` () =
@@ -637,8 +657,10 @@ let ``post-symmetric-closure catalog is cyclic; emitters compose correctly`` () 
         |> fun lineage -> lineage.Value
     let result = topoRun withInverses
     // Symmetric closure introduced an inverse on Customer → Order
-    // alongside the original Order → Customer; the FK graph is now cyclic.
-    Assert.Equal(Alphabetical, result.Value.Mode)
+    // alongside the original Order → Customer; the FK graph is now cyclic
+    // and the cycle is unresolvable — v6 keeps the rest of the catalog in
+    // dependency position.
+    Assert.Equal(PartialTopological, result.Value.Mode)
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences

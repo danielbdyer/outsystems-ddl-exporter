@@ -1046,30 +1046,56 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let lookups = FkEmissionLookups.ofCatalog catalog
-        // PL-4 (S54) — the per-(module, schema) first-kind decision derives
-        // once per module here, not per kind inside the render loop.
-        let firstKindBySchemaByModule =
-            catalog.Modules
-            |> List.map (fun m -> m.SsKey, firstKindBySchemaOf m)
-            |> Map.ofList
-        // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
-        // cost (the dominant emit.ssdt work at production scale is
-        // proportional to the kind count). Slice A.4.7'-prelude
-        // .perf-sweep-6 instrumentation gap-fill.
-        ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
-            match Map.tryFind k.SsKey modules with
-            | Some m ->
-                let firstKindBySchema =
-                    Map.tryFind m.SsKey firstKindBySchemaByModule
-                    |> Option.defaultValue Map.empty
-                kindToSsdtFile renderMode emitIdentityAnnotations overlay lookups firstKindBySchema m k
-            | None ->
-                // Unreachable: `Catalog.allKinds` walks
-                // `c.Modules |> List.collect (fun m -> m.Kinds)`;
-                // every yielded Kind has an owning Module. The
-                // defensive `invalidOp` makes the unreachability
-                // structural.
-                invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
+        // DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate.
+        // A deployable, non-overlay-dropped reference whose target kind
+        // declares a composite primary key cannot emit as a single-column
+        // foreign key: the truncated key is rejected at deploy (`Msg 1776`).
+        // The publish refuses here — a red board finding
+        // (`EmissionCompositePkFk`, the same predicate) and a refused
+        // publish are the same fact. The overlay's `DropFk` is the ruling's
+        // second arm: a dropped reference emits no constraint and passes.
+        let compositeKeyRefusal =
+            lookups.AllKinds
+            |> List.tryPick (fun k ->
+                k.References
+                |> List.filter Reference.isDeployable
+                |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+                |> List.tryPick (fun r ->
+                    match Map.tryFind r.TargetKind lookups.TargetByKey with
+                    | Some target when List.length (Kind.primaryKey target) > 1 ->
+                        Some (EmitError.CompositeKeyReferenceRefused (
+                                Name.value k.Name,
+                                Name.value r.Name,
+                                Name.value target.Name,
+                                List.length (Kind.primaryKey target)))
+                    | _ -> None))
+        match compositeKeyRefusal with
+        | Some refusal -> Error refusal
+        | None ->
+            // PL-4 (S54) — the per-(module, schema) first-kind decision derives
+            // once per module here, not per kind inside the render loop.
+            let firstKindBySchemaByModule =
+                catalog.Modules
+                |> List.map (fun m -> m.SsKey, firstKindBySchemaOf m)
+                |> Map.ofList
+            // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
+            // cost (the dominant emit.ssdt work at production scale is
+            // proportional to the kind count). Slice A.4.7'-prelude
+            // .perf-sweep-6 instrumentation gap-fill.
+            ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
+                match Map.tryFind k.SsKey modules with
+                | Some m ->
+                    let firstKindBySchema =
+                        Map.tryFind m.SsKey firstKindBySchemaByModule
+                        |> Option.defaultValue Map.empty
+                    kindToSsdtFile renderMode emitIdentityAnnotations overlay lookups firstKindBySchema m k
+                | None ->
+                    // Unreachable: `Catalog.allKinds` walks
+                    // `c.Modules |> List.collect (fun m -> m.Kinds)`;
+                    // every yielded Kind has an owning Module. The
+                    // defensive `invalidOp` makes the unreachability
+                    // structural.
+                    invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
 
     /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
     /// is the principled `empty`-default wrapper. With `empty`, every per-kind

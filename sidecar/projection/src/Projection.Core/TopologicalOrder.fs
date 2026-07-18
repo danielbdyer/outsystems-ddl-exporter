@@ -6,11 +6,22 @@ namespace Projection.Core
 /// asymmetric-2-cycle resolver) and the order respects every FK
 /// dependency.
 ///
-/// `Alphabetical` — cycles surfaced and the resolver could not break them
-/// without losing edges; the pass falls back to alphabetical-by-SsKey
-/// ordering. Downstream emitters can either reject this mode (data
-/// emission) or accept it (diagnostics). Schema emitters ignore the
-/// ordering entirely per A33.
+/// `PartialTopological` — at least one cycle the resolver could not break
+/// (every internal edge non-deferrable). Every kind OUTSIDE the unresolved
+/// cycles sits in its true dependency position; the members of an
+/// unresolved cycle order alphabetically among themselves at the position
+/// the cycle occupies in the dependency graph. The unresolved cycles ride
+/// `Cycles` with empty `BreakableEdges`. Live data loads still refuse
+/// (the load-order gate proves nothing about intra-cycle order); the
+/// emitted data lanes stay deploy-correct for the whole acyclic majority
+/// (DECISIONS 2026-07-18; #669 B-1 — the whole-catalog alphabetical
+/// degrade is retired).
+///
+/// `Alphabetical` — the defensive last resort (resolver residue after a
+/// reduction that should have been acyclic): alphabetical-by-SsKey over
+/// the whole catalog. Downstream emitters can either reject this mode
+/// (data emission) or accept it (diagnostics). Schema emitters ignore
+/// the ordering entirely per A33.
 ///
 /// `JunctionDeferred` — the resolver opted to push junction (bridge)
 /// kinds to the end of the order to satisfy the data-emission
@@ -18,6 +29,7 @@ namespace Projection.Core
 /// kinds; junctions are appended in alphabetical-by-SsKey order.
 type OrderingMode =
     | Topological
+    | PartialTopological
     | Alphabetical
     | JunctionDeferred
 
@@ -312,8 +324,13 @@ module TopologicalOrder =
     /// exactly.
     let levels (t: TopologicalOrder) : ParallelSafe<SsKey> list =
         match t.Mode with
+        | PartialTopological
         | Alphabetical
         | JunctionDeferred ->
+            // The mint refuses to license parallelism it cannot prove:
+            // under PartialTopological an unresolved cycle's members are
+            // NOT dependency-ordered among themselves, so the honest
+            // degenerate stays singleton groups in `t.Order` order.
             t.Order |> List.map (fun k -> ParallelSafe [ k ])
         | Topological ->
             let parentsOf =

@@ -1257,7 +1257,7 @@ let runCheckGo
         (match Transfer.orderedLoadGate topo with
          | Some refusal ->
              items.Add (GoBoard.itemWith "load order"
-                 (GoBoard.Status.Red ("the load order of the transferred set degraded to the alphabetical fallback — a live run refuses.", "make the named cycle's FK columns nullable (they then defer automatically), or transfer without the affected kinds."))
+                 (GoBoard.Status.Red ("the load order is unproven inside an unresolved dependency cycle — a live run refuses.", "make a cycle relationship's column nullable (it then defers automatically), or transfer without the affected kinds."))
                  [ refusal.Message ])
          | None ->
              items.Add (GoBoard.item "load order" (GoBoard.Status.Green "parents before children over the transferred set, proven (topological).")))

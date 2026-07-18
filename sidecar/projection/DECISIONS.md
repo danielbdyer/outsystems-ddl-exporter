@@ -28447,3 +28447,73 @@ new contract rows under the register laws).
 stays un-lifted per matrix row 53's named trigger — the authored channel is the fix's scope.
 `BinaryLit` raw hex is not shape-validated at detection (garbage hex fails at deploy; rare,
 named). Boolean garbage refuses loudly at the lift (NM-20), so the detector never sees it.
+
+## 2026-07-18 — The composite-key gate: a reference targeting a composite primary key refuses the publish
+
+**Context.** #669 B-3 / EF-17 (+ the EF-17b sibling). The `Reference` IR carries one source column;
+`FkEmissionLookups.PkAttrByKey` carries the target's FIRST key attribute — a composite-key target
+emitted a single-leg foreign key pointing at a non-key column, SQL Server rejected it at deploy
+(`Msg 1776`), and the publish exited clean with no diagnostic: the downgrades-never-silent law's
+sharpest open violation.
+
+**The decision.** `EmitError` grows `CompositeKeyReferenceRefused (owner, reference, target,
+keyColumns)`; `emitSlicesWithRendering` gates before composition — a deployable, non-overlay-dropped
+reference whose target kind declares a composite primary key refuses the publish. The board's
+`EmissionCompositePkFk` finding and the refusal are the same predicate, so a red board and a refused
+publish are the same fact. The overlay's `DropFk` is the ruling's second arm (drop the relationship
+→ no constraint emits → the publish proceeds). The pure `statements` stream (canary, dacpac,
+reverse-leg consumers) is deliberately ungated — the artifact surface of the cutover is
+`emitSlices`, and the round-trip proofs run on truncation-free fixtures.
+
+**Witness.** `SsdtDdlEmitterTests` — the refusal (owner/target/key-column count carried) and the
+overlay-dropped pass with no FOREIGN KEY emitted.
+
+**Named residuals.** Modeling multi-leg references (the referenced-column list on the IR) stays the
+forward path that RETIRES this refusal; the gate holds the line until it lands.
+
+## 2026-07-18 — Logical-only relationships' orphans reach the board (decision 3, verified structural)
+
+**Context.** The population plan's cluster 3 asked whether the orphan evidence covers enforced
+LOGICAL-ONLY references (no backing SQL Server constraint) — the operator's clear-or-relax workflow
+must not depend on a constraint existing.
+
+**The decision.** No engine change: `ProfileDerivation.deriveForeignKeyRealitiesWith` walks
+`srcKind.References` with no deployable/physical filter, so a logical-only reference's orphan
+counts flow the same path a physically-backed one's do; the `Relaxation` record REQUIRES its
+`ReopenProbe` (a non-optional field), so a relaxation cannot exist without its re-tighten trigger.
+Both facts are now WITNESSED rather than assumed.
+
+**Witness.** `EstateTests` — a `NoDbConstraint` reference with orphan evidence produces the REPAIR
+finding exactly as a physically-backed one.
+
+**Named residuals.** Static source kinds skip orphan derivation (their rows ride the seed lane);
+composite-key targets resolve `ambiguous` (now ALSO gated at publish by the composite-key refusal —
+the two dispositions are coherent).
+
+## 2026-07-18 — The partial-topological order (v6): an unresolved cycle no longer degrades the whole catalog
+
+**Context.** #669 B-1 / EF-8 — the audit's data-lane blocker. One unresolvable dependency cycle
+anywhere put the ENTIRE catalog's data-lane order into the alphabetical fallback: children loaded
+before parents estate-wide, and the emitted `Data/*.sql` failed on a linear deploy (`Msg 547`) for
+kinds nowhere near the cycle.
+
+**The decision.** `OrderingMode` grows `PartialTopological`; the pass (v5 → v6) removes the
+unresolved cycles' internal precedence edges, re-runs Kahn, and every kind OUTSIDE the cycles keeps
+its true dependency position — the members of an unresolved cycle order alphabetically among
+themselves at the position the condensed cycle occupies. Whole-catalog `Alphabetical` survives only
+as the defensive residue arm ("please report"). The parallel-levels mint treats the new mode as
+unproven (singleton groups); the live-transfer gate still refuses (`transfer.loadOrderUnproven` —
+the message now names the unproven region as the cycles, since the rest of the order is
+dependency-true). The board's `EmissionDataLaneOrder` advisory names each unresolvable cycle's
+members (the `check estate` face of the same fact).
+
+**Witness.** `TopologicalOrderPassTests` — the mode flips on every unresolved-cycle fixture, plus
+the new majority witness (a hard 2-cycle beside a downstream child and an independent kind: the
+child follows BOTH cycle members; every kind appears once). `EstateTests` — the cycle advisory
+names "Customer and Order"; the acyclic fixture carries none. `DataEmissionComposerTests` — the
+partition law and the singleton-mint degrade hold under the new mode unchanged.
+
+**Named residuals.** The emitted data lanes still carry an unresolvable cycle's own rows without
+intra-cycle precedence — loading them in one pass with both relationships enforced fails; the
+deferred-enforcement emission for hard cycles (NOCHECK around the cycle's load, re-trust after)
+is the named follow-up that would retire the advisory entirely.

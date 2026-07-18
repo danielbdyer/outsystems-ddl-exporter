@@ -67,8 +67,15 @@ module TopologicalOrderPass =
     ///       non-deferrable edges, naming its members. 2-cycle and
     ///       self-loop behavior unchanged except symmetric weak
     ///       2-cycles, which now resolve.
+    /// v6 — The partial-topological order (2026-07-18; #669 B-1): an
+    ///       unresolved SCC no longer degrades the WHOLE catalog to
+    ///       alphabetical. The unresolved cycles' internal precedence
+    ///       edges are removed, Kahn re-runs, and every kind outside the
+    ///       cycles keeps its true dependency position — `Mode =
+    ///       PartialTopological`. Whole-catalog `Alphabetical` remains
+    ///       only as the defensive residue arm.
     [<Literal>]
-    let version : int = 5
+    let version : int = 6
 
     [<Literal>]
     let private passName : string = "topologicalOrder"
@@ -539,21 +546,57 @@ module TopologicalOrderPass =
                               version
                       ] }
             else
-                // At least one SCC the resolver can't handle. Fall
-                // back to alphabetical; record both the resolved and
-                // unresolved diagnostics so callers can audit.
-                let alphabeticalAll = graph.Nodes
-                { Mode         = Alphabetical
-                  Order        = alphabeticalAll
-                  Edges        = graph.Edges
-                  MissingEdges = graph.MissingEdges
-                  Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
-                  Diagnostics  = [
-                      sprintf "topologicalOrder v%d: %d resolved, %d unresolved; alphabetical fallback"
-                          version
-                          resolution.ResolvedDiagnostics.Length
-                          resolution.UnresolvedDiagnostics.Length
-                  ] }
+                // At least one SCC the resolver cannot break. The whole-
+                // catalog alphabetical degrade is RETIRED (DECISIONS
+                // 2026-07-18; #669 B-1): every kind outside the unresolved
+                // cycles keeps its true dependency position. Removing the
+                // unresolved SCCs' internal precedence edges (plus the
+                // resolver's own removals for the resolved ones) makes the
+                // graph acyclic; the re-run Kahn places each condensed
+                // cycle at its dependency position, its members ordered
+                // alphabetically among themselves by the sorted-ready
+                // tie-break.
+                let unresolvedInternalPrecedence =
+                    resolution.UnresolvedDiagnostics
+                    |> List.collect (fun d ->
+                        internalEdgesOf d.Members graph.ClassifiedEdges
+                        |> List.map (fun ((source, target), _) ->
+                            // FK orientation → precedence orientation
+                            // (parent = target, child = source), mirroring
+                            // `applyResolver`.
+                            (target, source)))
+                    |> Set.ofList
+                let reduced =
+                    reduceGraph graph
+                        (Set.union resolution.RemovedPrecedenceEdges unresolvedInternalPrecedence)
+                let resorted, residue = kahnSort reduced
+                if List.isEmpty residue then
+                    { Mode         = PartialTopological
+                      Order        = resorted
+                      Edges        = graph.Edges
+                      MissingEdges = graph.MissingEdges
+                      Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
+                      Diagnostics  = [
+                          sprintf "topologicalOrder v%d: %d resolved, %d unresolved; the acyclic majority is ordered, the unresolved cycle members ride alphabetically at their dependency position"
+                              version
+                              resolution.ResolvedDiagnostics.Length
+                              resolution.UnresolvedDiagnostics.Length
+                      ] }
+                else
+                    // Defensive: the SCC-internal reduction should always
+                    // yield an acyclic graph; residue here is a structural
+                    // surprise, degraded to the whole-catalog last resort.
+                    { Mode         = Alphabetical
+                      Order        = graph.Nodes
+                      Edges        = graph.Edges
+                      MissingEdges = graph.MissingEdges
+                      Cycles       = resolution.ResolvedDiagnostics @ resolution.UnresolvedDiagnostics
+                      Diagnostics  = [
+                          sprintf "topologicalOrder v%d: %d resolved, %d unresolved; reduction left residue — alphabetical fallback (please report)"
+                              version
+                              resolution.ResolvedDiagnostics.Length
+                              resolution.UnresolvedDiagnostics.Length
+                      ] }
 
     let private lineageOf (graph: Graph) : Lineage<TopologicalOrder> =
         let events = graph.Nodes |> List.map touchedEvent

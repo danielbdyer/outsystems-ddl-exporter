@@ -980,6 +980,107 @@ let ``emission: a non-default ON UPDATE reference is a WATCH advisory`` () =
     Assert.Contains("ON UPDATE CASCADE", f.Statement)
 
 [<Fact>]
+let ``emission: an unresolvable reference cycle is a WATCH advisory naming its members (#669 B-1)`` () =
+    // Add the reverse reference Customer → Order (non-nullable source, no
+    // deferrable edge) — a hard 2-cycle. The board names the members; the
+    // v6 ordering keeps every other kind in dependency position.
+    let backRef =
+        Reference.create (refKey ["Customer"; "Order"; "back"]) (mkName "OrderBack") customerTenantKey orderKey
+    let cyclic =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey
+                                then { k with References = backRef :: k.References }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor cyclic
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionDataLaneOrder)
+    Assert.Equal(EstateLane.Watch, f.Lane)
+    Assert.Contains("Customer and Order", f.Statement)
+    Assert.Contains("cycle", f.Statement)
+    // The clean acyclic fixture carries no cycle advisory.
+    Assert.True(
+        Estate.emissionFindingsFor sampleCatalog
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionDataLaneOrder))
+
+[<Fact>]
+let ``emission: an authored default that does not parse as its column's type is a ruling (#669 M-1 residue)`` () =
+    // The classification lift carries `getutcdate()` as a callable expression
+    // and `''` as the empty-string value; what remains inside a VALUE literal
+    // must parse as the type. A date-time default of 'tomorrow' deploys and
+    // then fails at the first insert — the board names it before the deploy.
+    let withDefault (lit: SqlLiteral option) =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with DefaultValue = lit } else a) }
+                                else k) }) }
+    let f =
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.DateTimeLit "tomorrow")))
+        |> List.find (fun f -> f.Kind = EstateFindingKind.EmissionAuthoredDefault)
+    Assert.Equal(EstateLane.Decide, f.Lane)
+    Assert.Equal(EstatePlane.Emission, f.Plane)
+    Assert.Contains("does not parse as a date-time value", f.Statement)
+    Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the default"))
+    // The classified shapes are the negatives: a callable expression and a
+    // parseable value carry no finding.
+    Assert.True(
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.ExpressionLit "getutcdate()")))
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionAuthoredDefault))
+    Assert.True(
+        Estate.emissionFindingsFor (withDefault (Some (SqlLiteral.DateTimeLit "2026-01-01 08:30:00")))
+        |> List.forall (fun f -> f.Kind <> EstateFindingKind.EmissionAuthoredDefault))
+
+[<Fact>]
+let ``a LOGICAL-ONLY relationship's orphans reach the board — the orphan derivation walks every catalog reference (decision 3)`` () =
+    // The reference carries no backing SQL Server constraint
+    // (ConstraintState = NoDbConstraint); with enforcement decided, its
+    // orphan evidence must surface exactly as a physically-backed
+    // reference's would — REPAIR (clear the rows) below the band,
+    // RELAX (leave unenforced, reopen probe) past it. The profile
+    // derivation walks `srcKind.References` with no deployable filter,
+    // so the evidence path is one path; this pins it.
+    let logicalOnly =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    References =
+                                        k.References
+                                        |> List.map (fun r ->
+                                            if r.SsKey = orderRefToCustomer
+                                            then { r with ConstraintState = ConstraintState.ofLegacyBooleans false false }
+                                            else r) }) }) }
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 42L ] }
+    let report =
+        Estate.compute agreed logicalOnly
+            [ "cloud-uat", { operand "cloud-uat" logicalOnly with Profile = Some dirty } ]
+    let f = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphans)
+    Assert.Equal(EstateLane.Repair, f.Lane)
+    Assert.Contains("42", f.Statement)
+
+[<Fact>]
 let ``the active posture: a relaxed relationship renders its meter and absorbs the orphan finding`` () =
     let posture : Estate.Posture =
         { Estate.Posture.defaults with RelaxedReferences = Set.singleton orderRefToCustomer }
