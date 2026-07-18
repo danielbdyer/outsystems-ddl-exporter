@@ -16,10 +16,13 @@ name: lint-projection
 # acknowledgement.
 
 on:
+  # Runs on EVERY pull request (no `paths:` filter) so it is safe to make this
+  # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
+  # leaves its required check pending forever and blocks the merge (GitHub's
+  # "skipped but required" behavior). With no filter the check always reports —
+  # and it passes trivially when `sidecar/projection/` is unchanged (the scan
+  # finds nothing new), so it only ever blocks a real projection-lint violation.
   pull_request:
-    paths:
-      - 'sidecar/projection/**'
-      - '.github/workflows/lint-projection.yml'
   push:
     branches:
       - main

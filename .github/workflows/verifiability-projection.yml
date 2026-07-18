@@ -23,10 +23,13 @@ name: verifiability-projection
 # a stale matrix.
 
 on:
+  # Runs on EVERY pull request (no `paths:` filter) so it is safe to make this
+  # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
+  # leaves its required check pending forever and blocks the merge. With no
+  # filter the check always reports — and passes trivially when
+  # `sidecar/projection/` is unchanged (the matrix regenerates identically), so
+  # it only ever blocks a stale matrix / phantom-coverage claim.
   pull_request:
-    paths:
-      - 'sidecar/projection/**'
-      - '.github/workflows/verifiability-projection.yml'
   push:
     branches:
       - main
