@@ -347,6 +347,22 @@ module MetadataSnapshotRunner =
           IsDisabled        : bool
           TriggerDefinition : string option }
 
+    /// Rowset 24 — deployed `sys.sequences` reflection (DECISIONS
+    /// 2026-07-18; #669 EF-22). Appended at the script's end; the ten
+    /// axes mirror `ReadSide`'s `SequenceRow` so both lanes reconstruct
+    /// the same `Sequence` values.
+    type OssysSequenceRow =
+        { Schema       : string
+          Name         : string
+          DataType     : string
+          StartValue   : decimal option
+          Increment    : decimal option
+          MinimumValue : decimal option
+          MaximumValue : decimal option
+          IsCycling    : bool
+          IsCached     : bool
+          CacheSize    : int option }
+
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
     /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
@@ -367,6 +383,7 @@ module MetadataSnapshotRunner =
             ForeignKeysReality : OssysFkRealityRow list
             ForeignKeyColumns  : OssysFkColumnRow list
             Triggers           : OssysTriggerRow list
+            Sequences          : OssysSequenceRow list
         }
 
     // -------------------------------------------------------------------
@@ -459,6 +476,13 @@ module MetadataSnapshotRunner =
     let private readGuidOpt (row: RowAtRest) (ordinal: int) : Guid option =
         if isDbNull row ordinal then None
         else Some (unbox<Guid> (cellAt row ordinal))
+
+    let private readDecimalOpt (row: RowAtRest) (ordinal: int) : decimal option =
+        // sys.sequences ranges surface as decimal(38,0) via the rowset's
+        // explicit CAST; Convert tolerates provider width variation the
+        // same way `readInt` does.
+        if isDbNull row ordinal then None
+        else Some (System.Convert.ToDecimal(cellAt row ordinal))
 
     /// Read all rows of the current result set — each row captured at
     /// rest via `captureRow`, then handed to `mapper`; advance to the
@@ -677,6 +701,21 @@ module MetadataSnapshotRunner =
           IsDisabled        = readBool      r 2
           TriggerDefinition = readStringOpt r 3 }
 
+    /// Rowset 24 (`sys.sequences`) — ordinals mirror the SELECT:
+    /// SchemaName, SequenceName, DataType, StartValue, Increment,
+    /// MinimumValue, MaximumValue, IsCycling, IsCached, CacheSize.
+    let private mapSequenceRow (r: RowAtRest) : OssysSequenceRow =
+        { Schema       = readString     r 0
+          Name         = readString     r 1
+          DataType     = readString     r 2
+          StartValue   = readDecimalOpt r 3
+          Increment    = readDecimalOpt r 4
+          MinimumValue = readDecimalOpt r 5
+          MaximumValue = readDecimalOpt r 6
+          IsCycling    = readBool       r 7
+          IsCached     = readBool       r 8
+          CacheSize    = readIntOpt     r 9 }
+
     /// Number of user-visible result sets the carbon-copied OSSYS rowsets
     /// script emits. V1's documentation describes 22 user-visible rowsets
     /// (rowsets 0..21); the canary's empirical walk observes **23** —
@@ -688,8 +727,10 @@ module MetadataSnapshotRunner =
     /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
     /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
     /// instead of silently accepting partial data. Matrix row 35.
+    /// **24 as of the extraction fork** (DECISIONS 2026-07-18; #669
+    /// EF-22): the appended `sys.sequences` rowset joins the walk.
     [<Literal>]
-    let ExpectedResultSets = 23
+    let ExpectedResultSets = 24
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
@@ -876,6 +917,10 @@ module MetadataSnapshotRunner =
                 do! skip "triggerJson"
                 do! skip "moduleJson"
 
+                // Rowset 24 — sequences (the extraction fork; DECISIONS
+                // 2026-07-18; #669 EF-22). Appended at the script's end.
+                let! sequences = read "sequences" mapSequenceRow
+
                 // Drain any trailing rowsets the SQL might emit beyond
                 // the documented 23. Per matrix row 35: a SQL-contract
                 // drift adds rowsets here; the contract check below
@@ -918,6 +963,7 @@ module MetadataSnapshotRunner =
                         ForeignKeysReality = fkReality
                         ForeignKeyColumns  = fkColumns
                         Triggers           = triggers
+                        Sequences          = sequences
                     }
             with
             | ex ->
@@ -1562,6 +1608,22 @@ module MetadataSnapshotRunner =
                     IsNotTrusted   = c.IsNotTrusted
                 } : OssysRowsetTypes.ColumnCheckRow)
 
+        let sequences =
+            snapshot.Sequences
+            |> List.map (fun s ->
+                ({
+                    Schema       = s.Schema
+                    Name         = s.Name
+                    DataType     = s.DataType
+                    StartValue   = s.StartValue
+                    Increment    = s.Increment
+                    MinimumValue = s.MinimumValue
+                    MaximumValue = s.MaximumValue
+                    IsCycling    = s.IsCycling
+                    IsCached     = s.IsCached
+                    CacheSize    = s.CacheSize
+                } : OssysRowsetTypes.SequenceRow))
+
         {
             Modules      = modules
             Kinds        = kinds
@@ -1571,4 +1633,5 @@ module MetadataSnapshotRunner =
             IndexColumns = indexColumns
             Triggers     = triggers
             ColumnChecks = columnChecks
+            Sequences    = sequences
         }

@@ -366,6 +366,23 @@ module OssysRowsetTypes =
             Definition  : string option
         }
 
+    /// Rowset 24 — one deployed `sys.sequences` row (DECISIONS 2026-07-18;
+    /// #669 EF-22). The ten axes mirror `ReadSide`'s reflection so both
+    /// lanes reconstruct the same `Sequence` values.
+    type SequenceRow =
+        {
+            Schema       : string
+            Name         : string
+            DataType     : string
+            StartValue   : decimal option
+            Increment    : decimal option
+            MinimumValue : decimal option
+            MaximumValue : decimal option
+            IsCycling    : bool
+            IsCached     : bool
+            CacheSize    : int option
+        }
+
     /// V1 rowset `#ColumnCheckReality` — per-column CHECK constraint
     /// reflection (chapter 5.13 slice ossys-rowsets-cluster; matrix
     /// row 12). One row per CHECK constraint per attribute; V2's
@@ -409,6 +426,12 @@ module OssysRowsetTypes =
             /// constraints. Lifts into `Kind.ColumnChecks` (grouped
             /// by the AttrId's owning Kind).
             ColumnChecks : ColumnCheckRow list
+            /// Rowset 24 (DECISIONS 2026-07-18; #669 EF-22) — the deployed
+            /// `sys.sequences` rows. Lifts into `Catalog.Sequences`; the
+            /// emission already renders CREATE SEQUENCE, so carriage
+            /// closes the round-trip. Empty for sources without the
+            /// extended extraction (fixtures; the JSON path).
+            Sequences : SequenceRow list
         }
 
     /// Empty RowsetBundle helper. Test fixtures + JSON-path placeholders
@@ -430,4 +453,5 @@ module OssysRowsetTypes =
               Indexes      = []
               IndexColumns = []
               Triggers     = []
-              ColumnChecks = [] }
+              ColumnChecks = []
+              Sequences    = [] }

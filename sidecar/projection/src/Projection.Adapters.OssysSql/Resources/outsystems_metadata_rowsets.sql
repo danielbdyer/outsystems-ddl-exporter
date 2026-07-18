@@ -1255,3 +1255,23 @@ SELECT
   mj.[module.entities]
 FROM #ModuleJson AS mj
 ORDER BY mj.[module.name];
+
+-- Rowset 24 — sequences (DECISIONS 2026-07-18; #669 EF-22). The deployed
+-- sys.sequences shape, mirroring ReadSide's reflection so both lanes
+-- reconstruct the same Sequence values; the emission already renders
+-- CREATE SEQUENCE, so carrying the rows closes the round-trip. A NEW
+-- result set appended at the script's end (the runner's result-set
+-- contract bumps 23 → 24 in lockstep).
+SELECT
+  SCHEMA_NAME(s.schema_id) AS SchemaName,
+  s.[name] AS SequenceName,
+  TYPE_NAME(s.user_type_id) AS DataType,
+  CAST(s.start_value AS decimal(38, 0)) AS StartValue,
+  CAST(s.increment AS decimal(38, 0)) AS Increment,
+  CAST(s.minimum_value AS decimal(38, 0)) AS MinimumValue,
+  CAST(s.maximum_value AS decimal(38, 0)) AS MaximumValue,
+  s.is_cycling AS IsCycling,
+  s.is_cached AS IsCached,
+  s.cache_size AS CacheSize
+FROM sys.sequences AS s
+ORDER BY SCHEMA_NAME(s.schema_id), s.[name];

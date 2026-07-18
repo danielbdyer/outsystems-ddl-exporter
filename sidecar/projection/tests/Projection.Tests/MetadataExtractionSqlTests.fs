@@ -41,7 +41,7 @@ let ``Slice α: embedded SQL resource loads with expected line count`` () =
     // fork is pinned by the divergence test below.
     let lineCount = sql.Split('\n').Length
     // Be tolerant of trailing-newline variations.
-    Assert.InRange(lineCount, 1257, 1259)
+    Assert.InRange(lineCount, 1276, 1278)
 
 [<Fact>]
 let ``Slice α: embedded SQL declares the five expected parameters`` () =

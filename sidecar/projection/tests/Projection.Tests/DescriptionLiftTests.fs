@@ -286,7 +286,7 @@ let ``L3-S9: rowset path carries Kind.Description from KindRow`` () =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith (Some "Carried through the rowset path.") ]
           Attributes = [ idAttrRowWith None ]
-          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []; Sequences = [] }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
@@ -300,7 +300,7 @@ let ``L3-S9: rowset path carries Attribute.Description from AttributeRow`` () =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith None ]
           Attributes = [ idAttrRowWith (Some "Surrogate primary key (rowset).") ]
-          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []; Sequences = [] }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
@@ -315,7 +315,7 @@ let ``L3-S9: rowset path None Description survives roundtrip`` () =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith None ]
           Attributes = [ idAttrRowWith None ]
-          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = [] }
+          References = []; Indexes = []; IndexColumns = []; Triggers = []; ColumnChecks = []; Sequences = [] }
     let result = parseSync (CatalogReader.SnapshotRowsets bundle)
     match result with
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)

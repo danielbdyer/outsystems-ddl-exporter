@@ -32,7 +32,7 @@ let private snapshotOf
     (realities: MetadataSnapshotRunner.OssysColumnRealityRow list)
     : MetadataSnapshotRunner.MetadataSnapshot =
     { Modules = []; Entities = []; Attributes = attrs; References = []
-      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []
+      PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = [] }
 

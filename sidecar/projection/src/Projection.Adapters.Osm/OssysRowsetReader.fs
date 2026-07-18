@@ -957,9 +957,29 @@ module OssysRowsetReader =
               ColumnChecksByEntity = columnChecksByEntity }
         let moduleResults =
             bundle.Modules |> Bench.iterMap "adapter.osm.parse.rowsetModule" (parseModuleRow ctx)
+        // Rowset 24 (DECISIONS 2026-07-18; #669 EF-22) — deployed
+        // sequences lift into `Catalog.Sequences`, mirroring ReadSide's
+        // reconstruction (same CacheMode derivation) so both lanes agree.
+        // Rows that fail the smart constructor are dropped the same way
+        // ReadSide drops them: a sequence the IR cannot hold is absent,
+        // never mangled.
+        let sequences =
+            bundle.Sequences
+            |> List.choose (fun r ->
+                let cacheMode =
+                    if not r.IsCached then NoCache
+                    elif Option.isSome r.CacheSize then Cache
+                    else Unspecified
+                match SsKey.synthesized "OSSYS_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+                      Name.create r.Name with
+                | Ok sk, Ok nm ->
+                    match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with
+                    | Ok s -> Some s
+                    | Error _ -> None
+                | _ -> None)
         match Result.aggregate moduleResults with
         | Ok modules ->
-            Catalog.create modules []
+            Catalog.create modules sequences
         | Error errors -> Error errors
 
     /// Parse a V1 `osm_model.json` snapshot into a V2 `Catalog`.
