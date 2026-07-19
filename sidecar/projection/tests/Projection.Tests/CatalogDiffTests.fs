@@ -962,6 +962,39 @@ let ``C1: an index option change (ALLOW_PAGE_LOCKS) names the Options facet and 
     Assert.False(rebuiltIdx.AllowPageLocks)   // the flag survived; no default-substitution
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed))
 
+[<Fact>]
+let ``estate: an index renamed across espaces (same columns + uniqueness) is not a difference after toLogicalShape (promotion, not drift)`` () =
+    // OutSystems generates the physical index name per espace, so two cells of
+    // ONE model carry the same index under DIFFERENT names (and thus different
+    // name-derived SsKeys). toLogicalShape re-keys each index to its structural
+    // identity, so a promoted-but-renamed index reads as one index, not a
+    // spurious drop-here / add-there.
+    let idxAbc = { Index.create (idxKey [ "Customer"; "OSIDX_ABC" ]) (nm "OSIDX_ABC_001") (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = Unique }
+    let idxXyz = { Index.create (idxKey [ "Customer"; "OSIDX_XYZ" ]) (nm "OSIDX_XYZ_002") (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = Unique }
+    let a = catalogOfKinds [ { customer with Indexes = [ idxAbc ] }; order; country ]
+    let b = catalogOfKinds [ { customer with Indexes = [ idxXyz ] }; order; country ]
+    // Raw physical diff: the name-derived SsKeys differ, so it reads as drop + add.
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between a b))
+    // After the espace-invariant normalization: one logical index, no difference.
+    let diff = CatalogDiff.between (Projection.Pipeline.Readiness.normalizeIndexIdentity a) (Projection.Pipeline.Readiness.normalizeIndexIdentity b)
+    match CatalogDiff.indexDiffOf customerKey diff with
+    | None -> ()
+    | Some d ->
+        Assert.Empty d.Added
+        Assert.Empty d.Removed
+        Assert.Empty d.Renamed
+        Assert.Empty d.Reshaped
+
+[<Fact>]
+let ``estate: a genuinely different index (uniqueness) still surfaces after toLogicalShape`` () =
+    // Uniqueness is part of the structural identity, so a real difference is
+    // NOT normalized away — the normalization collapses only physical-name noise.
+    let idxUnique = { Index.create (idxKey [ "Customer"; "OSIDX_ABC" ]) (nm "OSIDX_ABC_001") (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = Unique }
+    let idxNotUnique = { Index.create (idxKey [ "Customer"; "OSIDX_XYZ" ]) (nm "OSIDX_XYZ_002") (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = NotUnique }
+    let a = catalogOfKinds [ { customer with Indexes = [ idxUnique ] }; order; country ]
+    let b = catalogOfKinds [ { customer with Indexes = [ idxNotUnique ] }; order; country ]
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between (Projection.Pipeline.Readiness.normalizeIndexIdentity a) (Projection.Pipeline.Readiness.normalizeIndexIdentity b)))
+
 // -- Sequence channel -------------------------------------------------------
 
 [<Fact>]

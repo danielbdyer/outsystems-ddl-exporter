@@ -210,6 +210,19 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                                 saveAdvisory p live
                                 Some p, Estate.EvidenceProvenance.Live
                             | None -> None, Estate.EvidenceProvenance.Absent
+        // Fan the per-environment reads out concurrently: each environment is
+        // a distinct server and writes only its own evidence directory, so the
+        // Dev/QA/UAT reads run in parallel while the results stay in INPUT
+        // order — the roll-up and the first-error pick stay deterministic.
+        // (Bench is lock-protected; the evidence store writes per-env atomic
+        // files; only stderr advisories can interleave.)
+        let inParallel (f: 'a -> 'b) (items: 'a list) : 'b list =
+            items
+            |> List.map (fun x -> System.Threading.Tasks.Task.Run<'b>(fun () -> f x))
+            |> Array.ofList
+            |> System.Threading.Tasks.Task.WhenAll
+            |> fun t -> t.GetAwaiter().GetResult()
+            |> Array.toList
         // Each confirm environment: its OSSYS catalog (schema) + the
         // data-plane evidence pair. A profile failure degrades to
         // advisory-silent — the schema verdict still leads; the masthead
@@ -229,7 +242,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                 Result.success
                     ((label, ({ Label = label; Catalog = catalog; Profile = profile } : Compare.Operand)),
                      provenance)
-        let resolved = args.Confirm |> List.map resolveEnv
+        let resolved = args.Confirm |> inParallel resolveEnv
         match resolved |> List.tryPick (fun (label, r) -> match r with Error es -> Some (label, es) | Ok _ -> None) with
         | Some (label, errs) -> unreadable label errs
         | None ->
@@ -276,7 +289,7 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                         | EstateTargetSource.AgreedEnv connRef -> readStaticRowsFor connRef target
                     let byEnv =
                         outcomes
-                        |> List.map (fun ((label, operandValue), _) ->
+                        |> inParallel (fun ((label, operandValue), _) ->
                             let refStr = args.Confirm |> List.tryFind (fun (l, _) -> l = label) |> Option.map snd |> Option.defaultValue ""
                             label, readStaticRowsFor refStr operandValue.Catalog)
                         |> Map.ofList

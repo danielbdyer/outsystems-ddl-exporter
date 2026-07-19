@@ -1524,6 +1524,132 @@ module Estate =
                               Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",") })
             | _ -> [])
 
+    /// The reconciliation difficulty of a data-repair finding — how much
+    /// cognitive work clearing it demands, read from RELATIONAL STRUCTURE, not
+    /// magnitude. A NULL / orphan / duplicate on a foreign key into a highly-
+    /// referenced entity — or one caught in a reference cycle — ripples through
+    /// every reconciliation choice (High); a declared default or a sentinel-
+    /// dominated set collapses to a mechanical fix (Low); a peripheral
+    /// relationship or a standalone column is a bounded, local fix (Moderate).
+    /// Estate-RELATIVE by construction — the "hub" cut is the estate's own
+    /// median in-degree, never an absolute count — so it reads the same on a
+    /// 20-table estate and a 200-table one (the operator's steer, 2026-07-19).
+    [<RequireQualifiedAccess>]
+    type ReconciliationDifficulty =
+        | Low
+        | Moderate
+        | High
+
+    /// The reference-graph context the difficulty read consumes, built ONCE from
+    /// the target shape: the in-degree of each entity (how many references point
+    /// AT it), which entities sit in a reference cycle, the estate's median
+    /// in-degree (the relative "hub" cut), the FK each (entity, column) sources,
+    /// and which (entity, column) carry a SAFE default.
+    type DifficultyContext =
+        { InDegree      : Map<SsKey, int>
+          CycleMembers  : Set<SsKey>
+          HubInDegree   : int
+          RefByColumn   : Map<string * string, Reference>
+          SafeDefaultOf : Set<string * string> }
+
+    /// Build the difficulty context from the target's reference graph. The FK
+    /// edge direction is `TopologicalOrder`'s: an edge `(a, b)` means "a
+    /// references b", so `snd` is the target — the entity's in-degree.
+    let difficultyContextOf (target: Catalog) : DifficultyContext =
+        let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle target).Value
+        let inDegree =
+            topo.Edges |> List.map snd |> List.countBy id |> Map.ofList
+        // The estate-RELATIVE hub cut: the median in-degree over the entities
+        // that are referenced at all. An absolute count would not travel across
+        // estate sizes; the median does. A hub is at or above it.
+        let hubInDegree =
+            match inDegree |> Map.toList |> List.map snd |> List.sort with
+            | [] -> System.Int32.MaxValue
+            | ds -> List.item (List.length ds / 2) ds
+        let kinds = Catalog.allKinds target
+        let refByColumn =
+            kinds
+            |> List.collect (fun k ->
+                k.References
+                |> List.choose (fun r ->
+                    Kind.tryFindAttribute r.SourceAttribute k
+                    |> Option.map (fun a -> (Name.value k.Name, Name.value a.Name), r)))
+            |> Map.ofList
+        let safeDefaultOf =
+            kinds
+            |> List.collect (fun k ->
+                k.Attributes
+                |> List.choose (fun a ->
+                    match a.DefaultValue with
+                    | Some lit when Option.isNone (SqlLiteral.unparsableValueReason lit) ->
+                        Some (Name.value k.Name, Name.value a.Name)
+                    | _ -> None))
+            |> Set.ofList
+        { InDegree = inDegree
+          CycleMembers = TopologicalOrder.cycleMembers topo
+          HubInDegree = hubInDegree
+          RefByColumn = refByColumn
+          SafeDefaultOf = safeDefaultOf }
+
+    /// The reconciliation difficulty of a data-repair finding on `ec`, plus the
+    /// structural clause that states WHY. Centrality dominates: a safe default
+    /// (or a sentinel-dominated set) is mechanical (Low); otherwise a foreign key
+    /// into a cycle or a hub is a rippling reconciliation (High); a peripheral FK
+    /// or a standalone column is a bounded fix (Moderate).
+    let difficultyOf
+        (ctx: DifficultyContext)
+        (target: Catalog)
+        (ec: ModelFidelity.EntityColumn)
+        (sentinelDominated: bool)
+        : ReconciliationDifficulty * string =
+        let coord = ec.Entity, ec.Column
+        if Set.contains coord ctx.SafeDefaultOf then
+            ReconciliationDifficulty.Low,
+            " A default is declared for the column, so the rows can be set without a per-row decision."
+        elif sentinelDominated then
+            ReconciliationDifficulty.Low, ""
+        else
+            match Map.tryFind coord ctx.RefByColumn with
+            | Some r ->
+                let targetName =
+                    Catalog.kindIndex target
+                    |> Map.tryFind r.TargetKind
+                    |> Option.map (fun k -> Name.value k.Name)
+                    |> Option.defaultValue "its target"
+                let inDeg = Map.tryFind r.TargetKind ctx.InDegree |> Option.defaultValue 0
+                if Set.contains r.TargetKind ctx.CycleMembers then
+                    ReconciliationDifficulty.High,
+                    sprintf " The relationship targets %s, which sits in a reference cycle — each reconciliation choice ripples, so this one needs a plan." targetName
+                elif inDeg >= ctx.HubInDegree then
+                    ReconciliationDifficulty.High,
+                    sprintf " The relationship targets %s, referenced by %d relationship(s) across the model — each reconciliation choice ripples, so this one needs a plan." targetName inDeg
+                else
+                    ReconciliationDifficulty.Moderate,
+                    sprintf " The relationship targets %s — reconcile each row against it." targetName
+            | None ->
+                ReconciliationDifficulty.Moderate, ""
+
+    /// The board rank of a difficulty (High first). A non-data finding carries no
+    /// difficulty and ranks beneath the graded ones, by impact weight alone.
+    let private difficultyRank (d: ReconciliationDifficulty option) : int =
+        match d with
+        | Some ReconciliationDifficulty.High     -> 3
+        | Some ReconciliationDifficulty.Moderate -> 2
+        | Some ReconciliationDifficulty.Low      -> 1
+        | None                                   -> 0
+
+    /// The data-repair kinds a reconciliation-difficulty read applies to — the
+    /// NULL / duplicate / orphan findings (and their past-band relaxations); a
+    /// schema, identity, or emission finding carries no difficulty.
+    let private isDataRepairKind (kind: EstateFindingKind) : bool =
+        match kind with
+        | EstateFindingKind.DataNotNull
+        | EstateFindingKind.DataUnique
+        | EstateFindingKind.DataOrphans
+        | EstateFindingKind.DataNotNullPastBand
+        | EstateFindingKind.DataOrphansPastBand -> true
+        | _ -> false
+
     /// Compute the estate report from the resolved target and confirm
     /// operands, under the operator's posture (the repair band + the loaded
     /// config's active relaxations — wave A6). Every catalog is normalized
@@ -1540,7 +1666,15 @@ module Estate =
         (targetCatalog: Catalog)
         (envs: (string * Compare.Operand) list)
         : EstateReport =
-        let logicalTarget = Readiness.toLogicalShape targetCatalog
+        // The estate compare shares ONE SsKey lineage across environments, so
+        // index identity is normalized to its structure here (a promoted index
+        // whose OSSYS-generated name differs per espace reads as one index, not
+        // drift) — the SsKey-rewriting step the clone alignment must NOT take.
+        let logicalTarget = Readiness.toLogicalShape targetCatalog |> Readiness.normalizeIndexIdentity
+        // The reference-graph read the reconciliation-difficulty model consumes,
+        // built once: centrality (in-degree + cycle membership) and actionability
+        // (safe defaults) over the target shape.
+        let difficultyCtx = difficultyContextOf logicalTarget
         // The clean-environment attribution's evidence paths (wave A2): each
         // environment's profile, and the target's logical coordinates resolved
         // to attribute / reference identities once.
@@ -1566,7 +1700,7 @@ module Estate =
         let perEnv =
             envs
             |> List.map (fun (env, operand) ->
-                let logicalEnv = Readiness.toLogicalShape operand.Catalog
+                let logicalEnv = Readiness.toLogicalShape operand.Catalog |> Readiness.normalizeIndexIdentity
                 let compare =
                     Compare.compute
                         { operand with Label = env; Catalog = logicalEnv }
@@ -1606,12 +1740,14 @@ module Estate =
                   DataEvidenceAvailable = evidence
                   Provenance = if evidence then EvidenceProvenance.Live else EvidenceProvenance.Absent })
         let envCount = List.length perEnv
-        // The clean-environment clause (wave A2; RT-6): the environments that
-        // carry evidence for the finding's coordinate and DO NOT carry the
-        // finding are named beside the divergence with their observation
-        // basis — advisory beneath the decision floor. An environment with no
-        // evidence for the coordinate stays silent here; the masthead already
-        // names evidence-less environments estate-wide.
+        // The satisfied-environment clause (wave A2; RT-6): the environments
+        // that carry evidence for the finding's coordinate and DO NOT carry
+        // the finding are named beside the divergence with their observation
+        // basis — a reading drawn from too few rows to be conclusive is marked
+        // as such (beneath the decision floor), never called "clean" (an
+        // under-observed cell is not a proof). An environment with no evidence
+        // for the coordinate stays silent here; the masthead already names
+        // evidence-less environments estate-wide.
         let cleanClause
             (reference: ModelFidelity.EntityColumn option)
             (kind: EstateFindingKind)
@@ -1630,16 +1766,16 @@ module Estate =
                             Map.tryFind coordinate referenceKeyOf
                             |> Option.bind (fun key -> Profile.tryFindForeignKey key profile)
                             |> Option.filter (fun fk -> not fk.HasOrphan)
-                            |> Option.map (fun _ -> sprintf "clean in %s" env)
+                            |> Option.map (fun _ -> sprintf "satisfied in %s" env)
                         | _ ->
                             Map.tryFind coordinate attributeKeyOf
                             |> Option.bind (fun key -> Profile.tryFindColumn key profile)
                             |> Option.map (fun c ->
                                 if c.RowCount < posture.DecisionFloor then
-                                    sprintf "clean in %s (%s row(s) observed — advisory; the sample is below the decision floor)"
+                                    sprintf "satisfied in %s (only %s row(s) observed — too few to be conclusive)"
                                         env (humane64 c.RowCount)
                                 else
-                                    sprintf "clean in %s (%s row(s) observed)" env (humane64 c.RowCount))
+                                    sprintf "satisfied in %s (%s row(s) observed)" env (humane64 c.RowCount))
                 let clauses =
                     perEnv
                     |> List.choose (fun (env, _, _) ->
@@ -1654,7 +1790,7 @@ module Estate =
         let crossEnv =
             let profilesByEnv = Map.toList profileByEnv
             let logicalEnvs =
-                envs |> List.map (fun (env, operand) -> env, Readiness.toLogicalShape operand.Catalog)
+                envs |> List.map (fun (env, operand) -> env, (Readiness.toLogicalShape operand.Catalog |> Readiness.normalizeIndexIdentity))
             asymmetryContributions posture.DecisionFloor posture.AsymmetryFactor logicalTarget profilesByEnv
             @ uniquenessCandidateContributions posture.DecisionFloor logicalTarget profilesByEnv
             @ headroomContributions logicalTarget profilesByEnv
@@ -1711,6 +1847,18 @@ module Estate =
                     if fork then
                         " The environments disagree among themselves here — a fork; no single adoption resolves it."
                     else ""
+                // The reconciliation-difficulty read (the operator's 2026-07-19
+                // steer): structural, centrality-dominant. The clause states WHY;
+                // the level ranks the finding (High reconciliations first). Only
+                // the data-repair findings carry it. (Sentinel-dominated is wired
+                // in the next increment; passed false here.)
+                let difficulty =
+                    if isDataRepairKind kind then
+                        perEnvRows
+                        |> List.tryPick (fun c -> c.Reference)
+                        |> Option.map (fun ec -> difficultyOf difficultyCtx logicalTarget ec false)
+                    else None
+                let difficultyClause = difficulty |> Option.map snd |> Option.defaultValue ""
                 // The one lever per line (waves A5 + A6), minted from the
                 // presentation contract's per-kind form: a ruling carries
                 // its own imperative; a block review names the primary
@@ -1727,15 +1875,20 @@ module Estate =
                     | EstateLeverForm.MergeOverlayEntry ->
                         Some (sprintf "Merge the config edit for %s in environments.overlay.json." (FindingKey.readableLabel key))
                     | EstateLeverForm.NoLever -> None
-                { Key = key
-                  Kind = kind
-                  Lane = EstateFindingKind.laneOf kind
-                  Plane = plane
-                  Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
-                  Statement = (sprintf "%s%s.%s%s" body clean majorityNote forkNote).TrimEnd()
-                  Lever = lever
-                  Fork = fork })
-            |> List.sortByDescending weightOf
+                let finding =
+                    { Key = key
+                      Kind = kind
+                      Lane = EstateFindingKind.laneOf kind
+                      Plane = plane
+                      Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
+                      Statement = (sprintf "%s%s.%s%s%s" body clean majorityNote difficultyClause forkNote).TrimEnd()
+                      Lever = lever
+                      Fork = fork }
+                finding, (difficulty |> Option.map fst))
+            // Impact-ranked, but reconciliation difficulty leads: the hardest
+            // reconciliations surface first, ties broken by the largest count.
+            |> List.sortByDescending (fun (f, d) -> difficultyRank d, weightOf f)
+            |> List.map fst
         // The verdict formula (Appendix A.4): unified ⇔ nothing diverges
         // (an active posture keeps its own RELAX/REPAIR lines, so a
         // non-empty relaxation set can never read unified); forked ⇔ any

@@ -95,6 +95,11 @@ module EstateHistory =
                      | EstateLane.Watch -> "watch")
                   Weight = Estate.weightOf f
                   FirstSeenAtUtc = Map.tryFind key firstSeen |> Option.defaultValue nowUtc })
+            // Canonical (by-key) order for the STORED reading — it matches the
+            // serializer's own sort, so the save/load round-trip is stable no
+            // matter how the report ORDERS its findings for display (the board's
+            // order is reconciliation-difficulty-ranked; the record's is not).
+            |> List.sortBy (fun rf -> rf.Key)
         let streak =
             if report.Verdict = Estate.Verdict.Unified then
                 1 + (previous |> Option.map (fun p -> p.Streak) |> Option.defaultValue 0)
