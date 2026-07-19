@@ -302,6 +302,15 @@ module Config =
         /// passes ScriptDom's raw output through. Threads to
         /// `EmissionPolicy.RenderConstraintsElegant`.
         RenderConstraintsElegant : bool
+        /// 2026-07-19 — `emission.renderDataElegant`. `true` (the default —
+        /// V1-parity readable shape) reformats the data lanes (`Data/StaticSeeds
+        /// .sql` / `MigrationData.sql` / `Bootstrap.sql`) with a `SET NOCOUNT ON;`
+        /// header, per-module banners, a `-- <Entity> (N rows)` comment per block,
+        /// and the `USING (VALUES …)` list one row per line (V1's
+        /// `StaticEntitySeedScriptGenerator` shape); `false` is the diagnostic /
+        /// bisect opt-out that passes the compact per-kind concatenation through.
+        /// Threads to `EmissionPolicy.RenderDataElegant`.
+        RenderDataElegant : bool
         /// NM-70 (WP5) — `emission.identityAnnotations`. `true` (the
         /// default — current behavior) emits the `Projection.SsKey` /
         /// `Projection.LogicalName` identity extended properties; `false`
@@ -540,6 +549,8 @@ module Config =
         Signoff               = []
         // NM-38 — V1-parity default-on (elegant multi-line constraints).
         RenderConstraintsElegant = true
+        // 2026-07-19 — V1-parity default-on (readable data lanes).
+        RenderDataElegant = true
         // NM-70 — default-on (identity annotations emit; byte-identical).
         EmitIdentityAnnotations = true
         // NM-73 — CDC-silence-canonical default (byte-identical).
@@ -1349,6 +1360,8 @@ module Config =
                 let! vals = read "validations" defaultEmission.Validations
                 let! includeAuto = read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes
                 let! renderElegant = read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant
+                // 2026-07-19 — `emission.renderDataElegant`; default true.
+                let! renderDataElegant = read "renderDataElegant" defaultEmission.RenderDataElegant
                 // NM-70 — `emission.identityAnnotations`; default true.
                 let! identityAnnotations = read "identityAnnotations" defaultEmission.EmitIdentityAnnotations
                 let! dataVerification = parseDataVerification element
@@ -1382,6 +1395,7 @@ module Config =
                     DeleteScope = deleteScope
                     Signoff = emissionSignoff
                     RenderConstraintsElegant = renderElegant
+                    RenderDataElegant = renderDataElegant
                     EmitIdentityAnnotations = identityAnnotations
                     DataVerification = dataVerification
                     Tolerance = tolerance

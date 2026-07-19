@@ -222,6 +222,19 @@ type EmissionPolicy = {
     /// here as a bool the SSDT emit seam lifts to `Render.toTextWith`.
     /// Default `true` keeps the default bundle byte-identical.
     RenderConstraintsElegant : bool
+    /// 2026-07-19 — operator toggle for the DATA-lane rendering overlay
+    /// (`DataSeedFormatter.Mode`, classified `OperatorIntent Emission`). `true`
+    /// (the V1-parity production default) reformats the compact per-kind data
+    /// MERGE/UPDATE text into V1's readable shape — a `SET NOCOUNT ON;` header,
+    /// per-module banners, a `-- <Entity> (N rows)` comment before each block,
+    /// and the `USING (VALUES …)` list broken one row per line (V1's
+    /// `StaticEntitySeedScriptGenerator` shape). `false` is the diagnostic /
+    /// bisect opt-out that passes the composer's compact concatenation through.
+    /// Applied at the published-file boundary (`DataEmissionComposer
+    /// .renderArtifactInTopoOrder`), not the parallel-deploy path. Sibling to
+    /// `RenderConstraintsElegant`; the emitter never reads `Policy` (A18 amended)
+    /// — the composer lifts this bool to `DataSeedFormatter.Mode`.
+    RenderDataElegant : bool
     /// NM-70 (WP5) — operator toggle for the identity extended-property
     /// annotations (the `Projection.SsKey` / `Projection.LogicalName`
     /// SsKey-bearing extended properties `SsdtDdlEmitter` writes). `true`
@@ -774,6 +787,10 @@ module EmissionPolicy =
                   // constraint shape is the production default (matches the
                   // prior hardcoded `Render.toText` Enabled mode).
                   RenderConstraintsElegant = true
+                  // 2026-07-19 — V1-parity default-on: the data lanes emit V1's
+                  // readable shape (banners + NOCOUNT + per-entity headers +
+                  // one-row-per-line VALUES). `false` passes the compact form.
+                  RenderDataElegant = true
                   // NM-70 — identity annotations emit by default (the
                   // downgrade-free posture; byte-identical to pre-NM-70 and
                   // the posture ReadSide's persisted-SsKey recovery needs).
@@ -802,6 +819,13 @@ module EmissionPolicy =
     /// bisect opt-out). Sibling to `withIncludePlatformAutoIndexes`.
     let withRenderConstraintsElegant (elegant: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with RenderConstraintsElegant = elegant }
+
+    /// 2026-07-19 — replace `RenderDataElegant` while preserving the rest of the
+    /// policy. Operators set to `false` to fall back to the composer's compact
+    /// per-kind concatenation (the diagnostic / bisect opt-out). Sibling to
+    /// `withRenderConstraintsElegant`.
+    let withRenderDataElegant (elegant: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with RenderDataElegant = elegant }
 
     /// NM-70 (WP5) — replace `EmitIdentityAnnotations` while preserving the
     /// rest of the policy. Operators set to `false` to suppress the

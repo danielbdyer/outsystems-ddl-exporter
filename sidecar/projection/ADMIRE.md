@@ -3015,3 +3015,43 @@ witnesses T17 cites.
 query builder derives both from the logical basis so the projection stays aligned with the
 canonical form; a type the server projection cannot carry descends to the canonical plane BY
 NAME (capability-descent discipline), never silently.
+
+---
+
+## `StaticEntitySeedScriptGenerator` / `StaticSeedSqlBuilder` — the readable seed-file layout (2026-07-19)
+
+**V1 source:** `src/Osm.Emission/Seeds/StaticEntitySeedScriptGenerator.cs` +
+`src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs` (`AppendValuesClause` line 307,
+`AppendMergeStatement` line 211).
+
+### What it does
+V1 emitted each static-entity seed file as a file banner + `SET NOCOUNT ON;`, a
+per-entity header block (`-- Module: … / -- Entity: … (schema.physical) / -- Target:
+schema.effective`), and a MERGE whose `USING ( VALUES …)` list breaks ONE ROW PER
+LINE (8-space indent, comma-then-newline). The layout is a maintenance affordance:
+an operator reviewing `Data/*.sql` reads one row per line, labelled by entity.
+
+### V2 placement
+Editorial donor for `Projection.Targets.Data/DataSeedFormatter.fs`
+(`emission.renderDataElegant`, default on). NOT a carbon-copy of the codepath —
+V2 keeps ScriptDom as the typed-AST MERGE renderer (pillar 7) and layers V1's
+readability as a TERMINAL TEXT POST-PROCESSOR over the rendered output, the same
+shape `ConstraintFormatter` (NM-38) took for CREATE TABLE. The donation is the
+FORM: banner + NOCOUNT + per-entity headers + one-row-per-line VALUES. V2 simplifies
+the header to a per-module banner + `-- <Entity> (N rows)` (the data V2 has readily),
+and the MERGE body stays ScriptDom's (`[Target]` alias, its clause placement) —
+readability parity, not byte-exact V1. Header citation + the `DECISIONS 2026-07-19`
+entry land with the file.
+
+### Existing test coverage
+V1: golden fixtures under `tests/Fixtures/emission/*/Seeds/…/StaticEntities.seed.sql`.
+V2: `DataSeedFormatterTests` (reflow + lane assembly) + the re-recorded
+`Golden/{data-lanes,master}/Data/*.sql` goldens.
+
+### Edges / risks
+The reflow targets the inline `USING (VALUES …)` only — a staged `#temp` MERGE
+(`USING [#temp]`, whose INSERT batches ScriptDom already renders per row) and a
+Phase-2 UPDATE pass through unchanged. Applied at the PUBLISHED-file boundary only;
+the deploy shapes (`composeRenderedFull` / `composeRenderedLeveled`) stay compact so
+the leveled-PARTITIONS-fused invariant holds. The composite-PK `ON` clause keeps
+ScriptDom's wide continuation alignment (not V1's) — outside the reflow's scope.
