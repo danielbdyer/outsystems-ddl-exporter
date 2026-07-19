@@ -110,6 +110,26 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
     | Ok v -> v
     | Error e -> Assert.Fail (sprintf "expected Ok, got %A" e); Unchecked.defaultof<_>
 
+/// DECISIONS 2026-07-19 — the static LANE (`StaticSeedsEmitter.emit` /
+/// `emitWithTopo`) now renders cyclic nullable FKs INLINE (single MERGE, no
+/// Phase-2), matching V1's `StaticSeedSqlBuilder`. The two-phase deferral
+/// MACHINERY it shares with the bootstrap / migration / transfer lanes is
+/// unchanged: those lanes reach the renderer through `emitFromPlan` over a plan
+/// whose `DeferredFkColumns` are populated (only `emitWithTopo` clears them).
+/// The δ / v7-slice-5 tests below pin THAT machinery through `emitFromPlan` —
+/// the exact path bootstrap + transfer take — while the static-lane inline
+/// behavior is pinned by its own test (`static lane renders a cyclic nullable
+/// FK inline`).
+let private emitDeferring (catalog: Catalog) : ArtifactByKind<DataInsertScript> =
+    let topo = (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+    let rawRows =
+        Catalog.allKinds catalog
+        |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
+        |> Map.ofList
+    let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
+    StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan
+    |> mustOkEmit
+
 [<Fact>]
 let ``StaticSeedsEmitter.emit produces one DataInsertScript per kind (T11 keyset)`` () =
     let catalog = mkCatalog [ mkCountryKind (); mkRegularKind () ]
@@ -579,7 +599,7 @@ let ``Slice δ: acyclic catalog produces empty DeferredFkSet on every Phase1 row
 let ``Slice δ: self-referencing nullable FK populates DeferredFkSet`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
     let phase1 = List.head script.Phase1Merges
@@ -593,7 +613,7 @@ let ``Slice δ: self-referencing nullable FK populates DeferredFkSet`` () =
 let ``Slice δ: self-FK kind produces one Phase2Updates row per Phase1 row`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     Assert.Equal (List.length script.Phase1Merges, List.length script.Phase2Updates)
     // Phase2 rows carry the same (KindKey, Identifier, DeferredFkSet)
@@ -601,6 +621,26 @@ let ``Slice δ: self-FK kind produces one Phase2Updates row per Phase1 row`` () 
     let p1Identities = script.Phase1Merges |> List.map (fun r -> r.KindKey, r.Identifier, r.DeferredFkSet)
     let p2Identities = script.Phase2Updates |> List.map (fun r -> r.KindKey, r.Identifier, r.DeferredFkSet)
     Assert.Equal<(SsKey * SsKey * Set<Name>) list> (p1Identities, p2Identities)
+
+[<Fact>]
+let ``static lane renders a cyclic nullable FK inline (no Phase-2; DECISIONS 2026-07-19)`` () =
+    // The static-seed LANE (`emit` / `emitWithTopo`) renders a self-referencing
+    // nullable FK as a single MERGE carrying the real FK value — NOT the
+    // Phase-1-NULL / Phase-2-UPDATE deferral (which the migration / bootstrap /
+    // transfer lanes keep — pinned above via `emitDeferring`). V1's
+    // `StaticSeedSqlBuilder` shape: single MERGE, no follow-up UPDATE.
+    let tree = mkTreeKind ()
+    let catalog = mkCatalog [ tree ]
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
+    // No column deferred, no Phase-2 UPDATE.
+    Assert.All (script.Phase1Merges, fun row -> Assert.Empty row.DeferredFkSet)
+    Assert.Empty script.Phase2Updates
+    // The rendered MERGE carries the real FK value (the deferred-NULL form does
+    // NOT appear), and there is no standalone Phase-2 UPDATE statement.
+    let r = normWs script.Rendered
+    Assert.DoesNotContain ("(1, N'root', NULL)", r)
+    Assert.DoesNotContain ("UPDATE [dbo].[OSUSR_TEST_TREE]", r)
 
 [<Fact>]
 let ``Slice δ: NOT NULL FK in cycle is NOT deferred`` () =
@@ -619,7 +659,7 @@ let ``Slice δ: NOT NULL FK in cycle is NOT deferred`` () =
 let ``Slice δ: Phase1 MERGE renders deferred column as NULL in VALUES`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     let r = normWs script.Rendered
     // The MERGE's USING (VALUES (...)) row should carry NULL in the
@@ -635,7 +675,7 @@ let ``Slice δ: Phase1 MERGE renders deferred column as NULL in VALUES`` () =
 let ``Slice δ: Phase2 UPDATE references PK in WHERE + deferred column in SET`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     let r = normWs script.Rendered
     Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_TREE]", r)
@@ -685,7 +725,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ aKind; bKind ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let m = ArtifactByKind.toMap artifact
     let aScript = Map.find aKey m
     let bScript = Map.find bKey m
@@ -1142,7 +1182,7 @@ let ``v7 slice 5: phase 2 touches exactly the repair set — an all-NULL deferre
           Indexes = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ kind ]
-    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let artifact = emitDeferring catalog
     let script = ArtifactByKind.toMap artifact |> Map.find key
     Assert.Equal(2, script.Phase1Merges.Length)
     // The repair set is exactly the one row with a non-NULL parent.
