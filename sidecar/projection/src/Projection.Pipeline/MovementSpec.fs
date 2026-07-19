@@ -667,6 +667,12 @@ type PlanAction =
     /// `needCatalog` seam (live-OSSYS primary, file fallback) like every
     /// model-bearing action.
     | CheckFidelityFlow of model: ModelSource * modelOssys: string option * args: CheckFidelityFlowArgs
+    /// `check fidelity --against <manifest> --target <ref>` (P2-S3) — the OFFLINE
+    /// reconcile: verify a target the tool did NOT stage (a database the operator
+    /// applied themselves) against a PORTABLE proof manifest, with no live source.
+    /// The model rides the same `needCatalog` seam (its shape is the alignment
+    /// basis; a manifest captured under a different model is refused).
+    | CheckFidelityAgainst of model: ModelSource * modelOssys: string option * args: CheckFidelityAgainstArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -875,6 +881,18 @@ and CheckFidelityFlowArgs =
       /// (the manifest needs the report's per-kind source digests, which a cache
       /// hit does not carry). `None` writes no manifest.
       Capture    : string option }
+
+/// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
+/// --target <ref>`, P2-S3): the portable manifest path, and the target the
+/// operator applied themselves (label + resolved conn). No source — the manifest
+/// IS the source's captured fingerprint. The model arrives on the `PlanAction`
+/// (the `needCatalog` seam), its shape gated against the manifest's basis.
+and CheckFidelityAgainstArgs =
+    { ManifestPath : string
+      /// The target env's display label (`--target`'s raw ref).
+      TargetLabel  : string
+      TargetConn   : string
+      AsJson       : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

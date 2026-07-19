@@ -2480,6 +2480,33 @@ module Command =
                               FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }
             | "fidelity" :: rest ->
+                match valueOf "--against" with
+                | Some manifestPath ->
+                    // P2-S3 — the OFFLINE reconcile form: verify a target the tool
+                    // did NOT stage against a portable manifest, no live source.
+                    // The model (its shape the reconcile's alignment basis) rides
+                    // the same `needCatalog` seam as the flow form.
+                    let modelOssys = cfg.Shaping.Model.Ossys
+                    let modelSource =
+                        match cfg.Shaping.Model.Path with
+                        | Some m -> ModelSource.ModelFile m
+                        | None   -> ModelSource.Unspecified
+                    if modelSource = ModelSource.Unspecified && Option.isNone modelOssys then
+                        PlanAction.Refused (2, err "cli.check.fidelityNoModel" "projection check fidelity --against: no model is configured (set `model` or `model.ossys` in projection.json) — the model's shape is the reconcile's alignment basis.")
+                    else
+                        (match valueOf "--target" with
+                         | None -> PlanAction.Refused (2, err "cli.check.fidelityAgainstNoTarget" "projection check fidelity --against <manifest>: needs --target <ref> — the database (the one you applied yourself) to reconcile against the manifest.")
+                         | Some targetRef ->
+                             match connOf targetRef with
+                             | Ok targetConn ->
+                                 PlanAction.CheckFidelityAgainst
+                                     (modelSource, modelOssys,
+                                      { ManifestPath = manifestPath
+                                        TargetLabel  = targetRef
+                                        TargetConn   = targetConn
+                                        AsJson       = (valueOf "--format" = Some "json") })
+                             | Error es -> PlanAction.Refused (6, List.head es))
+                | None ->
                 // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15
                 // decision 4 — one fidelity concept, file-source and
                 // estate-source): flow-map membership is tested BEFORE the
@@ -2490,7 +2517,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest

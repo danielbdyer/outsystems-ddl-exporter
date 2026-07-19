@@ -29912,3 +29912,43 @@ foreign version / foreign plane / garbage / missing field each fail closed.
 `ReverseLegCanaryTests` "P2-S2 capture" (Docker): `check fidelity --capture` writes
 a valid manifest carrying every compared kind's non-empty source digest + the
 provenance.
+
+---
+
+## 2026-07-19 — `check fidelity --against`: the offline reconcile verifies a target the operator applied themselves against a portable manifest, no live source (P2-S3)
+
+**The decision.** `check fidelity` grew the `--against <manifest> --target <ref>`
+form — the OFFLINE reconcile. It reads a portable proof manifest (the source's
+captured per-kind `RowDigestFold` digests), reads back the target the operator
+applied THEMSELVES, folds each kind's digest from the target ALONE, and proves it
+byte-identical to the stored source digest — with NO live source present. This
+closes Path 2: capture a manifest at cutover (`--capture`), carry it to the
+local/deployed database, and re-check what was deployed later, offline.
+
+**Per-kind pass/fail — the honest, named downgrade.** The manifest carries
+digests, not rows, so the reconcile decides each kind byte-identical-or-diverged
+but cannot NAME which rows differ (that needs the live source). Every verdict
+carries `NamingSkipped = "reconciled against a stored source digest …"`, and the
+report points the operator to `check data --rows` (both live) for the drill-down —
+the T17 `NamingSkipped` degradation applied to the source-absent case, never a
+silent weakening.
+
+**The alignment gate.** The manifest's digests were captured under a specific
+model shape (its `ModelHash`); reconciling a target read under a DIFFERENT shape
+would compare incomparable bytes. `FidelityProofCache.modelHash model ≠
+manifest.ModelHash` is a NAMED refusal (exit 6), never a false verdict. An
+unreadable/foreign manifest (fail-closed `tryParse`) and an unreachable/absent
+target are likewise named refusals, never a crash or a silent pass.
+
+**Reuse.** `FidelityCompareRun.reconcileAgainstDigests` is a sibling of
+`compareKind` reusing its private fold machinery (the LOGICAL basis, the datetime
+canonicalization, `RowDigestFold`); it produces the SAME `RowFidelityReport`, so
+the verb rides the same render / `fidelity.rows.json` / exit-code (0/5/6) surface
+as the flow proof. The reconcile core is decoupled from `ProofManifest` (which
+compiles after `FidelityCompareRun`) by a small `SourceDigestEntry` carrier.
+Read-only — a gate, not a move (the estate chapter's non-goal).
+
+**Witness.** `FidelityRowsDockerTests` "P2-S3 offline reconcile": capture a
+manifest from a source, then reconcile a byte-identical target against it (exit 0)
+and a tampered target (exit 5) — both decided from the manifest + the target
+alone, `runFidelityAgainst` never opening a source connection.

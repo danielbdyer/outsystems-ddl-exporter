@@ -337,6 +337,12 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // family's no-ledger-append contract holds).
         needCatalog modelOssys model (fun cat ->
             shellRun "projection check fidelity" Shell.ReadOnly (fun () -> runCheckFidelityFlow cat args))
+    | PlanAction.CheckFidelityAgainst (model, modelOssys, args) ->
+        // P2-S3 — the OFFLINE reconcile: verify a target the tool did not stage
+        // against a portable manifest, no live source. Read-only (a gate, not a
+        // move); the model rides the same `needCatalog` seam.
+        needCatalog modelOssys model (fun cat ->
+            shellRun "projection check fidelity --against" Shell.ReadOnly (fun () -> runFidelityAgainst cat args))
     | PlanAction.CheckReady                ->
         // Self-bracketed: `runReadiness` owns its RunEnvelope (the documented
         // no-append contract rides the ReadOnly register).

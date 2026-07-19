@@ -316,3 +316,77 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             printfn "  Proof cache: %s — clear with --refresh, or delete the file." cachePathText
         0
     | None -> runProof ()
+
+/// P2-S3 — `check fidelity --against <manifest> --target <ref>`. THE OFFLINE
+/// RECONCILE: read a portable proof manifest (a source estate's captured per-kind
+/// digests + provenance), read back the target the operator applied THEMSELVES,
+/// and prove each kind byte-identical WITHOUT the live source. Per-kind pass/fail
+/// (the manifest carries digests, not rows — the drill-down escalates to
+/// `check data --rows`). Read-only. Exits: 0 all kinds match · 5 a kind diverged
+/// (named) · 6 the manifest is unreadable, the model's shape has moved from the
+/// manifest's basis, or the target could not be read.
+let runFidelityAgainst (model: Catalog) (args: CheckFidelityAgainstArgs) : int =
+    match ProofManifest.tryRead args.ManifestPath with
+    | None ->
+        // §14 — the manifest is the reconcile's whole input; a torn/absent/foreign
+        // one reconciles to NOTHING (fail-closed), surfaced as a named refusal.
+        printErrors Console.Error
+            [ ValidationError.create "cli.fidelity.against.manifestUnreadable"
+                (sprintf "projection check fidelity --against: the manifest '%s' is absent, unreadable, or not a valid v%d rowDigestFold manifest." args.ManifestPath ProofManifest.Version) ]
+        6
+    | Some manifest ->
+        // The alignment gate: the manifest's digests were captured under a
+        // specific model shape; reconciling a target read under a DIFFERENT shape
+        // would compare incomparable bytes. A mismatch is a NAMED refusal.
+        if FidelityProofCache.modelHash model <> manifest.ModelHash then
+            printErrors Console.Error
+                [ ValidationError.create "cli.fidelity.against.modelMismatch"
+                    (sprintf "projection check fidelity --against: the manifest was captured from '%s' under a DIFFERENT model shape than the one now configured — the alignment basis has moved, so the digests are not comparable. Re-capture the manifest against the current model, or point `model` at the shape it was captured under." manifest.SourceLabel) ]
+            6
+        else
+        let logical = CatalogRendition.logical model
+        let entries : SourceDigestEntry list =
+            manifest.Kinds
+            |> List.map (fun k -> { KindKey = k.Kind; KindName = k.KindName; Digest = k.Digest })
+        let work () : Task<Result<RowFidelityReport>> =
+            task {
+                try
+                    use target = new Microsoft.Data.SqlClient.SqlConnection(args.TargetConn)
+                    do! target.OpenAsync()
+                    let! report =
+                        FidelityCompareRun.reconcileAgainstDigests
+                            target manifest.SourceLabel args.TargetLabel manifest.TolerancesInForce logical entries
+                    return Ok report
+                with ex ->
+                    return
+                        Result.failureOf
+                            (ValidationError.createWithMetadata
+                                "cli.fidelity.against.targetUnreadable"
+                                "The target could not be read for the reconcile (unreachable, or a kind's table is absent)."
+                                (Map.ofList [ "target", Some args.TargetLabel; "detail", Some ex.Message ]))
+            }
+        match (work ()).GetAwaiter().GetResult() with
+        | Error errs ->
+            printErrors Console.Error errs
+            6
+        | Ok report ->
+            let artifact = FidelityCompareRun.toJsonString report
+            if args.AsJson then
+                printfn "%s" artifact
+            else
+                let payload : Voice.Payload =
+                    Map.ofList
+                        [ "rows",  box (RowFidelityReport.rowsCompared report)
+                          "kinds", box (List.length report.Kinds)
+                          "diffs", box (RowFidelityReport.differenceTotal report)
+                          "ledger", box ""
+                          "tolerances", box (String.concat ", " report.TolerancesInForce)
+                          "artifactPath", box "fidelity.rows.json" ]
+                let verdictCode =
+                    if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"
+                TtyRenderer.renderVoicedTo Console.Out verdictCode payload
+                printfn ""
+                printfn "  Reconciled the target '%s' against the manifest captured from '%s' — per-kind pass/fail, NO live source. Escalate to `check data --rows` (both live) to name differing rows." args.TargetLabel manifest.SourceLabel
+                FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
+            tryWriteArtifact "fidelity.rows.json" artifact
+            if RowFidelityReport.agrees report then 0 else 5
