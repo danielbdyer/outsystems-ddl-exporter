@@ -29762,3 +29762,64 @@ then applies all with one edit — or declares the intended indexes UNIQUE in th
 model). The other keep-reasons stay non-config-actionable (duplicates need a
 data fix; missing evidence needs profiling; policy-disabled is the operator's
 own toggle). Closes the machine-readable-candidate-list residual named above.
+
+## 2026-07-19 — σ's value streams are content-addressed to the cell: stability across schema versions (`S-stable`), the Twin's load-bearing property
+
+**Status:** ADOPTED. The kernel change lands with its executable witness
+(`SyntheticDataTests``S-stable``, three facts) and no other test churn — the
+pure pool stays green.
+
+**The property this serves.** The Twin's reason to exist is schema-change
+testing: spin up a local DB, make a schema edit, and see whether a test behaves
+differently. That signal is only trustworthy if the DATA is held fixed across
+the edit — otherwise a diff between v1 and v2 could be the dice, not the schema
+change. So determinism-within-a-schema (T1: same seed → byte-identical) is not
+enough; we need **stability across schema versions**: an edit perturbs only the
+columns it touches, and every other column is byte-identical between the two
+versions.
+
+**The gap.** σ already content-addressed at the KIND grain — `kindSeed master
+kind` made each kind's stream independent, stable under kind reordering. But
+WITHIN a kind it threaded ONE `Rng` over rows × attributes in declaration order
+("pass-2 rng, salted off the PK-pool rng"). A column consumes a variable number
+of draws (an FK draws 1–2, a categorical 2, a null-decision 0–1), so inserting a
+column mid-table shifts every DOWNSTREAM column's draws — and, because the thread
+was row-major, every LATER row of every column too. Adding one column changed
+the synthetic data wholesale, between exactly the two versions the operator is
+trying to diff. This is the failure mode `THE_SYNTHETIC_DATA_DESIGN.md` §6
+("schema-drift handling, free via SsKey") did NOT cover: §6 keeps the PROFILE
+lookup stable across renames; it said nothing about the DRAW stream.
+
+**The fix — one law, seeded from the coordinate.** Extend the content-address
+down to the cell: `column_seed = mix(kind_seed ⊕ hash(column_name))`, and each
+cell's stream is `cell_seed = mix(column_seed + γ·(row+1))` (a splitmix step over
+the row index). Every value σ emits is now a pure function of
+`(master, kind, column, row)` and that column's own evidence/config — never of a
+sibling column's presence, order, or draw count. The one deliberately-shared
+stream is the F5b correlated-FK tuple, keyed `(kind, row)` via `rowStreamSeed`
+(it MUST correlate its participating columns; an unrelated column's arrival still
+cannot move it). PK pools were already index-based (`surrogateRaw … i`), so row
+identity was stable before and stays so.
+
+**Why no other test moved.** The existing σ suite is property/range/determinism-
+shaped, not golden-literal: T1 (`generate = generate`), zero-orphans, null-rate
+within ε, the privacy contract, F5/F5b/H-072 skews, and the no-op-config
+byte-identity pairs (empty `ProvidedPools`/`AugmentPools`, cross-cluster) all
+hold under any deterministic re-seed that preserves the distributions and the
+equal-path draws — which per-cell seeding does. The actual emitted bytes for a
+FIXED schema DID change (a re-seed), but nothing pins them, and the Twin's mint
+re-mints on every schema change today (`THE_TWIN.md` §9), so there is no
+persisted dataset to migrate.
+
+**Distributional note.** Per-cell fresh seeding is the counter-based-RNG posture
+(seed = hash(key ‖ counter)): splitmix64's finalizer over disjoint seeds yields
+independent uniform streams, and the design's correctness claim is distributional
+("within ε"), not a uniformity proof (`THE_SYNTHETIC_DATA_DESIGN.md` §3). The
+null-rate-ε, range, and skew facts confirm the shapes survive.
+
+**Boundary named (adjacent, deferred).** The essay that opened this work also
+asks for a `--dry-run --explain` that prints, per column, which resolution rule
+won (explicit → heuristic → profile → constraint → type-default) and why. That
+inspectability is real and load-bearing for trust in the defaults layer, but it
+is a CLI/reporting surface, not the data-stability axis this branch owns — left
+as the next slice, not smuggled in here.

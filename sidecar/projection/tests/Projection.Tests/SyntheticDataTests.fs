@@ -594,3 +594,94 @@ let ``K1b: augmented generation keeps its own rows' keys and stays deterministic
     // beyond the row range.
     let baseline = SyntheticData.generate catalog profile cfg 3UL
     Assert.Equal<string list>(valuesOf baseline custKey "Id", valuesOf a custKey "Id")
+
+// ---------------------------------------------------------------------------
+// S-stable (DECISIONS 2026-07-19) — stability across schema versions. σ's value
+// streams are content-addressed by (master, kind, column, row): a draw is
+// seeded from the coordinate it fills, never threaded positionally across a
+// kind's columns. So a schema edit perturbs ONLY the columns it touches —
+// inserting, removing, or reordering a column leaves every other column
+// byte-identical. This is the Twin's load-bearing property: when a test behaves
+// differently between two schema versions the DATA is the same variable held
+// fixed, so the schema change is the only cause — not the dice.
+//
+// The naive one-RNG-per-kind, threaded-in-declaration-order design fails all
+// three of these: a mid-table column consumes a different number of draws,
+// shifting every downstream column and (through the row-major thread) every
+// later row. These tests are that law's executable witness.
+// ---------------------------------------------------------------------------
+
+let private custMiddle = attrKey ["C"; "Middle"]
+
+/// Customer with one extra NOT NULL text column inserted in the MIDDLE of the
+/// attribute list (between Status and Email) — the adversarial position for a
+/// positional generator.
+let private customerWithMiddle : Kind =
+    { Kind.create custKey (name "Customer") (mkTableId "dbo" "CUSTOMER")
+        [ attr custId    "Id"     Integer true  false
+          attr custStat  "Status" Text    false false
+          attr custMiddle "Middle" Text   false false
+          attr custEmail "Email"  Text    false false
+          attr custScore "Score"  Integer false false
+          attr custNotes "Notes"  Text    false true  ] with
+        Modality = [] }
+
+[<Fact>]
+let ``S-stable: inserting a column mid-table perturbs only that column — every other column byte-identical`` () =
+    let catalogV2 =
+        Catalog.create [ mkModule (modKey "M") (name "M") [ customerWithMiddle; order ] ] [] |> mkOk
+    // The new column carries its own row count (100, no nulls); the kind's
+    // volume is unchanged (max over the columns' RowCounts is still 100).
+    let profileV2 = { profile with Columns = col custMiddle 100L 0L :: profile.Columns }
+    let v1 = SyntheticData.generate catalog   profile   cfg 7UL
+    let v2 = SyntheticData.generate catalogV2 profileV2 cfg 7UL
+    // Every column that survived the edit is byte-identical across the versions.
+    for attrName in [ "Id"; "Status"; "Email"; "Score"; "Notes" ] do
+        Assert.Equal<string list>(valuesOf v1 custKey attrName, valuesOf v2 custKey attrName)
+    // The child kind — its FKs draw from the (unchanged) Customer PK pool — is
+    // wholly untouched by the parent's new column.
+    for attrName in [ "Id"; "CustomerId"; "OptCustomerId" ] do
+        Assert.Equal<string list>(valuesOf v1 ordKey attrName, valuesOf v2 ordKey attrName)
+    // The new column is the ONLY difference: present in v2, absent from v1.
+    Assert.Equal(100, valuesOf v2 custKey "Middle" |> List.length)
+    Assert.Empty(valuesOf v1 custKey "Middle")
+
+[<Fact>]
+let ``S-stable: reordering a kind's columns is byte-identical to the original`` () =
+    // A pure permutation of the attribute list (Id stays the PK, just no longer
+    // first). Content-addressed streams ignore declaration order entirely, so
+    // the whole dataset — values AND row identities — is unchanged.
+    let customerReordered : Kind =
+        { customer with
+            Attributes =
+                [ attr custStat  "Status" Text    false false
+                  attr custEmail "Email"  Text    false false
+                  attr custId    "Id"     Integer true  false
+                  attr custNotes "Notes"  Text    false true
+                  attr custScore "Score"  Integer false false ] }
+    let catalogReordered =
+        Catalog.create [ mkModule (modKey "M") (name "M") [ customerReordered; order ] ] [] |> mkOk
+    let v1 = SyntheticData.generate catalog          profile cfg 7UL
+    let v2 = SyntheticData.generate catalogReordered profile cfg 7UL
+    Assert.Equal<Map<SsKey, StaticRow list>>(v1, v2)
+
+[<Fact>]
+let ``S-stable: removing a column leaves every surviving column byte-identical`` () =
+    // Drop Score from the middle of Customer. The columns around it — and the
+    // child kind — must be exactly what they were before the drop.
+    let customerNoScore : Kind =
+        { customer with
+            Attributes =
+                [ attr custId    "Id"     Integer true  false
+                  attr custStat  "Status" Text    false false
+                  attr custEmail "Email"  Text    false false
+                  attr custNotes "Notes"  Text    false true  ] }
+    let catalogV2 =
+        Catalog.create [ mkModule (modKey "M") (name "M") [ customerNoScore; order ] ] [] |> mkOk
+    let v1 = SyntheticData.generate catalog   profile cfg 7UL
+    let v2 = SyntheticData.generate catalogV2 profile cfg 7UL
+    for attrName in [ "Id"; "Status"; "Email"; "Notes" ] do
+        Assert.Equal<string list>(valuesOf v1 custKey attrName, valuesOf v2 custKey attrName)
+    for attrName in [ "Id"; "CustomerId"; "OptCustomerId" ] do
+        Assert.Equal<string list>(valuesOf v1 ordKey attrName, valuesOf v2 ordKey attrName)
+    Assert.Empty(valuesOf v2 custKey "Score")

@@ -185,6 +185,21 @@ Generate rows for the **target schema B** (what we load into), drawing evidence 
 columns (no profile) get type-defaults; A-only columns are ignored. So profiled-legacy →
 cloud-preview works even under schema drift, as long as identity is preserved.
 
+### 6.1 Stability across schema versions (`S-stable`, DECISIONS 2026-07-19)
+
+§6 keeps the *profile lookup* stable across the drift; the **draw stream** is kept stable
+by the same discipline, one grain finer. σ's values are **content-addressed to the cell**:
+`table_seed = mix(master ⊕ hash(table))`, `column_seed = mix(table_seed ⊕ hash(column))`,
+and each cell draws from `mix(column_seed + γ·(row+1))`. Every emitted value is a pure
+function of `(master, kind, column, row)` — never threaded positionally across a kind's
+columns. So inserting, removing, or reordering a column perturbs **only that column's
+cells**; every other column is byte-identical between the two schema versions. This is the
+property that makes local schema-change testing trustworthy (the Twin's whole reason to
+exist): when a test behaves differently between v1 and v2, the data is the fixed variable,
+so the schema change is the only cause — not the dice. The one deliberately row-shared
+stream is the F5b correlated-FK tuple, keyed `(kind, row)`; the marginal columns each own
+their stream. Witnessed by `SyntheticDataTests``S-stable`` (insert / reorder / remove).
+
 ---
 
 ## 7. Scope boundaries (named, not silent — surface each in `THE_CLI.md` §12)
