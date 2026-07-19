@@ -555,7 +555,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl }
+                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None }
                     try
                         // GREEN — the machinery is faithful: every minted key
                         // and every FK cell translates through the journal;
@@ -609,7 +609,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "p1s1-dacfx"; FromLabel = "p1s1-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Dacfx }
+                            { Flow = "p1s1-dacfx"; FromLabel = "p1s1-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Dacfx; Capture = None }
                     try
                         // GREEN — the DacFx-published stand-in carries the target
                         // shape; the journaled load lands every row byte-identical
@@ -632,6 +632,51 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         with _ -> ()
                 }))
 
+    // ------------------------------------------------------------------
+    // P2-S2 — THE PORTABLE MANIFEST CAPTURE: `check fidelity <flow> --capture
+    // <path>` writes the SOURCE side's per-kind RowDigestFold digests +
+    // provenance to a portable file, so a target the tool did not stage can be
+    // reconciled against it OFFLINE (P2-S3) without the live source. This witness
+    // proves the face writes a VALID, parseable manifest carrying every compared
+    // kind's non-empty digest — the artifact the offline reconcile consumes.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member _.``P2-S2 capture: check fidelity --capture writes a valid portable manifest carrying each kind's source digest`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "P2S2Capture") then () else
+        let model = ReverseLegFixtures.authoredModel
+        let physicalContract = CatalogRendition.physical model
+        let manifestPath =
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "p2s2-" + System.Guid.NewGuid().ToString "N" + ".manifest.json")
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "P2S2CaptureSrc" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
+                    let code =
+                        Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                            { Flow = "p2s2"; FromLabel = "p2s2-src"; SourceConn = srcConnStr; SampleCap = 20
+                              AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = Some manifestPath }
+                    try
+                        // A green proof AND a manifest written beside it.
+                        Assert.Equal(0, code)
+                        match ProofManifest.tryRead manifestPath with
+                        | None -> Assert.True(false, "the manifest was not written or does not parse")
+                        | Some m ->
+                            // Provenance: the source label + a non-empty model hash.
+                            Assert.Equal("p2s2-src", m.SourceLabel)
+                            Assert.False(System.String.IsNullOrEmpty m.ModelHash)
+                            // Every compared kind carries a non-empty aggregate digest —
+                            // the source content the offline reconcile re-derives.
+                            Assert.NotEmpty(m.Kinds)
+                            for k in m.Kinds do
+                                Assert.False(System.String.IsNullOrEmpty k.Digest.Aggregate, "each kind carries a source digest")
+                    finally
+                        try System.IO.File.Delete manifestPath with _ -> ()
+                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                        try if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true) with _ -> ()
+                }))
+
     [<Fact>]
     member _.``B6 proof cache: the first green proof caches; an unchanged estate hits the cache and skips the container (no new transfer journal)`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "B6Cache") then () else
@@ -649,7 +694,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl }
+                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None }
                     try
                         // RUN 1 — a green proof runs the container AND caches its
                         // result (the source's fingerprints were probed live, the
@@ -671,7 +716,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         // (the container runs again, recreating the journal).
                         let refreshed () =
                             Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true; Stage = StagingMode.Ddl }
+                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true; Stage = StagingMode.Ddl; Capture = None }
                         Assert.Equal(0, refreshed ())
                         Assert.True(System.IO.Directory.Exists flowDir, "--refresh forces the container to run again")
                     finally

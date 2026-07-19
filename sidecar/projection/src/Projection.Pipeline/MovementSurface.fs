@@ -2490,7 +2490,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest
@@ -2533,7 +2533,8 @@ module Command =
                                           SampleCap  = cap
                                           AsJson     = (valueOf "--format" = Some "json")
                                           Refresh    = List.contains "--refresh" rest
-                                          Stage      = stg })
+                                          Stage      = stg
+                                          Capture    = valueOf "--capture" })
                                | Error es, _, _ -> PlanAction.Refused (6, List.head es)
                                | _, Error es, _ -> PlanAction.Refused (2, List.head es)
                                | _, _, Error es -> PlanAction.Refused (2, List.head es))
@@ -2548,7 +2549,7 @@ module Command =
                  | [] ->
                      PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
                  | _ ->
-                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--format json])."))
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--capture <path>] [--format json])."))
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

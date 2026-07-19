@@ -29870,3 +29870,45 @@ byte-identical (exit 0) through a DacServices-published stand-in on the faithful
 machine, and an FK-orphan source row reads exit 5 (the DacFx path names residuals,
 never a silent pass). B5 (the DDL-staged sibling) + this together witness the
 equivalence.
+
+---
+
+## 2026-07-19 — The portable proof manifest: `check fidelity --capture` writes the source's per-kind digests for a later offline reconcile (P2-S1/S2)
+
+**The decision.** `check fidelity <flow>` gained `--capture <path>`, which writes a
+PORTABLE proof manifest: the SOURCE estate's per-kind `RowDigestFold` content
+digests (`{aggregate, count}` per kind, keyed by `SsKey`) plus capture provenance
+(source label, capture time, the alignment model's shape hash, the tolerances in
+force). The manifest is the seed of Path 2 — verifying a target the tool did NOT
+stage (a database the operator applied themselves) WITHOUT the live source (the
+offline reconcile `check fidelity --against`, P2-S3, consumes it).
+
+**One digest plane, stamped.** The manifest commits to the `RowDigestFold` plane
+(pure Core, order-independent, and — critically — it digests a physical stream and
+a logical stream IDENTICALLY across the rename gap, so a target carrying the same
+LOGICAL shape re-derives the same digest). The plane is written into the file; a
+reader refuses a foreign plane rather than comparing incomparable hex. The
+server-digest plane (`ServerDigest`) is never mixed in — the two produce different
+values by construction (`ServerDigest.fs` header).
+
+**Reuse, not reinvention.** `ProofManifest` is `FidelityProofCache` with the
+per-kind `KindFingerprint` replaced by the STRONG `RowDigestFold.TableDigest`: the
+same sidecar codec (`System.Text.Json.Nodes` DOM), the same atomic-write and
+fail-closed-read idiom, the same `SsKey.serialize`/`deserialize` keys. `ofReport`
+builds it purely from a completed `RowFidelityReport`'s SOURCE-side verdicts — the
+per-kind digests the compare already folded (today written to `fidelity.rows.json`
+as write-only telemetry; the manifest promotes them to a durable, portable oracle).
+
+**Fail-closed + version/plane-gated.** A torn, version-mismatched, or
+plane-mismatched manifest parses to `None` (reconciles to NOTHING, never a false
+green). UNLIKE the advisory cache write, `--capture` is an explicitly-requested
+artifact, so a write failure is a named `ValidationError`, never a silent drop.
+`--capture` forces a full proof run (the manifest needs the report's per-kind
+source digests, which a cache hit does not carry).
+
+**Witnesses.** `ProofManifestTests` (pure): the codec round-trips up to canonical
+kind-ordering, the bytes are deterministic (kind-order-independent — T1), and a
+foreign version / foreign plane / garbage / missing field each fail closed.
+`ReverseLegCanaryTests` "P2-S2 capture" (Docker): `check fidelity --capture` writes
+a valid manifest carrying every compared kind's non-empty source digest + the
+provenance.

@@ -152,7 +152,9 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             | Error _ -> None
     let cacheHit : CachedProof option =
         match storeRoot, sourceFps with
-        | Some root, Some fps when not args.Refresh && args.Stage = StagingMode.Ddl ->
+        // P2-S2 — `--capture` forces a full proof: the manifest needs the report's
+        // per-kind source digests, which a cache hit does not carry.
+        | Some root, Some fps when not args.Refresh && args.Stage = StagingMode.Ddl && Option.isNone args.Capture ->
             match FidelityProofCache.tryRead root args.Flow with
             | Some cached when FidelityProofCache.isFresh cached currentModelHash fps -> Some cached
             | _ -> None
@@ -254,6 +256,21 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
           // ran; the scoped copy is this flow's, and its mtime is its age).
           (try IO.Directory.CreateDirectory journalDir |> ignore with _ -> ())
           tryWriteArtifact (IO.Path.Combine(journalDir, "fidelity.rows.json")) artifact
+          // P2-S2 — the PORTABLE proof manifest (`--capture <path>`): the SOURCE
+          // side's per-kind RowDigestFold digests + capture provenance, written
+          // for a later OFFLINE reconcile (`check fidelity --against`, P2-S3). The
+          // manifest is the source's fingerprint at proof time — meaningful green
+          // OR red (the source is the source). An explicitly-requested artifact,
+          // so a write failure is a NAMED error, never a silent drop.
+          (match args.Capture with
+           | Some capturePath ->
+               let manifest = ProofManifest.ofReport nowUtc currentModelHash report
+               match ProofManifest.write capturePath manifest with
+               | Ok () ->
+                   if not args.AsJson then
+                       printfn "  Proof manifest captured: %s — %d kind(s). Reconcile a target against it (no live source needed) with `check fidelity --against %s --target <ref>`." capturePath (List.length manifest.Kinds) capturePath
+               | Error errs -> printErrors Console.Error errs
+           | None -> ())
           // Cache the GREEN proof (wave B6) — the source fingerprints from the
           // pre-probe + the model hash; a non-green result CLEARS any prior entry
           // so a residual never short-circuits a future run.

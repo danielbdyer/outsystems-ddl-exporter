@@ -344,6 +344,7 @@
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="PerfHarnessCatalogTests.fs" />
+    <Compile Include="ProofManifestTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

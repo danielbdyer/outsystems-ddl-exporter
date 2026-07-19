@@ -132,6 +132,12 @@
          is clearable by flow name (the refresh flag) or wholesale (remove the
          proofs directory). -->
     <Compile Include="FidelityProofCache.fs" />
+    <!-- ProofManifest.fs: the portable proof manifest (P2 — offline
+         verification). FidelityProofCache with the per-kind KindFingerprint
+         replaced by the strong RowDigestFold.TableDigest + capture provenance;
+         `ofReport` reads a completed RowFidelityReport, so it compiles after
+         FidelityCompareRun.fs. The offline reconcile (P2-S3) consumes it. -->
+    <Compile Include="ProofManifest.fs" />
     <!-- EstateHistory.fs: the estate's recorded readings (wave A7 - the
          burndown's memory under the evidence store; movement + streak
          derivations pure, atomic save / fail-closed load at the boundary).

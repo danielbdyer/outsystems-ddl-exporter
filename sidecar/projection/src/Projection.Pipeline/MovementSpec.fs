@@ -867,7 +867,14 @@ and CheckFidelityFlowArgs =
       /// target. A `Dacfx` run always runs the container proof (it never reads or
       /// writes the DDL-keyed incremental cache — the DacFx≡DDL equivalence is the
       /// very thing under proof, so it is not assumed for cache reuse).
-      Stage      : StagingMode }
+      Stage      : StagingMode
+      /// `--capture <path>` (P2-S2) — write a PORTABLE proof manifest (the
+      /// source's per-kind RowDigestFold digests + capture provenance) to
+      /// `<path>`, for a later OFFLINE reconcile (`check fidelity --against`,
+      /// P2-S3) against a target the tool did not stage. Forces a full proof run
+      /// (the manifest needs the report's per-kind source digests, which a cache
+      /// hit does not carry). `None` writes no manifest.
+      Capture    : string option }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).
