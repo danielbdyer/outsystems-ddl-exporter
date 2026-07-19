@@ -60,8 +60,11 @@ shaped from day one to peel off as a standalone tool (§8).
 5. **Twin self-description** — the `[twin]` schema (one single-row state table) is the
    tool's only write outside the estate's own objects, excluded from schema comparison.
 6. **Inherited and re-asserted at the twin's grain** — T1 determinism of the mint
-   (`TwinMintLoopTests``T1``; byte-identical re-mints by construction under K1c), zero
-   FK orphans (`K1 + L1`), the privacy contract (the evidence-loop E2E's
+   (`TwinMintLoopTests``T1``; byte-identical re-mints by construction under K1c),
+   `S-stable` stability across schema versions (σ content-addresses every value to
+   `(master, kind, column, row)`, so a schema edit re-mints only the changed columns and
+   holds the rest byte-identical — `SyntheticDataTests``S-stable``; DECISIONS 2026-07-19),
+   zero FK orphans (`K1 + L1`), the privacy contract (the evidence-loop E2E's
    never-re-emitted source emails), and π ∘ σ ≈ id productized as `twin check`
    (model → publish → lanes → mint ×2 → zero orphans + identical digests +
    preserved-vocabulary re-profile).
@@ -204,7 +207,14 @@ scenario, coordinate, and expected shape named.
   pool length is the row range).
 - **`perParent` lands the MEAN fan-out via volumes**; skewed fan-out is the evidence
   plane's (`ForeignKeySelectivity`, F5a).
-- **v1 re-mints on every schema change** (data-preserving refresh is future work).
+- **v1 re-mints on every schema change** (data-preserving refresh is future work) — but
+  the re-mint is **stable across the schema change** (`S-stable`, DECISIONS 2026-07-19):
+  σ content-addresses every value to `(master, kind, column, row)`, so a schema edit
+  perturbs only the columns it touches and every other column re-mints byte-identical. This
+  is the axis the whole test bed hangs on — the re-mint being deterministic is not enough;
+  it must hold the unchanged data FIXED so a v1↔v2 test difference is the schema, not the
+  dice. The `--dry-run --explain` view of the per-column resolution chain is the adjacent,
+  still-deferred inspectability slice (named in the DECISIONS entry).
 - **Evidence-free realism needs a corrections artifact** — without one, columns mint as
   shaped tokens; `twin init`'s proposer scaffolds the classification (M5 wires it).
 - **`--watch`** deferred behind the same reconcile loop (operator decision 2026-07-18).

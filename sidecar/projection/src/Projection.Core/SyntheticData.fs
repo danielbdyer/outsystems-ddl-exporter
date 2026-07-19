@@ -235,6 +235,28 @@ module SyntheticData =
     let private kindSeed (master: uint64) (key: SsKey) : uint64 =
         mix (master ^^^ fnv1a (SsKey.serialize key))
 
+    /// The per-column base seed: the kind seed mixed with a stable hash of the
+    /// column's identity. Independent per column and stable under column
+    /// reordering — the content-address the stability-across-schema-change law
+    /// (`S-stable`) is built on: `column_seed = hash(table_seed, column_name)`.
+    let private columnSeed (master: uint64) (kindKey: SsKey) (attrKey: SsKey) : uint64 =
+        mix (kindSeed master kindKey ^^^ fnv1a (SsKey.serialize attrKey))
+
+    /// The seed for ONE cell — column `attrKey` at row `rowIndex`. A splitmix
+    /// step over the row index gives each row an independent draw stream while
+    /// the column seed keeps the streams disjoint across columns. So every value
+    /// σ emits is a pure function of (master, kind, column, row): inserting,
+    /// removing, or reordering a SIBLING column cannot move it — the whole point.
+    let private cellSeed (master: uint64) (kindKey: SsKey) (attrKey: SsKey) (rowIndex: int) : uint64 =
+        mix (columnSeed master kindKey attrKey + SplitGamma * (uint64 rowIndex + 1UL))
+
+    /// The seed for one ROW's correlated-FK-tuple stream (F5b). Keyed by
+    /// (kind, row) only — the joint columns' values ride this one draw, so an
+    /// unrelated column's arrival never disturbs the tuple. Salted apart from
+    /// every column stream (the historical pass-2 salt) so the two never collide.
+    let private rowStreamSeed (master: uint64) (kindKey: SsKey) (rowIndex: int) : uint64 =
+        mix ((kindSeed master kindKey ^^^ 0xD1B54A32D192ED03UL) + SplitGamma * (uint64 rowIndex + 1UL))
+
     // -- Type-rendered surrogates and defaults (raw-form; design §3 / §8) -----
 
     let private ticksPerDay : int64 = 864000000000L
@@ -406,10 +428,14 @@ module SyntheticData =
     // (raw strings keyed by attribute Name). A column at NULL is omitted.
 
     /// Build one kind's rows. `pkPools` carries every kind's PK pool (raw PK
-    /// values, one per row) so FK columns draw from the target's pool. The
-    /// per-kind `Rng` is threaded over rows × attributes in a fixed order
-    /// (declaration order, ascending row index) — deterministic by
-    /// construction.
+    /// values, one per row) so FK columns draw from the target's pool. Each
+    /// cell's `Rng` is CONTENT-ADDRESSED — seeded from (master, kind, column,
+    /// row) via `cellSeed`, never threaded positionally across the kind's
+    /// columns — so σ is deterministic AND stable across schema versions
+    /// (`S-stable`): inserting/removing/reordering a column moves only that
+    /// column's cells. The one exception is the row's correlated-FK tuple
+    /// (F5b), drawn once from a (kind, row)-keyed stream shared by the joint's
+    /// participating columns.
     /// H-072 — the leading fraction of a parent pool that intra-cluster FK draws
     /// concentrate on (opt-in). 0.3 = intra-cluster references land in the top 30%
     /// of the pool, so a cluster's rows share a small parent set (the cluster reads
@@ -534,24 +560,33 @@ module SyntheticData =
                         && (pkPools |> Map.tryFind target |> Option.defaultValue [] |> List.isEmpty) ->
                     Some (SyntheticDiagnostic.unsatisfiableForeignKey kind.SsKey attr.SsKey target)
                 | _ -> None)
-        // pass-2 rng, salted off the PK-pool rng so FK / distribution draws
-        // don't correlate with surrogate minting.
-        let mutable state = rngOf (kindSeed master kind.SsKey ^^^ 0xD1B54A32D192ED03UL)
-        let nextDraw () =
-            let v, s = draw state in state <- s; v
+        // Content-addressed value streams (the `S-stable` law). Every draw is
+        // seeded from the coordinate it fills — (master, kind, column, row) —
+        // never threaded positionally across a kind's columns. So inserting,
+        // removing, or reordering a column perturbs ONLY that column's cells;
+        // every other column is byte-identical across the schema change. The
+        // salt `^^^ 0xD1B5…` that once separated this "pass-2" stream from the
+        // PK-pool minting now lives in `rowStreamSeed` / `cellSeed`.
         let rows =
           [ for i in 0 .. rowCount - 1 ->
-            // §6.3 F5b — draw the row's correlated FK tuple ONCE (when a joint
-            // exists); the joint FK columns below take their value from it.
+            // §6.3 F5b — the row's correlated FK tuple, drawn ONCE from the row's
+            // own (kind, row)-keyed stream; the joint FK columns below take their
+            // value from it. Keyed by the row (not any column position), so an
+            // unrelated column's arrival never moves the tuple.
             let jointAssignment =
                 match jointDraw with
-                | Some draw -> let m, s = draw state in state <- s; m
+                | Some draw -> fst (draw (rngOf (rowStreamSeed master kind.SsKey i)))
                 | None      -> Map.empty
             let cells =
                 kind.Attributes
                 |> List.choose (fun attr ->
                     let attrHash = fnv1a (SsKey.serialize attr.SsKey)
                     let nullable = attr.Column.IsNullable
+                    // This column's own stream at this row — independent of every
+                    // sibling column's presence, declaration order, or draw count.
+                    let mutable state = rngOf (cellSeed master kind.SsKey attr.SsKey i)
+                    let nextDraw () =
+                        let v, s = draw state in state <- s; v
                     // §3 precedence: PK → FK → unique → distribution/default.
                     let raw =
                         if attr.IsPrimaryKey then
