@@ -386,7 +386,23 @@ module StaticSeedsEmitter =
             |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
             |> Map.ofList
         let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
-        emitFromPlan opts catalog profile plan
+        // DECISIONS 2026-07-19 — the STATIC-SEED lane renders cyclic nullable FKs
+        // INLINE (a single MERGE carrying the real FK value), NOT via the two-phase
+        // NULL-then-UPDATE deferral. This restores V1's `StaticSeedSqlBuilder` shape
+        // (single MERGE, no follow-up UPDATE); V1's phased insert-then-update
+        // (`PhasedDynamicEntityInsertGenerator`) was a DYNAMIC-entity, cycle-only
+        // mechanism V2 had generalized to static seeds. We keep `DataLoadPlan.build`'s
+        // FK-safe ordering + row construction and drop ONLY the per-load
+        // `DeferredFkColumns` here at the static-lane entry (`emitWithTopo` / `emit`).
+        // The bootstrap, migration, and transfer lanes build their OWN plans and reach
+        // `emitFromPlan` directly, so their Phase-2 deferral is untouched. (A
+        // self-referencing static FK is satisfied by a single MERGE — SQL Server checks
+        // the constraint at statement completion; a genuine cross-table static cycle
+        // relies on the FK not being enforced at seed time.)
+        let staticPlan =
+            { plan with
+                Loads = plan.Loads |> List.map (fun l -> { l with DeferredFkColumns = Set.empty }) }
+        emitFromPlan opts catalog profile staticPlan
 
     /// Π_StaticSeeds emit (standalone). Convenience for callers that don't go
     /// through the `DataEmissionComposer` (canary tests, direct-Π integration

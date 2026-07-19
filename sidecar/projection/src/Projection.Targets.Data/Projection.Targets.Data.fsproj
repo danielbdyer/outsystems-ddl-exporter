@@ -18,6 +18,7 @@
     <Compile Include="StaticSeedsEmitter.fs" />
     <Compile Include="MigrationDependenciesEmitter.fs" />
     <Compile Include="BootstrapEmitter.fs" />
+    <Compile Include="DataSeedFormatter.fs" />
     <Compile Include="DataEmissionComposer.fs" />
     <Compile Include="RegisteredDataTransforms.fs" />
   </ItemGroup>

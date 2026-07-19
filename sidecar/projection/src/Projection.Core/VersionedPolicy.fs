@@ -193,6 +193,7 @@ module VersionedPolicy =
                  appendLP sb (ColumnName.value t.Column)
                  appendLP sb t.Value)
         appendField sb "elegant"   (boolTok e.RenderConstraintsElegant)
+        appendField sb "dataElegant" (boolTok e.RenderDataElegant)
         appendField sb "identAnn"  (boolTok e.EmitIdentityAnnotations)
         appendField sb "dataVerif" (dataVerificationTok e.DataVerification)
 

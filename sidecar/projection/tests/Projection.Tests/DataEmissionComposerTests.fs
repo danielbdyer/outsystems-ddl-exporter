@@ -402,9 +402,21 @@ let ``Slice ι: composeRendered emits Phase-1 (MERGE) of every kind before Phase
     let alpha = mkSelfCycleKind "Alpha" "OSUSR_ALPHA" "1"
     let beta = mkSelfCycleKind "Beta" "OSUSR_BETA" "1"
     let catalog = mkCatalog [ alpha; beta ]
+    // DECISIONS 2026-07-19 — the static-seed lane now renders cyclic FKs inline
+    // (no Phase-2), so the composer's global Phase-1-before-Phase-2 ordering
+    // invariant is exercised through the BOOTSTRAP lane, which keeps the
+    // two-phase deferral. Under `AllData` bootstrap covers both self-cycle kinds
+    // and defers their nullable self-FKs.
     let text =
-        DataEmissionComposer.composeRendered (policyWith AllRemaining) catalog Profile.empty
+        let bootstrapRows =
+            Catalog.allKinds catalog
+            |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
+            |> Map.ofList
+        DataEmissionComposer.composeRenderedBundleWithBootstrap
+            (policyWith AllData) catalog Profile.empty
+            MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty
         |> mustOkEmit
+        |> fun (b: DataEmissionComposer.RenderedDataBundle) -> b.Bootstrap
     let n = normWsCmp text
     // Both kinds should produce a MERGE and an UPDATE (each has a
     // self-FK cycle on a nullable column → deferred → Phase-2 UPDATE).
@@ -663,16 +675,25 @@ let ``WP6 step 3: a single active lane makes the fused seed equal that lane (non
     // so the per-lane split adds nothing and the pipeline omits it.
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
+    // DECISIONS 2026-07-19 — the published per-lane files are V1-formatted
+    // (`renderDataElegant`, default on) with lane-specific banners; the on-demand
+    // FUSED render (`composeRenderedFull`) stays COMPACT (a deploy shape, and the
+    // `composeRenderedLeveled PARTITIONS composeRenderedFull` invariant requires
+    // it). Compare like-for-like at the compact (deploy) shape: render the bundle
+    // with the data formatter OFF.
+    let compactPolicy =
+        let p = policyWith AllRemaining
+        { p with Emission = EmissionPolicy.withRenderDataElegant false p.Emission }
     let bundle =
-        DataEmissionComposer.composeRenderedBundle (policyWith AllRemaining) catalog Profile.empty
+        DataEmissionComposer.composeRenderedBundle compactPolicy catalog Profile.empty
         |> mustOkEmit
     Assert.Equal (1, DataEmissionComposer.RenderedDataBundle.nonEmptyLaneCount bundle)
-    // Cross-path law: with a single active lane there is nothing to
-    // interleave, so the on-demand fused render (`composeRenderedFull`)
-    // is byte-identical to that lane's bundle rendering.
+    // Cross-path law: with a single active lane there is nothing to interleave, so
+    // the compact fused render is byte-identical to that lane's compact bundle
+    // rendering.
     let fused =
         DataEmissionComposer.composeRenderedFull
-            (policyWith AllRemaining) catalog Profile.empty
+            compactPolicy catalog Profile.empty
             MigrationDependencyContext.empty UserRemapContext.empty
         |> mustOkEmit
     Assert.Equal<string> (fused, bundle.StaticSeeds)
@@ -848,6 +869,34 @@ let private composeBoth (kinds: Kind list) =
         |> mustOkEmit
     fused, leveled
 
+/// DECISIONS 2026-07-19 — the STATIC-SEED lane renders cyclic nullable FKs
+/// INLINE (single MERGE, no Phase-2), so the composer's Phase-2 ORDERING /
+/// LEVELING invariants are exercised here through the BOOTSTRAP lane, which
+/// keeps the two-phase deferral. Under `AllData` the bootstrap lane covers every
+/// kind (static + migration skipped) and builds its plan from the supplied rows
+/// (the kinds' `Modality.Static` populations) — the cyclic FKs defer, so the
+/// Phase-2 surface (fused global ordering + `Phase2Levels`) is real. `fused` is
+/// the bootstrap lane's globally-phase-ordered text.
+let private composeBothViaBootstrap (kinds: Kind list) =
+    let catalog = mkCatalog kinds
+    let policy = policyWith AllData
+    let bootstrapRows =
+        Catalog.allKinds catalog
+        |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
+        |> Map.ofList
+    let fused =
+        DataEmissionComposer.composeRenderedBundleWithBootstrap
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty
+        |> mustOkEmit
+        |> fun (b: DataEmissionComposer.RenderedDataBundle) -> b.Bootstrap
+    let leveled =
+        DataEmissionComposer.composeRenderedLeveledWithBootstrap
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty
+        |> mustOkEmit
+    fused, leveled
+
 let private segments (sql: string) =
     Projection.Targets.SSDT.BatchSplitter.splitOnGoLineFold sql |> Array.toList
 
@@ -900,7 +949,7 @@ let ``P2′: an unresolved cycle serializes only its OWN members — cross-compo
     // proves the quotient DAG, so only the cycle's two members serialize
     // (their internal precedence is unproven) while the acyclic majority
     // keeps its concurrent levels.
-    let _, leveled = composeBoth (mkCycleBearingCatalog ())
+    let _, leveled = composeBothViaBootstrap (mkCycleBearingCatalog ())
     let allLevels = leveled.Phase1Levels @ leveled.Phase2Levels
     // The cycle members are ALWAYS singleton-grouped...
     for level in allLevels do
@@ -976,7 +1025,7 @@ let ``P2: a nullable self-FK no longer degrades the order — the self-loop reso
     // ordering, the resolved SCC keeps the kind in `Cycles`, and the
     // nullable self-FK still re-points by Phase-2 UPDATE.
     let _, leveled =
-        composeBoth (mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ])
+        composeBothViaBootstrap (mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ])
     // The acyclic chain's root level still carries ≥2 concurrent members —
     // parallelism is NOT surrendered to the self-loop.
     let rootLevel =

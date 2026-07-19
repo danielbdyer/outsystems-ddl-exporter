@@ -1429,6 +1429,10 @@ module Compose =
                                      // threads the operator's constraint-rendering
                                      // opt-out (default true = current behavior).
                                      RenderConstraintsElegant = cfg.Emission.RenderConstraintsElegant
+                                     // 2026-07-19 — `emission.renderDataElegant`
+                                     // threads the operator's data-lane rendering
+                                     // opt-out (default true = V1 readable shape).
+                                     RenderDataElegant = cfg.Emission.RenderDataElegant
                                      // NM-70 — `emission.identityAnnotations`
                                      // threads the operator's identity-annotation
                                      // gate (default true = current behavior;
@@ -1551,43 +1555,57 @@ module Compose =
     /// from the renamed catalog. Any other provider carries `Profile.empty`
     /// forward as the no-evidence base case; a `"live"` provider with a
     /// missing connection is a named failure.
+    /// The profiler's SYNCHRONOUS resolution — either the profile is already
+    /// known (`Fixture` → the empty profile) or a live source connection is
+    /// resolved to profile against. Computed OUTSIDE the `task { }` so the async
+    /// state machine stays trivially compilable: the prior nested `match … match …
+    /// return/return!` INSIDE the `task { }` defeated static compilation (FS3511),
+    /// the same failure mode `runWithConfigCore` was extracted to avoid.
+    type private ProfilerPlan =
+        | ReadyProfile of Profile
+        | ProfileLiveConnection of string
+
+    let private resolveProfilerPlan (cfg: Config.Config) : Result<ProfilerPlan> =
+        match cfg.Profiler.Provider with
+        | Config.ProfilerProvider.Fixture -> Result.success (ReadyProfile Profile.empty)
+        | Config.ProfilerProvider.Live ->
+            // The profiling connection string, resolved in precedence:
+            //   1. PROJECTION_MSSQL_CONN_STR — the explicit override / back-compat.
+            //   2. model.ossys — when the model is read live from an OSSYS
+            //      connection ref, the SAME database holds the data to profile,
+            //      so the profiler DERIVES its connection from the model's ref
+            //      (one source, both uses — no double-configuration). D9-
+            //      preserving: model.ossys is an out-of-band `env:`/`file:`
+            //      reference, so the secret is still never in the config
+            //      document (operator directive 2026-07-18).
+            let envConn =
+                System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
+                |> Option.ofObj
+                |> Option.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
+            match envConn with
+            | Some c -> Result.success (ProfileLiveConnection c)
+            | None ->
+                match cfg.Model.Ossys with
+                | Some ossysSpec ->
+                    ConnectionSpec.resolveSpec "profiler-source" ossysSpec
+                    |> Result.map ProfileLiveConnection
+                | None ->
+                    Result.failureOf
+                        (ValidationError.create
+                            "pipeline.profiler.connectionMissing"
+                            (sprintf
+                                "profiler.provider = \"%s\" needs a source connection: set the %s environment variable, or configure model.ossys (the live OSSYS connection the profiler derives from). D9: connection sources are out-of-band."
+                                Config.LiveProfilerProvider
+                                Config.SourceConnectionStringEnvVar))
+
     let private acquireProfile (cfg: Config.Config) (hydratedRows: Map<SsKey, StaticRow list>) (catalog: Catalog) : Task<Result<Profile>> =
         task {
-            match cfg.Profiler.Provider with
-            | Config.ProfilerProvider.Fixture ->
-                return Result.success Profile.empty
-            | Config.ProfilerProvider.Live ->
-                // The profiling connection string, resolved in precedence:
-                //   1. PROJECTION_MSSQL_CONN_STR — the explicit override / back-compat.
-                //   2. model.ossys — when the model is read live from an OSSYS
-                //      connection ref, the SAME database holds the data to profile,
-                //      so the profiler DERIVES its connection from the model's ref
-                //      (one source, both uses — no double-configuration). D9-
-                //      preserving: model.ossys is an out-of-band `env:`/`file:`
-                //      reference, so the secret is still never in the config
-                //      document (operator directive 2026-07-18).
-                let envConn =
-                    System.Environment.GetEnvironmentVariable Config.SourceConnectionStringEnvVar
-                    |> Option.ofObj
-                    |> Option.filter (fun s -> not (System.String.IsNullOrWhiteSpace s))
-                let resolved : Result<string> =
-                    match envConn with
-                    | Some c -> Result.success c
-                    | None ->
-                        match cfg.Model.Ossys with
-                        | Some ossysSpec -> ConnectionSpec.resolveSpec "profiler-source" ossysSpec
-                        | None ->
-                            Result.failureOf
-                                (ValidationError.create
-                                    "pipeline.profiler.connectionMissing"
-                                    (sprintf
-                                        "profiler.provider = \"%s\" needs a source connection: set the %s environment variable, or configure model.ossys (the live OSSYS connection the profiler derives from). D9: connection sources are out-of-band."
-                                        Config.LiveProfilerProvider
-                                        Config.SourceConnectionStringEnvVar))
-                match resolved with
-                | Error es -> return Result.failure es
-                | Ok connectionString ->
-                    return! profileFromLiveConnection cfg.Profiler.MaxConcurrency hydratedRows connectionString catalog
+            match resolveProfilerPlan cfg with
+            | Error es -> return Result.failure es
+            | Ok (ReadyProfile profile) -> return Result.success profile
+            | Ok (ProfileLiveConnection connectionString) ->
+                let! result = profileFromLiveConnection cfg.Profiler.MaxConcurrency hydratedRows connectionString catalog
+                return result
         }
 
     /// Synchronous core for `runWithConfig`. Extracted from the `task { }`

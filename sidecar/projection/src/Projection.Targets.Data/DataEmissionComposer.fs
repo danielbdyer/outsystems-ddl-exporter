@@ -333,19 +333,49 @@ module DataEmissionComposer =
     /// (WP6 step 3) — they differ only in WHICH artifact is walked, never in
     /// HOW, so the per-lane outputs are byte-faithful slices of the same
     /// per-kind strings, re-rendered nowhere.
+    /// Lift the operator's `EmissionPolicy.RenderDataElegant` bool to the data
+    /// formatter's typed `Mode` (Core's bool → the target's typed mode; the
+    /// emitter never reads `Policy`, A18 amended — the composer is the lift site,
+    /// mirroring `ConstraintFormatter` at the SSDT seam).
+    let private dataFormatMode (policy: Policy) : DataSeedFormatter.Mode =
+        if policy.Emission.RenderDataElegant then DataSeedFormatter.Enabled
+        else DataSeedFormatter.Disabled
+
     let private renderArtifactInTopoOrder
+        (mode: DataSeedFormatter.Mode)
+        (laneTitle: string)
+        (catalog: Catalog)
         (topo: TopologicalOrder)
         (artifact: ArtifactByKind<DataInsertScript>)
         : string =
         let map = ArtifactByKind.toMap artifact
-        let phase1Texts =
+        // SsKey → (module, entity) logical names for the V1-style per-block
+        // headers (`renderDataElegant`). Absent kinds fall back to empty strings;
+        // the compact `Disabled` path never reads them.
+        let moduleEntityOf =
+            catalog.Modules
+            |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey, (Name.value m.Name, Name.value k.Name)))
+            |> Map.ofList
+        // Per-kind blocks in topological order — same `choose` (kinds in the
+        // artifact map, topo order) the prior phase1/phase2 walk used, so the
+        // `Disabled` reproduction stays byte-identical.
+        let blocks =
             topo.Order
-            |> List.choose (fun k -> Map.tryFind k map |> Option.map (fun s -> s.RenderedPhase1))
-        let phase2Texts =
-            topo.Order
-            |> List.choose (fun k -> Map.tryFind k map |> Option.map (fun s -> s.RenderedPhase2))
-        Seq.append phase1Texts phase2Texts
-        |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
+            |> List.choose (fun k ->
+                Map.tryFind k map
+                |> Option.map (fun s ->
+                    let modName, entName =
+                        Map.tryFind k moduleEntityOf |> Option.defaultValue ("", "")
+                    { DataSeedFormatter.Module   = modName
+                      DataSeedFormatter.Entity   = entName
+                      DataSeedFormatter.RowCount = List.length s.Phase1Merges
+                      DataSeedFormatter.Phase1   = s.RenderedPhase1
+                      DataSeedFormatter.Phase2   = s.RenderedPhase2 }))
+        // `Disabled` is the prior global Phase-1-then-Phase-2 concatenation
+        // byte-for-byte; `Enabled` adds V1's banner / NOCOUNT / per-entity headers
+        // + one-row-per-line VALUES. The published-file boundary only — the
+        // parallel-deploy path (`composeRenderedLeveled*`) stays compact.
+        DataSeedFormatter.renderLane mode laneTitle blocks
 
     /// Full-arity form. The `composeRendered` convenience defaults
     /// both contexts to empty.
@@ -371,7 +401,12 @@ module DataEmissionComposer =
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e   -> Error e
-            | Ok artifact -> Ok (renderArtifactInTopoOrder topo artifact)
+            // The fused, on-demand single-artifact render is a DEPLOY shape, not a
+            // reviewed file — it stays COMPACT (`Disabled`) so it remains a faithful
+            // partition of `composeRenderedLeveled` (also compact). `renderDataElegant`
+            // formats the published per-lane bundle files (`composeRenderedBundle*`),
+            // never this deploy surface.
+            | Ok artifact -> Ok (renderArtifactInTopoOrder DataSeedFormatter.Disabled "Data Seeds" catalog topo artifact)
 
     /// The three per-lane renderings from ONE dispatch (WP6 step 3):
     /// `Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
@@ -436,9 +471,9 @@ module DataEmissionComposer =
                 // assertion only — rendering it would re-concatenate the
                 // whole estate's per-kind text a second time (the fused
                 // surface is `composeRenderedFull`, on demand).
-                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
-                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
-                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+                Ok { StaticSeeds   = renderArtifactInTopoOrder (dataFormatMode policy) "Static Seeds" catalog topo siblings.StaticSeeds
+                     MigrationData = renderArtifactInTopoOrder (dataFormatMode policy) "Migration Data" catalog topo siblings.MigrationDependencies
+                     Bootstrap     = renderArtifactInTopoOrder (dataFormatMode policy) "Bootstrap" catalog topo siblings.Bootstrap }
 
     /// Convenience over `composeRenderedBundleFull` — empty contexts.
     let composeRenderedBundle
@@ -497,9 +532,9 @@ module DataEmissionComposer =
                 // assertion only — rendering it would re-concatenate the
                 // whole estate's per-kind text a second time (the fused
                 // surface is `composeRenderedFull`, on demand).
-                Ok { StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
-                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
-                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+                Ok { StaticSeeds   = renderArtifactInTopoOrder (dataFormatMode policy) "Static Seeds" catalog topo siblings.StaticSeeds
+                     MigrationData = renderArtifactInTopoOrder (dataFormatMode policy) "Migration Data" catalog topo siblings.MigrationDependencies
+                     Bootstrap     = renderArtifactInTopoOrder (dataFormatMode policy) "Bootstrap" catalog topo siblings.Bootstrap }
 
     let composeRenderedBundleWithBootstrapUsing
         (topo: TopologicalOrder)

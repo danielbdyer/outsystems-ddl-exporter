@@ -29952,3 +29952,121 @@ Read-only — a gate, not a move (the estate chapter's non-goal).
 manifest from a source, then reconcile a byte-identical target against it (exit 0)
 and a tampered target (exit 5) — both decided from the manifest + the target
 alone, `runFidelityAgainst` never opening a source connection.
+
+---
+
+## 2026-07-19 — Static seeds render cyclic nullable FKs INLINE (no Phase-2 deferral); the two-phase cycle-break stays on the dynamic/bootstrap/migration/transfer lanes
+
+**Decision (operator, 2026-07-19).** The **static-seed** lane emits a
+self-referencing or in-cycle nullable FK as a **single MERGE carrying the real
+FK value** — NOT the two-phase `Phase-1-NULL` / `Phase-2-UPDATE` deferral V2's
+slice δ had generalized to it. Every other lane (bootstrap, migration, transfer)
+keeps the deferral unchanged.
+
+**Why.** This restores V1's actual static-seed shape: `StaticSeedSqlBuilder`
+(`src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs`) emitted one MERGE with
+`WHEN MATCHED … UPDATE` + `WHEN NOT MATCHED … INSERT` and **no follow-up UPDATE**.
+The insert-then-update dance was V1's `PhasedDynamicEntityInsertGenerator`
+(`src/Osm.Emission/PhasedDynamicEntityInsertGenerator.cs`) — a **dynamic-entity,
+cycle-only** mechanism. V2's slice δ unified static + migration + bootstrap onto
+one `DataLoadPlan` with one cycle-break algebra, which pulled static seeds into
+the phased treatment and produced the trailing `UPDATE [t] SET [fk]=… WHERE [pk]=…`
+statements the operator flagged. A self-referencing static FK is satisfied by a
+single MERGE — SQL Server checks the constraint at statement completion — so the
+inline form is deploy-correct for that (dominant) shape. A genuine cross-table
+static cycle now relies on the FK not being enforced at seed time; that is the
+operator's accepted trade (named here, not silent).
+
+**Mechanism (one seam).** `StaticSeedsEmitter.emitWithTopo` clears the per-load
+`DeferredFkColumns` on the built `DataLoadPlan` before `emitFromPlan`. This keeps
+`DataLoadPlan.build`'s FK-safe ordering + row construction and touches ONLY the
+static lane's entry (`emitWithTopo` / `emit`). `TopologicalOrder.deferredFkColumns`,
+`DataLoadPlan.build`, and the shared renderer (`emitFromPlan` / `scriptOfTyped` /
+`MergeRender`) are unchanged — bootstrap, migration, transfer, and slice-apply
+build their own plans and reach `emitFromPlan` directly, so their Phase-2 is
+untouched. The deferral machinery stays exercised by
+`MigrationDependenciesEmitterTests` and (repointed) `StaticSeedsEmitterTests` via
+`emitFromPlan` over a deferring plan.
+
+**Test impact.** The six `StaticSeedsEmitterTests` "Slice δ" / "v7 slice 5" cases
+now exercise the deferral machinery through `emitFromPlan` (the bootstrap/transfer
+path) via a local `emitDeferring` helper; a new test pins the static-lane inline
+behavior. Three `DataEmissionComposerTests` (Slice ι global ordering, P2/P2′
+leveling) route through the **bootstrap** lane (`AllData` + explicit bootstrap
+rows) so the composer's Phase-2 ordering/leveling invariants stay tested with real
+deferral (`composeBothViaBootstrap`). The `Data/StaticSeeds.sql` goldens
+(data-lanes + master) were re-recorded (`GOLDEN_RECORD=1`): the RegionA/RegionB
+MERGEs carry the real `PartnerId` inline, `PartnerId` joins their `WHEN MATCHED`
+SET, and the two trailing Phase-2 `UPDATE`s are gone — nothing else changed.
+
+---
+
+## 2026-07-19 — V1-parity data-lane formatting: `emission.renderDataElegant` (default on), a `ConstraintFormatter`-style post-processor for the published seed files
+
+**Decision (operator, 2026-07-19).** The published data lanes (`Data/StaticSeeds
+.sql` / `Data/MigrationData.sql` / `Data/Bootstrap.sql`) emit V1's readable shape
+by default: a file banner + `SET NOCOUNT ON;`, a per-module banner, a
+`-- <Entity> (N rows)` comment before each block, and the `USING (VALUES …)` list
+broken **one row per line** — V1's `StaticEntitySeedScriptGenerator` /
+`StaticSeedSqlBuilder` layout. Gated by `emission.renderDataElegant` (default
+`true`); `false` is the diagnostic / bisect opt-out that passes the compact
+per-kind concatenation through.
+
+**Why a text post-processor.** ScriptDom's `Sql160ScriptGenerator` renders a
+MERGE's inline `USING (VALUES …)` on a single line and offers no option to break
+it per row (proven: the option `MultilineInsertSourcesList = true` governs an
+`INSERT`'s source, not a MERGE derived-table constructor — the goldens stay inline
+with it set), and models neither the sqlcmd banner nor the per-entity comments.
+This is the SAME structural gap NM-38 hit for CREATE TABLE constraints, so the
+resolution is the SAME sanctioned pattern: `DataSeedFormatter` is a terminal
+text post-processor mirroring `Projection.Targets.SSDT.ConstraintFormatter`, with
+the same four-question pillar-7 rationale (the use-case library IS ScriptDom;
+already in the codebase; the cost of coercing it is "there is no option"; the
+structural reason is a missing generator axis). The reflow is paren / quote /
+bracket-aware so a comma, parens, or a `''` escape inside a value never splits a
+tuple. `reflowMergeValues` no-ops on a staged `#temp` MERGE (`USING [#temp]`,
+whose `INSERT` batches ScriptDom already renders one row per line) and on a
+Phase-2 `UPDATE`.
+
+**Applied at the PUBLISHED-file boundary only.** The toggle formats the per-lane
+bundle files (`DataEmissionComposer.composeRenderedBundle*` →
+`renderArtifactInTopoOrder`, which threads the `catalog` for the module/entity
+headers). The DEPLOY shapes stay COMPACT: `composeRenderedFull` (the on-demand
+single-artifact render) is pinned `Disabled` so it remains a faithful partition
+of `composeRenderedLeveled` (the parallel-deploy path, which never sees the
+formatter) — the `composeRenderedLeveled PARTITIONS composeRenderedFull`
+invariant requires it. So the operator reviews V1-readable files while the
+execution plane stays byte-for-byte the compact per-kind strings. The Phase-1
+section reflows + gets headers; all Phase-2 follows (the global cycle-correct
+ordering is preserved; the static lane's Phase-2 is empty since 2026-07-19).
+
+**Plumbing.** `EmissionPolicy.RenderDataElegant` (Core; default `true` in
+`create`, so `empty`/`schemaOnly`/`dataOnly`/`combined` inherit it) ← `Config
+.EmissionSection.RenderDataElegant` (`emission.renderDataElegant`) via
+`Pipeline.fs`; the composer lifts the bool to `DataSeedFormatter.Mode`
+(`dataFormatMode`), the emitter never reads `Policy` (A18 amended). Added to the
+`VersionedPolicy` digest (`dataElegant`). `withRenderDataElegant` is the
+single-axis setter. Test impact: 5 full `EmissionSection` fixtures gained the
+field; the WP6-step-3 "single lane == fused" test compares at the compact shape
+(the published lane is now formatted, the fused deploy render is not); the
+DataLane + master `Data/*.sql` goldens re-recorded (`GOLDEN_RECORD=1`);
+`DataSeedFormatterTests` pins the reflow + assembly.
+
+---
+
+## 2026-07-19 — `acquireProfile` extracted out of its `task { }` (FS3511 Release-build fix)
+
+**Fix.** `Pipeline.acquireProfile`'s `task { }` carried a nested `match … match …
+return/return!` control flow that the F# task builder could not reduce to a
+statically-compilable resumable state machine — `error FS3511` in **Release**
+(Debug compiled it via the dynamic fallback, so the pure pool was green while the
+Release build — and thus the perf-gate — failed). The synchronous connection
+resolution moves to `resolveProfilerPlan : Config -> Result<ProfilerPlan>`
+(`ProfilerPlan = ReadyProfile of Profile | ProfileLiveConnection of string`), and
+the `task { }` shrinks to one flat match with a single `let!` — trivially
+compilable. This is the SAME extraction discipline `runWithConfigCore` was built
+on (its docstring names the FS3511 cause). Behavior-identical: same
+env→`model.ossys`→named-error precedence, same `Fixture`→empty-profile,
+same `profileFromLiveConnection` call. Pre-existing on `main` (unrelated to the
+static-seeds / `renderDataElegant` work); fixed here so the branch's Release
+build — and the perf-gate — are green.

@@ -130,6 +130,7 @@
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
+    <Compile Include="DataSeedFormatterTests.fs" />
     <Compile Include="HydrationTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileTests.fs" />
