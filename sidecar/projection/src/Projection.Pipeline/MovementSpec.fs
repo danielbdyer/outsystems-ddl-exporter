@@ -829,6 +829,21 @@ and CheckDataRowsArgs =
       /// recorded `JournalRef` (wave B4a). `None` claims strict byte-identity.
       Interventions : string option }
 
+/// How `check fidelity <flow>` stands the target's shape up on the container
+/// stand-in before the load + proof (P1-S1): apply the emitted DDL batch (the
+/// executor's path — today's default), or publish the emitted `.dacpac`
+/// through DacFx (`DacServices.Deploy` — what a declarative deploy realizes).
+/// The load and the proof are IDENTICAL across both modes: a model-built
+/// dacpac is schema-only by construction, so the data still arrives through the
+/// transfer machinery. "Byte-identical" is asserted at the deployed-schema +
+/// row grain, never on dacpac bytes (which embed a wall-clock — `BACKLOG.md`
+/// Slice ζ names that deferral).
+and [<RequireQualifiedAccess>] StagingMode =
+    /// Apply `SsdtDdlEmitter.statements` as a batch through `Deploy.executeBatch`.
+    | Ddl
+    /// Publish `DacpacEmitter.emit` through `Deploy.deployDacpac`.
+    | Dacfx
+
 /// The container proof's operands (`check fidelity <flow>`, wave B5): the
 /// flow, its live source (the estate being proven), the named-difference cap,
 /// and the output form. The model arrives separately on the `PlanAction`
@@ -845,7 +860,14 @@ and CheckFidelityFlowArgs =
       /// `--refresh` — force a full re-prove, ignoring and clearing this flow's
       /// cached proof (wave B6). The cache otherwise skips the expensive
       /// container proof when the model + source fingerprints are unchanged.
-      Refresh    : bool }
+      Refresh    : bool
+      /// `--stage ddl|dacfx` (P1-S1) — how the stand-in's SCHEMA is staged
+      /// before the load. `Ddl` (the default) keeps the pre-P1-S1 behaviour
+      /// byte-identically; `Dacfx` proves the extraction through a DacFx-published
+      /// target. A `Dacfx` run always runs the container proof (it never reads or
+      /// writes the DDL-keyed incremental cache — the DacFx≡DDL equivalence is the
+      /// very thing under proof, so it is not assumed for cache reuse).
+      Stage      : StagingMode }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

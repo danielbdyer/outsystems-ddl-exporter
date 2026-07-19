@@ -2490,7 +2490,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest
@@ -2501,6 +2501,15 @@ module Command =
                         (match System.Int32.TryParse raw with
                          | true, n when n > 0 -> Result.success n
                          | _ -> Result.failureOf (err "cli.check.fidelitySample" (sprintf "projection check fidelity: --sample needs a positive whole number; '%s' is not one." raw)))
+                // P1-S1 — the staging mode for the stand-in's schema. Absent (or
+                // 'ddl') keeps the pre-P1-S1 behaviour; 'dacfx' proves the
+                // extraction through a DacFx-published target. Named refusal on any
+                // other token (A44: expressible ⇔ reachable — no silent default).
+                let stage : Result<StagingMode> =
+                    match valueOf "--stage" with
+                    | None | Some "ddl" -> Result.success StagingMode.Ddl
+                    | Some "dacfx"      -> Result.success StagingMode.Dacfx
+                    | Some other        -> Result.failureOf (err "cli.check.fidelityStage" (sprintf "projection check fidelity: --stage must be 'ddl' or 'dacfx'; '%s' is neither." other))
                 (match positionals with
                  | [ sub ] when Map.containsKey sub cfg.Flows ->
                      let flow = Map.find sub cfg.Flows
@@ -2514,8 +2523,8 @@ module Command =
                      else
                          (match flow.From with
                           | FlowSource.Env envName ->
-                              (match resolveLiveConn cfg envName, sampleCap with
-                               | Ok conn, Ok cap ->
+                              (match resolveLiveConn cfg envName, sampleCap, stage with
+                               | Ok conn, Ok cap, Ok stg ->
                                    PlanAction.CheckFidelityFlow
                                        (modelSource, modelOssys,
                                         { Flow       = sub
@@ -2523,9 +2532,11 @@ module Command =
                                           SourceConn = conn
                                           SampleCap  = cap
                                           AsJson     = (valueOf "--format" = Some "json")
-                                          Refresh    = List.contains "--refresh" rest })
-                               | Error es, _ -> PlanAction.Refused (6, List.head es)
-                               | _, Error es -> PlanAction.Refused (2, List.head es))
+                                          Refresh    = List.contains "--refresh" rest
+                                          Stage      = stg })
+                               | Error es, _, _ -> PlanAction.Refused (6, List.head es)
+                               | _, Error es, _ -> PlanAction.Refused (2, List.head es)
+                               | _, _, Error es -> PlanAction.Refused (2, List.head es))
                           | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
                               PlanAction.Refused (2, err "cli.check.fidelityFlowSource" (sprintf "projection check fidelity: flow '%s' does not draw from a live environment — the proof loads the flow's live source into the container stand-in. Name a flow whose `from` is an environment." sub)))
                  | [ sub ] when sub.EndsWith ".sql" ->
@@ -2537,7 +2548,7 @@ module Command =
                  | [] ->
                      PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
                  | _ ->
-                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--format json])."))
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--format json])."))
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

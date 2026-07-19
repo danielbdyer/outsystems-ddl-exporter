@@ -29823,3 +29823,50 @@ won (explicit → heuristic → profile → constraint → type-default) and why
 inspectability is real and load-bearing for trust in the defaults layer, but it
 is a CLI/reporting surface, not the data-stability axis this branch owns — left
 as the next slice, not smuggled in here.
+
+---
+
+## 2026-07-19 — `check fidelity --stage ddl|dacfx`: the container proof stages the stand-in through DacFx as well as DDL (P1-S1)
+
+**The decision.** `check fidelity <flow>` gained a `--stage` selector. `ddl` (the
+default) keeps the pre-P1-S1 behaviour byte-identically — the stand-in's schema is
+applied as the emitted `SsdtDdlEmitter` batch through `Deploy.executeBatch`. `dacfx`
+publishes the model-built `.dacpac` (`DacpacEmitter.emit`) into the per-run scratch
+through `DacServices.Deploy`, in-process. The load and the proof are IDENTICAL across
+both modes: a model-built dacpac is schema-only by construction (`DacpacEmitter`
+header), so the data still arrives through the journaled transfer, and the
+row-fidelity compare is unchanged. Only the schema-staging leg differs.
+
+**Why.** The operator asked to prove byte-identical extraction "staging it using
+either DacFx or applying the DDL" — the two product paths a cutover actually takes
+(a declarative DacFx publish vs the executor's DDL). `DacpacPublishEquivalenceTests`
+already proved DacFx≡DDL at the schema plane (deployed `PhysicalSchema.diff`); this
+closes the DATA leg through a DacFx-staged target, so the whole extraction is proven
+end-to-end on both paths.
+
+**"Byte-identical" is deployed-schema + row grain, never dacpac bytes.**
+`DacpacEmitter` returns raw DacFx bytes whose byte-equality explicitly does NOT hold
+(Origin.xml embeds a wall-clock; `BACKLOG.md` Slice ζ, the deferred dacpac
+byte-determinism cash-out). The proof asserts equality of the deployed schema (the
+load succeeds against the published shape) and the streamed rows (the `RowDigestFold`
+comparator) — the same grain the DDL path asserts.
+
+**The primitive lands in `Deploy`.** `Deploy.deployDacpac (connStr) (bytes)` is the
+shared SECOND consumer of the DacServices publish shape (`EstateModel.publishTo` in
+the Twin and the dacpac-equivalence test each proved one leg inline). It opens no new
+role — Pipeline already owns all deploy I/O — and names `Microsoft.SqlServer.DacFx`
+on Pipeline (already in its transitive closure via `Targets.SSDT`, so no new runtime
+dependency). Fail-loud: a publish exception is a named `ValidationError`, never a
+silent half-deploy.
+
+**Cache honesty.** A `--stage dacfx` run never reads or writes the DDL-keyed
+incremental proof cache (`FidelityProofCache`, wave B6). The DacFx≡DDL equivalence is
+the very thing under proof, so it is not assumed for cache reuse; the DacFx path
+always runs the container proof.
+
+**Witness.** `ReverseLegCanaryTests` — `P1-S1 DacFx-staged proof: …`. The LE-3 estate
+(every PK sink-minted, an FK chain + diamond, colliding key spaces) proves
+byte-identical (exit 0) through a DacServices-published stand-in on the faithful
+machine, and an FK-orphan source row reads exit 5 (the DacFx path names residuals,
+never a silent pass). B5 (the DDL-staged sibling) + this together witness the
+equivalence.

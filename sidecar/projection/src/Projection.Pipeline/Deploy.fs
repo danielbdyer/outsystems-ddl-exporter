@@ -8,6 +8,7 @@ open System
 open System.IO
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
+open Microsoft.SqlServer.Dac
 open Testcontainers.MsSql
 open Projection.Core
 open Projection.Adapters.Sql
@@ -221,6 +222,42 @@ module Deploy =
                 cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 let! _ = cmd.ExecuteNonQueryAsync()
                 ()
+        }
+
+    /// P1-S1 (the DacFx-staged fidelity proof) — publish a schema-only
+    /// `.dacpac` (`DacpacEmitter.emit`) into an ALREADY-CREATED per-run
+    /// database through `DacServices.Deploy` (in-process — the same engine
+    /// `sqlpackage` drives, so what deploys here deploys anywhere). `connStr`
+    /// names the target database directly (its `InitialCatalog`); a model-built
+    /// package carries schema ONLY by construction (`DacpacEmitter` header), so
+    /// the data still arrives through the caller's own load. This is the shared
+    /// SECOND consumer of the DacServices publish shape — `EstateModel.publishTo`
+    /// (Twin) and `DacpacPublishEquivalenceTests` each proved one leg; the
+    /// fidelity proof is the second, so the primitive lands here. Fail-loud: a
+    /// publish exception is a named `ValidationError`, never a silent
+    /// half-deploy.
+    let deployDacpac (connStr: string) (dacpacBytes: byte[]) : Task<Result<unit>> =
+        task {
+            use _ = Bench.scope "deploy.deployDacpac"
+            try
+                let databaseName = SqlConnectionStringBuilder(connStr).InitialCatalog
+                use stream = new MemoryStream(dacpacBytes)
+                use package = DacPackage.Load stream
+                let services = DacServices connStr
+                // `upgradeExisting = true`; the scratch is empty, so this is a
+                // fresh create-and-populate-schema. Defaults on `DacDeployOptions`
+                // match `DacpacPublishEquivalenceTests` (no drop/data-loss levers
+                // needed against an empty stand-in).
+                do! Task.Run(fun () ->
+                        services.Deploy(package, databaseName, true, DacDeployOptions()))
+                return Result.success ()
+            with ex ->
+                return
+                    Result.failureOf
+                        (ValidationError.createWithMetadata
+                            "deploy.dacpac.failed"
+                            "The dacpac publish to the stand-in did not succeed."
+                            (Map.ofList [ "detail", Some ex.Message ]))
         }
 
     /// PL-6 (S14) — realization of PRE-SPLIT batch segments: the caller

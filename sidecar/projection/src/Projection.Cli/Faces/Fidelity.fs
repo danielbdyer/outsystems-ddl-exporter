@@ -82,6 +82,30 @@ let private humaneRows (n: int64) : string =
 let private ageText (days: int) : string =
     if days <= 0 then "today" else sprintf "%d day(s) ago" days
 
+/// P1-S1 — stand the target's SCHEMA up on the per-run scratch via the chosen
+/// staging mode. `Ddl` applies the emitted statement batch (the executor's
+/// path — the pre-P1-S1 behaviour, byte-identical); `Dacfx` publishes the
+/// emitted `.dacpac` through `DacServices`. Both land the SAME logical schema —
+/// a model-built dacpac is schema-only by construction — so the load and proof
+/// that follow are identical; only the schema-staging leg differs. Fail-loud: an
+/// emit/publish failure is the run's named error, never a silent empty stand-in.
+let private stageStandIn
+    (mode: StagingMode)
+    (scratchConn: string)
+    (standIn: Microsoft.Data.SqlClient.SqlConnection)
+    (logical: Catalog)
+    : Task<Result<unit>> =
+    task {
+        match mode with
+        | StagingMode.Ddl ->
+            do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
+            return Result.success ()
+        | StagingMode.Dacfx ->
+            match DacpacEmitter.emit logical with
+            | Error es  -> return Result.failure es
+            | Ok dacpac -> return! Deploy.deployDacpac scratchConn dacpac
+    }
+
 let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
     // ONE model, two renditions — exactly the comparator's alignment package:
     // the flow's live source carries the PHYSICAL rendition (the estate's
@@ -119,14 +143,16 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
     // physical rendition's kinds, the resolved source connection). A probe
     // failure is a cache miss — the proof runs and names its own read.
     let sourceFps : KindFingerprint list option =
-        if Option.isNone storeRoot then None
+        // P1-S1 — the incremental cache is DDL-keyed; a `--stage dacfx` run
+        // probes nothing and reuses nothing (it always runs the container proof).
+        if Option.isNone storeRoot || args.Stage <> StagingMode.Ddl then None
         else
             match (EstateEvidenceStore.probeLive args.SourceConn physical).GetAwaiter().GetResult() with
             | Ok fps -> Some fps
             | Error _ -> None
     let cacheHit : CachedProof option =
         match storeRoot, sourceFps with
-        | Some root, Some fps when not args.Refresh ->
+        | Some root, Some fps when not args.Refresh && args.Stage = StagingMode.Ddl ->
             match FidelityProofCache.tryRead root args.Flow with
             | Some cached when FidelityProofCache.isFresh cached currentModelHash fps -> Some cached
             | _ -> None
@@ -144,11 +170,16 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
       let work () : Task<Result<Transfer.TransferReport * RowFidelityReport>> =
         Deploy.withScratchDatabase "ProjectionFidelity" (fun scratchConn ->
             task {
-                // 1 — THE SCAFFOLD: the target-shape DDL (the logical
-                //     rendition), applied whole to the per-run scratch.
+                // 1 — THE SCAFFOLD: the target-shape schema (the logical
+                //     rendition), staged whole onto the per-run scratch — via
+                //     the emitted DDL batch (`--stage ddl`, the default) or a
+                //     DacFx publish (`--stage dacfx`). A model-built dacpac is
+                //     schema-only, so the load below is identical across both.
                 use standIn = new Microsoft.Data.SqlClient.SqlConnection(scratchConn)
                 do! standIn.OpenAsync()
-                do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
+                match! stageStandIn args.Stage scratchConn standIn logical with
+                | Error es -> return Result.failure es
+                | Ok () ->
                 // 2 — THE LOAD: the transfer machinery, journaled wipe-and-load
                 //     across the rendition gap (reads with the source's physical
                 //     names, writes with the stand-in's logical names — the
@@ -226,8 +257,10 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
           // Cache the GREEN proof (wave B6) — the source fingerprints from the
           // pre-probe + the model hash; a non-green result CLEARS any prior entry
           // so a residual never short-circuits a future run.
+          // P1-S1 — only the DDL staging owns the incremental cache; a Dacfx
+          // run never writes (nor clears) it, since DacFx≡DDL is under proof.
           (match storeRoot with
-           | Some root ->
+           | Some root when args.Stage = StagingMode.Ddl ->
                if RowFidelityReport.agrees report then
                    match sourceFps with
                    | Some fps ->
@@ -239,7 +272,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                              WrittenAtUtc = nowUtc }
                    | None -> ()
                else FidelityProofCache.clear root args.Flow |> ignore
-           | None -> ())
+           | _ -> ())
           if RowFidelityReport.agrees report then 0 else 5
     // The verb: a fresh cached proof short-circuits the container; else it runs.
     match cacheHit with

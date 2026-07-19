@@ -555,7 +555,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false }
+                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl }
                     try
                         // GREEN — the machinery is faithful: every minted key
                         // and every FK cell translates through the journal;
@@ -569,6 +569,56 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         // the load drops it (skip-and-diagnose), the compare
                         // names it missing in the stand-in, and the verdict is
                         // exit 5 — never a silent pass.
+                        do! Deploy.executeBatch src
+                                ("ALTER TABLE [dbo].[OSUSR_L3_PAYMENT] NOCHECK CONSTRAINT ALL; " +
+                                 "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] ON; " +
+                                 "INSERT INTO [dbo].[OSUSR_L3_PAYMENT] ([ID],[INVOICE_ID],[ACCOUNT_ID],[PAYREF]) VALUES (1099,9999,1000,N'pay-orphan'); " +
+                                 "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] OFF;")
+                        Assert.Equal(5, run ())
+                    finally
+                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                        try
+                            if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true)
+                        with _ -> ()
+                }))
+
+    // ------------------------------------------------------------------
+    // P1-S1 — THE DACFX-STAGED PROOF: `check fidelity <flow> --stage dacfx`.
+    // The stand-in's SCHEMA is published through `DacServices` (a model-built
+    // dacpac — schema-only by construction); the DATA still arrives through the
+    // journaled transfer, and the compare proves the load byte-identical to the
+    // live source. B5 above is the DDL-staged sibling; together they witness
+    // DacFx≡DDL extraction at the DEPLOYED-SCHEMA + ROW grain (never dacpac
+    // bytes — BACKLOG.md Slice ζ). A green verdict proves the DacFx publish
+    // stood the target's shape up faithfully enough for the whole estate to
+    // read identical; the orphan case proves the DacFx path still names
+    // residuals, never a silent pass.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member _.``P1-S1 DacFx-staged proof: the fidelity flow proves byte-identical through a DacServices-published stand-in — green on the faithful machine; an FK-orphan reads exit 5`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "P1S1Dacfx") then () else
+        let model = ReverseLegFixtures.authoredModel
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "P1S1DacfxSrc" (fun src srcConnStr ->
+                task {
+                    // The proof's live source: the model's PHYSICAL shape,
+                    // seeded with the colliding-key-space rows (as B5).
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
+                    let run () =
+                        Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                            { Flow = "p1s1-dacfx"; FromLabel = "p1s1-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Dacfx }
+                    try
+                        // GREEN — the DacFx-published stand-in carries the target
+                        // shape; the journaled load lands every row byte-identical
+                        // to source, exactly as the DDL-staged B5 does.
+                        Assert.Equal(0, run ())
+                        Assert.True(System.IO.File.Exists "fidelity.rows.json", "the DacFx-staged proof writes its artifact")
+                        // RESIDUAL — an FK-orphan source row: the load drops it,
+                        // the compare names it missing, the verdict is exit 5 —
+                        // the DacFx path names residuals, never a silent pass.
                         do! Deploy.executeBatch src
                                 ("ALTER TABLE [dbo].[OSUSR_L3_PAYMENT] NOCHECK CONSTRAINT ALL; " +
                                  "SET IDENTITY_INSERT [dbo].[OSUSR_L3_PAYMENT] ON; " +
@@ -599,7 +649,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false }
+                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl }
                     try
                         // RUN 1 — a green proof runs the container AND caches its
                         // result (the source's fingerprints were probed live, the
@@ -621,7 +671,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         // (the container runs again, recreating the journal).
                         let refreshed () =
                             Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true }
+                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true; Stage = StagingMode.Ddl }
                         Assert.Equal(0, refreshed ())
                         Assert.True(System.IO.Directory.Exists flowDir, "--refresh forces the container to run again")
                     finally
