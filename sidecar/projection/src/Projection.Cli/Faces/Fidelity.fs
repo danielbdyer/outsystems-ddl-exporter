@@ -198,10 +198,22 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                 | Error es -> return Result.failure es
                 | Ok connections ->
                     let! transferR =
+                        // The proof OWNS its throwaway scratch container, so it
+                        // self-greenlights the container's own writes: `Replace`
+                        // (the wipe-and-load) always, and — P1-S3 —
+                        // `IdentityInsert` so a `PreferPreservedKeys` load may
+                        // write the source surrogate keys directly (IDENTITY_INSERT).
+                        // The IdentityInsert greenlight is INERT under `Structural`
+                        // (no `PreservedFromSource` identity kind ⇒ the gate's
+                        // `identityInsertTables` is empty ⇒ the signoff is never
+                        // consulted — NM-40's reasoning), so B5/B6/P1-S1/P2-S2 are
+                        // unchanged. This is the proof authorizing ITS container,
+                        // never the operator's production sink.
                         Transfer.runReverseLegThroughConnectionsWith
-                            IdentityPolicy.Structural Transfer.Execute EmissionMode.WipeAndLoad false false false []
+                            args.IdentityPolicy Transfer.Execute EmissionMode.WipeAndLoad false false false []
                             connections physical logical Map.empty Set.empty Set.empty Set.empty
-                            [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None (Some journalDir)
+                            [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace
+                              WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] [] false Set.empty Set.empty false None (Some journalDir)
                     match transferR with
                     | Error es -> return Result.failure es
                     | Ok transferReport ->

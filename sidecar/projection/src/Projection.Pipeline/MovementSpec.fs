@@ -880,7 +880,16 @@ and CheckFidelityFlowArgs =
       /// P2-S3) against a target the tool did not stage. Forces a full proof run
       /// (the manifest needs the report's per-kind source digests, which a cache
       /// hit does not carry). `None` writes no manifest.
-      Capture    : string option }
+      Capture    : string option
+      /// P1-S3 — the identity disposition the proof's load runs under, derived at
+      /// parse time from the flow's TARGET (`flow.To`) archetype (the production
+      /// sink's policy): `PreferPreservedKeys` for a FullRights target
+      /// (IDENTITY_INSERT — source keys written directly, no capture/remap, no
+      /// journal), else `Structural` (the sink mints IDENTITY keys and the
+      /// ledger-modulated replay reconciles — the pre-P1-S3 default, byte-identical
+      /// for an undeclared / ManagedDml target). So the container proof reproduces
+      /// the identity handling the real cutover load would perform.
+      IdentityPolicy : IdentityPolicy }
 
 /// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
 /// --target <ref>`, P2-S3): the portable manifest path, and the target the

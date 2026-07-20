@@ -693,6 +693,30 @@ let ``flow grant gate: schema-from-model against a data-only target is Refused (
     | PlanAction.Refused (9, e) -> Assert.Equal("cli.flow.grantSchemaRefused", e.Code)
     | other -> Assert.Fail(sprintf "expected grant refusal, got %A" other)
 
+// -- P1-S3: `check fidelity` derives the proof's identity policy from the -----
+// TARGET (`flow.To`) archetype — the same `CapabilityProfile.of` projection the
+// production load applies (`resolveFlowSpec`). A FullRights target
+// (`schema+data` grant) writes source surrogate keys directly (IDENTITY_INSERT),
+// so the proof loads under `PreferPreservedKeys`; a ManagedDml (`data`-only)
+// target mints keys, so the proof stays `Structural` (the pre-P1-S3 default).
+// This is the parse-time "expressible ⇔ reachable" half; the container proof
+// then LOADS under whichever policy it derived (`ReverseLegCanaryTests` P1-S3).
+
+let private fidelityPolicyOf flowName =
+    match (Command.plan flowCfg (Command.parse flowCfg [ "check"; "fidelity"; flowName ] |> mustOk)).Action with
+    | PlanAction.CheckFidelityFlow (_, _, args) -> args.IdentityPolicy
+    | other -> failwithf "expected CheckFidelityFlow, got %A" other
+
+[<Fact>]
+let ``check fidelity: a FullRights (schema+data) target derives IdentityPolicy.PreferPreservedKeys`` () =
+    // `uat` → onprem-uat (grant schema+data ⇒ FullRights ⇒ IDENTITY_INSERT).
+    Assert.Equal(IdentityPolicy.PreferPreservedKeys, fidelityPolicyOf "uat")
+
+[<Fact>]
+let ``check fidelity: a ManagedDml (data-only) target derives IdentityPolicy.Structural`` () =
+    // `golden` → cloud-uat (grant data ⇒ ManagedDml ⇒ sink-mints, no identity-insert).
+    Assert.Equal(IdentityPolicy.Structural, fidelityPolicyOf "golden")
+
 // -- S4a: per-flow `scope`, decoupled from `grant` (G1) ----------------------
 // The move's PROJECTION (which legs of the T16 square THIS move carries) is now
 // an explicit per-flow `scope`, decoupled from the target's `grant` (the refusal

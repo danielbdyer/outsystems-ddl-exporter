@@ -30070,3 +30070,66 @@ env→`model.ossys`→named-error precedence, same `Fixture`→empty-profile,
 same `profileFromLiveConnection` call. Pre-existing on `main` (unrelated to the
 static-seeds / `renderDataElegant` work); fixed here so the branch's Release
 build — and the perf-gate — are green.
+
+---
+
+## 2026-07-20 — `check fidelity` derives the proof's identity policy from the target archetype; single-rendition estates align for free (P1-S3)
+
+**The decision.** The container proof no longer hardcodes `IdentityPolicy.Structural`
+for its load. `check fidelity <flow>` now reads the TARGET place's (`flow.To`)
+effective archetype and threads the matching `IdentityPolicy` into the proof's
+transfer: a **FullRights** target (a `schema+data` grant, or a declared
+`FullRights` archetype) loads under **`PreferPreservedKeys`** — the source surrogate
+keys are written DIRECTLY through `IDENTITY_INSERT`, no minting and no journal remap;
+a **ManagedDml** (`data`-only) or undeclared target keeps **`Structural`** (the sink
+mints IDENTITY keys and the ledger-modulated replay reconciles — the pre-P1-S3
+default, unchanged and byte-identical). So the proof reproduces the identity handling
+the operator's REAL cutover load would perform, not a single fixed disposition.
+
+**Why.** The operator asked to prove byte-identical extraction for an *arbitrarily
+shaped* estate. A real on-prem FullRights sink preserves the source keys
+(`IDENTITY_INSERT`); the pre-P1-S3 proof always ran the cloud-style sink-minting
+path, so it proved a DIFFERENT load than the one an on-prem cutover executes. Deriving
+the policy from the declared archetype makes the proof faithful to the target the
+operator actually declared.
+
+**One projection, reused — not a second identity classifier.** The resolution is the
+SAME `Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype`
+→ `(CapabilityProfile.``of`` archetype).IdentityInsert` predicate the production load
+already applies (`SinkLoadCapability`, the shipped Archetype Slices A/B). `check
+fidelity` reads it at parse time; nothing new decides identity.
+
+**The proof authorizes its OWN container, never the operator's sink.** A
+`PreferPreservedKeys` load writes explicit identity values, which the T1.5
+identity-insert gate refuses without a `WriteSignoff.WriteMode.IdentityInsert`
+greenlight. The face already self-greenlights `Replace` because it stages and owns
+the throwaway scratch database; it now also self-greenlights `IdentityInsert` on the
+same rationale (the write is to the tool's per-run container, not the operator's
+production place). The greenlight is INERT under `Structural` — no
+`PreservedFromSource` identity kind ⇒ the gate's `identityInsertTables` is empty ⇒ the
+signoff is never consulted (NM-40's reasoning), so B5/B6/P1-S1/P2-S2 are byte-identical
+and the full `ReverseLegCanaryTests` suite (18) stays green.
+
+**Single-rendition estates align for free — no code change.** The plan flagged
+`CatalogRendition.physical`/`.logical` as presuming the OSSYS physical↔logical rename
+triangle. It does not: `LogicalTableEmission`/`LogicalColumnEmission` SELF-SKIP a kind
+whose logical name already equals its physical name (`substituteKind`, the
+`elif logical = TableName.value k.Physical.Table then k` arm). A single-rendition
+estate (the model IS the shape) therefore renders `physical = logical`, the transfer's
+rename map is empty, and the proof aligns by identity — the empty-map case the
+rename-aware leg (LE-3, distinct `OSUSR_L3_*` renditions) strictly generalizes. Named
+here so the "works free" property is a decision, not a silent assumption.
+
+**Scope held.** Arbitrary *OutSystems* estates (decision 1 of the plan): the OSSYS
+data semantics (the space sentinel, the IsUserFk rekey, Static-marking) stay intact.
+A non-OSSYS source remains the named later extension.
+
+**Witnesses.** `MovementSurfaceTests` (pure) — `check fidelity: a FullRights
+(schema+data) target derives IdentityPolicy.PreferPreservedKeys` and its ManagedDml
+`Structural` sibling: the parse-time "expressible ⇔ reachable" half, resolving the
+policy from the target grant through the shipped projection. `ReverseLegCanaryTests`
+(Docker) — `P1-S3 preserved-keys proof: …`: the LE-3 estate LOADS byte-identically
+(exit 0) under `PreferPreservedKeys`, source keys written directly with no remap,
+proving the derived policy actually reproduces the estate. B5 (the `Structural`
+sibling) + this together witness the proof reproduces EITHER production identity
+handling, no longer a single hardcode.

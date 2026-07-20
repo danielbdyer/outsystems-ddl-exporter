@@ -555,7 +555,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None }
+                            { Flow = "b5-proof"; FromLabel = "b5-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None; IdentityPolicy = IdentityPolicy.Structural }
                     try
                         // GREEN — the machinery is faithful: every minted key
                         // and every FK cell translates through the journal;
@@ -609,7 +609,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = "p1s1-dacfx"; FromLabel = "p1s1-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Dacfx; Capture = None }
+                            { Flow = "p1s1-dacfx"; FromLabel = "p1s1-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Dacfx; Capture = None; IdentityPolicy = IdentityPolicy.Structural }
                     try
                         // GREEN — the DacFx-published stand-in carries the target
                         // shape; the journaled load lands every row byte-identical
@@ -656,7 +656,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     let code =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
                             { Flow = "p2s2"; FromLabel = "p2s2-src"; SourceConn = srcConnStr; SampleCap = 20
-                              AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = Some manifestPath }
+                              AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = Some manifestPath; IdentityPolicy = IdentityPolicy.Structural }
                     try
                         // A green proof AND a manifest written beside it.
                         Assert.Equal(0, code)
@@ -677,6 +677,43 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         try if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true) with _ -> ()
                 }))
 
+    // ------------------------------------------------------------------
+    // P1-S3 — THE FULLRIGHTS IDENTITY PATH: the container proof under
+    // `IdentityPolicy.PreferPreservedKeys` (the policy a FullRights `flow.To`
+    // archetype derives). The sink writes the SOURCE surrogate keys directly
+    // (IDENTITY_INSERT) instead of minting + remapping, so the proof reproduces
+    // the estate with NO journal replay — exactly what a FullRights on-prem
+    // cutover does. B5 (Structural) is the ManagedDml sibling; together they
+    // prove the fidelity proof reproduces EITHER production identity handling,
+    // no longer a single hardcode.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member _.``P1-S3 preserved-keys proof: the container proof under a FullRights (PreferPreservedKeys) policy proves byte-identical — source keys written directly, no remap`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "P1S3Preserved") then () else
+        let model = ReverseLegFixtures.authoredModel
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "P1S3Src" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
+                    let run () =
+                        Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
+                            { Flow = "p1s3"; FromLabel = "p1s3-src"; SourceConn = srcConnStr; SampleCap = 20
+                              AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None
+                              IdentityPolicy = IdentityPolicy.PreferPreservedKeys }
+                    try
+                        // GREEN — the FullRights load preserves the source keys; the
+                        // stand-in reproduces the estate byte-identically with no remap.
+                        Assert.Equal(0, run ())
+                    finally
+                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                        try
+                            if System.IO.Directory.Exists "fidelity-proof" then System.IO.Directory.Delete("fidelity-proof", true)
+                        with _ -> ()
+                }))
+
     [<Fact>]
     member _.``B6 proof cache: the first green proof caches; an unchanged estate hits the cache and skips the container (no new transfer journal)`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "B6Cache") then () else
@@ -694,7 +731,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch src ReverseLegFixtures.physicalSeed
                     let run () =
                         Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None }
+                            { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = false; Stage = StagingMode.Ddl; Capture = None; IdentityPolicy = IdentityPolicy.Structural }
                     try
                         // RUN 1 — a green proof runs the container AND caches its
                         // result (the source's fingerprints were probed live, the
@@ -716,7 +753,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         // (the container runs again, recreating the journal).
                         let refreshed () =
                             Projection.Cli.Faces.Fidelity.runCheckFidelityFlow model
-                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true; Stage = StagingMode.Ddl; Capture = None }
+                                { Flow = flow; FromLabel = "b6-src"; SourceConn = srcConnStr; SampleCap = 20; AsJson = false; Refresh = true; Stage = StagingMode.Ddl; Capture = None; IdentityPolicy = IdentityPolicy.Structural }
                         Assert.Equal(0, refreshed ())
                         Assert.True(System.IO.Directory.Exists flowDir, "--refresh forces the container to run again")
                     finally

@@ -2540,6 +2540,17 @@ module Command =
                 (match positionals with
                  | [ sub ] when Map.containsKey sub cfg.Flows ->
                      let flow = Map.find sub cfg.Flows
+                     // P1-S3 — the proof loads under the identity policy the
+                     // PRODUCTION sink (`flow.To`) would use, derived from its
+                     // declared-or-inferred archetype (the same `SinkLoadCapability`
+                     // projection `resolveFlowSpec` applies): a FullRights target ⇒
+                     // IDENTITY_INSERT (`PreferPreservedKeys`); an undeclared /
+                     // ManagedDml target ⇒ `Structural` (the pre-P1-S3 default). So
+                     // the container proof reproduces the cutover's identity handling.
+                     let identityPolicy : IdentityPolicy =
+                         match Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype with
+                         | Some archetype when (CapabilityProfile.``of`` archetype).IdentityInsert -> IdentityPolicy.PreferPreservedKeys
+                         | _ -> IdentityPolicy.Structural
                      let modelOssys = cfg.Shaping.Model.Ossys
                      let modelSource =
                          match cfg.Shaping.Model.Path with
@@ -2561,7 +2572,8 @@ module Command =
                                           AsJson     = (valueOf "--format" = Some "json")
                                           Refresh    = List.contains "--refresh" rest
                                           Stage      = stg
-                                          Capture    = valueOf "--capture" })
+                                          Capture    = valueOf "--capture"
+                                          IdentityPolicy = identityPolicy })
                                | Error es, _, _ -> PlanAction.Refused (6, List.head es)
                                | _, Error es, _ -> PlanAction.Refused (2, List.head es)
                                | _, _, Error es -> PlanAction.Refused (2, List.head es))
