@@ -35,9 +35,11 @@ trap: confusing an IDENTITY surrogate with a natural key — see `../identity-sw
 - existing table, key column already unique and non-NULL: ships as a single in-place schema change,
   but the clustered-index build scans and reorders every row — a dev lead or an experienced
   developer should review it, because the build runs over live data.
-- existing table with duplicate or NULL key values: the index build is blocked on the actual
-  duplicate or NULL rows, and the error names the offending keys. Ships as one release with a
-  pre-deployment script that dedupes or assigns keys, after which the primary key lands validated —
+- existing table with duplicate or NULL key values: the index build is blocked — `Msg 1505` on
+  duplicate keys (naming the duplicate value), or `Msg 8111` for a NULL in a column declared
+  nullable — and the error names the offending keys (`../../_index/constraint-is-a-claim/SKILL.md`
+  owns the full signature table). Ships as one release with a pre-deployment script that dedupes or
+  assigns keys, after which the primary key lands validated —
   or across several releases when old and new application code must coexist while the key is
   introduced. A dev lead must review this: existing data is modified to make the key hold. See
   `../../_index/constraint-is-a-claim/SKILL.md`.
@@ -49,7 +51,8 @@ trap: confusing an IDENTITY surrogate with a natural key — see `../identity-sw
 ## Prove it
 Run the op-specific probes FIRST: `SELECT <keycols>, COUNT(*) FROM <table> GROUP BY <keycols> HAVING
 COUNT(*) > 1` (the duplicate probe) and a NULL count on each key column. Then a Strict publish: with
-duplicates or NULLs the index build is blocked (show the offending keys); clean, the delta is the
+duplicates or NULLs the index build is blocked (`Msg 1505` duplicate / `Msg 8111` NULL — show the
+offending keys); clean, the delta is the
 primary key inline in the CREATE (new table) or a clean clustered-index build (existing table).
 Author the dedupe/assign-keys pre-deployment script, then re-run the Strict publish clean. See
 `../../prove-on-dacpac/SKILL.md` for the publish loop and `../../talk-to-local-sql/SKILL.md` for

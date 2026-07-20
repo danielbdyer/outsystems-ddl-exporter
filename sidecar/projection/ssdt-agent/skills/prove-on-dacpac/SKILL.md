@@ -66,16 +66,16 @@ executors. (Single-developer, one-at-a-time use can target `ProvingGround` direc
 
 > All commands assume the repo root as the working directory and a warm disposable copy — see
 > `talk-to-local-sql` for the container, the connection string, and the **runtime shim** (the
-> `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required on this machine**, because
-> `sqlpackage` targets .NET 8 and the box has .NET 9 at a non-standard path). On Git Bash also
-> export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and any `/opt/...`
-> docker-exec paths are not mangled.
+> `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required wherever the .NET 8 runtime
+> `sqlpackage` targets is not the default** — point `DOTNET_ROOT` at your dotnet root; per-OS
+> values live in `talk-to-local-sql`). On Git Bash also export `MSYS_NO_PATHCONV=1` so the
+> `/Action:` / `/SourceFile:` switches and any `/opt/...` docker-exec paths are not mangled.
 
 ```bash
-# 0. Runtime shim (REQUIRED here) + warm DB — details in talk-to-local-sql
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+# 0. Runtime shim (env-specific) + warm DB — full details + per-OS values in talk-to-local-sql
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # your dotnet root (Git Bash: C:/Users/<you>/AppData/Local/Microsoft/dotnet)
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1                  # Git Bash: keep /Action: + /opt/... paths intact
+export MSYS_NO_PATHCONV=1                  # Git Bash ONLY: keep /Action: + /opt/... paths intact
 scripts/warm-sql.sh start                 # container projection-mssql-warm, localhost,11433
 
 # 1. Establish the BEFORE state once: deploy current CREATEs + seed (the 'real-shaped data')

@@ -32,18 +32,19 @@ the instance grain.
 
 ## 0 — The runtime environment (REQUIRED, every shell)
 
-`sqlpackage` is a .NET-8 dotnet tool and must find a runtime before it starts. The block below is
-**one developer's box** — a .NET-8 tool on a .NET-9 runtime at a non-standard Windows path,
-invoked from Git Bash — kept verbatim as the worked example. Export its equivalents in **every**
-shell you call `sqlpackage` from, or it fails to start:
+`sqlpackage` is a .NET-8 dotnet tool and must find a runtime before it starts. The block below is a
+**worked example** — a .NET-8 tool on a .NET-9 runtime at a non-standard Windows path, invoked from
+Git Bash. Replace `<you>` (and the path) with yours; the portable form for non-Windows boxes
+follows. Export these in **every** shell you call `sqlpackage` from, or it fails to start:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+export DOTNET_ROOT="${DOTNET_ROOT:-C:/Users/<you>/AppData/Local/Microsoft/dotnet}"   # your dotnet root
 export DOTNET_ROLL_FORWARD=Major
 export MSYS_NO_PATHCONV=1   # REQUIRED on Git Bash for sqlpackage /Action: args AND docker-exec /opt/... paths
 ```
 
-`sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe`. The host has **no
+`sqlpackage` is on PATH as `sqlpackage` (a global `dotnet tool install`), or at
+`C:/Users/<you>/.dotnet/tools/sqlpackage.exe` on that box. The host has **no
 sqlcmd** — issue SQL through the container:
 
 ```bash
@@ -86,7 +87,7 @@ TESTID="COL-03"                        # the test-matrix id you are proving
 RAND=$(openssl rand -hex 4)            # 8 hex chars; uniqueness across parallel executors
 DB="PG_${TESTID//-/_}_${RAND}"         # e.g. PG_COL_03_9f2a1c4e  (no dashes — valid DB identifier)
 SCRATCH="$CLAUDE_SCRATCHPAD/pg-${TESTID}-${RAND}"   # your private scratch dir
-SRC="C:/Users/danny/code/outsystems-ddl-exporter/sidecar/projection/ssdt-agent/proving-ground"
+SRC="<your-repo-checkout>/sidecar/projection/ssdt-agent/proving-ground"  # absolute path to the authored tree
 ```
 
 `DB` and `SCRATCH` both carry `TESTID` + `RAND`, so they are globally unique among parallel

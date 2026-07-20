@@ -1119,7 +1119,9 @@ discovering the backfill-then-still-blocked reality has classified from text and
 
 ## Coverage map (every per-op skill has at least one case)
 
-The ~48 per-op skills each have at least one prompt above. The mapping:
+Each per-op skill has at least one prompt above, with one known gap: the newer `backfill-rows` op
+(the data-plane UPDATE companion to add-default / make-mandatory) has **no case yet** — it is
+pending its own prompt and golden capture (`../CERTIFICATION_PLAN.md` Stage 1). The mapping:
 
 - **tables:** create-entity=TBL-01 · rename-entity=TBL-02/02N · delete-entity=TBL-03 (+AUD-07N) ·
   move-schema=TBL-04 · archive-entity=TBL-05 · junction=TBL-06

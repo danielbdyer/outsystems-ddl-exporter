@@ -84,6 +84,7 @@ ssdt-agent/
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
+├── CERTIFICATION_PLAN.md ··· the staged plan to make the agent's proof machine-checkable (the Twin, capsules, CI)
 ├── agents/
 │   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the four facts
 │   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
@@ -93,10 +94,13 @@ ssdt-agent/
 │   ├── classify-mechanism/ · the decision cascade → a provisional how-it-ships + who-reviews
 │   ├── prove-on-dacpac/ ····· the proving loop that confirms or flips the classification
 │   ├── talk-to-local-sql/ ··· the disposable-copy substrate + the content-hash check
-│   ├── op/ ················· the 48 per-operation skills — each proves, then feeds the PR
+│   ├── os-vocabulary/ ······ the OutSystems↔SQL conversation vocabulary (nouns, gestures, anchors)
+│   ├── ask-the-developer/ ·· the one mid-flow question a human must answer (options + consequences)
+│   ├── op/ ················· the 49 per-operation skills — each proves, then feeds the PR
 │   ├── operations/ ········· the family TOC over op/ (tables · columns · keys · indexes · …)
 │   ├── _index/ ············· the shared reasoning ops cite (tightening-class, cdc, …)
-│   ├── author-pr/ ·········· the terminal artifact: the pull request a reviewer approves by reading
+│   ├── author-pr/ ·········· the authoring terminal artifact: the PR a reviewer approves by reading
+│   ├── author-review/ ······ the review terminal artifact: the four dispositions, record register
 │   └── review/ ············· Persona 2: reproduce-first review, dependency scope, dispositions
 ├── proving-ground/ ········· the hand-authored, self-contained sample project (the disposable copy)
 │   ├── SampleCatalog.sqlproj   Modules/*.sql   Script.Pre/PostDeployment.sql   Data/Seed.sql
@@ -120,9 +124,12 @@ ssdt-agent/
    authors the pull request. Persona 2 is `reviewer.md`, which reproduces the change and returns
    a disposition.
 3. **`skills/`** — the four capability skills (`confirm-intent` → `classify-mechanism` →
-   `prove-on-dacpac`, riding on `talk-to-local-sql`), the per-operation skills in `skills/op/`
-   (with the shared reasoning in `skills/_index/` and the family TOC in `skills/operations/`),
-   `skills/author-pr/` — the pull request they all feed — and `skills/review/` for Persona 2.
+   `prove-on-dacpac`, riding on `talk-to-local-sql`), with `os-vocabulary` and `ask-the-developer`
+   owning the conversation surface (the two-way vocabulary and the one human question); the
+   per-operation skills in `skills/op/` (with the shared reasoning in `skills/_index/` and the family
+   TOC in `skills/operations/`), `skills/author-pr/` — the pull request they all feed — and
+   `skills/review/` + `skills/author-review/` for Persona 2 (the review procedure and its
+   written disposition).
 4. **`proving-ground/README.md`** — the runbook. Read it before you run a single command.
 
 ## Scope

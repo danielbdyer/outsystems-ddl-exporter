@@ -43,8 +43,9 @@ do not re-derive the claim mechanics here.
 ## Prove it
 Run the duplicate probe FIRST: `SELECT <Col>, COUNT(*) FROM <table> GROUP BY <Col> HAVING COUNT(*)
 > 1` (and a NULL count for nullable columns). Then build + Strict publish: clean → uniqueness holds;
-a build failure ("duplicate key was found") means the deployment is blocked. Author the pre-deploy
-de-dupe (or the filtered index), re-run Strict clean. See `../../prove-on-dacpac/SKILL.md` +
+a build failure — `Msg 1505`, "duplicate key was found" (the same error a second NULL row raises on
+a nullable column) — means the deployment is blocked. Author the pre-deploy de-dupe (or the filtered
+index), re-run Strict clean. See `../../prove-on-dacpac/SKILL.md` +
 `../../talk-to-local-sql/SKILL.md`. Seed: Status's `UX_Status_Code` is the clean positive; Product's
 `DUPE` rows drive the flip to a blocked deploy.
 

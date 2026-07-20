@@ -23,17 +23,18 @@ existing rows.
 The **unnamed default**: letting SSDT auto-name the constraint (`DF__Table__Col__<hash>`) yields a
 name that differs per environment, and diffing and refactoring become fragile — always name it
 `DF_<Table>_<Col>`. Second surprise: the default does not fill existing NULLs. It touches only new
-rows; backfilling the existing rows is a separate op (see `../make-mandatory/SKILL.md` for the
-NOT-NULL-with-backfill path).
+rows; backfilling the existing rows is a separate op — `../backfill-rows/SKILL.md` (and if the
+column is also becoming required, `../make-mandatory/SKILL.md` for the NOT-NULL path).
 
 ## How it flips (the specifics only)
 - adding a default → ships as a single schema change, applied in place; any team member can review
   it, in any data state.
-- the developer also wants existing rows backfilled → a separate op. It ships as one release: the
-  schema change, then a post-deployment script that runs an idempotent UPDATE after it lands (see
-  `../../_index/idempotent-seed/SKILL.md`). If the column is also becoming NOT NULL, follow
-  `../make-mandatory/SKILL.md` instead. The default itself still ships in place and stays reviewable
-  by any team member.
+- the developer also wants existing rows backfilled → a separate op, `../backfill-rows/SKILL.md`. It
+  ships as one release: the schema change, then a post-deployment guarded UPDATE that runs after it
+  lands (the discipline is `../../_index/idempotent-seed/SKILL.md`), and a dev lead reviews the
+  backfill because existing data is modified. If the column is also becoming NOT NULL, follow
+  `../make-mandatory/SKILL.md` for the tightening. The default itself still ships in place and stays
+  reviewable by any team member.
 - CDC-enabled table → CDC does not track constraints (handbook file 15 = §18.5), so a default on a
   CDC-tracked table needs no added scrutiny on its own.
 

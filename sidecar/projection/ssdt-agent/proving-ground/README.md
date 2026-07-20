@@ -21,17 +21,19 @@ worked commands; read them, then run them in order.
 
 ## 0 — The runtime shim (REQUIRED on this machine)
 
-`sqlpackage` is installed as a dotnet tool targeting .NET 8, but this box has .NET 9 at a
-non-standard path. Export these in the shell that runs `sqlpackage`, or the tool fails to
-start:
+`sqlpackage` is installed as a dotnet tool targeting .NET 8; wherever that runtime is not the
+default, export these in the shell that runs `sqlpackage`, or the tool fails to start (`<you>` =
+your OS user; `../skills/talk-to-local-sql/SKILL.md` carries the per-OS values):
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # Git Bash e.g. C:/Users/<you>/AppData/Local/Microsoft/dotnet
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: switches and /opt/... docker paths intact
+export MSYS_NO_PATHCONV=1   # Git Bash ONLY: keep /Action: switches and /opt/... docker paths intact
 ```
 
-`sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe` (version 170.4.83).
+`sqlpackage` is the global dotnet tool `microsoft.sqlpackage` — on PATH as `sqlpackage`, or at
+`C:/Users/<you>/.dotnet/tools/sqlpackage.exe` on Windows / `$HOME/.dotnet/tools/sqlpackage`
+elsewhere; the findings here were captured on version 170.4.83 (stamp the version in every proof).
 (Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)
 
 ## 1 — Warm the disposable substrate

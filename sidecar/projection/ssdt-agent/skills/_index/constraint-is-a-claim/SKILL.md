@@ -38,6 +38,28 @@ Run the probe **first** to know what to look for; let the Strict publish **prove
 The probe **predicts**; the Strict publish **proves.** A clean probe is *necessary* — but you still
 publish, because the publish delta is the honest proof.
 
+## The block's signature (what the refusal actually says)
+
+When the claim is violated, the block is a specific SQL Server error, and the **number names the
+cause.** These are the signatures to read in the publish output and carry into the proof packet:
+
+| The op / cause | The block, as SQL Server reports it on publish |
+|---|---|
+| define-PK · add-unique · modify-index→unique — **duplicate values** | `Msg 1505` — "The CREATE UNIQUE INDEX statement terminated because a duplicate key was found …", naming the duplicate key value (a PK/unique constraint builds a unique index) |
+| define-PK — **NULL in a column declared nullable** | `Msg 8111` — "Cannot define PRIMARY KEY constraint on nullable column …". A NOT NULL tightening of a *populated* key column is instead the tightening-class block — `Msg 515` / `Msg 50000` behind the data-loss guard (`../tightening-class/SKILL.md`) |
+| add-check — **rows violating the predicate** (added WITH CHECK) | `Msg 547` — "The ALTER TABLE statement conflicted with the CHECK constraint …", naming the table and column |
+| create-fk-clean · create-fk-orphan — **orphan children** (added WITH CHECK) | `Msg 547` — "… conflicted with the FOREIGN KEY constraint …", naming the parent table and column |
+
+> **Read the number; it tells you which claim broke.** `Msg 1505` = a duplicate, `Msg 547` = an
+> orphan or a failing predicate, `Msg 8111` = a NULL in a key. sqlpackage surfaces the inner SQL
+> Server error during publish — commonly wrapped as `SQL72014: .NET SqlClient Data Provider: Msg
+> NNNN, Level 16, State S, …` above the `Could not deploy package` line, so parse the **text**, not
+> the exit code (a blocked publish does not reliably exit non-zero — see `self-test/PROTOCOL.md`).
+> These are engine- and version-bound: **capture the verbatim `Msg` and the offending value from the
+> blocked run** (`../../prove-on-dacpac/SKILL.md`'s violating-row probe does exactly this), rather
+> than asserting them from memory. This is the value-violation counterpart to tightening-class's
+> data-blind `Msg 515` / `Msg 50000` — a different number for a different cause.
+
 ## The discriminator: clean data lands in place, dirty data needs a script
 
 - **Data satisfies the claim** → the constraint lands clean → it **ships as a single schema change,

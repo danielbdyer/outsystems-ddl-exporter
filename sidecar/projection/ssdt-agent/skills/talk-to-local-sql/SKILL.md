@@ -30,14 +30,20 @@ any `dotnet`/`sqlpackage` call in the session, or the tool fails to start. On Gi
 sqlcmd paths below are not mangled:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+# Point DOTNET_ROOT at YOUR local dotnet root — sqlpackage (a .NET 8 tool) needs a runtime there,
+# and ROLL_FORWARD lets it use a newer one. `<you>` = your OS user.
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # Windows/Git Bash e.g. "C:/Users/<you>/AppData/Local/Microsoft/dotnet"
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: + /SourceFile: + /opt/... paths intact
+export MSYS_NO_PATHCONV=1   # Git Bash ONLY: keep /Action: + /SourceFile: + /opt/... paths intact (drop it elsewhere)
 ```
 
-(The durable alternative is installing the .NET 8 runtime; until then, these exports are the fix.)
-`sqlpackage` itself is the dotnet tool `microsoft.sqlpackage` at
-`C:\Users\danny\.dotnet\tools\sqlpackage.exe`.
+`sqlpackage` is the dotnet tool `microsoft.sqlpackage`. Install it globally
+(`dotnet tool install -g microsoft.sqlpackage`) so it is on PATH as `sqlpackage`, or set
+`SQLPACKAGE` to its full path — Windows `C:/Users/<you>/.dotnet/tools/sqlpackage.exe`,
+Linux/macOS `$HOME/.dotnet/tools/sqlpackage`. (The durable alternative to the shim is installing
+the .NET 8 runtime; then `DOTNET_ROOT` / `ROLL_FORWARD` are unnecessary.) The proving-ground
+findings in this tree were captured on sqlpackage 170.4.83 — that version stamp belongs in every
+proof, because the guard behaviour is version-bound.
 
 ## sqlcmd lives in the CONTAINER, not on the host (IMPORTANT)
 

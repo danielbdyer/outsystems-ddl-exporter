@@ -98,6 +98,7 @@ Two disambiguations the table now forces you to make (the op split lives here, n
 | "rebuild it, it's fragmented" | `rebuild-index` | `skills/op/rebuild-index/SKILL.md` | **OPERATIONAL** — no declarative destination; route out |
 | "default to X" (new default) | `add-default` | `skills/op/add-default/SKILL.md` | `DEFAULT` constraint `DF_Table_Col` |
 | "change the default" / "stop defaulting" | `modify-default` | `skills/op/modify-default/SKILL.md` | DROP-then-ADD the `DEFAULT` constraint |
+| "fill in the existing rows too" / "backfill the blanks" / "re-stamp the old rows" | `backfill-rows` | `skills/op/backfill-rows/SKILL.md` | post-deploy guarded idempotent UPDATE of existing rows (data-plane, not a schema edit) |
 | "no duplicates" / "must be unique" | `add-unique` | `skills/op/add-unique/SKILL.md` | `UNIQUE` index (dups fail; one NULL only) |
 | "only allow these values" / "must be positive" | `add-check` | `skills/op/add-check/SKILL.md` | `CHECK` constraint (existing violations fail) |
 | "trust the constraint now" / "flip it on" | `toggle-trust` | `skills/op/toggle-trust/SKILL.md` | **OPERATIONAL** — `WITH CHECK CHECK`, not a CREATE edit |
@@ -123,6 +124,16 @@ Two disambiguations the table now forces you to make (the op split lives here, n
 If the developer's words don't fit any row, say so and ask a clarifying question — do not stretch
 a near-match. "External Entity" (an OutSystems entity backed by a table you don't own) means the
 destination edit may be out of your control; flag it and stop.
+
+**Out of the catalog on purpose (route, don't stretch).** Some SQL objects have no op here because
+an OutSystems-native developer does not author them from Service Studio and the change is a DBA's
+call: **triggers, sequences, filegroups / partitioning, and index compression** — name the request,
+say it is outside this tree, and route it to a DBA or principal. Three others are **genuine gaps an
+OutSystems SSDT estate does hit and this catalog does not yet cover** — **computed / persisted
+columns** (a cutover dealbreaker class), a **column collation change**, and **stored procedures /
+functions** — handle them the same way (flag and route) until an op is authored for them
+(`../../CERTIFICATION_PLAN.md` F13). Do not force any of these into a near-match op; a wrong op
+proven perfectly is still wrong.
 
 **The op skill IS the change-author's entry.** The op-slug you name resolves to
 `skills/op/<op-slug>/SKILL.md` — that per-op skill is the exact file the change-author will open
@@ -216,7 +227,7 @@ you are routing to its owner. The six concerns and their triggers:
 | `split-table`, `merge-tables`, `move-attribute`, `extract-to-lookup`, `archive-entity`, `retype-explicit`, `temporal-convert`, `delete-attribute` (4-phase) | `skills/_index/multi-phase/SKILL.md` (old + new coexist; conservation proof) |
 | `enable-cdc`, `recreate-capture-instance`, `change-tracking`, **any op on a CDC-enabled table** | `skills/_index/cdc/SKILL.md` (the added-scrutiny tripwire, frozen capture shape) |
 | `define-pk`, `create-fk-clean`, `create-fk-orphan`, `add-unique`, `add-check`, `toggle-trust`, `modify-index`→unique | `skills/_index/constraint-is-a-claim/SKILL.md` (a constraint is a data claim) |
-| `create-static-seed`, `edit-seed`, `delete-seed-value`, the seed leg of `extract-to-lookup`, the no-op redeploy | `skills/_index/idempotent-seed/SKILL.md` (guarded MERGE, silence is the proof) |
+| `create-static-seed`, `edit-seed`, `delete-seed-value`, the seed leg of `extract-to-lookup`, `backfill-rows`, the no-op redeploy | `skills/_index/idempotent-seed/SKILL.md` (guarded MERGE / UPDATE, silence is the proof) |
 
 A change on a **CDC-enabled table** always pre-flags `_index/cdc` *in addition to* the op's own
 concern — the added scrutiny rides on top of the base op (that is the whole `TRAP-01N` lesson).
