@@ -850,6 +850,20 @@ and [<RequireQualifiedAccess>] StagingMode =
     /// Publish `DacpacEmitter.emit` through `Deploy.deployDacpac`.
     | Dacfx
 
+/// P1-S4 — HOW the stand-in's ROWS are loaded before the proof (a second
+/// staging axis beside `StagingMode`, which stages the SCHEMA). `Transfer`
+/// (the default) runs the journaled wipe-and-load transfer machinery — the
+/// tool's own extraction leg. `Lanes` instead applies the EMITTED data-lane
+/// artifacts (the live-hydrated StaticSeeds + Bootstrap MERGE lanes, composed
+/// against the logical rendition and applied through `Deploy.executeLeveledSeed`)
+/// — the operator's OWN hand-apply path ("prove what I ship"): the lanes bracket
+/// IDENTITY_INSERT, so the source keys land directly, no transfer and no journal.
+and [<RequireQualifiedAccess>] LoadMode =
+    /// The journaled transfer (the pre-P1-S4 behaviour, byte-identical).
+    | Transfer
+    /// The emitted StaticSeeds + Bootstrap data lanes, hydrated and applied.
+    | Lanes
+
 /// The container proof's operands (`check fidelity <flow>`, wave B5): the
 /// flow, its live source (the estate being proven), the named-difference cap,
 /// and the output form. The model arrives separately on the `PlanAction`
@@ -889,7 +903,15 @@ and CheckFidelityFlowArgs =
       /// ledger-modulated replay reconciles — the pre-P1-S3 default, byte-identical
       /// for an undeclared / ManagedDml target). So the container proof reproduces
       /// the identity handling the real cutover load would perform.
-      IdentityPolicy : IdentityPolicy }
+      IdentityPolicy : IdentityPolicy
+      /// `--data transfer|lanes` (P1-S4) — how the stand-in's ROWS are loaded.
+      /// `Transfer` (the default) uses the journaled transfer machinery (the
+      /// pre-P1-S4 behaviour); `Lanes` applies the emitted StaticSeeds+Bootstrap
+      /// data lanes (the operator's hand-apply path), proving that what the tool
+      /// SHIPS reproduces the source byte-identical. A `Lanes` load writes the
+      /// source keys directly (the lanes bracket IDENTITY_INSERT) and needs no
+      /// transfer journal, so the compare aligns by identity.
+      Load       : LoadMode }
 
 /// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
 /// --target <ref>`, P2-S3): the portable manifest path, and the target the

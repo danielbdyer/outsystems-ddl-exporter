@@ -2517,7 +2517,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" || f = "--data" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest
@@ -2537,6 +2537,15 @@ module Command =
                     | None | Some "ddl" -> Result.success StagingMode.Ddl
                     | Some "dacfx"      -> Result.success StagingMode.Dacfx
                     | Some other        -> Result.failureOf (err "cli.check.fidelityStage" (sprintf "projection check fidelity: --stage must be 'ddl' or 'dacfx'; '%s' is neither." other))
+                // P1-S4 — the ROW-load mode. Absent (or 'transfer') keeps the
+                // pre-P1-S4 journaled transfer; 'lanes' applies the emitted
+                // StaticSeeds+Bootstrap data lanes (the operator's hand-apply path).
+                // Named refusal on any other token (A44: expressible ⇔ reachable).
+                let load : Result<LoadMode> =
+                    match valueOf "--data" with
+                    | None | Some "transfer" -> Result.success LoadMode.Transfer
+                    | Some "lanes"           -> Result.success LoadMode.Lanes
+                    | Some other             -> Result.failureOf (err "cli.check.fidelityData" (sprintf "projection check fidelity: --data must be 'transfer' or 'lanes'; '%s' is neither." other))
                 (match positionals with
                  | [ sub ] when Map.containsKey sub cfg.Flows ->
                      let flow = Map.find sub cfg.Flows
@@ -2561,8 +2570,8 @@ module Command =
                      else
                          (match flow.From with
                           | FlowSource.Env envName ->
-                              (match resolveLiveConn cfg envName, sampleCap, stage with
-                               | Ok conn, Ok cap, Ok stg ->
+                              (match resolveLiveConn cfg envName, sampleCap, stage, load with
+                               | Ok conn, Ok cap, Ok stg, Ok ld ->
                                    PlanAction.CheckFidelityFlow
                                        (modelSource, modelOssys,
                                         { Flow       = sub
@@ -2573,10 +2582,12 @@ module Command =
                                           Refresh    = List.contains "--refresh" rest
                                           Stage      = stg
                                           Capture    = valueOf "--capture"
-                                          IdentityPolicy = identityPolicy })
-                               | Error es, _, _ -> PlanAction.Refused (6, List.head es)
-                               | _, Error es, _ -> PlanAction.Refused (2, List.head es)
-                               | _, _, Error es -> PlanAction.Refused (2, List.head es))
+                                          IdentityPolicy = identityPolicy
+                                          Load       = ld })
+                               | Error es, _, _, _ -> PlanAction.Refused (6, List.head es)
+                               | _, Error es, _, _ -> PlanAction.Refused (2, List.head es)
+                               | _, _, Error es, _ -> PlanAction.Refused (2, List.head es)
+                               | _, _, _, Error es -> PlanAction.Refused (2, List.head es))
                           | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
                               PlanAction.Refused (2, err "cli.check.fidelityFlowSource" (sprintf "projection check fidelity: flow '%s' does not draw from a live environment — the proof loads the flow's live source into the container stand-in. Name a flow whose `from` is an environment." sub)))
                  | [ sub ] when sub.EndsWith ".sql" ->

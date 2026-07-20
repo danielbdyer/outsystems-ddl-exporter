@@ -30133,3 +30133,60 @@ policy from the target grant through the shipped projection. `ReverseLegCanaryTe
 proving the derived policy actually reproduces the estate. B5 (the `Structural`
 sibling) + this together witness the proof reproduces EITHER production identity
 handling, no longer a single hardcode.
+
+---
+
+## 2026-07-20 — `check fidelity --data lanes`: the proof loads through the EMITTED data lanes (the operator's hand-apply path), not only the transfer (P1-S4)
+
+**The decision.** `check fidelity <flow>` gained a `--data` selector — a second
+staging axis beside `--stage` (which stages the SCHEMA). `--data transfer` (the
+default) keeps the pre-P1-S4 journaled wipe-and-load transfer byte-identically.
+`--data lanes` loads the stand-in by APPLYING THE EMITTED DATA-LANE ARTIFACTS: the
+source's rows are live-hydrated, composed into the leveled StaticSeeds + Bootstrap
+seed against the LOGICAL rendition (`composeRenderedLeveledWithBootstrap`), and
+applied (`Deploy.executeLeveledSeed`). Then the SAME row-fidelity comparator proves
+the landed estate is byte-identical to the source. The two schema axes × two load
+axes compose freely (DDL⊕DacFx × transfer⊕lanes).
+
+**Why.** The operator asked to prove byte-identical extraction "staging it using
+either DacFx OR applying the DDL + seeds + bootstrap." P1-S1 closed the DacFx
+schema leg; this closes the "**+ seeds + bootstrap**" leg — the proof now exercises
+the operator's OWN hand-apply path (the `Data/StaticSeeds.sql` + `Data/Bootstrap.sql`
+the published bundle ships), not just the tool's transfer machinery. "Prove what I
+ship" becomes literal: what reproduces the source is the emitted SQL itself.
+
+**The lanes ARE the publish path, re-aimed at the proof's stand-in.** The load
+mirrors `PipelinedBootstrapEquivalenceTests`'s composition exactly:
+`Hydration.hydrateCatalog` grafts the Static-marked kinds' rows onto the catalog;
+`CatalogRendition.logical` re-renders the grafted catalog to the logical names
+(the emission passes touch `Kind.Physical`, never `Modality` — A1 — so the static
+rows survive the re-render); `Hydration.hydrateBootstrapRows` drains the non-static
+kinds (keyed by `SsKey`, rename-invariant, so they align onto the logical shape).
+Rows carry values keyed by attribute `Name` (rendition-invariant), so a
+physical-source hydrate composes correctly against the logical target. The lanes
+bracket `IDENTITY_INSERT` (NM-26), so the source surrogate keys land DIRECTLY — no
+transfer, no journal, no remap — and the compare aligns by identity.
+
+**Cache honesty (P1-S1's rule, extended).** A `--data lanes` run never reads or
+writes the DDL+transfer-keyed incremental proof cache (`FidelityProofCache`). The
+lanes≡transfer equivalence is the very thing under proof, so it is not assumed for
+cache reuse — a lanes run always runs the container proof, exactly as `--stage
+dacfx` does.
+
+**The load leg is a total branch, no synthetic report.** The face's step-2 load
+factors into `loadViaTransfer` / `loadViaLanes`, each returning a `LoadOutcome`
+(`Transferred of TransferReport | LanesApplied`) plus the journal path the compare
+replays (`Some` for transfer, `None` for lanes). The caller renders provenance off
+the outcome (the transfer's `SkippedReferences` drop-note, or the lanes' hand-apply
+line) — the lanes path fabricates no empty `TransferReport` (survival rule 7). The
+helpers hoist out of the `work` task so its state machine stays a flat match chain
+(FS3511; Release-clean).
+
+**Witnesses.** `MovementSurfaceTests` (pure) — `--data` defaults to `Transfer`,
+`--data lanes`/`transfer` select their mode, and `--data <garbage>` refuses by name
+(`cli.check.fidelityData`): the A44 expressible ⇔ reachable half. `ReverseLegCanaryTests`
+(Docker) — `P1-S4 lanes proof: …`: the LE-3 estate proves byte-identical (exit 0)
+loaded ENTIRELY through the emitted lanes. B5 (the `--data transfer` sibling) + this
+witness that the tool's transfer AND the operator's shipped artifacts both reproduce
+the source. Full `ReverseLegCanaryTests` (19) green — the transfer refactor is
+regression-clean.

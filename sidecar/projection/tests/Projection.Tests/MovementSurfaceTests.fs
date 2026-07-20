@@ -717,6 +717,35 @@ let ``check fidelity: a ManagedDml (data-only) target derives IdentityPolicy.Str
     // `golden` → cloud-uat (grant data ⇒ ManagedDml ⇒ sink-mints, no identity-insert).
     Assert.Equal(IdentityPolicy.Structural, fidelityPolicyOf "golden")
 
+// -- P1-S4: `check fidelity --data transfer|lanes` selects the ROW-load leg. ---
+// Absent (or 'transfer') keeps the journaled transfer; 'lanes' applies the
+// emitted StaticSeeds+Bootstrap data lanes (the operator's hand-apply path).
+// A44: the mode is expressible in the argv and reaches the proof's args; an
+// unknown token refuses by name, never a silent default.
+
+let private fidelityLoadOf (extra: string list) =
+    match (Command.plan flowCfg (Command.parse flowCfg ([ "check"; "fidelity"; "golden" ] @ extra) |> mustOk)).Action with
+    | PlanAction.CheckFidelityFlow (_, _, args) -> args.Load
+    | other -> failwithf "expected CheckFidelityFlow, got %A" other
+
+[<Fact>]
+let ``check fidelity: no --data defaults the row-load to Transfer`` () =
+    Assert.Equal(LoadMode.Transfer, fidelityLoadOf [])
+
+[<Fact>]
+let ``check fidelity --data lanes selects the emitted-lanes hand-apply load`` () =
+    Assert.Equal(LoadMode.Lanes, fidelityLoadOf [ "--data"; "lanes" ])
+
+[<Fact>]
+let ``check fidelity --data transfer selects the journaled transfer load`` () =
+    Assert.Equal(LoadMode.Transfer, fidelityLoadOf [ "--data"; "transfer" ])
+
+[<Fact>]
+let ``check fidelity --data <garbage> refuses by name, never a silent default`` () =
+    match (Command.plan flowCfg (Command.parse flowCfg [ "check"; "fidelity"; "golden"; "--data"; "sideways" ] |> mustOk)).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.check.fidelityData", e.Code)
+    | other -> Assert.Fail(sprintf "expected a named --data refusal, got %A" other)
+
 // -- S4a: per-flow `scope`, decoupled from `grant` (G1) ----------------------
 // The move's PROJECTION (which legs of the T16 square THIS move carries) is now
 // an explicit per-flow `scope`, decoupled from the target's `grant` (the refusal
