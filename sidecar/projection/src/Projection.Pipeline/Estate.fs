@@ -451,6 +451,7 @@ module Estate =
             (kind: EstateFindingKind)
             (noun: string)
             (facetsOf: 'change -> string list)
+            (classify: SsKey -> string option)
             (diffs: Map<SsKey, ChannelDiff<'change>>)
             : EnvContribution list =
             diffs
@@ -472,9 +473,19 @@ module Estate =
                         | []     -> sprintf "%d changed" (List.length d.Reshaped)
                         | facets -> sprintf "%d changed (%s)" (List.length d.Reshaped) (String.concat ", " facets) ]
                     |> String.concat ", "
+                // A classification note for the differing items (today only the
+                // index channel classifies) — appended once, de-duplicated.
+                let classified =
+                    (Set.toList d.Added @ Set.toList d.Removed @ (d.Renamed |> Map.toList |> List.map fst))
+                    |> List.choose classify
+                    |> List.distinct
+                let fullDetail =
+                    match classified with
+                    | []    -> detail
+                    | notes -> sprintf "%s — %s" detail (String.concat "; " notes)
                 contribution kind name (Some (sprintf "%A" d))
                     (sprintf "%s's %s differ from the target shape in %s: %s"
-                        name noun env detail)
+                        name noun env fullDetail)
                     (int64 count))
         // One finding per differing facet — triggers, check constraints,
         // modality (static vs regular), and active state are named
@@ -532,12 +543,30 @@ module Estate =
                 | IndexFacet.Filter -> "filter"
                 | IndexFacet.DataSpace -> "storage"
                 | IndexFacet.Options -> "options")
+        // Classification for the differing items — only indexes classify today:
+        // a custom-named (non-`OSIDX_`) index is not OutSystems-generated, so it
+        // does not promote via a module publish. Only platform-generated vs
+        // custom is derivable — the read is a physical `sys.indexes` reflection
+        // that does not cross-reference an OutSystems logical index model, so a
+        // developer-authored-in-OutSystems index and a DBA-added one both read
+        // as "custom".
+        let noClassify (_: SsKey) : string option = None
+        let indexBySsKey : Map<SsKey, Index> =
+            Seq.append (Catalog.allKinds targetCatalog) (Catalog.allKinds envCatalog)
+            |> Seq.collect (fun k -> k.Indexes)
+            |> Seq.map (fun i -> i.SsKey, i)
+            |> Map.ofSeq
+        let idxClassify (ssKey: SsKey) : string option =
+            match Map.tryFind ssKey indexBySsKey with
+            | Some i when not i.IsPlatformAuto ->
+                Some "a custom-named index here is not OutSystems-generated and will not promote via a module publish"
+            | _ -> None
         presenceInEnv
         @ presenceInTarget
         @ renames
-        @ channel EstateFindingKind.SchemaAttributes "columns" attrFacets (CatalogDiff.attributeDiffs diff)
-        @ channel EstateFindingKind.SchemaReferences "relationships" refFacets (CatalogDiff.referenceDiffs diff)
-        @ channel EstateFindingKind.SchemaIndexes "indexes" idxFacets (CatalogDiff.indexDiffs diff)
+        @ channel EstateFindingKind.SchemaAttributes "columns" attrFacets noClassify (CatalogDiff.attributeDiffs diff)
+        @ channel EstateFindingKind.SchemaReferences "relationships" refFacets noClassify (CatalogDiff.referenceDiffs diff)
+        @ channel EstateFindingKind.SchemaIndexes "indexes" idxFacets idxClassify (CatalogDiff.indexDiffs diff)
         @ facets
 
     // -- Data-plane findings (one env's data against the target's model) ----

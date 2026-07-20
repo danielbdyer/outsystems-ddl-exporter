@@ -122,6 +122,33 @@ let ``schema detail: a reshaped column names the facet, not just a difference co
     Assert.Contains("changed (type)", finding.Statement)
     Assert.DoesNotContain("difference(s)", finding.Statement)
 
+[<Fact>]
+let ``index classification: a differing custom-named index is flagged won't-promote; a platform-auto one is not`` () =
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "1dcc0000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) isPk : Attribute =
+        { Attribute.create (g n) (nmD col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let platformIdx = { Index.ofKeyColumns (g 30) (nmD "OSIDX_A_EMAIL") [ g 11 ] with IsPlatformAuto = true }
+    let customIdx   = { Index.ofKeyColumns (g 31) (nmD "IX_Custom_Name") [ g 12 ] with IsPlatformAuto = false }
+    let platformIdx2 = { Index.ofKeyColumns (g 32) (nmD "OSIDX_A_NAME") [ g 12 ] with IsPlatformAuto = true }
+    let customer (idxs: Index list) : Catalog =
+        mkCatalog [ mkModule (g 100) (nmD "Sales")
+                        [ { Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_A_CUSTOMER")
+                                [ attr 10 "Id" true; attr 11 "Email" false; attr 12 "Name" false ] with Indexes = idxs } ] ]
+    let indexFindingFor (env: Catalog) =
+        (Estate.compute agreed (customer [ platformIdx ]) [ "cloud-uat", operand "cloud-uat" env ]).Findings
+        |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaIndexes)
+    // The env adds a CUSTOM-named index — flagged as won't-promote.
+    let custom = indexFindingFor (customer [ platformIdx; customIdx ])
+    Assert.Contains("custom-named index", custom.Statement)
+    Assert.Contains("will not promote", custom.Statement)
+    // The env adds a PLATFORM-generated index — no won't-promote flag.
+    let platform = indexFindingFor (customer [ platformIdx; platformIdx2 ])
+    Assert.DoesNotContain("custom-named", platform.Statement)
+
 // -- finding ⇔ presentation (the totality seed) -------------------------------
 
 [<Fact>]
