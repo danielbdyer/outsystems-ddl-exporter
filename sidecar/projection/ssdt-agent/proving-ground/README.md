@@ -19,6 +19,25 @@ worked commands; read them, then run them in order.
 > That is how a hundred provers share the warm container without colliding on the same `.sql`,
 > the same `bin/`, or the same DB.
 
+## The Twin substrate (preferred) vs this warm-container runbook
+
+`twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
+evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present, prefer
+it for the BEFORE state:
+
+```bash
+cd sidecar/projection/ssdt-agent/proving-ground
+twin up      # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+             # applies Data/Seed.sql; mints deterministically (no sqlpackage). `twin reset` tears down.
+```
+
+The Twin establishes the deterministic BEFORE state; the sqlpackage proving loop below then targets
+`localhost,21434 / twin` (see `../skills/talk-to-local-sql/SKILL.md` §"substrate of record" and
+`../skills/prove-on-dacpac/SKILL.md` §"On the Twin substrate"). This warm-container runbook
+(`localhost,11433 / ProvingGround`) is the **fallback** when the Twin is not wired. The Twin gives
+the sample its reproducible base; the flip-twin variants (empty / clean / violating) stay **seed-based**
+here — the Twin's scenario/pin flip mechanism is for synthetically-minted estates, not the static seed.
+
 ## 0 — The runtime shim (REQUIRED on this machine)
 
 `sqlpackage` is installed as a dotnet tool targeting .NET 8; wherever that runtime is not the

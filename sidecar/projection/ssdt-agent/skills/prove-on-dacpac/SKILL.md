@@ -109,6 +109,27 @@ sqlpackage /Action:Publish \
 > For a **parallel** run, every command above also carries `/TargetDatabaseName:PG_<testId>_<rand>`
 > and points at a scratch copy of the tree — see `self-test/PROTOCOL.md`.
 
+### On the Twin substrate (when `proving-ground/twin.json` + the `twin` CLI are present)
+
+The loop is unchanged; only the BEFORE state and the publish target move. Replace step 1 (deploy the
+current CREATEs + seed on the warm container) with `twin up` from `proving-ground/`, which stands up
+the deterministic base on `localhost,21434 / twin` (DacFx, no sqlpackage — see
+`../talk-to-local-sql/SKILL.md`). Then point every `sqlpackage` publish at the Twin by overriding the
+profile's connection:
+
+```bash
+sqlpackage /Action:Publish \
+  /SourceFile:.../bin/Release/SampleCatalog.dacpac \
+  /Profile:.../profiles/ProvingGround.Strict.publish.xml \
+  /TargetConnectionString:"Server=localhost,21434;Initial Catalog=twin;User ID=sa;Password=Twin@Strong1;TrustServerCertificate=True;Encrypt=False"
+```
+
+The `/TargetConnectionString` overrides the profile's `TargetConnectionString`; the block/smart-default
+settings (Strict vs Permissive) still come from the profile. Obey the isolation rules in
+`../talk-to-local-sql/SKILL.md`: the Twin sets BEFORE, then only sqlpackage touches `twin` until
+teardown (`twin reset`). The Twin is the base data, never the verdict — the refactorlog / rename /
+pre-post-deploy semantics are proven by *this* sqlpackage publish on top of it.
+
 ## Reading the result -> how it ships
 
 **Read the generated `delta.sql` AND the Strict publish outcome together.** Map what they show:

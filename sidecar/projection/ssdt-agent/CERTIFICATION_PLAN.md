@@ -144,7 +144,7 @@ each one is simultaneously teaching material, a scoring fixture, and a drift can
 
 The rubric has an objective half a script can assert (probe ran before publish; expected block
 fired with the expected signature; flip twins produced different outcomes from the same op;
-teardown ran; the capsule's counts match the prompt's legend) and a subjective half only a
+teardown ran; the evidence's counts match the prompt's legend) and a subjective half only a
 reader can judge (voice, teaching, the one question). Split them: the scorer reads the presented
 evidence (the scripts shipped, the silent-redeploy assertions, the delta) and emits per-case
 verdicts; the human rubric keeps the register and pedagogy. Seed variants
@@ -159,7 +159,7 @@ seeding from scratch):
 
 - **Smoke gate (per PR touching the tree):** build the proving-ground dacpac; run the
   make-mandatory triple + rename-with/without-refactorlog + create-fk-orphan against fresh
-  DBs; assert each capsule against its golden. ~5 cases, minutes, catches both skill-text rot
+  DBs; assert each evidence bundle against its golden. ~5 cases, minutes, catches both skill-text rot
   and substrate rot.
 - **Knowledge canary (scheduled + on sqlpackage version bump):** re-prove the §2-F9 findings
   and diff against the goldens. On divergence, the canary opens the issue that says "the
@@ -195,19 +195,19 @@ What each Twin property buys this plan:
   `Twin.Core/ScenarioCompiler.fs`. The `prove-on-dacpac` violating-row probe (the injected
   orphan / dup / over-length / NULL) becomes a **pin**: an operator-authored exact row,
   declared in the scenario, merged after realization, reproducible forever.
-- **Determinism makes capsules comparable by construction.** T1 byte-identical re-mints plus
-  `S-stable` (a schema edit re-mints only the columns it touches; everything else holds
-  byte-identical) mean two capsules over the same `(estate, evidence, scenario, corrections,
-  seed)` fingerprint may differ **only in what the change did**. That is the exact property
-  §3.1's "deterministic fields must agree" check needs, and the Twin provides it as law, not
-  hope. The capsule carries the fingerprint; fingerprint equality is what makes
-  "reproduced" a mechanical word.
+- **Determinism makes the base data reproducible by construction.** T1 byte-identical re-mints
+  plus `S-stable` (a schema edit re-mints only the columns it touches; everything else holds
+  byte-identical) mean a run over the same `(estate, evidence, scenario, corrections, seed)`
+  fingerprint stands on the **identical base data every time** — a reviewer regenerates it exactly
+  without re-running the agent. That is what makes "reproduced" a mechanical word: the substrate is
+  the guarantee, not an agent-to-agent match. Evidence captured against a fixed fingerprint differs
+  only in what the change did.
 - **`twin bake` is the CI substrate.** The §3.4 smoke gate and canary pull the baked,
   pre-seeded image instead of paying schema-deploy + mint time per run — deterministic
   starting state, minutes saved, no seed drift between CI runs.
 - **Masking makes the goldens committable.** The shape tier is literal-free (Twin law 3), a
   real high-cardinality value is never emitted, and PII renders through the seeded Faker
-  realization — so golden captures, capsules, and logbook entries built on Twin data carry
+  realization — so golden captures, evidence bundles, and logbook entries built on Twin data carry
   no production literal and can live in the repo without a data-governance question. A golden
   corpus captured from restored real Dev data could never say that.
 - **`twin check` joins the reviewer's independent corroboration** (beside `projection check` /
@@ -224,7 +224,7 @@ carry that gap, exactly as they do today; nothing about the record register chan
 ### 3.6 The estate logbook — memory that compounds
 
 An append-only `logbook/` of shipped changes: date · op-slug(s) · object · the two findings ·
-capsule reference · disposition · the business decision and its decider. It makes
+evidence-bundle reference · disposition · the business decision and its decider. It makes
 "first time on this estate" a lookup instead of a shrug (F11), lets a PR cite precedent
 ("matches the widen shipped 2026-08-12, entry 47") — the single cheapest trust-builder for a
 wary reviewer — and turns every real change into a golden-corpus candidate. Seed it during the
@@ -239,52 +239,58 @@ logbook chapter, so the agent enters day one already carrying the estate's histo
   fix the README tree map (F6); parameterize the five hardcoded paths behind documented env
   vars with per-OS worked examples (F7); add the F13 route-to-DBA note. Every item is a
   same-day edit.
-- **Stage 1 — capsule + goldens.** Define `proof.json` (schema + a worked example); amend
-  `prove-on-dacpac` and `review-change` to end every loop by writing one; re-run the
-  make-mandatory golden capturing its capsule; capture 4–5 more goldens (3.2), each from a
-  live run.
-- **Stage 2 — the scorer.** The capsule-reader that asserts the objective rubric half; run it
-  over a full self-test fleet once by hand; fix what it exposes (it will expose things).
-- **Stage 3 — CI.** The smoke gate, then the knowledge canary. Gate on the goldens from
-  Stage 1–2. Record the CI-exception decision (§3.4).
-- **Stage 4 — estate anchoring, riding the Twin.** The proving substrate moves to
-  `twin up`/`twin seed` over the real estate definition (§3.5) — this supersedes
-  `ACCELERANT_PLAN.md` stage 1's engine-emitted proving-ground schema where they overlap
-  (the Twin reads the SSDT repo itself post-eject, and imports evidence from either
-  rendition — logical on-prem or physical cloud through the capture-side catalog — so it
-  covers both eras). The accelerant's other pieces stay engine-side and complementary:
-  `profile.json` predicts the per-environment block + CDC awareness across the ~200 tracked
-  tables, `diff` feeds dependency scope. Flip-twin scenarios land here; goldens re-capture on
-  the Twin (committable now — literal-free by law); the logbook seeds from the cutover
-  dry-runs.
-- **Stage 5 — adoption + the funnel.** Wire `CONNECTORS.md` §1 so intake is a slash-command
-  away; surface the reviewer disposition as a PR check; start counting the funnel — % of
-  changes approved by reading alone, reproduction-mismatch rate, disposition mix
-  (any-team-member / dev-lead / principal), returned-to-author reasons, escalations carrying
-  one question + the map. The funnel numbers are how "the principals stopped being the
-  bottleneck" is demonstrated instead of asserted — and the returned-to-author reasons are the
-  next curriculum chapter, discovered rather than guessed.
+- **Stage 1 — the lifecycle rails + the Twin re-anchor (DONE).** Authored `skills/deploy-scripts`
+  (the deployment-script lifecycle: folder = permanence class, header = death certificate, silent
+  redeploy = proof, retirement = tracked act, the six gates); re-anchored trust on Twin determinism
+  + the evidence showcase; sharpened the evidence-only record register; added the proving-ground
+  class folders. **The agent-to-agent `proof.json` capsule is retired** — reproducibility is the
+  Twin's property (§3.1), so no per-loop capsule is written. What the loop presents is the evidence
+  bundle (the scripts + the silent-redeploy assertions + the delta), plain, in the record.
+- **Stage 2 — make the Twin substrate real (this stage).** Author `proving-ground/twin.json` (the
+  first real evidence-profiling config, resolving against the config dir); operationalize the
+  substrate in `talk-to-local-sql` + `prove-on-dacpac` (detect `twin.json` + the `twin` CLI →
+  `twin up` establishes the deterministic BEFORE state on its own container via DacFx, no sqlpackage;
+  the sqlpackage proof targets the Twin; the isolation rules); the sample stays the fallback.
+  Supersedes the old "Stage 4 — estate anchoring" for the substrate half. The real-estate twin.json
+  (with evidence `sources` in logical/physical rendition, covering the ~200 tracked tables) is the
+  production sibling and follows. **Discovered gap (2026-07-20):** the Twin's pre-mint wipe fails on a
+  view over multiple base tables (`vOrderSummary`); the schema publishes but the data mint blocks —
+  the proper fix is a small Twin-engine change (skip non-updatable views in the wipe), out of this
+  tree's scope. Verified here through container-start + DacFx schema publish; the sample fallback is
+  unaffected.
+- **Stage 3 — the scorer.** A script that reads the **evidence bundle** the Twin loop produces (the
+  captured `delta.sql`, the silent-redeploy assertions, the block text with its signature) and
+  asserts the objective half of the rubric (probe-ran-before-publish, expected block + signature,
+  flip twins differ, teardown ran); run it over a full self-test fleet once by hand; fix what it
+  exposes. Not a "capsule-reader" — it reads the plain evidence, structured only as far as the
+  objective checks need. The human rubric keeps the register and pedagogy.
+- **Stage 4 — CI.** The smoke gate, then the knowledge canary (§3.4); once Stage 2 matures, the
+  runner pulls the `twin bake` pre-seeded image. Gate on the goldens. Record the CI-exception.
+- **Stage 5 — adoption + the funnel.** Wire `CONNECTORS.md` §1 so intake is a slash-command away;
+  surface the reviewer disposition as a PR check; count the funnel — % approved by reading alone,
+  disposition mix, returned-to-author reasons, escalations. The funnel is how "the principals stopped
+  being the bottleneck" is demonstrated instead of asserted, and the returned-to-author reasons are
+  the next curriculum chapter, discovered rather than guessed.
 
-Stages 0–2 need no new infrastructure and de-risk everything after; 3 is the first
-infrastructure spend; 4–5 ride existing plans (`ACCELERANT_PLAN.md`, `CONNECTORS.md`).
+Stages 0–2 need no new infrastructure and de-risk everything after; Stage 4 is the first CI spend;
+5 rides existing plans (`ACCELERANT_PLAN.md`, `CONNECTORS.md`).
 
 ## 5 — Guardrails
 
 - **The human surfaces do not change.** `THE_RECORD.md`'s two registers, the PR body shape,
-  and the conversation stay exactly as specified; the capsule sits beneath the record, never
-  in it.
-- **No wrapper for the developer loop.** The agent still runs `docker`/`dotnet`/`sqlpackage`
-  itself; the capsule is output, not orchestration. CI's scripts are the named exception and
-  live outside `skills/`.
+  and the conversation stay exactly as specified; the evidence bundle is the plain scripts +
+  proof already in the record, not a separate artifact beneath it.
+- **No wrapper for the developer loop.** The agent still runs `docker`/`dotnet`/`sqlpackage`/`twin`
+  itself. CI's scripts are the named exception and live outside `skills/`.
 - **The engine and the Twin stay optional** (`ACCELERANT_PLAN.md` governing principle,
   extended). The generic path — hand-authored sample + raw probes — must keep passing the
-  self-test with capsules, engine and Twin absent. `proving-ground/SampleCatalog` is not
-  deleted at Stage 4; it remains the deterministic fixture and the fallback.
+  self-test, engine and Twin absent. `proving-ground/SampleCatalog` is not deleted; it remains
+  the deterministic fixture and the fallback.
 - **The Twin supplies substrate, never verdicts.** The two-profile Strict/Permissive
-  discipline, the content-hash check, and the capsule stay skill-owned
-  (`ACCELERANT_PLAN.md` §4 guardrail). And the proving loop never touches the warm
-  projection container from the Twin side: Twin containers are the Twin's own, per
-  `../THE_TWIN.md` §6.
+  discipline and the content-hash check stay skill-owned (`ACCELERANT_PLAN.md` §4 guardrail),
+  and the sqlpackage proof — not the Twin — establishes the refactorlog / rename / pre-post-deploy
+  verdict on top of the Twin base. The proving loop never touches the warm projection container
+  from the Twin side: Twin containers are the Twin's own, per `../THE_TWIN.md` §6.
 - **Goldens are re-captured, never hand-edited.** A golden that no longer matches the engine
   is re-proven and re-stamped with the new sqlpackage version, per `self-test/golden/README.md`
   — the canary exists to force exactly that, loudly.
@@ -293,33 +299,45 @@ infrastructure spend; 4–5 ride existing plans (`ACCELERANT_PLAN.md`, `CONNECTO
 
 ## 6 — Open questions
 
-- **Capsule extraction discipline:** the block signature must be extracted from publish output
-  by rule (F8's string-match, now load-bearing). Pin the exact grep set per signature in the
-  capsule schema, and version it with sqlpackage.
+- **Block-signature extraction (was "capsule extraction"):** the block signature must be extracted
+  from publish output by rule (F8's string-match, now load-bearing) — there is no capsule schema to
+  pin it in anymore. Pin the exact grep set per signature where the Stage-3 scorer reads the evidence
+  bundle, and version it with sqlpackage. The signatures themselves are already lifted into
+  `_index/constraint-is-a-claim` (F5, Stage 0).
 - **CDC cases in CI:** `sp_cdc_enable_db` is instance-wide and capture timing is
   agent-dependent (`PROTOCOL.md` §8) — the smoke gate should exclude the CDC family; the
   canary runs them serialized with poll-and-timeout, or on a dedicated instance.
 - **Where the logbook lives:** in-repo markdown vs the deploy repo vs ADO work items. In-repo
   first (grep-able, PR-diffable); revisit at the ADO seam (`CONNECTORS.md` §5).
 - **Runner provisioning:** the smoke gate needs Docker + the sqlpackage tool on a hosted or
-  self-hosted runner; verify image pull + license posture before Stage 3 is scheduled.
-- **Violating pins vs the Twin's laws:** zero FK orphans is a mint law (K1), but the flip
-  twins need violating states — an orphan seeded *before* the FK the change introduces, a
-  dup before the unique, an over-length value before the narrow, a NULL before the
-  tightening. Verify each is expressible as a scenario pin against the pre-change estate
-  (the constraint under proof does not exist yet, so coordinate totality should accept the
-  row) before Stage 2 commits to scenarios; any state a pin cannot express keeps its
-  documented scratch edit.
-- **Parallel executors on one Twin:** the Twin maintains one persistent twin per config;
-  the self-test fleet needs per-executor isolation. Candidates: unique databases on the twin
-  container (today's `PG_<id>` pattern), per-executor `twin.json` with a unique container
-  name + port, or the `twin check`-style throwaway database. Decide before the fleet rides
-  the Twin; until then `PROTOCOL.md` isolation stands as-is.
-- **`twin up` mid-proof is a hazard:** the proving loop *deliberately* diverges the twin
-  from the estate definition (it publishes the edited dacpac). A `twin up` run mid-proof
-  would read the fingerprint mismatch and reconcile the edit away. The loop's rule: the Twin
-  establishes the BEFORE state; from that point until teardown, only sqlpackage touches the
-  proving database.
-- **CDC stays outside the Twin:** the Twin does not manage capture instances; the
-  enable-cdc / recreate-capture-instance family keeps its isolated-instance,
-  serialized discipline (`PROTOCOL.md` §8) regardless of substrate.
+  self-hosted runner; verify image pull + license posture before Stage 4 is scheduled.
+- **Flip-twin variants — seed-based for the sample, scenario/pin-based for synthetic estates
+  (resolved).** Traced in the Twin code: the proving-ground's data comes from the **static seed**
+  (`Data/Seed.sql`), and the Twin treats lane-seeded kinds as *provided*, not synthetically minted —
+  so Twin scenarios/pins do **not** drive the sample's empty/clean/violating variants; those stay
+  seed-based (the self-test scratch-edit path). Scenarios + pins are the flip mechanism for a
+  **synthetically-minted real estate**, where evidence-profiled data fills the tables. The original
+  concern (zero-FK-orphan mint law K1 vs a violating pin) applies there: verify each violating pin
+  binds against the pre-change estate before Stage 3's synthetic-estate scenarios rely on it.
+- **`twin up` mid-proof is a hazard (resolved — rule encoded).** The loop deliberately diverges the
+  twin (it publishes the edited dacpac). The rule, now in `talk-to-local-sql`: the Twin sets BEFORE;
+  from then until `twin reset`, only sqlpackage touches the DB. A second `twin up` would reconcile
+  the edit away.
+- **`twin check` may share the warm container (new).** `twin check` acquires a throwaway DB via
+  `PROJECTION_MSSQL_CONN_STR`; if that points at `projection-mssql-warm` it lands there transiently.
+  Give the proving-ground Twin its own throwaway container/env so `twin check` never shares the warm
+  instance. Encoded as an isolation rule in `talk-to-local-sql`.
+- **Twin view-wipe gap (new, Stage 2 finding).** The Twin's pre-mint wipe issues a DELETE against
+  every read-back object, and a view over multiple base tables is not deletable —
+  `twin up` publishes the schema but the data mint blocks on `vOrderSummary`. The proper fix is a
+  small Twin-engine change (skip non-updatable views in the wipe); out of this tree's scope. Owner:
+  the Twin (`Twin.Runtime`). Until then the Twin path establishes the schema base but not the data;
+  the sample fallback is unaffected.
+- **Parallel executors on one Twin:** the Twin maintains one persistent twin per config; the
+  self-test fleet needs per-executor isolation. Candidates: unique databases on the twin container,
+  per-executor `twin.json` with a unique container name + port, or the `twin check`-style throwaway
+  database. Decide before the fleet rides the Twin (Stage 3); until then `PROTOCOL.md` isolation
+  stands as-is.
+- **CDC stays outside the Twin:** the Twin does not manage capture instances; the enable-cdc /
+  recreate-capture-instance family keeps its isolated-instance, serialized discipline
+  (`PROTOCOL.md` §8) regardless of substrate.
