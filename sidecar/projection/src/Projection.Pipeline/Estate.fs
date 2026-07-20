@@ -61,6 +61,22 @@ module Estate =
             | TargetOperand.AgreedEnv l -> sprintf "the agreed shape (%s)" l
             | TargetOperand.AuthoredModel l -> sprintf "the authored model (%s)" l
 
+    /// The reconciliation difficulty of a data-repair finding — how much
+    /// cognitive work clearing it demands, read from RELATIONAL STRUCTURE, not
+    /// magnitude. A NULL / orphan / duplicate on a foreign key into a highly-
+    /// referenced entity — or one caught in a reference cycle — ripples through
+    /// every reconciliation choice (High); a declared default or a sentinel-
+    /// dominated set collapses to a mechanical fix (Low); a peripheral
+    /// relationship or a standalone column is a bounded, local fix (Moderate).
+    /// Estate-RELATIVE by construction — the "hub" cut is the estate's own
+    /// median in-degree, never an absolute count — so it reads the same on a
+    /// 20-table estate and a 200-table one (the operator's steer, 2026-07-19).
+    [<RequireQualifiedAccess>]
+    type ReconciliationDifficulty =
+        | Low
+        | Moderate
+        | High
+
     /// One finding — a keyed divergence with its per-environment evidence.
     /// `Envs` carries `(environment, weight)` pairs: the weight is the
     /// count-evidence (NULL rows, orphan rows, channel-change count) that
@@ -84,6 +100,10 @@ module Estate =
             /// and no promotion order explains it. Any forked finding turns
             /// the estate verdict to `Forked`.
             Fork      : bool
+            /// The reconciliation difficulty (data-repair findings only; `None`
+            /// elsewhere) — the sortable/filterable signal carried to
+            /// `environments.json`, from the centrality-dominant read.
+            Difficulty : ReconciliationDifficulty option
         }
 
     /// The impact rank — the largest consequence anywhere in the estate.
@@ -1168,7 +1188,8 @@ module Estate =
             match EstateFindingKind.leverFormOf kind with
             | EstateLeverForm.Ruling imperative -> Some imperative
             | _ -> None
-          Fork      = false }
+          Fork      = false
+          Difficulty = None }
 
     /// WP-12: a relationship whose target entity has a COMPOSITE primary key.
     /// The emitter renders a single-column foreign key that references only
@@ -1494,7 +1515,8 @@ module Estate =
                                 match EstateFindingKind.leverFormOf kind with
                                 | EstateLeverForm.Ruling imperative -> Some imperative
                                 | _ -> None
-                              Fork      = false }))
+                              Fork      = false
+                              Difficulty = None }))
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
     // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
@@ -1622,22 +1644,6 @@ module Estate =
                               // differently — no single adoption resolves it.
                               Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",") })
             | _ -> [])
-
-    /// The reconciliation difficulty of a data-repair finding — how much
-    /// cognitive work clearing it demands, read from RELATIONAL STRUCTURE, not
-    /// magnitude. A NULL / orphan / duplicate on a foreign key into a highly-
-    /// referenced entity — or one caught in a reference cycle — ripples through
-    /// every reconciliation choice (High); a declared default or a sentinel-
-    /// dominated set collapses to a mechanical fix (Low); a peripheral
-    /// relationship or a standalone column is a bounded, local fix (Moderate).
-    /// Estate-RELATIVE by construction — the "hub" cut is the estate's own
-    /// median in-degree, never an absolute count — so it reads the same on a
-    /// 20-table estate and a 200-table one (the operator's steer, 2026-07-19).
-    [<RequireQualifiedAccess>]
-    type ReconciliationDifficulty =
-        | Low
-        | Moderate
-        | High
 
     /// The reference-graph context the difficulty read consumes, built ONCE from
     /// the target shape: the in-degree of each entity (how many references point
@@ -1869,12 +1875,13 @@ module Estate =
                         | _ ->
                             Map.tryFind coordinate attributeKeyOf
                             |> Option.bind (fun key -> Profile.tryFindColumn key profile)
+                            // The satisfied-environment clause is a plain
+                            // statement — no confidence hedge (operator, 2026-07-19):
+                            // it names the environment and the rows observed. The
+                            // sample-confidence caveat lives on the cross-environment
+                            // conclusions (asymmetry / uniqueness), not here.
                             |> Option.map (fun c ->
-                                if c.RowCount < posture.DecisionFloor then
-                                    sprintf "satisfied in %s (only %s row(s) observed — too few to be conclusive)"
-                                        env (humane64 c.RowCount)
-                                else
-                                    sprintf "satisfied in %s (%s row(s) observed)" env (humane64 c.RowCount))
+                                sprintf "satisfied in %s (%s row(s) observed)" env (humane64 c.RowCount))
                 let clauses =
                     perEnv
                     |> List.choose (fun (env, _, _) ->
@@ -1982,7 +1989,8 @@ module Estate =
                       Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
                       Statement = (sprintf "%s%s.%s%s%s" body clean majorityNote difficultyClause forkNote).TrimEnd()
                       Lever = lever
-                      Fork = fork }
+                      Fork = fork
+                      Difficulty = (difficulty |> Option.map fst) }
                 finding, (difficulty |> Option.map fst))
             // Impact-ranked, but reconciliation difficulty leads: the hardest
             // reconciliations surface first, ties broken by the largest count.
@@ -2125,7 +2133,8 @@ module Estate =
               // The one lever names the flow to run — the §3 contract's row
               // (the registry's generic Ruling is the form; the flow rides here).
               Lever = Some (sprintf "Run: projection check fidelity %s." flow)
-              Fork = false }
+              Fork = false
+              Difficulty = None }
         let extra =
             match clause with
             | FidelityClause.NotConfigured
@@ -2583,6 +2592,13 @@ module Estate =
              | Some lever -> o.["lever"] <- JsonValue.Create lever
              | None -> ())
             if f.Fork then o.["fork"] <- JsonValue.Create true
+            // The reconciliation-difficulty signal (data-repair findings) — the
+            // sortable/filterable field a downstream consumer keys on.
+            (match f.Difficulty with
+             | Some ReconciliationDifficulty.Low      -> o.["difficulty"] <- JsonValue.Create "low"
+             | Some ReconciliationDifficulty.Moderate -> o.["difficulty"] <- JsonValue.Create "moderate"
+             | Some ReconciliationDifficulty.High     -> o.["difficulty"] <- JsonValue.Create "high"
+             | None -> ())
             let perEnv = JsonArray()
             for env, weight in f.Envs do
                 let e = JsonObject()

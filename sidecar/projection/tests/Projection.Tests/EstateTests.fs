@@ -539,9 +539,11 @@ let ``consensus: the clean environments are named beside the divergence with the
     Assert.Contains("satisfied in cloud-dev (1,240 row(s) observed)", finding.Statement)
     Assert.DoesNotContain("advisory", finding.Statement)
     Assert.DoesNotContain("clean", finding.Statement)
+    // The data-repair finding carries the reconciliation-difficulty signal.
+    Assert.True(finding.Difficulty.IsSome)
 
 [<Fact>]
-let ``consensus: a satisfied reading below the decision floor is marked too few to be conclusive, never clean (sample-size honesty, RT-7)`` () =
+let ``consensus: a satisfied reading is a plain statement — rows observed, no confidence hedge, never clean (RT-7)`` () =
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 4120L ] }
     let tiny  = { Profile.empty with Columns = [ nullEvidence customerNameKey 12L 0L ] }
     let report =
@@ -549,7 +551,8 @@ let ``consensus: a satisfied reading below the decision floor is marked too few 
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some tiny } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
-    Assert.Contains("satisfied in cloud-dev (only 12 row(s) observed — too few to be conclusive)", finding.Statement)
+    Assert.Contains("satisfied in cloud-dev (12 row(s) observed)", finding.Statement)
+    Assert.DoesNotContain("too few", finding.Statement)
     Assert.DoesNotContain("clean", finding.Statement)
 
 [<Fact>]
