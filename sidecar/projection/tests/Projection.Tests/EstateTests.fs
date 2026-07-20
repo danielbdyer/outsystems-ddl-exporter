@@ -56,6 +56,99 @@ let ``A45: N espace cells of one model produce zero estate findings after toLogi
     Assert.Equal(Estate.Verdict.Unified, report.Verdict)
     Assert.True(Estate.isUnified report)
 
+// -- the reconciliation-difficulty read (centrality-dominant; operator steer 2026-07-19) --
+
+/// Region is a HUB — referenced by Customer, Order, and Store; Note stands
+/// alone. Customer.Priority carries a declared default. So the difficulty read
+/// has one of each structural case to grade.
+let private difficultyCatalog : Catalog =
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "d1ff0000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) ptype isPk : Attribute =
+        { Attribute.create (g n) (nmD col) ptype with
+            Column       = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+            IsPrimaryKey = isPk
+            IsMandatory  = isPk }
+    let region = Kind.create (g 1) (nmD "Region") (tidD "OSUSR_A_REGION") [ attr 10 "Id" Integer true ]
+    let child kindKey (name: string) idKey fkAttrKey refKey : Kind =
+        let id    = attr idKey "Id" Integer true
+        let regId = attr fkAttrKey "RegionId" Integer false
+        { Kind.create (g kindKey) (nmD name) (tidD ("OSUSR_A_" + name.ToUpperInvariant())) [ id; regId ] with
+            References = [ Reference.create (g refKey) (nmD ("FK_" + name + "_Region")) regId.SsKey region.SsKey ] }
+    let customer =
+        let id       = attr 20 "Id" Integer true
+        let regId    = attr 21 "RegionId" Integer false
+        let priority = { attr 25 "Priority" Integer false with DefaultValue = SqlLiteral.ofAuthoredDefault Integer "0" }
+        { Kind.create (g 2) (nmD "Customer") (tidD "OSUSR_A_CUSTOMER") [ id; regId; priority ] with
+            References = [ Reference.create (g 200) (nmD "FK_Customer_Region") regId.SsKey region.SsKey ] }
+    let order = child 3 "Order" 30 31 201
+    let store = child 4 "Store" 40 41 202
+    let note  = Kind.create (g 5) (nmD "Note") (tidD "OSUSR_A_NOTE") [ attr 50 "Id" Integer true; attr 51 "Body" Text false ]
+    mkCatalog [ mkModule (g 100) (nmD "Sales") [ region; customer; order; store; note ] ]
+
+[<Fact>]
+let ``difficulty: centrality dominates — an FK into a hub is High, a standalone column Moderate, a defaulted or sentinel column Low`` () =
+    let ctx = Estate.difficultyContextOf difficultyCatalog
+    let ec (e: string) (c: string) : ModelFidelity.EntityColumn = { Entity = e; Column = c }
+    let levelOf e c sentinel = fst (Estate.difficultyOf ctx difficultyCatalog (ec e c) sentinel)
+    // Region is referenced by three entities — a hub; an FK into it ripples (High).
+    Assert.Equal(Estate.ReconciliationDifficulty.High, levelOf "Customer" "RegionId" false)
+    // A standalone (non-FK) column is a bounded, local fix (Moderate).
+    Assert.Equal(Estate.ReconciliationDifficulty.Moderate, levelOf "Note" "Body" false)
+    // A declared safe default collapses it to mechanical (Low).
+    Assert.Equal(Estate.ReconciliationDifficulty.Low, levelOf "Customer" "Priority" false)
+    // A sentinel-dominated set collapses even an FK-into-a-hub to Low.
+    Assert.Equal(Estate.ReconciliationDifficulty.Low, levelOf "Customer" "RegionId" true)
+
+[<Fact>]
+let ``schema detail: a reshaped column names the facet, not just a difference count`` () =
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "5c0dd000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) ptype isPk : Attribute =
+        { Attribute.create (g n) (nmD col) ptype with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let customerWith (emailType: PrimitiveType) =
+        mkCatalog [ mkModule (g 100) (nmD "Sales")
+                        [ Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_A_CUSTOMER")
+                            [ attr 10 "Id" Integer true; attr 11 "Email" emailType false ] ] ]
+    // The env's Email is a different type than the target's — a reshaped column.
+    let report =
+        Estate.compute agreed (customerWith Text) [ "cloud-uat", operand "cloud-uat" (customerWith Integer) ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaAttributes)
+    // Names the facet, not "(1 difference(s))".
+    Assert.Contains("changed (type)", finding.Statement)
+    Assert.DoesNotContain("difference(s)", finding.Statement)
+
+[<Fact>]
+let ``index classification: a differing custom-named index is flagged won't-promote; a platform-auto one is not`` () =
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "1dcc0000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) isPk : Attribute =
+        { Attribute.create (g n) (nmD col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let platformIdx = { Index.ofKeyColumns (g 30) (nmD "OSIDX_A_EMAIL") [ g 11 ] with IsPlatformAuto = true }
+    let customIdx   = { Index.ofKeyColumns (g 31) (nmD "IX_Custom_Name") [ g 12 ] with IsPlatformAuto = false }
+    let platformIdx2 = { Index.ofKeyColumns (g 32) (nmD "OSIDX_A_NAME") [ g 12 ] with IsPlatformAuto = true }
+    let customer (idxs: Index list) : Catalog =
+        mkCatalog [ mkModule (g 100) (nmD "Sales")
+                        [ { Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_A_CUSTOMER")
+                                [ attr 10 "Id" true; attr 11 "Email" false; attr 12 "Name" false ] with Indexes = idxs } ] ]
+    let indexFindingFor (env: Catalog) =
+        (Estate.compute agreed (customer [ platformIdx ]) [ "cloud-uat", operand "cloud-uat" env ]).Findings
+        |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaIndexes)
+    // The env adds a CUSTOM-named index — flagged as won't-promote.
+    let custom = indexFindingFor (customer [ platformIdx; customIdx ])
+    Assert.Contains("custom-named index", custom.Statement)
+    Assert.Contains("will not promote", custom.Statement)
+    // The env adds a PLATFORM-generated index — no won't-promote flag.
+    let platform = indexFindingFor (customer [ platformIdx; platformIdx2 ])
+    Assert.DoesNotContain("custom-named", platform.Statement)
+
 // -- finding ⇔ presentation (the totality seed) -------------------------------
 
 [<Fact>]
@@ -443,11 +536,14 @@ let ``consensus: the clean environments are named beside the divergence with the
               "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some clean } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
     Assert.Contains("cloud-uat holds 4,120 NULL row(s)", finding.Statement)
-    Assert.Contains("clean in cloud-dev (1,240 row(s) observed)", finding.Statement)
+    Assert.Contains("satisfied in cloud-dev (1,240 row(s) observed)", finding.Statement)
     Assert.DoesNotContain("advisory", finding.Statement)
+    Assert.DoesNotContain("clean", finding.Statement)
+    // The data-repair finding carries the reconciliation-difficulty signal.
+    Assert.True(finding.Difficulty.IsSome)
 
 [<Fact>]
-let ``consensus: a clean verdict below the decision floor renders advisory (sample-size honesty, RT-7)`` () =
+let ``consensus: a satisfied reading is a plain statement — rows observed, no confidence hedge, never clean (RT-7)`` () =
     let dirty = { Profile.empty with Columns = [ nullEvidence customerNameKey 5000L 4120L ] }
     let tiny  = { Profile.empty with Columns = [ nullEvidence customerNameKey 12L 0L ] }
     let report =
@@ -455,7 +551,9 @@ let ``consensus: a clean verdict below the decision floor renders advisory (samp
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some tiny } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
-    Assert.Contains("clean in cloud-dev (12 row(s) observed — advisory; the sample is below the decision floor)", finding.Statement)
+    Assert.Contains("satisfied in cloud-dev (12 row(s) observed)", finding.Statement)
+    Assert.DoesNotContain("too few", finding.Statement)
+    Assert.DoesNotContain("clean", finding.Statement)
 
 [<Fact>]
 let ``consensus: an environment with no evidence for the coordinate stays silent in the clean clause (the masthead owns it)`` () =
@@ -1055,6 +1153,31 @@ let ``emission: two entities emitting to the same table name collide (WP-16)`` (
     Assert.Equal(EstatePlane.Emission, f.Plane)
     Assert.Contains("entities are named 'Customer'", f.Statement)
     Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the collision"))
+
+[<Fact>]
+let ``emission: a configured tableRename clears a duplicate-table-name collision on the board`` () =
+    // Two entities named "Customer", in different modules, emit as one table.
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "dc0dd000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) : Attribute =
+        { Attribute.create (g n) (nmD col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true }
+    let salesCustomer   = Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_SALES_CUSTOMER")   [ attr 10 "Id" ]
+    let billingCustomer = Kind.create (g 2) (nmD "Customer") (tidD "OSUSR_BILLING_CUSTOMER") [ attr 20 "Id" ]
+    let cat = mkCatalog [ mkModule (g 100) (nmD "Sales")   [ salesCustomer ]
+                          mkModule (g 101) (nmD "Billing") [ billingCustomer ] ]
+    let dupFindings renames =
+        Estate.emissionFindingsForWith renames cat
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDuplicateName)
+    // No rename: the two Customers collide.
+    Assert.NotEmpty(dupFindings [])
+    // A logical-key rename of the Billing Customer resolves the emitted name -> no collision.
+    let rename : Projection.Core.Passes.TableRename.RenameSpec =
+        { Key = Projection.Core.Passes.TableRename.RenameKey.Logical (nmD "Billing", nmD "Customer")
+          Target = tidD "BillingCustomer" }
+    Assert.Empty(dupFindings [ rename ])
 
 [<Fact>]
 let ``emission: an identifier over 128 characters is a deploy blocker (WP-11)`` () =

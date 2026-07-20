@@ -509,7 +509,15 @@ module OssysRowsetReader =
                     // .toBundle does the JSON parse + DU shaping
                     // (the Adapter.Osm boundary trusts the typed
                     // DataSpace coming from the OssysSql adapter).
-                    DataSpace             = row.DataSpace }
+                    DataSpace             = row.DataSpace
+                    // Derived from the physical index NAME here (the rowset path
+                    // does not surface the flag): the `OSIDX_` prefix is
+                    // OutSystems's own naming for the indexes it generates — the
+                    // SAME heuristic the SQL uses in the skipped JSON tail
+                    // (`LIKE 'OSIDX\_%'`). Set at read time because the estate
+                    // canonicalizes the index name downstream, so a later
+                    // classifier must read this bool, not re-sniff the name.
+                    IsPlatformAuto        = row.IndexName.StartsWith("OSIDX_", System.StringComparison.Ordinal) }
         | _ ->
             propagateOrFallback
                 [ Result.errors indexKey

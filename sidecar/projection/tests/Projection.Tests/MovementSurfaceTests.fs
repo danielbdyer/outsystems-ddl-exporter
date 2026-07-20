@@ -1506,6 +1506,24 @@ let ``render: a config's slice flows round-trip (data-portability; parse-render 
     | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
 
 [<Fact>]
+let ``render: overrides.tableRenames round-trip (parse-render = id) — the emission rename map is no longer dropped`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "overrides": { "tableRenames": [
+            { "from": { "module": "Billing", "entity": "Customer" }, "to": { "schema": "dbo", "table": "BillingCustomer" } },
+            { "from": { "schema": "dbo", "table": "OSUSR_X_CUST" },  "to": { "schema": "sales", "table": "Customer" } } ] }
+        }
+        """ |> mustOk
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<Config.TableRename list>(cfg.Shaping.Overrides.TableRenames, back.Shaping.Overrides.TableRenames)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``render: a config with no overrides round-trips to no overrides key`` () =
+    Assert.DoesNotContain("overrides", ProjectionConfig.render ProjectionConfig.empty)
+
+[<Fact>]
 let ``parse: --seed and --scale set the per-run intent (D8)`` () =
     let (_, o) = parseFlowIntent [ "golden"; "--seed"; "7"; "--scale"; "0.5" ]
     Assert.Equal(Some 7UL, o.Seed)

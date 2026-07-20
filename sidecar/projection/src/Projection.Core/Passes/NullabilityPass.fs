@@ -93,7 +93,8 @@ module NullabilityPass =
     /// outcomes are not opportunities.
     ///
     /// Diagnostic mapping:
-    ///   - `EnforceNotNull(_)`                          → None
+    ///   - `EnforceNotNull(LogicalMandatoryWithinBudget)` → Warning (never silently tighten: tightened OVER observed nulls)
+    ///   - `EnforceNotNull(_)`                          → None (no profile, or zero nulls — a clean tightening)
     ///   - `KeepNullable(OperatorOverride)`             → None (operator chose this; not an opportunity)
     ///   - `KeepNullable(NoTighteningSignal)`           → None (V1 #7 — column is intentionally nullable)
     ///   - `KeepNullable(RelaxedUnderEvidence)`         → Warning (audit-worthy: relaxation chosen under evidence)
@@ -128,6 +129,26 @@ module NullabilityPass =
 
     let private opportunityEntry (profile: Profile) (decision: NullabilityDecision) : DiagnosticEntry option =
         match decision.Outcome with
+        | NullabilityOutcome.EnforceNotNull (LogicalMandatoryWithinBudget (nulls, rows, budget)) ->
+            // Never silently tighten (operator, 2026-07-19): a column tightened
+            // to NOT NULL OVER observed nulls (kept under the budget) is
+            // surfaced, not silent — the constraint will not hold until those
+            // rows are reconciled. The zero-null / no-profile tightenings stay
+            // silent below (nothing to reconcile).
+            Some {
+                Source   = passName
+                Severity = DiagnosticSeverity.Warning
+                Code     = "tightening.nullability.tightenedWithinBudget"
+                Message  =
+                    sprintf
+                        "Column tightened to NOT NULL over %d/%d observed null(s), within the configured budget %s — the tightening is surfaced, not silent; those rows must be reconciled before the constraint holds."
+                        nulls rows (budget.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                SsKey    = Some decision.AttributeKey
+                Metadata =
+                    Map.ofList [ "interventionId", decision.InterventionId ]
+                    |> cvMetadata decision.AttributeKey profile
+                SuggestedConfig = None
+            }
         | NullabilityOutcome.EnforceNotNull _ ->
             None
         | NullabilityOutcome.KeepNullable OperatorOverride ->

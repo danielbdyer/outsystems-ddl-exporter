@@ -112,6 +112,25 @@ let ``V1 #1: mandatory column with nulls within budget tightens (LogicalMandator
             (LogicalMandatoryWithinBudget (4L, 100L, 0.05m)),
         decision.Outcome)
 
+[<Fact>]
+let ``never silently tighten: a within-budget tightening emits a Warning diagnostic (operator 2026-07-19)`` () =
+    // Same scenario as V1 #1 — a mandatory column tightened over 4/100 nulls,
+    // kept under the 5% budget. It USED to tighten silently (EnforceNotNull ->
+    // None); now the tightening is surfaced (never silently tighten).
+    let catalog = buildCatalog true true
+    let profile = buildProfile 100L 4L
+    let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
+    let lineage = nullRun catalog (policyWith cfg) profile
+    let tighten =
+        LineageDiagnostics.entries lineage
+        |> Seq.filter (fun e -> e.Code = "tightening.nullability.tightenedWithinBudget")
+        |> Seq.toList
+    Assert.Single(tighten) |> ignore
+    let entry = tighten.[0]
+    Assert.Equal(DiagnosticSeverity.Warning, entry.Severity)
+    Assert.Equal(Some mandatoryAttributeKey, entry.SsKey)
+    Assert.Contains("4/100", entry.Message)
+
 // ---------------------------------------------------------------------------
 // V1 #2 — EvidenceGated_Should_StayNullable_When_MandatoryColumn_Has_Nulls
 //   V1 input:  EvidenceGated + Mandatory + 12/100 nulls + budget 5%.

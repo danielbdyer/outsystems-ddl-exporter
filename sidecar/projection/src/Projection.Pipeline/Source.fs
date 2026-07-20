@@ -223,10 +223,31 @@ module Source =
             Some (fun catalog ->
                 task {
                     try
-                        use cnn = new SqlConnection(resolveConn conn)
-                        do! cnn.OpenAsync()
+                        // Bounded per-kind parallelism (the connection-factory
+                        // form): one short-lived connection per in-flight kind
+                        // up to MaxConcurrency, each opened AND disposed by the
+                        // concurrent capture. The result is order-independent —
+                        // byte-identical to the serial `attach`, only faster
+                        // (LiveProfiler acquisition-only concurrency). Compounds
+                        // with the estate face's per-environment fan-out. The
+                        // serial `attach` (one connection, per-kind sequential)
+                        // stays the `ofLive` physical-read path.
+                        let openConnection () : Task<Result<SqlConnection>> =
+                            task {
+                                try
+                                    let cnn = new SqlConnection(resolveConn conn)
+                                    do! cnn.OpenAsync()
+                                    return Result.success cnn
+                                with ex ->
+                                    return
+                                        Result.failureOf
+                                            (ValidationError.create "source.ossys.profileFailed"
+                                                (System.String.Concat("ossys source ", conn, ": ", ex.Message)))  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat is the right primitive
+                            }
                         let profileCatalog = Catalog.stripStaticPopulations catalog
-                        return! LiveProfiler.attach cnn profileCatalog Profile.empty
+                        return!
+                            LiveProfiler.attachConcurrent
+                                Projection.Adapters.Sql.SqlProfilerOptions.defaults openConnection profileCatalog Profile.empty
                     with ex ->
                         return
                             Result.failureOf

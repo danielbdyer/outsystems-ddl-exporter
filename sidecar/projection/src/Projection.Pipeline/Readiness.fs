@@ -66,6 +66,65 @@ module Readiness =
             elif not (List.isEmpty r.DataDealbreakers) then Verdict.Paused
             else Verdict.Ready
 
+    /// The espace-invariant structural identity of an index, as `SsKey`
+    /// segments: its key columns (each an ATTRIBUTE SsKey — the native GUID
+    /// LifeTime preserves across environments — plus sort direction), its
+    /// uniqueness, its filter, and its included columns. The physical index
+    /// NAME and the platform storage options are deliberately excluded.
+    let private indexIdentity (i: Index) : string =
+        let cols =
+            i.Columns
+            |> List.map (fun c -> System.String.Concat(SsKey.rootOriginal c.Attribute, ":", string c.Direction))
+            |> String.concat ","
+        let included =
+            i.IncludedColumns |> List.map SsKey.rootOriginal |> String.concat ","
+        // ONE non-blank, unambiguous basis string (labelled + delimited): the
+        // included-columns and filter parts are frequently empty, and
+        // `synthesizedComposite` rejects a blank basis PART, so the whole
+        // structural identity rides a single segment.
+        System.String.Concat(
+            "cols=", cols,
+            ";inc=", included,
+            ";uq=", string i.Uniqueness,
+            ";filter=", (match i.Filter with Some f -> f | None -> ""))
+
+    /// Re-key an index to its structural identity and canonicalize its name to
+    /// match. OutSystems generates the physical index name per espace (the
+    /// `OSIDX_<hash>` form, which `OssysTranslation.indexSsKey` folds into the
+    /// SsKey), so two cells of ONE model carry the same index under DIFFERENT
+    /// names — and a promoted-but-renamed index would otherwise read as a
+    /// spurious drop-here / add-there. Keying on the structural identity makes
+    /// it read as one index; a genuine difference in columns, uniqueness,
+    /// filter, or included columns still yields distinct keys and surfaces. A
+    /// synthesis failure (impossible for a well-formed index) leaves the index
+    /// untouched — safe: it simply does not normalize.
+    let private toLogicalIndex (i: Index) : Index =
+        match SsKey.synthesizedComposite "OS_IDX_LOGICAL" [ indexIdentity i ] with
+        | Ok key ->
+            { i with
+                SsKey = key
+                Name = (match Name.create (SsKey.rootOriginal key) with Ok n -> n | Error _ -> i.Name) }
+        | Error _ -> i
+
+    /// Re-key every index in a catalog to its espace-invariant structural
+    /// identity (`toLogicalIndex`). Held SEPARATE from `toLogicalShape` — which
+    /// the clone-alignment pass (`NameAlignment.align`) relies on to PRESERVE
+    /// SsKeys while blanking only the derived names — because re-keying an index
+    /// rewrites its SsKey. Only the cross-ENVIRONMENT estate compare applies this:
+    /// its operands share ONE SsKey lineage (LifeTime preserves SS_KEY across
+    /// promotion), so the structural identity — built from the columns' attribute
+    /// SsKeys — is stable. The by-NAME clone compare must NOT apply it (its
+    /// operands carry DISTINCT SsKeys, aligned only by name).
+    let normalizeIndexIdentity (c: Catalog) : Catalog =
+        { c with
+            Modules =
+                c.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k -> { k with Indexes = k.Indexes |> List.map toLogicalIndex }) }) }
+
     /// Normalize a catalog to its espace-INVARIANT logical shape for the
     /// cross-environment comparison. `CatalogDiff` already ignores physical
     /// table/column NAMES (the espace-invariance law, AXIOMS A1-corollary) — but
@@ -78,7 +137,10 @@ module Readiness =
     /// they do not bear on "same model"). Blanking them makes the readiness
     /// verdict espace-safe at every grain — proven end-to-end by the
     /// `OssysComprehensiveFixtureTests` two-DB canary. The default VALUE is kept
-    /// (it IS logical); only the constraint NAME is dropped.
+    /// (it IS logical); only the constraint NAME is dropped. Index identity is
+    /// likewise per-espace, but re-keying it rewrites SsKeys (which the clone
+    /// alignment relies on being preserved) — so the estate applies
+    /// `normalizeIndexIdentity` as a SEPARATE step (above), never here.
     let toLogicalShape (c: Catalog) : Catalog =
         { c with
             Modules =
