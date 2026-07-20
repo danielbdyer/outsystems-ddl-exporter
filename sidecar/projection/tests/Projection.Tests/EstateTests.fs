@@ -101,6 +101,27 @@ let ``difficulty: centrality dominates — an FK into a hub is High, a standalon
     // A sentinel-dominated set collapses even an FK-into-a-hub to Low.
     Assert.Equal(Estate.ReconciliationDifficulty.Low, levelOf "Customer" "RegionId" true)
 
+[<Fact>]
+let ``schema detail: a reshaped column names the facet, not just a difference count`` () =
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "5c0dd000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) ptype isPk : Attribute =
+        { Attribute.create (g n) (nmD col) ptype with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+            IsPrimaryKey = isPk; IsMandatory = isPk }
+    let customerWith (emailType: PrimitiveType) =
+        mkCatalog [ mkModule (g 100) (nmD "Sales")
+                        [ Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_A_CUSTOMER")
+                            [ attr 10 "Id" Integer true; attr 11 "Email" emailType false ] ] ]
+    // The env's Email is a different type than the target's — a reshaped column.
+    let report =
+        Estate.compute agreed (customerWith Text) [ "cloud-uat", operand "cloud-uat" (customerWith Integer) ]
+    let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.SchemaAttributes)
+    // Names the facet, not "(1 difference(s))".
+    Assert.Contains("changed (type)", finding.Statement)
+    Assert.DoesNotContain("difference(s)", finding.Statement)
+
 // -- finding ⇔ presentation (the totality seed) -------------------------------
 
 [<Fact>]

@@ -450,6 +450,7 @@ module Estate =
         let channel
             (kind: EstateFindingKind)
             (noun: string)
+            (facetsOf: 'change -> string list)
             (diffs: Map<SsKey, ChannelDiff<'change>>)
             : EnvContribution list =
             diffs
@@ -459,9 +460,21 @@ module Estate =
                 let count =
                     Set.count d.Added + Set.count d.Removed
                     + Map.count d.Renamed + List.length d.Reshaped
+                // WHAT differs, not just how many: the direction breakdown and,
+                // for reshaped items, the changed facets — all already computed
+                // and collapsed to a bare count before.
+                let detail =
+                    [ if not (Set.isEmpty d.Added)   then sprintf "%d added" (Set.count d.Added)
+                      if not (Set.isEmpty d.Removed) then sprintf "%d removed" (Set.count d.Removed)
+                      if not (Map.isEmpty d.Renamed) then sprintf "%d renamed" (Map.count d.Renamed)
+                      if not (List.isEmpty d.Reshaped) then
+                        match d.Reshaped |> List.collect facetsOf |> List.distinct with
+                        | []     -> sprintf "%d changed" (List.length d.Reshaped)
+                        | facets -> sprintf "%d changed (%s)" (List.length d.Reshaped) (String.concat ", " facets) ]
+                    |> String.concat ", "
                 contribution kind name (Some (sprintf "%A" d))
-                    (sprintf "%s's %s differ from the target shape in %s (%s difference(s))"
-                        name noun env (humane count))
+                    (sprintf "%s's %s differ from the target shape in %s: %s"
+                        name noun env detail)
                     (int64 count))
         // One finding per differing facet — triggers, check constraints,
         // modality (static vs regular), and active state are named
@@ -489,12 +502,42 @@ module Estate =
                             EstateFindingKind.SchemaActivity,
                             sprintf "%s's active state differs from the target shape in %s" name env
                     contribution kind name (Some (sprintf "%A" facet)) statement 1L))
+        // Readable facet labels per channel — the reshaped facets each change
+        // carries, named plainly for the operator.
+        let attrFacets (c: AttributeChange) : string list =
+            c.Facets |> Set.toList |> List.map (function
+                | AttributeFacet.DataType -> "type"
+                | AttributeFacet.Nullability -> "nullability"
+                | AttributeFacet.PrimaryKey -> "primary key"
+                | AttributeFacet.Length -> "length"
+                | AttributeFacet.Precision -> "precision"
+                | AttributeFacet.Scale -> "scale"
+                | AttributeFacet.Identity -> "identity"
+                | AttributeFacet.DefaultValue -> "default"
+                | AttributeFacet.Computed -> "computed")
+        let refFacets (c: ReferenceChange) : string list =
+            c.Facets |> Set.toList |> List.map (function
+                | ReferenceFacet.Target -> "target"
+                | ReferenceFacet.SourceAttribute -> "source column"
+                | ReferenceFacet.OnDelete -> "delete rule"
+                | ReferenceFacet.OnUpdate -> "update rule"
+                | ReferenceFacet.UserFk -> "user relationship"
+                | ReferenceFacet.DbConstraint -> "enforcement"
+                | ReferenceFacet.Trust -> "trust")
+        let idxFacets (c: IndexChange) : string list =
+            c.Facets |> Set.toList |> List.map (function
+                | IndexFacet.Columns -> "columns"
+                | IndexFacet.Uniqueness -> "uniqueness"
+                | IndexFacet.IncludedColumns -> "included columns"
+                | IndexFacet.Filter -> "filter"
+                | IndexFacet.DataSpace -> "storage"
+                | IndexFacet.Options -> "options")
         presenceInEnv
         @ presenceInTarget
         @ renames
-        @ channel EstateFindingKind.SchemaAttributes "columns" (CatalogDiff.attributeDiffs diff)
-        @ channel EstateFindingKind.SchemaReferences "relationships" (CatalogDiff.referenceDiffs diff)
-        @ channel EstateFindingKind.SchemaIndexes "indexes" (CatalogDiff.indexDiffs diff)
+        @ channel EstateFindingKind.SchemaAttributes "columns" attrFacets (CatalogDiff.attributeDiffs diff)
+        @ channel EstateFindingKind.SchemaReferences "relationships" refFacets (CatalogDiff.referenceDiffs diff)
+        @ channel EstateFindingKind.SchemaIndexes "indexes" idxFacets (CatalogDiff.indexDiffs diff)
         @ facets
 
     // -- Data-plane findings (one env's data against the target's model) ----
