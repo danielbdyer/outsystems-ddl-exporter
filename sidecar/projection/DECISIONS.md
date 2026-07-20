@@ -30190,3 +30190,35 @@ loaded ENTIRELY through the emitted lanes. B5 (the `--data transfer` sibling) + 
 witness that the tool's transfer AND the operator's shipped artifacts both reproduce
 the source. Full `ReverseLegCanaryTests` (19) green — the transfer refactor is
 regression-clean.
+
+---
+
+## 2026-07-20 — The fidelity proofs land as law + AC + doc; the ServerDigest completeness rung is DEFERRED as redundant (P1-S5 / P2-S5)
+
+**The decision.** The two shipped capabilities become first-class with their forcing functions:
+two AXIOMS laws (**A47** — the fidelity proof is staging-and-loading invariant across
+`--stage ddl|dacfx` × `--data transfer|lanes` × the derived identity policy; **A48** — the
+offline manifest reconcile is sound: agrees iff every target digest equals the recorded source
+digest, a stale digest reds by name, never phantom-green), each with its same-commit
+`AxiomTests.fs` Skip-pointer to the LIVE witnesses; two acceptance rows (**AC-D11** Path 1,
+**AC-D12** Path 2) in `THE_USE_CASE_ONTOLOGY.acceptance.md`; and a design doc,
+`THE_FIDELITY_PROOFS.md`, beside `CROSS_ENVIRONMENT_READINESS.md` (the sibling estate-shape gate
+— that proves the schema is one shape, this proves the data reproduces).
+
+**P1-S2 (the whole-estate `ServerDigest` completeness rung) is DEFERRED — redundant for
+correctness.** The plan sequenced a `ServerDigest`-based "nothing was missed off-sample" rung.
+Its premise is false: `RowDigestFold` already folds EVERY row (not just `--sample`), and
+`DifferenceTotal` is exact (`keepDiff` caps only the NAMED diff list — `(if total < cap then
+d::diffs else diffs), total + 1L`). So a divergence outside the sample window already reds the
+verdict, and GUID-keyed kinds are already covered by the content-addressed aggregate (the fold
+needs no per-row integer key). `ServerDigest`'s only distinct value is ZERO-TRANSFER (a
+server-side fast path — perf at estate scale), and wiring it would mutate the Core verdict types
+(`KindRowVerdict`, `RowFidelityReport.agrees`). Adding an invasive Core change for a rung whose
+correctness value is already delivered is not justified. **Re-open trigger:** a measured need to
+prove a table whose row stream is too large to fold client-side. (Named per the "named skips,
+never silent" discipline; also in `THE_FIDELITY_PROOFS.md` §4 and the `BACKLOG`/deferral index.)
+
+**Also named-deferred** (Path 2 extensions, `THE_FIDELITY_PROOFS.md` §4): a business-key-anchored
+manifest (surrogate-excluded, for sink-minting targets); offline per-row naming (embed
+`GoldenDataset` rows so a reconcile names the cell, not just the kind); non-OSSYS source estates
+(the three de-OSSYS gating seams become archetype/config-gated).

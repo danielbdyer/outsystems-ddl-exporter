@@ -1634,6 +1634,33 @@ SQL type at B3; B5's container proof runs the full triangle. This entry is the \
 axiom-file pointer to those facts.")>]
 let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
 
+[<Fact(Skip = "A47 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
+container fidelity proof's verdict is INVARIANT across the schema-staging axis (--stage \
+ddl|dacfx), the row-loading axis (--data transfer|lanes), and the target's derived identity \
+disposition (Structural / PreferPreservedKeys read from the flow.To archetype). The invariant \
+grain is the deployed schema + streamed rows (RowDigestFold, whole-table), never dacpac bytes. \
+T17 generalized from one build path to the product of the estate's real staging and loading \
+choices — the proof reproduces THIS operator's estate through the artifacts they ship. The \
+promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ReverseLegCanaryTests` runs B5 \
+(DDL×transfer), `P1-S1 DacFx-staged proof` (DacFx×transfer), `P1-S4 lanes proof` (DDL×lanes), \
+and `P1-S3 preserved-keys proof` (PreferPreservedKeys) each byte-identical, the orphan arms \
+red; `MovementSurfaceTests` pins the parse-time mode + policy resolution. This entry is the \
+axiom-file pointer to those facts.")>]
+let ``A47: the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction)`` () = ()
+
+[<Fact(Skip = "A48 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
+offline manifest reconcile is SOUND: `check fidelity --against <manifest> --target <ref>` (no \
+live source) agrees (exit 0) iff every kind's live-folded target digest equals the manifest's \
+recorded source RowDigestFold digest; a stale digest reconciles to a NAMED divergence (exit 5), \
+never phantom-green; an unreachable target or model-hash mismatch refuses (exit 6). The manifest \
+plane is RowDigestFold end-to-end, so a capture and a reconcile are two reads of one canonical \
+form. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ProofManifestTests` (pure) \
+round-trips the codec and fails closed on foreign version/plane/garbage; `FidelityRowsDockerTests` \
+`P2-S3 offline reconcile` captures a manifest then reconciles a byte-identical target (exit 0) \
+and a tampered target (exit 5) with the source torn down. This entry is the axiom-file pointer \
+to those facts.")>]
+let ``A48: offline manifest reconcile is sound (source-absent verification)`` () = ()
+
 // ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)
 // ===========================================================================
