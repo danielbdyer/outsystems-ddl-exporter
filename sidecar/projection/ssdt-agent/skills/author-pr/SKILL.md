@@ -182,6 +182,16 @@ sections: its **Review & release** findings, its **Verification** query, its **R
 and its standing **Not verified** items. Assemble the body from those fragments; the operation skill
 owns the specifics, this skill owns the shape and the register.
 
+When the change ships a **deployment script**, `../deploy-scripts/SKILL.md` contributes the
+script-lifecycle evidence — almost exclusively evidence, no narration: each script's permanence class
+and header (in **Changes**); the idempotency proof, stated as the no-op redeploy's three assertions
+verbatim — **0 rows affected · identical content digest before/after · 0 CDC captures** if tracked —
+alongside the sanity/verification SQL run before the change was allowed to land (in **Deployment
+evidence**); and the **retirement condition** for every transient/guarded/ad-hoc script (the trigger
++ work item, or the phase that ends it), or "Retire: never" with the reason for a permanent one. The
+retirement line rides in **Changes** beside the file, or in **Deployment evidence** — do not drop it;
+a script with no stated retirement is not finished.
+
 A complete **captured** example from a live run — every count, error, and digest in it observed on a
 disposable copy — is `../../self-test/golden/make-mandatory-pr.md`, with its developer conversation
 alongside. That pair is the standard to imitate.

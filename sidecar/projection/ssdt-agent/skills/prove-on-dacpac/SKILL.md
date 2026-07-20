@@ -433,7 +433,15 @@ proves the refusal; Permissive, only after, shows the consequence.
 
 ## Connector points
 
-The hand-authored `SampleCatalog` can be replaced by the F# engine's `SqlprojEmitter` /
+The substrate of record is the **Twin** (`../../../THE_TWIN.md`) when present: `twin up` mints a
+deterministic, evidence-profiled dataset over the real estate definition that evolves with the schema,
+and the proving loop above runs against it **unchanged**. The trust is the Twin's own determinism
+(`twin check` = π∘σ≈id, T1 byte-identical, S-stable) — the base data is reproducible by construction,
+so the proof rests on a dataset a reviewer regenerates identically without re-running the agent. See
+`../talk-to-local-sql/SKILL.md`'s substrate-of-record section; the hand-authored `SampleCatalog` is
+the fallback.
+
+The hand-authored `SampleCatalog` can also be replaced by the F# engine's `SqlprojEmitter` /
 `DacpacEmitter` / `PostDeployEmitter` output (in `src/Projection.Targets.SSDT`) from a **real**
 OutSystems catalog — same proving loop, real schema. The engine emits the artifacts but never
 *drives* `sqlpackage`; **this skill is that missing driver**, kept as agent-run commands by

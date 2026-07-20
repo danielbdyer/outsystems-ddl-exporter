@@ -199,8 +199,29 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 Rename with no refactorlog entry · Optimistic NOT NULL · Forgotten FK Check · Ambitious
 Narrowing · CDC Surprise · Refactorlog Cleanup · SELECT * View.
 
+## Deployment-script class folders (the folder is the contract)
+
+The proving ground carries the deployment-script class folders the lifecycle rails require
+(`../skills/deploy-scripts/SKILL.md`) so a script's *permanence class is its location*:
+
+- `Migrations/` · `ReferenceData/` — **permanent · idempotent** (model-restoring backfills, guarded
+  reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
+- `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
+  or the phase that ends it). Swept on the deprecation train once prod-confirmed.
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). Principal review; the four
+  obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+
+Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
+`OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in
+`Script.PostDeployment.sql` are **commented** so the standing seed the self-test pins is not
+perturbed — when you prove a real script, author it in the right folder and add its include under the
+matching class heading. The `SampleCatalog.sqlproj` reclassifies all four folders' `*.sql` out of the
+schema `Build` glob (as `None`, like `Data/`), so a script is never compiled as a schema object.
+
 ## Connector point
 
 The hand-authored `SampleCatalog` can be replaced by the F# engine's
 `SqlprojEmitter`/`DacpacEmitter`/`PostDeployEmitter` output from a real OutSystems catalog —
-the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3.
+the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3. And the substrate of
+record is the **Twin** (`../../THE_TWIN.md`) when present — a deterministic, evidence-profiled dataset
+over the real estate definition that evolves with the schema; the sample here is the fallback.

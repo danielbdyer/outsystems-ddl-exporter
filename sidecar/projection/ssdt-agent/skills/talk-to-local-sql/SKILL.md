@@ -18,6 +18,25 @@ This skill owns the substrate `prove-on-dacpac` publishes against: a disposable 
 database, real-*shaped* but safe to drop, standing in for the Dev database. Nothing here ever
 touches production; the database is reset between scenarios and dropped without ceremony.
 
+## The substrate of record: the Twin (deterministic), the sample as fallback
+
+The substrate that earns trust is **the Twin** (`../../../THE_TWIN.md`): one command (`twin up`)
+holds a local SQL Server current with the estate's own definitions and fills it with a
+**deterministic, masked, distribution-faithful** dataset. Its trust is a property of the *system*,
+not of any agent re-running it — `twin check` proves π∘σ≈id, mints are byte-identical (T1), and a
+schema edit re-mints only the columns it touches (**S-stable**), so a reviewer regenerates the exact
+same base data without re-running the agent. The **evidence-profiling config (`twin.json`) is
+version-controlled beside the model and evolves as the schema evolves** — that is the local dev
+environment the agent proves changes against. The Twin runs in **its own** container
+(`../../../THE_TWIN.md` §6), never the warm projection container the fallback below uses. Do not
+restate the Twin's laws here — point.
+
+The hand-authored `ProvingGround` sample on the warm container (the rest of this file) is the
+**fallback** — the deterministic fixture the self-test pins and the substrate when the Twin is not
+wired. The proving loop is identical on either: build → Script → Strict → Permissive, then the silent
+redeploy. When the Twin is present, prefer it — the base dataset is real-estate-shaped and evolves
+with the schema; when it is absent, the sample keeps the loop working.
+
 The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
 script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and
 `sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.

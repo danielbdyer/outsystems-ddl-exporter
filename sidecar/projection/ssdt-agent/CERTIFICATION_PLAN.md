@@ -91,32 +91,48 @@ The defects, ranked by what they cost:
 
 ## 3 — The certification spine (the design)
 
+> **Amendment (2026-07-20) — trust is not agent-to-agent.** The earlier framing of §3.1 (an
+> author capsule and a reviewer capsule that must *agree* to make "reproduced" true) is
+> **retired**. Reproducibility is a property of the **Twin**, not of two agents matching: the
+> Twin's determinism means the base dataset regenerates byte-identically for anyone, so no
+> second agent's re-run is what earns trust. Trust now rests on two anchors — the Twin's
+> determinism (§3.1) and the plain showcase of the risk-averse checks the agent ran (§3.1) —
+> and the process the agent walks to place, prove, and retire deployment scripts is
+> `skills/deploy-scripts` (the deployment-script lifecycle rails). The pieces below are
+> re-aimed accordingly; the golden corpus (§3.2) is reframed as evidence-presentation
+> exemplars, not agent-diff fixtures.
+
 Six pieces, smallest first. Each is independently useful; together they close the loop from
-"the agent says" to "the machine re-verified and any developer can see that it did."
+"the agent says" to "the substrate is reproducible by construction and the evidence is on the
+record for any developer to read."
 
-### 3.1 The evidence capsule — the proof as data
+### 3.1 The two trust anchors — Twin determinism + the evidence showcase
 
-Every proving run already produces the facts; capture them once, structured, beside the prose:
-a small `proof.json` written by the agent at the end of the loop (it is **data the agent
-writes, not a wrapper that runs the loop** — the no-orchestration constraint stands).
+Trust comes from two places, **neither of them a second agent**:
 
-Fields (schema versioned): run id · date · sqlpackage version · dacpac SHA-256 · the
-substrate fingerprint (on the Twin: the `[twin].[__state]` fingerprint + the `(seed,
-scenario, evidence-pack hash)` triple, §3.5; on the hand-authored sample: the seed-file
-SHA-256) · target DB name · per-step records (command, outcome, the extracted block
-signature `Msg`/`SQL72xxx` when one fired, probe SQL + returned count) · `delta.sql` SHA-256 +
-the guard excerpt · the two findings (how it ships / who reviews) + added scrutiny · the
-Not-verified list. The PR body remains the human surface per `THE_RECORD.md` and
-`author-pr`'s "nothing attached for the reviewer to run" rule — the capsule is for the
-reviewer *agent* and CI, and it is what makes "reproduced" checkable: two capsules from two
-isolated runs must agree on every deterministic field (block fired y/n, signatures, counts,
-delta shape). Disagreement is itself the finding.
+- **The Twin's inherent determinism** (`../THE_TWIN.md`). `twin up` mints a deterministic,
+  masked, distribution-faithful dataset over the estate's own definitions; `twin check` proves
+  π∘σ≈id, mints are byte-identical (T1), and a schema edit re-mints only the columns it touches
+  (S-stable). The evidence-profiling config (`twin.json`) is version-controlled beside the model
+  and **evolves as the schema evolves** — this is the local dev environment the agent proves
+  against, and its base dataset is reproducible *by construction*, so a reviewer regenerates the
+  identical data without re-running the agent. The substrate is the guarantee.
+- **The plain showcase of the risk-averse checks the agent ran.** Presented as evidence and
+  little else, in the record register (`THE_RECORD.md` §2, pushed evidence-forward): the exact
+  pre-/post-deployment scripts (each with its permanence class + header + retirement condition),
+  the **idempotency proof** (the no-op redeploy's three assertions — 0 rows · identical content
+  digest · 0 CDC captures if tracked), and the sanity/verification SQL run before the change was
+  allowed to land. The precise changes required, **no more and no less** (Gate 0 refuses a script
+  when the diff already does the work). This is what `skills/deploy-scripts` + `skills/author-pr`
+  now produce; it needs no separate machine artifact for another agent to match.
 
 ### 3.2 The golden corpus — one certified exemplar per family × flip
 
 Grow `self-test/golden/` from 1 pair to ~14: for each op family, the case whose outcome flips
-on data, captured from a live run as (PR body + conversation + **capsule + `delta.sql` +
-publish-log excerpt**). Candidates: make-mandatory triple (exists — add its capsule) ·
+on data, captured from a live run as an **evidence bundle** — PR body + conversation + the
+scripts shipped + the silent-redeploy assertions + `delta.sql` + publish-log excerpt. These are
+**evidence-presentation exemplars** (the existing make-mandatory PR already is one), not
+agent-diff fixtures. Candidates: make-mandatory triple (exists) ·
 rename-attribute with/without refactorlog · create-fk-orphan · add-unique on dupes · narrow
 past the data · delete-entity populated (the principal-review exemplar) ·
 recreate-capture-instance · split-table multi-phase · edit-seed idempotency ·
@@ -129,8 +145,9 @@ each one is simultaneously teaching material, a scoring fixture, and a drift can
 The rubric has an objective half a script can assert (probe ran before publish; expected block
 fired with the expected signature; flip twins produced different outcomes from the same op;
 teardown ran; the capsule's counts match the prompt's legend) and a subjective half only a
-reader can judge (voice, teaching, the one question). Split them: the scorer consumes capsules
-and emits per-case verdicts; the human rubric keeps the register and pedagogy. Seed variants
+reader can judge (voice, teaching, the one question). Split them: the scorer reads the presented
+evidence (the scripts shipped, the silent-redeploy assertions, the delta) and emits per-case
+verdicts; the human rubric keeps the register and pedagogy. Seed variants
 (empty / clean / violating) become named Twin scenarios (§3.5) instead of hand-typed scratch
 edits — declarative, refused-by-name when wrong, byte-identical on every re-mint.
 
