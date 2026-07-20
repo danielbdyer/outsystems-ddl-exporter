@@ -32,7 +32,7 @@ op maps to one of the enriched Modules, each of which the enriched-sample author
 | `OrderLine` (new) | IDENTITY PK; `OrderId` FK to Order; `LineNumber`; `Amount`; 2–3 lines/Order | define-PK composite (KEY-01), change-delete-rule cascade dependency-scope (KEY-04), FK-graph depth |
 | `OrderStatusText` (new) | adds free-text `StatusText NVARCHAR(20) NOT NULL` to Order, values `Pending`/`Shipped`/`Cancelled` mapping to Status | extract-to-lookup (STA-03) + its total-mapping negative |
 | `CdcCandidate` (new) | plain `Id/Name/Notes` table, seeded, header carries the survival-rule-1 / PROTOCOL §8 CDC-isolation warning | enable-cdc (AUD-04), recreate-capture-instance (AUD-05), change-tracking (AUD-06), drop-CDC-table (AUD-07N), nullable-add-to-CDC (TRAP-01N) |
-| `OrderSummary` (new) | authored VIEW `dbo.vOrderSummary` with **enumerated** columns joining Order+Customer+Status, plus a documented `SELECT *` variant for the trap | create-view (VIE-01), compat-view target (VIE-02), indexed-view (VIE-04) |
+| `OrderSummary` (new) | authored VIEW `dbo.vOrderSummary` with **enumerated** columns joining Order+Customer+Status, plus a documented `SELECT *` variant for the trap | dependency-scope fixture ("a column feeds a view") + the SELECT * trap; the view-authoring cases VIE-01/02/04 are principal-only route negatives (VIE-03 synonym unaffected) |
 
 **Seed discipline (mirrors PROTOCOL step 5):** the **authored** positive seed is never edited to
 produce a negative/flip — you edit **your scratch copy** (`$SCRATCH/Data/Seed.sql`) for the
@@ -865,7 +865,15 @@ flag it against the op skill, not the run.
 
 ## Family: views-synonyms — `skills/operations/views-synonyms.md` (family index)
 
-### VIE-01 — create-view · positive
+> **⚠️ Views are PRINCIPAL-ONLY (2026-07-20).** Authoring a view — `create-view`, `compat-view`,
+> `indexed-view` — is out of the developer catalog on purpose. **VIE-01, VIE-02, and VIE-04 are
+> therefore route-to-principal NEGATIVES** (`…N`): the correct outcome is that the agent does NOT
+> author the view — it names the request, says views are a principal's call, and routes it up (the
+> pattern of IDX-04N / CON-04N). The prompt bodies below are retained as the principal's authoring
+> reference. **VIE-03 (synonym) is unaffected** — it authors no view and stays a developer positive.
+> The `vOrderSummary` fixture stays (dependency-scope; see its header) — only the *ops* are gated.
+
+### VIE-01 — create-view · positive (now a route-to-principal negative — see the family note)
 > **"Give me a view that joins Order and Customer for active customers."**
 - **op:** `skills/op/create-view/SKILL.md`
 - **How it ships:** as a single schema change applied in place — a clean `CREATE/ALTER VIEW`; it
@@ -1136,7 +1144,7 @@ pending its own prompt and golden capture (`../CERTIFICATION_PLAN.md` Stage 1). 
 - **static-data:** create-static-seed=STA-01 · edit-seed=STA-02 (+IDEM-01N) · extract-to-lookup=STA-03/03N ·
   delete-seed-value=STA-04N
 - **structural:** split-table=STR-01 · merge-tables=STR-02/02N · move-attribute=STR-03 · identity-swap=STR-04
-- **views-synonyms:** create-view=VIE-01 · compat-view=VIE-02 · synonym=VIE-03 · indexed-view=VIE-04
+- **views-synonyms:** synonym=VIE-03 (developer positive) · create-view=VIE-01, compat-view=VIE-02, indexed-view=VIE-04 — **PRINCIPAL-ONLY, route-to-principal negatives** (see the family note)
 - **audit-cdc:** temporal-new=AUD-01 · temporal-convert=AUD-02 · audit-columns=AUD-03 · enable-cdc=AUD-04 ·
   recreate-capture-instance=AUD-05 · change-tracking=AUD-06 (delete-entity on a CDC table=AUD-07N)
 

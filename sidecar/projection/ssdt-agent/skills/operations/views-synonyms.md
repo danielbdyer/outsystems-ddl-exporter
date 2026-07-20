@@ -5,6 +5,12 @@
 > The AUTHORED-HERE backward-compat-view recipe (§17.8) has moved its full body into
 > `../op/compat-view/SKILL.md` with the AUTHORED-HERE notice preserved verbatim.
 
+> **⚠️ Views are PRINCIPAL-ONLY for this team.** `create-view`, `compat-view`, and `indexed-view` are
+> **out of the developer catalog on purpose** — the team does not author views at the outset; if the
+> org adopts them, a **principal** authors them. Their skills stay as the principal's reference.
+> **`synonym` is the family's developer op** — it authors no view (a cross-database pointer). Route a
+> view request up to a principal; do not hand a developer a view op.
+
 **Family framing.** Views, synonyms, and their materialized cousins are the *indirection layer*.
 Most are benign changes applied in place — a view is a saved SELECT with no data to lose. The
 danger here is rarely data loss; it is **stale shape** (a `SELECT *` view that silently drifts as
@@ -16,10 +22,10 @@ stands in for (an OutSystems "External Entity" / "Advanced Query" is often a vie
 
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
-| create-view | `../op/create-view/SKILL.md` | a saved SELECT; ships in place, no data touched, any team member can review; **enumerate columns** — `SELECT *` is a latent defect (the SELECT-* trap) |
-| compat-view | `../op/compat-view/SKILL.md` | a view bearing the OLD name after a rename/split; ships in place, but as one step of a multi-PR program a dev lead or an experienced developer should review it — the dependency scope reaches outside the dacpac, to consumers the model cannot see still using the old name; temporary, enumerated *(AUTHORED-HERE §17.8)* |
-| synonym | `../op/synonym/SKILL.md` | a runtime-resolved alias to an external object; ships in place, any team member can review one inside the project — a dev lead when it points outside it; target NOT validated at publish |
-| indexed-view | `../op/indexed-view/SKILL.md` | SCHEMABINDING + unique clustered index; stores data, binds base columns; flips to a staged, multi-release change as the base grows |
+| create-view | `../op/create-view/SKILL.md` | **PRINCIPAL-ONLY** (see banner) — a saved SELECT; ships in place, no data touched; **enumerate columns** — `SELECT *` is a latent defect (the SELECT-* trap) |
+| compat-view | `../op/compat-view/SKILL.md` | **PRINCIPAL-ONLY** (see banner) — a view bearing the OLD name after a rename/split; ships in place as one step of a multi-PR program; the dependency scope reaches outside the dacpac, to consumers the model cannot see still using the old name; temporary, enumerated *(AUTHORED-HERE §17.8)* |
+| synonym | `../op/synonym/SKILL.md` | **the family's developer op** — a runtime-resolved alias to an external object (authors no view); ships in place, any team member can review one inside the project — a dev lead when it points outside it; target NOT validated at publish |
+| indexed-view | `../op/indexed-view/SKILL.md` | **PRINCIPAL-ONLY** (see banner) — SCHEMABINDING + unique clustered index; stores data, binds base columns; flips to a staged, multi-release change as the base grows |
 
 ## Shared concerns for this family
 - **`../_index/identity-and-refactorlog/SKILL.md`** — the refactorlog `sp_rename` that makes a

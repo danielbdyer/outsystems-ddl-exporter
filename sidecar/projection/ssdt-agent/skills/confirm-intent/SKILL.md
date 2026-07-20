@@ -110,10 +110,10 @@ Two disambiguations the table now forces you to make (the op split lives here, n
 | "merge these two entities" | `merge-tables` | `skills/op/merge-tables/SKILL.md` | multi-phase: prove 1:1 cardinality, absorb, drop |
 | "this field is on the wrong entity" | `move-attribute` | `skills/op/move-attribute/SKILL.md` | copy-then-drop across tables (NOT a rename) |
 | "Auto Number" on/off | `identity-swap` | `skills/op/identity-swap/SKILL.md` | **cannot ALTER** — shadow rebuild + `IDENTITY_INSERT` + reseed |
-| "a view" / "an Advanced Query joining …" | `create-view` | `skills/op/create-view/SKILL.md` | `CREATE VIEW`, enumerated columns (**SELECT * View** trap) |
-| "keep the old name working after a rename" | `compat-view` | `skills/op/compat-view/SKILL.md` | view bearing the old name over the new (temporary) |
+| "a view" / "an Advanced Query joining …" | `create-view` | `skills/op/create-view/SKILL.md` | **PRINCIPAL-ONLY — route up** (views are out of the developer catalog; a principal authors them) |
+| "keep the old name working after a rename" | `compat-view` | `skills/op/compat-view/SKILL.md` | **PRINCIPAL-ONLY — route up** (the compat bridge is a principal's step; the rename itself is the developer's) |
 | "point at a table in another database" | `synonym` | `skills/op/synonym/SKILL.md` | `CREATE SYNONYM` (runtime-resolution gap) |
-| "materialize / cache the joined view" | `indexed-view` | `skills/op/indexed-view/SKILL.md` | `WITH SCHEMABINDING` + `UNIQUE CLUSTERED` |
+| "materialize / cache the joined view" | `indexed-view` | `skills/op/indexed-view/SKILL.md` | **PRINCIPAL-ONLY — route up** (a materialized view; a principal authors it) |
 | "full history on a NEW entity" | `temporal-new` | `skills/op/temporal-new/SKILL.md` | `SYSTEM_VERSIONING=ON` from birth (declarative) |
 | "add history to an EXISTING populated entity" | `temporal-convert` | `skills/op/temporal-convert/SKILL.md` | multi-phase: period cols + backfill + enable versioning |
 | "CreatedBy/CreatedOn/ModifiedBy/ModifiedOn" | `audit-columns` | `skills/op/audit-columns/SKILL.md` | nullable = M1; NOT NULL on populated = backfill |
@@ -134,6 +134,13 @@ columns** (a cutover dealbreaker class), a **column collation change**, and **st
 functions** — handle them the same way (flag and route) until an op is authored for them
 (`../../CERTIFICATION_PLAN.md` F13). Do not force any of these into a near-match op; a wrong op
 proven perfectly is still wrong.
+
+**Views are principal-only for this team.** `create-view`, `compat-view`, and `indexed-view` have
+skills, but views are **out of the developer catalog on purpose** — the team does not author views at
+the outset; if the org adopts them, a **principal** authors them. Do not route a developer to a view
+op: name the request, say views are a principal's call, and route it up. The skills stay as the
+principal's reference. (A rename is the developer's; if it needs a compat view for external consumers
+of the old name, *that bridge* is the principal's step — see `compat-view`.)
 
 **The op skill IS the change-author's entry.** The op-slug you name resolves to
 `skills/op/<op-slug>/SKILL.md` — that per-op skill is the exact file the change-author will open

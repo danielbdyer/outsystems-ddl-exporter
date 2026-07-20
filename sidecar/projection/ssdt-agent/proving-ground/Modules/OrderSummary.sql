@@ -1,41 +1,36 @@
 /*
-  dbo.vOrderSummary — the authored view (enumerated columns) and the base for the SELECT * View
-  trap variant.
+  dbo.vOrderSummary — the dependency-scope + SELECT * View fixture (enumerated columns).
 
-  CREATE-only schema item. The authored view lists its columns explicitly, never SELECT *. That
-  is the correct, stable shape: a column added to Order, Customer, or Status does not silently
-  change the view's contract, and the view is a safe base for a compatibility or indexed view.
+  CREATE-only schema item. The authored view lists its columns explicitly, never SELECT *. That is
+  the correct, stable shape: a column added to Order, Customer, or Status does not silently change
+  the view's contract.
 
   PARALLEL EXECUTORS — READ FIRST: do not edit this authored file in place. Copy the tree, publish
-  to a unique database per `../self-test/PROTOCOL.md`.
+  to a unique database per `../../self-test/PROTOCOL.md`.
 
-  WHAT THIS VIEW UNLOCKS
-  ----------------------
-  - create-view (VIE-01): an OutSystems Advanced Query / view over a join. The authored,
-    enumerated form is the clean destination: it ships as a single schema change, applied in
-    place, and no data is read or written. See skills/op/create-view/.
-  - the SELECT * View trap (handbook 16 = §19): the SELECT * variant below is proven in a scratch
-    copy. Replace the enumerated SELECT with `SELECT *`, and the view's column set is frozen at
-    first bind and drifts against the base tables — a base column add is not reflected, and a base
-    column drop breaks the view at runtime, not at deploy. The authored view stays enumerated so
-    VIE-01 positive passes; the trap is a scratch edit only. See skills/op/create-view/ and
-    skills/op/compat-view/.
-  - compat-view target (VIE-02): after a rename, a view carrying the old name over the new table
-    is the backward-compatibility bridge — the identity survives the move, and the name is just an
-    address. See skills/op/compat-view/ and skills/_index/identity-and-refactorlog/.
-  - indexed-view (VIE-04): a scratch edit adds WITH SCHEMABINDING and a UNIQUE CLUSTERED index to
-    materialize an aggregation. SCHEMABINDING is why the enumerated column list matters. See
-    skills/op/indexed-view/.
+  WHY THIS FIXTURE STAYS (though authoring views is principal-only)
+  ----------------------------------------------------------------
+  Authoring a view — create-view, compat-view, indexed-view — is PRINCIPAL-ONLY for this team (out
+  of the developer catalog on purpose; see skills/operations/views-synonyms.md). But this view is a
+  load-bearing FIXTURE for the developer curriculum, independent of those ops:
 
-  synonym (VIE-03) needs no table here — it targets an external database or server and is proven
-  by the runtime-resolution gap: the dacpac cannot validate the far side. See skills/op/synonym/.
+  - Dependency scope (the primary use): vOrderSummary is the canonical "this column feeds a view"
+    example — a change to Order/Customer must account for the view that reads it. Used by
+    skills/review/dependency-scope, the REV-08 named-risk review scenario, and THE_RECORD.md's
+    worked correction. The view stays here so that lesson has a real object.
+  - The SELECT * View trap (handbook 16 = §19): the enumerated form is the stable destination; a
+    `SELECT *` variant (a scratch edit) drifts against the base tables — a base column add is not
+    reflected until sp_refreshview, with no reviewable diff. Taught in skills/op/create-view/
+    (principal-only) and proven as a scratch edit only.
+  - The Twin holds it: a view carries no data, so the Twin publishes vOrderSummary but never wipes
+    or mints it (DECISIONS 2026-07-20). Faithful on both substrates.
 
-  The SELECT * View trap and the indexed-view variants are scratch edits — do not bake them into
-  this file. The authored view must stay enumerated and non-schemabound so VIE-01 positive
-  publishes clean.
+  The authored view MUST stay enumerated and non-schemabound. The SELECT * and indexed-view variants
+  are scratch edits — do not bake them into this file.
 
-  UNLOCKS self-test ids: VIE-01 (create-view), VIE-02 (compat-view target),
-  VIE-04 (indexed-view — scratch edit), and the SELECT * View trap (scratch edit).
+  Self-test: the view-authoring cases VIE-01 (create-view), VIE-02 (compat-view), VIE-04
+  (indexed-view) are downgraded to principal-route negatives; synonym (VIE-03) is unaffected — it
+  authors no view.
 */
 
 CREATE VIEW dbo.vOrderSummary

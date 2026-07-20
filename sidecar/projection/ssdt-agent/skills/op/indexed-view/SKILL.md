@@ -5,12 +5,17 @@ description: Use when the developer says "materialize this aggregation for speed
 
 # Indexed / materialized view (SCHEMABINDING) (deterministic-only / base-column-binding trap)
 
+> **⚠️ PRINCIPAL-ONLY — out of the developer catalog on purpose.** This team does not author views
+> (a materialized view least of all) at the outset; if the org adopts them, a **principal** authors
+> them. At intake, name the request, say it is a principal's call, and route it up — `confirm-intent`
+> routes it to a principal, not to a developer. This skill stays as the principal's reference.
+
 > **Default (provisional — the data decides).** On a small or empty base it ships as a single
-> declarative change — the view and its unique clustered index, applied in place — and an
-> experienced developer or a dev lead reviews it, because it is a stored object that binds its base
-> tables, not a plain view. As the base grows, the unique-clustered-index build becomes expensive
-> and blocking, and it ships as a scripted or staged change instead. Prove it on a disposable copy
-> before classifying.
+> declarative change — the view and its unique clustered index, applied in place. **A principal must
+> review this: views are a principal-only concern for this team** — and this one is a stored object
+> that binds its base tables, not a plain view, so the call is doubly a principal's. As the base
+> grows, the unique-clustered-index build becomes expensive and blocking, and it ships as a scripted
+> or staged change instead. Prove it on a disposable copy before classifying.
 
 ## OutSystems phrasing
 "materialize this aggregation for speed", "cache the joined view", "make the summary view fast".
@@ -68,9 +73,9 @@ nobody scheduled — which is exactly what proving the rebuild in the delta lets
 The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`), in the record register.
 
 **Review & release**
-- An experienced developer or a dev lead should review this: it adds a stored object that binds its
-  base tables and maintains a materialized result on every base-table write, not a plain view. On a
-  large base, a dev lead must review it.
+- A principal must review this: views are a principal-only concern for this team (out of the
+  developer catalog on purpose — see the banner), and this one adds a stored object that binds its
+  base tables and maintains a materialized result on every base-table write, not a plain view.
 - Ships as a single declarative change on a small or empty base — the view and its unique clustered
   index, applied in place. On a large base it ships as a scripted single release scheduled with
   care, or staged across releases, because the unique-clustered-index build reads and materializes

@@ -5,9 +5,16 @@ description: Use when the developer says "give me a view that joins Order and Cu
 
 # Create a view (SELECT * View trap)
 
+> **⚠️ PRINCIPAL-ONLY — out of the developer catalog on purpose.** This team does not author views at
+> the outset; if the org adopts views later, a **principal** authors them. At intake, name the
+> request, say views are a principal's call, and route it up — `confirm-intent` routes "a view" to a
+> principal, not to a developer. This skill stays as the principal's reference; the mechanics below
+> are kept for when a principal picks it up.
+
 > **Default (provisional — the data decides).** Ships as a single schema change, applied in place —
-> no data is read or written. Any team member can review it: the change is additive and the running
-> application is unaffected. Enumerate the columns explicitly rather than `SELECT *`.
+> no data is read or written. **A principal must review this: views are a principal-only concern for
+> this team** (the technical change is otherwise additive and the running application is unaffected).
+> Enumerate the columns explicitly rather than `SELECT *`.
 
 ## OutSystems phrasing
 "give me a view that joins Order and Customer", "an Advanced Query entity for active customers", "expose a read-only combined entity".
@@ -37,7 +44,7 @@ A view written as `SELECT *` has no shape of its own — it defers its contract 
 The fragment this contributes to the pull request (feeds `../../author-pr/SKILL.md`):
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected. If downstream apps, reports, or ETL read the view, a dev lead should review instead — a later change to it becomes a cross-system change.
+- A principal must review this: views are a principal-only concern for this team (out of the developer catalog on purpose — see the banner). The technical change is otherwise additive and the running application is unaffected; if downstream apps, reports, or ETL read the view, that dependency scope is a further reason it is a principal's call.
 - Ships as a single schema change, applied in place. No data is read or written.
 - Added scrutiny: none. A `SELECT *` definition is a latent defect to fix before shipping, not added scrutiny.
 
