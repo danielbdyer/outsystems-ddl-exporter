@@ -29826,6 +29826,135 @@ as the next slice, not smuggled in here.
 
 ---
 
+## 2026-07-19 — `check fidelity --stage ddl|dacfx`: the container proof stages the stand-in through DacFx as well as DDL (P1-S1)
+
+**The decision.** `check fidelity <flow>` gained a `--stage` selector. `ddl` (the
+default) keeps the pre-P1-S1 behaviour byte-identically — the stand-in's schema is
+applied as the emitted `SsdtDdlEmitter` batch through `Deploy.executeBatch`. `dacfx`
+publishes the model-built `.dacpac` (`DacpacEmitter.emit`) into the per-run scratch
+through `DacServices.Deploy`, in-process. The load and the proof are IDENTICAL across
+both modes: a model-built dacpac is schema-only by construction (`DacpacEmitter`
+header), so the data still arrives through the journaled transfer, and the
+row-fidelity compare is unchanged. Only the schema-staging leg differs.
+
+**Why.** The operator asked to prove byte-identical extraction "staging it using
+either DacFx or applying the DDL" — the two product paths a cutover actually takes
+(a declarative DacFx publish vs the executor's DDL). `DacpacPublishEquivalenceTests`
+already proved DacFx≡DDL at the schema plane (deployed `PhysicalSchema.diff`); this
+closes the DATA leg through a DacFx-staged target, so the whole extraction is proven
+end-to-end on both paths.
+
+**"Byte-identical" is deployed-schema + row grain, never dacpac bytes.**
+`DacpacEmitter` returns raw DacFx bytes whose byte-equality explicitly does NOT hold
+(Origin.xml embeds a wall-clock; `BACKLOG.md` Slice ζ, the deferred dacpac
+byte-determinism cash-out). The proof asserts equality of the deployed schema (the
+load succeeds against the published shape) and the streamed rows (the `RowDigestFold`
+comparator) — the same grain the DDL path asserts.
+
+**The primitive lands in `Deploy`.** `Deploy.deployDacpac (connStr) (bytes)` is the
+shared SECOND consumer of the DacServices publish shape (`EstateModel.publishTo` in
+the Twin and the dacpac-equivalence test each proved one leg inline). It opens no new
+role — Pipeline already owns all deploy I/O — and names `Microsoft.SqlServer.DacFx`
+on Pipeline (already in its transitive closure via `Targets.SSDT`, so no new runtime
+dependency). Fail-loud: a publish exception is a named `ValidationError`, never a
+silent half-deploy.
+
+**Cache honesty.** A `--stage dacfx` run never reads or writes the DDL-keyed
+incremental proof cache (`FidelityProofCache`, wave B6). The DacFx≡DDL equivalence is
+the very thing under proof, so it is not assumed for cache reuse; the DacFx path
+always runs the container proof.
+
+**Witness.** `ReverseLegCanaryTests` — `P1-S1 DacFx-staged proof: …`. The LE-3 estate
+(every PK sink-minted, an FK chain + diamond, colliding key spaces) proves
+byte-identical (exit 0) through a DacServices-published stand-in on the faithful
+machine, and an FK-orphan source row reads exit 5 (the DacFx path names residuals,
+never a silent pass). B5 (the DDL-staged sibling) + this together witness the
+equivalence.
+
+---
+
+## 2026-07-19 — The portable proof manifest: `check fidelity --capture` writes the source's per-kind digests for a later offline reconcile (P2-S1/S2)
+
+**The decision.** `check fidelity <flow>` gained `--capture <path>`, which writes a
+PORTABLE proof manifest: the SOURCE estate's per-kind `RowDigestFold` content
+digests (`{aggregate, count}` per kind, keyed by `SsKey`) plus capture provenance
+(source label, capture time, the alignment model's shape hash, the tolerances in
+force). The manifest is the seed of Path 2 — verifying a target the tool did NOT
+stage (a database the operator applied themselves) WITHOUT the live source (the
+offline reconcile `check fidelity --against`, P2-S3, consumes it).
+
+**One digest plane, stamped.** The manifest commits to the `RowDigestFold` plane
+(pure Core, order-independent, and — critically — it digests a physical stream and
+a logical stream IDENTICALLY across the rename gap, so a target carrying the same
+LOGICAL shape re-derives the same digest). The plane is written into the file; a
+reader refuses a foreign plane rather than comparing incomparable hex. The
+server-digest plane (`ServerDigest`) is never mixed in — the two produce different
+values by construction (`ServerDigest.fs` header).
+
+**Reuse, not reinvention.** `ProofManifest` is `FidelityProofCache` with the
+per-kind `KindFingerprint` replaced by the STRONG `RowDigestFold.TableDigest`: the
+same sidecar codec (`System.Text.Json.Nodes` DOM), the same atomic-write and
+fail-closed-read idiom, the same `SsKey.serialize`/`deserialize` keys. `ofReport`
+builds it purely from a completed `RowFidelityReport`'s SOURCE-side verdicts — the
+per-kind digests the compare already folded (today written to `fidelity.rows.json`
+as write-only telemetry; the manifest promotes them to a durable, portable oracle).
+
+**Fail-closed + version/plane-gated.** A torn, version-mismatched, or
+plane-mismatched manifest parses to `None` (reconciles to NOTHING, never a false
+green). UNLIKE the advisory cache write, `--capture` is an explicitly-requested
+artifact, so a write failure is a named `ValidationError`, never a silent drop.
+`--capture` forces a full proof run (the manifest needs the report's per-kind
+source digests, which a cache hit does not carry).
+
+**Witnesses.** `ProofManifestTests` (pure): the codec round-trips up to canonical
+kind-ordering, the bytes are deterministic (kind-order-independent — T1), and a
+foreign version / foreign plane / garbage / missing field each fail closed.
+`ReverseLegCanaryTests` "P2-S2 capture" (Docker): `check fidelity --capture` writes
+a valid manifest carrying every compared kind's non-empty source digest + the
+provenance.
+
+---
+
+## 2026-07-19 — `check fidelity --against`: the offline reconcile verifies a target the operator applied themselves against a portable manifest, no live source (P2-S3)
+
+**The decision.** `check fidelity` grew the `--against <manifest> --target <ref>`
+form — the OFFLINE reconcile. It reads a portable proof manifest (the source's
+captured per-kind `RowDigestFold` digests), reads back the target the operator
+applied THEMSELVES, folds each kind's digest from the target ALONE, and proves it
+byte-identical to the stored source digest — with NO live source present. This
+closes Path 2: capture a manifest at cutover (`--capture`), carry it to the
+local/deployed database, and re-check what was deployed later, offline.
+
+**Per-kind pass/fail — the honest, named downgrade.** The manifest carries
+digests, not rows, so the reconcile decides each kind byte-identical-or-diverged
+but cannot NAME which rows differ (that needs the live source). Every verdict
+carries `NamingSkipped = "reconciled against a stored source digest …"`, and the
+report points the operator to `check data --rows` (both live) for the drill-down —
+the T17 `NamingSkipped` degradation applied to the source-absent case, never a
+silent weakening.
+
+**The alignment gate.** The manifest's digests were captured under a specific
+model shape (its `ModelHash`); reconciling a target read under a DIFFERENT shape
+would compare incomparable bytes. `FidelityProofCache.modelHash model ≠
+manifest.ModelHash` is a NAMED refusal (exit 6), never a false verdict. An
+unreadable/foreign manifest (fail-closed `tryParse`) and an unreachable/absent
+target are likewise named refusals, never a crash or a silent pass.
+
+**Reuse.** `FidelityCompareRun.reconcileAgainstDigests` is a sibling of
+`compareKind` reusing its private fold machinery (the LOGICAL basis, the datetime
+canonicalization, `RowDigestFold`); it produces the SAME `RowFidelityReport`, so
+the verb rides the same render / `fidelity.rows.json` / exit-code (0/5/6) surface
+as the flow proof. The reconcile core is decoupled from `ProofManifest` (which
+compiles after `FidelityCompareRun`) by a small `SourceDigestEntry` carrier.
+Read-only — a gate, not a move (the estate chapter's non-goal).
+
+**Witness.** `FidelityRowsDockerTests` "P2-S3 offline reconcile": capture a
+manifest from a source, then reconcile a byte-identical target against it (exit 0)
+and a tampered target (exit 5) — both decided from the manifest + the target
+alone, `runFidelityAgainst` never opening a source connection.
+
+---
+
 ## 2026-07-19 — Static seeds render cyclic nullable FKs INLINE (no Phase-2 deferral); the two-phase cycle-break stays on the dynamic/bootstrap/migration/transfer lanes
 
 **Decision (operator, 2026-07-19).** The **static-seed** lane emits a
@@ -29941,3 +30070,155 @@ env→`model.ossys`→named-error precedence, same `Fixture`→empty-profile,
 same `profileFromLiveConnection` call. Pre-existing on `main` (unrelated to the
 static-seeds / `renderDataElegant` work); fixed here so the branch's Release
 build — and the perf-gate — are green.
+
+---
+
+## 2026-07-20 — `check fidelity` derives the proof's identity policy from the target archetype; single-rendition estates align for free (P1-S3)
+
+**The decision.** The container proof no longer hardcodes `IdentityPolicy.Structural`
+for its load. `check fidelity <flow>` now reads the TARGET place's (`flow.To`)
+effective archetype and threads the matching `IdentityPolicy` into the proof's
+transfer: a **FullRights** target (a `schema+data` grant, or a declared
+`FullRights` archetype) loads under **`PreferPreservedKeys`** — the source surrogate
+keys are written DIRECTLY through `IDENTITY_INSERT`, no minting and no journal remap;
+a **ManagedDml** (`data`-only) or undeclared target keeps **`Structural`** (the sink
+mints IDENTITY keys and the ledger-modulated replay reconciles — the pre-P1-S3
+default, unchanged and byte-identical). So the proof reproduces the identity handling
+the operator's REAL cutover load would perform, not a single fixed disposition.
+
+**Why.** The operator asked to prove byte-identical extraction for an *arbitrarily
+shaped* estate. A real on-prem FullRights sink preserves the source keys
+(`IDENTITY_INSERT`); the pre-P1-S3 proof always ran the cloud-style sink-minting
+path, so it proved a DIFFERENT load than the one an on-prem cutover executes. Deriving
+the policy from the declared archetype makes the proof faithful to the target the
+operator actually declared.
+
+**One projection, reused — not a second identity classifier.** The resolution is the
+SAME `Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype`
+→ `(CapabilityProfile.``of`` archetype).IdentityInsert` predicate the production load
+already applies (`SinkLoadCapability`, the shipped Archetype Slices A/B). `check
+fidelity` reads it at parse time; nothing new decides identity.
+
+**The proof authorizes its OWN container, never the operator's sink.** A
+`PreferPreservedKeys` load writes explicit identity values, which the T1.5
+identity-insert gate refuses without a `WriteSignoff.WriteMode.IdentityInsert`
+greenlight. The face already self-greenlights `Replace` because it stages and owns
+the throwaway scratch database; it now also self-greenlights `IdentityInsert` on the
+same rationale (the write is to the tool's per-run container, not the operator's
+production place). The greenlight is INERT under `Structural` — no
+`PreservedFromSource` identity kind ⇒ the gate's `identityInsertTables` is empty ⇒ the
+signoff is never consulted (NM-40's reasoning), so B5/B6/P1-S1/P2-S2 are byte-identical
+and the full `ReverseLegCanaryTests` suite (18) stays green.
+
+**Single-rendition estates align for free — no code change.** The plan flagged
+`CatalogRendition.physical`/`.logical` as presuming the OSSYS physical↔logical rename
+triangle. It does not: `LogicalTableEmission`/`LogicalColumnEmission` SELF-SKIP a kind
+whose logical name already equals its physical name (`substituteKind`, the
+`elif logical = TableName.value k.Physical.Table then k` arm). A single-rendition
+estate (the model IS the shape) therefore renders `physical = logical`, the transfer's
+rename map is empty, and the proof aligns by identity — the empty-map case the
+rename-aware leg (LE-3, distinct `OSUSR_L3_*` renditions) strictly generalizes. Named
+here so the "works free" property is a decision, not a silent assumption.
+
+**Scope held.** Arbitrary *OutSystems* estates (decision 1 of the plan): the OSSYS
+data semantics (the space sentinel, the IsUserFk rekey, Static-marking) stay intact.
+A non-OSSYS source remains the named later extension.
+
+**Witnesses.** `MovementSurfaceTests` (pure) — `check fidelity: a FullRights
+(schema+data) target derives IdentityPolicy.PreferPreservedKeys` and its ManagedDml
+`Structural` sibling: the parse-time "expressible ⇔ reachable" half, resolving the
+policy from the target grant through the shipped projection. `ReverseLegCanaryTests`
+(Docker) — `P1-S3 preserved-keys proof: …`: the LE-3 estate LOADS byte-identically
+(exit 0) under `PreferPreservedKeys`, source keys written directly with no remap,
+proving the derived policy actually reproduces the estate. B5 (the `Structural`
+sibling) + this together witness the proof reproduces EITHER production identity
+handling, no longer a single hardcode.
+
+---
+
+## 2026-07-20 — `check fidelity --data lanes`: the proof loads through the EMITTED data lanes (the operator's hand-apply path), not only the transfer (P1-S4)
+
+**The decision.** `check fidelity <flow>` gained a `--data` selector — a second
+staging axis beside `--stage` (which stages the SCHEMA). `--data transfer` (the
+default) keeps the pre-P1-S4 journaled wipe-and-load transfer byte-identically.
+`--data lanes` loads the stand-in by APPLYING THE EMITTED DATA-LANE ARTIFACTS: the
+source's rows are live-hydrated, composed into the leveled StaticSeeds + Bootstrap
+seed against the LOGICAL rendition (`composeRenderedLeveledWithBootstrap`), and
+applied (`Deploy.executeLeveledSeed`). Then the SAME row-fidelity comparator proves
+the landed estate is byte-identical to the source. The two schema axes × two load
+axes compose freely (DDL⊕DacFx × transfer⊕lanes).
+
+**Why.** The operator asked to prove byte-identical extraction "staging it using
+either DacFx OR applying the DDL + seeds + bootstrap." P1-S1 closed the DacFx
+schema leg; this closes the "**+ seeds + bootstrap**" leg — the proof now exercises
+the operator's OWN hand-apply path (the `Data/StaticSeeds.sql` + `Data/Bootstrap.sql`
+the published bundle ships), not just the tool's transfer machinery. "Prove what I
+ship" becomes literal: what reproduces the source is the emitted SQL itself.
+
+**The lanes ARE the publish path, re-aimed at the proof's stand-in.** The load
+mirrors `PipelinedBootstrapEquivalenceTests`'s composition exactly:
+`Hydration.hydrateCatalog` grafts the Static-marked kinds' rows onto the catalog;
+`CatalogRendition.logical` re-renders the grafted catalog to the logical names
+(the emission passes touch `Kind.Physical`, never `Modality` — A1 — so the static
+rows survive the re-render); `Hydration.hydrateBootstrapRows` drains the non-static
+kinds (keyed by `SsKey`, rename-invariant, so they align onto the logical shape).
+Rows carry values keyed by attribute `Name` (rendition-invariant), so a
+physical-source hydrate composes correctly against the logical target. The lanes
+bracket `IDENTITY_INSERT` (NM-26), so the source surrogate keys land DIRECTLY — no
+transfer, no journal, no remap — and the compare aligns by identity.
+
+**Cache honesty (P1-S1's rule, extended).** A `--data lanes` run never reads or
+writes the DDL+transfer-keyed incremental proof cache (`FidelityProofCache`). The
+lanes≡transfer equivalence is the very thing under proof, so it is not assumed for
+cache reuse — a lanes run always runs the container proof, exactly as `--stage
+dacfx` does.
+
+**The load leg is a total branch, no synthetic report.** The face's step-2 load
+factors into `loadViaTransfer` / `loadViaLanes`, each returning a `LoadOutcome`
+(`Transferred of TransferReport | LanesApplied`) plus the journal path the compare
+replays (`Some` for transfer, `None` for lanes). The caller renders provenance off
+the outcome (the transfer's `SkippedReferences` drop-note, or the lanes' hand-apply
+line) — the lanes path fabricates no empty `TransferReport` (survival rule 7). The
+helpers hoist out of the `work` task so its state machine stays a flat match chain
+(FS3511; Release-clean).
+
+**Witnesses.** `MovementSurfaceTests` (pure) — `--data` defaults to `Transfer`,
+`--data lanes`/`transfer` select their mode, and `--data <garbage>` refuses by name
+(`cli.check.fidelityData`): the A44 expressible ⇔ reachable half. `ReverseLegCanaryTests`
+(Docker) — `P1-S4 lanes proof: …`: the LE-3 estate proves byte-identical (exit 0)
+loaded ENTIRELY through the emitted lanes. B5 (the `--data transfer` sibling) + this
+witness that the tool's transfer AND the operator's shipped artifacts both reproduce
+the source. Full `ReverseLegCanaryTests` (19) green — the transfer refactor is
+regression-clean.
+
+---
+
+## 2026-07-20 — The fidelity proofs land as law + AC + doc; the ServerDigest completeness rung is DEFERRED as redundant (P1-S5 / P2-S5)
+
+**The decision.** The two shipped capabilities become first-class with their forcing functions:
+two AXIOMS laws (**A47** — the fidelity proof is staging-and-loading invariant across
+`--stage ddl|dacfx` × `--data transfer|lanes` × the derived identity policy; **A48** — the
+offline manifest reconcile is sound: agrees iff every target digest equals the recorded source
+digest, a stale digest reds by name, never phantom-green), each with its same-commit
+`AxiomTests.fs` Skip-pointer to the LIVE witnesses; two acceptance rows (**AC-D11** Path 1,
+**AC-D12** Path 2) in `THE_USE_CASE_ONTOLOGY.acceptance.md`; and a design doc,
+`THE_FIDELITY_PROOFS.md`, beside `CROSS_ENVIRONMENT_READINESS.md` (the sibling estate-shape gate
+— that proves the schema is one shape, this proves the data reproduces).
+
+**P1-S2 (the whole-estate `ServerDigest` completeness rung) is DEFERRED — redundant for
+correctness.** The plan sequenced a `ServerDigest`-based "nothing was missed off-sample" rung.
+Its premise is false: `RowDigestFold` already folds EVERY row (not just `--sample`), and
+`DifferenceTotal` is exact (`keepDiff` caps only the NAMED diff list — `(if total < cap then
+d::diffs else diffs), total + 1L`). So a divergence outside the sample window already reds the
+verdict, and GUID-keyed kinds are already covered by the content-addressed aggregate (the fold
+needs no per-row integer key). `ServerDigest`'s only distinct value is ZERO-TRANSFER (a
+server-side fast path — perf at estate scale), and wiring it would mutate the Core verdict types
+(`KindRowVerdict`, `RowFidelityReport.agrees`). Adding an invasive Core change for a rung whose
+correctness value is already delivered is not justified. **Re-open trigger:** a measured need to
+prove a table whose row stream is too large to fold client-side. (Named per the "named skips,
+never silent" discipline; also in `THE_FIDELITY_PROOFS.md` §4 and the `BACKLOG`/deferral index.)
+
+**Also named-deferred** (Path 2 extensions, `THE_FIDELITY_PROOFS.md` §4): a business-key-anchored
+manifest (surrogate-excluded, for sink-minting targets); offline per-row naming (embed
+`GoldenDataset` rows so a reconcile names the cell, not just the kind); non-OSSYS source estates
+(the three de-OSSYS gating seams become archetype/config-gated).

@@ -667,6 +667,12 @@ type PlanAction =
     /// `needCatalog` seam (live-OSSYS primary, file fallback) like every
     /// model-bearing action.
     | CheckFidelityFlow of model: ModelSource * modelOssys: string option * args: CheckFidelityFlowArgs
+    /// `check fidelity --against <manifest> --target <ref>` (P2-S3) — the OFFLINE
+    /// reconcile: verify a target the tool did NOT stage (a database the operator
+    /// applied themselves) against a PORTABLE proof manifest, with no live source.
+    /// The model rides the same `needCatalog` seam (its shape is the alignment
+    /// basis; a manifest captured under a different model is refused).
+    | CheckFidelityAgainst of model: ModelSource * modelOssys: string option * args: CheckFidelityAgainstArgs
     /// `revert [--script <path>] --against <env> [--go]` — execute (or
     /// preview) a transfer undo/revert artifact against a configured live
     /// environment (2026-07-06, the proving-loop program). Carries the
@@ -829,6 +835,35 @@ and CheckDataRowsArgs =
       /// recorded `JournalRef` (wave B4a). `None` claims strict byte-identity.
       Interventions : string option }
 
+/// How `check fidelity <flow>` stands the target's shape up on the container
+/// stand-in before the load + proof (P1-S1): apply the emitted DDL batch (the
+/// executor's path — today's default), or publish the emitted `.dacpac`
+/// through DacFx (`DacServices.Deploy` — what a declarative deploy realizes).
+/// The load and the proof are IDENTICAL across both modes: a model-built
+/// dacpac is schema-only by construction, so the data still arrives through the
+/// transfer machinery. "Byte-identical" is asserted at the deployed-schema +
+/// row grain, never on dacpac bytes (which embed a wall-clock — `BACKLOG.md`
+/// Slice ζ names that deferral).
+and [<RequireQualifiedAccess>] StagingMode =
+    /// Apply `SsdtDdlEmitter.statements` as a batch through `Deploy.executeBatch`.
+    | Ddl
+    /// Publish `DacpacEmitter.emit` through `Deploy.deployDacpac`.
+    | Dacfx
+
+/// P1-S4 — HOW the stand-in's ROWS are loaded before the proof (a second
+/// staging axis beside `StagingMode`, which stages the SCHEMA). `Transfer`
+/// (the default) runs the journaled wipe-and-load transfer machinery — the
+/// tool's own extraction leg. `Lanes` instead applies the EMITTED data-lane
+/// artifacts (the live-hydrated StaticSeeds + Bootstrap MERGE lanes, composed
+/// against the logical rendition and applied through `Deploy.executeLeveledSeed`)
+/// — the operator's OWN hand-apply path ("prove what I ship"): the lanes bracket
+/// IDENTITY_INSERT, so the source keys land directly, no transfer and no journal.
+and [<RequireQualifiedAccess>] LoadMode =
+    /// The journaled transfer (the pre-P1-S4 behaviour, byte-identical).
+    | Transfer
+    /// The emitted StaticSeeds + Bootstrap data lanes, hydrated and applied.
+    | Lanes
+
 /// The container proof's operands (`check fidelity <flow>`, wave B5): the
 /// flow, its live source (the estate being proven), the named-difference cap,
 /// and the output form. The model arrives separately on the `PlanAction`
@@ -845,7 +880,50 @@ and CheckFidelityFlowArgs =
       /// `--refresh` — force a full re-prove, ignoring and clearing this flow's
       /// cached proof (wave B6). The cache otherwise skips the expensive
       /// container proof when the model + source fingerprints are unchanged.
-      Refresh    : bool }
+      Refresh    : bool
+      /// `--stage ddl|dacfx` (P1-S1) — how the stand-in's SCHEMA is staged
+      /// before the load. `Ddl` (the default) keeps the pre-P1-S1 behaviour
+      /// byte-identically; `Dacfx` proves the extraction through a DacFx-published
+      /// target. A `Dacfx` run always runs the container proof (it never reads or
+      /// writes the DDL-keyed incremental cache — the DacFx≡DDL equivalence is the
+      /// very thing under proof, so it is not assumed for cache reuse).
+      Stage      : StagingMode
+      /// `--capture <path>` (P2-S2) — write a PORTABLE proof manifest (the
+      /// source's per-kind RowDigestFold digests + capture provenance) to
+      /// `<path>`, for a later OFFLINE reconcile (`check fidelity --against`,
+      /// P2-S3) against a target the tool did not stage. Forces a full proof run
+      /// (the manifest needs the report's per-kind source digests, which a cache
+      /// hit does not carry). `None` writes no manifest.
+      Capture    : string option
+      /// P1-S3 — the identity disposition the proof's load runs under, derived at
+      /// parse time from the flow's TARGET (`flow.To`) archetype (the production
+      /// sink's policy): `PreferPreservedKeys` for a FullRights target
+      /// (IDENTITY_INSERT — source keys written directly, no capture/remap, no
+      /// journal), else `Structural` (the sink mints IDENTITY keys and the
+      /// ledger-modulated replay reconciles — the pre-P1-S3 default, byte-identical
+      /// for an undeclared / ManagedDml target). So the container proof reproduces
+      /// the identity handling the real cutover load would perform.
+      IdentityPolicy : IdentityPolicy
+      /// `--data transfer|lanes` (P1-S4) — how the stand-in's ROWS are loaded.
+      /// `Transfer` (the default) uses the journaled transfer machinery (the
+      /// pre-P1-S4 behaviour); `Lanes` applies the emitted StaticSeeds+Bootstrap
+      /// data lanes (the operator's hand-apply path), proving that what the tool
+      /// SHIPS reproduces the source byte-identical. A `Lanes` load writes the
+      /// source keys directly (the lanes bracket IDENTITY_INSERT) and needs no
+      /// transfer journal, so the compare aligns by identity.
+      Load       : LoadMode }
+
+/// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
+/// --target <ref>`, P2-S3): the portable manifest path, and the target the
+/// operator applied themselves (label + resolved conn). No source — the manifest
+/// IS the source's captured fingerprint. The model arrives on the `PlanAction`
+/// (the `needCatalog` seam), its shape gated against the manifest's basis.
+and CheckFidelityAgainstArgs =
+    { ManifestPath : string
+      /// The target env's display label (`--target`'s raw ref).
+      TargetLabel  : string
+      TargetConn   : string
+      AsJson       : bool }
 
 /// How `check estate` acquires each environment's data evidence
 /// (DECISIONS 2026-07-15, the estate chapter opens, entry 4).

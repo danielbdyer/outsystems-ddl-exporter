@@ -113,3 +113,66 @@ module FidelityRowsDockerTests =
                             }))
                 Assert.Equal(0, result)
             })
+
+    // P2-S3 — THE OFFLINE RECONCILE. Capture a portable manifest (the SOURCE's
+    // per-kind digests), then verify a target the tool did not stage against it
+    // with NO live source present (`check fidelity --against`). A byte-identical
+    // target reconciles green; a tampered cell reds — both decided from the
+    // stored manifest + the target alone, the source never touched.
+    [<Fact>]
+    let ``P2-S3 offline reconcile: --against proves a target byte-identical to a captured manifest with NO live source; a tampered cell reads exit 5`` () =
+        let label = "P2S3Reconcile"
+        if not (skipIfNoDocker label) then () else
+        let manifestPath =
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "p2s3-" + System.Guid.NewGuid().ToString "N" + ".manifest.json")
+        TaskSync.run (fun () ->
+            task {
+                let physicalKind = CatalogRendition.physical model |> Catalog.allKinds |> List.head
+                let logicalKind = CatalogRendition.logical model |> Catalog.allKinds |> List.head
+                let! result =
+                    Deploy.withScratchDatabase "P2S3Src" (fun srcConn ->
+                        Deploy.withScratchDatabase "P2S3Tgt" (fun tgtConn ->
+                            task {
+                                use src = new SqlConnection(srcConn)
+                                use tgt = new SqlConnection(tgtConn)
+                                do! src.OpenAsync()
+                                do! tgt.OpenAsync()
+                                do! Deploy.executeBatch src (seedFor physicalKind rows)
+                                do! Deploy.executeBatch tgt (seedFor logicalKind rows)
+                                // CAPTURE — the SOURCE's per-kind (logical-aligned) digests, to a portable file.
+                                let! reportR =
+                                    FidelityCompareRun.runWith src tgt "src" "tgt" "the authored model" model None None 20 None
+                                let report = Result.value reportR
+                                Assert.True(RowFidelityReport.agrees report, "capture precondition: the two renditions must agree")
+                                let manifest =
+                                    ProofManifest.ofReport
+                                        (System.DateTimeOffset(2026, 7, 19, 0, 0, 0, System.TimeSpan.Zero))
+                                        (FidelityProofCache.modelHash model)
+                                        report
+                                match ProofManifest.write manifestPath manifest with
+                                | Error es ->
+                                    Assert.True(false, sprintf "manifest write failed: %A" es)
+                                    return 0
+                                | Ok () ->
+                                    let againstArgs : CheckFidelityAgainstArgs =
+                                        { ManifestPath = manifestPath; TargetLabel = "tgt"; TargetConn = tgtConn; AsJson = false }
+                                    try
+                                        // GREEN — the target reconciles byte-identical to the manifest;
+                                        // `runFidelityAgainst` opens only the target, never the source.
+                                        Assert.Equal(0, Projection.Cli.Faces.Fidelity.runFidelityAgainst model againstArgs)
+                                        // RED — tamper one target cell; the reconcile detects it OFFLINE (exit 5).
+                                        let emailCol = ColumnRealization.columnNameText (logicalKind.Attributes |> List.find (fun a -> Name.value a.Name = "Email")).Column
+                                        let pkCol = ColumnRealization.columnNameText (logicalKind.Attributes |> List.find (fun a -> a.IsPrimaryKey)).Column
+                                        do! Deploy.executeBatch tgt
+                                                (sprintf "UPDATE [%s].[%s] SET [%s] = N'tampered@x.example' WHERE [%s] = 1042;"
+                                                    (TableId.schemaText logicalKind.Physical)
+                                                    (TableId.tableText logicalKind.Physical)
+                                                    emailCol pkCol)
+                                        Assert.Equal(5, Projection.Cli.Faces.Fidelity.runFidelityAgainst model againstArgs)
+                                        return 0
+                                    finally
+                                        try System.IO.File.Delete manifestPath with _ -> ()
+                                        try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                            }))
+                Assert.Equal(0, result)
+            })

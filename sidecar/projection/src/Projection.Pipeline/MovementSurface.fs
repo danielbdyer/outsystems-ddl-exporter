@@ -2480,6 +2480,33 @@ module Command =
                               FidelityFlow = rs.FidelityFlow
                               Tightening  = cfg.Shaping.Policy.Tightening }
             | "fidelity" :: rest ->
+                match valueOf "--against" with
+                | Some manifestPath ->
+                    // P2-S3 — the OFFLINE reconcile form: verify a target the tool
+                    // did NOT stage against a portable manifest, no live source.
+                    // The model (its shape the reconcile's alignment basis) rides
+                    // the same `needCatalog` seam as the flow form.
+                    let modelOssys = cfg.Shaping.Model.Ossys
+                    let modelSource =
+                        match cfg.Shaping.Model.Path with
+                        | Some m -> ModelSource.ModelFile m
+                        | None   -> ModelSource.Unspecified
+                    if modelSource = ModelSource.Unspecified && Option.isNone modelOssys then
+                        PlanAction.Refused (2, err "cli.check.fidelityNoModel" "projection check fidelity --against: no model is configured (set `model` or `model.ossys` in projection.json) — the model's shape is the reconcile's alignment basis.")
+                    else
+                        (match valueOf "--target" with
+                         | None -> PlanAction.Refused (2, err "cli.check.fidelityAgainstNoTarget" "projection check fidelity --against <manifest>: needs --target <ref> — the database (the one you applied yourself) to reconcile against the manifest.")
+                         | Some targetRef ->
+                             match connOf targetRef with
+                             | Ok targetConn ->
+                                 PlanAction.CheckFidelityAgainst
+                                     (modelSource, modelOssys,
+                                      { ManifestPath = manifestPath
+                                        TargetLabel  = targetRef
+                                        TargetConn   = targetConn
+                                        AsJson       = (valueOf "--format" = Some "json") })
+                             | Error es -> PlanAction.Refused (6, List.head es))
+                | None ->
                 // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15
                 // decision 4 — one fidelity concept, file-source and
                 // estate-source): flow-map membership is tested BEFORE the
@@ -2490,7 +2517,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" || f = "--data" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest
@@ -2501,9 +2528,38 @@ module Command =
                         (match System.Int32.TryParse raw with
                          | true, n when n > 0 -> Result.success n
                          | _ -> Result.failureOf (err "cli.check.fidelitySample" (sprintf "projection check fidelity: --sample needs a positive whole number; '%s' is not one." raw)))
+                // P1-S1 — the staging mode for the stand-in's schema. Absent (or
+                // 'ddl') keeps the pre-P1-S1 behaviour; 'dacfx' proves the
+                // extraction through a DacFx-published target. Named refusal on any
+                // other token (A44: expressible ⇔ reachable — no silent default).
+                let stage : Result<StagingMode> =
+                    match valueOf "--stage" with
+                    | None | Some "ddl" -> Result.success StagingMode.Ddl
+                    | Some "dacfx"      -> Result.success StagingMode.Dacfx
+                    | Some other        -> Result.failureOf (err "cli.check.fidelityStage" (sprintf "projection check fidelity: --stage must be 'ddl' or 'dacfx'; '%s' is neither." other))
+                // P1-S4 — the ROW-load mode. Absent (or 'transfer') keeps the
+                // pre-P1-S4 journaled transfer; 'lanes' applies the emitted
+                // StaticSeeds+Bootstrap data lanes (the operator's hand-apply path).
+                // Named refusal on any other token (A44: expressible ⇔ reachable).
+                let load : Result<LoadMode> =
+                    match valueOf "--data" with
+                    | None | Some "transfer" -> Result.success LoadMode.Transfer
+                    | Some "lanes"           -> Result.success LoadMode.Lanes
+                    | Some other             -> Result.failureOf (err "cli.check.fidelityData" (sprintf "projection check fidelity: --data must be 'transfer' or 'lanes'; '%s' is neither." other))
                 (match positionals with
                  | [ sub ] when Map.containsKey sub cfg.Flows ->
                      let flow = Map.find sub cfg.Flows
+                     // P1-S3 — the proof loads under the identity policy the
+                     // PRODUCTION sink (`flow.To`) would use, derived from its
+                     // declared-or-inferred archetype (the same `SinkLoadCapability`
+                     // projection `resolveFlowSpec` applies): a FullRights target ⇒
+                     // IDENTITY_INSERT (`PreferPreservedKeys`); an undeclared /
+                     // ManagedDml target ⇒ `Structural` (the pre-P1-S3 default). So
+                     // the container proof reproduces the cutover's identity handling.
+                     let identityPolicy : IdentityPolicy =
+                         match Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype with
+                         | Some archetype when (CapabilityProfile.``of`` archetype).IdentityInsert -> IdentityPolicy.PreferPreservedKeys
+                         | _ -> IdentityPolicy.Structural
                      let modelOssys = cfg.Shaping.Model.Ossys
                      let modelSource =
                          match cfg.Shaping.Model.Path with
@@ -2514,8 +2570,8 @@ module Command =
                      else
                          (match flow.From with
                           | FlowSource.Env envName ->
-                              (match resolveLiveConn cfg envName, sampleCap with
-                               | Ok conn, Ok cap ->
+                              (match resolveLiveConn cfg envName, sampleCap, stage, load with
+                               | Ok conn, Ok cap, Ok stg, Ok ld ->
                                    PlanAction.CheckFidelityFlow
                                        (modelSource, modelOssys,
                                         { Flow       = sub
@@ -2523,9 +2579,15 @@ module Command =
                                           SourceConn = conn
                                           SampleCap  = cap
                                           AsJson     = (valueOf "--format" = Some "json")
-                                          Refresh    = List.contains "--refresh" rest })
-                               | Error es, _ -> PlanAction.Refused (6, List.head es)
-                               | _, Error es -> PlanAction.Refused (2, List.head es))
+                                          Refresh    = List.contains "--refresh" rest
+                                          Stage      = stg
+                                          Capture    = valueOf "--capture"
+                                          IdentityPolicy = identityPolicy
+                                          Load       = ld })
+                               | Error es, _, _, _ -> PlanAction.Refused (6, List.head es)
+                               | _, Error es, _, _ -> PlanAction.Refused (2, List.head es)
+                               | _, _, Error es, _ -> PlanAction.Refused (2, List.head es)
+                               | _, _, _, Error es -> PlanAction.Refused (2, List.head es))
                           | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData ->
                               PlanAction.Refused (2, err "cli.check.fidelityFlowSource" (sprintf "projection check fidelity: flow '%s' does not draw from a live environment — the proof loads the flow's live source into the container stand-in. Name a flow whose `from` is an environment." sub)))
                  | [ sub ] when sub.EndsWith ".sql" ->
@@ -2537,7 +2599,7 @@ module Command =
                  | [] ->
                      PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
                  | _ ->
-                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--format json])."))
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--capture <path>] [--format json])."))
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

@@ -82,6 +82,40 @@ let private humaneRows (n: int64) : string =
 let private ageText (days: int) : string =
     if days <= 0 then "today" else sprintf "%d day(s) ago" days
 
+/// P1-S1 — stand the target's SCHEMA up on the per-run scratch via the chosen
+/// staging mode. `Ddl` applies the emitted statement batch (the executor's
+/// path — the pre-P1-S1 behaviour, byte-identical); `Dacfx` publishes the
+/// emitted `.dacpac` through `DacServices`. Both land the SAME logical schema —
+/// a model-built dacpac is schema-only by construction — so the load and proof
+/// that follow are identical; only the schema-staging leg differs. Fail-loud: an
+/// emit/publish failure is the run's named error, never a silent empty stand-in.
+let private stageStandIn
+    (mode: StagingMode)
+    (scratchConn: string)
+    (standIn: Microsoft.Data.SqlClient.SqlConnection)
+    (logical: Catalog)
+    : Task<Result<unit>> =
+    task {
+        match mode with
+        | StagingMode.Ddl ->
+            do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
+            return Result.success ()
+        | StagingMode.Dacfx ->
+            match DacpacEmitter.emit logical with
+            | Error es  -> return Result.failure es
+            | Ok dacpac -> return! Deploy.deployDacpac scratchConn dacpac
+    }
+
+/// P1-S4 — the two ways the proof's stand-in got its rows, carried out of the
+/// load leg so the caller renders the right provenance. `Transferred` holds the
+/// journaled transfer report (its `JournalPath` becomes the run's ledger ref and
+/// its `SkippedReferences` the dropped-row note); `LanesApplied` is the emitted-
+/// lanes hand-apply path (no transfer, no journal — the source keys landed
+/// directly through the lanes' own IDENTITY_INSERT).
+type private LoadOutcome =
+    | Transferred of Transfer.TransferReport
+    | LanesApplied
+
 let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
     // ONE model, two renditions — exactly the comparator's alignment package:
     // the flow's live source carries the PHYSICAL rendition (the estate's
@@ -119,14 +153,20 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
     // physical rendition's kinds, the resolved source connection). A probe
     // failure is a cache miss — the proof runs and names its own read.
     let sourceFps : KindFingerprint list option =
-        if Option.isNone storeRoot then None
+        // P1-S1 — the incremental cache is DDL+transfer-keyed; a `--stage dacfx`
+        // run (and — P1-S4 — a `--data lanes` run) probes nothing and reuses
+        // nothing: the very equivalence under proof (DacFx≡DDL, lanes≡transfer)
+        // must never be assumed for cache reuse, so it always runs the container.
+        if Option.isNone storeRoot || args.Stage <> StagingMode.Ddl || args.Load <> LoadMode.Transfer then None
         else
             match (EstateEvidenceStore.probeLive args.SourceConn physical).GetAwaiter().GetResult() with
             | Ok fps -> Some fps
             | Error _ -> None
     let cacheHit : CachedProof option =
         match storeRoot, sourceFps with
-        | Some root, Some fps when not args.Refresh ->
+        // P2-S2 — `--capture` forces a full proof: the manifest needs the report's
+        // per-kind source digests, which a cache hit does not carry.
+        | Some root, Some fps when not args.Refresh && args.Stage = StagingMode.Ddl && args.Load = LoadMode.Transfer && Option.isNone args.Capture ->
             match FidelityProofCache.tryRead root args.Flow with
             | Some cached when FidelityProofCache.isFresh cached currentModelHash fps -> Some cached
             | _ -> None
@@ -141,59 +181,134 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
       else
       TtyRenderer.renderVoicedTo Console.Out "container.starting"
         (Map.ofList [ "purpose", box "fidelity proof" ])
-      let work () : Task<Result<Transfer.TransferReport * RowFidelityReport>> =
+      // --- the LOAD leg (step 2), branched on `--data` -------------------
+      // Both helpers return the load OUTCOME (for the caller's provenance) and
+      // the journal path the compare replays (the transfer's ledger, or `None`
+      // for the lanes hand-apply). Defined outside `work`'s task so the state
+      // machine stays a flat match chain (FS3511).
+      let loadViaTransfer (scratchConn: string) : Task<Result<LoadOutcome * string option>> =
+        task {
+            // The transfer machinery: journaled wipe-and-load across the
+            // rendition gap (reads with the source's physical names, writes
+            // with the stand-in's logical names — the rename-aware leg the LE-3
+            // canaries prove, mirrored).
+            let srcSub : Substrate =
+                { Environment = Projection.Core.Environment.Named args.FromLabel
+                  Role = SubstrateRole.Source
+                  ConnectionRef = ConnectionRef.Raw args.SourceConn }
+            let sinkSub : Substrate =
+                { Environment = Projection.Core.Environment.Named "container stand-in"
+                  Role = SubstrateRole.Sink
+                  ConnectionRef = ConnectionRef.Raw scratchConn }
+            match TransferConnections.create srcSub sinkSub false with
+            | Error es -> return Result.failure es
+            | Ok connections ->
+                let! transferR =
+                    // The proof OWNS its throwaway scratch container, so it
+                    // self-greenlights the container's own writes: `Replace`
+                    // (the wipe-and-load) always, and — P1-S3 — `IdentityInsert`
+                    // so a `PreferPreservedKeys` load may write the source
+                    // surrogate keys directly (IDENTITY_INSERT). The IdentityInsert
+                    // greenlight is INERT under `Structural` (no `PreservedFromSource`
+                    // identity kind ⇒ the gate's `identityInsertTables` is empty ⇒
+                    // the signoff is never consulted — NM-40's reasoning), so
+                    // B5/B6/P1-S1/P2-S2 are unchanged. This is the proof authorizing
+                    // ITS container, never the operator's production sink.
+                    Transfer.runReverseLegThroughConnectionsWith
+                        args.IdentityPolicy Transfer.Execute EmissionMode.WipeAndLoad false false false []
+                        connections physical logical Map.empty Set.empty Set.empty Set.empty
+                        [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace
+                          WriteSignoff.greenlit WriteSignoff.WriteMode.IdentityInsert ] [] false Set.empty Set.empty false None (Some journalDir)
+                match transferR with
+                | Error es -> return Result.failure es
+                | Ok transferReport -> return Result.success (Transferred transferReport, transferReport.JournalPath)
+        }
+      // P1-S4 — the emitted-lanes hand-apply path: live-hydrate the source's
+      // rows, compose the StaticSeeds+Bootstrap data lanes against the LOGICAL
+      // rendition, and apply them. The lanes bracket IDENTITY_INSERT, so the
+      // source keys land directly — NO transfer, NO journal, the compare aligns
+      // by identity. This proves the artifacts the operator SHIPS reproduce the
+      // source, not just the tool's transfer.
+      let loadViaLanes (scratchConn: string) : Task<Result<LoadOutcome * string option>> =
+        task {
+            // The source as the ossys ref — a raw connection string, which the
+            // opener uses as-is (`ConnectionSpec.openSpec`).
+            let cfgSrc =
+                { Config.defaultConfig with
+                    Model = { Config.defaultConfig.Model with Ossys = Some args.SourceConn; Path = None } }
+            // Static-marked kinds' rows graft onto the catalog; the logical
+            // re-render preserves them (the emission passes touch names, not
+            // Modality — A1), so `hydratedLogical` carries the StaticSeeds lane at
+            // the logical rendition.
+            let! staticR = Hydration.hydrateCatalog cfgSrc physical
+            match staticR with
+            | Error es -> return Result.failure es
+            | Ok hydratedPhysical ->
+                let hydratedLogical = CatalogRendition.logical hydratedPhysical
+                // The non-static kinds' rows (the Bootstrap lane), keyed by SsKey
+                // (rename-invariant, so they align onto the logical shape).
+                let! bootR = Hydration.hydrateBootstrapRows cfgSrc hydratedPhysical
+                match bootR with
+                | Error es -> return Result.failure es
+                | Ok bootstrapRows ->
+                    match Projection.Targets.Data.DataEmissionComposer.composeRenderedLeveledWithBootstrap
+                            Policy.empty hydratedLogical Profile.empty
+                            Projection.Targets.Data.MigrationDependencyContext.empty
+                            bootstrapRows UserRemapContext.empty with
+                    | Error e ->
+                        return Result.failureOf (ValidationError.create "fidelity.lanes.compose" (sprintf "the emitted data lanes could not be composed for the proof: %A" e))
+                    | Ok leveled ->
+                        do! Deploy.executeLeveledSeed scratchConn leveled
+                        return Result.success (LanesApplied, None)
+        }
+      let work () : Task<Result<LoadOutcome * RowFidelityReport>> =
         Deploy.withScratchDatabase "ProjectionFidelity" (fun scratchConn ->
             task {
-                // 1 — THE SCAFFOLD: the target-shape DDL (the logical
-                //     rendition), applied whole to the per-run scratch.
+                // 1 — THE SCAFFOLD: the target-shape schema (the logical
+                //     rendition), staged whole onto the per-run scratch — via
+                //     the emitted DDL batch (`--stage ddl`, the default) or a
+                //     DacFx publish (`--stage dacfx`). A model-built dacpac is
+                //     schema-only, so the load below is identical across both.
                 use standIn = new Microsoft.Data.SqlClient.SqlConnection(scratchConn)
                 do! standIn.OpenAsync()
-                do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
-                // 2 — THE LOAD: the transfer machinery, journaled wipe-and-load
-                //     across the rendition gap (reads with the source's physical
-                //     names, writes with the stand-in's logical names — the
-                //     rename-aware leg the LE-3 canaries prove, mirrored).
-                let srcSub : Substrate =
-                    { Environment = Projection.Core.Environment.Named args.FromLabel
-                      Role = SubstrateRole.Source
-                      ConnectionRef = ConnectionRef.Raw args.SourceConn }
-                let sinkSub : Substrate =
-                    { Environment = Projection.Core.Environment.Named "container stand-in"
-                      Role = SubstrateRole.Sink
-                      ConnectionRef = ConnectionRef.Raw scratchConn }
-                match TransferConnections.create srcSub sinkSub false with
+                match! stageStandIn args.Stage scratchConn standIn logical with
                 | Error es -> return Result.failure es
-                | Ok connections ->
-                    let! transferR =
-                        Transfer.runReverseLegThroughConnectionsWith
-                            IdentityPolicy.Structural Transfer.Execute EmissionMode.WipeAndLoad false false false []
-                            connections physical logical Map.empty Set.empty Set.empty Set.empty
-                            [ WriteSignoff.greenlit WriteSignoff.WriteMode.Replace ] [] false Set.empty Set.empty false None (Some journalDir)
-                    match transferR with
-                    | Error es -> return Result.failure es
-                    | Ok transferReport ->
-                        // 3 — THE PROOF: the flow's live source against the
-                        //     loaded stand-in, aligned by the model, modulo
-                        //     the journal's recorded interventions.
-                        let! proof =
-                            FidelityCompareRun.run
-                                args.FromLabel args.SourceConn
-                                (sprintf "%s stand-in" args.Flow) scratchConn
-                                "the authored model" model
-                                None None args.SampleCap transferReport.JournalPath
-                        return proof |> Result.map (fun report -> transferReport, report)
+                | Ok () ->
+                // 2 — THE LOAD: the journaled transfer (`--data transfer`, the
+                //     default) or the emitted data lanes (`--data lanes`, P1-S4).
+                let! loadR =
+                    match args.Load with
+                    | LoadMode.Transfer -> loadViaTransfer scratchConn
+                    | LoadMode.Lanes    -> loadViaLanes scratchConn
+                match loadR with
+                | Error es -> return Result.failure es
+                | Ok (outcome, journalForCompare) ->
+                    // 3 — THE PROOF: the flow's live source against the loaded
+                    //     stand-in, aligned by the model, modulo the journal's
+                    //     recorded interventions (none for the lanes path).
+                    let! proof =
+                        FidelityCompareRun.run
+                            args.FromLabel args.SourceConn
+                            (sprintf "%s stand-in" args.Flow) scratchConn
+                            "the authored model" model
+                            None None args.SampleCap journalForCompare
+                    return proof |> Result.map (fun report -> outcome, report)
             })
       match (work ()).GetAwaiter().GetResult() with
       | Error errs ->
           printErrors Console.Error errs
           6
-      | Ok (transferReport, report) ->
-          // The run aggregate records WHERE the proof's ledger lives (wave B4a).
-          transferReport.JournalPath
-          |> Option.iter (fun p ->
-              match CaptureJournal.digestOfFile p with
-              | Some digest -> Shell.recordLedgerRef (Run.JournalRef (digest, p))
-              | None -> ())
+      | Ok (outcome, report) ->
+          // The run aggregate records WHERE the proof's ledger lives (wave B4a) —
+          // the transfer's journal; the lanes hand-apply writes none.
+          (match outcome with
+           | Transferred transferReport ->
+               transferReport.JournalPath
+               |> Option.iter (fun p ->
+                   match CaptureJournal.digestOfFile p with
+                   | Some digest -> Shell.recordLedgerRef (Run.JournalRef (digest, p))
+                   | None -> ())
+           | LanesApplied -> ())
           let artifact = FidelityCompareRun.toJsonString report
           if args.AsJson then
               printfn "%s" artifact
@@ -210,11 +325,16 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                   if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"
               TtyRenderer.renderVoicedTo Console.Out verdictCode payload
               printfn ""
-              printfn "  The stand-in: a per-run container database carrying the target's shape (the model's logical rendition), loaded by the transfer machinery (wipe-and-load, journaled, FKs re-trusted), reaped after the proof."
-              // The load's own named erasures — each dropped row surfaces in
-              // the compare as a missing row; the WHY is said here.
-              if not (List.isEmpty transferReport.SkippedReferences) then
-                  printfn "  The load dropped %d row(s) (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (List.length transferReport.SkippedReferences)
+              // The stand-in's provenance differs by load mode.
+              (match outcome with
+               | Transferred transferReport ->
+                   printfn "  The stand-in: a per-run container database carrying the target's shape (the model's logical rendition), loaded by the transfer machinery (wipe-and-load, journaled, FKs re-trusted), reaped after the proof."
+                   // The load's own named erasures — each dropped row surfaces in
+                   // the compare as a missing row; the WHY is said here.
+                   if not (List.isEmpty transferReport.SkippedReferences) then
+                       printfn "  The load dropped %d row(s) (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (List.length transferReport.SkippedReferences)
+               | LanesApplied ->
+                   printfn "  The stand-in: a per-run container database carrying the target's shape (the model's logical rendition), loaded by APPLYING THE EMITTED DATA LANES (the live-hydrated StaticSeeds + Bootstrap MERGE scripts, IDENTITY_INSERT-bracketed — the operator's own hand-apply path), reaped after the proof.")
               FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
           tryWriteArtifact "fidelity.rows.json" artifact
           // RT-10 — a FLOW-SCOPED copy beside the journal, so the estate board
@@ -223,11 +343,29 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
           // ran; the scoped copy is this flow's, and its mtime is its age).
           (try IO.Directory.CreateDirectory journalDir |> ignore with _ -> ())
           tryWriteArtifact (IO.Path.Combine(journalDir, "fidelity.rows.json")) artifact
+          // P2-S2 — the PORTABLE proof manifest (`--capture <path>`): the SOURCE
+          // side's per-kind RowDigestFold digests + capture provenance, written
+          // for a later OFFLINE reconcile (`check fidelity --against`, P2-S3). The
+          // manifest is the source's fingerprint at proof time — meaningful green
+          // OR red (the source is the source). An explicitly-requested artifact,
+          // so a write failure is a NAMED error, never a silent drop.
+          (match args.Capture with
+           | Some capturePath ->
+               let manifest = ProofManifest.ofReport nowUtc currentModelHash report
+               match ProofManifest.write capturePath manifest with
+               | Ok () ->
+                   if not args.AsJson then
+                       printfn "  Proof manifest captured: %s — %d kind(s). Reconcile a target against it (no live source needed) with `check fidelity --against %s --target <ref>`." capturePath (List.length manifest.Kinds) capturePath
+               | Error errs -> printErrors Console.Error errs
+           | None -> ())
           // Cache the GREEN proof (wave B6) — the source fingerprints from the
           // pre-probe + the model hash; a non-green result CLEARS any prior entry
           // so a residual never short-circuits a future run.
+          // P1-S1/P1-S4 — only the DDL-staged, transfer-loaded proof owns the
+          // incremental cache; a Dacfx or lanes run never writes (nor clears) it,
+          // since the equivalence under proof must not be assumed for reuse.
           (match storeRoot with
-           | Some root ->
+           | Some root when args.Stage = StagingMode.Ddl && args.Load = LoadMode.Transfer ->
                if RowFidelityReport.agrees report then
                    match sourceFps with
                    | Some fps ->
@@ -239,7 +377,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                              WrittenAtUtc = nowUtc }
                    | None -> ()
                else FidelityProofCache.clear root args.Flow |> ignore
-           | None -> ())
+           | _ -> ())
           if RowFidelityReport.agrees report then 0 else 5
     // The verb: a fresh cached proof short-circuits the container; else it runs.
     match cacheHit with
@@ -266,3 +404,77 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             printfn "  Proof cache: %s — clear with --refresh, or delete the file." cachePathText
         0
     | None -> runProof ()
+
+/// P2-S3 — `check fidelity --against <manifest> --target <ref>`. THE OFFLINE
+/// RECONCILE: read a portable proof manifest (a source estate's captured per-kind
+/// digests + provenance), read back the target the operator applied THEMSELVES,
+/// and prove each kind byte-identical WITHOUT the live source. Per-kind pass/fail
+/// (the manifest carries digests, not rows — the drill-down escalates to
+/// `check data --rows`). Read-only. Exits: 0 all kinds match · 5 a kind diverged
+/// (named) · 6 the manifest is unreadable, the model's shape has moved from the
+/// manifest's basis, or the target could not be read.
+let runFidelityAgainst (model: Catalog) (args: CheckFidelityAgainstArgs) : int =
+    match ProofManifest.tryRead args.ManifestPath with
+    | None ->
+        // §14 — the manifest is the reconcile's whole input; a torn/absent/foreign
+        // one reconciles to NOTHING (fail-closed), surfaced as a named refusal.
+        printErrors Console.Error
+            [ ValidationError.create "cli.fidelity.against.manifestUnreadable"
+                (sprintf "projection check fidelity --against: the manifest '%s' is absent, unreadable, or not a valid v%d rowDigestFold manifest." args.ManifestPath ProofManifest.Version) ]
+        6
+    | Some manifest ->
+        // The alignment gate: the manifest's digests were captured under a
+        // specific model shape; reconciling a target read under a DIFFERENT shape
+        // would compare incomparable bytes. A mismatch is a NAMED refusal.
+        if FidelityProofCache.modelHash model <> manifest.ModelHash then
+            printErrors Console.Error
+                [ ValidationError.create "cli.fidelity.against.modelMismatch"
+                    (sprintf "projection check fidelity --against: the manifest was captured from '%s' under a DIFFERENT model shape than the one now configured — the alignment basis has moved, so the digests are not comparable. Re-capture the manifest against the current model, or point `model` at the shape it was captured under." manifest.SourceLabel) ]
+            6
+        else
+        let logical = CatalogRendition.logical model
+        let entries : SourceDigestEntry list =
+            manifest.Kinds
+            |> List.map (fun k -> { KindKey = k.Kind; KindName = k.KindName; Digest = k.Digest })
+        let work () : Task<Result<RowFidelityReport>> =
+            task {
+                try
+                    use target = new Microsoft.Data.SqlClient.SqlConnection(args.TargetConn)
+                    do! target.OpenAsync()
+                    let! report =
+                        FidelityCompareRun.reconcileAgainstDigests
+                            target manifest.SourceLabel args.TargetLabel manifest.TolerancesInForce logical entries
+                    return Ok report
+                with ex ->
+                    return
+                        Result.failureOf
+                            (ValidationError.createWithMetadata
+                                "cli.fidelity.against.targetUnreadable"
+                                "The target could not be read for the reconcile (unreachable, or a kind's table is absent)."
+                                (Map.ofList [ "target", Some args.TargetLabel; "detail", Some ex.Message ]))
+            }
+        match (work ()).GetAwaiter().GetResult() with
+        | Error errs ->
+            printErrors Console.Error errs
+            6
+        | Ok report ->
+            let artifact = FidelityCompareRun.toJsonString report
+            if args.AsJson then
+                printfn "%s" artifact
+            else
+                let payload : Voice.Payload =
+                    Map.ofList
+                        [ "rows",  box (RowFidelityReport.rowsCompared report)
+                          "kinds", box (List.length report.Kinds)
+                          "diffs", box (RowFidelityReport.differenceTotal report)
+                          "ledger", box ""
+                          "tolerances", box (String.concat ", " report.TolerancesInForce)
+                          "artifactPath", box "fidelity.rows.json" ]
+                let verdictCode =
+                    if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"
+                TtyRenderer.renderVoicedTo Console.Out verdictCode payload
+                printfn ""
+                printfn "  Reconciled the target '%s' against the manifest captured from '%s' — per-kind pass/fail, NO live source. Escalate to `check data --rows` (both live) to name differing rows." args.TargetLabel manifest.SourceLabel
+                FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
+            tryWriteArtifact "fidelity.rows.json" artifact
+            if RowFidelityReport.agrees report then 0 else 5

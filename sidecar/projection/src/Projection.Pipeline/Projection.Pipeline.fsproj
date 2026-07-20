@@ -132,6 +132,12 @@
          is clearable by flow name (the refresh flag) or wholesale (remove the
          proofs directory). -->
     <Compile Include="FidelityProofCache.fs" />
+    <!-- ProofManifest.fs: the portable proof manifest (P2 — offline
+         verification). FidelityProofCache with the per-kind KindFingerprint
+         replaced by the strong RowDigestFold.TableDigest + capture provenance;
+         `ofReport` reads a completed RowFidelityReport, so it compiles after
+         FidelityCompareRun.fs. The offline reconcile (P2-S3) consumes it. -->
+    <Compile Include="ProofManifest.fs" />
     <!-- EstateHistory.fs: the estate's recorded readings (wave A7 - the
          burndown's memory under the evidence store; movement + streak
          derivations pure, atomic save / fail-closed load at the boundary).
@@ -149,6 +155,12 @@
   <ItemGroup>
     <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <!-- P1-S1 (the DacFx-staged fidelity proof): DacServices.Deploy, the
+         in-process publish path `Deploy.deployDacpac` drives. Already in
+         Pipeline's transitive closure via Targets.SSDT (DacpacEmitter); named
+         here so the DacServices/DacPackage types are directly usable. Version
+         pinned to Targets.SSDT's. -->
+    <PackageReference Include="Microsoft.SqlServer.DacFx" Version="162.5.57" />
     <!-- F2 (THE_SYNTHETIC_DATA_FUZZING §5) — the Faker boundary realization.
          Bogus is RNG-based, so it lives OUTSIDE Core (T1); FakerRealization seeds
          it deterministically per row identity, so the realization is reproducible. -->

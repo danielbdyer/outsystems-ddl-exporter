@@ -50,6 +50,17 @@ module RowFidelityReport =
         |> List.filter (fun k -> not (KindRowVerdict.agrees k))
         |> List.sortByDescending (fun k -> k.DifferenceTotal)
 
+/// P2-S3 — one captured SOURCE digest to reconcile a live target kind against
+/// OFFLINE (no live source). Carries the manifest's per-kind data decoupled from
+/// the `ProofManifest` type (which compiles AFTER this module — `ofReport` reads
+/// a `RowFidelityReport`), so the reconcile core stays free of that dependency.
+type SourceDigestEntry =
+    {
+        KindKey  : SsKey
+        KindName : string
+        Digest   : RowDigestFold.TableDigest
+    }
+
 [<RequireQualifiedAccess>]
 module FidelityCompareRun =
 
@@ -461,6 +472,95 @@ module FidelityCompareRun =
                       Differences = []
                       DifferenceTotal = (if sourceDigest = targetDigest then 0L else 1L)
                       NamingSkipped = Some reason }
+        }
+
+    // -- P2-S3: the OFFLINE reconcile (a live target vs a STORED source digest) --
+
+    /// Fold ONE kind's digest from the LIVE TARGET alone and compare it to the
+    /// STORED source digest carried by a portable manifest (no live source). The
+    /// target's rows read under the LOGICAL basis, millisecond-canonicalized
+    /// exactly as `compareKind` does, so a byte-identical estate re-derives the
+    /// captured digest. Per-kind pass/fail ONLY — naming WHICH rows differ needs
+    /// the live source, so the verdict carries the named `NamingSkipped` downgrade.
+    let private reconcileKindAgainstDigest
+        (target: SqlConnection)
+        (sourceDigest: RowDigestFold.TableDigest)
+        (logicalKind: Kind)
+        : Task<KindRowVerdict> =
+        task {
+            use _ = Bench.scope "fidelity.reconcile.kind"
+            let targetBasis = Kind.rowBasis logicalKind
+            let dateTimeOrdinals =
+                logicalKind.Attributes
+                |> List.mapi (fun i a -> i, a.Type)
+                |> List.choose (fun (i, t) -> if t = DateTime then Some i else None)
+                |> List.toArray
+            let canonicalize (q: RowQuantum) : RowQuantum =
+                RowFidelity.canonicalizeDateTimeCells dateTimeOrdinals q
+            let targetStream = mapStream canonicalize (Ingestion.streamKind target logicalKind)
+            let! foldRight = foldStream targetBasis targetStream RowDigestFold.empty
+            let targetDigest = RowDigestFold.finalize foldRight
+            return
+                { Kind = logicalKind.SsKey
+                  KindName = Name.value logicalKind.Name
+                  Source = sourceDigest
+                  Target = targetDigest
+                  KeyColumn = ""
+                  Differences = []
+                  DifferenceTotal = (if sourceDigest = targetDigest then 0L else 1L)
+                  NamingSkipped = Some "reconciled against a stored source digest — no live source, so the per-kind verdict stands but rows are not named (escalate to `check data --rows` for the drill-down)" }
+        }
+
+    /// Reconcile ONE captured entry: fold the target kind when the model carries
+    /// it, else surface a NAMED divergence (a manifest kind the model lacks — the
+    /// alignment basis moved; never a silent drop). The entry is a RECORD, so it
+    /// destructures by field, not a tuple `let!`/`for` (FS3511-safe inside `task`).
+    let private reconcileEntry
+        (target: SqlConnection)
+        (logicalByKey: Map<SsKey, Kind>)
+        (entry: SourceDigestEntry)
+        : Task<KindRowVerdict> =
+        task {
+            match Map.tryFind entry.KindKey logicalByKey with
+            | Some logicalKind -> return! reconcileKindAgainstDigest target entry.Digest logicalKind
+            | None ->
+                return
+                    { Kind = entry.KindKey
+                      KindName = entry.KindName
+                      Source = entry.Digest
+                      Target = RowDigestFold.finalize RowDigestFold.empty
+                      KeyColumn = ""
+                      Differences = []
+                      DifferenceTotal = 1L
+                      NamingSkipped = Some "the manifest carries a kind the model does not — the alignment basis has moved; cannot reconcile" }
+        }
+
+    /// P2-S3 — the OFFLINE reconcile: for each captured source digest, fold the
+    /// live target kind and compare, with NO live source present. Reuses the
+    /// `RowFidelityReport` shape so the `--against` verb rides the same render /
+    /// JSON / exit-code surface as the flow proof.
+    let reconcileAgainstDigests
+        (target: SqlConnection)
+        (sourceLabel: string)
+        (targetLabel: string)
+        (tolerancesInForce: string list)
+        (logical: Catalog)
+        (sourceDigests: SourceDigestEntry list)
+        : Task<RowFidelityReport> =
+        task {
+            let logicalByKey =
+                logical |> Catalog.allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+            let verdicts = System.Collections.Generic.List<KindRowVerdict>()
+            for entry in sourceDigests do
+                let! v = reconcileEntry target logicalByKey entry
+                verdicts.Add v
+            return
+                { BeforeLabel = sourceLabel
+                  AfterLabel = targetLabel
+                  ModelBasis = "the portable proof manifest"
+                  Interventions = None
+                  TolerancesInForce = tolerancesInForce
+                  Kinds = List.ofSeq verdicts }
         }
 
     let rec private compareKinds

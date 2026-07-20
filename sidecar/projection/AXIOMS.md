@@ -2185,3 +2185,59 @@ live SQL; one flipped cell names its key and column``). The two digest planes (c
 SHA256 authoritative; server `HASHBYTES` fast-path) are projections of one canonical form; their
 agreement is property-tested per SQL type (wave B3). `AxiomTests.fs` carries the axiom-file pointer
 to those facts.
+
+## A47 — the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction; 2026-07-20)
+
+**Statement.** For an arbitrary OutSystems estate, the container fidelity proof's VERDICT —
+byte-identical (exit 0) or named-divergence (exit 5) — is INVARIANT across three orthogonal
+axes of HOW the stand-in is built: the schema-staging axis (`--stage ddl|dacfx` — the emitted
+DDL batch or a DacFx publish), the row-loading axis (`--data transfer|lanes` — the journaled
+transfer or the emitted StaticSeeds+Bootstrap data lanes), and the target's derived identity
+disposition (`Structural`/`PreferPreservedKeys`, read from the `flow.To` archetype). The
+invariant grain is the DEPLOYED schema plus the streamed rows (`RowDigestFold`, whole-table),
+never dacpac bytes (which embed a wall-clock — `BACKLOG.md` Slice ζ). All four staging×load
+combinations, under either identity policy, reproduce the same source byte-identical and red
+the same divergence. This is T17 (transfer byte-faithfulness) generalized from one build path
+to the product of the estate's real staging and loading choices — the data-plane statement of
+"the proof reproduces THIS operator's estate, through the artifacts they actually ship."
+
+**Enforcement.** The face's staging seam (`stageStandIn`, `StagingMode`) and the load seam
+(`loadViaTransfer`/`loadViaLanes`, `LoadMode`) both feed the ONE comparator
+(`FidelityCompareRun.run`); the identity policy is derived once at parse from
+`Environment.effectiveArchetype`→`CapabilityProfile.of`. A `dacfx` or `lanes` run never
+reuses the DDL+transfer proof cache — the equivalence is the very thing under proof.
+
+**Property test.** `MovementSurfaceTests` (pure) — `--stage`/`--data` resolve their modes and
+refuse unknown tokens by name; a FullRights target derives `PreferPreservedKeys`, a ManagedDml
+target `Structural`.
+
+**Witness.** LIVE — `ReverseLegCanaryTests`: `B5` (DDL×transfer), `P1-S1 DacFx-staged proof`
+(DacFx×transfer), `P1-S4 lanes proof` (DDL×lanes), and `P1-S3 preserved-keys proof`
+(PreferPreservedKeys) each prove byte-identical over live SQL; the orphan-row arms red exit 5/9.
+`AxiomTests.fs` carries the axiom-file pointer to those facts.
+
+## A48 — offline manifest reconcile is sound (source-absent verification; 2026-07-20)
+
+**Statement.** A portable proof manifest records the source's per-kind `RowDigestFold` digests
+(with model-hash + capture provenance) at proof time. Reconciling a target against it
+(`check fidelity --against <manifest> --target <ref>`, NO live source) is SOUND: the reconcile
+agrees (exit 0) ⟺ every kind's live-folded target digest equals the manifest's recorded source
+digest. A manifest whose recorded digest no longer matches the applied database reconciles to a
+NAMED per-kind divergence (exit 5) — never a phantom-green; an unreachable target or a
+model-hash mismatch refuses by name (exit 6). The offline verdict never claims an agreement the
+digests do not support: the manifest plane is `RowDigestFold` end-to-end (the same whole-table,
+content-addressed, stricter-than-`=` comparator the live proof uses), so a capture and a
+reconcile are two reads of one canonical form, and their equality is the property.
+
+**Enforcement.** `ProofManifest` (versioned + plane-gated codec, fail-closed `tryParse`);
+`FidelityCompareRun.reconcileAgainstDigests` folds only the target and compares against the
+stored source digest, marking each verdict `NamingSkipped` (the honest, named degradation — no
+per-row naming without the live source). The reconcile opens no source connection.
+
+**Property test.** `ProofManifestTests` (pure) — the codec round-trips to a canonical sort; a
+foreign version / foreign plane / garbage document fails closed to a named `Error`.
+
+**Witness.** LIVE — `FidelityRowsDockerTests` `P2-S3 offline reconcile`: capture a manifest,
+then reconcile a byte-identical target (exit 0) and a tampered target (exit 5) — both decided
+from the manifest + the target alone, the source torn down. `AxiomTests.fs` carries the
+axiom-file pointer to those facts.
