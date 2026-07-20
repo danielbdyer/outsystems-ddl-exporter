@@ -49,6 +49,11 @@ removes data gets under-reviewed on the strength of how simply it ships.
 The plain "how it ships" statement each shape surfaces on the record is in `THE_RECORD.md` §5 — the
 shape name is internal; the §5 sentence is what a reviewer reads.
 
+When the shape carries a **script** — declarative + post-deploy, pre-deploy + declarative, or
+script-only — `../deploy-scripts/SKILL.md` owns its lifecycle: where it goes (pre vs post vs
+out-of-DACPAC), its permanence class (the folder is the contract), the idempotency proof, and when it
+retires. Name the shape here; `deploy-scripts` places, proves, and retires the script.
+
 **Shape -> release-bucket map** (the team's release vocabulary):
 
 - **SINGLE-PHASE** = pure declarative: no script, one publish.

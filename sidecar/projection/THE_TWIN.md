@@ -132,8 +132,10 @@ clean slate: nullable deferred-FK columns nulled → child-first wipe →
         identity counters reseeded to the declared seed (the last_value guard
         normalizes SQL Server's virgin-vs-deleted RESEED asymmetry)
 apply the estate's static lanes (its own reference data, verbatim)
-ReadSide read-back → twin catalog; row-carrying kinds ARE the lane-seeded set
-        (by observation — no config names it) → K1 provided pools
+ReadSide read-back → twin catalog; the [twin] state schema AND every VIEW are
+        excluded (a view carries no data — it is not wiped or minted, but stays
+        published; DECISIONS 2026-07-20) → row-carrying kinds ARE the lane-seeded
+        set (by observation — no config names it) → K1 provided pools
 σ mint (Transfer.runSynthetic; corrections realize at the boundary) → load
 write fingerprints to [twin].[__state] → the VOICE report
 ```

@@ -66,16 +66,16 @@ executors. (Single-developer, one-at-a-time use can target `ProvingGround` direc
 
 > All commands assume the repo root as the working directory and a warm disposable copy — see
 > `talk-to-local-sql` for the container, the connection string, and the **runtime shim** (the
-> `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required on this machine**, because
-> `sqlpackage` targets .NET 8 and the box has .NET 9 at a non-standard path). On Git Bash also
-> export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and any `/opt/...`
-> docker-exec paths are not mangled.
+> `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required wherever the .NET 8 runtime
+> `sqlpackage` targets is not the default** — point `DOTNET_ROOT` at your dotnet root; per-OS
+> values live in `talk-to-local-sql`). On Git Bash also export `MSYS_NO_PATHCONV=1` so the
+> `/Action:` / `/SourceFile:` switches and any `/opt/...` docker-exec paths are not mangled.
 
 ```bash
-# 0. Runtime shim (REQUIRED here) + warm DB — details in talk-to-local-sql
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+# 0. Runtime shim (env-specific) + warm DB — full details + per-OS values in talk-to-local-sql
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # your dotnet root (Git Bash: C:/Users/<you>/AppData/Local/Microsoft/dotnet)
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1                  # Git Bash: keep /Action: + /opt/... paths intact
+export MSYS_NO_PATHCONV=1                  # Git Bash ONLY: keep /Action: + /opt/... paths intact
 scripts/warm-sql.sh start                 # container projection-mssql-warm, localhost,11433
 
 # 1. Establish the BEFORE state once: deploy current CREATEs + seed (the 'real-shaped data')
@@ -108,6 +108,27 @@ sqlpackage /Action:Publish \
 
 > For a **parallel** run, every command above also carries `/TargetDatabaseName:PG_<testId>_<rand>`
 > and points at a scratch copy of the tree — see `self-test/PROTOCOL.md`.
+
+### On the Twin substrate (when `proving-ground/twin.json` + the `twin` CLI are present)
+
+The loop is unchanged; only the BEFORE state and the publish target move. Replace step 1 (deploy the
+current CREATEs + seed on the warm container) with `twin up` from `proving-ground/`, which stands up
+the deterministic base on `localhost,21434 / twin` (DacFx, no sqlpackage — see
+`../talk-to-local-sql/SKILL.md`). Then point every `sqlpackage` publish at the Twin by overriding the
+profile's connection:
+
+```bash
+sqlpackage /Action:Publish \
+  /SourceFile:.../bin/Release/SampleCatalog.dacpac \
+  /Profile:.../profiles/ProvingGround.Strict.publish.xml \
+  /TargetConnectionString:"Server=localhost,21434;Initial Catalog=twin;User ID=sa;Password=Twin@Strong1;TrustServerCertificate=True;Encrypt=False"
+```
+
+The `/TargetConnectionString` overrides the profile's `TargetConnectionString`; the block/smart-default
+settings (Strict vs Permissive) still come from the profile. Obey the isolation rules in
+`../talk-to-local-sql/SKILL.md`: the Twin sets BEFORE, then only sqlpackage touches `twin` until
+teardown (`twin reset`). The Twin is the base data, never the verdict — the refactorlog / rename /
+pre-post-deploy semantics are proven by *this* sqlpackage publish on top of it.
 
 ## Reading the result -> how it ships
 
@@ -433,7 +454,15 @@ proves the refusal; Permissive, only after, shows the consequence.
 
 ## Connector points
 
-The hand-authored `SampleCatalog` can be replaced by the F# engine's `SqlprojEmitter` /
+The substrate of record is the **Twin** (`../../../THE_TWIN.md`) when present: `twin up` mints a
+deterministic, evidence-profiled dataset over the real estate definition that evolves with the schema,
+and the proving loop above runs against it **unchanged**. The trust is the Twin's own determinism
+(`twin check` = π∘σ≈id, T1 byte-identical, S-stable) — the base data is reproducible by construction,
+so the proof rests on a dataset a reviewer regenerates identically without re-running the agent. See
+`../talk-to-local-sql/SKILL.md`'s substrate-of-record section; the hand-authored `SampleCatalog` is
+the fallback.
+
+The hand-authored `SampleCatalog` can also be replaced by the F# engine's `SqlprojEmitter` /
 `DacpacEmitter` / `PostDeployEmitter` output (in `src/Projection.Targets.SSDT`) from a **real**
 OutSystems catalog — same proving loop, real schema. The engine emits the artifacts but never
 *drives* `sqlpackage`; **this skill is that missing driver**, kept as agent-run commands by

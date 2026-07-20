@@ -18,6 +18,83 @@ This skill owns the substrate `prove-on-dacpac` publishes against: a disposable 
 database, real-*shaped* but safe to drop, standing in for the Dev database. Nothing here ever
 touches production; the database is reset between scenarios and dropped without ceremony.
 
+## The substrate of record: the Twin (deterministic), the sample as fallback
+
+The substrate that earns trust is **the Twin** (`../../../THE_TWIN.md`): `twin up` holds a local SQL
+Server current with the estate's own definitions and fills it with a **deterministic, masked,
+distribution-faithful** dataset. Trust is a property of the *system*, not of any agent re-running it —
+`twin check` proves π∘σ≈id, mints are byte-identical (T1), and a schema edit re-mints only the
+columns it touches (**S-stable**), so a reviewer regenerates the same base data without re-running
+the agent. The **evidence-profiling config (`twin.json`) is version-controlled beside the model and
+evolves as the schema evolves**. Do not restate the Twin's laws here — point.
+
+### Detect the substrate
+- `proving-ground/twin.json` present **and** the `twin` CLI available (`twin` on PATH, or
+  `dotnet run --project sidecar/projection/src/Twin.Cli --`) → **the Twin substrate**.
+- else → the hand-authored `ProvingGround` sample on the warm container (the rest of this file).
+
+The proving **loop is identical** on either substrate — only the BEFORE-state setup differs.
+
+### Establish the BEFORE state on the Twin
+Run from the config's directory — `root` is the `twin.json` directory, so the estate globs resolve
+against `proving-ground/`:
+
+```bash
+cd sidecar/projection/ssdt-agent/proving-ground
+twin up            # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+                   #   applies Data/Seed.sql; mints deterministically. ~1s no-op when already current.
+twin status        # schema + data current? the stored seed / scenario.
+```
+
+The Twin mints via **DacFx — no sqlpackage** and runs in its **own** container, distinct from the
+warm one the fallback uses:
+
+| Field | Twin | Sample fallback |
+|---|---|---|
+| Container | `twin-ssdt-agent` | `projection-mssql-warm` |
+| Server (from host) | `localhost,21434` | `localhost,11433` |
+| Database | `twin` | `ProvingGround` |
+| User / Password | `sa` / `Twin@Strong1` | `sa` / `Projection@Strong1` |
+
+### The Twin is the BEFORE state; sqlpackage is the proof
+The Twin establishes the deterministic base data; it is **not** the publish-under-test. Its own
+publish drops-objects-not-in-source, **ignores the refactorlog**, and runs **only** the `staticData`
+lane (not the pre/post-deploy `:r` chain). So the refactorlog / rename / pre-post-deploy semantics
+the curriculum turns on are proven by **SSDT's `sqlpackage` on top of the Twin base** — point the
+proving loop's Strict/Permissive publishes at `localhost,21434 / twin` (see `../prove-on-dacpac`).
+
+### Isolation rules (encode these)
+- **Twin sets BEFORE; sqlpackage owns the rest.** Once `twin up` establishes the base, only
+  `sqlpackage` touches the DB until teardown. A second `twin up` mid-proof reads the fingerprint
+  mismatch (your edited dacpac ≠ the estate files) and would reconcile your edit away.
+- **`twin check` may share the warm container.** It acquires a throwaway DB via
+  `PROJECTION_MSSQL_CONN_STR`; if that points at `projection-mssql-warm` it lands there transiently.
+  For hard separation, unset it (or give the Twin its own throwaway container) before `twin check`.
+- **Parallel executors.** The Twin holds one DB per config; the self-test fleet still isolates per
+  `../../self-test/PROTOCOL.md` (unique `PG_<id>` DBs on the warm container) or a per-executor
+  `twin.json`/port. Until that is decided, the fleet uses the sample path.
+
+### What the Twin does and does NOT do for the sample
+For the static-seeded sample the Twin gives the **deterministic, reproducible base** (schema +
+`Data/Seed.sql`), standing up in one command and re-minting deterministically when a Module changes
+(S-stable: only edited columns move; a **rename** perturbs its own object's values, because the
+Twin's identity is name-based). The seed-planted flip states (NULL Emails, orphan Order, DUPE Codes)
+are the **static seed's** — the Twin reproduces them, it does not generate them. So the flip-twin
+**variants** (empty / clean / violating) stay **seed-based** for the sample (the self-test's
+scratch-edit path). Twin **scenarios + pins** (rows / weights / date windows / exact pins) are the
+flip mechanism for a **synthetically-minted real estate**, where evidence-profiled data fills the
+tables — that is where empty/clean/violating become named `twin.json` scenarios. Do not claim
+scenarios drive the static sample's variants.
+
+### Views in the estate (resolved 2026-07-20)
+
+A view carries no data, so the Twin's read-back **excludes views from the wipe and the mint** while
+leaving them **published** in the schema (`../../../DECISIONS.md` 2026-07-20; `../../../THE_TWIN.md`
+§6). Verified: `twin up` against the proving-ground (which holds `dbo.vOrderSummary`) materializes —
+schema published, the base tables minted, the view present in `sys.views` and queryable through to
+its base rows, the re-run an idempotent no-op. No workaround needed; `vOrderSummary` stays a
+first-class dependency-scope fixture (a column feeding a view), and the Twin holds it faithfully.
+
 The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
 script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and
 `sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
@@ -30,14 +107,20 @@ any `dotnet`/`sqlpackage` call in the session, or the tool fails to start. On Gi
 sqlcmd paths below are not mangled:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+# Point DOTNET_ROOT at YOUR local dotnet root — sqlpackage (a .NET 8 tool) needs a runtime there,
+# and ROLL_FORWARD lets it use a newer one. `<you>` = your OS user.
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # Windows/Git Bash e.g. "C:/Users/<you>/AppData/Local/Microsoft/dotnet"
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: + /SourceFile: + /opt/... paths intact
+export MSYS_NO_PATHCONV=1   # Git Bash ONLY: keep /Action: + /SourceFile: + /opt/... paths intact (drop it elsewhere)
 ```
 
-(The durable alternative is installing the .NET 8 runtime; until then, these exports are the fix.)
-`sqlpackage` itself is the dotnet tool `microsoft.sqlpackage` at
-`C:\Users\danny\.dotnet\tools\sqlpackage.exe`.
+`sqlpackage` is the dotnet tool `microsoft.sqlpackage`. Install it globally
+(`dotnet tool install -g microsoft.sqlpackage`) so it is on PATH as `sqlpackage`, or set
+`SQLPACKAGE` to its full path — Windows `C:/Users/<you>/.dotnet/tools/sqlpackage.exe`,
+Linux/macOS `$HOME/.dotnet/tools/sqlpackage`. (The durable alternative to the shim is installing
+the .NET 8 runtime; then `DOTNET_ROOT` / `ROLL_FORWARD` are unnecessary.) The proving-ground
+findings in this tree were captured on sqlpackage 170.4.83 — that version stamp belongs in every
+proof, because the guard behaviour is version-bound.
 
 ## sqlcmd lives in the CONTAINER, not on the host (IMPORTANT)
 

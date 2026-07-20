@@ -1,6 +1,6 @@
 ---
 name: idempotent-seed
-description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and data-plane row ops. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash + 0 CDC captures on a no-op redeploy). Per-op skills POINT here. Points to _index/cdc for the CDC-silence face; the hash check lives in talk-to-local-sql.
+description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and the data-plane backfill-rows op. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash + 0 CDC captures on a no-op redeploy). Per-op skills POINT here. Points to _index/cdc for the CDC-silence face; the hash check lives in talk-to-local-sql.
 ---
 
 # Idempotent seed — re-running changes nothing, and silence is the proof
@@ -83,9 +83,11 @@ non-silent redeploy as a bug even when the data ends up correct.
 - **extract-to-lookup (seed leg only)** — seeding the new lookup with the distinct existing values
   is idempotent-MERGE work; the *rest* of extract-to-lookup (the FK backfill + old-column drop) is
   multi-phase, see `../multi-phase/SKILL.md`.
-- **data-plane row ops** — the four row fates (insert / guarded update / unchanged / careful
-  delete) under one null-safe MERGE; a bulk DELETE of populated rows removes data irreversibly, so a
-  principal must review it.
+- **backfill-rows** (`../../op/backfill-rows/SKILL.md`) — the data-plane UPDATE of existing business
+  rows (fill the blanks, re-stamp to a new value). Same guard, same silence proof: a `WHERE` that
+  touches only the differing rows, and a redeploy that reports 0 rows + an identical hash. A dev lead
+  reviews it because existing data is modified; a bulk DELETE of populated rows is a different op and
+  removes data irreversibly, so a principal must review that.
 
 ## The CDC-silence face (pointer)
 

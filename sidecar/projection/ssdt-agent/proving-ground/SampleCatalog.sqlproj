@@ -48,6 +48,26 @@
   </ItemGroup>
 
   <!--
+    The deployment-script class folders (see skills/deploy-scripts/SKILL.md — the folder is the
+    contract). Scripts in these folders are DATA, not schema: reclassify them OUT of the **/*.sql
+    Build glob so they are not compiled as schema objects, and mark them None (they enter the
+    build only when the post-deploy `:r`-includes one — see Script.PostDeployment.sql). AdHoc/
+    is never included (it runs outside the DACPAC by definition) but is reclassified all the same
+    so its scripts never leak into the schema model.
+  -->
+  <ItemGroup>
+    <Build Remove="Migrations\**\*.sql" />
+    <Build Remove="ReferenceData\**\*.sql" />
+    <Build Remove="OneTime\**\*.sql" />
+    <Build Remove="AdHoc\**\*.sql" />
+
+    <None Include="Migrations\**\*.sql" />
+    <None Include="ReferenceData\**\*.sql" />
+    <None Include="OneTime\**\*.sql" />
+    <None Include="AdHoc\**\*.sql" />
+  </ItemGroup>
+
+  <!--
     The refactorlog is how a rename survives as sp_rename instead of becoming DROP+CREATE
     (the Naked Rename catastrophe). When the agent proves a rename, the refactorlog entry is
     the artifact that must exist. It is created here as an empty scaffold; the rename proof

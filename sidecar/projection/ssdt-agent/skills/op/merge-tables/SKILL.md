@@ -52,8 +52,9 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
   clean. A dev lead or an experienced developer should review this: the running application must
   change to dual-write into the new columns.
 - **Phase 2 (cutover):** repoint app reads, FKs, and views from the absorbed entity to the
-  survivor's new columns. Leave a backward-compat view named for the absorbed entity if any external
-  consumer still references it (`../compat-view/SKILL.md`).
+  survivor's new columns. If any external consumer still references the absorbed entity, a
+  backward-compat view named for it holds the bridge (`../compat-view/SKILL.md`) — **principal-only,
+  route that bridge up to a principal.**
 - **Phase 3 (subtractive):** drop the absorbed table. Strict must block the drop under
   `BlockOnPossibleDataLoss` until the Phase-1 hashes prove every value is now in the survivor.
 

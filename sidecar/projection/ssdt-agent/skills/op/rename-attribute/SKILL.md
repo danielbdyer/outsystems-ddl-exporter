@@ -34,7 +34,9 @@ Cleanup** (§19.6). This is the identity-vs-name concern — see
 - CDC-enabled → the capture instance names the old column and is frozen to the table's current
   columns, so it must be recreated → added scrutiny (see `../../_index/cdc/SKILL.md`)
 - external consumers must keep the old name → a backward-compatibility view holds it
-  (`../compat-view/SKILL.md`) → the change stages across releases so both names coexist
+  (`../compat-view/SKILL.md`) → the change stages across releases so both names coexist. **The rename
+  is yours; the compat view is principal-only — route that bridge up to a principal** (see
+  `../compat-view/SKILL.md`).
 
 ## Prove it
 Script the delta and **read it** — it MUST be `sp_rename ... 'COLUMN'`. If you see `DROP

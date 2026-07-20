@@ -27,6 +27,7 @@ computes the ALTER.
 | retype-explicit | `../op/retype-explicit/SKILL.md` | Value-reshaping/lossy cast (Text→Date). Ships across releases (multi-phase); the TRY_CONVERT count drives it. |
 | rename-attribute | `../op/rename-attribute/SKILL.md` | Rename at column grain. A refactorlog entry makes it `sp_rename` (data preserved); a rename with no refactorlog entry becomes DROP COLUMN + ADD and loses the column's data. |
 | delete-attribute | `../op/delete-attribute/SKILL.md` | Drop a column. The 4-phase deprecation; a populated column is blocked on row-presence; a principal must review once data would be lost. |
+| backfill-rows | `../op/backfill-rows/SKILL.md` | **Data-plane, not schema** — fill the existing rows a default only covers going forward, or re-stamp them to a new value. A post-deployment guarded, idempotent UPDATE; a dev lead reviews it because existing data is modified. |
 
 ## Shared concerns for this family (the `_index` layer)
 
@@ -34,6 +35,7 @@ computes the ALTER.
 - `../_index/identity-and-refactorlog/SKILL.md` — governs **rename-attribute**: identity is separate from name.
 - `../_index/multi-phase/SKILL.md` — **retype-explicit, delete-attribute** coexistence + conservation proof.
 - `../_index/cdc/SKILL.md` — the added-scrutiny face of every column op on a CDC-tracked table (a new tracked column is silent until the capture instance is recreated).
+- `../_index/idempotent-seed/SKILL.md` — governs **backfill-rows** (the data-plane member): the guarded, null-safe UPDATE and silence-is-the-proof, the same discipline the static seeds use.
 
 ## Handbook citation reminder
 

@@ -23,15 +23,15 @@ only ever governed future inserts.
 Same as add-default: the **unnamed default** makes the DROP-then-ADD fragile across environments —
 insist the constraint is named `DF_<Table>_<Col>`. And a modified default still does not retro-change
 existing rows that were written under the old default; if the developer wants old rows re-stamped,
-that is a separate backfill (see `../add-default/SKILL.md` and
-`../../_index/idempotent-seed/SKILL.md`).
+that is a separate backfill — `../backfill-rows/SKILL.md`.
 
 ## How it flips (the specifics only)
 - modify / remove a default → ships as a single schema change, applied in place; any team member
   can review it, in any data state — no existing row values change.
-- the developer also wants existing rows re-stamped to the new value → a separate op. It ships as
-  one release: the schema change, then a post-deployment script that runs an idempotent UPDATE after
-  it lands (see `../../_index/idempotent-seed/SKILL.md`).
+- the developer also wants existing rows re-stamped to the new value → a separate op,
+  `../backfill-rows/SKILL.md`. It ships as one release: the schema change, then a post-deployment
+  guarded UPDATE that runs after it lands (the discipline is `../../_index/idempotent-seed/SKILL.md`),
+  and a dev lead reviews the backfill because existing data is modified.
 - CDC-enabled table → CDC does not track constraints (handbook file 15 = §18.5), so a modified or
   removed default on a CDC-tracked table needs no added scrutiny on its own.
 

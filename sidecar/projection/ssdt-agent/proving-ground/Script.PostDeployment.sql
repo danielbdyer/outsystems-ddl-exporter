@@ -20,5 +20,25 @@
 
 GO
 
+/*
+  Deployment scripts by permanence class (skills/deploy-scripts/SKILL.md — the folder is the
+  contract). Group `:r` includes by class so the order and the class are legible at a glance.
+  The example includes below are COMMENTED: the standing sample must not run the exemplar scripts
+  (they would perturb the seed the self-test scenarios pin). When an agent proves a real change, it
+  authors the script in the right folder and UNCOMMENTS (or adds) its include under the matching
+  heading. AdHoc/ is never included here — it runs outside the DACPAC by definition.
+*/
+
+-- Migrations (permanent · idempotent) — model-restoring backfills; Retire: never.
+-- PRINT 'Running migrations...';        :r .\Migrations\001_backfill_customer_region.sql
+
+-- Reference data (permanent · idempotent) — guarded MERGE seeds; Retire: never.
+--   (The live reference seed is Data\Seed.sql, included above.)
+
+-- One-time (transient · REMOVE AFTER PROD) — each carries a death certificate + a removal work item.
+-- PRINT 'One-time (remove after prod)...'; :r .\OneTime\Release_2026.07_email_normalize.sql
+
+GO
+
 PRINT 'Post-deploy complete: seed MERGEs applied (idempotent).';
 GO

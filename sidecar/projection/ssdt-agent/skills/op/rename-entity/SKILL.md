@@ -33,8 +33,9 @@ A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Re
 - table is CDC-enabled → the capture instance still names the old table → ships as a scripted, staged
   change that recreates the capture instance, with added scrutiny because the table feeds a
   change-data-capture stream (see `../../_index/cdc/SKILL.md`)
-- external consumers must keep the old name → add a backward-compat view (`../compat-view/SKILL.md`),
-  pushing toward a staged, multi-release coexistence
+- external consumers must keep the old name → a backward-compat view (`../compat-view/SKILL.md`),
+  pushing toward a staged, multi-release coexistence. **The rename is yours; the compat view is
+  principal-only — route that bridge up to a principal.**
 
 ## Prove it
 Run `sqlpackage /Action:Script` and **read the delta** — it MUST be `sp_rename`. If you see

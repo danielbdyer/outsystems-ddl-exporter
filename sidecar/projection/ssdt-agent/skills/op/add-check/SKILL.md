@@ -45,9 +45,9 @@ NOCHECK mechanics here.
 
 ## Prove it
 Run the violation probe FIRST: `SELECT COUNT(*) FROM <table> WHERE NOT (<predicate>)`. Then build +
-Strict publish (adds WITH CHECK): clean → zero violations; a build failure ("conflicted with the
-CHECK constraint") means the deployment is blocked. Author the pre-deploy fix-up, re-run Strict
-clean. If anyone proposes WITH NOCHECK, prove the cost:
+Strict publish (adds WITH CHECK): clean → zero violations; a build failure — `Msg 547`, "conflicted
+with the CHECK constraint" — means the deployment is blocked. Author the pre-deploy fix-up, re-run
+Strict clean. If anyone proposes WITH NOCHECK, prove the cost:
 `SELECT is_not_trusted FROM sys.check_constraints WHERE name='CK_…'` returns 1. See
 `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
 

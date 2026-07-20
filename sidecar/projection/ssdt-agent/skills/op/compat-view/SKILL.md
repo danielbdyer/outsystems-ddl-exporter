@@ -5,15 +5,22 @@ description: Use when the developer says "I renamed Customer to Account but the 
 
 # Backward-compatibility view (SELECT * / forgotten-it-is-temporary trap) — recipe AUTHORED HERE
 
+> **⚠️ PRINCIPAL-ONLY — out of the developer catalog on purpose.** A compat view is still a view, so
+> this team treats authoring it as a **principal's** call. It is the bridge a rename/split may need
+> for external consumers of the old name — `rename-entity`, `rename-attribute`, and `merge-tables`
+> route here — but building that bridge routes **up to a principal**, not to the developer. The
+> developer's rename is theirs; if external consumers need the old name kept readable, that is a
+> principal's step. This skill stays as the principal's reference.
+
 > **AUTHORED-HERE NOTICE.** Handbook file 14 references §17.8 "backward-compatibility view" as the companion to a rename/split, but the template body is empty. The recipe below is authored here to fill the gap; treat it as the working contract and fold it back when file 14 is completed.
 
 > **Default (provisional — the data decides).** The view itself ships as a single declarative
 > schema change — a `CREATE VIEW`, applied in place, reading and writing no data. It is one release
 > in a staged rename/split program: the view lands with the rename to keep the old name readable,
-> and a later release drops it once every external consumer has migrated. A dev lead or an
-> experienced developer should review it, because the dependency scope reaches outside the dacpac to
-> consumers the SSDT model cannot see. Provisional until the rename delta and the view's transparency
-> are proven.
+> and a later release drops it once every external consumer has migrated. **A principal must review
+> it: views are a principal-only concern for this team**, and the dependency scope reaches outside
+> the dacpac to consumers the SSDT model cannot see. Provisional until the rename delta and the
+> view's transparency are proven.
 
 ## OutSystems phrasing
 "I renamed Customer to Account but the old reports still ask for Customer", "keep the old entity name working after the rename", "don't break the integrations that read the old table".
@@ -52,8 +59,9 @@ The refactorlog's reach stops at the model boundary. So a rename's real dependen
 The fragment this change contributes to the pull request (`../../author-pr/SKILL.md`):
 
 **Review & release**
-- A dev lead or an experienced developer should review this: external consumers outside the SSDT
-  model read the old name, and those consumers must migrate to the new name to keep working.
+- A principal must review this: views are a principal-only concern for this team (out of the
+  developer catalog on purpose — see the banner). External consumers outside the SSDT model read the
+  old name, and those consumers must migrate to the new name to keep working.
 - Ships across releases: the compat view lands with the rename so the old name stays readable, and a
   later release drops it once every external consumer has moved.
 - Added scrutiny: the dependency scope reaches outside the dacpac — SSIS, Power BI, hand-written

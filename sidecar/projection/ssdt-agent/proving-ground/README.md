@@ -19,19 +19,40 @@ worked commands; read them, then run them in order.
 > That is how a hundred provers share the warm container without colliding on the same `.sql`,
 > the same `bin/`, or the same DB.
 
-## 0 — The runtime shim (REQUIRED on this machine)
+## The Twin substrate (preferred) vs this warm-container runbook
 
-`sqlpackage` is installed as a dotnet tool targeting .NET 8, but this box has .NET 9 at a
-non-standard path. Export these in the shell that runs `sqlpackage`, or the tool fails to
-start:
+`twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
+evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present, prefer
+it for the BEFORE state:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
-export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: switches and /opt/... docker paths intact
+cd sidecar/projection/ssdt-agent/proving-ground
+twin up      # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+             # applies Data/Seed.sql; mints deterministically (no sqlpackage). `twin reset` tears down.
 ```
 
-`sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe` (version 170.4.83).
+The Twin establishes the deterministic BEFORE state; the sqlpackage proving loop below then targets
+`localhost,21434 / twin` (see `../skills/talk-to-local-sql/SKILL.md` §"substrate of record" and
+`../skills/prove-on-dacpac/SKILL.md` §"On the Twin substrate"). This warm-container runbook
+(`localhost,11433 / ProvingGround`) is the **fallback** when the Twin is not wired. The Twin gives
+the sample its reproducible base; the flip-twin variants (empty / clean / violating) stay **seed-based**
+here — the Twin's scenario/pin flip mechanism is for synthetically-minted estates, not the static seed.
+
+## 0 — The runtime shim (REQUIRED on this machine)
+
+`sqlpackage` is installed as a dotnet tool targeting .NET 8; wherever that runtime is not the
+default, export these in the shell that runs `sqlpackage`, or the tool fails to start (`<you>` =
+your OS user; `../skills/talk-to-local-sql/SKILL.md` carries the per-OS values):
+
+```bash
+export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"   # Git Bash e.g. C:/Users/<you>/AppData/Local/Microsoft/dotnet
+export DOTNET_ROLL_FORWARD=Major
+export MSYS_NO_PATHCONV=1   # Git Bash ONLY: keep /Action: switches and /opt/... docker paths intact
+```
+
+`sqlpackage` is the global dotnet tool `microsoft.sqlpackage` — on PATH as `sqlpackage`, or at
+`C:/Users/<you>/.dotnet/tools/sqlpackage.exe` on Windows / `$HOME/.dotnet/tools/sqlpackage`
+elsewhere; the findings here were captured on version 170.4.83 (stamp the version in every proof).
 (Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)
 
 ## 1 — Warm the disposable substrate
@@ -197,8 +218,29 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 Rename with no refactorlog entry · Optimistic NOT NULL · Forgotten FK Check · Ambitious
 Narrowing · CDC Surprise · Refactorlog Cleanup · SELECT * View.
 
+## Deployment-script class folders (the folder is the contract)
+
+The proving ground carries the deployment-script class folders the lifecycle rails require
+(`../skills/deploy-scripts/SKILL.md`) so a script's *permanence class is its location*:
+
+- `Migrations/` · `ReferenceData/` — **permanent · idempotent** (model-restoring backfills, guarded
+  reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
+- `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
+  or the phase that ends it). Swept on the deprecation train once prod-confirmed.
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). Principal review; the four
+  obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+
+Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
+`OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in
+`Script.PostDeployment.sql` are **commented** so the standing seed the self-test pins is not
+perturbed — when you prove a real script, author it in the right folder and add its include under the
+matching class heading. The `SampleCatalog.sqlproj` reclassifies all four folders' `*.sql` out of the
+schema `Build` glob (as `None`, like `Data/`), so a script is never compiled as a schema object.
+
 ## Connector point
 
 The hand-authored `SampleCatalog` can be replaced by the F# engine's
 `SqlprojEmitter`/`DacpacEmitter`/`PostDeployEmitter` output from a real OutSystems catalog —
-the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3.
+the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3. And the substrate of
+record is the **Twin** (`../../THE_TWIN.md`) when present — a deterministic, evidence-profiled dataset
+over the real estate definition that evolves with the schema; the sample here is the fallback.
