@@ -86,20 +86,14 @@ flip mechanism for a **synthetically-minted real estate**, where evidence-profil
 tables — that is where empty/clean/violating become named `twin.json` scenarios. Do not claim
 scenarios drive the static sample's variants.
 
-### Known limitation — a view in the estate blocks the Twin mint (verified 2026-07-20)
+### Views in the estate (resolved 2026-07-20)
 
-`twin up` against the proving-ground stands up the container and **DacFx-publishes all 12 Modules**,
-then its **pre-mint wipe fails on the view**: `twin.wipe.failed · View or function 'dbo.vOrderSummary'
-is not updatable because the modification affects multiple base tables`. The Twin's clean-slate wipe
-issues a DELETE against every read-back object, and a view over multiple base tables is not deletable.
-Verified up to that point: `twin status` reads `twin.json`, globs the 12 tables, and reports them; the
-container starts; DacFx publishes the schema. Only the **data mint** is blocked, and only by the view.
-The proper fix is a small Twin-engine change — the pre-mint wipe should **skip non-updatable views**
-(a view carries no data to wipe or mint); it is out of this tree's scope (the Twin is the F# sidecar).
-Until it lands, the Twin path establishes the *schema* base but not the *data*; the hand-authored
-sample fallback is unaffected and remains the working substrate. (A workaround — excluding views from
-the Twin estate — trades this off against the view's presence in the BEFORE state, which the
-indexed-view / SELECT\* curriculum depends on; not taken here.)
+A view carries no data, so the Twin's read-back **excludes views from the wipe and the mint** while
+leaving them **published** in the schema (`../../../DECISIONS.md` 2026-07-20; `../../../THE_TWIN.md`
+§6). Verified: `twin up` against the proving-ground (which holds `dbo.vOrderSummary`) materializes —
+schema published, the base tables minted, the view present in `sys.views` and queryable through to
+its base rows, the re-run an idempotent no-op. No workaround needed; `vOrderSummary` stays a
+first-class dependency-scope fixture (a column feeding a view), and the Twin holds it faithfully.
 
 The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
 script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and

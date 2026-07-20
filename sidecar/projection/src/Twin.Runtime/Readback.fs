@@ -14,43 +14,77 @@ open Twin.Core
 /// carries none), `ReadSide` synthesizes deterministic name-based keys,
 /// so coordinate binding is stable run to run by construction.
 ///
-/// Two twin-specific projections happen here:
-///   - the `[twin]` furniture is excluded (law 5 — the state table is
-///     the tool's own, never part of the estate);
-///   - kinds whose rows the estate itself seeded (the static-data
-///     lanes) become the K1 provided pools: their PK values feed child
-///     FK draws, and σ neither generates nor wipes them.
+/// Three twin-specific projections happen here, all removing objects that
+/// are not estate DATA before the wipe/mint sees the catalog:
+///   - the `[twin]` STATE SCHEMA is excluded (law 5 — the twin's own
+///     single-row `__state` table is the tool's self-description, never
+///     part of the estate);
+///   - VIEWS are excluded — a view carries no data to wipe or mint, and a
+///     view over multiple base tables is not even deletable (it refuses
+///     `DELETE`); it stays published in the schema but is never a
+///     data-bearing kind (`DECISIONS 2026-07-20`);
+///   - kinds whose rows the estate itself seeded (the static-data lanes)
+///     become the K1 provided pools: their PK values feed child FK draws,
+///     and σ neither generates nor wipes them.
 [<RequireQualifiedAccess>]
 module Readback =
 
-    let private isTwinFurniture (k: Kind) : bool =
+    /// The `[twin]` state schema — the twin's own `__state` table (law 5,
+    /// its self-description), which lives outside the estate.
+    let private isTwinStateSchema (k: Kind) : bool =
         TableId.schemaTextEquals "twin" k.Physical
 
-    /// Drop the `[twin]` furniture from a read-back catalog. Plain
-    /// record surgery — the reconstructed catalog is a single module, so
-    /// emptied modules are removed rather than left hollow.
-    let private stripTwinFurniture (catalog: Catalog) : Catalog =
+    /// Remove every kind matching `drop` from a read-back catalog. Plain
+    /// record surgery — the reconstructed catalog is a single module, so a
+    /// module left empty is removed rather than left hollow.
+    let private stripKinds (drop: Kind -> bool) (catalog: Catalog) : Catalog =
         { catalog with
             Modules =
                 catalog.Modules
-                |> List.map (fun m -> { m with Kinds = m.Kinds |> List.filter (fun k -> not (isTwinFurniture k)) })
+                |> List.map (fun m -> { m with Kinds = m.Kinds |> List.filter (fun k -> not (drop k)) })
                 |> List.filter (fun m -> not (List.isEmpty m.Kinds)) }
+
+    /// The normalized `schema.table` keys of every VIEW in the twin
+    /// database. Read from `sys.views` so a view can be told from a base
+    /// table (the read-back catalog does not distinguish them — both
+    /// arrive as `Kind`s). A view has no rows to wipe or mint.
+    let private readViewKeys (twinCnn: SqlConnection) : Task<Set<string>> =
+        task {
+            use cmd = twinCnn.CreateCommand()
+            cmd.CommandText <- "SELECT SCHEMA_NAME([schema_id]) AS s, [name] AS n FROM sys.views;"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.HashSet<string>()
+            let mutable more = true
+            while more do
+                let! has = reader.ReadAsync()
+                if has then acc.Add(TableId.normalizedKeyOf (reader.GetString 0) (reader.GetString 1)) |> ignore
+                else more <- false
+            return Set.ofSeq acc
+        }
+
+    /// Exclude the `[twin]` state schema and every view from a read-back
+    /// catalog, so the wipe and the mint see estate data only.
+    let private stripNonEstate (views: Set<string>) (catalog: Catalog) : Catalog =
+        let isView (k: Kind) = Set.contains (TableId.normalizedKey k.Physical) views
+        stripKinds (fun k -> isTwinStateSchema k || isView k) catalog
 
     /// Read the twin database's catalog, rows lifted (`ReadSide.read` —
     /// row-carrying kinds arrive with `Modality.Static` populations, the
-    /// provided-pool source), `[twin]` furniture excluded.
+    /// provided-pool source); the state schema and views excluded.
     let read (twinCnn: SqlConnection) : Task<Result<Catalog>> =
         task {
             let! catalog = ReadSide.read twinCnn
-            return catalog |> Result.map stripTwinFurniture
+            let! views = readViewKeys twinCnn
+            return catalog |> Result.map (stripNonEstate views)
         }
 
     /// Read the twin database's schema only (no row drain) — the
-    /// status/check path.
+    /// status/check path; the state schema and views excluded.
     let readSchema (twinCnn: SqlConnection) : Task<Result<Catalog>> =
         task {
             let! catalog = ReadSide.readSchema twinCnn
-            return catalog |> Result.map stripTwinFurniture
+            let! views = readViewKeys twinCnn
+            return catalog |> Result.map (stripNonEstate views)
         }
 
     /// The K1 provided pools of a read-back catalog: for every kind

@@ -13,13 +13,13 @@ open Projection.Core
 open Projection.Pipeline
 open Twin.Core
 
-/// THE TWIN — the twin database's own furniture (Twin.Runtime).
+/// THE TWIN — the twin database's own state schema (Twin.Runtime).
 ///
 /// The `[twin]` schema is the tool's only write outside the estate's own
 /// objects (law 5): one single-row state table holding the fingerprints,
 /// so the twin describes what it holds and `status`/`up` never consult
 /// hidden local state. A schema publish with drop-not-in-source removes
-/// the furniture (the estate does not define it); `ensureState` re-lays
+/// the state schema (the estate does not define it); `ensureState` re-lays
 /// it afterward — cheap, idempotent, and honest about ownership.
 [<RequireQualifiedAccess>]
 module TwinDatabase =
@@ -55,7 +55,7 @@ module TwinDatabase =
             return not (isNull result) && result <> box System.DBNull.Value
         }
 
-    /// Lay the `[twin]` furniture (schema + state table) if absent.
+    /// Lay the `[twin]` state schema (its single-row `__state` table) if absent.
     let ensureState (twinCnn: SqlConnection) : Task<Result<unit>> =
         task {
             try
@@ -80,7 +80,7 @@ IF NOT EXISTS (SELECT 1 FROM [twin].[__state])
                 return Result.failureOf (sqlFailure "ensureState" ex.Message)
         }
 
-    /// Read the stored state; `emptyState` when the furniture is absent
+    /// Read the stored state; `emptyState` when the state schema is absent
     /// (a twin that has never materialized).
     let readState (twinCnn: SqlConnection) : Task<StoredState> =
         task {
@@ -165,7 +165,7 @@ IF NOT EXISTS (SELECT 1 FROM [twin].[__state])
             | None -> return Result.success applied
         }
 
-    /// Total rows held by the estate's tables (the `[twin]` furniture
+    /// Total rows held by the estate's tables (the `[twin]` state schema
     /// and system objects excluded) — the status report's headline count.
     let totalRows (twinCnn: SqlConnection) : Task<int64> =
         task {

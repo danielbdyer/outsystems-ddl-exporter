@@ -327,12 +327,11 @@ Stages 0–2 need no new infrastructure and de-risk everything after; Stage 4 is
   `PROJECTION_MSSQL_CONN_STR`; if that points at `projection-mssql-warm` it lands there transiently.
   Give the proving-ground Twin its own throwaway container/env so `twin check` never shares the warm
   instance. Encoded as an isolation rule in `talk-to-local-sql`.
-- **Twin view-wipe gap (new, Stage 2 finding).** The Twin's pre-mint wipe issues a DELETE against
-  every read-back object, and a view over multiple base tables is not deletable —
-  `twin up` publishes the schema but the data mint blocks on `vOrderSummary`. The proper fix is a
-  small Twin-engine change (skip non-updatable views in the wipe); out of this tree's scope. Owner:
-  the Twin (`Twin.Runtime`). Until then the Twin path establishes the schema base but not the data;
-  the sample fallback is unaffected.
+- **Twin view-wipe gap (resolved 2026-07-20).** The Twin's read-back now excludes views from the
+  wipe and the mint (a view carries no data), while leaving them published — `Twin.Runtime/Readback.fs`
+  `stripNonEstate` via a `sys.views` probe; `DECISIONS 2026-07-20`; witness `TwinViewLoopTests`.
+  `twin up` against the proving-ground (with `vOrderSummary`) now materializes; `vOrderSummary`
+  stays a first-class dependency-scope fixture.
 - **Parallel executors on one Twin:** the Twin maintains one persistent twin per config; the
   self-test fleet needs per-executor isolation. Candidates: unique databases on the twin container,
   per-executor `twin.json` with a unique container name + port, or the `twin check`-style throwaway

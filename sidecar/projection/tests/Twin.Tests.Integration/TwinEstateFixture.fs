@@ -142,3 +142,14 @@ type TwinSchemaEstateFixture () =
 /// The mint-loop fixture (its own container + port).
 type TwinMintEstateFixture () =
     inherit TwinEstateFixture ("twin-e2e-mint", 21633)
+
+/// The view-loop fixture (its own container + port): the base estate plus a
+/// multi-base-table VIEW. A view over multiple base tables is not updatable
+/// (it refuses `DELETE`), which is exactly what tripped the pre-mint wipe
+/// before the fix (`twin.wipe.failed`). The regression witness: a view must
+/// publish, but never be wiped or minted.
+type TwinViewEstateFixture () as this =
+    inherit TwinEstateFixture ("twin-e2e-view", 21733)
+    do
+        this.Rewrite "Tables/dbo.vCustomerOrders.sql"
+            "CREATE VIEW [dbo].[vCustomerOrders] AS SELECT o.[Id] AS [OrderId], c.[Name] AS [CustomerName] FROM [dbo].[Order] AS o JOIN [dbo].[Customer] AS c ON c.[Id] = o.[CustomerId];\n"
