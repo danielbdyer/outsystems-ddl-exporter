@@ -317,6 +317,10 @@ module Estate =
             /// Attribute keys the loaded posture keeps nullable
             /// (budget-less nullability `overrides` + `keepNullable`).
             RelaxedAttributes : Set<SsKey>
+            /// The operator's `overrides.tableRenames`, resolved to rename specs.
+            /// The emission audit groups duplicate table-name collisions by the
+            /// EMITTED name (post-rename), so an authored rename clears the board.
+            RenameSpecs : Projection.Core.Passes.TableRename.RenameSpec list
         }
 
     [<RequireQualifiedAccess>]
@@ -329,7 +333,8 @@ module Estate =
               AsymmetryFactor   = asymmetryFactor
               PromotionOrder    = []
               RelaxedReferences = Set.empty
-              RelaxedAttributes = Set.empty }
+              RelaxedAttributes = Set.empty
+              RenameSpecs       = [] }
 
     /// The per-run STATIC ROW content the D10/D11 detectors read (wave A4β).
     /// The estate carries only statistical `Profile` in its operands, and the
@@ -1116,9 +1121,25 @@ module Estate =
 
     /// WP-16: two entities whose logical names collide across modules — one
     /// published schema cannot hold two tables of the same name.
-    let private emissionDuplicateNameFindings (target: Catalog) : Finding list =
+    let private emissionDuplicateNameFindings (renames: Projection.Core.Passes.TableRename.RenameSpec list) (target: Catalog) : Finding list =
+        // The EMITTED table name — a configured rename's target if one resolves
+        // this kind (the logical {module,entity} form is env-stable; the physical
+        // form matches the kind's current coordinate), else the logical name
+        // (what LogicalTableEmission substitutes at emit). So a rename the
+        // operator authored to resolve a collision actually clears it here. (A
+        // rename that RESOLVES a clash removes this kind from its group, so the
+        // finding only ever shows an UNRENAMED collision — "are named" holds.)
+        let emittedName (m: Module) (k: Kind) : string =
+            renames
+            |> List.tryPick (fun spec ->
+                match spec.Key with
+                | Projection.Core.Passes.TableRename.RenameKey.Logical (mm, ee)
+                    when Name.value mm = Name.value m.Name && Name.value ee = Name.value k.Name -> Some (TableName.value spec.Target.Table)
+                | Projection.Core.Passes.TableRename.RenameKey.Physical src when k.Physical = src -> Some (TableName.value spec.Target.Table)
+                | _ -> None)
+            |> Option.defaultValue (Name.value k.Name)
         target.Modules
-        |> List.collect (fun m -> m.Kinds |> List.map (fun k -> Name.value k.Name, Name.value m.Name))
+        |> List.collect (fun m -> m.Kinds |> List.map (fun k -> emittedName m k, Name.value m.Name))
         |> List.groupBy fst
         |> List.choose (fun (entity, pairs) ->
             if List.length pairs > 1 then
@@ -1326,9 +1347,9 @@ module Estate =
 
     /// Every emission-audit finding over the target shape (Phase 1) — the
     /// SSDT-fidelity dimension of the readiness report.
-    let emissionFindingsFor (target: Catalog) : Finding list =
+    let emissionFindingsForWith (renames: Projection.Core.Passes.TableRename.RenameSpec list) (target: Catalog) : Finding list =
         [ emissionCompositePkFkFindings target
-          emissionDuplicateNameFindings target
+          emissionDuplicateNameFindings renames target
           emissionLongNameFindings target
           emissionNoPrimaryKeyFindings target
           emissionLossyScalarFindings target
@@ -1340,6 +1361,12 @@ module Estate =
           emissionTriggerFindings target ]
         |> List.concat
         |> List.sortBy (fun f -> FindingKey.text f.Key)
+
+    /// The emission audit with no rename map — the estate default (and the
+    /// tests' entry). `emissionFindingsForWith` applies the operator's
+    /// `overrides.tableRenames` so an authored rename clears a name collision.
+    let emissionFindingsFor (target: Catalog) : Finding list =
+        emissionFindingsForWith [] target
 
     /// EF-18 / M-3 (operator decision 2; DECISIONS 2026-07-18): a column the
     /// AGREED shape would emit nullable that a deployed environment enforces
@@ -1906,7 +1933,7 @@ module Estate =
           Remediation = []
           OverlayEntries = None
           EmissionFindings =
-            emissionFindingsFor logicalTarget
+            emissionFindingsForWith posture.RenameSpecs logicalTarget
             @ deployedNotNullFindings logicalTarget (Map.toList profileByEnv)
             |> List.sortBy (fun f -> FindingKey.text f.Key)
           Burndown = None

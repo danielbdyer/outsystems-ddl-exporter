@@ -1501,6 +1501,31 @@ module ProjectionConfig =
               if e.Count > 0 then o.["estate"] <- e)
              root.["readiness"] <- o
          | None -> ())
+        // `overrides.tableRenames` — the emission rename map. Omitted when
+        // empty, so a config with no overrides round-trips to no key
+        // (`parse ∘ render = id`, mirroring `tighteningRelaxations`). Parse read
+        // it but render dropped it before — a silent round-trip loss (A44).
+        (if not (List.isEmpty cfg.Shaping.Overrides.TableRenames) then
+            let arr = JsonArray()
+            for tr in cfg.Shaping.Overrides.TableRenames do
+                let entry = JsonObject()
+                let fromObj = JsonObject()
+                (match tr.From with
+                 | Config.LogicalSource ln ->
+                     fromObj.["module"] <- JsonValue.Create ln.Module
+                     fromObj.["entity"] <- JsonValue.Create ln.Entity
+                 | Config.PhysicalSource pn ->
+                     fromObj.["schema"] <- JsonValue.Create pn.Schema
+                     fromObj.["table"] <- JsonValue.Create pn.Table)
+                entry.["from"] <- fromObj
+                let toObj = JsonObject()
+                toObj.["schema"] <- JsonValue.Create tr.To.Schema
+                toObj.["table"] <- JsonValue.Create tr.To.Table
+                entry.["to"] <- toObj
+                arr.Add entry
+            let ov = JsonObject()
+            ov.["tableRenames"] <- arr
+            root.["overrides"] <- ov)
         root
 
     /// Render a movement config to its `projection.json` text — the round-trip
@@ -2478,7 +2503,8 @@ module Command =
                               PromotionOrder = rs.PromotionOrder
                               Since       = sinceRun
                               FidelityFlow = rs.FidelityFlow
-                              Tightening  = cfg.Shaping.Policy.Tightening }
+                              Tightening  = cfg.Shaping.Policy.Tightening
+                              TableRenames = cfg.Shaping.Overrides.TableRenames }
             | "fidelity" :: rest ->
                 // THE CONTAINER PROOF (T17, wave B5; DECISIONS 2026-07-15
                 // decision 4 — one fidelity concept, file-source and

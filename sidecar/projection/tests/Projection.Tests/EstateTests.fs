@@ -1104,6 +1104,31 @@ let ``emission: two entities emitting to the same table name collide (WP-16)`` (
     Assert.True(f.Lever |> Option.exists (fun l -> l.StartsWith "Rule the collision"))
 
 [<Fact>]
+let ``emission: a configured tableRename clears a duplicate-table-name collision on the board`` () =
+    // Two entities named "Customer", in different modules, emit as one table.
+    let g (n: int) : SsKey = OssysOriginal (System.Guid (sprintf "dc0dd000-0000-0000-0000-%012d" n))
+    let nmD (s: string) : Name = Name.create s |> Result.value
+    let tidD (t: string) : TableId = TableId.create "dbo" t |> Result.value
+    let attr n (col: string) : Attribute =
+        { Attribute.create (g n) (nmD col) Integer with
+            Column = ColumnRealization.create (col.ToUpperInvariant()) false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true }
+    let salesCustomer   = Kind.create (g 1) (nmD "Customer") (tidD "OSUSR_SALES_CUSTOMER")   [ attr 10 "Id" ]
+    let billingCustomer = Kind.create (g 2) (nmD "Customer") (tidD "OSUSR_BILLING_CUSTOMER") [ attr 20 "Id" ]
+    let cat = mkCatalog [ mkModule (g 100) (nmD "Sales")   [ salesCustomer ]
+                          mkModule (g 101) (nmD "Billing") [ billingCustomer ] ]
+    let dupFindings renames =
+        Estate.emissionFindingsForWith renames cat
+        |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionDuplicateName)
+    // No rename: the two Customers collide.
+    Assert.NotEmpty(dupFindings [])
+    // A logical-key rename of the Billing Customer resolves the emitted name -> no collision.
+    let rename : Projection.Core.Passes.TableRename.RenameSpec =
+        { Key = Projection.Core.Passes.TableRename.RenameKey.Logical (nmD "Billing", nmD "Customer")
+          Target = tidD "BillingCustomer" }
+    Assert.Empty(dupFindings [ rename ])
+
+[<Fact>]
 let ``emission: an identifier over 128 characters is a deploy blocker (WP-11)`` () =
     let longName = System.String('x', 140)
     let longCat =

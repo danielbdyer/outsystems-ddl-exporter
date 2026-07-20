@@ -95,15 +95,18 @@ let runCheckEstate (args: CheckEstateArgs) : int =
         // NAMED config-shape refusal (exit 2), never silently ignored.
         let postureBinding =
             TighteningBinding.fromConfig target args.Tightening
-            |> Result.map (fun bound ->
-                let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
-                ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
-                   RepairBandByEntity = args.RepairBandByEntity
-                   DecisionFloor = args.DecisionFloor |> Option.defaultValue Estate.decisionFloor
-                   AsymmetryFactor = args.AsymmetryFactor |> Option.defaultValue Estate.asymmetryFactor
-                   PromotionOrder = args.PromotionOrder
-                   RelaxedReferences = relaxedRefs
-                   RelaxedAttributes = relaxedAttrs } : Estate.Posture))
+            |> Result.bind (fun bound ->
+                RenameBinding.fromConfig args.TableRenames
+                |> Result.map (fun renameSpecs ->
+                    let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
+                    ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
+                       RepairBandByEntity = args.RepairBandByEntity
+                       DecisionFloor = args.DecisionFloor |> Option.defaultValue Estate.decisionFloor
+                       AsymmetryFactor = args.AsymmetryFactor |> Option.defaultValue Estate.asymmetryFactor
+                       PromotionOrder = args.PromotionOrder
+                       RelaxedReferences = relaxedRefs
+                       RelaxedAttributes = relaxedAttrs
+                       RenameSpecs = renameSpecs } : Estate.Posture)))
         let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []
         if not (List.isEmpty postureErrors) then
             printErrors Console.Error postureErrors

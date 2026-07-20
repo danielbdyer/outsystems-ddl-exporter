@@ -807,7 +807,12 @@ and CheckEstateArgs =
       /// The loaded config's tightening section (wave A6): the face binds
       /// it against the resolved target catalog to read the ACTIVE interim
       /// posture — the relaxation keys whose meter lines the board carries.
-      Tightening  : Config.TighteningSection option }
+      Tightening  : Config.TighteningSection option
+      /// `overrides.tableRenames` (logical-key or physical form): the emission
+      /// audit groups duplicate table names by the EMITTED name so an authored
+      /// rename clears the collision on the board. A bad rename is a NAMED
+      /// exit-2 config refusal at the face (mirrors the tightening bind).
+      TableRenames : Config.TableRename list }
 
 /// The row-fidelity proof's operands (T17, wave B2): the two environments
 /// by label + resolved conn, the model reference whose rename map closes the
