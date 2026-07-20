@@ -41,7 +41,122 @@ invariant (A47). Path 2 removes coupling (2) by promoting the source's per-kind 
 
 ---
 
-## 1 — One comparator spine, two entry paths
+## 1 — Using it (operator recipes & agent guidance)
+
+Two audiences read this section: the **operator** running the CLI at a cutover, and an **agent**
+driving the sidecar on the operator's behalf. Both need the same three things — the command
+surface, which mode fits which intent, and the verdict contract.
+
+### 1.1 The command surface
+
+All of it lives under `check fidelity` (read-only, advisory, no `--go`). One model must be
+configured (`model` or `model.ossys` in `projection.json`); a Path-1 flow's `from` must be a
+live environment.
+
+| Command | What it proves | Needs |
+|---|---|---|
+| `check fidelity <flow>` | the estate reproduces via DDL staging + the journaled transfer (the default) | live source |
+| `check fidelity <flow> --stage dacfx` | …staging the schema through a DacFx publish instead of DDL | live source |
+| `check fidelity <flow> --data lanes` | …loading the rows by applying the emitted seeds+bootstrap instead of the transfer | live source |
+| `check fidelity <flow> --capture <path>` | …AND writes the portable proof manifest for a later offline reconcile | live source |
+| `check fidelity --against <manifest> --target <ref>` | a self-applied DB matches a captured manifest — **no live source** | the manifest + the target |
+
+Modifiers: `--sample N` caps the NAMED per-kind differences shown (the totals and the verdict
+stay exact — default 20); `--refresh` ignores the incremental proof cache and re-proves;
+`--format json` emits the machine-readable verdict. `--stage` and `--data` compose freely and
+default to `ddl` / `transfer`. Every unknown token refuses by name (A44) — nothing silently
+defaults.
+
+### 1.2 Path 1 — prove *this* estate reproduces, the way you actually deploy it
+
+Pick the staging and loading axes to match how the real cutover builds the target:
+
+- **Schema as emitted DDL, data via the tool's transfer** → `check fidelity <flow>` (the
+  default). The fastest path; the incremental cache skips it when nothing moved.
+- **Your cutover publishes a `.dacpac`** (SSDT / sqlpackage) → add `--stage dacfx`. Proves the
+  extraction survives the declarative publish, at the deployed-schema + row grain (never dacpac
+  bytes).
+- **You hand-apply the shipped `Data/StaticSeeds.sql` + `Data/Bootstrap.sql`** → add `--data
+  lanes`. Proves *the artifacts you ship* reproduce the source, not just the tool's transfer.
+- **Your real path is both** (DacFx schema + hand-applied data) → `--stage dacfx --data lanes`.
+
+All four combinations return the same verdict on a faithful estate (A47); reach for the pair that
+mirrors your production deploy so the proof is about *your* path. Identity handling is automatic
+— a FullRights target preserves the source keys (IDENTITY_INSERT), a data-only target lets the
+sink mint; you never choose it, the flow's target archetype (`grant`/`archetype` in
+`projection.json`) does.
+
+```
+check fidelity onprem-cutover                              # DDL + transfer
+check fidelity onprem-cutover --stage dacfx                # DacFx publish + transfer
+check fidelity onprem-cutover --data lanes                 # DDL + emitted seeds/bootstrap
+check fidelity onprem-cutover --stage dacfx --data lanes   # the full declarative + hand-apply path
+```
+
+### 1.3 Path 2 — capture now, verify a self-applied database later, offline
+
+The workflow spans two moments and usually two machines:
+
+1. **At capture time, with the source reachable** — run the proof and write the manifest:
+   ```
+   check fidelity onprem-cutover --capture cutover-proof.json
+   ```
+   The manifest is small and portable — the source's per-kind digests + the model hash + capture
+   provenance. Commit it, attach it to the change ticket, hand it to whoever applies the database.
+
+2. **Later, on the machine that applied the database, with no source** — reconcile:
+   ```
+   check fidelity --against cutover-proof.json --target "live:Server=…;Database=…"
+   ```
+   The target ref is any `env:` / `file:` / `live:` / raw connection. Nothing reads the source;
+   the verdict comes from the manifest + the target alone.
+
+Path 2 answers *"is the database I actually deployed byte-identical to what the source held when
+we captured?"* — days, or environments, away from the source.
+
+### 1.4 The verdict contract (exit 0 / 5 / 6)
+
+Every `check fidelity` invocation exits on one of three codes — script against them:
+
+- **0** — byte-identical. The estate (or the applied DB) reproduces the source / manifest exactly.
+- **5** — a NAMED divergence. The per-kind lines say which kind (and, with a live source, which
+  key and columns) differ; the totals are exact. Never a phantom-green — a stale manifest or a
+  single flipped cell reds.
+- **6** — refuse-by-name. The model or an environment could not be read, the target is
+  unreachable, or (Path 2) the manifest's model hash disagrees with the target. A precondition
+  failed; nothing was proven.
+
+The digest is *stricter than `=`*: `''` and `NULL` are distinct bytes, and the canonical hash is
+collation-blind (survival rule 14). A cell that "looks equal" but reds is usually the
+empty-string/NULL split or a collation fold — suspect that before the code.
+
+### 1.5 For the agent driving the sidecar
+
+An agent picks the invocation from the operator's intent and the declared environment, handles
+the verdict, and never guesses past a refusal:
+
+- **Choosing Path-1 flags.** Map intent → axes: "prove the DacFx publish" ⇒ `--stage dacfx`;
+  "prove the seeds/bootstrap I hand-apply" ⇒ `--data lanes`; "prove the default tool path" ⇒
+  neither. Do NOT set `--stage`/`--data` to a value the operator's real deploy doesn't use — the
+  proof is only meaningful about the path it runs. Never pass an identity policy; it is derived
+  from the target archetype (declare the target's `grant`/`archetype` in `projection.json`).
+- **The capture→reconcile handoff.** When the operator will verify a DB later or elsewhere,
+  capture at proof time (`--capture <path>`), record where the manifest lives, and reconcile with
+  `--against`/`--target` once the applied DB exists — no source needed then. A manifest is
+  `RowDigestFold`-plane only; never hand one flow's manifest to a different model's target (the
+  model-hash gate reds it, exit 6).
+- **Reading the verdict.** Branch on 0 / 5 / 6 (§1.4). On 5, surface the per-kind divergence
+  lines — they are the finding. On 6, report the precondition (unreadable model/env, unreachable
+  target, model-hash mismatch) and stop; do not retry with different flags hoping for green.
+- **What not to do.** These verbs are advisory and read-only — there is no `--go`, they never
+  write to the operator's databases (the proof owns a throwaway container; the reconcile only
+  reads the target). Don't force `--refresh` unless the estate changed under a cache the
+  fingerprint can't see (an in-place UPDATE); don't assume a `dacfx`/`lanes` run reused a cached
+  green — it never does, the equivalence is the thing under proof.
+
+---
+
+## 2 — One comparator spine, two entry paths
 
 The pure comparator core is reused unchanged by both paths:
 
@@ -55,11 +170,11 @@ The pure comparator core is reused unchanged by both paths:
 
 `--sample N` caps only the NAMED differences per kind; `DifferenceTotal` is exact and the fold
 is whole-table (`keepDiff`: `(if total < cap then d::diffs else diffs), total + 1L`). This is
-why a **whole-estate completeness rung is already present** — see §4's deferral.
+why a **whole-estate completeness rung is already present** — see §5's deferral.
 
 ---
 
-## 2 — Path 1: arbitrary-estate proof across the staging × loading square
+## 3 — Path 1: arbitrary-estate proof across the staging × loading square
 
 `check fidelity <flow>` grew two orthogonal axes plus an archetype-derived identity policy.
 The comparator (step 3) is identical across all of them; only HOW the stand-in is built varies.
@@ -95,7 +210,7 @@ unknown token (`MovementSurfaceTests`).
 
 ---
 
-## 3 — Path 2: offline verification against a portable proof manifest
+## 4 — Path 2: offline verification against a portable proof manifest
 
 | Step | Verb | What it does | Slice |
 |---|---|---|---|
@@ -116,11 +231,11 @@ down — prove the database you actually deployed is byte-identical to what the 
 
 ---
 
-## 4 — Deferred, named (never silent)
+## 5 — Deferred, named (never silent)
 
 - **P1-S2 · the ServerDigest whole-estate completeness rung — DEFERRED as redundant for
   correctness.** The rung's premise (a divergence *outside* the `--sample` window is missed) is
-  false: `RowDigestFold` folds every row and `DifferenceTotal` is exact (§1), so an off-sample
+  false: `RowDigestFold` folds every row and `DifferenceTotal` is exact (§2), so an off-sample
   divergence already reds the verdict, and GUID-keyed kinds are already covered by the
   content-addressed aggregate. `ServerDigest`'s only distinct value is **zero-transfer** (a
   server-side `CHECKSUM_AGG`-style fast path — perf at estate scale), and wiring it mutates the
@@ -138,7 +253,7 @@ down — prove the database you actually deployed is byte-identical to what the 
 
 ---
 
-## 5 — Where the truth lives
+## 6 — Where the truth lives
 
 | Question | Owner |
 |---|---|

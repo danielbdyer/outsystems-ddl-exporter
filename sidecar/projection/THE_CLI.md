@@ -282,6 +282,15 @@ In the register of `THE_VOICE.md` (stative, agentless, imperative direction):
 check                         # canary: round-trip fidelity on an ephemeral pair (default)
 check drift <flow>            # the deployed target vs the model
 check data  <flow>            # row-count + null-count integrity
+check fidelity <flow>         # BYTE-IDENTICAL extraction proof: stand the model's shape up in a throwaway
+                              #   container, load the flow's live source, prove every row reproduces.
+                              #   --stage ddl|dacfx (schema via emitted DDL or a DacFx publish) ·
+                              #   --data transfer|lanes (rows via the transfer or the emitted seeds+bootstrap) ·
+                              #   --capture <path> writes a portable proof manifest · --sample N · --refresh.
+                              #   Recipes + the agent guide: THE_FIDELITY_PROOFS.md §1.
+check fidelity --against <manifest> --target <ref>
+                              #   OFFLINE reconcile: verify a database you applied yourself against a captured
+                              #   manifest, NO live source. Exit 0 match · 5 diverged · 6 unreachable/model-mismatch.
 check ready                   # the run-ledger readiness gauge
 check shape                   # the CROSS-ENVIRONMENT readiness gate: the `readiness` set resolves
                               #   to one espace-safe shape + zero data dealbreakers (CROSS_ENVIRONMENT_READINESS.md)
