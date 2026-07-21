@@ -7,8 +7,9 @@
 A foreign key constraint says: "Every value in this column must exist in that other table's column."
 
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
-    REFERENCES [dbo].[Customer]([CustomerId])
+[CustomerId] INT NOT NULL
+    CONSTRAINT [FK_Order_Customer_CustomerId]
+        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
 ```
 
 This means:
@@ -61,7 +62,7 @@ You can skip validation:
 
 ```sql
 ALTER TABLE dbo.[Order] WITH NOCHECK
-ADD CONSTRAINT FK_Order_Customer 
+ADD CONSTRAINT FK_Order_Customer_CustomerId
 FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
 ```
 
@@ -73,7 +74,7 @@ FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
 **To regain trust:**
 
 ```sql
-ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer
+ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer_CustomerId
 ```
 
 This validates all existing rows and marks the constraint as trusted.

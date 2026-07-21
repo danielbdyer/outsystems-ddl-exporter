@@ -33,7 +33,7 @@ This section is your translation guide. It won't make SSDT feel like OutSystems 
 | Is Mandatory = Yes | NOT NULL | OutSystems terminology → SQL constraint. |
 | Is Mandatory = No | NULL (or omit — NULL is default) | Column allows empty values. |
 | Default Value | Default Constraint | Same concept, explicit syntax: `CONSTRAINT DF_Table_Column DEFAULT (value)`. |
-| Unique Attribute | Unique Constraint | `CONSTRAINT UQ_Table_Column UNIQUE`. |
+| Unique Attribute | Unique Index | `CREATE UNIQUE INDEX UIX_Table_Column` — a unique index after the table, not a `UQ_` constraint. |
 | Service Studio | Visual Studio + SSDT | Where you edit. |
 | Service Center | SQL Server Management Studio (SSMS) | Where you inspect the running database. |
 | Publish (1-Click Publish) | Deploy / Publish | Similar lifecycle, but SSDT deploys via pipeline, not directly from your IDE. |
@@ -63,11 +63,11 @@ This section is your translation guide. It won't make SSDT feel like OutSystems 
 
 | OutSystems Concept | SSDT Equivalent | How It Works |
 |--------------------|-----------------|--------------|
-| Entity relationships shown as lines | Foreign key constraints | You define them explicitly in the table or as separate constraint objects. |
+| Entity relationships shown as lines | Foreign key constraints | You define them explicitly, inline beneath the column that carries them. |
 | Cascade delete (Delete Rule = Delete) | ON DELETE CASCADE | Deleting a parent automatically deletes children. |
 | Protect (Delete Rule = Protect) | ON DELETE NO ACTION | Delete fails if children exist. This is the default. |
 | Computed/calculated attributes | Computed columns | `[FullName] AS ([FirstName] + ' ' + [LastName])` — SQL Server calculates it. |
-| Entity versioning / history | System-versioned temporal tables or CDC | OutSystems didn't have this. Now you can track all historical states. |
+| Entity versioning / history | System-versioned temporal tables | OutSystems didn't have this. Now you can track all historical states. |
 
 ---
 
@@ -147,7 +147,6 @@ This table recalibrates your risk intuition.
 | **Add nullable attribute** | Editing a production table | 🟢 **Safe** — purely additive, Tier 1 | Existing rows get NULL. Existing queries unaffected. |
 | **Add an index** | Touching table structure | 🟢 **Mostly safe** — additive for queries | Queries get faster. Only risk is blocking during creation on large tables. |
 | **Add default constraint** | Changing column behavior | 🟢 **Safe** — only affects future inserts | Existing data unchanged. New inserts get the default if no value provided. |
-| **Create a view** | Adding complexity | 🟢 **Safe** — just a named query | Views are additive. Can be dropped without affecting underlying data. |
 | **Widen column (TEXT 50 → 100)** | Changing column definition | 🟢 **Safe** — all existing values still fit | Widening never loses data. Only narrowing is dangerous. |
 
 ### The Mental Model Shift
@@ -156,7 +155,7 @@ This table recalibrates your risk intuition.
 
 **In SSDT:** "Classify, plan, verify, deploy. Know your rollback before you go."
 
-This isn't because SSDT is worse — it's because you now have direct access to the database, without the abstraction layer that protected you. That access enables things OutSystems couldn't do (CDC, temporal tables, complex constraints, precise indexing). The cost is that you must provide the judgment OutSystems provided for you.
+This isn't because SSDT is worse — it's because you now have direct access to the database, without the abstraction layer that protected you. That access enables things OutSystems couldn't do (temporal tables, complex constraints, precise indexing). The cost is that you must provide the judgment OutSystems provided for you.
 
 **The good news:** The playbook encodes that judgment. Follow the process, use the tiers, and you'll develop the intuition over time.
 
@@ -362,7 +361,7 @@ For changes that affect both schema and application logic:
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  BEFORE ANY CHANGE                                                      │
-│  □ Classified tier?    □ CDC table?    □ Need multi-phase?              │
+│  □ Classified tier?    □ Need multi-phase?                              │
 │  □ Refactorlog needed? □ Reviewers tagged?                              │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -377,31 +376,7 @@ Now that you have the translation layer:
 - **For conceptual foundation:** Read [4. State-Based Modeling vs. Imperative Migrations](#)
 - **For your first change:** Read [22. The Change/Release Process](#) and use the [Before-You-Start Checklist](#)
 - **For specific operations:** Find your operation in [16. Operation Reference](#)
-- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in #ssdt-questions
-
----
-
-Let me map the optimal sequence based on dependencies and team needs:
-
-**Foundation Layer (enables everything else):**
-- Section 4: State-Based Modeling → Section 5: Anatomy of SSDT Project
-
-**Conceptual Consolidation (thread content, needs structuring):**
-- Sections 6-12: Pre/Post Scripts, Idempotency, Referential Integrity, Refactorlog, Safety, Multi-Phase, CDC
-
-**Execution Layer (the "how to do it"):**
-- Section 17: Multi-Phase Pattern Templates → Section 19: Anti-Patterns Gallery
-
-**Process Layer (the human workflow):**
-- Section 20: OutSystems → External Entities Workflow → Section 21: Local Dev Setup → Section 22: Change/Release Process
-
-**Tools Layer (quick reference):**
-- Section 18: Decision Aids
-
-**Reference Layer (lookup material):**
-- Remaining sections (Standards, Templates, Glossary, etc.)
-
-Let me begin.
+- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in the ssdt-questions channel in Teams
 
 ---
 

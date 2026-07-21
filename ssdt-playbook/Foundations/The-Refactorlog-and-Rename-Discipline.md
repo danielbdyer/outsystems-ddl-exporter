@@ -1,7 +1,5 @@
 # 9. The Refactorlog and Rename Discipline
 
-*(This section consolidates the refactorlog content from earlier in the thread)*
-
 ---
 
 ## What the Refactorlog Is

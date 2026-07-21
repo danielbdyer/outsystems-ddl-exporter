@@ -21,13 +21,14 @@ ALTER TABLE dbo.Person DROP COLUMN LegacyId;
 -- "Here's what the table should look like"
 CREATE TABLE [dbo].[Person]
 (
-    PersonId INT IDENTITY(1,1) NOT NULL,
+    PersonId INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_Person_PersonId]
+            PRIMARY KEY CLUSTERED,
     FirstName NVARCHAR(100) NOT NULL,
     MiddleName NVARCHAR(50) NULL,           -- Added
     LastName NVARCHAR(100) NOT NULL,
-    Email NVARCHAR(200) NOT NULL,           -- Widened
+    Email NVARCHAR(200) NOT NULL            -- Widened
     -- LegacyId removed
-    CONSTRAINT [PK_Person] PRIMARY KEY CLUSTERED (PersonId)
 )
 ```
 

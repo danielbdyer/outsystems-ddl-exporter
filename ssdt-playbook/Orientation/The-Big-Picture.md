@@ -13,13 +13,11 @@ We're migrating OutSystems applications to use **External Entities** — databas
 This gives us:
 - Full control over schema design, indexing, constraints
 - Ability to support complex data patterns OutSystems can't express
-- Change Data Capture for audit history across ~200 tables
 - Standard SQL Server tooling and practices
 
 It costs us:
 - A new mental model (declarative, not imperative)
 - Additional process (PR, review, staged deployment)
-- CDC management overhead on schema changes
 - Learning curve for the team
 
 This playbook exists to minimize the cost and maximize the benefit.
@@ -39,7 +37,6 @@ This playbook exists to minimize the cost and maximize the benefit.
 │   │  - What tier? (1-4)                     │                            │
 │   │  - What SSDT mechanism?                 │                            │
 │   │  - Multi-phase needed?                  │                            │
-│   │  - CDC impact?                          │                            │
 │   └─────────────────────────────────────────┘                            │
 │                           │                                              │
 │                           ▼                                              │
@@ -109,11 +106,8 @@ This playbook exists to minimize the cost and maximize the benefit.
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  SQL Server Database                                                    │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │  Tables, Views, Indexes, Constraints                               │ │
+│  │  Tables, Indexes, Constraints                                      │ │
 │  │  Managed by: SSDT                                                  │ │
-│  │                                                                    │ │
-│  │  CDC Capture Tables                                                │ │
-│  │  (auto-generated, track changes)                                   │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -124,7 +118,6 @@ This playbook exists to minimize the cost and maximize the benefit.
 │  Git Repository                                                         │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │  /Tables/*.sql     (declarative schema)                            │ │
-│  │  /Views/*.sql                                                      │ │
 │  │  /Scripts/         (pre/post deployment)                           │ │
 │  │  *.refactorlog     (rename tracking)                               │ │
 │  │  *.sqlproj         (project definition)                            │ │
@@ -138,24 +131,6 @@ This playbook exists to minimize the cost and maximize the benefit.
 2. Deploy to the database
 3. Refresh the External Entity in Integration Studio
 4. Use the updated entity in Service Studio
-
----
-
-## The Change Data Capture Constraint
-
-Almost 200 tables have CDC enabled. This powers our Change History feature — showing end users who changed what, when.
-
-**Why this matters for schema changes:**
-
-CDC capture instances are schema-bound. When you change a table's structure, you often need to:
-- Recreate the capture instance (accepting a history gap), or
-- Create a new instance alongside the old one (no gap, more complexity)
-
-In **development**: We accept gaps. Velocity matters more than audit completeness.
-
-In **production**: We cannot accept gaps. Schema changes on CDC-enabled tables require multi-phase treatment.
-
-Every schema change on a CDC-enabled table is at least Tier 2. See [11. CDC and Schema Evolution](#) for full guidance.
 
 ---
 
@@ -175,7 +150,6 @@ Every schema change on a CDC-enabled table is at least Tier 2. See [11. CDC and 
 
 **For the system:**
 - Zero data loss incidents from SSDT deployments
-- Change History feature has complete audit trails in production
 - Deployments are predictable and recoverable
 - Schema matches source control — no drift
 

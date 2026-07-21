@@ -68,7 +68,7 @@ This playbook is **living documentation**. It will evolve as we learn. If someth
 
 ## Quick Glossary
 
-You'll encounter these terms immediately. Full glossary is in [26. Glossary](#).
+You'll encounter these terms immediately. Full glossary is in [29. Glossary](#).
 
 | Term | Meaning |
 |------|---------|
@@ -79,7 +79,6 @@ You'll encounter these terms immediately. Full glossary is in [26. Glossary](#).
 | **Refactorlog** | XML file tracking renames so SSDT doesn't interpret them as drop+create |
 | **Pre-deployment script** | SQL that runs *before* SSDT applies schema changes |
 | **Post-deployment script** | SQL that runs *after* SSDT applies schema changes |
-| **Capture instance** | CDC's record of a table's schema at a point in time |
 | **Tier** | Ownership level for a change (1-4), based on risk/complexity |
 | **Multi-phase** | A change that requires multiple sequential deployments to complete safely |
 
@@ -99,11 +98,9 @@ Everything in this playbook rests on these principles:
 
 5. **Multi-phase is discipline, not exception.** Changes touching data or dependencies often require sequenced releases.
 
-6. **CDC is load-bearing.** ~200 tables with CDC means schema changes carry audit continuity obligations.
+6. **Documentation is infrastructure.** This playbook evolves. Outdated docs are worse than no docs.
 
-7. **Documentation is infrastructure.** This playbook evolves. Outdated docs are worse than no docs.
-
-8. **Judgment develops through practice.** Reading doesn't create competence. Pairing and graduated autonomy do.
+7. **Judgment develops through practice.** Reading doesn't create competence. Pairing and graduated autonomy do.
 
 ---
 
@@ -126,11 +123,11 @@ If you're new, here's what to do:
 
 | Need | Where to go |
 |------|-------------|
-| Quick question | #ssdt-questions Slack channel |
+| Quick question | the ssdt-questions channel in Teams |
 | PR review | Tag in PR per tier guidance |
 | Escalation | See [23. Escalation Paths](#) |
 | Something's broken | [22. Troubleshooting Playbook](#), then escalate |
-| Playbook feedback | #ssdt-playbook Slack channel or direct to Danny |
+| Playbook feedback | the ssdt-playbook channel in Teams or direct to Danny |
 
 ---
 

@@ -1,7 +1,5 @@
 # 10. SSDT Deployment Safety
 
-*(This section consolidates the settings discussion from earlier)*
-
 ---
 
 ## The Publish Profile Settings That Matter
@@ -113,10 +111,6 @@ Settings (BlockOnPossibleDataLoss, etc.) → catches what everything else missed
 ```
 
 When a setting blocks you, that's the system working. Investigate, don't bypass.
-
----
-
-I'll continue with Sections 11-12 (Multi-Phase Evolution and CDC), then move to the Execution Layer (Pattern Templates and Anti-Patterns), then Process.
 
 ---
 
