@@ -1,5 +1,7 @@
 # 17.1 Pattern: Explicit Conversion Data Type Change
 
+*In OutSystems you'd just Change an Attribute's Data Type; here, when the conversion is incompatible and SQL Server can't convert the values implicitly, it takes a multi-phase migration through a new column.*
+
 **When to use:** Changing a column's data type when SQL Server can't implicitly convert (e.g., VARCHAR → DATE, INT → UNIQUEIDENTIFIER)
 
 **Scenario:** Convert `PolicyDate` from `VARCHAR(10)` to `DATE`

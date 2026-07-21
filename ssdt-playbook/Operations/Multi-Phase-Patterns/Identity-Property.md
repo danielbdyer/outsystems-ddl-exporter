@@ -1,5 +1,7 @@
 # 17.3 Pattern: Add/Remove IDENTITY Property
 
+*This roughly corresponds to toggling Auto Number on an Identifier in OutSystems, but there's no exact parallel — here it means a full table swap, since you can't ALTER a column into an IDENTITY.*
+
 **When to use:** Adding auto-increment to an existing column, or removing it
 
 **Scenario:** Convert `PolicyId INT` to `PolicyId INT IDENTITY(1,1)`

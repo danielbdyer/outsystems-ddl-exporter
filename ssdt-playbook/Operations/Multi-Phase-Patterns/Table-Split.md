@@ -1,5 +1,7 @@
 # 17.6 Pattern: Table Split (Vertical Partitioning)
 
+*There's no direct OutSystems equivalent for splitting a table — it's a relational refactor the platform abstracted away, so you carry the columns into a new related Entity by hand.*
+
 **When to use:** Extracting columns from one table into a new related table
 
 **Scenario:** Extract address columns from `Customer` into `CustomerAddress`

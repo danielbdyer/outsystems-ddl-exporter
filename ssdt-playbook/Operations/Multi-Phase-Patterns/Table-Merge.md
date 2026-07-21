@@ -1,5 +1,7 @@
 # 17.7 Pattern: Table Merge (Denormalization)
 
+*There's no direct OutSystems equivalent for merging tables — it's a relational refactor the platform abstracted away, so you fold one Entity's columns into another by hand.*
+
 **When to use:** Combining two related tables into one, typically for performance or simplification.
 
 **Scenario:** Merge `CustomerAddress` back into `Customer` (reversing a previous split, or denormalizing for query performance).

@@ -1,5 +1,7 @@
 # 17.4 Pattern: Add FK with Orphan Data
 
+*In OutSystems, adding a Reference Attribute was one click and the platform enforced integrity; here, with existing data, you validate first, then add and trust the foreign key.*
+
 **When to use:** Adding a foreign key when orphan records exist that you can't immediately delete
 
 **Scenario:** Add `FK_Order_Customer_CustomerId` but some orders have invalid `CustomerId` values

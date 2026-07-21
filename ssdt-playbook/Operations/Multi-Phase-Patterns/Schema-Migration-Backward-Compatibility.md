@@ -1,5 +1,7 @@
 # 17.8 Pattern: Schema Migration with Backward Compatibility
 
+*In OutSystems, renaming or restructuring an Entity was safe because the platform refactored every reference at once; here you make the change while old consumers keep working, bridging the gap yourself until they migrate.*
+
 **When to use:** Making a breaking change (rename, restructure) while maintaining backward compatibility during a transition period. Allows old and new code to coexist.
 
 **Scenario:** Rename `FirstName` to `GivenName` while existing code continues to work.

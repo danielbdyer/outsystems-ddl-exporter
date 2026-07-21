@@ -1,5 +1,7 @@
 # 17.2 Pattern: NULL → NOT NULL on Populated Table
 
+*In OutSystems, flipping Is Mandatory to Yes just worked; here, on a table with rows, it takes a backfill and a guarded deployment.*
+
 **When to use:** Making an existing nullable column required
 
 **Scenario:** Make `Customer.Email` NOT NULL
