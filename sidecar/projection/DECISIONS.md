@@ -30297,3 +30297,47 @@ re-recorded via `GOLDEN_RECORD=1` — a pure reordering (201 insertions / 201 de
 schema-object bytes added or removed). The `CanonicalizeIdentityTests` ordering-contract tests
 were rewritten to the new (authored-order, SsKey) contract, including a witness that a PK with a
 non-minimal SsKey no longer floats to the front.
+
+## 2026-07-21 — FK tightening: missing/unreliable evidence under `AllowNoCheckCreation` creates the FK WITH NOCHECK rather than dropping it
+
+**Context (V1↔V2 emission-parity review).** A cluster of resolvable **logical** FKs (references
+whose target kind is present in the catalog, but with no source-backed DB constraint —
+`hasDbConstraint = false`) were being dropped by V2. With an FK tightening intervention registered
+(`EvidenceDriven`), a reference with no reliable orphan probe fell to
+`DoNotEnforce(EvidenceMissing) → DropFk`, so the FK never reached the emitted DDL. The root
+asymmetry: with **no** intervention every deployable reference emits (empty overlay ⇒ empty
+`DropFk`), but registering an `EvidenceDriven` intervention could only ever *remove* FKs relative
+to that baseline — a resolvable logical FK with no profile evidence silently disappeared.
+
+**The decision.** When no reliable orphan evidence exists (no probe ran, or the probe outcome is
+`FallbackTimeout`/`Cancelled`/`AmbiguousMapping`) and the operator has opted into
+`AllowNoCheckCreation = true` (with `EnableCreation = true`), `ForeignKeyRules.evaluate` now
+decides `EnforceConstraint(NoCheckWithoutEvidence)` instead of `DoNotEnforce(EvidenceMissing)`.
+The FK is emitted `WITH NOCHECK` via the existing two-step untrusted-alter path
+(`DecisionOverlay.NoCheckFk` → `SsdtDdlEmitter.untrustedFkAltersUsing`): new rows are enforced,
+existing rows are not validated. Without the `AllowNoCheckCreation` opt-in, V2's collapsed-mode
+strict default is unchanged (`EvidenceMissing` ⇒ dropped). The structural **cross-schema gate
+still applies** on this path — the opt-in accepts *unverified* FKs, not *cross-schema* ones.
+
+**Why NOCHECK, not trusted.** With no evidence we cannot know whether existing rows have orphans;
+a trusted (`WITH CHECK`) constraint would validate at deploy and fail if any orphan exists. NOCHECK
+enforces new rows and defers the existing-row check — the honest, deployable choice under an
+explicit opt-in.
+
+**Honesty surface (downgrades-never-silent).** A dedicated evidence variant
+`ForeignKeyEvidence.NoCheckWithoutEvidence` (not `ScriptWithNoCheck 0L`, which would falsely claim
+zero observed orphans) carries the fact, and `ForeignKeyPass` emits a named
+`tightening.foreignKey.noCheckWithoutEvidence` Warning per such creation, so the export report
+carries the accepted divergence rather than a silent constraint. `ForeignKeyPass.version` bumps
+3 → 4.
+
+**Estate pre-check (interaction with the composite-PK FK blocker, audit B-3/EF-17).** Enabling
+these FKs surfaces any whose target has a **composite** primary key: V2's `Reference` IR is a
+single `sourceAttribute → targetKind` with no referenced-column list, so a multi-leg FK is
+truncated to one leg and the DDL fails to deploy (`Msg 1776`). Inventory composite-PK FK targets
+before turning `AllowNoCheckCreation` on for a real estate; that blocker is tracked separately.
+
+**Unaffected.** The golden corpus uses `allowNoCheckCreation = false`
+(`GoldenEmissionTests.ejectFkIntervention`), so this change is byte-invisible to the goldens; the
+source-backed carve-out (`DatabaseConstraintPresent`), the orphan-observed `ScriptWithNoCheck`
+path, and the relaxation-only/override directions are all untouched.

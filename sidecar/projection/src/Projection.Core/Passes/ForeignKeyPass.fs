@@ -72,8 +72,12 @@ module ForeignKeyPass =
     ///       never enter FK decisions, so the spurious per-inverse
     ///       `evidenceMissing` warnings (and the accidental-DropFk
     ///       suppression they fed) disappear.
+    /// v4 — missing/unreliable evidence under `AllowNoCheckCreation` now
+    ///       decides `EnforceConstraint(NoCheckWithoutEvidence)` instead of
+    ///       dropping (DECISIONS 2026-07-21), adding the
+    ///       `tightening.foreignKey.noCheckWithoutEvidence` diagnostic.
     [<Literal>]
-    let version : int = 3
+    let version : int = 4
 
     [<Literal>]
     let private passName : string = "foreignKey"
@@ -218,6 +222,18 @@ module ForeignKeyPass =
                     (sprintf
                         "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
                         orphanCount)
+                    None)
+        | ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence ->
+            // Accepted divergence (DECISIONS 2026-07-21): a resolvable
+            // logical FK created WITH NOCHECK without profile evidence,
+            // because AllowNoCheckCreation is enabled. New rows are
+            // enforced; existing rows are not validated. Surfaced so the
+            // creation is never silent — the export report carries it.
+            Some (mkEntry
+                    DiagnosticSeverity.Warning
+                    "tightening.foreignKey.noCheckWithoutEvidence"
+                    (sprintf
+                        "Foreign-key constraint scripted with NOCHECK without profile evidence because AllowNoCheckCreation is enabled. The reference resolves but no reliable orphan probe ran; new rows are enforced, existing rows are not validated. Collect evidence or remediate before promoting to a trusted constraint.")
                     None)
         | ForeignKeyOutcome.DoNotEnforce PolicyDisabled ->
             // H-024: if cardinality shows active use, suggest re-enabling.

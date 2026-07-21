@@ -34,8 +34,9 @@ type DecisionOverlay =
         /// ReferenceKeys decided `ForeignKeyOutcome.DoNotEnforce` — drop the
         /// inline FK constraint at emission.
         DropFk : Set<SsKey>
-        /// ReferenceKeys decided `EnforceConstraint (ScriptWithNoCheck _)` —
-        /// emit the FK but `WITH NOCHECK` (untrusted).
+        /// ReferenceKeys decided `EnforceConstraint (ScriptWithNoCheck _)` or
+        /// `EnforceConstraint NoCheckWithoutEvidence` — emit the FK but
+        /// `WITH NOCHECK` (untrusted).
         NoCheckFk : Set<SsKey>
     }
 
@@ -98,6 +99,7 @@ module DecisionOverlay =
     let private isNoCheckFk (o: ForeignKeyOutcome) : bool =
         match o with
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck _) -> true
+        | ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence -> true
         | _ -> false
 
     let private fkKeys
