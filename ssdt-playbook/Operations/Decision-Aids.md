@@ -134,45 +134,45 @@ DEPENDENCIES
 
 ## 18.3 "Can SSDT Handle This Declaratively?" Quick Reference
 
-| Operation | Declarative? | Notes |
-|-----------|--------------|-------|
-| **CREATION** | | |
-| Create table | ✅ Yes | Add .sql file |
-| Create column (nullable) | ✅ Yes | Edit table file |
-| Create column (NOT NULL) | ✅ Yes | Need default for existing rows |
-| Create PK/FK/unique/check | ✅ Yes | Inline beneath their column; composite keys and multi-column checks at table level |
-| Create index | ✅ Yes | Inline or separate file |
-| | | |
-| **MODIFICATION** | | |
-| Widen column | ✅ Yes | Just change the definition |
-| Narrow column | ⚠️ Depends | May need pre-validation; BlockOnPossibleDataLoss guards |
-| Change type (implicit) | ✅ Yes | INT→BIGINT, VARCHAR→NVARCHAR |
-| Change type (explicit) | ❌ No | Needs multi-phase: add new, migrate, drop old |
-| NULL → NOT NULL | ⚠️ Depends | Need default or pre-backfill |
-| NOT NULL → NULL | ✅ Yes | Just change the definition |
-| Rename column | ✅ Yes | **Must use refactorlog** |
-| Rename table | ✅ Yes | **Must use refactorlog** |
-| Add/remove IDENTITY | ❌ No | Can't ALTER to add/remove; needs table swap |
-| | | |
-| **CONSTRAINTS** | | |
-| Add default | ✅ Yes | Inline in table definition |
-| Modify default | ✅ Yes | Change the value; SSDT drops and recreates |
-| Remove default | ✅ Yes | Remove from definition |
-| Add FK (clean data) | ✅ Yes | Inline beneath its column |
-| Add FK (orphan data) | ❌ No | Need WITH NOCHECK via script, then trust |
-| Enable/disable constraint | ❌ No | Script-only (operational, not declarative) |
-| | | |
-| **INDEXES** | | |
-| Add/drop index | ✅ Yes | Add/remove definition |
-| Change index columns | ✅ Yes | SSDT regenerates |
-| Rebuild/reorganize | ❌ No | Maintenance operation, not schema |
-| Online index operations | ⚠️ Partial | May need script for WITH (ONLINE=ON) |
-| | | |
-| **STRUCTURAL** | | |
-| Split table | ❌ No | Multi-phase: create, migrate, drop |
-| Merge tables | ❌ No | Multi-phase: create, migrate, drop |
-| Move column between tables | ❌ No | Multi-phase |
-| Move table between schemas | ⚠️ Partial | Declarative with refactorlog, or ALTER SCHEMA TRANSFER |
+| In OutSystems | Operation | Declarative? | Notes |
+|---------------|-----------|--------------|-------|
+| **CREATION** | | | |
+| Create an Entity | Create table | ✅ Yes | Add .sql file |
+| Add an optional Attribute | Create column (nullable) | ✅ Yes | Edit table file |
+| Add a mandatory Attribute | Create column (NOT NULL) | ✅ Yes | Need default for existing rows |
+| Identifier, Reference, or unique Attribute | Create PK/FK/unique/check | ✅ Yes | Inline beneath their column; composite keys and multi-column checks at table level |
+| Add an Index | Create index | ✅ Yes | Inline or separate file |
+| | | | |
+| **MODIFICATION** | | | |
+| Increase an Attribute's length | Widen column | ✅ Yes | Just change the definition |
+| Reduce an Attribute's length | Narrow column | ⚠️ Depends | May need pre-validation; BlockOnPossibleDataLoss guards |
+| Change an Attribute's Data Type | Change type (implicit) | ✅ Yes | INT→BIGINT, VARCHAR→NVARCHAR |
+| Change an Attribute's Data Type (incompatible) | Change type (explicit) | ❌ No | Needs multi-phase: add new, migrate, drop old |
+| Make an Attribute mandatory | NULL → NOT NULL | ⚠️ Depends | Need default or pre-backfill |
+| Make an Attribute optional | NOT NULL → NULL | ✅ Yes | Just change the definition |
+| Rename an Attribute | Rename column | ✅ Yes | **Must use refactorlog** |
+| Rename an Entity | Rename table | ✅ Yes | **Must use refactorlog** |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | ❌ No | Can't ALTER to add/remove; needs table swap |
+| | | | |
+| **CONSTRAINTS** | | | |
+| Set a Default Value | Add default | ✅ Yes | Inline in table definition |
+| Change a Default Value | Modify default | ✅ Yes | Change the value; SSDT drops and recreates |
+| Remove a Default Value | Remove default | ✅ Yes | Remove from definition |
+| Add a Reference Attribute | Add FK (clean data) | ✅ Yes | Inline beneath its column |
+| Add a Reference Attribute (existing data) | Add FK (orphan data) | ❌ No | Need WITH NOCHECK via script, then trust |
+| — *(SSDT concept)* | Enable/disable constraint | ❌ No | Script-only (operational, not declarative) |
+| | | | |
+| **INDEXES** | | | |
+| Add or remove an Index | Add/drop index | ✅ Yes | Add/remove definition |
+| Change an Index | Change index columns | ✅ Yes | SSDT regenerates |
+| — *(maintenance)* | Rebuild/reorganize | ❌ No | Maintenance operation, not schema |
+| — *(SSDT concept)* | Online index operations | ⚠️ Partial | May need script for WITH (ONLINE=ON) |
+| | | | |
+| **STRUCTURAL** | | | |
+| — *(no OutSystems equivalent)* | Split table | ❌ No | Multi-phase: create, migrate, drop |
+| — *(no OutSystems equivalent)* | Merge tables | ❌ No | Multi-phase: create, migrate, drop |
+| ≈ Move an Attribute to another Entity | Move column between tables | ❌ No | Multi-phase |
+| — *(modules aren't schemas)* | Move table between schemas | ⚠️ Partial | Declarative with refactorlog, or ALTER SCHEMA TRANSFER |
 
 **Legend:**
 - ✅ Yes = Pure declarative, just edit the schema files
@@ -297,30 +297,30 @@ READY FOR PR
 
 **One-line summaries for common operations:**
 
-| Operation | Tier | Mechanism | Watch For |
-|-----------|------|-----------|-----------|
-| Add table | 1 | Declarative | Nothing — safest operation |
-| Add nullable column | 1 | Declarative | Nothing |
-| Add NOT NULL column | 1-2 | Declarative | Need default for existing rows |
-| Add index | 1-2 | Declarative | Large table = blocking time |
-| Add FK (clean data) | 2 | Declarative | Verify no orphans first |
-| Add FK (orphan data) | 3 | Multi-phase | WITH NOCHECK → clean → trust |
-| Add default | 1 | Declarative | Nothing |
-| Add check constraint | 2 | Declarative | Existing data may violate |
-| Add unique constraint | 2 | Declarative | Check for duplicates first |
-| Widen column | 2 | Declarative | Index rebuild possible |
-| Narrow column | 4 | Pre + Declarative | Validate data fits; BlockOnPossibleDataLoss |
-| Change type (implicit) | 2 | Declarative | INT→BIGINT is safe |
-| Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
-| NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2) |
-| NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
-| Rename column | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
-| Rename table | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
-| Drop column | 3-4 | Declarative | Follow deprecation workflow |
-| Drop table | 4 | Declarative | Verify truly unused; backup |
-| Add/remove IDENTITY | 3-4 | Multi-phase (table swap) | Full table rebuild |
-| Split table | 4 | Multi-phase | Multiple releases |
-| Merge tables | 4 | Multi-phase | Multiple releases |
+| In OutSystems | Operation | Tier | Mechanism | Watch For |
+|---------------|-----------|------|-----------|-----------|
+| Create an Entity | Add table | 1 | Declarative | Nothing — safest operation |
+| Add an optional Attribute | Add nullable column | 1 | Declarative | Nothing |
+| Add a mandatory Attribute | Add NOT NULL column | 1-2 | Declarative | Need default for existing rows |
+| Add an Index | Add index | 1-2 | Declarative | Large table = blocking time |
+| Add a Reference Attribute | Add FK (clean data) | 2 | Declarative | Verify no orphans first |
+| Add a Reference Attribute (existing data) | Add FK (orphan data) | 3 | Multi-phase | WITH NOCHECK → clean → trust |
+| Set a Default Value | Add default | 1 | Declarative | Nothing |
+| — *(no OutSystems equivalent)* | Add check constraint | 2 | Declarative | Existing data may violate |
+| Make an Attribute unique | Add unique constraint | 2 | Declarative | Check for duplicates first |
+| Increase an Attribute's length | Widen column | 2 | Declarative | Index rebuild possible |
+| Reduce an Attribute's length | Narrow column | 4 | Pre + Declarative | Validate data fits; BlockOnPossibleDataLoss |
+| Change an Attribute's Data Type | Change type (implicit) | 2 | Declarative | INT→BIGINT is safe |
+| Change an Attribute's Data Type (incompatible) | Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
+| Make an Attribute mandatory | NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2) |
+| Make an Attribute optional | NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
+| Rename an Attribute | Rename column | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
+| Rename an Entity | Rename table | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
+| Delete an Attribute | Drop column | 3-4 | Declarative | Follow deprecation workflow |
+| Delete an Entity | Drop table | 4 | Declarative | Verify truly unused; backup |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | 3-4 | Multi-phase (table swap) | Full table rebuild |
+| — *(no OutSystems equivalent)* | Split table | 4 | Multi-phase | Multiple releases |
+| — *(no OutSystems equivalent)* | Merge tables | 4 | Multi-phase | Multiple releases |
 
 ---
 
