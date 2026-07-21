@@ -91,14 +91,16 @@ module TighteningBinding =
 
     /// Build the RELAXATION-ONLY `TighteningIntervention.Nullability`
     /// from a config entry (DECISIONS 2026-07-15, the estate A6
-    /// amendment — amends 2026-06-22). Only budget-less entries reach
-    /// this binder (`fromConfig` drops the coercion direction), so the
-    /// bound intervention's ONLY reachable acts are its resolved
-    /// `keepNullable` overrides — they relax emission below the declared
-    /// shape (`DecisionOverlay.KeepNullable`) until the reopen probe
-    /// retires them. `allowMandatoryRelaxation` binds verbatim for the
-    /// policy fingerprint; under RelaxationOnly no budget hierarchy runs
-    /// to consult it.
+    /// amendment — amends 2026-06-22; extended 2026-07-21). Entries
+    /// reaching this binder are budget-less OR budget-bearing-with-
+    /// overrides — either way `fromConfig` has stripped the coercion, and
+    /// this binder never consults `NullBudget`, so the bound
+    /// intervention's ONLY reachable acts are its resolved `keepNullable`
+    /// overrides — they relax emission below the declared shape
+    /// (`DecisionOverlay.KeepNullable`) until the reopen probe retires
+    /// them. `allowMandatoryRelaxation` binds verbatim for the policy
+    /// fingerprint; under RelaxationOnly no budget hierarchy runs to
+    /// consult it.
     let private bindNullability
         (catalog: Catalog)
         (entry: Config.TighteningInterventionEntry)
@@ -249,21 +251,28 @@ module TighteningBinding =
             // DECISIONS 2026-06-22 (config-driven nullable→NOT NULL coercion
             // disabled — the team's declared nullability is authoritative, not
             // the tool's), AS AMENDED 2026-07-15 (the estate chapter's A6
-            // relaxation-direction re-opening): a `kind:"nullability"` entry
-            // that names a `nullBudget` is the COERCION direction and stays
-            // dropped (not refused, so an existing config does not hard-fail;
-            // null-density stays a profiling statistic only). An entry WITHOUT
-            // a budget binds as a RELAXATION-ONLY intervention — its
-            // `keepNullable` overrides (and nothing else) act, relaxing
-            // emission below the declared shape. That is the estate overlay's
-            // nullability arm, and it closes the A44 gap the 2026-06-22 drop
-            // opened: `overrides` was expressible-but-inert; now every
-            // expressible key binds and reaches emission. The sibling
-            // blessing surface, `tighteningRelaxations` (F7), is DIFFERENT
-            // machinery — the migrate face's data-compat gate honoring, scoped
-            // to tightening-work violations — and stays untouched.
+            // relaxation-direction re-opening) and 2026-07-21 (the
+            // budget-alongside-overrides fix): the COERCION a `nullBudget`
+            // carries is always dropped (not refused, so an existing config
+            // does not hard-fail; null-density stays a profiling statistic
+            // only) — but that drop is now scoped to the coercion ALONE. A
+            // `kind:"nullability"` entry binds as a RELAXATION-ONLY
+            // intervention whenever it carries `keepNullable` overrides,
+            // whether or not it also names a budget, because `bindNullability`
+            // never consults the budget. Only a PURE-coercion entry (a budget
+            // and no overrides) has nothing left to bind and is filtered out.
+            // This closes the last A44 gap: a budget sitting beside overrides
+            // previously dropped the whole entry, so those overrides were
+            // expressible-but-inert; now every expressible key binds and
+            // reaches emission. The sibling blessing surface,
+            // `tighteningRelaxations` (F7), is DIFFERENT machinery — the
+            // migrate face's data-compat gate honoring, scoped to
+            // tightening-work violations — and stays untouched.
             s.Interventions
-            |> List.filter (fun e -> not (e.Kind = "nullability" && e.NullBudget.IsSome))
+            |> List.filter (fun e ->
+                not (e.Kind = "nullability"
+                     && e.NullBudget.IsSome
+                     && List.isEmpty e.NullabilityOverrides))
             |> List.map (bindEntry catalog)
             |> Result.aggregate
             |> Result.map (fun interventions -> { Interventions = interventions })
