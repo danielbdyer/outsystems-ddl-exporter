@@ -1,8 +1,8 @@
 CREATE TABLE [dbo].[Country] (
+    [Code]  NVARCHAR (2)   NOT NULL,
     [Id]    INT            NOT NULL
         CONSTRAINT [PK_Country_Id]
             PRIMARY KEY CLUSTERED,
-    [Code]  NVARCHAR (2)   NOT NULL,
     [Label] NVARCHAR (100) NOT NULL
 )
 
@@ -26,24 +26,6 @@ GO
 
 EXECUTE [sys].[sp_addextendedproperty]
     @name = N'Projection.LogicalName',
-    @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Country',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.SsKey',
-    @value = N'S9:GOLD_ATTR1:110:Country.Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Country',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.LogicalName',
     @value = N'Code',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Country',
@@ -57,6 +39,24 @@ EXECUTE [sys].[sp_addextendedproperty]
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Country',
     @level2type = N'COLUMN', @level2name = N'Code';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.LogicalName',
+    @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Id';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.SsKey',
+    @value = N'S9:GOLD_ATTR1:110:Country.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Id';
 
 GO
 

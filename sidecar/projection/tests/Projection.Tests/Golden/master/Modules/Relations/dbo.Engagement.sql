@@ -1,7 +1,4 @@
 CREATE TABLE [dbo].[Engagement] (
-    [Id]            INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_Engagement_Id]
-            PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
         CONSTRAINT [DF_Engagement_AltCustomerId] DEFAULT 0,
     [CreatedBy]     INT            NOT NULL
@@ -10,6 +7,9 @@ CREATE TABLE [dbo].[Engagement] (
                 ON DELETE NO ACTION
                 ON UPDATE CASCADE,
     [CustomerId]    INT            NOT NULL,
+    [Id]            INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Engagement_Id]
+            PRIMARY KEY CLUSTERED,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
@@ -52,24 +52,6 @@ EXECUTE [sys].[sp_addextendedproperty]
     @value = N'S9:GOLD_KIND1:110:Engagement',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.LogicalName',
-    @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Engagement',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.SsKey',
-    @value = N'S9:GOLD_ATTR1:113:Engagement.Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Engagement',
-    @level2type = N'COLUMN', @level2name = N'Id';
 
 GO
 
@@ -124,6 +106,24 @@ EXECUTE [sys].[sp_addextendedproperty]
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'CustomerId';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.LogicalName',
+    @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Id';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.SsKey',
+    @value = N'S9:GOLD_ATTR1:113:Engagement.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Id';
 
 GO
 

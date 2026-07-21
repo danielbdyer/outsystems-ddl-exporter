@@ -536,8 +536,11 @@ module SsdtDdlEmitter =
     /// Build the CREATE INDEX statements for a Kind's non-PK indexes.
     /// Per chapter pre-scope §8 slice 3: PK-marked indexes are
     /// skipped (PK is inlined in CREATE TABLE per V1 convention);
-    /// remaining indexes are sorted by SsKey for deterministic
-    /// emission ordering (A33).
+    /// remaining indexes are sorted by their EMITTED name
+    /// (case-insensitive, SsKey tiebreak — 2026-07-21, V1 display-order
+    /// parity: V1 orders emitted index-name lists case-insensitively).
+    /// The dedup ordinal in `IndexNaming.emittedNames` stays SsKey-based,
+    /// so only the display order changes; A33 determinism holds.
     // Wave-2 slice 2.3 — apply the UNIQUE tightening decision at emission.
     // Additive-only (`field || enforce`): an index is emitted UNIQUE iff the
     // source already declared it unique OR a registered UniqueIndex
@@ -546,7 +549,7 @@ module SsdtDdlEmitter =
     let private indexStatementsWith (emittedNames: Map<SsKey, string>) (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
-        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.sortBy (fun idx -> (Map.find idx.SsKey emittedNames).ToUpperInvariant(), idx.SsKey)
         |> List.map (fun idx ->
             // Chapter 4.9 slice γ — Index.Columns now carries
             // IndexColumn (SsKey + direction). Resolve to
@@ -617,7 +620,7 @@ module SsdtDdlEmitter =
     let private disabledIndexAltersWith (emittedNames: Map<SsKey, string>) (k: Kind) : Statement list =
         k.Indexes
         |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness) && idx.IsDisabled)
-        |> List.sortBy (fun idx -> idx.SsKey)
+        |> List.sortBy (fun idx -> (Map.find idx.SsKey emittedNames).ToUpperInvariant(), idx.SsKey)
         |> List.map (fun idx ->
             // Same emitted name as the CREATE INDEX — the ALTER must
             // reference the identifier the CREATE introduced.
@@ -817,8 +820,13 @@ module SsdtDdlEmitter =
 
             // Index extended-property owners follow the EMITTED index
             // name (the identifier the CREATE INDEX / PK constraint
-            // introduced), never the source physical name.
-            for idx in k.Indexes do
+            // introduced), never the source physical name — and emit in
+            // the same emitted-name order (case-insensitive, SsKey
+            // tiebreak) as the CREATE INDEX statements (2026-07-21, V1
+            // display-order parity).
+            for idx in
+                (k.Indexes
+                 |> List.sortBy (fun idx -> (Map.find idx.SsKey emittedNames).ToUpperInvariant(), idx.SsKey)) do
                 for ep in idx.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
                         IndexProperty (table, Map.find idx.SsKey emittedNames), ep.Name, ep.Value)

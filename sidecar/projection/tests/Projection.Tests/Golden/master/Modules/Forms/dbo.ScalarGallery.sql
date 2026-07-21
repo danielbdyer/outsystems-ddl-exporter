@@ -1,7 +1,4 @@
 CREATE TABLE [dbo].[ScalarGallery] (
-    [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_ScalarGallery_Id]
-            PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
         CONSTRAINT [DF_ScalarGallery_AlarmAt] DEFAULT CAST ('08:30:00' AS TIME (7)),
     [Amount]      DECIMAL (18, 4)  NULL
@@ -14,6 +11,9 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [ExternalKey] UNIQUEIDENTIFIER NULL
         CONSTRAINT [DF_ScalarGallery_ExternalKey] DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
+    [Id]          INT              IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_ScalarGallery_Id]
+            PRIMARY KEY CLUSTERED,
     [IsActive]    BIT              NOT NULL
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
@@ -37,23 +37,23 @@ CREATE INDEX [IX_ScalarGallery_Code_1]
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Tally_1]
-    ON [dbo].[ScalarGallery]([Tally] DESC)
-
-GO
-
 CREATE INDEX [IX_ScalarGallery_Code_2]
     ON [dbo].[ScalarGallery]([Code])
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Tally_2]
-    ON [dbo].[ScalarGallery]([Tally]) WHERE ([Tally] IS NOT NULL)
+CREATE INDEX [IX_ScalarGallery_Code_3]
+    ON [dbo].[ScalarGallery]([Code])
 
 GO
 
-CREATE INDEX [IX_ScalarGallery_Code_3]
-    ON [dbo].[ScalarGallery]([Code])
+CREATE INDEX [IX_ScalarGallery_Tally_1]
+    ON [dbo].[ScalarGallery]([Tally] DESC)
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Tally_2]
+    ON [dbo].[ScalarGallery]([Tally]) WHERE ([Tally] IS NOT NULL)
 
 GO
 
@@ -98,24 +98,6 @@ EXECUTE [sys].[sp_addextendedproperty]
     @value = N'S9:GOLD_KIND1:113:ScalarGallery',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.LogicalName',
-    @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'ScalarGallery',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.SsKey',
-    @value = N'S9:GOLD_ATTR1:116:ScalarGallery.Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'ScalarGallery',
-    @level2type = N'COLUMN', @level2name = N'Id';
 
 GO
 
@@ -242,6 +224,24 @@ EXECUTE [sys].[sp_addextendedproperty]
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'FreeText';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.LogicalName',
+    @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.SsKey',
+    @value = N'S9:GOLD_ATTR1:116:ScalarGallery.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id';
 
 GO
 

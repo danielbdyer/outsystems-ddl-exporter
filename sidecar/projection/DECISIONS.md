@@ -30260,3 +30260,40 @@ inline extended-property unit assertions (`SsdtExtendedPropertyEmissionTests`,
 `ModuleExtendedPropertyEmissionTests`, `LogicalNameRoundtripTests`) are fragment-level
 `Contains`/`Matches` on `@name = …` / `@value = …` / `@levelNtype = …`, all of which survive the
 reshaping (the fragments just move onto their own lines), so they stay green unchanged.
+
+## 2026-07-21 — Attribute emission order: the PK-first reorder is retired for V1 authored-order parity (CanonicalizeIdentity v3); index / extended-property display order follows the emitted name — golden re-record
+
+**Context (V1↔V2 emission-parity review).** V1 orders emitted attributes by authored
+`Order_Num`, then `AttrId` — never PK-first. V2 had layered a PK-first rank on top (attributes
+sorted PK-first, then authored order, then SsKey), both in `CanonicalizeIdentity` (the single
+emission-ordering site) and in the extraction SQL's ORDER BY. The two diverged on any table whose
+PK is not its lowest-authored-order attribute.
+
+**The decision (Fix 2 — attribute order).** Retire the PK-first rank.
+`CanonicalizeIdentity.attributeSortKey` is now `(authored-order rank, SsKey)` (pass `version`
+2 → 3), and the extraction SQL's two attribute `ORDER BY` clauses drop the
+`CASE WHEN IsIdentifier … THEN 0 …` PK-first key and tiebreak on `AttrId` (matching V1).
+`Order_Num` is already COALESCEd to the creation `Id` at `#Attr` population, so it is non-null; a
+hand-built catalog (every `Order = None`) falls to the SsKey tiebreak, so determinism (T1) still
+holds for every source. Nothing structural depended on PK columns leading — the emitted PK
+constraint names its key columns regardless of their position in the CREATE TABLE body. On a real
+OSSYS estate the identifier's `Order_Num = 1` keeps it first on its own authored merit.
+
+**The decision (Fix 5 — index / extended-property display order).** Emitted non-PK indexes, their
+`ALTER INDEX … DISABLE` statements, and their extended-property owners now sort by the EMITTED
+index name (case-insensitive, SsKey tiebreak) rather than by SsKey, for V1 display-order parity
+(V1 orders emitted index-name lists case-insensitively). The collision-dedup ordinal in
+`IndexNaming.emittedNames` stays SsKey-based, so only the display order changes. Column extended
+properties already followed column order (the `for attr in k.Attributes` loop), so they inherit
+the Fix-2 authored order for free.
+
+**V2 extraction SQL is now independently maintained.** V2's `outsystems_metadata_rowsets.sql`
+(the ordering change above, plus the earlier PERSISTED carriage) no longer tracks V1's
+`src/AdvancedSql/` copy; the V1-comparison fork / line-count tests in `MetadataExtractionSqlTests`
+are retired.
+
+**Golden re-record (blessing protocol).** 10 files under `tests/Projection.Tests/Golden/`
+re-recorded via `GOLDEN_RECORD=1` — a pure reordering (201 insertions / 201 deletions; no
+schema-object bytes added or removed). The `CanonicalizeIdentityTests` ordering-contract tests
+were rewritten to the new (authored-order, SsKey) contract, including a witness that a PK with a
+non-minimal SsKey no longer floats to the front.

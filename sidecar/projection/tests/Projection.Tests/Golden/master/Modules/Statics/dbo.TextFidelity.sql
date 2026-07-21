@@ -1,8 +1,8 @@
 CREATE TABLE [dbo].[TextFidelity] (
+    [Body] NVARCHAR (50) NULL,
     [Id]   INT           NOT NULL
         CONSTRAINT [PK_TextFidelity_Id]
-            PRIMARY KEY CLUSTERED,
-    [Body] NVARCHAR (50) NULL
+            PRIMARY KEY CLUSTERED
 )
 
 GO
@@ -25,24 +25,6 @@ GO
 
 EXECUTE [sys].[sp_addextendedproperty]
     @name = N'Projection.LogicalName',
-    @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TextFidelity',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.SsKey',
-    @value = N'S9:GOLD_ATTR1:115:TextFidelity.Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TextFidelity',
-    @level2type = N'COLUMN', @level2name = N'Id';
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty]
-    @name = N'Projection.LogicalName',
     @value = N'Body',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'TextFidelity',
@@ -56,4 +38,22 @@ EXECUTE [sys].[sp_addextendedproperty]
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'TextFidelity',
     @level2type = N'COLUMN', @level2name = N'Body';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.LogicalName',
+    @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Id';
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'Projection.SsKey',
+    @value = N'S9:GOLD_ATTR1:115:TextFidelity.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'TextFidelity',
+    @level2type = N'COLUMN', @level2name = N'Id';
 
