@@ -6,17 +6,9 @@
 
 ### Add a Default Value
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Set a value to use when none is provided | 1 | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Set a value to use when none is provided | 1 | Pure Declarative |
 
 **What you do:**
 ```sql
@@ -31,10 +23,7 @@ ALTER TABLE [dbo].[Order] ADD CONSTRAINT [DF_Order_Status] DEFAULT ('Pending') F
 
 SSDT generates the appropriate ALTER.
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -43,23 +32,16 @@ SSDT generates the appropriate ALTER.
 
 ---
 
-### Add a Uniqueness Rule (Unique Constraint)
+### Add a Uniqueness Rule (Unique Index)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Enforce distinct values in a column | 2 | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Enforce distinct values in a column | 2 | Pure Declarative |
 
 **What you do:**
 ```sql
-CONSTRAINT [UQ_Customer_Email] UNIQUE ([Email])
+CREATE UNIQUE INDEX [UIX_Customer_Email]
+    ON [dbo].[Customer]([Email])
 ```
 
 **Pre-flight check:**
@@ -72,31 +54,20 @@ HAVING COUNT(*) > 1
 -- Must return 0 rows
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | Duplicates | Deploy fails if duplicates exist. Clean first. |
-| NULLs | Standard unique constraint allows one NULL. For multiple NULLs, use filtered unique index. |
+| NULLs | Standard unique index allows one NULL. For multiple NULLs, use filtered unique index. |
 
 ---
 
 ### Add a Validation Rule (Check Constraint)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Enforce business rules at the database level | 1-2 | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Enforce business rules at the database level | 1-2 | Pure Declarative |
 
 **What you do:**
 ```sql
@@ -111,10 +82,7 @@ SELECT * FROM dbo.OrderLine WHERE Quantity <= 0
 -- Must return 0 rows
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -125,17 +93,9 @@ SELECT * FROM dbo.OrderLine WHERE Quantity <= 0
 
 ### Enable/Disable Constraint
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Temporarily suspend constraint enforcement | 3 | Script-Only | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Temporarily suspend constraint enforcement | 3 | Script-Only |
 
 This is **operational**, not declarative. SSDT manages existence, not enabled state.
 
@@ -151,10 +111,7 @@ ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer
 
 **Note:** `NOCHECK` leaves the constraint untrusted. `WITH CHECK CHECK` validates and restores trust.
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

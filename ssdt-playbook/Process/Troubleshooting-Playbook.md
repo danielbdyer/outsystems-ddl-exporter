@@ -10,7 +10,7 @@
 
 **Causes:**
 - FK references a table not in the project
-- View references a column that was removed
+- Computed column references a column that was removed
 - Cross-database reference without database reference configured
 
 **Resolution:**
@@ -81,7 +81,7 @@
 **What triggered it:**
 - Column is part of an index
 - Column has a default constraint
-- Column is referenced by a computed column or view
+- Column is referenced by a computed column
 
 **Resolution:**
 1. Identify the dependent object (error message usually says which)
@@ -116,7 +116,7 @@
 
 **Resolution:**
 - Add a default constraint, or
-- Make the column nullable initially, backfill, then tighten to NOT NULL later — the tightening is still blocked on a populated table (the guard checks row presence; see §17.2, corrected) and needs a logged guard-relaxation after a proven-zero-NULL count, or
+- Make the column nullable initially, backfill, then tighten to NOT NULL later — the tightening is still blocked on a populated table (the guard checks row presence; see §17.2) and needs a logged guard-relaxation after a proven-zero-NULL count, or
 - Backfill in pre-deployment script
 
 ---
@@ -164,32 +164,6 @@
 2. If same object renamed differently in each branch, coordinate with other developer
 3. Ensure all GUIDs are unique
 4. Build after merge to verify
-
----
-
-## CDC Issues
-
-### Capture instance not tracking new column
-
-**Symptom:** Change History doesn't show changes to a new column.
-
-**Cause:** Old capture instance doesn't know about the new column.
-
-**Resolution:**
-- Development: Disable and re-enable CDC on the table
-- Production: Create new capture instance, update consumers
-
----
-
-### "Invalid object name 'cdc.fn_cdc_get_all_changes_...'"
-
-**Symptom:** CDC function doesn't exist.
-
-**Cause:** Capture instance was disabled or never created for this table.
-
-**Resolution:**
-1. Check if CDC is enabled: `SELECT * FROM cdc.change_tables`
-2. If missing, create capture instance: `EXEC sys.sp_cdc_enable_table ...`
 
 ---
 

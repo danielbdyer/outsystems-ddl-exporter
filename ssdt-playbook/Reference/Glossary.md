@@ -1,4 +1,4 @@
-# 30. Glossary
+# 29. Glossary
 
 ---
 
@@ -8,9 +8,7 @@
 | **Attribute** | A column in a table | Entity Attribute |
 | **Backup** | Point-in-time copy of database | (Platform managed) |
 | **BlockOnPossibleDataLoss** | SSDT setting that prevents destructive deployments | (Platform guardrails) |
-| **Capture Instance** | CDC's record of a table's schema at a point in time | (N/A) |
 | **CASCADE** | Automatic propagation of delete/update to child records | Delete Rule = Delete |
-| **CDC (Change Data Capture)** | SQL Server feature tracking row-level changes | (N/A) |
 | **CHECK constraint** | Rule validating column values | (N/A — enforced in app logic) |
 | **Clustered index** | Index defining physical row order | (Hidden) |
 | **Column** | A field in a table | Entity Attribute |
@@ -48,13 +46,11 @@
 | **sp_rename** | SQL Server command to rename objects | (Hidden) |
 | **SSDT** | SQL Server Data Tools | (N/A) |
 | **SSMS** | SQL Server Management Studio | Service Center (sort of) |
-| **Stored procedure** | Named SQL routine | Server Action (sort of) |
 | **Table** | Structure storing rows of data | Entity |
 | **Temporal table** | System-versioned table tracking history | (N/A) |
 | **Tier** | Risk classification for changes (1-4) | (N/A) |
 | **Trigger** | Code executing on data events | (N/A) |
 | **Unique constraint** | Enforces distinct values in column | (N/A — enforced in app) |
-| **View** | Saved query appearing as table | (N/A) |
 | **WITH NOCHECK** | Add constraint without validating existing data | (N/A) |
 
 ---

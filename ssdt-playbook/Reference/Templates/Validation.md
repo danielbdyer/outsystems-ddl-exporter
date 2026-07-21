@@ -3,7 +3,7 @@
 ```sql
 /*
 Pre-Deployment Validation: Describe what you're validating
-Ticket: JIRA-XXXX
+Work item: AB#XXXX
 */
 
 PRINT 'Pre-deployment validation...'

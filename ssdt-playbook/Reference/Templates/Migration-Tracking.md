@@ -6,12 +6,12 @@ If you need migration tracking for complex multi-step migrations:
 -- Create this table in your schema
 CREATE TABLE [dbo].[MigrationHistory]
 (
-    [MigrationId] NVARCHAR(200) NOT NULL,
+    [MigrationId] NVARCHAR(200) NOT NULL
+        CONSTRAINT [PK_MigrationHistory_MigrationId]
+            PRIMARY KEY CLUSTERED,
     [ExecutedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_MigrationHistory_ExecutedAt] DEFAULT (SYSUTCDATETIME()),
     [ExecutedBy] NVARCHAR(128) NOT NULL CONSTRAINT [DF_MigrationHistory_ExecutedBy] DEFAULT (SYSTEM_USER),
-    [Description] NVARCHAR(500) NULL,
-    
-    CONSTRAINT [PK_MigrationHistory] PRIMARY KEY CLUSTERED ([MigrationId])
+    [Description] NVARCHAR(500) NULL
 )
 GO
 ```

@@ -1,4 +1,4 @@
-# 32. Contribution Guidelines
+# 31. Contribution Guidelines
 
 ---
 
@@ -29,7 +29,7 @@ The playbook evolves. When you encounter something undocumented, something wrong
 
 For changes to the playbook's organization:
 
-1. Open a discussion in #ssdt-playbook
+1. Open a discussion in the ssdt-playbook channel in Teams
 2. Propose the change with rationale
 3. Gather feedback
 4. Implement if consensus reached
@@ -87,10 +87,10 @@ Complex topics should layer:
 
 ## After You Contribute
 
-1. Note your change in the Changelog (Section 33)
+1. Note your change in the Changelog (Section 32)
 2. If you added a term, add it to the Glossary
 3. If you added a pattern, cross-reference it from Operation Reference
-4. Announce significant additions in #ssdt-playbook
+4. Announce significant additions in the ssdt-playbook channel in Teams
 
 ---
 

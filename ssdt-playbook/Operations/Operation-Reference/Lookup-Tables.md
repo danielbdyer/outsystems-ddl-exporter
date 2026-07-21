@@ -6,17 +6,9 @@
 
 ### Create a Lookup Table with Seed Data
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Create a reference/code table with fixed values | 1-2 | Declarative (structure) + Post-Deployment (data) | Usually not CDC-enabled |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Create a reference/code table with fixed values | 1-2 | Declarative (structure) + Post-Deployment (data) |
 
 **Two pieces:**
 1. Table structure (declarative `.sql` file)
@@ -27,15 +19,19 @@
 -- /Tables/dbo/dbo.OrderStatus.sql
 CREATE TABLE [dbo].[OrderStatus]
 (
-    [StatusId] INT NOT NULL,
+    [StatusId] INT NOT NULL
+        CONSTRAINT [PK_OrderStatus_StatusId]
+            PRIMARY KEY CLUSTERED,
     [StatusCode] NVARCHAR(20) NOT NULL,
     [StatusName] NVARCHAR(50) NOT NULL,
     [SortOrder] INT NOT NULL,
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_OrderStatus_IsActive] DEFAULT (1),
-    
-    CONSTRAINT [PK_OrderStatus] PRIMARY KEY CLUSTERED ([StatusId]),
-    CONSTRAINT [UQ_OrderStatus_Code] UNIQUE ([StatusCode])
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_OrderStatus_IsActive] DEFAULT (1)
 )
+
+GO
+
+CREATE UNIQUE INDEX [UIX_OrderStatus_StatusCode]
+    ON [dbo].[OrderStatus]([StatusCode])
 ```
 
 **Seed data:**
@@ -62,10 +58,7 @@ WHEN NOT MATCHED THEN
     VALUES (source.[StatusId], source.[StatusCode], source.[StatusName], source.[SortOrder], source.[IsActive]);
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -80,17 +73,9 @@ WHEN NOT MATCHED THEN
 
 ### Add/Modify Seed Data
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add or update values in a lookup table | 1-2 | Post-Deployment Script | Usually not CDC-enabled |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add or update values in a lookup table | 1-2 | Post-Deployment Script |
 
 **What you do:**
 
@@ -103,10 +88,7 @@ Edit the seed data script. Add new values or modify existing:
 
 MERGE handles both insert (new) and update (existing).
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -117,17 +99,9 @@ MERGE handles both insert (new) and update (existing).
 
 ### Extract Values to a Lookup Table
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Convert inline values to a normalized lookup table | 3 | Multi-Phase | May affect both tables |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Convert inline values to a normalized lookup table | 3 | Multi-Phase |
 
 **Scenario:** `Order.Status` is `VARCHAR(20)` with values like 'Pending', 'Active'. Extract to `OrderStatus` table.
 
@@ -137,10 +111,7 @@ MERGE handles both insert (new) and update (existing).
 **Phase 4:** Application transitions to FK
 **Phase 5:** Next release: drop `Status` column, add FK constraint
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

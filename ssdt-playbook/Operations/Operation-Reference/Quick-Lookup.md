@@ -1,4 +1,4 @@
-# 16.10 Quick Lookup: All Operations by Tier
+# 16.9 Quick Lookup: All Operations by Tier
 
 ### Tier 1: Self-Service
 
@@ -9,8 +9,6 @@
 | Add default constraint | Declarative |
 | Add check constraint (new table) | Declarative |
 | Add index (small table) | Declarative |
-| Create view | Declarative |
-| Create synonym | Declarative |
 | NOT NULL → NULL | Declarative |
 
 ### Tier 2: Pair-Supported
@@ -26,8 +24,6 @@
 | Change type (implicit) | Declarative |
 | NULL → NOT NULL | Pre-deployment + Declarative |
 | Add manual audit columns (existing) | Post-deployment |
-| Enable Change Tracking | Script + Declarative |
-| Create indexed view | Declarative |
 
 ### Tier 3: Dev Lead Owned
 
@@ -41,8 +37,6 @@
 | Change type (explicit) | Multi-Phase |
 | Add/remove IDENTITY | Multi-Phase |
 | Move table between schemas | Declarative + Refactorlog |
-| Enable CDC | Script-Only |
-| CDC table schema change | Multi-Phase |
 | Add system-versioned temporal (existing) | Multi-Phase |
 | Extract to lookup table | Multi-Phase |
 

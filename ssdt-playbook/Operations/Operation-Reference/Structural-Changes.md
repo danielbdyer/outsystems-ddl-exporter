@@ -6,30 +6,19 @@
 
 ### Split an Entity (Vertical Partitioning)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Extract columns into a new related table | 4 | Multi-Phase | Both tables affected |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Extract columns into a new related table | 4 | Multi-Phase |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
 |-----------|-------|-----------|
 | Data Involvement | Data-transforming | Data moves between tables |
 | Reversibility | Effortful | Can merge back, but requires scripted work |
-| Dependency Scope | Cross-boundary | All queries/procs referencing those columns |
+| Dependency Scope | Cross-boundary | All queries referencing those columns |
 | Application Impact | Breaking | Query patterns must change |
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -43,17 +32,9 @@
 
 ### Merge Entities (Denormalization)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Combine two tables into one | 4 | Multi-Phase | Both tables affected |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Combine two tables into one | 4 | Multi-Phase |
 
 Reverse of split. Same tier, same concerns.
 
@@ -67,17 +48,9 @@ Reverse of split. Same tier, same concerns.
 
 ### Move an Attribute Between Entities
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Move a column from one table to another | 3-4 | Multi-Phase | Both tables affected |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Move a column from one table to another | 3-4 | Multi-Phase |
 
 **Phase sequence:**
 1. Add column to destination table
@@ -89,17 +62,9 @@ Reverse of split. Same tier, same concerns.
 
 ### Move an Entity Between Schemas
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Move a table to a different schema namespace | 3 | Declarative + Refactorlog OR Script | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Move a table to a different schema namespace | 3 | Declarative + Refactorlog OR Script |
 
 **SSDT approach:**
 
@@ -115,10 +80,7 @@ Use refactorlog to express the move, otherwise SSDT drops and recreates.
 ALTER SCHEMA archive TRANSFER dbo.AuditLog
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

@@ -3,7 +3,7 @@
 ```sql
 /*
 Migration: Brief description
-Ticket: JIRA-XXXX
+Work item: AB#XXXX
 Author: Your Name
 Date: YYYY-MM-DD
 
