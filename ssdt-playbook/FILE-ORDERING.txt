@@ -24,7 +24,6 @@ After removing numbering from filenames, use this document to restore the correc
 - 09-The-Refactorlog-and-Rename-Discipline.md
 - 10-SSDT-Deployment-Safety.md
 - 11-Multi-Phase-Evolution.md
-- 12-CDC-and-Schema-Evolution.md
 
 ## 03-Operations
 
@@ -45,10 +44,9 @@ After removing numbering from filenames, use this document to restore the correc
 - 16.05-Lookup-Tables.md
 - 16.06-Constraints.md
 - 16.07-Structural-Changes.md
-- 16.08-Views-and-Abstraction.md
-- 16.09-Audit-and-Temporal.md
-- 16.10-Quick-Lookup.md
-- 16.11-Cross-Reference.md
+- 16.08-Audit-and-Temporal.md
+- 16.09-Quick-Lookup.md
+- 16.10-Cross-Reference.md
 
 ### 03-Operations/17-Multi-Phase-Patterns
 
@@ -60,7 +58,6 @@ After removing numbering from filenames, use this document to restore the correc
 - 17.06-Table-Split.md
 - 17.07-Table-Merge.md
 - 17.08-Schema-Migration-Backward-Compatibility.md
-- 17.09-CDC-Table-Change.md
 
 ## 04-Process
 
@@ -76,11 +73,10 @@ After removing numbering from filenames, use this document to restore the correc
 
 - 27-SSDT-Standards.md
 - 28-Templates.md
-- 29-CDC-Table-Registry.md
-- 30-Glossary.md
-- 31-Resources.md
-- 32-Contribution-Guidelines.md
-- 33-Changelog.md
+- 29-Glossary.md
+- 30-Resources.md
+- 31-Contribution-Guidelines.md
+- 32-Changelog.md
 
 ### 05-Reference/28-Templates
 
@@ -89,5 +85,4 @@ After removing numbering from filenames, use this document to restore the correc
 - 28.03-Seed-Data.md
 - 28.04-Migration-Tracking.md
 - 28.05-Validation.md
-- 28.06-CDC-Scripts.md
-- 28.07-Incident-Report.md
+- 28.06-Incident-Report.md

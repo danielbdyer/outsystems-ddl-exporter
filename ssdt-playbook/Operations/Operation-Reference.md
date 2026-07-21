@@ -4,13 +4,7 @@ Detailed "how to" guides for every type of database operation.
 
 ## How to Use This Section
 
-Each operation page follows a three-layer progressive disclosure pattern:
-
-- **Layer 1:** Quick summary (tier, mechanism, CDC impact)
-- **Layer 2:** Full details (dimensions, steps, what SSDT generates)
-- **Layer 3:** Gotchas, edge cases, worked examples
-
-Start with Layer 1 for quick lookups. Dive deeper when you need the details.
+Each operation page opens with a compact classification table — the tier and the SSDT mechanism — so you can size up the change at a glance. Below that, each page walks through the dimensions, the exact SQL you write, what SSDT generates, and the gotchas to watch for.
 
 ---
 
@@ -28,13 +22,12 @@ Start with Layer 1 for quick lookups. Dive deeper when you need the details.
 ### Structural Operations
 
 - [16.07: Structural Changes](Operation-Reference/Structural-Changes.md)
-- [16.08: Views and Abstraction](Operation-Reference/Views-and-Abstraction.md)
-- [16.09: Audit and Temporal](Operation-Reference/Audit-and-Temporal.md)
+- [16.08: Audit and Temporal](Operation-Reference/Audit-and-Temporal.md)
 
 ### Quick Reference
 
-- [16.10: Quick Lookup Tables](Operation-Reference/Quick-Lookup.md) — Operations by tier
-- [16.11: Cross-Reference](Operation-Reference/Cross-Reference.md) — Anti-patterns and patterns
+- [16.09: Quick Lookup Tables](Operation-Reference/Quick-Lookup.md) — Operations by tier
+- [16.10: Cross-Reference](Operation-Reference/Cross-Reference.md) — Anti-patterns and patterns
 
 ---
 

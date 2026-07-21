@@ -18,7 +18,6 @@ Core concepts you need to understand before making changes.
 ## Advanced Patterns
 
 - [Multi-Phase Evolution](Foundations/Multi-Phase-Evolution.md) — Changes that span releases
-- [CDC and Schema Evolution](Foundations/CDC-and-Schema-Evolution.md) — Working with CDC-enabled tables
 
 ## Reading Path
 

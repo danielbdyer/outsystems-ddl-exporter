@@ -31,50 +31,23 @@ Consistent naming makes the schema self-documenting and simplifies tooling.
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Primary key | `PK_TableName` | `PK_Customer` |
-| Foreign key | `FK_ChildTable_ParentTable` | `FK_Order_Customer` |
-| Unique | `UQ_TableName_Column(s)` | `UQ_Customer_Email` |
+| Primary key | `PK_TableName_Column(s)` | `PK_Customer_CustomerId` |
+| Foreign key | `FK_ChildTable_ParentTable_Column` | `FK_Order_Customer_CustomerId` |
 | Check | `CK_TableName_Description` | `CK_Order_PositiveQuantity` |
 | Default | `DF_TableName_Column` | `DF_Customer_CreatedAt` |
+
+The generator synthesizes primary-key, foreign-key, and default names on this scheme; check-constraint names are carried through from the source model. Uniqueness is not a constraint here — it is a unique index (`UIX_…`; see Indexes below).
 
 ### Indexes
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Non-clustered | `IX_TableName_Column(s)` | `IX_Order_CustomerId` |
-| Clustered (non-PK) | `CX_TableName_Column(s)` | `CX_Order_OrderDate` |
-| Unique | `UX_TableName_Column(s)` | `UX_Customer_Email` |
-| Filtered | `IX_TableName_Column(s)_Description` | `IX_Order_Status_Active` |
+| Non-unique | `IX_TableName_Column(s)` | `IX_Order_CustomerId` |
+| Unique | `UIX_TableName_Column(s)` | `UIX_Customer_Email` |
+| Filtered | `IX_TableName_Column(s)` + `WHERE` predicate | `IX_Order_Status` |
 | Covering | Mention key columns only | `IX_Order_CustomerId` (INCLUDE is implementation) |
 
-### Views
-
-| Rule | Convention | Example |
-|------|------------|---------|
-| Prefix | `vw_` | `vw_ActiveCustomer` |
-| Description | Clear purpose | `vw_OrderSummary`, `vw_CustomerWithAddress` |
-
-### Stored Procedures
-
-| Rule | Convention | Example |
-|------|------------|---------|
-| Prefix | `usp_` | `usp_GetCustomerOrders` |
-| Verb first | Action-oriented | `usp_CreateOrder`, `usp_UpdateCustomerStatus` |
-| Avoid `sp_` | Reserved for system | Never `sp_GetCustomer` (conflicts with system procs) |
-
-### Functions
-
-| Rule | Convention | Example |
-|------|------------|---------|
-| Scalar | `fn_` prefix | `fn_CalculateTax` |
-| Table-valued | `fn_` or `tvf_` | `fn_GetCustomerOrders` |
-
-### Synonyms
-
-| Rule | Convention | Example |
-|------|------------|---------|
-| Match target name when possible | Same as underlying object | `dbo.Customer` → `archive.Customer` |
-| Or describe purpose | When bridging systems | `Legacy_Customer` |
+Indexes are emitted as `CREATE INDEX` / `CREATE UNIQUE INDEX` — the `CLUSTERED` / `NONCLUSTERED` keyword is left implicit.
 
 ---
 
@@ -141,10 +114,6 @@ These are our standards. Deviate only with good reason.
 /Test.publish.xml
 /Prod.publish.xml
 
-/Security/
-    Schemas.sql
-    Roles.sql
-
 /Tables/
     /dbo/
         dbo.Customer.sql
@@ -152,29 +121,6 @@ These are our standards. Deviate only with good reason.
         dbo.OrderLine.sql
     /audit/
         audit.ChangeLog.sql
-    /archive/
-        archive.OrderHistory.sql
-
-/Views/
-    /dbo/
-        dbo.vw_ActiveCustomer.sql
-        dbo.vw_OrderSummary.sql
-
-/Stored Procedures/
-    /dbo/
-        dbo.usp_GetCustomerOrders.sql
-        dbo.usp_CreateOrder.sql
-
-/Functions/
-    /dbo/
-        dbo.fn_CalculateOrderTotal.sql
-
-/Indexes/
-    IX_Order_CustomerId.sql
-    IX_Order_OrderDate.sql
-
-/Synonyms/
-    dbo.LegacyCustomer.sql
 
 /Scripts/
     /PreDeployment/
@@ -189,10 +135,9 @@ These are our standards. Deviate only with good reason.
             SeedStatusCodes.sql
         /OneTime/
             Release_2025.02_Fixes.sql
-
-/Snapshots/
-    DatabaseProject_v1.0.dacpac
 ```
+
+The generated project has only **`Tables/`** and **`Scripts/`** — no folders for views, stored procedures, functions, synonyms, or indexes. The publish profiles and `.sqlproj`/`.refactorlog` sit at the root.
 
 ### Rules
 
@@ -200,8 +145,8 @@ These are our standards. Deviate only with good reason.
 |------|-----------|
 | One object per file | Easy to find, clear git history |
 | File name matches object name | `dbo.Customer.sql` contains `dbo.Customer` table |
-| Schema folders under each type | `/Tables/dbo/`, `/Tables/audit/` |
-| Indexes can be inline or separate | Team choice; be consistent |
+| Schema folders under Tables/ | `/Tables/dbo/`, `/Tables/audit/` |
+| Indexes live with their table | Emitted in the same file, after the `CREATE TABLE` |
 | Pre/Post scripts organized | `/Migrations/`, `/ReferenceData/`, `/OneTime/` |
 
 ---
@@ -212,20 +157,25 @@ These are our standards. Deviate only with good reason.
 
 ```sql
 -- Table definition formatting
-CREATE TABLE [dbo].[Customer]
-(
-    [CustomerId] INT IDENTITY(1,1) NOT NULL,
-    [FirstName] NVARCHAR(100) NOT NULL,
-    [LastName] NVARCHAR(100) NOT NULL,
-    [Email] NVARCHAR(200) NOT NULL,
-    [PhoneNumber] NVARCHAR(20) NULL,
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_Customer_IsActive] DEFAULT (1),
-    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_Customer_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-    [UpdatedAt] DATETIME2(7) NULL,
-    
-    CONSTRAINT [PK_Customer] PRIMARY KEY CLUSTERED ([CustomerId]),
-    CONSTRAINT [UQ_Customer_Email] UNIQUE ([Email])
+CREATE TABLE [dbo].[Customer] (
+    [CustomerId]  INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Customer_CustomerId]
+            PRIMARY KEY CLUSTERED,
+    [CreatedAt]   DATETIME2 (7)  NOT NULL
+        CONSTRAINT [DF_Customer_CreatedAt] DEFAULT SYSUTCDATETIME(),
+    [Email]       NVARCHAR (200) NOT NULL,
+    [FirstName]   NVARCHAR (100) NOT NULL,
+    [IsActive]    BIT            NOT NULL
+        CONSTRAINT [DF_Customer_IsActive] DEFAULT 1,
+    [LastName]    NVARCHAR (100) NOT NULL,
+    [PhoneNumber] NVARCHAR (20)  NULL,
+    [UpdatedAt]   DATETIME2 (7)  NULL
 )
+
+GO
+
+CREATE UNIQUE INDEX [UIX_Customer_Email]
+    ON [dbo].[Customer]([Email])
 ```
 
 | Element | Standard |
@@ -234,7 +184,7 @@ CREATE TABLE [dbo].[Customer]
 | Object names | Bracket-quoted (`[dbo].[Customer]`) |
 | Indentation | 4 spaces (not tabs) |
 | Columns | One per line |
-| Constraints | After columns, separated by blank line or at end |
+| Constraints | Inline, laddered beneath their column; composite keys and multi-column checks at table level |
 | Commas | Trailing (at end of line, not beginning) |
 
 ### Comments
@@ -262,31 +212,6 @@ Multi-line comment for:
 **Don't comment:**
 - The obvious (`-- This is the customer ID`)
 - What the code already says
-
-### Views
-
-Always enumerate columns:
-
-```sql
--- Good
-CREATE VIEW [dbo].[vw_ActiveCustomer]
-AS
-SELECT 
-    CustomerId,
-    FirstName,
-    LastName,
-    Email,
-    CreatedAt
-FROM dbo.Customer
-WHERE IsActive = 1
-
--- Bad
-CREATE VIEW [dbo].[vw_ActiveCustomer]
-AS
-SELECT *
-FROM dbo.Customer
-WHERE IsActive = 1
-```
 
 ---
 

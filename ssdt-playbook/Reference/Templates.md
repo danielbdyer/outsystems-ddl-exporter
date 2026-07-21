@@ -20,11 +20,10 @@ Copy the template, fill in your specifics, and adjust as needed. All templates f
 - [28.02: Migration Block](Templates/Migration-Block.md) — Idempotent post-deployment migration pattern
 - [28.03: Seed Data](Templates/Seed-Data.md) — MERGE-based seed data for lookup tables
 - [28.05: Validation](Templates/Validation.md) — Pre-deployment validation checks
-- [28.06: CDC Scripts](Templates/CDC-Scripts.md) — Enable/disable CDC capture instances
 
 ### Process Templates
 
-- [28.07: Incident Report](Templates/Incident-Report.md) — Post-mortem template for production issues
+- [28.06: Incident Report](Templates/Incident-Report.md) — Post-mortem template for production issues
 
 ---
 

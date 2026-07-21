@@ -37,7 +37,6 @@ Core concepts you need to understand before making changes.
 - [The Refactorlog and Rename Discipline](Foundations/The-Refactorlog-and-Rename-Discipline.md) — How to rename without data loss
 - [SSDT Deployment Safety](Foundations/SSDT-Deployment-Safety.md) — Publish profiles and protection mechanisms
 - [Multi-Phase Evolution](Foundations/Multi-Phase-Evolution.md) — Changes requiring multiple sequential releases
-- [CDC and Schema Evolution](Foundations/CDC-and-Schema-Evolution.md) — Capture instance management and audit continuity
 
 ---
 
@@ -59,7 +58,6 @@ How to perform specific database operations safely and correctly.
   - [Working with Lookup Tables](Operations/Operation-Reference/Lookup-Tables.md)
   - [Working with Constraints](Operations/Operation-Reference/Constraints.md)
   - [Structural Changes](Operations/Operation-Reference/Structural-Changes.md)
-  - [Views and Abstraction](Operations/Operation-Reference/Views-and-Abstraction.md)
   - [Audit and Temporal](Operations/Operation-Reference/Audit-and-Temporal.md)
   - [Quick Lookup Tables](Operations/Operation-Reference/Quick-Lookup.md)
   - [Cross-Reference](Operations/Operation-Reference/Cross-Reference.md)
@@ -75,7 +73,6 @@ How to perform specific database operations safely and correctly.
   - [Table Split](Operations/Multi-Phase-Patterns/Table-Split.md)
   - [Table Merge](Operations/Multi-Phase-Patterns/Table-Merge.md)
   - [Schema Migration with Backward Compatibility](Operations/Multi-Phase-Patterns/Schema-Migration-Backward-Compatibility.md)
-  - [CDC-Enabled Table Schema Change](Operations/Multi-Phase-Patterns/CDC-Table-Change.md)
 
 #### Quick References
 
@@ -109,9 +106,7 @@ Standards, templates, and resources.
   - [Seed Data](Reference/Templates/Seed-Data.md)
   - [Migration Tracking](Reference/Templates/Migration-Tracking.md)
   - [Validation](Reference/Templates/Validation.md)
-  - [CDC Scripts](Reference/Templates/CDC-Scripts.md)
   - [Incident Report](Reference/Templates/Incident-Report.md)
-- [CDC Table Registry](Reference/CDC-Table-Registry.md) — All CDC-enabled tables
 - [Glossary](Reference/Glossary.md) — Term definitions and OutSystems equivalents
 - [Resources](Reference/Resources.md) — Documentation, links, and contacts
 - [Contribution Guidelines](Reference/Contribution-Guidelines.md) — How to improve this playbook
@@ -123,11 +118,11 @@ Standards, templates, and resources.
 
 | Need | Where to go |
 |------|-------------|
-| Quick question | #ssdt-questions Slack channel |
+| Quick question | ssdt-questions channel in Teams |
 | PR review | Tag reviewer per tier guidance |
 | Escalation | See [Escalation Paths](Process/Escalation-Paths.md) |
 | Something's broken | [Troubleshooting](Process/Troubleshooting-Playbook.md), then escalate |
-| Playbook feedback | #ssdt-playbook Slack channel or direct to Danny |
+| Playbook feedback | ssdt-playbook channel in Teams or direct to Danny |
 
 ---
 
