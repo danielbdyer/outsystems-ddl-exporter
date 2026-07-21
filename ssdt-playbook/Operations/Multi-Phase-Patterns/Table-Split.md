@@ -10,16 +10,16 @@
 -- Declarative: New table file
 CREATE TABLE [dbo].[CustomerAddress]
 (
-    [CustomerAddressId] INT IDENTITY(1,1) NOT NULL,
-    [CustomerId] INT NOT NULL,
+    [CustomerAddressId] INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_CustomerAddress_CustomerAddressId]
+            PRIMARY KEY CLUSTERED,
+    [CustomerId] INT NOT NULL
+        CONSTRAINT [FK_CustomerAddress_Customer_CustomerId]
+            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
     [Street] NVARCHAR(200) NULL,
     [City] NVARCHAR(100) NULL,
     [State] NVARCHAR(50) NULL,
-    [PostalCode] NVARCHAR(20) NULL,
-    
-    CONSTRAINT [PK_CustomerAddress] PRIMARY KEY CLUSTERED ([CustomerAddressId]),
-    CONSTRAINT [FK_CustomerAddress_Customer] FOREIGN KEY ([CustomerId]) 
-        REFERENCES [dbo].[Customer]([CustomerId])
+    [PostalCode] NVARCHAR(20) NULL
 )
 ```
 

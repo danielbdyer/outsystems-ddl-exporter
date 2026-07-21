@@ -6,17 +6,9 @@
 
 ### Add an Attribute (Nullable)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add a new column that allows NULL values | 1 | Pure Declarative | Instance recreation if tracking needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add a new column that allows NULL values | 1 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -47,34 +39,19 @@ You never write this ALTER. You declare; SSDT transitions.
 - Column appears in local database
 - Existing rows have NULL for new column
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | Position | SSDT may add at end of table. If `IgnoreColumnOrder=False`, could trigger rebuild. Keep `IgnoreColumnOrder=True`. |
-| CDC | If table is CDC-enabled and you want this column tracked, you must recreate the capture instance. |
-
-**Related:**
-- CDC: [18.5 CDC Impact Checker](#185-cdc-impact-checker)
 
 ---
 
 ### Add an Attribute (Required / NOT NULL)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add a new column that requires a value | 2 | Declarative (with default) | Instance recreation if tracking needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add a new column that requires a value | 2 | Declarative (with default) |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -100,10 +77,7 @@ ALTER TABLE [dbo].[Customer] ADD [Status] NVARCHAR(20) NOT NULL
 
 SQL Server applies the default to existing rows automatically.
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -118,17 +92,9 @@ SQL Server applies the default to existing rows automatically.
 
 ### Make an Attribute Required (NULL → NOT NULL)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Make an existing nullable column required | 2-3 | Pre-Deployment + Declarative + a logged guard-relaxation (see 17.2, corrected) | No instance recreation needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Make an existing nullable column required | 2-3 | Pre-Deployment + Declarative + a logged guard-relaxation (see 17.2) |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -171,14 +137,11 @@ ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(200) NOT NULL;
 SELECT COUNT(*) FROM dbo.Customer WHERE Email IS NULL
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
-| Deploy is blocked while the table has rows | Corrected (proven, sqlpackage 170.4.83): the guard fires on row presence, not NULL content — a zero-NULL populated table is still blocked. The backfill is necessary, not sufficient; pair it with a logged `BlockOnPossibleDataLoss` relaxation for that deployment, or add-new-column → migrate → drop-old. See 17.2 (corrected). |
+| Deploy is blocked while the table has rows | The guard fires on row presence, not NULL content — a zero-NULL populated table is still blocked. The backfill is necessary, not sufficient; pair it with a logged `BlockOnPossibleDataLoss` relaxation for that deployment, or add-new-column → migrate → drop-old. See 17.2. |
 | Concurrent inserts | If app is inserting NULLs while you deploy, backfill won't catch them. Consider adding default first. |
 | Index rebuild | May trigger index rebuild if column is in an index. |
 
@@ -189,17 +152,9 @@ SELECT COUNT(*) FROM dbo.Customer WHERE Email IS NULL
 
 ### Make an Attribute Optional (NOT NULL → NULL)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Make an existing required column optional | 1-2 | Pure Declarative | No instance recreation needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Make an existing required column optional | 1-2 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -222,10 +177,7 @@ Change the definition:
 ALTER TABLE [dbo].[Person] ALTER COLUMN [MiddleName] NVARCHAR(50) NULL;
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -236,17 +188,9 @@ ALTER TABLE [dbo].[Person] ALTER COLUMN [MiddleName] NVARCHAR(50) NULL;
 
 ### Change an Attribute's Data Type (Implicit Conversion)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change type when SQL Server can convert automatically | 2 | Pure Declarative | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change type when SQL Server can convert automatically | 2 | Pure Declarative |
 
 Implicit conversions are safe widening conversions where no data can be lost:
 - `INT` → `BIGINT`
@@ -259,7 +203,7 @@ Implicit conversions are safe widening conversions where no data can be lost:
 |-----------|-------|-----------|
 | Data Involvement | Data-preserving | SQL Server converts without loss |
 | Reversibility | Effortful | Reverse may not be implicit |
-| Dependency Scope | Inter-table | Views, procs may have type expectations |
+| Dependency Scope | Inter-table | Application code may have type expectations |
 | Application Impact | Contractual | Usually works, but app type handling may differ |
 
 **What you do:**
@@ -275,32 +219,20 @@ Change the definition:
 ALTER TABLE [dbo].[Order] ALTER COLUMN [CustomerId] BIGINT NOT NULL;
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | VARCHAR → NVARCHAR | Doubles storage. May bloat indexes past limits. |
 | Index key limits | Non-clustered index keys can't exceed 1700 bytes (900 in older versions). Widening columns in indexes may fail. |
-| CDC | Capture instance has old type. Must recreate. |
 
 ---
 
 ### Change an Attribute's Data Type (Explicit Conversion)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change type when data must be explicitly converted | 3-4 | Multi-Phase | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change type when data must be explicitly converted | 3-4 | Multi-Phase |
 
 Explicit conversions require transformation:
 - `VARCHAR` → `DATE`
@@ -325,10 +257,7 @@ This requires multi-phase. You cannot simply change the type.
 **Phase 3:** Application transitions to new column
 **Phase 4:** Drop old column, rename new column
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -343,17 +272,9 @@ This requires multi-phase. You cannot simply change the type.
 
 ### Change an Attribute's Length (Widen)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Increase column length/precision | 2 | Pure Declarative | No instance recreation needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Increase column length/precision | 2 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -376,10 +297,7 @@ Change the definition:
 ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(200) NOT NULL;
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -390,17 +308,9 @@ ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(200) NOT NULL;
 
 ### Change an Attribute's Length (Narrow)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Decrease column length/precision | 4 | Pre-Deployment + Declarative | No instance recreation needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Decrease column length/precision | 4 | Pre-Deployment + Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -430,10 +340,7 @@ WHERE LEN(Email) > 100  -- New limit
 [Email] NVARCHAR(100) NOT NULL,  -- was NVARCHAR(200)
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -447,24 +354,16 @@ WHERE LEN(Email) > 100  -- New limit
 
 ### Rename an Attribute
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change a column's name while preserving data | 3 | Declarative + Refactorlog | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change a column's name while preserving data | 3 | Declarative + Refactorlog |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
 |-----------|-------|-----------|
 | Data Involvement | Schema-only | Data untouched |
 | Reversibility | Symmetric | Rename back |
-| Dependency Scope | Inter-table to Cross-boundary | Views, procs, app code, reports, ETL |
+| Dependency Scope | Inter-table to Cross-boundary | App code, reports, ETL |
 | Application Impact | Breaking | All callers must update |
 
 **What you do:**
@@ -480,17 +379,13 @@ WHERE LEN(Email) > 100  -- New limit
 EXEC sp_rename 'dbo.Person.FirstName', 'GivenName', 'COLUMN'
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | 🔴 **The Naked Rename** | Without refactorlog, SSDT drops column and creates new one. Data loss. See [Anti-Pattern 19.1](#191-the-naked-rename). |
 | Dynamic SQL | Queries building column names as strings won't be caught. Search codebase. |
 | ORM mappings | Application ORMs may have column name assumptions. |
-| CDC | Capture instance references old column name. Must recreate. |
 
 **Related:**
 - Anti-pattern: [19.1 The Naked Rename](#191-the-naked-rename)
@@ -500,24 +395,16 @@ EXEC sp_rename 'dbo.Person.FirstName', 'GivenName', 'COLUMN'
 
 ### Delete an Attribute
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Remove a column and all its data permanently | 3-4 | Declarative (with deprecation workflow) | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Remove a column and all its data permanently | 3-4 | Declarative (with deprecation workflow) |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
 |-----------|-------|-----------|
 | Data Involvement | Data-destructive | Column values gone |
 | Reversibility | Lossy | Cannot recover without backup |
-| Dependency Scope | Inter-table to Cross-boundary | Views, procs, reports, ETL may reference |
+| Dependency Scope | Inter-table to Cross-boundary | Reports, ETL may reference |
 | Application Impact | Breaking | Anything referencing this column will fail |
 
 **What you do:**
@@ -541,17 +428,13 @@ FROM sys.dm_sql_referencing_entities('dbo.Customer', 'OBJECT')
 SELECT MAX(UpdatedAt) FROM dbo.Customer WHERE LegacyColumn IS NOT NULL
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | BlockOnPossibleDataLoss | If column has data, deployment halts. This is protection. |
 | Index dependencies | If column is in an index, drop index first (or SSDT will). |
 | Computed column dependencies | If column is referenced by computed column, drop that first. |
-| CDC | Even dropped columns affect capture instance. Must recreate. |
 
 **Related:**
 - Pattern: [17.5 Safe Column Removal (4-Phase)](#175-pattern-safe-column-removal-4-phase)

@@ -15,11 +15,12 @@ PRINT 'Creating new Policy table with IDENTITY...'
 -- Create new table structure
 CREATE TABLE dbo.Policy_New
 (
-    PolicyId INT IDENTITY(1,1) NOT NULL,
+    PolicyId INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT PK_Policy_New_PolicyId
+            PRIMARY KEY CLUSTERED,
     PolicyNumber NVARCHAR(50) NOT NULL,
     CustomerId INT NOT NULL,
     -- ... all other columns ...
-    CONSTRAINT PK_Policy_New PRIMARY KEY CLUSTERED (PolicyId)
 )
 
 -- Copy data with IDENTITY_INSERT

@@ -62,7 +62,7 @@ Application code transitions from querying `CustomerAddress` (with JOIN) to read
 
 - Big bang: Update all code at once (risky)
 - Gradual: Update code over multiple releases while both locations have data
-- Compatibility view: Create view named `CustomerAddress` that reads from `Customer` (see Pattern 17.8)
+- Compatibility shim: Keeping the old `CustomerAddress` name resolvable is out of scope for this project; for backward compatibility during the transition, apply the techniques in Pattern 17.8
 
 ---
 

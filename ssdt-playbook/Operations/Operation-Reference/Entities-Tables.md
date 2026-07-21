@@ -6,18 +6,9 @@
 
 ### Create a New Entity
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add a new table to the database | 1 | Pure Declarative | Enable separately if needed |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add a new table to the database | 1 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -36,16 +27,18 @@ Create a new `.sql` file in `/Tables/{schema}/`:
 
 CREATE TABLE [dbo].[CustomerPreference]
 (
-    [CustomerPreferenceId] INT IDENTITY(1,1) NOT NULL,
-    [CustomerId] INT NOT NULL,
+    [CustomerPreferenceId] INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_CustomerPreference_CustomerPreferenceId]
+            PRIMARY KEY CLUSTERED,
+    [CustomerId] INT NOT NULL
+        CONSTRAINT [FK_CustomerPreference_Customer_CustomerId]
+            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
     [PreferenceKey] NVARCHAR(100) NOT NULL,
     [PreferenceValue] NVARCHAR(500) NULL,
-    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_CustomerPreference_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-    [CreatedBy] NVARCHAR(128) NOT NULL CONSTRAINT [DF_CustomerPreference_CreatedBy] DEFAULT (SYSTEM_USER),
-    
-    CONSTRAINT [PK_CustomerPreference] PRIMARY KEY CLUSTERED ([CustomerPreferenceId]),
-    CONSTRAINT [FK_CustomerPreference_Customer] FOREIGN KEY ([CustomerId]) 
-        REFERENCES [dbo].[Customer]([CustomerId])
+    [CreatedAt] DATETIME2(7) NOT NULL
+        CONSTRAINT [DF_CustomerPreference_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+    [CreatedBy] NVARCHAR(128) NOT NULL
+        CONSTRAINT [DF_CustomerPreference_CreatedBy] DEFAULT (SYSTEM_USER)
 )
 ```
 
@@ -61,37 +54,23 @@ Verbatim — the table doesn't exist, so SSDT creates it.
 - Table appears in local database after publish
 - Constraints and FKs are in place
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | FK to non-existent table | If you reference a table not in your project, build fails. Add the parent table first, or add it to the same PR. |
 | Missing from project | If you create the file but don't add it to the project, it won't deploy. Verify in Solution Explorer. |
-| CDC enablement | New tables aren't CDC-enabled automatically. If this table needs audit tracking, add CDC enablement to post-deployment. |
 
 **Related:**
 - Template: [28.1 New Table Template](../../Reference/Templates/New-Table.md)
-- If CDC needed: [12. CDC and Schema Evolution](../../Foundations/CDC-and-Schema-Evolution.md)
 
 ---
 
 ### Rename an Entity
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change a table's name while preserving data | 3 | Declarative + Refactorlog | Instance recreation required |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change a table's name while preserving data | 3 | Declarative + Refactorlog |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -125,17 +104,13 @@ CREATE TABLE [dbo].[NewTableName] (...)
 - Schema Compare shows rename, not drop+create
 - Generated script uses `sp_rename`
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | 🔴 **The Naked Rename** | Editing the file directly without refactorlog causes data loss. See [Anti-Pattern 19.1](#191-the-naked-rename). |
 | Dynamic SQL | Any code that constructs table names as strings won't be caught by SSDT's analysis. Search codebase manually. |
 | External systems | ETL, reports, and other systems won't update automatically. Coordinate with stakeholders. |
-| CDC impact | Capture instance references old table name. Must recreate. |
 
 **Related:**
 - Anti-pattern: [19.1 The Naked Rename](#191-the-naked-rename)
@@ -146,25 +121,16 @@ CREATE TABLE [dbo].[NewTableName] (...)
 
 ### Delete an Entity
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Remove a table and all its data permanently | 4 | Declarative (guarded by BlockOnPossibleDataLoss) | Disable before drop |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Remove a table and all its data permanently | 4 | Declarative (guarded by BlockOnPossibleDataLoss) |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
 |-----------|-------|-----------|
 | Data Involvement | Data-destructive | All rows gone |
 | Reversibility | Lossy | Backup restore only path back |
-| Dependency Scope | Cross-boundary | FKs, views, procs, ETL, reports |
+| Dependency Scope | Cross-boundary | FKs, ETL, reports |
 | Application Impact | Breaking | Catastrophic if anything still references |
 
 **What you do:**
@@ -188,19 +154,13 @@ DROP TABLE [dbo].[TableName]
 - [ ] Text search across codebase for table name
 - [ ] ETL/reporting team confirms no dependencies
 - [ ] Backup verified and restoration tested
-- [ ] CDC disabled on table (if enabled)
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | Foreign keys | If other tables have FKs pointing to this table, drop will fail. Drop those FKs first. |
 | DropObjectsNotInSource=False | In production, this setting is usually False. You'll need explicit pre-deployment script to drop. |
-| CDC | Disable CDC before dropping table, otherwise CDC objects become orphaned. |
-| Views/Procs | Dependent objects will break. SSDT build should catch these if they're in the project. |
 
 **Related:**
 - Pattern: [17.5 Safe Column Removal (4-Phase)](#175-pattern-safe-column-removal-4-phase) — same workflow applies to tables
@@ -209,18 +169,9 @@ DROP TABLE [dbo].[TableName]
 
 ### Archive an Entity
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Move old data to archive while preserving it | 3-4 | Multi-Phase | Affects both source and destination |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Move old data to archive while preserving it | 3-4 | Multi-Phase |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -261,16 +212,12 @@ UNION ALL
 SELECT 'Archive', COUNT(*) FROM archive.Order_Pre2024
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | Transaction log | Large data movements bloat the log. Batch operations. |
 | FKs | Child records must be archived first, or FKs disabled. |
 | Cross-database | If archiving to different database, no FK enforcement. Consider different backup/retention policies. |
-| CDC | Both tables may need CDC consideration. Archive table typically doesn't need CDC. |
 
 ---
