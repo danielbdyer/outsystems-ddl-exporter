@@ -104,7 +104,7 @@ module ConstraintFormatter =
               TransformSite.operatorIntent "tableLevelCheck" Emission
                 "Split table-level `CONSTRAINT [CK_*] CHECK (expr)` into 2-line shape (constraint name / CHECK body at +4). V2 emits `Kind.ColumnChecks` at the table-constraint section. Operator emission-axis intent."
               TransformSite.operatorIntent "extendedPropertyExecWrap" Emission
-                "Wrap `EXEC sys.sp_addextendedproperty` calls at @level0type / @level1type / @level2type boundaries with 4-space continuation indent. Mirrors V1's MS_Description emission shape. Operator emission-axis intent." ]
+                "Reshape `EXECUTE [sys].[sp_addextendedproperty]` into the house style: the EXECUTE on its own line, @name / @value each on a 4-space continuation line, each @levelNtype/@levelNname pair on one line, trailing semicolon. Stable across schema/table/column/index targets. Operator emission-axis intent." ]
 
     // LF, not Environment.NewLine: this formatter reshapes ScriptDom's
     // CREATE TABLE constraint lines into the emitted SSDT artifact, so
@@ -297,50 +297,57 @@ module ConstraintFormatter =
             true
 
     // ---------------------------------------------------------------
-    // EXECUTE sys.sp_addextendedproperty multi-line formatting:
-    // wrap each @level-pair onto its own continuation line.
+    // EXECUTE [sys].[sp_addextendedproperty] house-style multi-line
+    // formatting (DECISIONS 2026-07-21). The typed ScriptDom builder
+    // owns the call; this post-format owns the polished layout:
+    //   * `EXECUTE [sys].[sp_addextendedproperty]` alone on the first line;
+    //   * `@name` and `@value` each on their own continuation line;
+    //   * each `@levelNtype = …, @levelNname = …` pair on one line;
+    //   * a trailing semicolon on the final line.
     //
     // Input:  `EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Customer', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'Customer'`
-    // Output: `EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Customer',\n`
+    // Output: `EXECUTE [sys].[sp_addextendedproperty]\n`
+    //         `    @name = N'V2.LogicalName',\n`
+    //         `    @value = N'Customer',\n`
     //         `    @level0type = N'SCHEMA', @level0name = N'dbo',\n`
-    //         `    @level1type = N'TABLE', @level1name = N'Customer'\n`
+    //         `    @level1type = N'TABLE', @level1name = N'Customer';\n`
     //
-    // Slice D.2.b — mirrors V1's emission shape for sp_addextendedproperty
-    // (reference: tests/Fixtures/emission/edge-case/Modules/AppCore/
-    // dbo.Customer.sql lines 34-43). Splits at the boundary BEFORE
-    // each `@levelNtype` token (where N ∈ {0, 1, 2}); pass-through
-    // for EXEC lines without level pairs.
+    // The parameter markers partition the line. @name / @value take their
+    // own lines; each present @levelNtype (N ∈ {0,1,2}) carries its level
+    // pair — so a schema / table / column / index target wraps stably with
+    // whatever subset of levels it uses. The segments already carry their
+    // inter-parameter commas from the inline form; only the final segment
+    // gains the semicolon. Pass-through for a call with no `@name` marker.
     // ---------------------------------------------------------------
     let private formatExtendedPropertyExec
         (sb: StringBuilder)
         (line: string)
         : bool =
-        let level0Idx = line.IndexOf(" @level0type", StringComparison.OrdinalIgnoreCase)
-        if level0Idx < 0 then
-            false
-        else
-            let level1Idx = line.IndexOf(" @level1type", StringComparison.OrdinalIgnoreCase)
-            let level2Idx = line.IndexOf(" @level2type", StringComparison.OrdinalIgnoreCase)
+        let markers =
+            [ " @name"; " @value"; " @level0type"; " @level1type"; " @level2type" ]
+            |> List.choose (fun m ->
+                let i = line.IndexOf(m, StringComparison.OrdinalIgnoreCase)
+                if i >= 0 then Some i else None)
+            |> List.sort
+        match markers with
+        | [] -> false
+        | firstMarker :: _ ->
             let continuationIndent = "    "  // LINT-ALLOW: V1 4-space convention
-            // Segment 1: head (everything before @level0type).
-            let head = line.Substring(0, level0Idx).TrimEnd()
+            // Head: `EXECUTE [sys].[sp_addextendedproperty]` — everything
+            // before the first parameter marker.
+            let head = line.Substring(0, firstMarker).TrimEnd()
             sb.Append(head).Append(newLine) |> ignore
-            // Segment 2: @level0type ... @level0name pair, ending at @level1type or @level2type or end-of-line.
-            let level0End =
-                if level1Idx > 0 then level1Idx
-                elif level2Idx > 0 then level2Idx
-                else line.Length
-            let level0Segment = line.Substring(level0Idx + 1, level0End - level0Idx - 1).TrimEnd()
-            sb.Append(continuationIndent).Append(level0Segment).Append(newLine) |> ignore
-            // Segment 3 (optional): @level1type ... @level1name pair, ending at @level2type or end-of-line.
-            if level1Idx > 0 then
-                let level1End = if level2Idx > 0 then level2Idx else line.Length
-                let level1Segment = line.Substring(level1Idx + 1, level1End - level1Idx - 1).TrimEnd()
-                sb.Append(continuationIndent).Append(level1Segment).Append(newLine) |> ignore
-            // Segment 4 (optional): @level2type ... @level2name pair.
-            if level2Idx > 0 then
-                let level2Segment = line.Substring(level2Idx + 1).TrimEnd()
-                sb.Append(continuationIndent).Append(level2Segment).Append(newLine) |> ignore
+            // Each marker's segment runs to the next marker (or end of
+            // line); the final segment closes with the semicolon.
+            let markerArr = List.toArray markers
+            let lastIdx = markerArr.Length - 1
+            markerArr
+            |> Array.iteri (fun i start ->
+                let stop = if i < lastIdx then markerArr.[i + 1] else line.Length
+                let segment = line.Substring(start + 1, stop - start - 1).TrimEnd()
+                sb.Append(continuationIndent).Append(segment) |> ignore
+                if i = lastIdx then sb.Append(";") |> ignore
+                sb.Append(newLine) |> ignore)
             true
 
     // -----------------------------------------------------------------

@@ -30222,3 +30222,41 @@ never silent" discipline; also in `THE_FIDELITY_PROOFS.md` §4 and the `BACKLOG`
 manifest (surrogate-excluded, for sink-minting targets); offline per-row naming (embed
 `GoldenDataset` rows so a reconcile names the cell, not just the kind); non-OSSYS source estates
 (the three de-OSSYS gating seams become archetype/config-gated).
+
+## 2026-07-21 — Extended-property emission gets a polished house style (typed ScriptDom builder kept; post-format reshaped) — golden re-record
+
+**Context (V1↔V2 emission-parity review).** The audit (`AUDIT_2026_07_17_V1_V2_PARITY.md`
+§4) named the extended-property style as one of the genuine aesthetic deltas: V2 emitted the
+whole `EXECUTE [sys].[sp_addextendedproperty]` call with `@name`/`@value` riding the EXECUTE
+line and no trailing `;`. The operator's call: **keep** V2's typed-AST builder
+(`ScriptDomBuild.buildSetExtendedProperty`) — do NOT revert to V1's hand-built
+`EXEC sys.sp_addextendedproperty` text — but give the post-format a deliberate house style.
+
+**The decision.** `ConstraintFormatter.formatExtendedPropertyExec` (the text post-processor at
+the `Render.toText` boundary, already the owner of V1's elegant constraint ladder) now reshapes
+the ScriptDom-emitted single line into:
+
+```
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'…',
+    @value = N'…',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE',  @level1name = N'…'[,
+    @level2type = N'COLUMN'|N'INDEX', @level2name = N'…'];
+```
+
+— the `EXECUTE` alone on the first line; `@name` and `@value` each on their own 4-space
+continuation line; each `@levelNtype`/`@levelNname` pair on one line; a trailing semicolon on
+the final line. The parameter markers partition the line, so a schema / table / column / index
+target wraps stably with whatever subset of levels it carries (the wrapping is level-count-driven,
+not target-shape-special-cased). The typed builder still owns the SQL surface; this owns only the
+layout. The `@name`/`@value` split is the one behavioral delta versus the prior post-format (which
+left them inline); the level-pair wrapping and 4-space indent are unchanged in spirit.
+
+**Golden re-record (blessing protocol, THE_GOLDEN_EMISSION.md §2).** 18 files under
+`tests/Projection.Tests/Golden/{master,pruned-platform-auto}/` re-recorded via `GOLDEN_RECORD=1`
+— the only change is the extended-property block layout above; no schema-object bytes moved. The
+inline extended-property unit assertions (`SsdtExtendedPropertyEmissionTests`,
+`ModuleExtendedPropertyEmissionTests`, `LogicalNameRoundtripTests`) are fragment-level
+`Contains`/`Matches` on `@name = …` / `@value = …` / `@levelNtype = …`, all of which survive the
+reshaping (the fragments just move onto their own lines), so they stay green unchanged.
