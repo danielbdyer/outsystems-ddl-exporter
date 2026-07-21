@@ -262,30 +262,50 @@ module SqlLiteral =
         && trimmed.Substring(0, trimmed.Length - 2)
            |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_' || c = '$')
 
+    /// Unwrap a quoted authored text form: strip the outer `quote` chars
+    /// and undo that quote's doubled-escape (`''`→`'` for the SQL
+    /// single-quote form; `""`→`"` for the OutSystems double-quote
+    /// expression form). Precondition: `trimmed` is `quote`-delimited and
+    /// at least two chars long (the caller's `isQuotedWith` guard).
+    let private unwrapAuthoredQuoted (quote: char) (trimmed: string) : string =
+        let q = System.String(quote, 1)
+        trimmed.Substring(1, trimmed.Length - 2).Replace(q + q, q)
+
     /// Classify an AUTHORED default (`ossys_Entity_Attr.Default_Value` /
     /// the JSON `default` field) into its typed literal (DECISIONS
     /// 2026-07-18; the #669 M-1 finding). The authored channel carries
-    /// three shapes the value lift (`ofRaw`) cannot discriminate:
+    /// shapes the value lift (`ofRaw`) cannot discriminate:
     ///   - a niladic function call (`getutcdate()`) — an EXPRESSION;
     ///     lifted as a value it rendered `CAST('getutcdate()' …)`, which
     ///     deployed and then failed at first insert;
-    ///   - a SQL-quoted text form (`''`, `'Draft'`) — the VALUE inside
-    ///     the quotes; lifted verbatim the quotes doubled (`N''''''`);
+    ///   - a SQL single-quoted text form (`''`, `'Draft'`) — the VALUE
+    ///     inside the quotes; lifted verbatim the quotes doubled (`N''''''`);
+    ///   - an OutSystems double-quoted text form (`"outsystems"`, `"*"`) —
+    ///     Service Studio's expression-language string literal; the VALUE
+    ///     inside the quotes. Lifted verbatim the double quotes survived
+    ///     into the literal (`N'"outsystems"'`) instead of V1's `N'outsystems'`.
     ///   - the bare value forms `ofRaw` already carries faithfully.
     /// An absent or whitespace-only raw carries nothing — a nullable
     /// column's implicit NULL is normal SQL behavior, not a configured
     /// default.
     let ofAuthoredDefault (typ: PrimitiveType) (raw: string) : SqlLiteral option =
         let trimmed = raw.Trim()
+        // A `quote`-delimited Text form of at least two chars — the shared
+        // guard for both the SQL single-quote and OutSystems double-quote
+        // authored string shapes. Char-indexed (ordinal), so a stray
+        // culture-sensitive `StartsWith` cannot misjudge the delimiter.
+        let isQuotedWith (quote: char) : bool =
+            typ = Text
+            && trimmed.Length >= 2
+            && trimmed.[0] = quote
+            && trimmed.[trimmed.Length - 1] = quote
         if trimmed = "" then None
         elif isNiladicCall trimmed then Some (ExpressionLit trimmed)
-        elif typ = Text
-             && trimmed.Length >= 2
-             && trimmed.StartsWith "'" && trimmed.EndsWith "'" then
-            // The SQL-quoted authored form: unwrap the outer quotes and
-            // undo the standard single-quote doubling. `''` is the
-            // authored EMPTY STRING (`DEFAULT N''`), the estate's most
-            // common authored default.
-            let inner = trimmed.Substring(1, trimmed.Length - 2).Replace("''", "'")
-            Some (TextLit inner)
+        // The SQL single-quoted authored form: `''` is the authored EMPTY
+        // STRING (`DEFAULT N''`), the estate's most common authored default.
+        elif isQuotedWith '\'' then Some (TextLit (unwrapAuthoredQuoted '\'' trimmed))
+        // The OutSystems double-quoted expression form: authored text
+        // defaults (`"outsystems"`, `"*"`) are Service Studio string
+        // literals — the value lives inside the quotes, not the quotes.
+        elif isQuotedWith '"' then Some (TextLit (unwrapAuthoredQuoted '"' trimmed))
         else Some (ofRaw typ (Some raw))
