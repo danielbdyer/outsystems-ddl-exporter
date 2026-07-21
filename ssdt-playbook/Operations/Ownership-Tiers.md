@@ -34,7 +34,6 @@ The tier system distributes risk appropriately: simple changes move fast; comple
 - Add a nullable column
 - Add a default constraint
 - Add an index to a small table
-- Create a view
 - NOT NULL → NULL
 
 **Review focus:**
@@ -70,7 +69,6 @@ The tier system distributes risk appropriately: simple changes move fast; comple
 - Everything from Tier 1
 - Data validation queries appropriate?
 - Pre/post scripts idempotent?
-- CDC impact correctly identified?
 - Rollback plan viable?
 
 ---
@@ -95,7 +93,6 @@ The tier system distributes risk appropriately: simple changes move fast; comple
 - Add FK with orphan data handling
 - Drop column (with deprecation workflow)
 - Structural refactoring (split, merge, move)
-- Any CDC-enabled table schema change
 
 **Review focus:**
 - Everything from Tier 2
@@ -160,7 +157,6 @@ Even if dimensions suggest a lower tier, these factors push you up:
 
 | Trigger | Effect |
 |---------|--------|
-| CDC-enabled table | +1 tier minimum |
 | Large table (>1M rows) | +1 tier for operations that touch data |
 | Production-critical timing | +1 tier |
 | First time doing this operation type | +1 tier or explicit pairing |
@@ -176,16 +172,6 @@ In your PR, state:
 ---
 
 ## Escalation Triggers: Detailed
-
-### CDC-Enabled Table (+1 Tier)
-
-Any schema change on a CDC-enabled table affects capture instances. Even "simple" changes require CDC awareness.
-
-**Why:** CDC powers Change History. Mistakes create audit gaps or stale instances.
-
-**Effect:** What would be Tier 1 becomes Tier 2. What would be Tier 2 becomes Tier 3.
-
-**Exception:** If the column being added doesn't need to be tracked, and you're only accepting a gap in dev/test, you might stay at the base tier — but document this explicitly.
 
 ### Large Table (+1 Tier for Data Operations)
 
@@ -215,7 +201,7 @@ If the change is being made during a sensitive period:
 
 If you've never done this type of operation before, even if the playbook says it's Tier 1:
 
-**Why:** Reading about something isn't the same as doing it. Your first rename, your first CDC change, your first FK addition — get support.
+**Why:** Reading about something isn't the same as doing it. Your first rename, your first FK addition — get support.
 
 **Effect:** Either bump your tier up, or do the change with explicit pairing from someone who's done it before.
 
@@ -251,9 +237,9 @@ Progression isn't about doing higher-tier work faster. It's about developing jud
 
 **Pattern:** "It's just adding a column" → marks Tier 1
 
-**Reality:** The column is NOT NULL without a default, the table is CDC-enabled, and there's a FK to it from another table.
+**Reality:** The column is NOT NULL without a default, and there's a FK to it from another table.
 
-**Actual tier:** Tier 3 (CDC + FK dependency)
+**Actual tier:** Tier 3 (FK dependency)
 
 **Prevention:** Walk through all four dimensions explicitly. Check escalation triggers.
 
@@ -294,24 +280,6 @@ Progression isn't about doing higher-tier work faster. It's about developing jud
 **Final tier:** Tier 2
 
 **Why:** The index build will take time and may block. Need to plan for maintenance window or use online operations.
-
----
-
-### Example: Add Column to CDC-Enabled Table
-
-**Dimensions:**
-- Data Involvement: Schema-only (nullable column, existing rows get NULL)
-- Reversibility: Symmetric (remove the column)
-- Dependency Scope: Self-contained (new column)
-- Application Impact: Additive (existing code works)
-
-**Base tier:** Tier 1
-
-**Triggers:** CDC-enabled (+1)
-
-**Final tier:** Tier 2
-
-**Why:** Need to decide on capture instance handling. Even though the column add is simple, CDC creates complexity.
 
 ---
 
