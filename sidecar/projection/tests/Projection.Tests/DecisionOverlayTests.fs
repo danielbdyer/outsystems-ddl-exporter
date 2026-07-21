@@ -112,18 +112,23 @@ let ``DecisionOverlay: EnforceUnique outcomes populate EnforceUnique; DoNotEnfor
 let ``DecisionOverlay: FK outcomes partition across DropFk / NoCheckFk, EnforceConstraint(clean) in neither`` () =
     let dropped = key "FK_dropped"
     let noCheck = key "FK_nocheck"
+    let noCheckNoEvidence = key "FK_nocheck_noevidence"
     let clean = key "FK_clean"
     let state =
         stateWith
             [] []
             [ fkDecision dropped (ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.EvidenceMissing)
               fkDecision noCheck (ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck 7L))
+              fkDecision noCheckNoEvidence (ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence)
               fkDecision clean (ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle 100L)) ]
     let overlay = DecisionOverlay.ofComposeState state
     Assert.True(overlay.DropFk.Contains dropped)
     Assert.False(overlay.NoCheckFk.Contains dropped)
     Assert.True(overlay.NoCheckFk.Contains noCheck)
     Assert.False(overlay.DropFk.Contains noCheck)
+    // NoCheckWithoutEvidence also lands in NoCheckFk (emitted WITH NOCHECK).
+    Assert.True(overlay.NoCheckFk.Contains noCheckNoEvidence)
+    Assert.False(overlay.DropFk.Contains noCheckNoEvidence)
     Assert.False(overlay.DropFk.Contains clean)
     Assert.False(overlay.NoCheckFk.Contains clean)
 

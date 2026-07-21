@@ -30222,3 +30222,122 @@ never silent" discipline; also in `THE_FIDELITY_PROOFS.md` §4 and the `BACKLOG`
 manifest (surrogate-excluded, for sink-minting targets); offline per-row naming (embed
 `GoldenDataset` rows so a reconcile names the cell, not just the kind); non-OSSYS source estates
 (the three de-OSSYS gating seams become archetype/config-gated).
+
+## 2026-07-21 — Extended-property emission gets a polished house style (typed ScriptDom builder kept; post-format reshaped) — golden re-record
+
+**Context (V1↔V2 emission-parity review).** The audit (`AUDIT_2026_07_17_V1_V2_PARITY.md`
+§4) named the extended-property style as one of the genuine aesthetic deltas: V2 emitted the
+whole `EXECUTE [sys].[sp_addextendedproperty]` call with `@name`/`@value` riding the EXECUTE
+line and no trailing `;`. The operator's call: **keep** V2's typed-AST builder
+(`ScriptDomBuild.buildSetExtendedProperty`) — do NOT revert to V1's hand-built
+`EXEC sys.sp_addextendedproperty` text — but give the post-format a deliberate house style.
+
+**The decision.** `ConstraintFormatter.formatExtendedPropertyExec` (the text post-processor at
+the `Render.toText` boundary, already the owner of V1's elegant constraint ladder) now reshapes
+the ScriptDom-emitted single line into:
+
+```
+EXECUTE [sys].[sp_addextendedproperty]
+    @name = N'…',
+    @value = N'…',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE',  @level1name = N'…'[,
+    @level2type = N'COLUMN'|N'INDEX', @level2name = N'…'];
+```
+
+— the `EXECUTE` alone on the first line; `@name` and `@value` each on their own 4-space
+continuation line; each `@levelNtype`/`@levelNname` pair on one line; a trailing semicolon on
+the final line. The parameter markers partition the line, so a schema / table / column / index
+target wraps stably with whatever subset of levels it carries (the wrapping is level-count-driven,
+not target-shape-special-cased). The typed builder still owns the SQL surface; this owns only the
+layout. The `@name`/`@value` split is the one behavioral delta versus the prior post-format (which
+left them inline); the level-pair wrapping and 4-space indent are unchanged in spirit.
+
+**Golden re-record (blessing protocol, THE_GOLDEN_EMISSION.md §2).** 18 files under
+`tests/Projection.Tests/Golden/{master,pruned-platform-auto}/` re-recorded via `GOLDEN_RECORD=1`
+— the only change is the extended-property block layout above; no schema-object bytes moved. The
+inline extended-property unit assertions (`SsdtExtendedPropertyEmissionTests`,
+`ModuleExtendedPropertyEmissionTests`, `LogicalNameRoundtripTests`) are fragment-level
+`Contains`/`Matches` on `@name = …` / `@value = …` / `@levelNtype = …`, all of which survive the
+reshaping (the fragments just move onto their own lines), so they stay green unchanged.
+
+## 2026-07-21 — Attribute emission order: the PK-first reorder is retired for V1 authored-order parity (CanonicalizeIdentity v3); index / extended-property display order follows the emitted name — golden re-record
+
+**Context (V1↔V2 emission-parity review).** V1 orders emitted attributes by authored
+`Order_Num`, then `AttrId` — never PK-first. V2 had layered a PK-first rank on top (attributes
+sorted PK-first, then authored order, then SsKey), both in `CanonicalizeIdentity` (the single
+emission-ordering site) and in the extraction SQL's ORDER BY. The two diverged on any table whose
+PK is not its lowest-authored-order attribute.
+
+**The decision (Fix 2 — attribute order).** Retire the PK-first rank.
+`CanonicalizeIdentity.attributeSortKey` is now `(authored-order rank, SsKey)` (pass `version`
+2 → 3), and the extraction SQL's two attribute `ORDER BY` clauses drop the
+`CASE WHEN IsIdentifier … THEN 0 …` PK-first key and tiebreak on `AttrId` (matching V1).
+`Order_Num` is already COALESCEd to the creation `Id` at `#Attr` population, so it is non-null; a
+hand-built catalog (every `Order = None`) falls to the SsKey tiebreak, so determinism (T1) still
+holds for every source. Nothing structural depended on PK columns leading — the emitted PK
+constraint names its key columns regardless of their position in the CREATE TABLE body. On a real
+OSSYS estate the identifier's `Order_Num = 1` keeps it first on its own authored merit.
+
+**The decision (Fix 5 — index / extended-property display order).** Emitted non-PK indexes, their
+`ALTER INDEX … DISABLE` statements, and their extended-property owners now sort by the EMITTED
+index name (case-insensitive, SsKey tiebreak) rather than by SsKey, for V1 display-order parity
+(V1 orders emitted index-name lists case-insensitively). The collision-dedup ordinal in
+`IndexNaming.emittedNames` stays SsKey-based, so only the display order changes. Column extended
+properties already followed column order (the `for attr in k.Attributes` loop), so they inherit
+the Fix-2 authored order for free.
+
+**V2 extraction SQL is now independently maintained.** V2's `outsystems_metadata_rowsets.sql`
+(the ordering change above, plus the earlier PERSISTED carriage) no longer tracks V1's
+`src/AdvancedSql/` copy; the V1-comparison fork / line-count tests in `MetadataExtractionSqlTests`
+are retired.
+
+**Golden re-record (blessing protocol).** 10 files under `tests/Projection.Tests/Golden/`
+re-recorded via `GOLDEN_RECORD=1` — a pure reordering (201 insertions / 201 deletions; no
+schema-object bytes added or removed). The `CanonicalizeIdentityTests` ordering-contract tests
+were rewritten to the new (authored-order, SsKey) contract, including a witness that a PK with a
+non-minimal SsKey no longer floats to the front.
+
+## 2026-07-21 — FK tightening: missing/unreliable evidence under `AllowNoCheckCreation` creates the FK WITH NOCHECK rather than dropping it
+
+**Context (V1↔V2 emission-parity review).** A cluster of resolvable **logical** FKs (references
+whose target kind is present in the catalog, but with no source-backed DB constraint —
+`hasDbConstraint = false`) were being dropped by V2. With an FK tightening intervention registered
+(`EvidenceDriven`), a reference with no reliable orphan probe fell to
+`DoNotEnforce(EvidenceMissing) → DropFk`, so the FK never reached the emitted DDL. The root
+asymmetry: with **no** intervention every deployable reference emits (empty overlay ⇒ empty
+`DropFk`), but registering an `EvidenceDriven` intervention could only ever *remove* FKs relative
+to that baseline — a resolvable logical FK with no profile evidence silently disappeared.
+
+**The decision.** When no reliable orphan evidence exists (no probe ran, or the probe outcome is
+`FallbackTimeout`/`Cancelled`/`AmbiguousMapping`) and the operator has opted into
+`AllowNoCheckCreation = true` (with `EnableCreation = true`), `ForeignKeyRules.evaluate` now
+decides `EnforceConstraint(NoCheckWithoutEvidence)` instead of `DoNotEnforce(EvidenceMissing)`.
+The FK is emitted `WITH NOCHECK` via the existing two-step untrusted-alter path
+(`DecisionOverlay.NoCheckFk` → `SsdtDdlEmitter.untrustedFkAltersUsing`): new rows are enforced,
+existing rows are not validated. Without the `AllowNoCheckCreation` opt-in, V2's collapsed-mode
+strict default is unchanged (`EvidenceMissing` ⇒ dropped). The structural **cross-schema gate
+still applies** on this path — the opt-in accepts *unverified* FKs, not *cross-schema* ones.
+
+**Why NOCHECK, not trusted.** With no evidence we cannot know whether existing rows have orphans;
+a trusted (`WITH CHECK`) constraint would validate at deploy and fail if any orphan exists. NOCHECK
+enforces new rows and defers the existing-row check — the honest, deployable choice under an
+explicit opt-in.
+
+**Honesty surface (downgrades-never-silent).** A dedicated evidence variant
+`ForeignKeyEvidence.NoCheckWithoutEvidence` (not `ScriptWithNoCheck 0L`, which would falsely claim
+zero observed orphans) carries the fact, and `ForeignKeyPass` emits a named
+`tightening.foreignKey.noCheckWithoutEvidence` Warning per such creation, so the export report
+carries the accepted divergence rather than a silent constraint. `ForeignKeyPass.version` bumps
+3 → 4.
+
+**Estate pre-check (interaction with the composite-PK FK blocker, audit B-3/EF-17).** Enabling
+these FKs surfaces any whose target has a **composite** primary key: V2's `Reference` IR is a
+single `sourceAttribute → targetKind` with no referenced-column list, so a multi-leg FK is
+truncated to one leg and the DDL fails to deploy (`Msg 1776`). Inventory composite-PK FK targets
+before turning `AllowNoCheckCreation` on for a real estate; that blocker is tracked separately.
+
+**Unaffected.** The golden corpus uses `allowNoCheckCreation = false`
+(`GoldenEmissionTests.ejectFkIntervention`), so this change is byte-invisible to the goldens; the
+source-backed carve-out (`DatabaseConstraintPresent`), the orphan-observed `ScriptWithNoCheck`
+path, and the relaxation-only/override directions are all untouched.

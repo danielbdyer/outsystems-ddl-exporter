@@ -840,12 +840,14 @@ SELECT
     LEFT JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
     LEFT JOIN #AttrCheckJson chk ON chk.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
-    -- WP8 / NM-72 — emission column order: PK first, then the authored
-    -- Service-Studio `Order_Num` ascending, then `AttrName` as the
-    -- stable tiebreak (deterministic when two attributes share an order).
-    ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
-             a.OrderNum,
-             a.AttrName
+    -- WP8 / NM-72 — emission column order: the authored Service-Studio
+    -- `Order_Num` ascending (already COALESCEd to the creation `Id` at
+    -- #Attr population, so non-null), then `AttrId` as the stable
+    -- tiebreak. The PK-first reorder was retired 2026-07-21 for V1
+    -- authored-order parity (V1 orders by Order_Num, AttrId — never
+    -- PK-first).
+    ORDER BY a.OrderNum,
+             a.AttrId
     FOR JSON PATH
   ), '[]') AS AttributesJson
 INTO #AttrJson
@@ -1068,14 +1070,15 @@ SELECT
   -- reads it at ordinal 23 into `OssysAttributeRow.Order`.
   a.OrderNum
 FROM #Attr AS a
--- WP8 / NM-72 — PK first, then authored `OrderNum`, then `AttrName` as
--- the stable tiebreak (CanonicalizeIdentity re-derives the canonical
--- order downstream; this keeps the snapshot rowset itself deterministic
--- and authored-ordered).
+-- WP8 / NM-72 — authored `OrderNum` ascending (COALESCEd to the creation
+-- `Id` at #Attr population, so non-null), then `AttrId` as the stable
+-- tiebreak. The PK-first reorder was retired 2026-07-21 for V1
+-- authored-order parity; CanonicalizeIdentity re-derives the canonical
+-- order downstream, this keeps the snapshot rowset itself deterministic
+-- and authored-ordered.
 ORDER BY a.EntityId,
-         CASE WHEN ISNULL(a.IsIdentifier, 0) = 1 THEN 0 ELSE 1 END,
          a.OrderNum,
-         a.AttrName;
+         a.AttrId;
 
 SELECT
   rr.AttrId,

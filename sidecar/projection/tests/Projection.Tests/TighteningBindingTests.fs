@@ -186,6 +186,33 @@ let ``A6 amendment: a budget-less nullability entry binds RELAXATION-ONLY with i
     | Error es -> failwithf "expected Ok, got %A" es
 
 [<Fact>]
+let ``A6 amendment: a nullability entry naming BOTH a budget and a keepNullable override binds relaxation-only with the override resolved (2026-07-21)`` () =
+    // The budget-alongside-overrides fix: previously an entry carrying a
+    // nullBudget was dropped WHOLESALE, so a keepNullable override sitting
+    // beside it was expressible-but-inert (the A44 gap). Now the coercion
+    // alone is dropped; the entry binds RelaxationOnly and its override
+    // reaches emission. Only a PURE-coercion entry (budget, no overrides)
+    // still filters out.
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "budget-and-override" with
+            NullBudget = Some 0.05m
+            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable" } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Ok policy ->
+        match policy.Interventions with
+        | [ TighteningIntervention.Nullability (id, config) ] ->
+            Assert.Equal("budget-and-override", id)
+            Assert.Equal(TighteningDirection.RelaxationOnly, config.Direction)
+            match config.Overrides with
+            | [ o ] ->
+                Assert.Equal(OverrideAction.KeepNullable, o.Action)
+                Assert.True(NullabilityTighteningConfig.shouldKeepNullable o.AttributeKey config)
+            | other -> failwithf "expected the override to bind despite the budget, got %A" other
+        | other -> failwithf "expected one relaxation-only Nullability intervention, got %A" other
+    | Error es -> failwithf "expected Ok, got %A" es
+
+[<Fact>]
 let ``A6 amendment: the physical Schema.Table.Column form resolves a keepNullable override too`` () =
     let catalog = loadCatalog ()
     let entry =

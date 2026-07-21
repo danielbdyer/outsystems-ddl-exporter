@@ -254,11 +254,14 @@ let ``cross-schema: comparison is case-insensitive`` () =
         decision.Outcome)
 
 // ---------------------------------------------------------------------------
-// EvidenceMissing — probe not reliable / missing entirely.
+// Missing / unreliable evidence — no reliable orphan probe. Under
+// AllowNoCheckCreation=false, V2's strict default declines (EvidenceMissing);
+// under AllowNoCheckCreation=true, the resolvable logical FK is created WITH
+// NOCHECK (NoCheckWithoutEvidence) rather than dropped (DECISIONS 2026-07-21).
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``evidence missing: probe outcome FallbackTimeout ⇒ DoNotEnforce(EvidenceMissing)`` () =
+let ``evidence missing: unreliable probe + AllowNoCheckCreation=false ⇒ DoNotEnforce(EvidenceMissing)`` () =
     let cfg = mkConfig true true false
     let profile =
         { Profile.empty with
@@ -269,7 +272,7 @@ let ``evidence missing: probe outcome FallbackTimeout ⇒ DoNotEnforce(EvidenceM
         decision.Outcome)
 
 [<Fact>]
-let ``evidence missing: no FK reality at all ⇒ DoNotEnforce(EvidenceMissing)`` () =
+let ``evidence missing: no FK reality + AllowNoCheckCreation=false ⇒ DoNotEnforce(EvidenceMissing)`` () =
     let cfg = mkConfig true true false
     let decision = decide cfg sampleCatalog order orderRef Profile.empty
     Assert.Equal(
@@ -277,25 +280,52 @@ let ``evidence missing: no FK reality at all ⇒ DoNotEnforce(EvidenceMissing)``
         decision.Outcome)
 
 [<Fact>]
-let ``evidence missing: Cancelled probe outcome ⇒ DoNotEnforce(EvidenceMissing)`` () =
+let ``no-check without evidence: no FK reality + AllowNoCheckCreation=true ⇒ EnforceConstraint(NoCheckWithoutEvidence)`` () =
+    // The "21 missing FKs" case: a resolvable logical reference with no
+    // probe at all is created WITH NOCHECK under the operator's opt-in,
+    // rather than dropped.
+    let cfg = mkConfig true true true
+    let decision = decide cfg sampleCatalog order orderRef Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence,
+        decision.Outcome)
+
+[<Fact>]
+let ``no-check without evidence: Cancelled probe + AllowNoCheckCreation=true ⇒ EnforceConstraint(NoCheckWithoutEvidence)`` () =
     let cfg = mkConfig true true true
     let profile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey false 0L Cancelled ] }
     let decision = decide cfg sampleCatalog order orderRef profile
     Assert.Equal(
-        ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.EvidenceMissing,
+        ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence,
         decision.Outcome)
 
 [<Fact>]
-let ``evidence missing: AmbiguousMapping probe outcome ⇒ DoNotEnforce(EvidenceMissing)`` () =
+let ``no-check without evidence: AmbiguousMapping probe + AllowNoCheckCreation=true ⇒ EnforceConstraint(NoCheckWithoutEvidence)`` () =
     let cfg = mkConfig true true true
     let profile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey false 0L AmbiguousMapping ] }
     let decision = decide cfg sampleCatalog order orderRef profile
     Assert.Equal(
-        ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.EvidenceMissing,
+        ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence,
+        decision.Outcome)
+
+[<Fact>]
+let ``no-check without evidence: the cross-schema gate still blocks (missing evidence + AllowNoCheckCreation=true + AllowCrossSchema=false)`` () =
+    // The missing-evidence NOCHECK path honors the structural cross-schema
+    // gate exactly as the clean path does — the opt-in does not bypass it.
+    let altCustomer =
+        { customer with
+            Physical = mkTableId "alt" (TableId.tableText customer.Physical) }
+    let altModule =
+        { salesModule with Kinds = [ altCustomer; order; country ] }
+    let altCatalog : Catalog = IRBuilders.mkCatalog [ altModule ]
+    let cfg = mkConfig true false true    // enableCreation; allowCrossSchema=false; allowNoCheck=true
+    let decision = decide cfg altCatalog order orderRef Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked,
         decision.Outcome)
 
 // ---------------------------------------------------------------------------
@@ -339,7 +369,7 @@ let ``enforces: true for EnforceConstraint, false for DoNotEnforce`` () =
     Assert.True (ForeignKeyRules.enforces allowed)
 
 [<Fact>]
-let ``scriptsWithNoCheck: true only for the ScriptWithNoCheck evidence variant`` () =
+let ``scriptsWithNoCheck: true for both NOCHECK evidence variants, false otherwise`` () =
     let cfg = mkConfig true true true
     let orphanProfile =
         { Profile.empty with
@@ -347,9 +377,11 @@ let ``scriptsWithNoCheck: true only for the ScriptWithNoCheck evidence variant``
     let cleanProfile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey false 0L Succeeded ] }
-    let withNoCheck = decide cfg sampleCatalog order orderRef orphanProfile
-    let normal      = decide cfg sampleCatalog order orderRef cleanProfile
+    let withNoCheck       = decide cfg sampleCatalog order orderRef orphanProfile  // ScriptWithNoCheck
+    let noEvidenceNoCheck = decide cfg sampleCatalog order orderRef Profile.empty  // NoCheckWithoutEvidence
+    let normal            = decide cfg sampleCatalog order orderRef cleanProfile   // NoEvidenceObstacle
     Assert.True (ForeignKeyRules.scriptsWithNoCheck withNoCheck)
+    Assert.True (ForeignKeyRules.scriptsWithNoCheck noEvidenceNoCheck)
     Assert.False(ForeignKeyRules.scriptsWithNoCheck normal)
 
 // ---------------------------------------------------------------------------
@@ -392,6 +424,7 @@ let ``outcome: ForeignKeyEvidence variants round-trip`` () =
     Assert.Equal<ForeignKeyEvidence>(DatabaseConstraintPresent, DatabaseConstraintPresent)
     Assert.Equal<ForeignKeyEvidence>(NoEvidenceObstacle 100L, NoEvidenceObstacle 100L)
     Assert.Equal<ForeignKeyEvidence>(ScriptWithNoCheck 5L, ScriptWithNoCheck 5L)
+    Assert.Equal<ForeignKeyEvidence>(NoCheckWithoutEvidence, NoCheckWithoutEvidence)
 
 [<Fact>]
 let ``outcome: ForeignKeyKeepReason variants round-trip`` () =

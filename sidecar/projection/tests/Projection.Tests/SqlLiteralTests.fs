@@ -320,6 +320,25 @@ let ``ofAuthoredDefault: a SQL-quoted text form carries the value inside the quo
     Assert.Equal<SqlLiteral option> (Some (TextLit "it's"),  SqlLiteral.ofAuthoredDefault Text "'it''s'")
 
 [<Fact>]
+let ``ofAuthoredDefault: an OutSystems double-quoted text form carries the value inside the quotes`` () =
+    // Service Studio stores authored text defaults as expression-language
+    // string literals (double-quoted). Lifted verbatim they rendered
+    // N'"outsystems"' (the outer quotes included); classified, they are the
+    // VALUE inside the quotes — V1's 'outsystems' / '*' semantics.
+    Assert.Equal<SqlLiteral option> (Some (TextLit "outsystems"), SqlLiteral.ofAuthoredDefault Text "\"outsystems\"")
+    Assert.Equal<SqlLiteral option> (Some (TextLit "*"),          SqlLiteral.ofAuthoredDefault Text "\"*\"")
+    // The rendered literal now carries the bare value (N-prefixed unicode).
+    Assert.Equal<string> ("N'outsystems'", SqlLiteral.toString (TextLit "outsystems"))
+
+[<Fact>]
+let ``ofAuthoredDefault: the double-quoted form undoes the doubled-quote escape and the empty form`` () =
+    // OutSystems escapes an embedded double-quote by doubling it (""); the
+    // unwrap undoes that, mirroring the single-quote form's '' handling.
+    Assert.Equal<SqlLiteral option> (Some (TextLit "say \"hi\""), SqlLiteral.ofAuthoredDefault Text "\"say \"\"hi\"\"\"")
+    // An empty double-quoted string is the empty VALUE, like ''.
+    Assert.Equal<SqlLiteral option> (Some (TextLit ""),           SqlLiteral.ofAuthoredDefault Text "\"\"")
+
+[<Fact>]
 let ``ofAuthoredDefault: an absent or whitespace-only raw carries nothing`` () =
     Assert.Equal<SqlLiteral option> (None, SqlLiteral.ofAuthoredDefault Text "")
     Assert.Equal<SqlLiteral option> (None, SqlLiteral.ofAuthoredDefault DateTime "   ")

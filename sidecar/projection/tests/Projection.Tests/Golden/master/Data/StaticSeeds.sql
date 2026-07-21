@@ -16,14 +16,14 @@ MERGE INTO [dbo].[Country]
 USING
 (
     VALUES
-        (2, N'CA', N'Canada'),
-        (3, N'MX', N'Mexico'),
-        (1, N'US', N'United States')
-) AS [Source]([Id], [Code], [Label]) ON [Target].[Id] = [Source].[Id]
+        (N'CA', 2, N'Canada'),
+        (N'MX', 3, N'Mexico'),
+        (N'US', 1, N'United States')
+) AS [Source]([Code], [Id], [Label]) ON [Target].[Id] = [Source].[Id]
 WHEN MATCHED THEN UPDATE 
     SET [Target].[Code]  = [Source].[Code],
         [Target].[Label] = [Source].[Label]
-WHEN NOT MATCHED THEN INSERT ([Id], [Code], [Label]) VALUES ([Source].[Id], [Source].[Code], [Source].[Label]);
+WHEN NOT MATCHED THEN INSERT ([Code], [Id], [Label]) VALUES ([Source].[Code], [Source].[Id], [Source].[Label]);
 GO
 -- RegionA (1 row)
 MERGE INTO [dbo].[RegionA]
@@ -72,14 +72,14 @@ MERGE INTO [dbo].[TextFidelity]
 USING
 (
     VALUES
-        (1, N''),
-        (2, NULL),
-        (3, NULL),
-        (4, N'hello')
-) AS [Source]([Id], [Body]) ON [Target].[Id] = [Source].[Id]
+        (N'', 1),
+        (NULL, 2),
+        (NULL, 3),
+        (N'hello', 4)
+) AS [Source]([Body], [Id]) ON [Target].[Id] = [Source].[Id]
 WHEN MATCHED THEN UPDATE 
     SET [Target].[Body] = [Source].[Body]
-WHEN NOT MATCHED THEN INSERT ([Id], [Body]) VALUES ([Source].[Id], [Source].[Body]);
+WHEN NOT MATCHED THEN INSERT ([Body], [Id]) VALUES ([Source].[Body], [Source].[Id]);
 GO
 -- Tier (3 rows)
 SET IDENTITY_INSERT [dbo].[Tier] ON;

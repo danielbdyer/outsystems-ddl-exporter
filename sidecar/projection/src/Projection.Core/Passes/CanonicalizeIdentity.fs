@@ -7,8 +7,9 @@ open Projection.Core
 ///
 ///   * modules within a catalog — by SsKey,
 ///   * kinds within a module — by SsKey,
-///   * attributes within a kind — by `(PK first, then authored
-///     Service-Studio order ascending, then SsKey)` (WP8 / NM-72),
+///   * attributes within a kind — by `(authored Service-Studio order
+///     ascending, then SsKey)` (WP8 / NM-72; PK-first reorder retired
+///     2026-07-21 for V1 authored-order parity),
 ///   * references within a kind — by SsKey,
 ///   * static-row populations (when present) — by identifier.
 ///
@@ -20,11 +21,14 @@ open Projection.Core
 ///
 /// WP8 / NM-72 — the attribute ordering honors the operator's authored
 /// Service-Studio order (`Attribute.Order`, sourced from the real
-/// `ossys_Entity_Attr.Order_Num`). PK columns lead (they are emitted
-/// first in OutSystems-faithful DDL); within the non-PK body, authored
-/// order ascending governs; `Order = None` (hand-built catalogs, the
-/// ReadSide reflection path) sorts last and falls back to the SsKey
-/// tiebreak, so determinism holds for every source. Emission is
+/// `ossys_Entity_Attr.Order_Num`). Authored order ascending governs
+/// directly — the PK-first reorder was retired 2026-07-21 for V1
+/// authored-order parity: V1 emits columns in `Order_Num, AttrId` order,
+/// never PK-first, and the emitted PK constraint names its key columns
+/// regardless of their position in the CREATE TABLE body, so nothing
+/// structural depends on PK columns leading. `Order = None` (hand-built
+/// catalogs, the ReadSide reflection path) sorts last and falls back to
+/// the SsKey tiebreak, so determinism holds for every source. Emission is
 /// inherited uniformly — the SSDT, dacpac, and data-lane emitters all
 /// iterate `Kind.Attributes` in list order, so ordering here is the
 /// single ordering site.
@@ -40,9 +44,12 @@ module CanonicalizeIdentity =
     /// Bump in the same commit that changes the canonicalization rules.
     /// v2 (WP8 / NM-72): attribute ordering is `(PK first, then authored
     /// `Attribute.Order` ascending, then SsKey)`, replacing the v1
-    /// SsKey-only sort.
+    /// SsKey-only sort. v3 (2026-07-21): the PK-first rank is retired —
+    /// ordering is `(authored `Attribute.Order` ascending, then SsKey)`
+    /// for V1 authored-order parity (V1 emits columns in Order_Num, AttrId
+    /// order, never PK-first).
     [<Literal>]
-    let version : int = 2
+    let version : int = 3
 
     [<Literal>]
     let private passName : string = "canonicalizeIdentity"
@@ -63,23 +70,22 @@ module CanonicalizeIdentity =
         | Temporal _    -> m
 
     /// WP8 / NM-72 — the total order on attributes within a kind.
-    /// `(PK rank, authored-order rank, SsKey)`:
-    ///   * PK rank 0 for primary keys, 1 otherwise — PKs lead.
+    /// `(authored-order rank, SsKey)` (the PK-first rank retired
+    /// 2026-07-21 for V1 authored-order parity):
     ///   * authored-order rank `(0, n)` for `Order = Some n`, `(1, 0)`
     ///     for `Order = None` — authored attributes precede unauthored,
     ///     ascending within the authored band.
     ///   * SsKey is the final stable tiebreak — when two attributes share
-    ///     PK rank and authored rank (e.g. both `Order = None`), the order
-    ///     is the prior SsKey order, so a hand-built catalog (every
-    ///     `Order = None`) is byte-identical to the v1 SsKey sort within
-    ///     each PK band, and determinism (T1) holds for every source.
-    let private attributeSortKey (a: Attribute) : (int * (int * int) * SsKey) =
-        let pkRank = if a.IsPrimaryKey then 0 else 1
+    ///     the authored rank (e.g. both `Order = None`), the order is the
+    ///     prior SsKey order, so a hand-built catalog (every `Order =
+    ///     None`) is byte-identical to the v1 SsKey sort, and determinism
+    ///     (T1) holds for every source.
+    let private attributeSortKey (a: Attribute) : ((int * int) * SsKey) =
         let orderRank =
             match a.Order with
             | Some n -> (0, n)
             | None   -> (1, 0)
-        (pkRank, orderRank, a.SsKey)
+        (orderRank, a.SsKey)
 
     let private canonicalizeKind (k: Kind) : Kind =
         { k with
@@ -134,6 +140,6 @@ module CanonicalizeIdentity =
           Sites =
             [ { SiteName = "canonicalize"
                 Classification = classification
-                Rationale = "Catalog-wide deterministic re-sort at every level (modules / kinds / references by SsKey; attributes by PK-first, then authored Service-Studio order, then SsKey per WP8 / NM-72) plus modality-mark normalization. No operator opinion enters; the authored order is source evidence, not policy; reachable from Project(catalog, Policy.empty, profile)." } ]
+                Rationale = "Catalog-wide deterministic re-sort at every level (modules / kinds / references by SsKey; attributes by authored Service-Studio order, then SsKey per WP8 / NM-72 — PK-first retired 2026-07-21 for V1 parity) plus modality-mark normalization. No operator opinion enters; the authored order is source evidence, not policy; reachable from Project(catalog, Policy.empty, profile)." } ]
           Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
           Status = Active }

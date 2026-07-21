@@ -135,9 +135,10 @@ let ``WP8/NM-72 canary: Customer attributes extract in authored Order_Num order,
     // The seed gives Customer a Service-Studio order (Order_Num) that is
     // DELIBERATELY different from alphabetical: Id(PK,1), LegacyCode(10),
     // FirstName(20), LastName(30), Email(40), CityId(50). The extraction
-    // ORDER BY is (PK-first, Order_Num, AttrName) and CanonicalizeIdentity
-    // re-derives the same key, so the emitted column order honors the
-    // operator's authored order — proving NM-72 closed end-to-end.
+    // ORDER BY is (Order_Num, AttrId) and CanonicalizeIdentity re-derives
+    // the same key (2026-07-21: PK-first retired), so the emitted column
+    // order honors the operator's authored order — Id leads on its own
+    // Order_Num=1, not by a PK-first rule — proving NM-72 closed end-to-end.
     if skipIfNoDocker "ossys-canary-order-num" then
         let result = TaskSync.run extractFromSeed
         match result with
@@ -156,7 +157,7 @@ let ``WP8/NM-72 canary: Customer attributes extract in authored Order_Num order,
                 |> List.find (fun k -> Name.value k.Name = "Customer")
             let authored =
                 customer.Attributes |> List.map (fun a -> Name.value a.Name)
-            // Authored (PK first, then Order_Num ascending):
+            // Authored (Order_Num ascending; Id leads on its own Order_Num=1):
             let expectedAuthored =
                 [ "Id"; "LegacyCode"; "FirstName"; "LastName"; "Email"; "CityId" ]
             Assert.Equal<string list>(expectedAuthored, authored)

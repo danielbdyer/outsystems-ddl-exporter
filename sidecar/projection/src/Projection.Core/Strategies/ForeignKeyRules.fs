@@ -32,6 +32,16 @@ type ForeignKeyEvidence =
     /// shape emits untouched. Identity at emission — the decision lands
     /// in neither `DropFk` nor `NoCheckFk`.
     | DeclaredShapeCarried
+    /// No reliable orphan evidence (no probe ran, or the probe was
+    /// unreliable), but the operator opted into `AllowNoCheckCreation`
+    /// (with `EnableCreation`), so a resolvable logical FK whose target
+    /// resolves is created WITH NOCHECK rather than dropped (DECISIONS
+    /// 2026-07-21): it enforces new rows and defers validating existing
+    /// ones. Distinct from `ScriptWithNoCheck`, which observed a concrete
+    /// orphan count — here no count exists because no reliable probe ran.
+    /// Surfaced as a named accepted-divergence diagnostic so it is never a
+    /// silent creation (the downgrades-never-silent law).
+    | NoCheckWithoutEvidence
 
 
 /// Why an FK constraint stays un-enforced.
@@ -150,6 +160,7 @@ module ForeignKeyEvidence =
             StructuredString.create "ScriptWithNoCheck"
                 [ "orphanCount", Inv.int64 orphanCount ]
         | DeclaredShapeCarried -> StructuredString.tag "DeclaredShapeCarried"
+        | NoCheckWithoutEvidence -> StructuredString.tag "NoCheckWithoutEvidence"
 
     let toDiagnosticString (e: ForeignKeyEvidence) : string =
         toStructured e |> StructuredString.render
@@ -241,10 +252,14 @@ module ForeignKeyRules =
     ///      caller chose; reported without further reasoning. New
     ///      constraints only, per the carve-out above.
     ///   4. Profile-driven decision:
-    ///        - Probe missing or unreliable ⇒ EvidenceMissing
-    ///          (V2 collapsed-mode strict default; V1 implicitly
-    ///          falls through to `EnableCreation` gate). V2 surfaces
-    ///          the missing evidence explicitly.
+    ///        - Probe missing or unreliable ⇒ under `AllowNoCheckCreation`,
+    ///          EnforceConstraint(NoCheckWithoutEvidence) — the resolvable
+    ///          logical FK is created WITH NOCHECK (enforce new rows, defer
+    ///          validating existing ones), honoring the cross-schema gate
+    ///          (DECISIONS 2026-07-21). Otherwise DoNotEnforce(EvidenceMissing),
+    ///          V2's collapsed-mode strict default (V1 implicitly falls
+    ///          through to `EnableCreation`); either way V2 surfaces the
+    ///          missing evidence explicitly.
     ///        - Profile shows orphans + AllowNoCheckCreation=false ⇒
     ///          DoNotEnforce(DataHasOrphans).
     ///        - Profile shows orphans + AllowNoCheckCreation=true ⇒
@@ -312,6 +327,23 @@ module ForeignKeyRules =
                 mkDecision (ForeignKeyOutcome.DoNotEnforce PolicyDisabled)
             else
                 // 4. Profile-driven decision on orphan signals.
+                //
+                // When no reliable orphan evidence exists (no probe ran, or
+                // the probe was unreliable), a resolvable logical FK is NOT
+                // dropped if the operator opted into `AllowNoCheckCreation`
+                // (DECISIONS 2026-07-21): it is created WITH NOCHECK
+                // (enforce new rows; defer validating existing ones),
+                // honoring the cross-schema gate exactly as the clean path
+                // does. Without the opt-in, V2's collapsed-mode strict
+                // default declines on missing evidence. `EnableCreation` is
+                // already `true` here (step 3 gated the disabled case).
+                let onMissingEvidence () : ForeignKeyDecision =
+                    if not config.AllowNoCheckCreation then
+                        mkDecision (ForeignKeyOutcome.DoNotEnforce EvidenceMissing)
+                    elif not config.AllowCrossSchema && crossesSchema sourceKind targetKind then
+                        mkDecision (ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked)
+                    else
+                        mkDecision (ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence)
                 let realityOpt = Profile.tryFindForeignKey reference.SsKey profile
                 match realityOpt with
                 | Some reality when ProbeStatus.isReliable reality.ProbeStatus ->
@@ -346,14 +378,12 @@ module ForeignKeyRules =
                                     (NoEvidenceObstacle reality.ProbeStatus.SampleSize))
                 | Some _ ->
                     // Probe outcome is unreliable (FallbackTimeout /
-                    // Cancelled / AmbiguousMapping).
-                    mkDecision
-                        (ForeignKeyOutcome.DoNotEnforce EvidenceMissing)
+                    // Cancelled / AmbiguousMapping) → missing-evidence path.
+                    onMissingEvidence ()
                 | None ->
-                    // No probe at all. V2 collapsed-mode strict
-                    // default: do not enforce on missing evidence.
-                    mkDecision
-                        (ForeignKeyOutcome.DoNotEnforce EvidenceMissing)
+                    // No probe at all → missing-evidence path (NOCHECK under
+                    // the operator's opt-in; strict-decline otherwise).
+                    onMissingEvidence ()
 
 
     // -----------------------------------------------------------------------
@@ -372,4 +402,5 @@ module ForeignKeyRules =
     let scriptsWithNoCheck (decision: ForeignKeyDecision) : bool =
         match decision.Outcome with
         | ForeignKeyOutcome.EnforceConstraint (ScriptWithNoCheck _) -> true
+        | ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence -> true
         | _ -> false
