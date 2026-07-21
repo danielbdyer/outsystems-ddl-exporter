@@ -4,7 +4,7 @@
 
 ---
 
-### Create a Lookup Table with Seed Data
+### Create a Static Entity (Lookup Table with Seed Data)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|
@@ -97,7 +97,7 @@ MERGE handles both insert (new) and update (existing).
 
 ---
 
-### Extract Values to a Lookup Table
+### Extract a Static Entity (Extract Values to a Lookup Table)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|

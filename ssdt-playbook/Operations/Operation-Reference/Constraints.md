@@ -4,7 +4,7 @@
 
 ---
 
-### Add a Default Value
+### Set a Default Value (Add a Default Constraint)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|
@@ -32,7 +32,7 @@ SSDT generates the appropriate ALTER.
 
 ---
 
-### Add a Uniqueness Rule (Unique Index)
+### Make an Attribute Unique (Unique Index)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|

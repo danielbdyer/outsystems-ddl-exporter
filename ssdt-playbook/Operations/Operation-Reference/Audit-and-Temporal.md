@@ -47,7 +47,7 @@ SELECT * FROM dbo.Employee FOR SYSTEM_TIME ALL WHERE EmployeeId = 42
 
 ---
 
-### Add Manual Audit Columns
+### Add Audit Attributes (Manual Audit Columns)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|
