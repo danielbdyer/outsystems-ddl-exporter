@@ -32,6 +32,7 @@
     <Compile Include="SamplePrCleanApplyTests.fs" />
     <Compile Include="SamplePrCleanApply2Tests.fs" />
     <Compile Include="SamplePrSchemaChangeTests.fs" />
+    <Compile Include="SamplePrRemovalTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
