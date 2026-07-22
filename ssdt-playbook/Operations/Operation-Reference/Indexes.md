@@ -96,6 +96,8 @@ Remove the index definition. SSDT generates:
 DROP INDEX [IX_Order_CustomerId] ON [dbo].[Order]
 ```
 
+Unlike deleting a whole table (a phantom under the production posture), an index removed from the model **does** drop on publish — DacFx's `DropIndexesNotInSource` defaults to True, so the granular removal happens even with `DropObjectsNotInSource=false`.
+
 **Before dropping, check usage:**
 ```sql
 SELECT 

@@ -86,14 +86,14 @@ Edit the seed data script. Add new values or modify existing:
     (6, 'RETURNED', 'Returned', 6, 1),  -- New value
 ```
 
-MERGE handles both insert (new) and update (existing).
+MERGE handles both insert (new) and update (existing). The seed is **additive**: it inserts what's missing and updates what changed, but it does **not** delete a value you remove from the VALUES list — the row stays; the seed just stops asserting it. That is deliberate: a value the app still references must not disappear on the next deploy.
 
 **Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
-| Deleting values | MERGE doesn't delete by default. If you need to deactivate, set `IsActive = 0` rather than deleting. |
-| FK references | Can't delete values that are referenced by FKs. |
+| Removing a value | Deleting a row from the seed does **not** drop it (the seed is additive — no delete-by-source). To actually remove a lookup row, take an explicit step (a scoped `DELETE`); prefer deactivating instead — set `IsActive = 0`. |
+| FK references | An explicit delete is FK-guarded: a value another Entity references is refused (Msg 547) and rolls back. Reconcile the references first, or deactivate (`IsActive = 0`). |
 
 ---
 

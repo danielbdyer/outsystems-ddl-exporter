@@ -40,7 +40,7 @@ Reverse of split. Same tier, same concerns.
 
 **Phase sequence:**
 1. Add columns to target table
-2. Migrate data from source table
+2. Migrate data from source table — **prove cardinality (1:1) before the copy** (`absorbed rows == distinct parents`); a 1:many copy silently drops rows a value hash won't flag. See [17.7 Table Merge](#177-pattern-table-merge).
 3. Application transitions
 4. Drop source table
 
@@ -54,7 +54,7 @@ Reverse of split. Same tier, same concerns.
 
 **Phase sequence:**
 1. Add column to destination table
-2. Migrate data
+2. Migrate data — but **prove cardinality first**: the source must be 1:1 with the destination (`moved rows == distinct destination keys`) *before* the copy. A one-to-many copy silently keeps one row per parent and drops the rest with no error, and a value hash won't catch it (it only compares the rows that survived). If it's 1:many, stop — that's a design decision (which row wins?), not a matter of how it ships.
 3. Application transitions
 4. Drop from source table
 
@@ -73,7 +73,7 @@ Change the schema in the file:
 CREATE TABLE [archive].[AuditLog]  -- was [dbo].[AuditLog]
 ```
 
-Use refactorlog to express the move, otherwise SSDT drops and recreates.
+Use refactorlog to express the move (or script the transfer). Without it, under the production posture (`DropObjectsNotInSource=false`) the header edit is a silent **phantom move**: the publish returns `Ok`, creates an **empty** table under the new schema, and leaves the populated original stranded under the old schema (same `object_id`) — a green deploy that moved nothing. Under a drop-enabled posture the same edit drops the original and loses its rows. Either way the move didn't happen.
 
 **Script approach (preserves object_id):**
 ```sql
@@ -84,7 +84,7 @@ ALTER SCHEMA archive TRANSFER dbo.AuditLog
 
 | Gotcha | Details |
 |--------|---------|
-| Refactorlog | Without it, SSDT interprets as drop + create. |
+| Refactorlog | Without it, the header edit is a phantom move under the production posture (empty new table, populated original stranded) — or a drop-and-lose under a drop-enabled posture. Not a real move either way. |
 | ALTER SCHEMA TRANSFER | Single operation, preserves object_id and data. May be preferable. |
 | References | All fully-qualified references break. |
 

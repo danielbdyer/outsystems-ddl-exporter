@@ -93,11 +93,19 @@ EXEC sp_rename 'dbo.OldTableName', 'NewTableName', 'OBJECT'
 ```
 
 **What SSDT generates (WITHOUT refactorlog):**
+
+SSDT sees the old name gone and a new name appear — two different tables — and what it does depends on the deploy's drop policy:
+
+- **Production posture (`DropObjectsNotInSource=false`) — a silent phantom rename.** The publish returns `Ok`, creates an **empty** `[dbo].[NewTableName]`, and leaves the populated `[dbo].[OldTableName]` exactly where it was (same `object_id`). The rows don't follow and the deploy reports success — a green deploy that didn't touch your data.
+- **Drop-enabled posture (`DropObjectsNotInSource=true`) — a drop-and-create that loses the rows:**
+
 ```sql
 DROP TABLE [dbo].[OldTableName]
 CREATE TABLE [dbo].[NewTableName] (...)
--- ALL DATA LOST
+-- rows gone; recoverable only from a backup
 ```
+
+Either way the intended rename did not happen. The real rename is an explicit `EXEC sp_rename 'dbo.OldTableName', 'NewTableName'` (or the header edit **paired with a refactorlog entry** so SSDT emits it), which renames the same object with its `object_id` and rows intact. Before promoting, confirm the generated delta reads as `sp_rename`, not `DROP TABLE` + `CREATE TABLE` or a silent no-op.
 
 **Verification:**
 - Check `.refactorlog` file was modified
@@ -123,12 +131,12 @@ CREATE TABLE [dbo].[NewTableName] (...)
 
 | Summary | Tier | Mechanism |
 |---------|------|-----------|
-| Remove a table and all its data permanently | 4 | Declarative (guarded by BlockOnPossibleDataLoss) |
+| Remove a table and all its data permanently | 4 | Scripted DROP (deleting the file is a phantom) |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
 |-----------|-------|-----------|
-| Data Involvement | Data-destructive | All rows gone |
+| Data Involvement | Data-destructive | All rows gone — once the scripted DROP runs |
 | Reversibility | Lossy | Backup restore only path back |
 | Dependency Scope | Cross-boundary | FKs, ETL, reports |
 | Application Impact | Breaking | Catastrophic if anything still references |
@@ -137,15 +145,15 @@ CREATE TABLE [dbo].[NewTableName] (...)
 
 1. Follow the deprecation workflow first (soft-deprecate → verify unused → soft-delete)
 2. Delete the `.sql` file from the project
-3. If `DropObjectsNotInSource=True`, SSDT generates the DROP
-4. If `DropObjectsNotInSource=False`, you need a pre-deployment script
+3. Under the production posture (`DropObjectsNotInSource=False`) that file deletion **does nothing** — it's a phantom removal, and `BlockOnPossibleDataLoss` never fires because there is no drop to guard. The publish returns `Ok` and the table and all its rows survive untouched.
+4. To actually remove the table, add an explicit scripted `DROP TABLE` (sequenced after any inbound FKs are dropped). That scripted drop is the destructive, irreversible act — it takes the rows with it.
 
-**What SSDT generates:**
+**What actually removes the table (scripted — the irreversible step):**
 ```sql
 DROP TABLE [dbo].[TableName]
 ```
 
-**Protection:** `BlockOnPossibleDataLoss=True` will halt deployment if table has rows.
+**Under a drop-enabled posture** (`DropObjectsNotInSource=True`, typically Dev/Test) the file deletion instead makes SSDT generate that `DROP TABLE` on publish — and there `BlockOnPossibleDataLoss=True` halts it if the table has rows. That guard applies to the SSDT-generated drop, not to a hand-scripted one.
 
 **Pre-flight checklist:**
 - [ ] Table has been soft-deprecated for defined period
@@ -160,7 +168,7 @@ DROP TABLE [dbo].[TableName]
 | Gotcha | Details |
 |--------|---------|
 | Foreign keys | If other tables have FKs pointing to this table, drop will fail. Drop those FKs first. |
-| DropObjectsNotInSource=False | In production, this setting is usually False. You'll need explicit pre-deployment script to drop. |
+| DropObjectsNotInSource=False | In production this is False, so deleting the file is a **phantom** (nothing dropped, deploy green). The removal must be an explicit scripted `DROP TABLE`, not the file's mere absence. |
 
 **Related:**
 - Pattern: [17.5 Safe Column Removal (4-Phase)](#175-pattern-safe-column-removal-4-phase) — same workflow applies to tables

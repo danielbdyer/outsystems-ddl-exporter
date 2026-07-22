@@ -86,7 +86,7 @@ SELECT * FROM dbo.OrderLine WHERE Quantity <= 0
 
 | Gotcha | Details |
 |--------|---------|
-| Existing violations | Deploy fails if existing data violates. Clean or use WITH NOCHECK (not recommended). |
+| Existing violations | It doesn't cleanly fail-and-vanish: SSDT adds the check **`WITH NOCHECK`** (so it lands), then a separate **`WITH CHECK CHECK`** validates the existing rows and fails on the violating row (`Msg 547`). The deploy is refused, but the constraint **lingers, untrusted** (`is_not_trusted=1`) — the bad row survives and the optimizer ignores the rule. Reconcile the data first, then let it validate trusted (`is_not_trusted=0`); if a prior attempt left an untrusted check, drop or re-validate it. |
 | Complex checks | Very complex checks can impact performance. Keep them simple. |
 
 ---

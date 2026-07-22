@@ -26,7 +26,7 @@ ALTER TABLE dbo.Person DROP COLUMN FirstName
 ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100) NULL
 ```
 
-All data in FirstName is lost.
+Under the production posture (`BlockOnPossibleDataLoss=true`) this drop-and-add is **refused**: the row-presence guard fires (`Msg 50000`), the deploy rolls back, and `FirstName` and its data survive. The column is only lost if the guard is relaxed — but either way the rename didn't happen. (A bare *table* rename is worse in a quieter way: under `DropObjectsNotInSource=false` it doesn't block at all — it phantoms to an empty new table while the populated original is stranded under the old name.)
 
 **The fix:**
 

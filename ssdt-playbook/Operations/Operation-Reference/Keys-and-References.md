@@ -79,7 +79,7 @@ WHERE c.CustomerId IS NULL
 
 | Gotcha | Details |
 |--------|---------|
-| 🔴 **The Forgotten FK Check** | If orphans exist, deploy fails. Always check first. See [Anti-Pattern 19.3](#193-the-forgotten-fk-check). |
+| 🔴 **The Forgotten FK Check** | An orphan doesn't cleanly block: SSDT adds the FK **`WITH NOCHECK`** (so it lands), then **`WITH CHECK CHECK`** fails on the orphan (`Msg 547`) and leaves the constraint present but **untrusted** (`is_not_trusted=1`) — the orphan survives and the optimizer ignores the key. Reconcile the orphans first, then `WITH CHECK CHECK` to end trusted (`is_not_trusted=0`); drop or re-validate any untrusted FK a prior attempt left behind. Always check first. See [Anti-Pattern 19.3](#193-the-forgotten-fk-check). |
 | WITH NOCHECK | Can add FK without validation, but it's untrusted. See pattern for proper handling. |
 | Large tables | FK validation scans the table. May take time. |
 
@@ -151,6 +151,8 @@ Remove the constraint from the table definition. SSDT generates:
 ```sql
 ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Customer_CustomerId]
 ```
+
+Unlike deleting a whole table (a phantom under the production posture), a foreign key removed from the model **does** drop on publish — DacFx's `DropConstraintsNotInSource` defaults to True, so the granular removal happens even with `DropObjectsNotInSource=false`.
 
 **Gotchas & Edge Cases**
 

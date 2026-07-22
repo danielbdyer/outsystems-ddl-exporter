@@ -152,7 +152,7 @@ DEPENDENCIES
 | Make an Attribute optional | NOT NULL → NULL | ✅ Yes | Just change the definition |
 | Rename an Attribute | Rename column | ✅ Yes | **Must use refactorlog** |
 | Rename an Entity | Rename table | ✅ Yes | **Must use refactorlog** |
-| ≈ Auto Number on the Identifier | Add/remove IDENTITY | ❌ No | Can't ALTER to add/remove; needs table swap |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | ⚠️ Rebuild | Can't ALTER in place, but SSDT rebuilds the table from the one-line edit (shadow-table swap, FKs recreated) and the gate allows it (data-preserving). Hand-script the swap only at scale |
 | | | | |
 | **CONSTRAINTS** | | | |
 | Set a Default Value | Add default | ✅ Yes | Inline in table definition |
@@ -172,7 +172,7 @@ DEPENDENCIES
 | — *(no OutSystems equivalent)* | Split table | ❌ No | Multi-phase: create, migrate, drop |
 | — *(no OutSystems equivalent)* | Merge tables | ❌ No | Multi-phase: create, migrate, drop |
 | ≈ Move an Attribute to another Entity | Move column between tables | ❌ No | Multi-phase |
-| — *(modules aren't schemas)* | Move table between schemas | ⚠️ Partial | Declarative with refactorlog, or ALTER SCHEMA TRANSFER |
+| — *(modules aren't schemas)* | Move table between schemas | ⚠️ Partial | With refactorlog (or ALTER SCHEMA TRANSFER); a bare header edit phantoms — empty new table, original stranded |
 
 **Legend:**
 - ✅ Yes = Pure declarative, just edit the schema files
@@ -314,11 +314,11 @@ READY FOR PR
 | Change an Attribute's Data Type (incompatible) | Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
 | Make an Attribute mandatory | NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2) |
 | Make an Attribute optional | NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
-| Rename an Attribute | Rename column | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
-| Rename an Entity | Rename table | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
+| Rename an Attribute | Rename column | 3 | Declarative + refactorlog | **Without refactorlog: drop+add blocked by the guard (data survives)** |
+| Rename an Entity | Rename table | 3 | Declarative + refactorlog | **Without refactorlog: a phantom — empty new table, original stranded** |
 | Delete an Attribute | Drop column | 3-4 | Declarative | Follow deprecation workflow |
-| Delete an Entity | Drop table | 4 | Declarative | Verify truly unused; backup |
-| ≈ Auto Number on the Identifier | Add/remove IDENTITY | 3-4 | Multi-phase (table swap) | Full table rebuild |
+| Delete an Entity | Drop table | 4 | Declarative (phantom) + scripted DROP | File deletion is a no-op under DropObjectsNotInSource=false; the real removal is a scripted DROP TABLE — irreversible |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | 3-4 | Declarative rebuild (SSDT) | Full table rebuild — SSDT generates it; the gate allows it (data-preserving). Hand-script only at scale |
 | — *(no OutSystems equivalent)* | Split table | 4 | Multi-phase | Multiple releases |
 | — *(no OutSystems equivalent)* | Merge tables | 4 | Multi-phase | Multiple releases |
 

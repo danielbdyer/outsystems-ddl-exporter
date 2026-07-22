@@ -46,7 +46,7 @@
 
 | In OutSystems | Operation | Mechanism |
 |---------------|-----------|-----------|
-| Delete an Entity | Drop table with data | Declarative (guarded) |
+| Delete an Entity | Drop table with data | Scripted DROP (declarative delete is a phantom) |
 | Reduce an Attribute's length | Narrow column | Pre-deployment + Declarative |
 | — *(no OutSystems equivalent)* | Split table | Multi-Phase |
 | — *(no OutSystems equivalent)* | Merge tables | Multi-Phase |

@@ -24,14 +24,17 @@ Without a refactorlog entry, SSDT interprets a rename as:
 ```sql
 ALTER TABLE dbo.Person DROP COLUMN FirstName
 ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100) NULL
--- Data in FirstName? Gone.
 ```
+
+Under the production posture (`BlockOnPossibleDataLoss=true`) that drop-and-add is **refused** — the row-presence guard fires on the populated table (`Msg 50000`), the deploy rolls back, and the data in `FirstName` survives untouched. It only loses the column if the guard is relaxed. Either way the rename didn't happen.
 
 **Generated script with refactorlog:**
 ```sql
 EXEC sp_rename 'dbo.Person.FirstName', 'GivenName', 'COLUMN'
--- Data preserved.
+-- Data preserved, in place.
 ```
+
+**The whole-object case is the truly silent one.** A bare *table* rename or *schema* move (rather than a column) doesn't even block. Under the production posture (`DropObjectsNotInSource=false`) it **phantoms**: the publish returns `Ok`, creates an empty table at the new name, and leaves the populated original stranded under the old name with its `object_id` unchanged — a green deploy that quietly moved nothing. The remedy is the same refactorlog entry (or a scripted `EXEC sp_rename` / `ALTER SCHEMA TRANSFER`) so SSDT renames the same object instead of inventing a new one.
 
 ---
 

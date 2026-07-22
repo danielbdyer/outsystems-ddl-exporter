@@ -41,7 +41,7 @@ SELECT * FROM dbo.Employee FOR SYSTEM_TIME ALL WHERE EmployeeId = 42
 
 | Gotcha | Details |
 |--------|---------|
-| Existing table | Converting existing table to temporal requires multi-phase approach. |
+| Existing (populated) table | A single publish **blocks**: the period columns are `NOT NULL GENERATED ALWAYS` with no default, so on a populated table DacFx warns `SQL72015` and the row-presence guard terminates it (`Msg 50000`). Ship it staged — (1) `ADD` `ValidFrom`/`ValidTo` **with defaults** (a chosen *historical* floor for `ROW START` — not conversion time, or every existing row falsely claims to have begun at go-live — and the `datetime2` max `9999-12-31 23:59:59.9999999` for `ROW END`) plus `PERIOD FOR SYSTEM_TIME`; then (2) `SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = …))`. On an **empty** table it collapses to one clean publish (the new-table case above). |
 | History table | System-managed; can't directly modify. |
 | SSDT table rebuilds | If SSDT needs to rebuild table (column reorder), it disables/re-enables versioning. |
 

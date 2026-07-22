@@ -6,7 +6,9 @@
 
 **Scenario:** Convert `PolicyId INT` to `PolicyId INT IDENTITY(1,1)`
 
-You cannot `ALTER TABLE` to add IDENTITY. This requires a table swap.
+You cannot `ALTER TABLE` to add or remove IDENTITY. This requires a table swap — but **SSDT generates that swap itself from the one-line `.sql` edit**; you don't have to hand-write it. From the single edit (adding or removing `IDENTITY(1,1)`), the production publish emits a shadow `tmp_ms_xx_` table, copies every row across with its key preserved, `sp_rename`s it into place, and drops and recreates every foreign key touching the table (re-validated trusted). And `BlockOnPossibleDataLoss=true` **allows** it: a rebuild *moves* rows rather than dropping them, so it's data-preserving — the setting's name misleads here. So the true outcome under the production gate is a clean, atomic, key-preserving rebuild in a single publish. Preview the generated delta and confirm it's a rebuild (a `tmp_ms_xx_` shadow table and `sp_rename`) before promising anything.
+
+The hand-scripted swap below is an **optional control**, not a requirement — reach for it when the row-by-row copy needs a scheduled window at production scale, or when you want to stage the FK drop/recreate yourself. (Mind the direction: *adding* IDENTITY needs `SET IDENTITY_INSERT ON` on the shadow to force existing keys into the new identity column; *removing* it copies into a plain `INT` and needs no `IDENTITY_INSERT`.)
 
 ### Phase 1 (Release N): Create New Table (Pre-Deployment Script)
 

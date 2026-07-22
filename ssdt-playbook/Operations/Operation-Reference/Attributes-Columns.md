@@ -383,7 +383,7 @@ EXEC sp_rename 'dbo.Person.FirstName', 'GivenName', 'COLUMN'
 
 | Gotcha | Details |
 |--------|---------|
-| 🔴 **The Naked Rename** | Without refactorlog, SSDT drops column and creates new one. Data loss. See [Anti-Pattern 19.1](#191-the-naked-rename). |
+| 🔴 **The Naked Rename** | Without refactorlog, SSDT plans to drop the old column and add a new empty one. Under `BlockOnPossibleDataLoss=true` that drop-and-add is **refused** (the row-presence guard, `Msg 50000`) — the deploy blocks and the data survives; it's lost only if the guard is relaxed. Either way the rename didn't happen. Use the refactorlog / `sp_rename` for a metadata rename. See [Anti-Pattern 19.1](#191-the-naked-rename). |
 | Dynamic SQL | Queries building column names as strings won't be caught. Search codebase. |
 | ORM mappings | Application ORMs may have column name assumptions. |
 
