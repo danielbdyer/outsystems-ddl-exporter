@@ -34,6 +34,7 @@
     <Compile Include="SamplePrSchemaChangeTests.fs" />
     <Compile Include="SamplePrRemovalTests.fs" />
     <Compile Include="SamplePrReferenceIntegrityTests.fs" />
+    <Compile Include="SamplePrRenameTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
