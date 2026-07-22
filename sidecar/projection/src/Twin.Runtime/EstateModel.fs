@@ -85,21 +85,67 @@ module EstateModel =
             [| ObjectType.Users; ObjectType.Logins; ObjectType.RoleMembership; ObjectType.Permissions |]
         options
 
-    /// Publish the dacpac to a named database (created when absent,
-    /// upgraded in place otherwise — DacFx computes the minimal delta).
-    let publishTo (masterConnStr: string) (databaseName: string) (dacpac: byte[]) : Task<Result<unit>> =
+    /// The PRODUCTION-FAITHFUL publish posture — the deployment a real
+    /// environment runs, mirroring
+    /// `ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml`.
+    /// Unlike the twin posture above, `BlockOnPossibleDataLoss` is ON, so
+    /// SSDT emits its row-presence guard (`IF EXISTS(...) RAISERROR(... data
+    /// loss ...)`) above a NULL→NOT NULL `ALTER COLUMN` and REFUSES the change
+    /// while the table holds rows — even after every NULL is backfilled — and
+    /// likewise refuses a truncating narrow or a populated drop. Smart-
+    /// defaults stay OFF so the refusal is preserved, not silently repaired.
+    /// The one deliberate deviation from the strict profile:
+    /// `DropObjectsNotInSource` is OFF, because the target is the twin
+    /// database, which carries bookkeeping the estate does not declare
+    /// (`__state`) — a schema publish must leave it, and every other object,
+    /// alone and surface only the estate delta under test.
+    let private strictDeployOptions () : DacDeployOptions =
+        let options = DacDeployOptions()
+        options.BlockOnPossibleDataLoss <- true
+        options.GenerateSmartDefaults <- false
+        options.IgnoreColumnOrder <- true
+        options.DropObjectsNotInSource <- false
+        options.IncludeTransactionalScripts <- true
+        options.AllowIncompatiblePlatform <- false
+        options.IgnorePermissions <- true
+        options
+
+    /// The shared DacFx deploy body: load the package, deploy with the given
+    /// options, translate any failure into the named publish refusal.
+    let private deployPackage
+        (options: DacDeployOptions)
+        (masterConnStr: string)
+        (databaseName: string)
+        (dacpac: byte[])
+        : Task<Result<unit>> =
         task {
             try
                 use stream = new MemoryStream(dacpac)
                 use package = DacPackage.Load stream
                 let services = DacServices masterConnStr
                 do! Task.Run(fun () ->
-                        services.Deploy(package, databaseName, true, deployOptions ()))
+                        services.Deploy(package, databaseName, true, options))
                 return Result.success ()
             with ex ->
                 return Result.failureOf (publishFailure ex.Message)
         }
 
+    /// Publish the dacpac to a named database (created when absent,
+    /// upgraded in place otherwise — DacFx computes the minimal delta).
+    let publishTo (masterConnStr: string) (databaseName: string) (dacpac: byte[]) : Task<Result<unit>> =
+        deployPackage (deployOptions ()) masterConnStr databaseName dacpac
+
     /// Publish to the twin database.
     let publish (masterConnStr: string) (dacpac: byte[]) : Task<Result<unit>> =
         publishTo masterConnStr TwinContainer.TwinDatabaseName dacpac
+
+    /// Publish to the twin database with the PRODUCTION-FAITHFUL (strict)
+    /// posture — the deployment a real environment would run. A change whose
+    /// `.sql` text is harmless but whose data is not (NOT NULL over rows, a
+    /// truncating narrow, a populated drop) is REFUSED here exactly as
+    /// production refuses it. The Twin's own `Runs.up` deliberately relaxes
+    /// this (it is disposable and re-mintable); the sample-PR proofs use this
+    /// to demonstrate what ships to a real environment. Reuses the same DacFx
+    /// Deploy path as `publish`.
+    let publishStrict (masterConnStr: string) (dacpac: byte[]) : Task<Result<unit>> =
+        deployPackage (strictDeployOptions ()) masterConnStr TwinContainer.TwinDatabaseName dacpac

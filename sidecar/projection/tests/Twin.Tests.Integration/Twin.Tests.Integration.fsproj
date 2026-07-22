@@ -26,6 +26,8 @@
     <Compile Include="TwinSchemaLoopTests.fs" />
     <Compile Include="TwinMintLoopTests.fs" />
     <Compile Include="TwinEvidenceLoopTests.fs" />
+    <Compile Include="SamplePrSupport.fs" />
+    <Compile Include="SamplePrMakeMandatoryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
