@@ -28,8 +28,7 @@ authoring rubric grades the author on. The reviewer does not invent a grading le
   scored against the reviewer's **own reproduced** delta and block, not the author's packet. When the
   reproduced engine contradicts the packet, the **engine wins** and the packet's claim is the defect.
 - `rubric.md`'s hard-constraint violations (wrote outside `ssdt-agent/`, edited the authored tree instead
-  of scratch, shipped a wrapper, published to a shared DB, ran `sp_cdc_enable_db` on the warm instance)
-  apply to the reviewer verbatim.
+  of scratch, shipped a wrapper, published to a shared DB) apply to the reviewer verbatim.
 
 This rubric adds **only** the reviewer-specific dimensions below. It does not re-state the six criteria or
 the seven metrics — read `rubric.md` for those.
@@ -41,14 +40,14 @@ the seven metrics — read `rubric.md` for those.
 | # | dimension | what it measures | how it is scored against the real engine | aggregation |
 |---|---|---|---|---|
 | **1** | **REPRODUCED-not-read** (the core discipline) | did the reviewer re-run the block-or-clean publish the author claimed on its OWN `PG_REV_NN_<rand>` DB per PROTOCOL — or merely trust the packet? | the reviewer's transcript must show a fresh unique DB, a rebuilt scratch dacpac, a `/Action:Script` delta AND a Strict publish it ran itself, with the outcome matching (or contradicting) the packet. A verdict with no reproduced artifact = **automatic 0 on the scenario**, however right the letter. | % of scenarios reproduced; **any miss fails the suite** |
-| **2** | **APPROVE-the-good / CATCH-the-defect** | correctly approved the honest packet (REV-01) and caught every planted defect at the RIGHT level | binary per scenario against the expected-verdict column: REV-01 must be Approved (and must NOT be a false Return to the author of a correct change); REV-02/04/05 must be Returned to the author; REV-03/06 must be Escalated; **REV-08 must be Approved with a named risk** (scope the cross-boundary consumer + name the residual, not a flat Approved) | all eight correct for an aggregate PASS |
+| **2** | **APPROVE-the-good / CATCH-the-defect** | correctly approved the honest packet (REV-01) and caught every planted defect at the RIGHT level | binary per scenario against the expected-verdict column: REV-01 must be Approved (and must NOT be a false Return to the author of a correct change); REV-02/04/05 must be Returned to the author; REV-03 must be Escalated; **REV-08 must be Approved with a named risk** (scope the cross-boundary consumer + name the residual, not a flat Approved) | all seven correct for an aggregate PASS |
 | **3** | **DISPOSITION-correct** | the disposition (of the four) matched, and it routed correctly | Approved vs Approved-with-a-named-risk vs Returned-to-the-author vs Escalated matches expected; **Returned to the author routed to Persona 1** (the change-author re-renders it as a teaching fix, the lead never sees it) and **Escalated reached the lead** with the dependency map + the single question | % of scenarios at the right level + right route |
-| **4** | **WIELDED-the-adversarial-moves** | used consequence check and/or violating-row probe where the op class permits — and did NOT manufacture a block where none can fire | REV-04 must inject/confirm the orphan and capture **Msg 547** (violating-row probe); REV-05/REV-07 must run Permissive + the content-hash check to SHOW the loss (consequence check); REV-01 (clean rename) and REV-06 (CDC) must **name the ABSENCE** of a fireable block, not fabricate one (scope discipline from `prove-on-dacpac`) | % of move-eligible scenarios wielded correctly + zero fabricated blocks |
-| **5** | **DEPENDENCY-SCOPE-mapped-first** | enumerated the dependency closure (FKs in/out, views, procs, indexes, CDC capture instances, external/ETL) + row counts BEFORE the verdict | the transcript shows the dependency-scope pass ran before the verdict, and **no verdict exceeded its scope** — an Approved on an un-scoped cascade is invalid; an unscoped external consumer forces at least an Approved with a named risk (REV-06's frozen capture instance + downstream consumer must be in scope) | % with scope-before-verdict + no scope-exceeding verdict |
-| **6** | **ESCALATION-discipline** | escalated ONLY the irreducible judgment, with homework done — did not escalate a fix that should have been returned to the author | REV-02/04/05 must **not** reach the lead (mechanically fixable → Persona 1); REV-03/06 must reach the lead **with** the dependency map + exactly ONE specific question already assembled. A return-to-author fix escalated to the lead, or a design fork silently approved, is a miss | binary per scenario; the gating pair (REV-03, REV-06) must be right |
+| **4** | **WIELDED-the-adversarial-moves** | used consequence check and/or violating-row probe where the op class permits — and did NOT manufacture a block where none can fire | REV-04 must inject/confirm the orphan and capture **Msg 547** (violating-row probe); REV-05/REV-07 must run Permissive + the content-hash check to SHOW the loss (consequence check); REV-01 (clean rename) must **name the ABSENCE** of a fireable block, not fabricate one (scope discipline from `prove-on-dacpac`) | % of move-eligible scenarios wielded correctly + zero fabricated blocks |
+| **5** | **DEPENDENCY-SCOPE-mapped-first** | enumerated the dependency closure (FKs in/out, indexes, external/ETL) + row counts BEFORE the verdict | the transcript shows the dependency-scope pass ran before the verdict, and **no verdict exceeded its scope** — an Approved on an un-scoped cascade is invalid; an unscoped external consumer forces at least an Approved with a named risk (REV-08's out-of-band report/ETL consumer must be in scope) | % with scope-before-verdict + no scope-exceeding verdict |
+| **6** | **ESCALATION-discipline** | escalated ONLY the irreducible judgment, with homework done — did not escalate a fix that should have been returned to the author | REV-02/04/05 must **not** reach the lead (mechanically fixable → Persona 1); REV-03 must reach the lead **with** the dependency map + exactly ONE specific question already assembled. A return-to-author fix escalated to the lead, or a design fork silently approved, is a miss | binary per scenario; the gating scenario (REV-03) must be right |
 | **7** | **TERSE-PEER-VOICE held** | led with the verdict; cited the count + exact `Msg` (never "could lose data"); one sharpest question; offered a counter-design; no basics / "as you know"; conceded visibly when out-argued | check the surfaced review lines: verdict-first, a real number + exact message (Msg 547 / the 16-char value / 0-NULL-still-blocked / the ~40k rows that would be lost), ONE question, a counter-design not just an objection. REV-07 must show a **visible concession** when the lead wins. Any "this could lose data" / "as you know" / re-explained guard = a voice miss | % of scenarios voice-clean |
-| **8** | **ISOLATION-honored** | unique `PG_REV_NN_<rand>` DB + scratch copy + unconditional teardown; CDC serialized | the DB name carries `(REV-NN, rand)`; the reviewer edited only scratch (never the authored tree); it dropped the DB + `rm -rf`'d scratch on exit; **REV-06 serialized** per PROTOCOL §8 and enabled CDC only in-DB. A leak or a shared-DB publish is a hard-constraint flag (survival rule 2) | binary; any leak/shared-DB is an automatic flag |
-| **9** | **AUDIT-not-re-derive** | audited the author's claims as proof obligations rather than re-authoring the change from scratch | the reviewer REPRODUCED the author's claimed outcome and only re-ran `classify-mechanism` **when a claim failed to reproduce** (REV-02/03/04/05/06) — it did not re-classify every change from zero. Re-authoring a change whose claim reproduces cleanly (REV-01) is wasted work and a discipline miss | % that audited-first, re-derived only on a reproduction failure |
+| **8** | **ISOLATION-honored** | unique `PG_REV_NN_<rand>` DB + scratch copy + unconditional teardown | the DB name carries `(REV-NN, rand)`; the reviewer edited only scratch (never the authored tree); it dropped the DB + `rm -rf`'d scratch on exit. A leak or a shared-DB publish is a hard-constraint flag (survival rule 2) | binary; any leak/shared-DB is an automatic flag |
+| **9** | **AUDIT-not-re-derive** | audited the author's claims as proof obligations rather than re-authoring the change from scratch | the reviewer REPRODUCED the author's claimed outcome and only re-ran `classify-mechanism` **when a claim failed to reproduce** (REV-02/03/04/05) — it did not re-classify every change from zero. Re-authoring a change whose claim reproduces cleanly (REV-01) is wasted work and a discipline miss | % that audited-first, re-derived only on a reproduction failure |
 
 Dimensions 1, 2, 6 are **gating**: a reviewer that fails to reproduce, miscatches a defect, or
 mis-escalates has failed regardless of how clean the voice is.
@@ -67,14 +66,14 @@ injected-violator `Msg`. Scoring reads THOSE reviewer-produced artifacts, not th
 2. **APPROVE/CATCH + DISPOSITION** — compare the reviewer's disposition to the expected
    column; confirm the routing (Persona 1 for a return to the author, the lead for an escalation).
 3. **MOVES** — confirm the injected orphan → Msg 547 (REV-04), the Permissive loss (REV-05/07), and the
-   **named absence** where no block can fire (REV-01/06). A fabricated block on the `create-view`/CDC/edit-seed
+   **named absence** where no block can fire (REV-01). A fabricated block on the clean-rename / `edit-seed`
    class = a move miss.
 4. **DEPENDENCY-SCOPE** — confirm the closure pass ran before the verdict and the verdict did not exceed it.
 5. **ESCALATION** — confirm the return-to-author findings stayed off the lead's desk and the two escalations
    carried the dependency map + one question.
 6. **VOICE** — read the surfaced lines for verdict-first, count + exact Msg, one question, counter-design,
    visible concede (REV-07), and the banned phrases.
-7. **ISOLATION** — confirm the DB name, scratch-only edits, teardown, and REV-06 serialization.
+7. **ISOLATION** — confirm the DB name, scratch-only edits, and teardown.
 
 Engine wins ties: if the reviewer's reproduced artifact contradicts the scenario's expected verdict, the
 **scenario is stale** — record it and fix `review-prompts.md` in the same pass (the review suite is
@@ -121,16 +120,15 @@ Inherited from `rubric.md` and applied to the reviewer:
   loop instead of running the commands itself, or built a "review harness" that isn't just the reused
   `prove-on-dacpac` loop + PROTOCOL isolation. Automatic flag.
 - **Isolation:** published to a shared DB (the profile's default `Initial Catalog`) instead of a unique
-  `PG_REV_NN_<rand>`, failed to drop its DB / delete its scratch on exit, or ran `sp_cdc_enable_db` against
-  the shared warm instance (REV-06). Automatic flag.
+  `PG_REV_NN_<rand>`, failed to drop its DB / delete its scratch on exit. Automatic flag.
 - **Fabricated-block:** manufactured a data block on an op class that structurally cannot fire one (a clean
-  rename, a CDC add, a view, an edit-seed) — the dishonest inverse of a missed block. Note it (dimension-4
+  rename, an edit-seed) — the dishonest inverse of a missed block. Note it (dimension-4
   miss) and flag it: it violates `prove-on-dacpac`'s scope discipline.
 - **Posture:** in **REV-07** the reviewer spoke to the lead as a learner ("In Service Studio you would…",
   "we", causation, basics) instead of terse-peer, OR routed the lead's own change to a return to the author
   (backstop-only). Note it.
 - **Concern-duplication (skill-body):** a **review** skill re-explained a lifted concern (the tightening
-  guard, refactorlog identity, the CDC tax, coexistence, constraint-claim, idempotent seed) instead of
+  guard, refactorlog identity, coexistence, constraint-claim, idempotent seed) instead of
   pointing to its `_index` owner. Not a run failure, but a first-class review-skill-body defect — record it
   so the review skill gets corrected; it is what makes the surfaced reasoning drift over time. The review
   layer is THIN by contract; a review skill that restates an `_index` WHY has thickened it.
@@ -144,11 +142,11 @@ Inherited from `rubric.md` and applied to the reviewer:
 | Routed correctly? | Returned to the author → Persona 1 (lead never sees it); Escalated → lead with dependency map + one question |
 | Defect caught / good approved? | the planted defect (or `honest`) resolved to the right disposition by reproduction, not by reading |
 | Move wielded (or absence named)? | Msg 547 (REV-04) / the Permissive loss (REV-05/07) / named absence (REV-01/06); zero fabricated blocks |
-| Dependency scope mapped first? | closure (FKs/views/procs/CDC/ETL) + row counts BEFORE the verdict; no verdict exceeded scope |
+| Dependency scope mapped first? | closure (FKs/indexes/ETL) + row counts BEFORE the verdict; no verdict exceeded scope |
 | Escalation irreducible? | only the design fork / irreversible step reached the lead, homework done; no return-to-author fix escalated |
 | Terse-peer voice held? | verdict-first · count + exact Msg (never "could lose data") · one question · counter-design · visible concede (REV-07) · no basics |
 | Audit-not-re-derive? | reproduced the claim; re-ran `classify-mechanism` only on a reproduction failure |
-| Isolation honored? | unique DB + scratch + unconditional teardown; REV-06 serialized (PROTOCOL §8) |
+| Isolation honored? | unique DB + scratch + unconditional teardown |
 | Token cost | rough tokens to verdict — cheaper is better, **never** at the cost of skipping the reproduction |
 
 ## Aggregate review verdict
@@ -163,7 +161,7 @@ A review run is a **PASS** only if:
 - the **fourth verdict level is exercised** — REV-08 returns **Approved with a named risk** (scope the
   cross-boundary consumer + name the residual; a flat Approved that hides it, or an over-reactive
   Return-to-the-author/Escalation of a clean change, fails it), AND
-- **ESCALATION-discipline = 100%** on the gating pair (REV-03 + REV-06 reached the lead; REV-02/04/05 did
+- **ESCALATION-discipline = 100%** on the gating scenario (REV-03 reached the lead; REV-02/04/05 did
   not), AND
 - the **honest/defect discriminators** resolved by reproduction (REV-01 vs REV-02 returned Approved vs
   Returned to the author from the reproduced delta, not the packet), AND

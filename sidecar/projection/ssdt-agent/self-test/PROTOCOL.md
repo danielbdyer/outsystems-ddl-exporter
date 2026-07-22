@@ -143,8 +143,8 @@ sqlpackage /Action:Publish \
   /TargetDatabaseName:"$DB"
 ```
 
-For the seed variant your test needs (empty table, zero-NULL re-seed, extra orphan, dup rows,
-CDC-enabled), edit `$SCRATCH/Data/Seed.sql` (or run a one-off `docker exec` SQL against `$DB`)
+For the seed variant your test needs (empty table, zero-NULL re-seed, extra orphan, dup rows),
+edit `$SCRATCH/Data/Seed.sql` (or run a one-off `docker exec` SQL against `$DB`)
 **before** this publish. The seed shape is part of YOUR scratch state, not shared.
 
 ## 6 — The prove loop (all in scratch, all against `$DB`)
@@ -214,21 +214,7 @@ trap cleanup EXIT
 - **Idempotent**: re-running the whole protocol yields the same verdict and leaks nothing,
   because every name is `(testId, rand)`-scoped and every create is drop-if-exists.
 
-## 8 — CDC tests are special (isolation is mandatory, not optional)
-
-For any CDC test (`AUD-04`, `AUD-05`, `AUD-07N`, `TRAP-01N`): `sp_cdc_enable_db` flips
-**instance-wide** state. Your unique DB already isolates this — enable CDC only inside `$DB`,
-never run a database-level CDC enable expecting it to be scoped to a table, and never target the
-profile's default catalog. The per-executor unique DB IS the `IsolatedContainerFixture` mindset
-from survival rule 1. Tear it down in step 7 like any other.
-
-The unique DB isolates CDC *state*, but the container's single capture/cleanup Agent is a
-**shared** resource — under heavy parallel CDC load, capture timing can be non-deterministic
-(not a data collision, a throughput one). Serialize the CDC-family cases, or poll-with-timeout
-for capture results rather than asserting immediate capture. Do not claim CDC is fully
-parallel-safe.
-
-## 9 — If connections start failing across executors
+## 8 — If connections start failing across executors
 
 A batch of `Could not open a connection` / pre-login-handshake failures means the **warm
 container died or degraded** — NOT a regression and NOT a collision in this protocol. Check

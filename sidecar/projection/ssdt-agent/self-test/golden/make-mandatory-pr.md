@@ -13,8 +13,7 @@ is traceable.
 - Ships as a scripted change: the data-loss guard (BlockOnPossibleDataLoss) is relaxed for this
   one publish, after the zero-NULL count is proven — a publish-time decision that cannot be
   expressed as a table definition.
-- Added scrutiny: none. The table is not CDC-tracked (sys.databases.is_cdc_enabled = 0 on the
-  disposable copy, checked 2026-07-16).
+- Added scrutiny: none.
 
 ## Changes
 | File | Change |
@@ -24,7 +23,7 @@ is traceable.
 | Data/Seed.sql | Customer rows 3 and 5 now seed the backfilled Email values; the seed previously declared NULL for both, which fails after the tightening (Msg 515) |
 
 No renames (the refactorlog is unchanged). No index changes; no view or procedure definitions
-change (the publish refreshes dbo.vOrderSummary automatically after the column change).
+change.
 
 ## Data remediation
 Two of the five dbo.Customer rows violate the new rule: Customer 3 (Initech) and Customer 5

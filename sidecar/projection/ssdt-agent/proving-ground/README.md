@@ -182,7 +182,7 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 | Customer `ContactPhone` populated, **no refactorlog** | rename `ContactPhone`→`MobileNumber` | delta = DROP+CREATE = a rename with no refactorlog entry loses the column's data → STOP, demand refactorlog | COL-08N |
 | `Order` row 4 has `CustomerId = 999` (orphan) | add FK `Order.CustomerId`→`Customer.Id` | clean FK blocks on orphan → ships as a scripted change (NOCHECK→reconcile→`WITH CHECK CHECK`) | KEY-03 |
 | `Product` row 3 `Code` = 16 chars | narrow `Code` to `NVARCHAR(10)` | over-length → Strict data-loss block → reconcile first (probe `MAX(LEN)` to predict) | COL-06 |
-| `Status` seed rows unchanged on re-publish | add lookup value `'Refunded'` | guarded MERGE captures 0 rows on no-op → CDC-silence proof | STA-02 |
+| `Status` seed rows unchanged on re-publish | add lookup value `'Refunded'` | guarded MERGE captures 0 rows on no-op → idempotency proof (0 rows affected + identical content-hash) | STA-02 |
 | `Product` rows 4 & 5 share `Code = 'DUPE'` | add UNIQUE on `Code` | unique index build fails on dupe → pre-deploy dedupe | CON-02 |
 
 > **The make-mandatory triple is the tree's central proof.** COL-03B (empty) MUST publish clean;
@@ -195,7 +195,7 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 ## Trap watch (handbook 16 = §19) — catch these in the delta, not after
 
 Rename with no refactorlog entry · Optimistic NOT NULL · Forgotten FK Check · Ambitious
-Narrowing · CDC Surprise · Refactorlog Cleanup · SELECT * View.
+Narrowing · Refactorlog Cleanup.
 
 ## Connector point
 

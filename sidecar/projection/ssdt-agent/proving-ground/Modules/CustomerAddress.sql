@@ -39,6 +39,6 @@ CREATE TABLE dbo.CustomerAddress
     City        NVARCHAR(80)    NULL,
     PostalCode  NVARCHAR(20)    NULL,
 
-    CONSTRAINT PK_CustomerAddress PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_CustomerAddress_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

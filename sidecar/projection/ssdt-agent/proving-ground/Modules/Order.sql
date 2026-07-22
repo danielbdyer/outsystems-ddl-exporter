@@ -8,7 +8,7 @@
   WHAT THIS TABLE EXERCISES
   -------------------------
   - create-FK clean vs with-orphans (Forgotten FK Check): adding
-      CONSTRAINT FK_Order_Customer FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(Id)
+      CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(Id)
     publishes clean ONLY if every CustomerId has a parent. With the orphan present, a clean
     declarative FK is blocked at deploy. The proven remedy is the script path:
     add WITH NOCHECK -> reconcile (delete/repoint the orphan) -> WITH CHECK CHECK to re-trust.
@@ -45,6 +45,6 @@ CREATE TABLE dbo.[Order]
     -- SCRATCH copy. See skills/op/extract-to-lookup/ and skills/_index/multi-phase/.
     StatusText      NVARCHAR(20)    NOT NULL CONSTRAINT DF_Order_StatusText DEFAULT (N'Pending'),
 
-    CONSTRAINT PK_Order PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

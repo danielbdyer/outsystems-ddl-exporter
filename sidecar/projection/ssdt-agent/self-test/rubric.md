@@ -7,11 +7,11 @@ a complete PR body** (per `skills/author-pr`) with a remedy that re-passes Stric
 correctly REFUSES when refusal is the right call), AND **surface the reasoning** to the developer,
 so the developer comes away understanding why."
 
-The reasoning the agent surfaces (criterion 6) now has a canonical home: the six `skills/_index/*`
+The reasoning the agent surfaces (criterion 6) now has a canonical home: the five `skills/_index/*`
 concern skills. A positive case's WHY is not free-form — it is the governing `_index` skill's
 principle, specialized to the op. When you score criterion 6 you are checking that the agent drew
 the principle from the right `_index` owner (tightening-class / identity-and-refactorlog /
-multi-phase / cdc / constraint-is-a-claim / idempotent-seed), not that it improvised a plausible
+multi-phase / constraint-is-a-claim / idempotent-seed), not that it improvised a plausible
 explanation. This makes criterion 6 objective: the prompt's `_index` column names the source.
 
 ## The six pass criteria
@@ -27,7 +27,7 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
    to the RIGHT slug; picking `create-fk-clean` for an orphan seed is a criterion-1 miss even if the
    downstream block is caught.
 
-2. **Determined the four state-variables BY PROVING.** Built the dacpac, previewed the real
+2. **Determined the three state-variables BY PROVING.** Built the dacpac, previewed the real
    generated delta (`/Action:Script`), and ran the Strict block check (`/Action:Publish`) on its
    own isolated DB — did **not** classify from the `.sql` text, did **not** guess from a row
    count it was simply told. The verdict is grounded in an artifact (a delta, a block, a hash
@@ -35,22 +35,21 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
 
 3. **Emitted BOTH findings.** *How it ships* — applied in place / a post- or pre-deploy script /
    scripted / staged — **with its release-count** (one release vs staged across releases), AND *who
-   must review* — any team member / dev lead / principal — with any **added scrutiny** named (CDC /
-   >1M rows / first-time op). **Review level kept distinct from release-count** — a single-release
+   must review* — any team member / dev lead / principal — with any **added scrutiny** named (>1M
+   rows / first-time op). **Review level kept distinct from release-count** — a single-release
    drop can still need a principal.
 
 4. **Caught the named anti-pattern, in the delta.** When the seed plants one (handbook 16 =
    §19: a rename with no refactorlog entry, Optimistic NOT NULL, Forgotten FK Check, Ambitious
-   Narrowing, CDC Surprise, Refactorlog Cleanup, SELECT * View), the agent caught it in the
+   Narrowing, Refactorlog Cleanup), the agent caught it in the
    **generated delta / block**, not after a hypothetical deploy. The traps are owned: a rename with
    no refactorlog entry / Refactorlog Cleanup by `_index/identity-and-refactorlog`; Optimistic NOT
    NULL / Ambitious Narrowing by `_index/tightening-class`; Forgotten FK Check by
-   `_index/constraint-is-a-claim`; CDC Surprise by `_index/cdc`; SELECT * View inline in
-   create-view/compat-view.
+   `_index/constraint-is-a-claim`.
 
 5. **Delivered the verdict and a complete PR body.** A proven, data-grounded verdict with the
    **specific remedy** (pre-deploy backfill / gate-relaxation / refactorlog entry / staged FK /
-   disable-CDC-first / dedupe / deactivate-not-delete) AND the **clean Strict re-run** (or the
+   dedupe / deactivate-not-delete) AND the **clean Strict re-run** (or the
    proven refusal) that shows the remedy works, assembled into the canonical PR body of
    `skills/author-pr` (Summary · Review & release · Changes · Data remediation · Deployment
    evidence · Verification · Rollback · Not verified). The verdict names the real numbers
@@ -60,9 +59,9 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
    explained the **why** behind the classification/remedy in the developer's terms, drawn from the
    case's governing `_index` skill and specialized to the op (the gate is conservative because it
    can't know intent → `_index/tightening-class`; identity is separate from name →
-   `_index/identity-and-refactorlog`; old and new must coexist → `_index/multi-phase`; the feed is
-   frozen to the old shape → `_index/cdc`; a constraint is a claim proven at apply time →
-   `_index/constraint-is-a-claim`; silence is the proof → `_index/idempotent-seed`). A run that
+   `_index/identity-and-refactorlog`; old and new must coexist → `_index/multi-phase`; a constraint
+   is a claim proven at apply time → `_index/constraint-is-a-claim`; silence is the proof →
+   `_index/idempotent-seed`). A run that
    produces the right label with no reasoning is **scored lower** than one that produces the right
    label AND teaches it. Reward it explicitly — a developer who comes away understanding why is the
    point of surfacing the reasoning at all. A per-op skill that **re-states** a lifted concern
@@ -78,21 +77,18 @@ through**. Score a negative case PASS only if:
 - **The refusal / block / escalation actually fired**, grounded in a proof artifact — the agent
   proved the block (BlockOnPossibleDataLoss, duplicate key, orphan FK), or read the destructive
   rewrite in the delta (DROP+CREATE on a rename with no refactorlog entry), or detected the
-  discriminator (1:many row counts; CDC-enabled flag; populated table; unmapped text value) — it
+  discriminator (1:many row counts; populated table; unmapped text value) — it
   did not merely *assert* a refusal.
 - **It proposed the safe alternative**, not just "no": deprecation/4-phase for a populated drop;
   a refactorlog entry demanded for a rename that lacks one; dedupe-first for add-unique; reconcile +
   `WITH CHECK CHECK` (ending trusted) for an orphan FK; deactivate (`IsActive=0`) for a retired
-  lookup value; capture-instance handling + disable-CDC-first for a CDC-table drop; route to a
-  maintenance job for a rebuild; the added-CDC-scrutiny call for the nullable-add-to-CDC-table trap;
-  the add-the-lookup-row-or-deactivate call for an unmapped extract value.
+  lookup value; route to a maintenance job for a rebuild; the add-the-lookup-row-or-deactivate call
+  for an unmapped extract value.
 - **It named the FAIL mode** — what a naive agent would have wrongly done (the blind drop, the
-  forced NOCHECK, the silent truncation, the dropped 1:many rows, the missed CDC scrutiny, the
-  NULLed unmapped value).
+  forced NOCHECK, the silent truncation, the dropped 1:many rows, the NULLed unmapped value).
 - **It surfaced WHY the refusal is correct** (criterion 6 applies to negatives too), drawn from
   the governing `_index` skill: the gate is conservative on purpose (tightening-class); identity
-  vs name (identity-and-refactorlog); the feed is frozen to the old shape (cdc); a constraint is
-  a claim (constraint-is-a-claim).
+  vs name (identity-and-refactorlog); a constraint is a claim (constraint-is-a-claim).
 
 A negative case that "succeeds" by pushing the change through is an **automatic FAIL**, however
 fluent the explanation.
@@ -116,7 +112,6 @@ that is the core *classify-by-proving* proof. Both halves route to the **same op
 | modify-index | IDX-02B include → **in place** | IDX-02 unique dupes → **pre-deploy dedupe** | uniqueness + dupes | constraint-is-a-claim |
 | extract-to-lookup | STA-03 mapped → **staged; proceeds** | STA-03N unmapped → **STOP** | total-mapping proof | multi-phase |
 | merge-tables | STR-02 1:1 → **staged; proceeds** | STR-02N 1:many → **STOP** | cardinality | multi-phase |
-| nullable-add | COL-01 plain → **in place** | TRAP-01N CDC → **added CDC scrutiny; recreate capture** | CDC-enabled flag | cdc |
 
 ## The hardest gate (automatic fail if missed)
 
@@ -157,9 +152,9 @@ already generated) will have emptied the NULLs. The corrected developer-facing v
 > column nullable. So on your populated table this is not a clean backfill-then-NOT-NULL — it needs
 > a deliberate call: either relax BlockOnPossibleDataLoss for this one change *after* proving zero
 > NULLs (a logged, script-only decision), or stage it across two releases. Either way the proof is
-> ready for the path you choose. A dev lead must review this because existing data is affected —
-> with added scrutiny if the table feeds CDC. On an empty table it would just apply, and any team
-> member could review it; the difference is entirely the rows."
+> ready for the path you choose. A dev lead must review this because existing data is affected. On
+> an empty table it would just apply, and any team member could review it; the difference is
+> entirely the rows."
 
 ---
 
@@ -177,7 +172,7 @@ would do. That is the whole point: the engine is the ground truth.
 | metric | what it measures | how it is scored against the real engine | aggregation |
 |---|---|---|---|
 | **Shipping-shape accuracy** | did the agent state correctly how the change ships (applied in place / post-deploy script / pre-deploy script / scripted / staged) and its release-count? | compare the agent's stated shape to the one the **real** delta/block implies — a clean Strict publish ⇒ applied in place; a data-loss block cleared by a pre-deploy step ⇒ a pre-deployment script; the corrected make-mandatory verdict ⇒ scripted (guard relaxed) / staged across releases. The engine's behavior, not the expected-column, is ground truth when they disagree (then fix the prompt). | % of positive+flip prompts correct |
-| **Review-level accuracy** | correct who-must-review level (any team member / dev lead / principal) **and** every added-scrutiny note named | the added-scrutiny triggers (CDC-enabled, >1M rows, first-time) are facts about the seed/estate, checked directly; review-level must stay distinct from release-count (a single-release drop that still needs a principal counts as a miss if graded by release count) | % correct, added-scrutiny notes counted separately |
+| **Review-level accuracy** | correct who-must-review level (any team member / dev lead / principal) **and** every added-scrutiny note named | the added-scrutiny triggers (>1M rows, first-time) are facts about the seed/estate, checked directly; review-level must stay distinct from release-count (a single-release drop that still needs a principal counts as a miss if graded by release count) | % correct, added-scrutiny notes counted separately |
 | **Block-prediction** | did the agent PREDICT the Strict block (via the probe) before proving it? | the pre-publish probe (NULL count / `MAX(LEN)` / orphan LEFT JOIN / dup GROUP BY / violation WHERE) must have been run and its result must MATCH the real Strict block that follows. Predicted-and-confirmed = full; proven-but-not-predicted = partial; neither = miss | % of block-bearing cases predicted-then-confirmed |
 | **Negative-case refusal-correctness** | for every `…N` case, did the refusal / block / escalation fire correctly? | binary against the real engine: the block or destructive delta was proven (BlockOnPossibleDataLoss row count, DROP+CREATE in the delta, `is_not_trusted=1`, 1:many row counts, unmapped-value rows) AND a safe alternative proposed AND the fail mode named. Pushing the change through = automatic 0 | ALL negatives must pass for an aggregate PASS |
 | **Flip-discriminator** | for each pair, did both halves prove and yield DIFFERENT outcomes? | run both legs on their two seeds against the real engine; PASS only if the two real outcomes differ AND the agent's two verdicts differ accordingly. Same verdict for both halves = classified-from-text = fail the pair | per-pair PASS/FAIL; make-mandatory pair is gating |
@@ -229,7 +224,7 @@ A failing metric localizes to a **surface**, and the fix lands in that surface's
 | Review level correct?          | matches expected, including any added-scrutiny note, named explicitly |
 | Block predicted then confirmed?| probe ran BEFORE publish and its count matched the real block        |
 | Proof artifact present?        | a real delta / block text with row counts / hash diff was produced   |
-| Which state-variable flipped?  | populated / violates / CDC-no-gap / coexist — name the one that drove it |
+| Which state-variable flipped?  | populated / violates / coexist — name the one that drove it |
 | Named trap caught?             | yes/no, and caught **in the delta** vs after                         |
 | Verdict + PR body delivered?   | proven verdict + specific remedy + clean Strict re-run (or proven refusal), in the author-pr body |
 | Reasoning surfaced (source)?   | did the agent teach the WHY from the correct `_index` owner, specialized? |
@@ -245,13 +240,13 @@ A failing metric localizes to a **surface**, and the fix lands in that surface's
   docker/dotnet/sqlpackage loop instead of running the commands itself. Automatic flag.
 - **Isolation violation:** the agent published to a shared DB (the profile's default
   `Initial Catalog`) instead of a unique `/TargetDatabaseName:PG_<testId>_<rand>`, or failed to
-  drop its DB / delete its scratch on exit (leaks degrade the warm container — survival rule 2),
-  or ran `sp_cdc_enable_db` against the shared warm instance. Automatic flag.
+  drop its DB / delete its scratch on exit (leaks degrade the warm container — survival rule 2).
+  Automatic flag.
 - **Voice violation:** the agent addressed the developer as if they were in Service Studio ("In
   Service Studio you would…") instead of producing developer-facing words from an agent-facing
   stance. Note it.
 - **Concern-duplication defect (skill-body):** a per-op skill re-explained a lifted concern (the
-  tightening guard, refactorlog identity, coexistence, CDC tax, constraint-claim, idempotent seed)
+  tightening guard, refactorlog identity, coexistence, constraint-claim, idempotent seed)
   instead of pointing to its `_index` owner. Not a run failure, but a first-class skill defect —
   record it so the op skill gets corrected; it is what makes criterion-6 reasoning drift over time.
 
@@ -266,17 +261,13 @@ The full run:
    `PG_<testId>_<rand>` database and a private scratch copy of the proving-ground tree, so no two
    touch the same `.sql`, `bin/`, or DB. The authored tree is read-only. This is what lets a hundred
    provers run at once.
-3. **Serialize the CDC family** (`AUD-04`, `AUD-05`, `AUD-07N`, `TRAP-01N`, and any CDC-leg of
-   another case): `sp_cdc_enable_db` is instance-wide, and the container's single capture/cleanup
-   Agent is a shared throughput resource (PROTOCOL §8) — run them one at a time, or poll-with-timeout
-   for capture rather than asserting immediate capture. Do not claim CDC is fully parallel-safe.
-4. **Score the flip pairs as pairs**, not halves — dispatch both legs, then score the pair with the
+3. **Score the flip pairs as pairs**, not halves — dispatch both legs, then score the pair with the
    flip-discriminator metric. The make-mandatory triple (COL-03/03B/03C) is the gating pair.
-5. **Each executor tears down unconditionally on exit** (drop-if-exists DB + `rm -rf` scratch) so
+4. **Each executor tears down unconditionally on exit** (drop-if-exists DB + `rm -rf` scratch) so
    accumulation stays at zero (survival rule 2).
-6. **If a batch of connection failures appears**, it is the warm container degrading, not a
+5. **If a batch of connection failures appears**, it is the warm container degrading, not a
    regression — `scripts/warm-sql.sh restart`, resume from PROTOCOL step 3.
-7. **Aggregate** the per-prompt rows into the seven metrics; produce the fitness verdict below.
+6. **Aggregate** the per-prompt rows into the seven metrics; produce the fitness verdict below.
 
 ## Aggregate verdict
 

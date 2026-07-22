@@ -41,6 +41,6 @@ CREATE TABLE dbo.Category
     -- that orphans the Product rows pointing at it.
     IsActive    BIT             NOT NULL CONSTRAINT DF_Category_IsActive DEFAULT (1),
 
-    CONSTRAINT PK_Category PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Category_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

@@ -10,7 +10,7 @@
   -------------------------
   - static-data seed: the post-deploy MERGE in Data/Seed.sql populates these rows. A re-publish
     with the seed unchanged must be silent — the guarded WHEN MATCHED captures 0 rows. An
-    unconditional WHEN MATCHED over-captures, breaking CDC-silence. (self-test prompt 6.)
+    unconditional WHEN MATCHED over-captures, churning every row on each deploy. (self-test prompt 6.)
 
   - extract-values-to-lookup / FK target: Order.StatusId references Status.Id, so adding a new
     lookup value ('Refunded') needs no schema change — it ships as a post-deploy change: just a
@@ -28,10 +28,10 @@ CREATE TABLE dbo.Status
     Code        NVARCHAR(20)    NOT NULL,
     IsActive    BIT             NOT NULL CONSTRAINT DF_Status_IsActive DEFAULT (1),
 
-    CONSTRAINT PK_Status PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Status_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO
 
 -- One NULL is allowed under a UNIQUE index, so Code uniqueness is a clean separate proof.
-CREATE UNIQUE INDEX UX_Status_Code ON dbo.Status (Code);
+CREATE UNIQUE INDEX [UIX_Status_Code] ON dbo.Status (Code);
 GO

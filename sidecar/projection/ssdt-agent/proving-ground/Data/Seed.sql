@@ -6,8 +6,8 @@
   rows exist. Every block is commented with the flip it triggers.
 
   Idempotency contract: every MERGE is guarded. Re-running this seed with the data unchanged
-  captures ZERO rows. An unconditional `WHEN MATCHED THEN UPDATE` would over-capture — that is
-  the CDC-silence anti-proof; do not write it that way.
+  captures ZERO rows. An unconditional `WHEN MATCHED THEN UPDATE` would over-capture — churning
+  every row on each redeploy; do not write it that way.
 
   Parents before children: Status/Account/Category seed before Customer/Product; Customer before
   CustomerAddress; Order before OrderLine (FK targets must exist first).
@@ -262,32 +262,7 @@ GO
 SET IDENTITY_INSERT dbo.OrderLine OFF;
 GO
 
-----------------------------------------------------------------------------------------------
--- dbo.CdcCandidate — a handful of rows for CDC proving. ISOLATED-DB ONLY (survival rule 1 /
---   PROTOCOL §8): enable CDC only inside a unique per-executor DB, never the shared warm
---   container. These rows just give the capture feed something to see.
-----------------------------------------------------------------------------------------------
-SET IDENTITY_INSERT dbo.CdcCandidate ON;
-GO
-MERGE dbo.CdcCandidate AS target
-USING (VALUES
-    (1, N'Alpha', N'first row'),
-    (2, N'Beta',  N'second row'),
-    (3, N'Gamma', CAST(NULL AS NVARCHAR(200)))
-) AS source (Id, Name, Notes)
-    ON target.Id = source.Id
-WHEN MATCHED AND (
-        target.Name <> source.Name
-     OR ISNULL(target.Notes, N'<NULL>') <> ISNULL(source.Notes, N'<NULL>')
-    ) THEN
-    UPDATE SET target.Name = source.Name, target.Notes = source.Notes
-WHEN NOT MATCHED BY TARGET THEN
-    INSERT (Id, Name, Notes) VALUES (source.Id, source.Name, source.Notes);
-GO
-SET IDENTITY_INSERT dbo.CdcCandidate OFF;
-GO
-
 PRINT 'Seed applied. Flip scenarios: NULL emails (3,5), over-length+dupe Code (3,4,5), orphan order (4).';
 PRINT 'Enriched (2026-06-30): Account/Category lookups, Customer.Region+AccountId, Product.LegacyCode+CategoryId,';
-PRINT 'Order.StatusText, CustomerAddress (1:1), OrderLine (deep FK), CdcCandidate (ISOLATED-DB CDC only).';
+PRINT 'Order.StatusText, CustomerAddress (1:1), OrderLine (deep FK).';
 GO

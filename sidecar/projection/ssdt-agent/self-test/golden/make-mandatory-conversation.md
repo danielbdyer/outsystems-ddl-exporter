@@ -17,13 +17,12 @@ You asked to make the Email attribute on the Customer entity required. In SQL te
 operation: the existing column dbo.Customer.Email changes from NULL to NOT NULL. The table
 definition gets edited to that destination and SSDT works out the steps — no hand-written ALTER.
 
-Four facts decide how this ships, and three of them are measurable, so I'll prove them on a
+Three facts decide how this ships, and two of them are measurable, so I'll prove them on a
 disposable copy of Dev rather than ask you to guess:
 
 - Is Customer populated? Measured: 5 rows.
 - Do existing rows break the new rule? Measured: 2 rows have no Email — Initech (Id 3) and
   Stark Industries (Id 5).
-- Does Customer feed a change-data-capture stream? Checked on the copy: no.
 - Must old and new application code coexist through the release? That one is about your
   deployment, not the data — tell me if the app ships separately from the schema.
 
