@@ -28,6 +28,7 @@
     <Compile Include="TwinEvidenceLoopTests.fs" />
     <Compile Include="SamplePrSupport.fs" />
     <Compile Include="SamplePrMakeMandatoryTests.fs" />
+    <Compile Include="SamplePrTighteningTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
