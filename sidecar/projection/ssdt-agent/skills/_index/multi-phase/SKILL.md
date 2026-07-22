@@ -21,7 +21,7 @@ The running OutSystems app **cannot atomically stop reading the old shape and st
 one** the instant a deploy lands. If you drop the old shape in the same release that creates the
 new one, any app code still on the old shape breaks the moment it deploys — and if the copy script
 had a bug, the data is already gone. So the two shapes must **coexist** until reads are repointed,
-and only then is the old shape removed. That coexistence requirement (state-variable 4) is exactly
+and only then is the old shape removed. That coexistence requirement (state-variable 3) is exactly
 what makes these changes **multi-PR**.
 
 ## The three-phase shape (each phase its own PR)
@@ -33,8 +33,8 @@ what makes these changes **multi-PR**.
   dual-write, a dev lead or an experienced developer should review it.
 - **Phase 2 — cutover.** Repoint app reads (and FKs, views) from the old shape to the new. No
   schema change to prove beyond confirming both shapes still agree (hash both). Leave a
-  backward-compat view named for the old shape if any external consumer still references it (see
-  `../identity-and-refactorlog/SKILL.md` for the compat-view bridge).
+  backward-compat **computed column** exposing the old shape if any external consumer still
+  references it (see `../identity-and-refactorlog/SKILL.md` for the computed-column bridge).
 - **Phase 3 — subtractive.** Drop the old shape from the project. **This is where
   `BlockOnPossibleDataLoss` blocks the drop** — under Strict the deployment is blocked until the
   conservation proof (below) licenses it. A dev lead must review the drop, and once the removed
@@ -117,5 +117,5 @@ equality that licenses the drop) and the row-count / mapping probes, see
 ## Handbook
 
 Cite by **filename**: **11-Multi-Phase-Evolution.md** (the additive→cutover→subtractive contract)
-and handbook **14** (= §17; the operation recipes — note §17.7 merge-entities and the §17.8
-compat-view companion have missing handbook bodies and are AUTHORED in the per-op skills).
+and handbook **14** (= §17; the operation recipes — note §17.7 merge-entities has a missing handbook
+body and is AUTHORED in the per-op skill `../op/merge-tables/`).

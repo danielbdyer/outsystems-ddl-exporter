@@ -25,11 +25,10 @@ disposable copy of Dev (`../prove-on-dacpac/SKILL.md`).
 
 ## Shared concerns for this family (the `_index` layer)
 
-- `../_index/identity-and-refactorlog/SKILL.md` — governs **rename-entity, move-schema** (and the compat-view bridge): identity is separate from name; a cross-table move has no refactorlog identity mapping.
+- `../_index/identity-and-refactorlog/SKILL.md` — governs **rename-entity, move-schema**: identity is separate from name; a cross-table move has no refactorlog identity mapping.
 - `../_index/tightening-class/SKILL.md` — the **delete-entity** populated-table row-presence guard.
 - `../_index/multi-phase/SKILL.md` — **archive-entity** coexistence + the conservation proof before any subtractive move.
 - `../_index/constraint-is-a-claim/SKILL.md` — **junction** orphan-pair FK validation.
-- `../_index/cdc/SKILL.md` — the added-scrutiny face of every op on a CDC-tracked table.
 
 ## Handbook citation reminder
 

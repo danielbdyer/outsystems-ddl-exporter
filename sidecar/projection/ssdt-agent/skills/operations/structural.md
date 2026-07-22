@@ -2,9 +2,8 @@
 
 > **This file is now an INDEX.** The op specifics live in the per-op skills under `../op/`; the
 > shared reasoning lives in `../_index/`. Nothing here restates a guard or how an op flips.
-> The two AUTHORED-HERE recipes (merge-entities §17.7; the rename-with-compat-view companion
-> §17.8) have moved their full bodies into the per-op skills (`../op/merge-tables/` and
-> `../op/compat-view/`) with the AUTHORED-HERE notice preserved verbatim.
+> The AUTHORED-HERE recipe (merge-entities §17.7) has moved its full body into the per-op skill
+> (`../op/merge-tables/`) with the AUTHORED-HERE notice preserved verbatim.
 
 **Family framing.** These are the heavy ops — one entity becoming two, two becoming one, a field
 crossing entities, or Auto-Number toggled. None is a single CREATE edit; most **cannot** be one
@@ -31,17 +30,14 @@ entity becoming two*, a merge is *two becoming one*, "Auto Number" is `IDENTITY`
 - **`../_index/identity-and-refactorlog/SKILL.md`** — identity is separate from name; a cross-table
   move / a rebuild that loses the mapping re-mints keys the way a rename with no refactorlog entry
   loses a column. (Governs move-attribute and identity-swap.)
-- **`../_index/cdc/SKILL.md`** — the added scrutiny when a reshaped table is CDC-tracked
-  (capture-instance refresh; rebuild invalidates the instance).
 
 > Handbook offset reminder (+3): file `14` = §17 (`§17.3` identity, `§17.6` split, `§17.7`
-> merge-AUTHORED, `§17.8` compat-view-AUTHORED, `§17.9` recreate-capture-instance), `16` = §19
-> (anti-patterns). Cite by filename.
+> merge-AUTHORED), `16` = §19 (anti-patterns). Cite by filename.
 
 ## Connector points
 - The hand-authored `proving-ground/SampleCatalog` can be replaced by the F# engine's
   `SqlprojEmitter`/`DacpacEmitter`/`PostDeployEmitter` output from a real catalog (see
   `CONNECTORS.md`) — the multi-phase copy/hash/drop loop is unchanged; only the source schema
   becomes real.
-- The §17.7 and §17.8 authored recipes (now in `../op/merge-tables/` and `../op/compat-view/`) are
-  the natural first candidates to push **back into the handbook** once its bodies are completed.
+- The §17.7 authored recipe (now in `../op/merge-tables/`) is the natural first candidate to push
+  **back into the handbook** once its bodies are completed.

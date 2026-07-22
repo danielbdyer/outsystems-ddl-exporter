@@ -22,7 +22,6 @@ lives in `_index/`. Nothing here restates a guard or the specifics of how a chan
 ## Shared concerns for this family
 
 - **The blocked unique change** (non-unique → unique on duplicates) is a claim about the data, proven at build time → `../_index/constraint-is-a-claim/SKILL.md` (duplicate probe).
-- **CDC** adds scrutiny on a tracked table → `../_index/cdc/SKILL.md`.
 - Single-op couplings NOT lifted: ONLINE=Enterprise (add-index) and the operational-not-declarative one-liner (rebuild-index, shared only with toggle-trust) stay inline in their op skills.
 
 ## Handbook offset reminder

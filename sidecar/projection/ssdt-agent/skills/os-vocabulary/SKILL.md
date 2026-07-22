@@ -68,8 +68,6 @@ name. Do not explain SQL to this developer; explain SSDT.
 - **trusted constraint** — "SQL Server distinguishes a rule it has verified against every existing
   row from one it merely stores; only the verified kind protects anything, and we always finish with
   that kind (`is_not_trusted = 0`)."
-- **capture instance** — "the change feed's frozen copy of the table's shape; a new column is
-  silently absent from the feed until the instance is recreated."
 - **a disposable copy of Dev** — "a scratch database shaped like Dev that we publish against to see
   what SSDT will actually do, then throw away."
 

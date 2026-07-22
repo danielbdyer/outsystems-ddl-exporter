@@ -41,8 +41,8 @@ Every change carries two independent findings. State both; never collapse them i
 - One release: the schema change, then a post-deployment script that runs after it lands.
 - One release: a pre-deployment script prepares the data first, then the schema change lands
   validated.
-- A scripted change, because it cannot be expressed as a table definition — enabling CDC,
-  reconciling a foreign key, an identity swap.
+- A scripted change, because it cannot be expressed as a table definition — reconciling a
+  foreign key, an identity swap.
 - Across N releases, so the running application keeps working while the change is in flight.
 
 **Who must review, and why** — decided by what the change does to data and to the running app:
@@ -52,29 +52,26 @@ Every change carries two independent findings. State both; never collapse them i
 - A dev lead — existing data is modified, or a cross-table relationship is added.
 - A principal — data is removed and the removal cannot be undone.
 
-Three facts add scrutiny on top of that, each stated on its own line when it holds: the table
-feeds a change-data-capture stream (the capture instance is frozen to its current columns and
-needs handling); at production row counts the change may block writes or run long (schedule a
-window); or the operation has not been performed on this estate before.
+Two facts add scrutiny on top of that, each stated on its own line when it holds: at production
+row counts the change may block writes or run long (schedule a window); or the operation has not
+been performed on this estate before.
 
 The two findings are orthogonal — review need is not shipping shape. Dropping a populated table
 ships as a single in-place change, but a principal must review it, because the data is removed
 and cannot be undone. State how it ships and who must review as two separate findings, every
 time.
 
-## The four state-variables the data must settle
+## The three state-variables the data must settle
 
-The classification is provisional until four facts are known, and three of the four can only be
+The classification is provisional until three facts are known, and two of the three can only be
 learned by proving against the data:
 
 1. **Is the table populated?**
 2. **Does the existing data violate the new rule?** (orphans / NULLs / dupes / over-length)
-3. **Is CDC enabled and is a no-gap capture required?**
-4. **Must old + new application code coexist** during the change?
+3. **Must old + new application code coexist** during the change?
 
 Each fact that crosses its threshold changes how the change ships or who must review it. The
-disposable copy of Dev exists to settle #1, #2, and (partly) #3 with evidence rather than a
-guess.
+disposable copy of Dev exists to settle #1 and #2 with evidence rather than a guess.
 
 ## The tree map
 
@@ -85,7 +82,7 @@ ssdt-agent/
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
 ├── agents/
-│   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the four facts
+│   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the three facts
 │   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
 │   └── reviewer.md ········· Persona 2: reproduce the change, then a plain disposition
 ├── skills/
@@ -93,9 +90,9 @@ ssdt-agent/
 │   ├── classify-mechanism/ · the decision cascade → a provisional how-it-ships + who-reviews
 │   ├── prove-on-dacpac/ ····· the proving loop that confirms or flips the classification
 │   ├── talk-to-local-sql/ ··· the disposable-copy substrate + the content-hash check
-│   ├── op/ ················· the 48 per-operation skills — each proves, then feeds the PR
+│   ├── op/ ················· the 41 per-operation skills — each proves, then feeds the PR
 │   ├── operations/ ········· the family TOC over op/ (tables · columns · keys · indexes · …)
-│   ├── _index/ ············· the shared reasoning ops cite (tightening-class, cdc, …)
+│   ├── _index/ ············· the shared reasoning ops cite (tightening-class, constraint-is-a-claim, …)
 │   ├── author-pr/ ·········· the terminal artifact: the pull request a reviewer approves by reading
 │   └── review/ ············· Persona 2: reproduce-first review, dependency scope, dispositions
 ├── proving-ground/ ········· the hand-authored, self-contained sample project (the disposable copy)
@@ -139,10 +136,9 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 
 ## Two operating notes
 
-- **Handbook citations are offset.** When a skill cites "handbook 15 = §18.1" or "handbook
-  16 = §19", the *file number* and the *internal section number* differ by a fixed offset
-  (file 14 = §17, file 16 = §19). Cite by **filename**; the §-number is the cross-reference
-  the deck readers will recognize.
+- **Cite the handbook by filename.** When a skill points at the playbook, cite the current
+  playbook **filename** (e.g. `16-Anti-Patterns.md`); that is the cross-reference the deck
+  readers will recognize.
 - **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
   loop. Skills give the commands as worked examples plus the reasoning; the developer's agent
   runs `docker` / `dotnet` / `sqlpackage` itself. A small hand-authored `.sqlproj` / `.sql` /

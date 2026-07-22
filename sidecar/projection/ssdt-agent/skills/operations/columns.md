@@ -33,7 +33,6 @@ computes the ALTER.
 - `../_index/tightening-class/SKILL.md` — governs **make-mandatory, narrow, delete-attribute** (the data-blind table-has-rows guard). The failure of classifying from the `.sql` text lives here.
 - `../_index/identity-and-refactorlog/SKILL.md` — governs **rename-attribute**: identity is separate from name.
 - `../_index/multi-phase/SKILL.md` — **retype-explicit, delete-attribute** coexistence + conservation proof.
-- `../_index/cdc/SKILL.md` — the added-scrutiny face of every column op on a CDC-tracked table (a new tracked column is silent until the capture instance is recreated).
 
 ## Handbook citation reminder
 

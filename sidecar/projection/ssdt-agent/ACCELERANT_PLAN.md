@@ -31,14 +31,11 @@ dependency.
 - **Capture:** `projection profile <conn> --out profile.json`.
 - **Exposes per column/FK:** `ColumnProfile.NullCount / RowCount / MaxObservedLength`;
   `AttributeReality.HasNulls / HasDuplicates / HasOrphans / IsNullableInDatabase`;
-  `ForeignKeyReality.HasOrphan / OrphanCount / IsNoCheck`; distributions; and **`CdcAwareness`
-  (CdcEnabled + CdcInstance)**.
+  `ForeignKeyReality.HasOrphan / OrphanCount / IsNoCheck`; and distributions.
 - **Turns "prove the block" into "predict, then prove":** `NullCount>0` → SSDT blocks the
   tightening; `MaxObservedLength>declared` → blocks the narrowing; `HasOrphan` → blocks the
-  foreign key; `HasDuplicates` → blocks the unique index; and `CdcAwareness` reports the CDC state,
-  so the change-data-capture added-scrutiny finding is known from the profile before publishing.
-  The tree's `talk-to-local-sql` probes (COUNT NULL, MAX(LEN), orphan LEFT JOIN, dup GROUP BY)
-  become *reads of `profile.json`*.
+  foreign key; `HasDuplicates` → blocks the unique index. The tree's `talk-to-local-sql` probes
+  (COUNT NULL, MAX(LEN), orphan LEFT JOIN, dup GROUP BY) become *reads of `profile.json`*.
 - **Source:** `Profile.fs`, `LiveProfiler.captureEvidenceCache` (Adapters.Sql), CLI
   `Faces/Synthetic.fs runCaptureProfile`.
 
@@ -48,8 +45,7 @@ dependency.
   **`synthesizedRenameWarnings`** (rename-as-drop+add detection) + `isEmpty` (idempotency). Feeds
   `skills/review/dependency-scope`. `CatalogDiff.fs`, `Faces/Diff.fs`.
 - **Independent proofs a reviewer can marshal alongside the sqlpackage verdict:**
-  - `projection check [--cdc-silence]` — round-trip structural equivalence + CDC-silence (exit 5 on
-    divergence).
+  - `projection check` — round-trip structural equivalence (exit 5 on divergence).
   - `projection check data --before <a> --after <b>` — row-count + null-count deltas (exit 8 on drift).
   - `projection compare a b` → `compare.json` — schema delta + data dealbreaker advisory.
 
@@ -58,7 +54,7 @@ dependency.
 | Tree piece (generic today) | Engine accelerant | What it buys |
 |---|---|---|
 | `proving-ground/SampleCatalog` (hand-authored) | `projection <flow>` bundle | prove against **real** schema |
-| `talk-to-local-sql` data probes | `projection profile → profile.json` | exact real-data evidence, one artifact, + CDC awareness |
+| `talk-to-local-sql` data probes | `projection profile → profile.json` | exact real-data evidence, one artifact |
 | `classify-mechanism` (must-prove) | `profile.json` predicts which change SSDT will block *before* publishing | fewer blind publishes; the block is predicted, then confirmed |
 | `skills/review/dependency-scope` | `projection diff --format json` | deterministic facet-granular dependency map + rename-as-drop+add warning |
 | `skills/review/adversary` + `prove-on-dacpac` | `projection check` / `check data` / `compare` | independent corroboration of the sqlpackage verdict |

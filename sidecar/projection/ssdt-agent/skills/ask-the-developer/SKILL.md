@@ -1,6 +1,6 @@
 ---
 name: ask-the-developer
-description: Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value, a CDC gap tolerance. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy.
+description: Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy.
 ---
 
 # Ask the developer (the mid-flow decision)
@@ -38,7 +38,6 @@ chat is not a decision; it is a memory.
 | **Check-constraint violators** | the violating rows and the predicate they fail | correct them to a stated value · exempt old rows by staging the rule | "What is the correct value for these rows — or do old rows get grandfathered?" |
 | **Cardinality is not 1:1** (merge / move) | the actual counts on each side of the join | stop — this is a design decision, not a data fix; a naive copy silently keeps one row per parent and drops the rest | "These tables aren't one-to-one — which rows should survive a merge, or should the merge not happen?" |
 | **Unmapped values** (extract-to-lookup) | the distinct values with no lookup row, by name and count | add the lookup row(s) · retire the value (deactivate, remap its rows) · hold the final phase until mapped | "Add 'Backordered' as a real status, or retire it?" |
-| **CDC gap tolerance** | the table is change-tracked; recreating the capture instance either pauses the feed or requires a dual-instance staged rollout | tolerable gap (drop and recreate — simpler, one release) · no gap (two instances, staged, drained and cut over) | "Can the downstream consumer tolerate a capture gap — yes or no?" |
 | **A constraint left unvalidated** (NOCHECK requested) | the constraint would exist but be untrusted (`is_not_trusted = 1`): the optimizer ignores it and existing bad rows stay | fix the data first, then validate (the constraint ends trusted) · accept untrusted as an explicit, logged exception | "Fix the data first, or accept — in writing — a rule that isn't enforced for existing rows?" |
 
 The consequences column is the load-bearing part. An option without its cost is an invitation to

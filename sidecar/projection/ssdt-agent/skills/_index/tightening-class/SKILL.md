@@ -96,9 +96,8 @@ part of the change set, not an afterthought. Proven live; the captured run is
     flight, each release its own pull request.
 
   Either way, **a dev lead must review this: existing data is modified.** Added scrutiny raises that
-  bar — this table feeds a change-data-capture stream, or it is large enough that the change may
-  block writes or run long at production row counts, or this is the first time the operation has
-  been done on this estate (see `../cdc/SKILL.md`).
+  bar — this table is large enough that the change may block writes or run long at production row
+  counts, or this is the first time the operation has been done on this estate.
 
 ## How the per-op specifics differ (they still point here)
 

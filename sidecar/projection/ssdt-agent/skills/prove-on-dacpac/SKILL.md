@@ -31,8 +31,8 @@ ever runs on production.
 
 - `classify-mechanism` handed over a provisional shipping shape and review need, marked
   **must-prove**.
-- The verdict depends on any of the four state-variables (populated / violates / CDC-no-gap /
-  coexist). Prove before telling the developer anything.
+- The verdict depends on any of the three state-variables (populated / violates / coexist). Prove
+  before telling the developer anything.
 - A named trap is suspected (especially a **rename with no refactorlog entry** — always read the
   delta).
 
@@ -124,10 +124,10 @@ sqlpackage /Action:Publish \
     that is the corrected finding.)
   - the fix is a post-deploy seed/reconcile -> **Ships as one release: the schema change, then a
     post-deployment script that runs after it lands.**
-  - the change isn't declarative at all (FK `NOCHECK`->`WITH CHECK CHECK`, CDC, IDENTITY swap)
-    -> **Ships as a scripted change — reconciling the foreign key / enabling CDC / the identity
+  - the change isn't declarative at all (FK `NOCHECK`->`WITH CHECK CHECK`, IDENTITY swap)
+    -> **Ships as a scripted change — reconciling the foreign key / the identity
     change cannot be expressed as a table definition.**
-  - old+new app code must coexist, or a no-gap CDC rollout -> **Ships across multiple releases so
+  - old+new app code must coexist -> **Ships across multiple releases so
     the running application keeps working while the change is in flight.**
 - **The delta shows `DROP <col/table>` + `CREATE` on an object requested as a RENAME**
   -> **a rename with no refactorlog entry. STOP.** The refactorlog entry is missing; publishing
@@ -187,8 +187,8 @@ The **honest, corrected recipe:**
   - **(b) Restructure to stage it across releases** — **ships across multiple releases so the
     running application keeps working** and the engine never has to relax its guard. A dev lead or
     an experienced developer must review this: the running application must change to keep working.
-    Added scrutiny where it applies: the table feeds a change-data-capture stream, or holds more
-    than a million rows, or the operation is a first on this estate.
+    Added scrutiny where it applies: the table holds more than a million rows, or the operation is a
+    first on this estate.
 
 **What the proof must EMPIRICALLY show (do not assert it — discover it):**
 
@@ -217,7 +217,7 @@ to miss:
   blocked publish:**
 
   ```sql
-  SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_Order_Customer';
+  SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_Order_Customer_CustomerId';
   -- is_not_trusted = 1 means the constraint exists but was never validated.
   ```
 
@@ -272,7 +272,7 @@ them where they cannot fire:
   hit. It turns "this could fail on bad data" into "here is the failure, verbatim."
 
 **Scope discipline.** These apply only to op classes that HAVE a data consequence or block. Ops with
-**no** data block — `edit-seed` (a MERGE), `enable-cdc` (a scripted change), `create-view` (no rows)
+**no** data block — `edit-seed` (a MERGE), `create-entity` (a brand-new table, no rows)
 — must **not** manufacture a block that structurally cannot fire. Naming the absence is itself the
 honest result.
 
@@ -318,14 +318,8 @@ And the same finding on the record, for the PR body:
 ## The named traps to catch in the delta (handbook file 16 = §19)
 
 A rename with no refactorlog entry, Optimistic NOT NULL, Ambitious Narrowing, Forgotten FK Check,
-CDC Surprise, Refactorlog Cleanup, SELECT * View. **Catch them in the generated delta or the Strict
+Refactorlog Cleanup. **Catch them in the generated delta or the Strict
 block — not after a hypothetical deploy.** That timing is the whole value of the disposable copy.
-
-> **SELECT \* View nuance (proven).** SSDT **auto-emits `EXECUTE sp_refreshsqlmodule`** for
-> dependent views on publish, so a `SELECT *` view stays correct through a *normal SSDT* base-column
-> add — the drift is **invisible through SSDT** and only bites when a base column is added **out of
-> band** (a raw `ALTER` outside the dacpac). Prove the trap with a non-SSDT column-add, not a
-> through-model one.
 
 ## What the disposable copy honestly cannot prove
 
@@ -340,7 +334,7 @@ Be truthful with the developer about the edges:
   **claim**, not something this loop demonstrated. State it plainly: the forward change is proven
   safe for the data; backing it out is not exercised here.
 - **Application impact — the disposable copy cannot prove the running app keeps working.** This is
-  state-variable 4 (must old + new app code coexist), and it is the very thing that separates a
+  state-variable 3 (must old + new app code coexist), and it is the very thing that separates a
   change any team member can review from one a dev lead must review because the running application
   must change to keep working. A single-connection publish against a disposable copy cannot show
   whether the live OutSystems app — or old and new app code mid-rollout — still compiles and reads
@@ -351,10 +345,6 @@ Be truthful with the developer about the edges:
   *whether* a block fires and *what* changes; it does **not** prove how long an index build or a
   table rebuild takes at 50M rows, or whether a lock will block. That stays added scrutiny — at
   production row counts the change may block writes or run long, so schedule a window — not a proof.
-- **CDC capture-instance behavior over time.** CDC is a **scripted change** and not in the dacpac
-  model; the disposable copy cannot demonstrate the downstream capture-instance management burden.
-  Flag **CDC Surprise** as a standing consequence — the capture instance is frozen to the table's
-  current columns and needs handling — don't try to publish-prove it away.
 - **Concurrency, blocking, and online-vs-offline.** `ONLINE` index builds (Enterprise) and lock
   behavior under live traffic are not modeled by a single-connection publish.
 - **External Entities and downstream consumers** (ETL, reports, procs in other databases). The

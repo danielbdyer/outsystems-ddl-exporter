@@ -1,6 +1,6 @@
 ---
 name: identity-and-refactorlog
-description: Cross-cutting KNOWLEDGE shared by rename-entity, rename-attribute, move-schema, and the compat-view bridge. Owns the discipline that IDENTITY IS SEPARATE FROM NAME — the refactorlog records that an old object and a new name are the same identity, so SSDT emits sp_rename (data + object_id preserved) instead of the DROP+CREATE / DROP COLUMN+ADD that silently loses the data. Owns the read-the-delta discriminator and the Refactorlog Cleanup companion trap. Per-op skills POINT here. The publish loop that PROVES the delta is sp_rename lives in prove-on-dacpac.
+description: Cross-cutting KNOWLEDGE shared by rename-entity, rename-attribute, and move-schema. Owns the discipline that IDENTITY IS SEPARATE FROM NAME — the refactorlog records that an old object and a new name are the same identity, so SSDT emits sp_rename (data + object_id preserved) instead of the DROP+CREATE / DROP COLUMN+ADD that silently loses the data. Owns the read-the-delta discriminator and the Refactorlog Cleanup companion trap. Per-op skills POINT here. The publish loop that PROVES the delta is sp_rename lives in prove-on-dacpac.
 ---
 
 # Identity is separate from name — the refactorlog carries the data
@@ -45,7 +45,7 @@ the two-part name.)
 - **A rename with no refactorlog entry** (handbook **16** = §19.1) — editing the name text
   *without* the refactorlog entry. The build succeeds (SSDT cannot see your rows); the deploy
   silently drops and recreates the object.
-- **Refactorlog Cleanup** (handbook **16** = §19.6) — the companion. **Never delete old refactorlog
+- **Refactorlog Cleanup** (handbook **16** = §19.5) — the companion. **Never delete old refactorlog
   entries.** A fresh-environment deploy *replays* the whole refactorlog; a deleted entry re-becomes
   a drop+create on the clean environment. The refactorlog is append-only history, not scratch.
 
@@ -84,9 +84,9 @@ unrecorded rename is the failure mode.
 - **move-schema** — the two-part `schema.Table` name is *just an address*; the refactorlog (or an
   explicit `ALTER SCHEMA target TRANSFER source.Table`, which preserves `object_id`) tells SSDT the
   identity survived the move. Same DROP+CREATE trap without it.
-- **compat-view** — the bridge that lets the *old* name keep resolving after a rename: identity
-  survived the move, and the view re-exposes the old address for consumers not yet updated (see
-  the per-op skill for the recipe).
+- **backward-compat bridge** — lets the *old* name keep resolving after a rename: identity
+  survived the move, and a **computed column** re-exposes the old address for consumers not yet
+  updated (playbook Pattern 17.8 — the computed-column bridge, not a compatibility view).
 
 ## Cross-table MOVE is NOT a rename
 
@@ -105,4 +105,4 @@ For the publish loop that PROVES the delta is `sp_rename` (script the delta, rea
 ## Handbook
 
 Cite by **filename**: **09-The-Refactorlog-and-Rename-Discipline.md** (the discipline), and **16**
-(= §19; specifically §19.1, a rename with no refactorlog entry, and §19.6 Refactorlog Cleanup).
+(= §19; specifically §19.1, a rename with no refactorlog entry, and §19.5 Refactorlog Cleanup).

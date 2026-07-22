@@ -1,14 +1,13 @@
 ---
 name: idempotent-seed
-description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and data-plane row ops. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash + 0 CDC captures on a no-op redeploy). Per-op skills POINT here. Points to _index/cdc for the CDC-silence face; the hash check lives in talk-to-local-sql.
+description: Cross-cutting KNOWLEDGE shared by create-static-seed, edit-seed, delete-seed-value, extract-to-lookup (its seed leg), and data-plane row ops. Owns the idempotent guarded MERGE (WHEN MATCHED ... AND value-differs, null-safe with NULL distinct from ''), explicit-IDs-not-IDENTITY for lookup keys (a constant must mean the same row across environments), deactivate-don't-delete (IsActive=0, never a hard DELETE that orphans fact rows), and silence-is-the-proof (0 rows affected + identical content-hash on a no-op redeploy). Per-op skills POINT here. The hash check lives in talk-to-local-sql.
 ---
 
 # Idempotent seed — re-running changes nothing, and silence is the proof
 
 > Reference rows are **part of the model**, so a redeploy must be a **no-op.** The strongest proof
-> a seed is correct is that the second deploy touches **zero** rows, produces an **identical hash**,
-> and captures **zero** CDC changes. Every static-data op points here so the seed discipline is the
-> same, every time.
+> a seed is correct is that the second deploy touches **zero** rows and produces an **identical
+> hash**. Every static-data op points here so the seed discipline is the same, every time.
 
 You are helping an **OutSystems-native developer** with Static Entities — the small enumerated
 tables (Status, Country, OrderType) whose rows *are* the model, not user input. In SSDT their rows
@@ -51,23 +50,23 @@ undone.
 ### 4. Silence is the proof (specialize per op; do not restate the whole thing there)
 
 A load is correct only if **re-running it is a no-op.** The canonical proof is the **silent
-redeploy**: deploy the seed, then redeploy with identical source and assert all three:
+redeploy**: deploy the seed, then redeploy with identical source and assert both:
 
 1. **0 rows affected** reported by the post-deploy.
 2. **Identical content-hash** before and after (the order-independent `SHA2_256(FOR XML RAW)` sum
    from `../../talk-to-local-sql/SKILL.md`, NULL kept distinct from `''`).
-3. **0 CDC captures** on the second deploy, *if* the table (or its consumer) is CDC-tracked.
 
-A non-zero capture count on a no-op redeploy is the **anti-proof** — it means the `WHEN MATCHED` is
-unconditional and over-capturing. Fix the guard, re-run, confirm silence. Silence is *the strongest
-guarantee* precisely because it is the **absence of an event** you'd otherwise have to trust.
+A non-zero rowcount or a shifted content-hash on a no-op redeploy is the **anti-proof** — it means
+the `WHEN MATCHED` is unconditional and over-writing. Fix the guard, re-run, confirm silence.
+Silence is *the strongest guarantee* precisely because it is the **absence of a change** you'd
+otherwise have to trust.
 
 ## The WHY
 
 For reference data, **"the values match" is not the same as "the redeploy was silent."** An
 unconditional MERGE *looks* idempotent (the final values are right) but rewrites every row on every
-deploy — and on a CDC-tracked table that is the loud failure: the feed reports the whole table as
-phantom changes. So you prove a load by what it *doesn't do* on the second run, and treat a
+deploy — and that rewrite is the loud failure: the redeploy reports a non-zero rowcount and the
+content-hash shifts. So you prove a load by what it *doesn't do* on the second run, and treat a
 non-silent redeploy as a bug even when the data ends up correct.
 
 ## The ops this governs (and their distinguishing note)
@@ -86,12 +85,6 @@ non-silent redeploy as a bug even when the data ends up correct.
 - **data-plane row ops** — the four row fates (insert / guarded update / unchanged / careful
   delete) under one null-safe MERGE; a bulk DELETE of populated rows removes data irreversibly, so a
   principal must review it.
-
-## The CDC-silence face (pointer)
-
-The "0 CDC captures on redeploy" limb of the proof, the over-capturing-MERGE failure mode, and the
-isolation rule all live in `../cdc/SKILL.md`. This concern owns the *seed*; the CDC index owns the
-*capture* consequence. Point there, don't restate it.
 
 ## Prove it (pointer, not a re-scaffold)
 

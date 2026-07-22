@@ -9,7 +9,7 @@ description: The disposable local-SQL substrate prove-on-dacpac publishes agains
 > asserted one is a guess — "1,240 rows are blank" stands where "some rows might be blank" cannot.
 > The count is taken before the change is classified, so classification rests on the data, not on
 > recollection. The strongest result this substrate produces is silence: a no-op redeploy that
-> captures 0 rows and returns an unchanged content digest is the proof that a deploy is idempotent,
+> affects 0 rows and returns an unchanged content digest is the proof that a deploy is idempotent,
 > and an unchanged digest on a re-run is a positive guarantee, not a non-event. The developer is
 > owed the measured form — "0 NULLs remain, and the second deploy moved nothing" — over a
 > recollection.
@@ -208,9 +208,8 @@ Run it once before the Permissive publish, once after, and compare `RowCount` + 
 >
 > **The no-op redeploy is the idempotency proof:** publish an unchanged tree twice; the second run
 > should produce **zero delta**, the guarded seed MERGE should report **0 rows**, and the digest
-> should be **identical** — and on a CDC-tracked table, CDC should capture **0 changes**. That
-> silence is the idempotency / CDC-silence guarantee, the strongest result this substrate produces,
-> not a non-event.
+> should be **identical**. That silence is the idempotency guarantee, the strongest result this
+> substrate produces, not a non-event.
 
 ## Honest limits of this substrate
 
