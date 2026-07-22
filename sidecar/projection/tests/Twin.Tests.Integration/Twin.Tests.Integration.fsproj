@@ -26,6 +26,18 @@
     <Compile Include="TwinSchemaLoopTests.fs" />
     <Compile Include="TwinMintLoopTests.fs" />
     <Compile Include="TwinEvidenceLoopTests.fs" />
+    <Compile Include="SamplePrSupport.fs" />
+    <Compile Include="SamplePrMakeMandatoryTests.fs" />
+    <Compile Include="SamplePrTighteningTests.fs" />
+    <Compile Include="SamplePrCleanApplyTests.fs" />
+    <Compile Include="SamplePrCleanApply2Tests.fs" />
+    <Compile Include="SamplePrSchemaChangeTests.fs" />
+    <Compile Include="SamplePrRemovalTests.fs" />
+    <Compile Include="SamplePrReferenceIntegrityTests.fs" />
+    <Compile Include="SamplePrRenameTests.fs" />
+    <Compile Include="SamplePrSeedTests.fs" />
+    <Compile Include="SamplePrStructuralTests.fs" />
+    <Compile Include="SamplePrRebuildTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

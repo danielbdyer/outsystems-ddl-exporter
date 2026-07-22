@@ -26,7 +26,7 @@ ALTER TABLE dbo.Person DROP COLUMN FirstName
 ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100) NULL
 ```
 
-All data in FirstName is lost.
+Under the production posture (`BlockOnPossibleDataLoss=true`) this drop-and-add is **refused**: the row-presence guard fires (`Msg 50000`), the deploy rolls back, and `FirstName` and its data survive. The column is only lost if the guard is relaxed — but either way the rename didn't happen. (A bare *table* rename is worse in a quieter way: under `DropObjectsNotInSource=false` it doesn't block at all — it phantoms to an empty new table while the populated original is stranded under the old name.)
 
 **The fix:**
 
@@ -57,7 +57,7 @@ Developer adds NOT NULL column without considering existing data:
 
 Either:
 1. Add with a default: `NOT NULL CONSTRAINT DF_Person_MiddleName DEFAULT ('')`
-2. Add as NULL, backfill, then tighten to NOT NULL in a later release — knowing the tightening step is itself blocked on a populated table (the data-loss guard checks row presence, not NULL content; see §17.2, corrected) and needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment, after proving zero NULLs remain
+2. Add as NULL, backfill, then tighten to NOT NULL in a later release — knowing the tightening step is itself blocked on a populated table (the data-loss guard checks row presence, not NULL content; see §17.2) and needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment, after proving zero NULLs remain
 
 **Rule of thumb:** NOT NULL on existing table = think about existing rows first.
 
@@ -70,7 +70,7 @@ Either:
 Developer adds FK without checking for orphan data:
 
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
+CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) 
     REFERENCES [dbo].[Customer]([CustomerId])
 ```
 
@@ -126,33 +126,7 @@ If data exceeds new limit, clean it first or reconsider the change.
 
 ---
 
-## 19.5 The CDC Surprise
-
-**What it looks like:**
-
-Developer changes schema on CDC-enabled table without considering capture instance:
-
-```sql
--- Just adds a column like normal
-[NewColumn] NVARCHAR(50) NULL,
-```
-
-**What happens:**
-
-- Column added to table
-- Existing capture instance doesn't include it
-- Change History won't show changes to NewColumn
-- Stale capture instance causes confusion
-
-**The fix:**
-
-Check if table is CDC-enabled first. If yes, follow CDC change protocol:
-- Development: Disable/re-enable CDC (accepting gap)
-- Production: Create new capture instance, manage dual-instance transition
-
----
-
-## 19.6 The Refactorlog Cleanup
+## 19.5 The Refactorlog Cleanup
 
 **What it looks like:**
 
@@ -170,45 +144,6 @@ Deletes the entry.
 **The fix:**
 
 Never delete refactorlog entries. They're needed for fresh environment deployments. They're small. Leave them.
-
----
-
-## 19.7 The SELECT * View
-
-**What it looks like:**
-
-Developer creates view with SELECT *:
-
-```sql
-CREATE VIEW dbo.vw_AllCustomers
-AS
-SELECT * FROM dbo.Customer
-```
-
-**What happens:**
-
-- View created with columns that exist *at creation time*
-- Later: Column added to Customer
-- View doesn't automatically include new column
-- Queries against view miss data
-- Confusion: "I added the column, why isn't it showing?"
-
-**The fix:**
-
-Always enumerate columns explicitly:
-```sql
-CREATE VIEW dbo.vw_AllCustomers
-AS
-SELECT 
-    CustomerId,
-    FirstName,
-    LastName,
-    Email,
-    CreatedAt
-FROM dbo.Customer
-```
-
-When you add a column, you must update the view too. This is a feature — it forces you to consider whether the view should expose the new column.
 
 ---
 

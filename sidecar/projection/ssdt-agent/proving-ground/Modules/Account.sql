@@ -38,6 +38,6 @@ CREATE TABLE dbo.Account
     -- dropped from Customer. Same type/nullability as the Customer-side attribute.
     Region  NVARCHAR(50)    NULL,
 
-    CONSTRAINT PK_Account PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Account_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

@@ -47,8 +47,7 @@ never enumerated); attack before judge (a finding may downgrade the disposition)
 Do **not** restate the isolation mechanics — they are owned by `self-test/PROTOCOL.md` and you obey
 them verbatim: a unique `PG_<reviewId>_<rand>` DB, a scratch copy of the proving ground, every
 `sqlpackage` call carrying `/TargetDatabaseName`, and an **unconditional teardown** on exit (drop
-DB + `rm -rf` scratch). Resolve `DB`/`SCRATCH` once, reuse the literal values. For a **CDC** packet,
-serialize per PROTOCOL §8 — the review runs no faster than the author's did. Nothing about being a
+DB + `rm -rf` scratch). Resolve `DB`/`SCRATCH` once, reuse the literal values. Nothing about being a
 *reviewer* relaxes the isolation invariants; you are one more executor in the fleet.
 
 ### 2. REPRODUCE the author's claimed outcome
@@ -83,8 +82,8 @@ re-scaffold it, you re-run it:
 
 ### 3. SCOPE — dispatch `skills/review/dependency-scope`
 
-Enumerate the dependency closure (FKs in/out, views, procs, indexes, CDC capture instances,
-external/ETL) and count affected rows on your DB. **No disposition may exceed this scope.** The
+Enumerate the dependency closure (FKs in/out, procs, indexes, external/ETL) and count affected rows
+on your DB. **No disposition may exceed this scope.** The
 dependency map it produces is what an escalation carries to the lead.
 
 ### 4. ATTACK — dispatch `skills/review/adversary`

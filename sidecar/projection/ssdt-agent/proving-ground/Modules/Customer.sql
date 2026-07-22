@@ -33,9 +33,8 @@
       (b) restructure it to ship across multiple releases (multiple PRs) so the running
           application keeps working while the change is in flight.
     A dev lead must review this: existing data is affected. Added scrutiny applies if the table
-    feeds a change-data-capture stream, holds >1M rows, or is the first time this operation has
-    run on the estate. This is the same-operation, different-seed proof (self-test COL-03 /
-    COL-03B / COL-03C).
+    holds >1M rows, or is the first time this operation has run on the estate. This is the
+    same-operation, different-seed proof (self-test COL-03 / COL-03B / COL-03C).
 
   - rename-attribute (ContactPhone -> MobileNumber): rename by editing the column name here.
     Without a refactorlog entry the delta is DROP ContactPhone + ADD MobileNumber — a rename with
@@ -95,6 +94,6 @@ CREATE TABLE dbo.Customer
     -- Account(Id) is itself a create-fk proof (see skills/op/create-fk-clean/).
     AccountId       INT             NULL,
 
-    CONSTRAINT PK_Customer PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Customer_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

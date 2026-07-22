@@ -19,7 +19,6 @@ OutSystems can read from and write to External Entities, but it doesn't control 
 **Why we use External Entities:**
 - Full control over schema design, data types, constraints
 - Ability to implement patterns OutSystems doesn't support (temporal tables, complex indexing, partitioning)
-- Change Data Capture for audit history
 - Standard SQL Server tooling and practices
 - Schema versioned in git, deployed through pipelines
 
@@ -28,7 +27,7 @@ OutSystems can read from and write to External Entities, but it doesn't control 
 ## The Handoff: When a Project Moves to SSDT
 
 A project migrates from OutSystems-managed entities to External Entities when:
-- We need capabilities OutSystems can't provide (CDC, temporal, complex constraints)
+- We need capabilities OutSystems can't provide (temporal, complex constraints)
 - We need tighter control over schema evolution
 - The project is designated for the External Entities architecture
 
@@ -36,10 +35,9 @@ A project migrates from OutSystems-managed entities to External Entities when:
 
 1. **Schema extraction:** Current OutSystems-generated tables are reverse-engineered into SSDT `.sql` files
 2. **SSDT project creation:** Tables, indexes, constraints defined declaratively
-3. **CDC enablement:** Capture instances created for audit tracking
-4. **External Entity creation:** Integration Studio extension created pointing to the tables
-5. **OutSystems reconnection:** Applications switch from internal entities to External Entities
-6. **Validation:** Data integrity verified, application tested
+3. **External Entity creation:** Integration Studio extension created pointing to the tables
+4. **OutSystems reconnection:** Applications switch from internal entities to External Entities
+5. **Validation:** Data integrity verified, application tested
 
 **After migration:**
 - SSDT owns the schema

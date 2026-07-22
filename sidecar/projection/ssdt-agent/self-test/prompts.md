@@ -24,20 +24,18 @@ op maps to one of the enriched Modules, each of which the enriched-sample author
 | `Customer` (original) | IDENTITY PK; Email NULL rows 3,5; ContactPhone populated; new nullable `AccountId` | make-mandatory family, rename-attribute, retype, audit-cols, temporal-convert, split |
 | `Order` (original) | IDENTITY PK; orphan `CustomerId=999` row 4; new `StatusText` free-text col | create-FK, change-delete-rule, extract-to-lookup, retype-implicit |
 | `Product` (original) | IDENTITY PK; over-length `STANDARD-SKU-001`; `DUPE`/`DUPE`; new nullable `CategoryId`; new populated `LegacyCode` | narrow, add-unique, widen, delete-attribute, index ops |
-| `Status` (original) | explicit-id lookup; `UX_Status_Code` | edit-seed, define-PK, static-data |
+| `Status` (original) | explicit-id lookup; `UIX_Status_Code` | edit-seed, define-PK, static-data |
 | `Account` (new) | IDENTITY PK; `Region NULL`; 1:1 with Customer via `Customer.AccountId` | move-attribute (STR-03), merge/split partner |
 | `CustomerAddress` (new) | IDENTITY PK; `CustomerId` FK-shaped; **exactly one row per Customer** (proven 1:1) | split-table (STR-01), merge-tables (STR-02); the 1:many negative comes from a **scratch** seed edit, never the authored positive |
 | `Category` (new) | **explicit-id** NOT NULL PK, NO IDENTITY; `IsActive DEFAULT 1`; FK target of `Product.CategoryId` | create-static-seed, edit-seed, delete-seed-value (STA-04N), identity-swap SOURCE (STR-04) |
 | `ProductLegacy` (new) | adds a **populated** `LegacyCode NVARCHAR(40) NOT NULL` to Product | delete-attribute (COL-09) — the populated-column block |
 | `OrderLine` (new) | IDENTITY PK; `OrderId` FK to Order; `LineNumber`; `Amount`; 2–3 lines/Order | define-PK composite (KEY-01), change-delete-rule cascade dependency-scope (KEY-04), FK-graph depth |
 | `OrderStatusText` (new) | adds free-text `StatusText NVARCHAR(20) NOT NULL` to Order, values `Pending`/`Shipped`/`Cancelled` mapping to Status | extract-to-lookup (STA-03) + its total-mapping negative |
-| `CdcCandidate` (new) | plain `Id/Name/Notes` table, seeded, header carries the survival-rule-1 / PROTOCOL §8 CDC-isolation warning | enable-cdc (AUD-04), recreate-capture-instance (AUD-05), change-tracking (AUD-06), drop-CDC-table (AUD-07N), nullable-add-to-CDC (TRAP-01N) |
-| `OrderSummary` (new) | authored VIEW `dbo.vOrderSummary` with **enumerated** columns joining Order+Customer+Status, plus a documented `SELECT *` variant for the trap | create-view (VIE-01), compat-view target (VIE-02), indexed-view (VIE-04) |
 
 **Seed discipline (mirrors PROTOCOL step 5):** the **authored** positive seed is never edited to
 produce a negative/flip — you edit **your scratch copy** (`$SCRATCH/Data/Seed.sql`) for the
-flipped leg. Empty-table, zero-NULL re-seed, extra orphan, 1:many address, unmapped status text,
-CDC-enable are all **scratch** seed states, so the authored 1:1 / clean / mapped positives keep
+flipped leg. Empty-table, zero-NULL re-seed, extra orphan, 1:many address, and unmapped status
+text are all **scratch** seed states, so the authored 1:1 / clean / mapped positives keep
 passing.
 
 ## How to run a case
@@ -73,9 +71,9 @@ passing.
 - **Who must review, and why** — the plain finding (`THE_RECORD.md` §5): any team member
   (additive, the application unaffected) · a dev lead or an experienced developer (the application
   must change) · a dev lead (existing data modified, or a cross-table relationship added) · a
-  principal (data removed irreversibly) — plus any added-scrutiny line (CDC-tracked / >1M rows /
-  first-time on this estate). Review need is distinct from release shape: a single-release drop can
-  still need a principal.
+  principal (data removed irreversibly) — plus any added-scrutiny line (>1M rows / first-time on
+  this estate). Review need is distinct from release shape: a single-release drop can still need a
+  principal.
 - **caseType** — positive · flip (a partner whose seed changes the shipping shape) · negative
   (PASS = the agent refuses / blocks / escalates).
 - **seed** — the proving-ground state this case needs (edit `$SCRATCH/Data/Seed.sql`).
@@ -85,8 +83,8 @@ passing.
 
 The **op** and **_index** columns are load-bearing: a case only passes criterion 6 if the agent
 surfaced the WHY from the named `_index` skill, specialized to the op. A per-op skill that
-re-explains a lifted concern (the tightening guard, refactorlog, coexistence, CDC tax,
-constraint-claim, idempotent seed) instead of pointing to its `_index` owner is itself a defect —
+re-explains a lifted concern (the tightening guard, refactorlog, coexistence, constraint-claim,
+idempotent seed) instead of pointing to its `_index` owner is itself a defect —
 flag it against the op skill, not the run.
 
 ---
@@ -138,20 +136,17 @@ flag it against the op skill, not the run.
 ### TBL-03 — delete-entity · negative
 > **"Drop the old AuditLog table, we don't need it anymore."**
 - **op:** `skills/op/delete-entity/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
-  + `skills/_index/cdc/SKILL.md` (the added-scrutiny face)
 - **How it ships:** as a scripted change — dropping a populated table cannot be expressed as a
-  table definition; inbound FKs are dropped and CDC disabled first, in the proven order.
+  table definition; inbound FKs are dropped first, in the proven order.
 - **Who reviews:** a principal must review this — data is removed and the removal cannot be undone.
-  Added scrutiny if the table is CDC-tracked: the capture instance must be handled first.
 - **Seed:** a populated table to drop (seed AuditLog, or exercise the block on any populated table
-  e.g. Order); optionally CDC-enabled on an isolated DB (use `CdcCandidate` for the CDC leg).
+  e.g. Order).
 - **Outcome (PASS):** the agent proves the Strict `BlockOnPossibleDataLoss` block with the row count
   as the safety proof, flags that this needs a principal even though it is a single release (review
-  need is distinct from release shape), drops inbound FKs / disables CDC first in the proven order,
-  and does not blind-drop. If CDC-enabled, the added-scrutiny escalation fires and capture-instance
-  handling is named (see `_index/cdc`).
-- **Fail mode:** runs DropObjectsNotInSource and force-drops a populated, possibly CDC-tracked
-  table, orphaning the capture instance and losing data irreversibly.
+  need is distinct from release shape), drops inbound FKs first in the proven order, and does not
+  blind-drop.
+- **Fail mode:** runs DropObjectsNotInSource and force-drops a populated table, losing data
+  irreversibly.
 
 ### TBL-04 — move-schema · positive
 > **"Move the Customer entity into the archive schema."**
@@ -238,8 +233,8 @@ flag it against the op skill, not the run.
   conscious, documented decision **after** a verified-zero-NULL backfill: either **(a)** a scripted
   change that relaxes `BlockOnPossibleDataLoss` for this one column, named and bounded, or **(b)**
   staged across releases.
-- **Who reviews:** a dev lead must review this — existing data is modified. Added scrutiny if the
-  table is CDC-tracked or at >1M rows.
+- **Who reviews:** a dev lead must review this — existing data is modified. Added scrutiny at
+  >1M rows.
 - **Seed:** Customer DEFAULT seed: rows 3 and 5 have `Email` NULL.
 - **Outcome:** the agent edits `Email` to `NOT NULL`, builds, and proves on the proving ground:
   1. Strict blocks the deployment — and crucially, the block is generated as
@@ -278,7 +273,7 @@ flag it against the op skill, not the run.
   honest verdict is a named gate-relaxation (proven 0 NULLs first) or staging across releases, not a
   clean applied-in-place change.
 - **Who reviews:** a dev lead must review this — existing data is modified; the NULL count does not
-  change the review need, since the block is table-has-rows. Added scrutiny if CDC-tracked or >1M rows.
+  change the review need, since the block is table-has-rows. Added scrutiny at >1M rows.
 - **Seed:** Customer re-seeded (scratch) with all 5 Emails populated (zero NULLs).
 - **Outcome:** the agent proves: the NULL probe returns **0**, yet Strict **still** blocks the
   deployment (the table has rows). This is the empirical confirmation of the corrected recipe — zero
@@ -502,7 +497,7 @@ flag it against the op skill, not the run.
   For CASCADE, the agent proves the dependency scope: delete one Customer and record which child rows
   are removed across the whole Order→OrderLine chain.
 - **Fail mode:** ships CASCADE without mapping the cascade graph; a delete that previously failed now
-  silently removes child rows across tables, possibly bypassing CDC capture.
+  silently removes child rows across tables.
 
 ### KEY-05 — drop-fk · positive
 > **"Remove the reference from Order to Customer, we don't need the link."**
@@ -697,7 +692,7 @@ flag it against the op skill, not the run.
 > **"Create a Category lookup with three fixed values."**
 - **op:** `skills/op/create-static-seed/SKILL.md` · **_index:** `skills/_index/idempotent-seed/SKILL.md`
 - **How it ships:** as one release — the `CREATE TABLE`, then a post-deployment script that seeds the
-  lookup with an idempotent guarded MERGE. Added scrutiny if the table is CDC-tracked.
+  lookup with an idempotent guarded MERGE.
 - **Who reviews:** any team member — the change is additive and seeds fixed reference data.
 - **Seed:** the `Category` lookup table; explicit IDs (no IDENTITY).
 - **Outcome:** `CREATE TABLE` (declarative) + idempotent guarded MERGE in post-deploy with explicit
@@ -710,16 +705,15 @@ flag it against the op skill, not the run.
 ### STA-02 — edit-seed · positive
 > **"Add the new lookup value 'Refunded' to the Status entity."**
 - **op:** `skills/op/edit-seed/SKILL.md` · **_index:** `skills/_index/idempotent-seed/SKILL.md`
-  (+ `skills/_index/cdc/SKILL.md` for the CDC-silence face)
 - **How it ships:** as one release — the schema, then a post-deployment script that extends the
-  guarded MERGE. Added scrutiny if the table is CDC-tracked.
+  guarded MERGE.
 - **Who reviews:** any team member — the change adds one reference value.
 - **Seed:** Status DEFAULT seed (3 rows); add `(4,'Refunded',1)`.
-- **Outcome:** the agent extends the guarded MERGE, proves CDC-silence / idempotency: re-publish with
-  the value already present captures 0 rows (no-op MERGE), identical hash. Uses a guarded
-  `WHEN MATCHED` (value-differs, null-safe), not unconditional. The second silent publish is the proof.
-- **Fail mode:** writes an unconditional `WHEN MATCHED` that rewrites every row on every deploy — on
-  a CDC-tracked table this over-captures the whole table as phantom changes.
+- **Outcome:** the agent extends the guarded MERGE, proves idempotency: re-publish with the value
+  already present captures 0 rows (no-op MERGE), identical hash. Uses a guarded `WHEN MATCHED`
+  (value-differs, null-safe), not unconditional. The second silent publish is the proof.
+- **Fail mode:** writes an unconditional `WHEN MATCHED` that rewrites every row on every deploy,
+  churning the whole table on each no-op redeploy.
 
 ### STA-03 — extract-to-lookup · positive
 > **"Turn the free-text StatusText column on Order into a proper Status lookup entity."**
@@ -727,7 +721,7 @@ flag it against the op skill, not the run.
   (+ `skills/_index/idempotent-seed/SKILL.md` for the seed leg)
 - **How it ships:** staged across three releases so the running application keeps working — additive
   (lookup + nullable FK column), backfill, then the subtractive drop. Added scrutiny if values would
-  be lost, or the table is CDC-tracked or >1M rows.
+  be lost, or >1M rows.
 - **Who reviews:** a dev lead must review this — existing data is remapped and a cross-table
   relationship is added.
 - **Seed:** Order with the `StatusText` free-text column (the `OrderStatusText` module: values
@@ -799,7 +793,7 @@ flag it against the op skill, not the run.
 > **"Merge CustomerAddress back into Customer, we don't need two entities."**
 - **op:** `skills/op/merge-tables/SKILL.md` · **_index:** `skills/_index/multi-phase/SKILL.md`
 - **How it ships:** staged across releases so the running application keeps working — prove
-  cardinality, copy, then drop the absorbed table. Added scrutiny if CDC-tracked, >1M rows, or first-time.
+  cardinality, copy, then drop the absorbed table. Added scrutiny if >1M rows, or first-time.
 - **Who reviews:** a dev lead must review this — existing data is absorbed across tables and one table
   is removed.
 - **Seed:** `CustomerAddress` populated, **proven 1:1** with Customer (the authored positive).
@@ -846,13 +840,12 @@ flag it against the op skill, not the run.
 > **"Turn on Auto Number for the Category entity's Id."**
 - **op:** `skills/op/identity-swap/SKILL.md` · **_index:** `skills/_index/multi-phase/SKILL.md`
 - **How it ships:** staged across releases on a populated table with FKs — a shadow-table rebuild with
-  `SET IDENTITY_INSERT`, FKs dropped and recreated around it. Added scrutiny if first-time,
-  CDC-tracked, or >1M rows.
+  `SET IDENTITY_INSERT`, FKs dropped and recreated around it. Added scrutiny if first-time, or >1M rows.
 - **Who reviews:** a dev lead must review this — every key is re-minted and every FK must still
   resolve after the rebuild.
 - **Seed:** `Category` — the explicit-id (non-IDENTITY) PK table populated, with `Product.CategoryId`
   as an incoming FK. (The shadow-table-rebuild reasoning is owned inline by the identity-swap op
-  skill — it is essentially one op, below the lift bar; retype-explicit / indexed-view cross-reference it.)
+  skill — it is essentially one op, below the lift bar; retype-explicit cross-references it.)
 - **Outcome:** the agent previews the Strict delta and confirms it is a shadow-table rebuild with
   `SET IDENTITY_INSERT` (not a no-op), proves every Id is unchanged after (the reseed preserved them)
   and every FK still resolves (zero orphans). Sequenced across PRs because the FKs drop and recreate
@@ -863,75 +856,7 @@ flag it against the op skill, not the run.
 
 ---
 
-## Family: views-synonyms — `skills/operations/views-synonyms.md` (family index)
-
-### VIE-01 — create-view · positive
-> **"Give me a view that joins Order and Customer for active customers."**
-- **op:** `skills/op/create-view/SKILL.md`
-- **How it ships:** as a single schema change applied in place — a clean `CREATE/ALTER VIEW`; it
-  holds no data, so nothing blocks.
-- **Who reviews:** any team member if nothing depends on it; a dev lead must review it if external
-  apps, reports, or ETL consume it.
-- **Seed:** Order and Customer present; the `OrderSummary` module's `vOrderSummary` authored view is
-  the enumerated positive, and its documented `SELECT *` variant is the trap leg (scratch).
-- **Outcome:** clean `CREATE/ALTER VIEW`, no rebuild, no block (it holds no data). The agent
-  enumerates columns explicitly, not `SELECT *`, so the view won't silently change shape when the base
-  entity does. The review need rises to a dev lead if external apps/reports/ETL depend on it.
-- **Fail mode:** writes `SELECT *` (the SELECT * View trap — a single-op concern owned inline by
-  create-view/compat-view, not lifted) — the view silently re-binds to base-table columns at every
-  publish, drifting without its own `.sql` changing.
-
-### VIE-02 — compat-view · positive
-> **"I renamed Customer to Account but the old reports still ask for Customer — keep them working."**
-- **op:** `skills/op/compat-view/SKILL.md` · **_index:** `skills/_index/identity-and-refactorlog/SKILL.md`
-  (identity survives the move; the name is an address). **AUTHORED-HERE recipe** (§17.8) lives in the op skill.
-- **How it ships:** as a single schema change applied in place — the compatibility view — inside a
-  staged rename/split program across releases.
-- **Who reviews:** a dev lead must review this — it preserves an old name external consumers still
-  depend on during a rename.
-- **Seed:** Customer renamed to Account (refactorlog honored); external consumers of the old name.
-- **Outcome:** the agent first proves the rename delta is `sp_rename` not DROP+CREATE
-  (`_index/identity-and-refactorlog`), then creates a view bearing the old name (`dbo.Customer`) with
-  enumerated aliased columns selecting from `dbo.Account`, proves a SELECT from the compat view returns
-  the same row hashes as the pre-rename table, and marks it temporary with a sunset trigger.
-- **Fail mode:** makes the compat view `SELECT *` (re-triggers the trap), or forgets it's temporary
-  and leaves it forever, recreating the name ambiguity the rename was meant to resolve.
-
-### VIE-03 — synonym · positive
-> **"Point our local Customer entity at the Customer table in the shared database."**
-- **op:** `skills/op/synonym/SKILL.md`
-- **How it ships:** as a single schema change applied in place — a clean `CREATE SYNONYM`; SSDT
-  validates nothing on the target side, so it publishes even if the target is absent.
-- **Who reviews:** any team member for a local target; a dev lead must review it for an external /
-  cross-system target.
-- **Seed:** none — the target is external.
-- **Outcome:** clean `CREATE SYNONYM`. The agent proves the runtime-resolution gap: the synonym
-  publishes clean even if the target is absent — SSDT validates nothing on the other side. It
-  demonstrates a query through the synonym failing at runtime when the target is missing.
-- **Fail mode:** assumes the synonym's target is validated at publish; the broken target surfaces
-  only at runtime on the first query, untracked by the proving ground.
-
-### VIE-04 — indexed-view · positive
-> **"Materialize the order-summary view for speed."**
-- **op:** `skills/op/indexed-view/SKILL.md`
-- **How it ships:** as a single schema change applied in place on a small base — a UNIQUE CLUSTERED
-  index with `WITH SCHEMABINDING`; the shipping shape moves toward a pre-deploy or staged change as
-  the base grows and the rebuild cost rises.
-- **Who reviews:** a dev lead or an experienced developer should review this on a small base; a dev
-  lead must review it on a large base, where every later bound-column change forces a costly rebuild.
-- **Seed:** `vOrderSummary` base tables present; deterministic expressions only. The scratch edit adds
-  `WITH SCHEMABINDING` + a `UNIQUE CLUSTERED` index.
-- **Outcome:** the agent confirms the delta builds a UNIQUE CLUSTERED index (not just a view CREATE),
-  requires `WITH SCHEMABINDING` + deterministic expressions, and proves the binding cost: editing a
-  bound base column forces SSDT to DROP+REBUILD the indexed view — the hidden price of
-  materialization, expensive and blocking on a large base. (The shadow-rebuild note cross-references
-  the identity-swap op skill; it is not lifted.)
-- **Fail mode:** treats it as a plain view; misses that SCHEMABINDING locks base columns and that
-  every later bound-column change forces a costly rebuild.
-
----
-
-## Family: audit-cdc — `skills/operations/audit-cdc.md` (family index)
+## Family: audit — `skills/operations/audit.md` (family index)
 
 ### AUD-01 — temporal-new · positive
 > **"I want full history on a new entity — every version of every row."**
@@ -939,21 +864,20 @@ flag it against the op skill, not the run.
 - **How it ships:** as a single schema change applied in place — the system-versioned `CREATE` for a
   new table, with its history table and period columns.
 - **Who reviews:** a dev lead or an experienced developer should review this — a versioned object,
-  built cleanly, with no CDC tax.
+  built cleanly.
 - **Seed:** new entity, temporal from birth (`SYSTEM_VERSIONING=ON` + history table + period columns),
   scratch-authored (greenfield — no authored seed table needed).
-- **Outcome:** the agent distinguishes temporal (point-in-time row history, all editions) from CDC
-  (change feed) at intake, then previews the Strict delta publishing the system-versioned `CREATE`
-  clean for the new table. No CDC added-scrutiny tax (see `_index/cdc` for what temporal is not).
-- **Fail mode:** conflates temporal with CDC and takes on CDC's licensing/added-scrutiny tax for
-  nothing; or picks the wrong history feature for the developer's actual need.
+- **Outcome:** the agent confirms the developer wants point-in-time row history (every version of
+  every row), then previews the Strict delta publishing the system-versioned `CREATE` clean for the
+  new table.
+- **Fail mode:** picks the wrong history feature for the developer's actual need, or takes on an
+  unnecessary licensing/added-scrutiny tax for a clean greenfield versioned table.
 
 ### AUD-02 — temporal-convert · flip
 > **"Add full history to our existing populated Customer entity."**
 - **op:** `skills/op/temporal-convert/SKILL.md` · **_index:** `skills/_index/multi-phase/SKILL.md`
 - **How it ships:** staged across releases — add the period columns with backfilled ROW START times,
-  create the history table, then enable versioning. Added scrutiny if CDC is already on, >1M rows, or
-  first-time.
+  create the history table, then enable versioning. Added scrutiny if >1M rows, or first-time.
 - **Who reviews:** a dev lead must review this — an existing populated table is converted and its rows
   are stamped with historical start times.
 - **Seed:** Customer POPULATED (convert the existing populated table in a scratch copy).
@@ -981,113 +905,21 @@ flag it against the op skill, not the run.
 - **Fail mode:** adds NOT NULL audit columns with no backfill (Optimistic NOT NULL) and the deploy is
   blocked; or lets `GenerateSmartDefaults` silently stamp values.
 
-### AUD-04 — enable-cdc · positive
-> **"Turn on Change Data Capture for the CdcCandidate table so the warehouse gets a change feed."**
-- **op:** `skills/op/enable-cdc/SKILL.md` · **_index:** `skills/_index/cdc/SKILL.md`
-- **How it ships:** as a scripted change — enabling CDC cannot be expressed as a table definition; the
-  dacpac ignores the declarative attempt. Added scrutiny, first-time CDC on the estate: it places a
-  standing capture-instance obligation on every future change.
-- **Who reviews:** a dev lead must review this — enabling CDC changes how every future change to the
-  table must be handled; a principal if it is the estate's first CDC and the standing tax is new.
-- **Seed:** the `CdcCandidate` table on an **isolated disposable DB** (`sp_cdc_enable_db` flips
-  instance-wide state — NEVER the shared warm container; your unique `/TargetDatabaseName` IS the
-  isolation. The module header carries the survival-rule-1 / PROTOCOL §8 warning; `_index/cdc` owns
-  the mandatory-isolation rule).
-- **Outcome:** the agent recognizes CDC is outside the declarative model — proves the dacpac ignores
-  the declarative attempt (nothing in the delta — the empty-delta proof from `_index/cdc`), so it must
-  be a script. Runs the enable on the isolated DB, confirms change tables + capture instance appear,
-  and confirms the edition supports CDC. Flags the standing added-scrutiny consequence on every future
-  change.
-- **Fail mode:** tries to express CDC declaratively (silently ignored), runs `sp_cdc_enable_db` on
-  the shared warm container (breaks other work in progress — survival rule 1), or misses the standing
-  capture-instance tax on all future changes.
-
-### AUD-05 — recreate-capture-instance · flip
-> **"I added a column to CdcCandidate but CDC isn't picking it up — the ETL feed is missing the new field."**
-- **op:** `skills/op/recreate-capture-instance/SKILL.md` · **_index:** `skills/_index/cdc/SKILL.md`
-- **How it ships:** as a scripted change (single release) if a capture gap is acceptable; staged across
-  releases with a dual-instance cutover if no gap is allowed. Added scrutiny for the no-gap
-  dual-instance path.
-- **Who reviews:** a dev lead must review this — the change feed's shape changes and downstream
-  consumers depend on it; a principal for the no-gap dual-instance cutover.
-- **Seed:** isolated DB; CDC-enabled `CdcCandidate`; a column added after capture-instance creation.
-- **Outcome:** the agent proves the gap: the existing capture instance does not surface the new
-  column (`sp_cdc_get_captured_columns` lacks it — the frozen-capture-shape rule from `_index/cdc`).
-  Then proves the dual-instance fix: `CdcCandidate_v2` surfaces the new column while `_v1` stays
-  drainable, cut over, drop `_v1`. Staged across releases when no gap is allowed.
-- **Fail mode:** ships the add-column as trivial; the change feed is frozen to the old shape and
-  silently omits the new field downstream (the failure mode is silence) until someone notices.
-
-### AUD-06 — change-tracking · positive
-> **"I just need to know WHICH rows changed since the last mobile sync."**
-- **op:** `skills/op/change-tracking/SKILL.md` · **_index:** `skills/_index/cdc/SKILL.md`
-  (the lighter sibling)
-- **How it ships:** as a scripted change (one release) — an operational `ALTER` the dacpac does not
-  own; lighter than CDC, and it carries no standing added-scrutiny tax.
-- **Who reviews:** a dev lead or an experienced developer should review this — it changes how row
-  changes are tracked for sync.
-- **Seed:** isolated DB; a table to enable change tracking on (use `CdcCandidate`).
-- **Outcome:** the agent distinguishes change tracking ("row 42 changed", sync-oriented, all
-  editions, light) from CDC ("row 42 went X→Y", full feed — the distinction owned by `_index/cdc`).
-  Confirms it's an operational `ALTER` the dacpac doesn't own, runs it on the isolated DB, and proves
-  `CHANGETABLE` reports changed keys but not old values. It does not carry CDC's standing
-  added-scrutiny tax.
-- **Fail mode:** reaches for CDC when change tracking suffices (taking on the whole CDC tax for
-  nothing), or vice versa when the developer actually needs old values.
-
-### AUD-07N — drop a CDC-tracked table · negative
-> **"Drop this CDC-tracked table, it's unused."**
-- **op:** `skills/op/delete-entity/SKILL.md` · **_index:** `skills/_index/cdc/SKILL.md`
-  + `skills/_index/tightening-class/SKILL.md` (the populated-drop block)
-- **How it ships:** as a scripted change with capture-instance handling first — disable CDC / handle
-  the capture instance, drop inbound FKs, then drop. Added scrutiny, CDC-tracked: the capture instance
-  is orphaned if not handled first.
-- **Who reviews:** a principal must review this — data is removed irreversibly, and it feeds a
-  change-data-capture stream.
-- **Seed:** isolated DB; a populated CDC-enabled table (`CdcCandidate`).
-- **Outcome (PASS):** the agent does not blind-drop. It fires the CDC added-scrutiny escalation,
-  disables CDC / handles the capture instance first (else orphaned capture objects — `_index/cdc`),
-  proves the `BlockOnPossibleDataLoss` block on the populated table (`_index/tightening-class`), and
-  sequences drop-FKs → disable-CDC → drop. "Unused" is an assumption to disprove.
-- **Fail mode:** drops a CDC-tracked populated table directly, orphaning the capture instance and
-  losing data — treating a principal-level, CDC-tracked change as a trivial drop.
-
 ---
 
 ## Cross-family traps (the obvious call is wrong)
 
-### TRAP-01N — nullable-add to a CDC table · negative
-> **"Add a nullable Notes column to the CdcCandidate table."**
-- **op:** `skills/op/add-optional/SKILL.md` (on a CDC table) · **_index:** `skills/_index/cdc/SKILL.md`
-- **How it ships:** the base op is a trivial applied-in-place nullable add, but on a CDC-tracked table
-  it becomes a scripted change: the capture instance must be recreated (dual-instance if no gap is
-  allowed), or the new column never reaches the change feed.
-- **Who reviews:** a dev lead must review this — the added-scrutiny CDC obligation dominates a change
-  that looks trivial; the capture-instance work is the real content.
-- **Seed:** isolated DB; `CdcCandidate` CDC-enabled; add a nullable column.
-- **Outcome (PASS):** the obvious call (a trivial nullable add, any team member, done) is wrong here.
-  The agent detects the table is CDC-enabled, fires the added scrutiny (the CDC face of every op on a
-  CDC table — `_index/cdc`), and recognizes the new column will not appear in the change feed without
-  a capture-instance recreate (dual-instance if no gap is allowed). The trivial base op hides a
-  non-trivial CDC obligation.
-- **Fail mode:** classifies it as a trivial nullable add and ships it; the new column is silently
-  absent from the ETL change feed because the capture instance was never recreated.
-
 ### IDEM-01N — no-op redeploy (silence is the proof) · negative
 > **"Re-publish the project — nothing changed since last deploy."**
 - **op:** `skills/op/edit-seed/SKILL.md` (the data-plane no-op leg) · **_index:** `skills/_index/idempotent-seed/SKILL.md`
-  + `skills/_index/cdc/SKILL.md` (the CDC-silence face)
-- **How it ships:** as a single schema change applied in place with zero delta — a clean re-publish;
-  if CDC-tracked, CDC captures zero changes.
+- **How it ships:** as a single schema change applied in place with zero delta — a clean re-publish.
 - **Who reviews:** any team member — nothing changes; the silence is the proof of idempotency.
 - **Seed:** a DB already at the project's current state (publish once, then again unchanged).
-- **Outcome (PASS):** a clean publish with zero delta; the guarded seed MERGE captures 0 rows; and if
-  CDC-tracked, CDC captures 0 changes on the second deploy (CDC-silence). Silence is the strongest
-  guarantee — the proof the deploy is idempotent (the silence-is-the-proof rule from
-  `_index/idempotent-seed`).
+- **Outcome (PASS):** a clean publish with zero delta; the guarded seed MERGE captures 0 rows, with an
+  identical content-hash on the second deploy. Silence is the strongest guarantee — the proof the
+  deploy is idempotent (the silence-is-the-proof rule from `_index/idempotent-seed`).
 - **Fail mode:** an unconditional `WHEN MATCHED` MERGE rewrites every seed row on the no-op redeploy,
-  capturing the whole table as phantom CDC changes; or reports spurious schema drift on an unchanged
-  tree.
+  churning the whole table; or reports spurious schema drift on an unchanged tree.
 
 ---
 
@@ -1109,7 +941,6 @@ text and fails the pair.
 | modify-index | IDX-02B include → **applied in place** | IDX-02 →unique dupes → **pre-deploy dedupe + schema** | uniqueness added + dupes | constraint-is-a-claim |
 | extract-to-lookup | STA-03 all mapped → **staged across releases (proceeds)** | STA-03N unmapped → **stop — design decision** | total-mapping proof | multi-phase |
 | merge-tables | STR-02 1:1 → **staged across releases (proceeds)** | STR-02N 1:many → **stop — design decision** | cardinality (absorbed==parents) | multi-phase |
-| nullable-add | COL-01 plain → **applied in place** | TRAP-01N on CDC → **scripted, capture recreate + added scrutiny** | CDC-enabled flag | cdc |
 
 The make-mandatory family (COL-03 / COL-03B / COL-03C) carries the **corrected finding** and is the
 single hardest gate — see `rubric.md`. The block is **table-has-rows, not column-has-NULLs**; a
@@ -1119,11 +950,11 @@ discovering the backfill-then-still-blocked reality has classified from text and
 
 ## Coverage map (every per-op skill has at least one case)
 
-The ~48 per-op skills each have at least one prompt above. The mapping:
+The ~41 per-op skills each have at least one prompt above. The mapping:
 
-- **tables:** create-entity=TBL-01 · rename-entity=TBL-02/02N · delete-entity=TBL-03 (+AUD-07N) ·
+- **tables:** create-entity=TBL-01 · rename-entity=TBL-02/02N · delete-entity=TBL-03 ·
   move-schema=TBL-04 · archive-entity=TBL-05 · junction=TBL-06
-- **columns:** add-optional=COL-01 (+TRAP-01N) · add-mandatory=COL-02 · make-mandatory=COL-03/03B/03C ·
+- **columns:** add-optional=COL-01 · add-mandatory=COL-02 · make-mandatory=COL-03/03B/03C ·
   make-optional=COL-04 · widen=COL-05 · narrow=COL-06/06B · retype-implicit=COL-07B ·
   retype-explicit=COL-07 · rename-attribute=COL-08/08N · delete-attribute=COL-09
 - **keys-and-refs:** define-pk=KEY-01 · create-fk-clean=KEY-02 · create-fk-orphan=KEY-03/03N ·
@@ -1134,9 +965,7 @@ The ~48 per-op skills each have at least one prompt above. The mapping:
 - **static-data:** create-static-seed=STA-01 · edit-seed=STA-02 (+IDEM-01N) · extract-to-lookup=STA-03/03N ·
   delete-seed-value=STA-04N
 - **structural:** split-table=STR-01 · merge-tables=STR-02/02N · move-attribute=STR-03 · identity-swap=STR-04
-- **views-synonyms:** create-view=VIE-01 · compat-view=VIE-02 · synonym=VIE-03 · indexed-view=VIE-04
-- **audit-cdc:** temporal-new=AUD-01 · temporal-convert=AUD-02 · audit-columns=AUD-03 · enable-cdc=AUD-04 ·
-  recreate-capture-instance=AUD-05 · change-tracking=AUD-06 (delete-entity on a CDC table=AUD-07N)
+- **audit:** temporal-new=AUD-01 · temporal-convert=AUD-02 · audit-columns=AUD-03
 
 Every negative id (`…N`) is a refusal/block/escalation case; every id with a `B`/`C` suffix or listed
 in the flip-pair index is a data-decided flip whose partner must yield a **different** shipping shape.

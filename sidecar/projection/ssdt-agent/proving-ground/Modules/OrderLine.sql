@@ -37,6 +37,6 @@ CREATE TABLE dbo.OrderLine
     LineNumber  INT             NOT NULL,
     Amount      DECIMAL(18, 2)  NOT NULL CONSTRAINT DF_OrderLine_Amount DEFAULT (0),
 
-    CONSTRAINT PK_OrderLine PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_OrderLine_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

@@ -17,7 +17,7 @@ description: Use when the developer says "set the primary key", "the Identifier"
 key on OrderId + LineNumber".
 
 ## SSDT meaning
-`CONSTRAINT [PK_Table] PRIMARY KEY CLUSTERED (...)` inline in the `CREATE`. On a new table it is part
+`CONSTRAINT [PK_<Table>_<Column>] PRIMARY KEY CLUSTERED (...)` inline in the `CREATE`. On a new table it is part
 of the create. On an existing populated table, adding the PK **builds a clustered index** (scans and
 reorders every row) and **fails if the key column has duplicate or NULL values**.
 
@@ -43,8 +43,6 @@ trap: confusing an IDENTITY surrogate with a natural key — see `../identity-sw
   `../../_index/constraint-is-a-claim/SKILL.md`.
 - more than 1M rows: added scrutiny — at production row counts the clustered-index build locks the
   table and runs long; schedule a window.
-- CDC-tracked table: added scrutiny — the table feeds a change-data-capture stream and the capture
-  instance must be handled; see `../../_index/cdc/SKILL.md`.
 
 ## Prove it
 Run the op-specific probes FIRST: `SELECT <keycols>, COUNT(*) FROM <table> GROUP BY <keycols> HAVING
@@ -83,8 +81,7 @@ What this operation contributes to the pull request (`../../author-pr/SKILL.md`)
   keys, then the primary key lands validated (or across several releases when old and new code must
   coexist).
 - Added scrutiny, when it applies — at production row counts the clustered-index build locks the
-  table and runs long, so schedule a window; and if the table feeds a change-data-capture stream,
-  the capture instance must be handled (`../../_index/cdc/SKILL.md`).
+  table and runs long, so schedule a window.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -100,7 +97,7 @@ WHERE object_id = OBJECT_ID('<table>') AND is_primary_key = 1;
 ```
 
 **Rollback.** Dropping the primary key is lossless for the data: `ALTER TABLE <table> DROP CONSTRAINT
-PK_<table>;` drops the constraint and its clustered index without changing any row values. If a
+PK_<table>_<column>;` drops the constraint and its clustered index without changing any row values. If a
 pre-deployment script deduped or assigned keys to make the key hold, that remediation is not
 auto-reversed — record the original values for a manual restore.
 

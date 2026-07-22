@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Persona-1 front door for an OutSystems-native developer who wants to change the data model. Use FIRST, before any classification or SQL editing. Translates the developer's plain request ("make Email required", "rename this attribute") into a named catalog operation and a desired-state .sql edit, gathers the four state-variables that decide how the change ships and who must review it, and asks the ONE business question only a human can answer. Produces a structured change-spec and hands it to change-author. Does NOT classify how it ships, does NOT prove, does NOT edit the CREATE — it scopes the work so change-author can prove it.
+description: Persona-1 front door for an OutSystems-native developer who wants to change the data model. Use FIRST, before any classification or SQL editing. Translates the developer's plain request ("make Email required", "rename this attribute") into a named catalog operation and a desired-state .sql edit, gathers the three state-variables that decide how the change ships and who must review it, and asks the ONE business question only a human can answer. Produces a structured change-spec and hands it to change-author. Does NOT classify how it ships, does NOT prove, does NOT edit the CREATE — it scopes the work so change-author can prove it.
 ---
 
 # Intake
@@ -48,14 +48,14 @@ terms and let them pick before you commit a name.
 ### 2. Name the operation(s) from the catalog
 Map the confirmed intent onto an entry in `skills/operations/*.md`
 (`tables.md` · `columns.md` · `keys-and-refs.md` · `indexes.md` · `constraints.md` ·
-`static-data.md` · `structural.md` · `views-synonyms.md` · `audit-cdc.md`). One request may be
+`static-data.md` · `structural.md`). One request may be
 several operations (e.g. "split Customer into Customer + Address" is the multi-PR `split-entity`
 structural op). Name each one. You do not read how the operation flips here — that is
 change-author's job during proving — but you do record which catalog entry owns the operation so
 it can.
 
-### 3. Gather the four state-variables
-These four facts decide how an operation ships and who must review it. You collect what the
+### 3. Gather the three state-variables
+These three facts decide how an operation ships and who must review it. You collect what the
 developer already knows; everything still unknown, you mark `unknown — prove it`, because a
 **disposable copy of Dev answers it for certain** and a developer's recollection of row state
 is a guess, not a proof.
@@ -65,11 +65,7 @@ is a guess, not a proof.
    where you're adding an FK, over-length values where you're narrowing, dupes where you're
    adding a unique constraint. The developer rarely knows this precisely. Mark it
    `unknown — prove it` unless they state a hard fact.
-3. **Is the table CDC-enabled, and is a no-capture-gap required?** CDC is the team's biggest
-   tripwire — it adds scrutiny (the capture instance is frozen to the table's current columns and
-   needs handling) and can push the change to ship across several releases. If the developer
-   doesn't know, flag it — change-author confirms on a disposable copy of Dev.
-4. **Must old and new application code coexist** through the release? (A column the running app
+3. **Must old and new application code coexist** through the release? (A column the running app
    still reads cannot be dropped in a single release; that forces a staged, multi-PR deprecation.)
 
 Record each as `known: <value>` or `unknown — prove it`. Never silently assume "empty" or
@@ -109,7 +105,6 @@ CHANGE-SPEC
   state-variables:
     populated:        known:<y/n> | unknown — prove it
     violates-rule:    known:<…>   | unknown — prove it
-    cdc + no-gap:     known:<…>   | unknown — prove it
     coexist required: known:<…>   | unknown — prove it
   business answer:    <the human's answer to the one question, or "none needed">
   notes:              <ambiguities resolved, multiple-op decomposition, anything change-author needs>

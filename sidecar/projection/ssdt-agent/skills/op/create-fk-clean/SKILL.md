@@ -11,7 +11,7 @@ description: Use when the developer says "add a reference to Customer", "draw th
 "add a reference to Customer", "draw the relationship from Order to Customer", "Order belongs to a Customer".
 
 ## SSDT meaning
-`CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([CustomerId])`. SSDT emits `ALTER TABLE ... ADD CONSTRAINT ...` and SQL Server **validates every existing child row** against the parent. All `Order.CustomerId` present in `Customer` → lands clean.
+`CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer]([CustomerId])`. SSDT emits `ALTER TABLE ... ADD CONSTRAINT ...` and SQL Server **validates every existing child row** against the parent. All `Order.CustomerId` present in `Customer` → lands clean.
 
 ## The named trap
 **Forgotten FK Check** (handbook file 16 = §19.3): adding the FK without probing for **orphans** (child rows whose parent key does not exist) — the clean declarative FK is then blocked at deploy when SQL Server validates the child rows. Dodging with `WITH NOCHECK` leaves an untrusted constraint (`is_not_trusted = 1`). This is the constraint-is-a-claim family — the deploy is blocked by a violating value, not by row presence — see `../../_index/constraint-is-a-claim/SKILL.md`; the orphan-reconcile-retrust path lives in `../create-fk-orphan/SKILL.md`.
@@ -20,7 +20,6 @@ description: Use when the developer says "add a reference to Customer", "draw th
 - no orphan rows → lands as one `ADD CONSTRAINT`, applied in place; inserts and updates are now validated against the parent and a new inter-table dependency exists. A dev lead reviews it: a cross-table relationship is added.
 - orphan rows present → SQL Server's validation blocks the deploy → this becomes a reconcile-then-retrust change; route to `../create-fk-orphan/SKILL.md`.
 - parent table large → validation scans the parent → added scrutiny at >1M rows: the scan may block writes or run long, so schedule a window.
-- CDC-enabled → the FK itself has no capture impact; coordinate if either side is mid-migration (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Run the orphan probe FIRST: `SELECT COUNT(*) FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE p.<pk> IS NULL`. Then Strict publish: clean data → the delta is one `ADD CONSTRAINT`; orphans → the Strict publish is blocked and reports the orphan count and the offending child rows, and the op changes. See `../../prove-on-dacpac/SKILL.md` (publish loop) + `../../talk-to-local-sql/SKILL.md` (probe). Seed: the clean Order→Customer rows are the positive; the seeded orphan `Order.CustomerId=999` flips it to a blocked deploy and routes to create-fk-orphan; OrderLine→Order gives FK-graph depth (KEY-01).
@@ -45,11 +44,11 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 SELECT c.<fk> FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE p.<pk> IS NULL;
 
 -- expect one row, is_not_trusted = 0: the foreign key landed trusted
-SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>';
+SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>_<column>';
 ```
 
 **Rollback**
-Lossless: `ALTER TABLE <child> DROP CONSTRAINT FK_<child>_<parent>;`. No data was modified, so nothing else is reversed.
+Lossless: `ALTER TABLE <child> DROP CONSTRAINT FK_<child>_<parent>_<column>;`. No data was modified, so nothing else is reversed.
 
 **Not verified**
 - Application impact: any insert or update that points a child at a parent that does not exist will now be rejected with error 547; application-side validation is not confirmed here.

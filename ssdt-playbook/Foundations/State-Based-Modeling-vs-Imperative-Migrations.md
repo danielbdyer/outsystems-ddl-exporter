@@ -21,13 +21,14 @@ ALTER TABLE dbo.Person DROP COLUMN LegacyId;
 -- "Here's what the table should look like"
 CREATE TABLE [dbo].[Person]
 (
-    PersonId INT IDENTITY(1,1) NOT NULL,
+    PersonId INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_Person_PersonId]
+            PRIMARY KEY CLUSTERED,
     FirstName NVARCHAR(100) NOT NULL,
     MiddleName NVARCHAR(50) NULL,           -- Added
     LastName NVARCHAR(100) NOT NULL,
-    Email NVARCHAR(200) NOT NULL,           -- Widened
+    Email NVARCHAR(200) NOT NULL            -- Widened
     -- LegacyId removed
-    CONSTRAINT [PK_Person] PRIMARY KEY CLUSTERED (PersonId)
 )
 ```
 
@@ -108,7 +109,7 @@ When you deploy, SSDT:
 | Remove a column from table definition | `ALTER TABLE ... DROP COLUMN ...` |
 | Change column type in definition | `ALTER TABLE ... ALTER COLUMN ...` |
 | Create new table file | `CREATE TABLE ...` |
-| Delete table file | `DROP TABLE ...` (if `DropObjectsNotInSource=True`) |
+| Delete table file | `DROP TABLE ...` if `DropObjectsNotInSource=True`; nothing (a silent phantom) if `False` — script the drop explicitly |
 | Rename via refactorlog | `EXEC sp_rename ...` |
 | Add constraint to definition | `ALTER TABLE ... ADD CONSTRAINT ...` |
 
@@ -152,7 +153,7 @@ ALTER TABLE dbo.Person DROP COLUMN FirstName
 ALTER TABLE dbo.Person ADD GivenName NVARCHAR(100)
 ```
 
-Data in FirstName? Gone.
+Under the production posture (`BlockOnPossibleDataLoss=true`) that drop-and-add is refused — the row-presence guard blocks the deploy and `FirstName`'s data survives; it's lost only if the guard is relaxed. Either way the rename didn't happen. (A bare *table* rename doesn't even block: under `DropObjectsNotInSource=false` it phantoms to an empty new table and strands the populated original.)
 
 **Your job:** Use the refactorlog for renames so SSDT knows it's identity-preserving, not drop-and-create.
 

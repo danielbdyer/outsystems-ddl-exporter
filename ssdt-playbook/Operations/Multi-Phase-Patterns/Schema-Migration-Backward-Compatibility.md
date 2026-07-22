@@ -1,76 +1,25 @@
 # 17.8 Pattern: Schema Migration with Backward Compatibility
 
+*In OutSystems, renaming or restructuring an Entity was safe because the platform refactored every reference at once; here you make the change while old consumers keep working, bridging the gap yourself until they migrate.*
+
 **When to use:** Making a breaking change (rename, restructure) while maintaining backward compatibility during a transition period. Allows old and new code to coexist.
 
-**Scenario:** Rename table `Employee` to `Staff` while existing code continues to work.
+**Scenario:** Rename `FirstName` to `GivenName` while existing code continues to work.
 
 ---
 
-## The Core Technique: Compatibility Views/Synonyms
+## The Core Technique: Computed Column Compatibility
 
 Instead of a hard cutover, you:
 
-1. Make the structural change
-2. Create an alias at the old name pointing to the new structure
+1. Rename the column to its new name
+2. Expose the old name as a computed column that returns the new column's value
 3. Transition consumers gradually
-4. Remove the alias when all consumers have migrated
+4. Remove the computed column when all consumers have migrated
 
 ---
 
-## Approach A: Rename Table with Compatibility View
-
-### Phase 1 (Release N): Rename Table
-
-Use SSDT GUI rename to create refactorlog entry:
-
-- `dbo.Employee` → `dbo.Staff`
-
-SSDT generates:
-
-```sql
-EXEC sp_rename 'dbo.Employee', 'Staff', 'OBJECT'
-```
-
-### Phase 1 (Release N): Create Compatibility View
-
-```sql
--- /Views/dbo/dbo.Employee.sql (new file)
-CREATE VIEW [dbo].[Employee]
-AS
-SELECT
-    StaffId AS EmployeeId,      -- Column was also renamed
-    FirstName,
-    LastName,
-    Email,
-    Department,
-    HireDate
-FROM dbo.Staff
-```
-
-**Result:**
-
-- New code uses `dbo.Staff`
-- Old code uses `dbo.Employee` (the view) — continues to work
-- Both see the same data
-
-### Phase 2 (Ongoing): Migrate Consumers
-
-Update application code, reports, ETL to use `dbo.Staff`. Track progress.
-
-### Phase 3 (Release N+X): Drop Compatibility View
-
-When monitoring confirms no queries against `dbo.Employee`:
-
-```sql
--- Declarative: Delete the view file
--- SSDT generates: DROP VIEW [dbo].[Employee]
-```
-
----
-
-## Approach B: Rename Column with Computed Column
-
-**Scenario:** Rename `FirstName` to `GivenName` with backward compatibility.
+## Rename Column with Computed Column
 
 ### Phase 1 (Release N): Rename + Add Computed Column
 
@@ -99,71 +48,12 @@ Add computed column for backward compatibility:
 
 ---
 
-## Approach C: Synonym for Cross-Database/Schema Move
-
-**Scenario:** Move `dbo.AuditLog` to `archive.AuditLog` with backward compatibility.
-
-### Phase 1 (Release N): Move Table
-
-```sql
-ALTER SCHEMA archive TRANSFER dbo.AuditLog
-```
-
-Or use refactorlog if SSDT-managed.
-
-### Phase 1 (Release N): Create Synonym
-
-```sql
--- /Synonyms/dbo.AuditLog.sql
-CREATE SYNONYM [dbo].[AuditLog] FOR [archive].[AuditLog]
-```
-
-**Result:**
-
-- New code uses `archive.AuditLog`
-- Old code uses `dbo.AuditLog` (synonym) — continues to work
-
-### Phase 2: Migrate consumers
-
-### Phase 3: Drop synonym
-
----
-
-## Approach D: View for Structural Refactoring
-
-**Scenario:** Split `Customer` into `Customer` + `CustomerContact`, but some reports still expect the combined structure.
-
-### Phase 1: Perform the split (see Pattern 17.6)
-
-### Phase 1: Create compatibility view
-
-```sql
--- /Views/dbo/dbo.vw_CustomerLegacy.sql
-CREATE VIEW [dbo].[vw_CustomerLegacy]
-AS
-SELECT
-    c.CustomerId,
-    c.CompanyName,
-    c.Industry,
-    cc.FirstName AS ContactFirstName,
-    cc.LastName AS ContactLastName,
-    cc.Email AS ContactEmail,
-    cc.Phone AS ContactPhone
-FROM dbo.Customer c
-LEFT JOIN dbo.CustomerContact cc ON c.CustomerId = cc.CustomerId
-    AND cc.IsPrimary = 1
-```
-
-**Result:** Old reports query `vw_CustomerLegacy` and see familiar structure
-
----
-
 ## Key Principles
 
-**The alias must be transparent:**
+**The compatibility column must be transparent:**
 
 - SELECTs should work identically
-- INSERTs/UPDATEs work if using views with INSTEAD OF triggers (complex) or synonyms (simple)
+- INSERTs/UPDATEs must target the new column name (computed columns are read-only)
 - JOINs work
 
 **Track migration progress:**
@@ -182,10 +72,8 @@ LEFT JOIN dbo.CustomerContact cc ON c.CustomerId = cc.CustomerId
 **Document the mapping:**
 
 ```
-Old Name          → New Name           → Compatibility Mechanism
-dbo.Employee      → dbo.Staff          → View dbo.Employee
-Employee.EmployeeId → Staff.StaffId    → View column alias
-dbo.AuditLog      → archive.AuditLog   → Synonym dbo.AuditLog
+Old Name             → New Name              → Compatibility Mechanism
+Customer.FirstName   → Customer.GivenName    → Computed column FirstName
 ```
 
 ---
@@ -194,11 +82,11 @@ dbo.AuditLog      → archive.AuditLog   → Synonym dbo.AuditLog
 
 | Phase | Rollback Approach |
 |-------|-------------------|
-| Phase 1 (rename + alias) | Reverse rename, drop alias |
+| Phase 1 (rename + computed column) | Reverse rename, drop computed column |
 | Phase 2 (consumer migration) | Revert application code |
-| Phase 3 (drop alias) | Recreate alias; no data impact |
+| Phase 3 (drop computed column) | Recreate computed column; no data impact |
 
-The compatibility layer makes rollback much safer — you can always recreate the alias if needed.
+The compatibility layer makes rollback much safer — you can always recreate the computed column if needed.
 
 ---
 
@@ -208,16 +96,5 @@ The compatibility layer makes rollback much safer — you can always recreate th
 - **No external consumers:** If you control all the code, just do a synchronized deployment
 - **Trivial changes:** Overhead not worth it for low-impact changes
 - **Permanent rename:** If there's no transition period needed, just rename
-
----
-
-## CDC Considerations
-
-If the table is CDC-enabled:
-
-- The rename changes the source table name
-- Capture instance still references old table name internally
-- You'll likely need to recreate the capture instance anyway
-- The compatibility view doesn't affect CDC (CDC tracks the underlying table, not views)
 
 ---

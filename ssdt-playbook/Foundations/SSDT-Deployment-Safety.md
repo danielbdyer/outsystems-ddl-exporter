@@ -1,7 +1,5 @@
 # 10. SSDT Deployment Safety
 
-*(This section consolidates the settings discussion from earlier)*
-
 ---
 
 ## The Publish Profile Settings That Matter
@@ -44,6 +42,8 @@ Your publish profile (`.publish.xml`) controls deployment behavior. These settin
 <DropObjectsNotInSource>False</DropObjectsNotInSource>
 ```
 
+**What it governs — and what it doesn't.** This is the master switch for **whole objects** (a table, view, or procedure the source no longer names), and `False` is the default `sqlpackage` itself ships. It does **not** govern the objects *inside* a table: DacFx's separate `DropIndexesNotInSource` and `DropConstraintsNotInSource` default to **True**, so an index or a foreign key you remove from the model still drops on publish even at the production posture — only whole-object removals are protected. And a **column** drop isn't an "object not in source" at all: it's governed by `BlockOnPossibleDataLoss` (which blocks it on a populated table), not by this switch.
+
 **Recommendations:**
 
 | Environment | Setting | Rationale |
@@ -53,7 +53,7 @@ Your publish profile (`.publish.xml`) controls deployment behavior. These settin
 | UAT | False | Don't accidentally drop test fixtures |
 | Prod | **False** | Never auto-drop in prod |
 
-**For production:** If you want something gone, do it explicitly in the schema (delete the file) so it goes through PR review. Don't rely on SSDT's diff to clean up.
+**For production:** Because `False` protects whole objects, deleting a table's `.sql` file does **nothing** on publish — a silent phantom removal (`Ok`, table and rows untouched). To actually remove a whole object, script an explicit `DROP` (through PR review), sequenced after any inbound FKs; don't rely on SSDT's diff to clean it up.
 
 ---
 
@@ -113,10 +113,6 @@ Settings (BlockOnPossibleDataLoss, etc.) → catches what everything else missed
 ```
 
 When a setting blocks you, that's the system working. Investigate, don't bypass.
-
----
-
-I'll continue with Sections 11-12 (Multi-Phase Evolution and CDC), then move to the Execution Layer (Pattern Templates and Anti-Patterns), then Process.
 
 ---
 

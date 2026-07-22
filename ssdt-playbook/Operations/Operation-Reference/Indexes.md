@@ -6,17 +6,9 @@
 
 ### Add an Index
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Create an index to improve query performance | 1 (small table) / 2 (large table) | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Create an index to improve query performance | 1 (small table) / 2 (large table) | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -29,29 +21,26 @@
 **What you do:**
 
 ```sql
--- Basic non-clustered
-CREATE NONCLUSTERED INDEX [IX_Order_CustomerId]
+-- Basic
+CREATE INDEX [IX_Order_CustomerId]
 ON [dbo].[Order]([CustomerId])
 
 -- Covering index
-CREATE NONCLUSTERED INDEX [IX_Order_CustomerId_Covering]
+CREATE INDEX [IX_Order_CustomerId_Covering]
 ON [dbo].[Order]([CustomerId])
 INCLUDE ([OrderDate], [TotalAmount])
 
 -- Filtered index
-CREATE NONCLUSTERED INDEX [IX_Order_Active]
+CREATE INDEX [IX_Order_Active]
 ON [dbo].[Order]([OrderDate])
 WHERE [Status] = 'Active'
 
 -- Unique index
-CREATE UNIQUE NONCLUSTERED INDEX [UX_Customer_Email]
+CREATE UNIQUE INDEX [UIX_Customer_Email]
 ON [dbo].[Customer]([Email])
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -64,17 +53,9 @@ ON [dbo].[Customer]([Email])
 
 ### Modify an Index
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change index columns or properties | 2 | Pure Declarative (DROP + CREATE) | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change index columns or properties | 2 | Pure Declarative (DROP + CREATE) |
 
 **Common modifications:**
 - Add/remove columns from key
@@ -84,10 +65,7 @@ ON [dbo].[Customer]([Email])
 
 **What SSDT generates:** DROP existing index, CREATE new index
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -99,17 +77,9 @@ ON [dbo].[Customer]([Email])
 
 ### Remove an Index
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Drop an index | 2 | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Drop an index | 2 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -126,6 +96,8 @@ Remove the index definition. SSDT generates:
 DROP INDEX [IX_Order_CustomerId] ON [dbo].[Order]
 ```
 
+Unlike deleting a whole table (a phantom under the production posture), an index removed from the model **does** drop on publish — DacFx's `DropIndexesNotInSource` defaults to True, so the granular removal happens even with `DropObjectsNotInSource=false`.
+
 **Before dropping, check usage:**
 ```sql
 SELECT 
@@ -140,10 +112,7 @@ LEFT JOIN sys.dm_db_index_usage_stats s
 WHERE i.object_id = OBJECT_ID('dbo.Order')
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -154,17 +123,9 @@ WHERE i.object_id = OBJECT_ID('dbo.Order')
 
 ### Rebuild / Reorganize Index
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Maintenance operation for index health | 2-3 | Script-Only (not declarative) | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Maintenance operation for index health | 2-3 | Script-Only (not declarative) |
 
 This is **operational maintenance**, not schema change. SSDT doesn't manage it.
 
@@ -185,10 +146,7 @@ ALTER INDEX [IX_Order_CustomerId] ON [dbo].[Order] REBUILD WITH (ONLINE = ON)
 - 10-30% fragmentation: REORGANIZE
 - >30% fragmentation: REBUILD
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

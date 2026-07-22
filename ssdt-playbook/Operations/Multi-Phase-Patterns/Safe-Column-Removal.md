@@ -1,5 +1,7 @@
 # 17.5 Pattern: Safe Column Removal (4-Phase)
 
+*In OutSystems you'd just Delete an Attribute and let the platform sort out the references; here, safely removing a column is a staged, verified retreat across several releases.*
+
 **When to use:** Removing a column safely with full verification
 
 **Scenario:** Remove `Customer.LegacyId` that's no longer used

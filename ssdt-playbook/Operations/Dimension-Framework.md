@@ -63,7 +63,6 @@ The change affects structure but doesn't touch existing data values.
 - Adding an index (structure built from data, data unchanged)
 - Adding a constraint to an empty table
 - Creating a new table
-- Creating a view
 
 **Risk profile:** Lowest. If something goes wrong, data is safe.
 
@@ -178,8 +177,8 @@ The change affects objects in other tables within the same database.
 
 **Examples:**
 - Changing a column that's referenced by FKs from other tables
-- Renaming a table that's joined in views
-- Modifying a column used in stored procedures
+- Renaming a table that other tables reference
+- Modifying a column used elsewhere
 
 **Coordination required:** Must identify and update all dependent objects. SSDT's build will catch missing references in declarative objects; search codebase for dynamic SQL.
 
@@ -191,7 +190,6 @@ The change affects systems outside the SSDT project's scope.
 - Renaming a column used by ETL pipelines
 - Changing a table consumed by reporting tools
 - Modifying structure that external APIs depend on
-- Anything with CDC implications (Change History feature depends on capture instances)
 
 **Coordination required:** Must communicate with external system owners. Timeline coordination. May require phased rollout with backward compatibility.
 
@@ -234,7 +232,7 @@ Existing code will fail if deployed without coordinated application changes.
 - Changing a type that application code depends on
 - Removing a table that's referenced
 
-**Deployment coordination:** Must deploy SSDT and application changes together, or use multi-phase approach with backward compatibility (e.g., create view with old name pointing to new table).
+**Deployment coordination:** Must deploy SSDT and application changes together, or use multi-phase approach with backward compatibility (e.g., stage the rename so the old shape stays available during the transition).
 
 ---
 
@@ -342,7 +340,7 @@ Will any existing query or application code fail?
 |-----------|------------|-----------|
 | Data Involvement | Schema-only | Data values unchanged |
 | Reversibility | Effortful | Need another refactorlog entry to rename back |
-| Dependency Scope | Inter-table to Cross-boundary | Views, procs, app code, possibly ETL |
+| Dependency Scope | Inter-table to Cross-boundary | App code, possibly ETL |
 | Application Impact | Breaking | All queries using old name will fail |
 
 **Conclusion:** Cross-boundary + Breaking → **Tier 3** minimum

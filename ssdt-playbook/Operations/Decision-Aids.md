@@ -49,8 +49,8 @@ START: You need to make a schema change
           │   minimum   │    │  on what you're changing?               │
           │             │    │                                         │
           │ Dev lead    │    │  • FKs from other tables?               │
-          │ owns this.  │    │  • Views referencing this column?       │
-          └─────────────┘    │  • Procs, computed columns, indexes?    │
+          │ owns this.  │    │  • Computed columns that use it?        │
+          └─────────────┘    │  • Indexes on this column?              │
                              │  • External systems (ETL, reports)?     │
                              └─────────────────────────────────────────┘
                                        │
@@ -90,7 +90,6 @@ START: You need to make a schema change
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ESCALATION TRIGGERS (add +1 tier if any apply)                         │
 │                                                                         │
-│  □ CDC-enabled table?                          → +1 tier minimum        │
 │  □ Table has >1M rows?                         → +1 for data operations │
 │  □ Production-critical timing?                 → +1 tier                │
 │  □ Pattern you've never done before?           → +1 tier or get support │
@@ -115,10 +114,6 @@ APPLICATION COORDINATION
 □ Column/table being removed is still referenced by app
 □ Breaking change requires synchronized app deployment
 
-CDC CONSTRAINTS (Production)
-□ CDC-enabled table is changing structure
-□ Audit continuity required (no history gaps)
-
 IRREVERSIBILITY
 □ Part of the change can't be easily undone
 □ Need to verify success before proceeding to next step
@@ -139,51 +134,45 @@ DEPENDENCIES
 
 ## 18.3 "Can SSDT Handle This Declaratively?" Quick Reference
 
-| Operation | Declarative? | Notes |
-|-----------|--------------|-------|
-| **CREATION** | | |
-| Create table | ✅ Yes | Add .sql file |
-| Create column (nullable) | ✅ Yes | Edit table file |
-| Create column (NOT NULL) | ✅ Yes | Need default for existing rows |
-| Create PK/FK/unique/check | ✅ Yes | Inline or separate file |
-| Create index | ✅ Yes | Inline or separate file |
-| Create view | ✅ Yes | Add .sql file |
-| Create proc/function | ✅ Yes | Add .sql file |
-| | | |
-| **MODIFICATION** | | |
-| Widen column | ✅ Yes | Just change the definition |
-| Narrow column | ⚠️ Depends | May need pre-validation; BlockOnPossibleDataLoss guards |
-| Change type (implicit) | ✅ Yes | INT→BIGINT, VARCHAR→NVARCHAR |
-| Change type (explicit) | ❌ No | Needs multi-phase: add new, migrate, drop old |
-| NULL → NOT NULL | ⚠️ Depends | Need default or pre-backfill |
-| NOT NULL → NULL | ✅ Yes | Just change the definition |
-| Rename column | ✅ Yes | **Must use refactorlog** |
-| Rename table | ✅ Yes | **Must use refactorlog** |
-| Add/remove IDENTITY | ❌ No | Can't ALTER to add/remove; needs table swap |
-| | | |
-| **CONSTRAINTS** | | |
-| Add default | ✅ Yes | Inline in table definition |
-| Modify default | ✅ Yes | Change the value; SSDT drops and recreates |
-| Remove default | ✅ Yes | Remove from definition |
-| Add FK (clean data) | ✅ Yes | Inline in table definition |
-| Add FK (orphan data) | ❌ No | Need WITH NOCHECK via script, then trust |
-| Enable/disable constraint | ❌ No | Script-only (operational, not declarative) |
-| | | |
-| **INDEXES** | | |
-| Add/drop index | ✅ Yes | Add/remove definition |
-| Change index columns | ✅ Yes | SSDT regenerates |
-| Rebuild/reorganize | ❌ No | Maintenance operation, not schema |
-| Online index operations | ⚠️ Partial | May need script for WITH (ONLINE=ON) |
-| | | |
-| **STRUCTURAL** | | |
-| Split table | ❌ No | Multi-phase: create, migrate, drop |
-| Merge tables | ❌ No | Multi-phase: create, migrate, drop |
-| Move column between tables | ❌ No | Multi-phase |
-| Move table between schemas | ⚠️ Partial | Declarative with refactorlog, or ALTER SCHEMA TRANSFER |
-| | | |
-| **CDC** | | |
-| Enable/disable CDC | ❌ No | Stored procedure calls, not declarative |
-| Create/drop capture instance | ❌ No | Stored procedure calls |
+| In OutSystems | Operation | Declarative? | Notes |
+|---------------|-----------|--------------|-------|
+| **CREATION** | | | |
+| Create an Entity | Create table | ✅ Yes | Add .sql file |
+| Add an optional Attribute | Create column (nullable) | ✅ Yes | Edit table file |
+| Add a mandatory Attribute | Create column (NOT NULL) | ✅ Yes | Need default for existing rows |
+| Identifier, Reference, or unique Attribute | Create PK/FK/unique/check | ✅ Yes | Inline beneath their column; composite keys and multi-column checks at table level |
+| Add an Index | Create index | ✅ Yes | Inline or separate file |
+| | | | |
+| **MODIFICATION** | | | |
+| Increase an Attribute's length | Widen column | ✅ Yes | Just change the definition |
+| Reduce an Attribute's length | Narrow column | ⚠️ Depends | May need pre-validation; BlockOnPossibleDataLoss guards |
+| Change an Attribute's Data Type | Change type (implicit) | ✅ Yes | INT→BIGINT, VARCHAR→NVARCHAR |
+| Change an Attribute's Data Type (incompatible) | Change type (explicit) | ❌ No | Needs multi-phase: add new, migrate, drop old |
+| Make an Attribute mandatory | NULL → NOT NULL | ⚠️ Depends | Need default or pre-backfill |
+| Make an Attribute optional | NOT NULL → NULL | ✅ Yes | Just change the definition |
+| Rename an Attribute | Rename column | ✅ Yes | **Must use refactorlog** |
+| Rename an Entity | Rename table | ✅ Yes | **Must use refactorlog** |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | ⚠️ Rebuild | Can't ALTER in place, but SSDT rebuilds the table from the one-line edit (shadow-table swap, FKs recreated) and the gate allows it (data-preserving). Hand-script the swap only at scale |
+| | | | |
+| **CONSTRAINTS** | | | |
+| Set a Default Value | Add default | ✅ Yes | Inline in table definition |
+| Change a Default Value | Modify default | ✅ Yes | Change the value; SSDT drops and recreates |
+| Remove a Default Value | Remove default | ✅ Yes | Remove from definition |
+| Add a Reference Attribute | Add FK (clean data) | ✅ Yes | Inline beneath its column |
+| Add a Reference Attribute (existing data) | Add FK (orphan data) | ❌ No | Need WITH NOCHECK via script, then trust |
+| — *(SSDT concept)* | Enable/disable constraint | ❌ No | Script-only (operational, not declarative) |
+| | | | |
+| **INDEXES** | | | |
+| Add or remove an Index | Add/drop index | ✅ Yes | Add/remove definition |
+| Change an Index | Change index columns | ✅ Yes | SSDT regenerates |
+| — *(maintenance)* | Rebuild/reorganize | ❌ No | Maintenance operation, not schema |
+| — *(SSDT concept)* | Online index operations | ⚠️ Partial | May need script for WITH (ONLINE=ON) |
+| | | | |
+| **STRUCTURAL** | | | |
+| — *(no OutSystems equivalent)* | Split table | ❌ No | Multi-phase: create, migrate, drop |
+| — *(no OutSystems equivalent)* | Merge tables | ❌ No | Multi-phase: create, migrate, drop |
+| ≈ Move an Attribute to another Entity | Move column between tables | ❌ No | Multi-phase |
+| — *(modules aren't schemas)* | Move table between schemas | ⚠️ Partial | With refactorlog (or ALTER SCHEMA TRANSFER); a bare header edit phantoms — empty new table, original stranded |
 
 **Legend:**
 - ✅ Yes = Pure declarative, just edit the schema files
@@ -199,7 +188,6 @@ DEPENDENCIES
 ```
 CLASSIFICATION
 □ I know which table(s) this change affects
-□ I've checked if any affected tables are CDC-enabled
 □ I've determined the tier for this change: ___
 □ I've identified the SSDT mechanism:
     □ Pure Declarative
@@ -215,12 +203,6 @@ PREPARATION
 □ If NOT NULL on existing table: I have a plan for existing rows
 □ If FK: I have verified no orphan data exists
 □ If multi-phase: I've mapped all phases to releases
-
-CDC (if applicable)
-□ I know which capture instance(s) will be affected
-□ I have a plan for instance recreation:
-    □ Dev/Test: Accept gap, disable/enable
-    □ Production: Dual-instance pattern
 
 IMPLEMENTATION
 □ Branch created from latest main
@@ -244,93 +226,7 @@ READY FOR PR
 
 ---
 
-## 18.5 CDC Impact Checker
-
-### Step 1: Is the Table CDC-Enabled?
-
-**Quick check:**
-```sql
-SELECT 
-    OBJECT_SCHEMA_NAME(source_object_id) AS SchemaName,
-    OBJECT_NAME(source_object_id) AS TableName,
-    capture_instance
-FROM cdc.change_tables
-WHERE OBJECT_NAME(source_object_id) = 'YourTableName'
-```
-
-**If no results:** Table is not CDC-enabled. No CDC impact.
-
-**If results returned:** Table is CDC-enabled. Continue to Step 2.
-
----
-
-### Step 2: What Kind of Change?
-
-| Your Change | CDC Impact? | Action Required |
-|-------------|-------------|-----------------|
-| Add nullable column | Yes (if you want it tracked) | Recreate capture instance |
-| Add NOT NULL column | Yes (if you want it tracked) | Recreate capture instance |
-| Drop column | Yes | Recreate capture instance |
-| Rename column | Yes | Recreate capture instance |
-| Change data type | Yes | Recreate capture instance |
-| Widen column | No | Capture instance still valid |
-| Add/modify constraint | No | Constraints not tracked |
-| Add/modify index | No | Indexes not tracked |
-| Add/drop FK | No | FKs not tracked |
-
----
-
-### Step 3: Development or Production?
-
-**Development/Test (Gap Acceptable):**
-```
-Pre-deployment:
-  1. Disable CDC on table
-  
-[SSDT deploys schema change]
-
-Post-deployment:
-  2. Re-enable CDC on table (new capture instance)
-
-⚠️ Changes during deployment window are not captured
-```
-
-**Production (No Gap):**
-```
-Post-deployment (after schema change):
-  1. Create NEW capture instance (schema already updated)
-     - Name it with version: dbo_TableName_v2
-  
-[Both v1 and v2 instances now active]
-[Consumer code reads from both, unions results]
-
-Next Release:
-  2. Drop OLD capture instance (v1)
-  3. Consumer code reads only from v2
-
-⚠️ Requires consumer abstraction layer
-```
-
----
-
-### Step 4: Document in PR
-
-```
-CDC Impact: Yes
-
-Affected Table(s):
-| Table | Current Instance | Action |
-|-------|------------------|--------|
-| dbo.Customer | dbo_Customer_v1 | Create v2, deprecate v1 next release |
-
-Environment Strategy:
-- Dev/Test: Disable/re-enable (accepting gap)
-- Production: Dual-instance pattern per Section 12
-```
-
----
-
-## 18.6 Tier Summary Card
+## 18.5 Tier Summary Card
 
 **Print this. Keep it visible.**
 
@@ -388,7 +284,6 @@ Environment Strategy:
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ESCALATION TRIGGERS: +1 tier for                                       │
-│  • CDC-enabled table                                                    │
 │  • Table >1M rows (for data operations)                                 │
 │  • Production-critical timing                                           │
 │  • First time doing this operation type                                 │
@@ -398,35 +293,34 @@ Environment Strategy:
 
 ---
 
-## 18.7 Operation Quick Reference
+## 18.6 Operation Quick Reference
 
 **One-line summaries for common operations:**
 
-| Operation | Tier | Mechanism | Watch For |
-|-----------|------|-----------|-----------|
-| Add table | 1 | Declarative | Nothing — safest operation |
-| Add nullable column | 1 | Declarative | Nothing |
-| Add NOT NULL column | 1-2 | Declarative | Need default for existing rows |
-| Add index | 1-2 | Declarative | Large table = blocking time |
-| Add FK (clean data) | 2 | Declarative | Verify no orphans first |
-| Add FK (orphan data) | 3 | Multi-phase | WITH NOCHECK → clean → trust |
-| Add default | 1 | Declarative | Nothing |
-| Add check constraint | 2 | Declarative | Existing data may violate |
-| Add unique constraint | 2 | Declarative | Check for duplicates first |
-| Widen column | 2 | Declarative | Index rebuild possible |
-| Narrow column | 4 | Pre + Declarative | Validate data fits; BlockOnPossibleDataLoss |
-| Change type (implicit) | 2 | Declarative | INT→BIGINT is safe |
-| Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
-| NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2, corrected) |
-| NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
-| Rename column | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
-| Rename table | 3 | Declarative + refactorlog | **Without refactorlog = data loss** |
-| Drop column | 3-4 | Declarative | Follow deprecation workflow |
-| Drop table | 4 | Declarative | Verify truly unused; backup |
-| Add/remove IDENTITY | 3-4 | Multi-phase (table swap) | Full table rebuild |
-| Split table | 4 | Multi-phase | Multiple releases |
-| Merge tables | 4 | Multi-phase | Multiple releases |
-| CDC table schema change | +1 tier | Environment-dependent | See CDC protocol |
+| In OutSystems | Operation | Tier | Mechanism | Watch For |
+|---------------|-----------|------|-----------|-----------|
+| Create an Entity | Add table | 1 | Declarative | Nothing — safest operation |
+| Add an optional Attribute | Add nullable column | 1 | Declarative | Nothing |
+| Add a mandatory Attribute | Add NOT NULL column | 1-2 | Declarative | Need default for existing rows |
+| Add an Index | Add index | 1-2 | Declarative | Large table = blocking time |
+| Add a Reference Attribute | Add FK (clean data) | 2 | Declarative | Verify no orphans first |
+| Add a Reference Attribute (existing data) | Add FK (orphan data) | 3 | Multi-phase | WITH NOCHECK → clean → trust |
+| Set a Default Value | Add default | 1 | Declarative | Nothing |
+| — *(no OutSystems equivalent)* | Add check constraint | 2 | Declarative | Existing data may violate |
+| Make an Attribute unique | Add unique constraint | 2 | Declarative | Check for duplicates first |
+| Increase an Attribute's length | Widen column | 2 | Declarative | Index rebuild possible |
+| Reduce an Attribute's length | Narrow column | 4 | Pre + Declarative | Validate data fits; BlockOnPossibleDataLoss |
+| Change an Attribute's Data Type | Change type (implicit) | 2 | Declarative | INT→BIGINT is safe |
+| Change an Attribute's Data Type (incompatible) | Change type (explicit) | 3-4 | Multi-phase | Add new → migrate → drop old |
+| Make an Attribute mandatory | NULL → NOT NULL | 2-3 | Pre + Declarative + logged guard-relaxation | Backfill first and prove 0 remain — necessary, not sufficient: the data-loss guard checks row presence, not NULL content, so a populated table stays blocked until `BlockOnPossibleDataLoss` is deliberately relaxed for that deployment (see §17.2) |
+| Make an Attribute optional | NOT NULL → NULL | 1-2 | Declarative | Safe; consider why |
+| Rename an Attribute | Rename column | 3 | Declarative + refactorlog | **Without refactorlog: drop+add blocked by the guard (data survives)** |
+| Rename an Entity | Rename table | 3 | Declarative + refactorlog | **Without refactorlog: a phantom — empty new table, original stranded** |
+| Delete an Attribute | Drop column | 3-4 | Declarative | Follow deprecation workflow |
+| Delete an Entity | Drop table | 4 | Declarative (phantom) + scripted DROP | File deletion is a no-op under DropObjectsNotInSource=false; the real removal is a scripted DROP TABLE — irreversible |
+| ≈ Auto Number on the Identifier | Add/remove IDENTITY | 3-4 | Declarative rebuild (SSDT) | Full table rebuild — SSDT generates it; the gate allows it (data-preserving). Hand-script only at scale |
+| — *(no OutSystems equivalent)* | Split table | 4 | Multi-phase | Multiple releases |
+| — *(no OutSystems equivalent)* | Merge tables | 4 | Multi-phase | Multiple releases |
 
 ---
 

@@ -21,7 +21,6 @@ Not a §19 anti-pattern by name — the silent cost is the trap: a non-`ONLINE` 
 - table populated, large (the build blocks writes) → still a single declarative schema change, but the build adds scrutiny: at production row counts it takes a write-blocking lock and may run long, so an experienced developer should review it and the maintenance window is named.
 - \+ >1M rows → the write-outage risk is acute: a dev lead should review it, and `ONLINE = ON` may be required (Enterprise-gated) to avoid blocking writes for the build's duration.
 - ONLINE=ON needed but target is Standard → the declarative build stays; flag that the online option is unavailable on Standard, and the build will block writes for its duration.
-- CDC-tracked table → added scrutiny: change data capture ignores the index, but the table feeds a capture stream and is high-stakes, so a dev lead should review it (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Build the dacpac, run Strict `sqlpackage /Action:Script`, and confirm the delta is a clean `CREATE INDEX` with **no drop, no table rebuild** — a clean Strict publish confirms the change ships as a single declarative schema change. The disposable copy is small, so the observed build time is not the production build time — **row count is the predictor**; say so explicitly when the target is large. See `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
@@ -39,7 +38,6 @@ Contributes to the pull request (`../../author-pr/SKILL.md`):
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as a single declarative schema change: SSDT emits `CREATE INDEX` and builds the index over every existing row.
 - Added scrutiny, when the target table is large: at production row counts the build takes a write-blocking lock and may block writes or run long — schedule a window, or use `WITH (ONLINE = ON)` where the edition is Enterprise/Developer.
-- Added scrutiny, when the table is CDC-tracked: change data capture ignores the index itself, but the table feeds a capture stream and is high-stakes.
 
 **Verification** — run in each environment after deployment
 ```sql

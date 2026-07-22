@@ -46,9 +46,7 @@ and Strict still blocked the change.
     - **(b) restructure so the change ships across releases** and the engine never has to relax
       its guard (see `../../_index/multi-phase/SKILL.md`).
   Either way, a dev lead must review this because existing data is affected; add scrutiny if the
-  table feeds CDC, holds more than a million rows, or this is the first time on this estate.
-- **+ CDC, no-gap** → push toward the multi-phase path, with added scrutiny for the capture
-  stream (see `../../_index/cdc/SKILL.md`)
+  table holds more than a million rows, or this is the first time on this estate.
 
 ## Prove it (COL-03 / COL-03C — discover, don't assert)
 1. Edit `NULL` → `NOT NULL`, build, Strict publish → prove the deployment is blocked, and **read
@@ -73,8 +71,7 @@ checks whether the table has any rows, not whether Email has blanks. That's prov
 NULL was backfilled (0 remain) and Strict still blocked the change and left the column nullable.
 On an empty table it would just apply. With data in the table, this needs a deliberate call:
 relax `BlockOnPossibleDataLoss` for this one column after proving zero blanks (logged,
-script-only), or stage it across two releases. If the table feeds a change-data-capture stream,
-the multi-phase path is the safer one. Which would you prefer?
+script-only), or stage it across two releases. Which would you prefer?
 
 ## The reasoning (in conversation)
 Run the change on a disposable copy rather than reasoning from the `.sql`: the guard keys on
@@ -94,8 +91,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Ships as a scripted change: the data-loss guard `BlockOnPossibleDataLoss` is relaxed for this
   one column after the zero-NULL count is proven, or the column is filled and tightened across
   two releases.
-- Added scrutiny, if any: the table feeds a change-data-capture stream; the table holds more than
-  a million rows; or this tightening has not been performed on this estate before.
+- Added scrutiny, if any: the table holds more than a million rows; or this tightening has not been
+  performed on this estate before.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -119,7 +116,7 @@ manual restore.
   the app owner owns closing it.
 - Other environments. Test, UAT, and Prod may hold NULLs this disposable copy cannot see. Run the
   NULL probe in each before promotion.
-- Production scale and timing. On a large or CDC-tracked table the `ALTER COLUMN` may block writes
+- Production scale and timing. On a large table the `ALTER COLUMN` may block writes
   or run long; the small copy cannot show that. Schedule a window.
 - Reversibility. The forward change and its lossless re-widening are the limit of what the copy
   proves; restoring backfilled values is not exercised here.

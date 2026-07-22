@@ -53,9 +53,9 @@ Approved with a named risk.
 Reproduced clean on a fresh copy: the column widens in place, no rows rewritten, second publish
 issues nothing.
 
-The named risk: two consumers outside this project read Order.Total — the view vOrderSummary and
-the nightly ETL job — and neither is in the dacpac, so their behaviour under the wider type is not
-verified here (dependency map attached).
+The named risk: two consumers outside this project read Order.Total — the nightly ETL job and a
+downstream reporting extract — and neither is in the dacpac, so their behaviour under the wider type
+is not verified here (dependency map attached).
 
 Accept that risk in a line, or hold for confirmation from the ETL owner.
 ```
@@ -70,8 +70,8 @@ developer; this comment does not do the teaching.
 Returned to the author.
 
 The submission states the foreign key lands clean. Reproduced on a fresh copy: the deployment is
-blocked — Msg 547, conflicted with FK_Order_Customer — 8 orphan rows (the orphan probe was not run
-before submission).
+blocked — Msg 547, conflicted with FK_Order_Customer_CustomerId — 8 orphan rows (the orphan probe
+was not run before submission).
 
 The fix: reconcile the 8 rows per the recorded business decision, make the reconcile durable at
 source (pre-deployment script, not a one-off UPDATE — the seed re-plants it), re-run the Strict
@@ -88,12 +88,12 @@ single question — last line, answerable in a word. Never three questions; neve
 ```
 Escalated — one question.
 
-Making Email required on a populated, change-tracked table: the zero-blank backfill is proven (0
-remain) and the deployment is still blocked — the guard checks row presence, not blank values. The
-two honest paths are a logged one-time relaxation of the data-loss guard, or a two-release staging.
-Both are reproduced on a fresh copy; the dependency map and capture-instance impact are attached.
+Making Email required on a populated table: the zero-blank backfill is proven (0 remain) and the
+deployment is still blocked — the guard checks row presence, not blank values. The two honest paths
+are a logged one-time relaxation of the data-loss guard, or a two-release staging. Both are
+reproduced on a fresh copy; the dependency map is attached.
 
-The question: can the downstream consumer tolerate a capture gap — yes or no?
+The question: is a one-time relaxation of the data-loss guard acceptable for this column — yes or no?
 ```
 
 ## Rules

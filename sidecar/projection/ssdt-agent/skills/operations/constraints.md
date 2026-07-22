@@ -24,7 +24,6 @@ lives in `_index/`. Nothing here restates a guard or the deploy-time specifics.
 - **The UNIQUE / CHECK deploy-time block, the NOCHECK→re-trust ladder, UNIQUE-one-NULL + filtered index** — a constraint is a claim proven at apply time → `../_index/constraint-is-a-claim/SKILL.md`.
 - **Multi-phase** when violators can't be fixed in-place (grandfather / quarantine) → `../_index/multi-phase/SKILL.md`.
 - **Backfill** of existing rows after a default (the separate idempotent-UPDATE op) → `../_index/idempotent-seed/SKILL.md`.
-- **CDC** adds scrutiny on a tracked table → `../_index/cdc/SKILL.md` (CDC does not track constraints; the added scrutiny is the high-stakes-table rule).
 
 ## Handbook offset reminder
 Uniform +3: file `13` = §16 (Operation Reference), `14` = §17 (patterns), `15` = §18 (decision

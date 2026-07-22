@@ -4,17 +4,12 @@
 
 ## What You're Looking At
 
-When you open the SSDT project in Visual Studio, you'll see a folder structure that represents your database schema. Every object in the database has a corresponding file.
+When you open the SSDT project in Visual Studio, you'll see a folder structure that represents your database schema. Every table has a corresponding file.
 
 ```
 /DatabaseProject.sqlproj          ← Project file (MSBuild, settings)
 /DatabaseProject.refactorlog      ← Rename tracking
 /DatabaseProject.publish.xml       ← Publish profile(s)
-
-/Security/
-    Schemas.sql                   ← Schema definitions (dbo, audit, etc.)
-    Roles.sql                     ← Database roles
-    Users.sql                     ← Database users
 
 /Tables/
     /dbo/
@@ -24,25 +19,6 @@ When you open the SSDT project in Visual Studio, you'll see a folder structure t
         dbo.Product.sql
     /audit/
         audit.ChangeLog.sql
-
-/Views/
-    /dbo/
-        dbo.vw_ActiveCustomer.sql
-        dbo.vw_OrderSummary.sql
-
-/Stored Procedures/
-    /dbo/
-        dbo.usp_GetCustomerOrders.sql
-
-/Functions/
-    /dbo/
-        dbo.fn_CalculateTotal.sql
-
-/Indexes/                          ← Optional: can be inline or separate
-    IX_Order_CustomerId.sql
-
-/Synonyms/
-    dbo.LegacyCustomer.sql
 
 /Scripts/
     /PreDeployment/
@@ -57,10 +33,9 @@ When you open the SSDT project in Visual Studio, you'll see a folder structure t
             SeedProductTypes.sql
         /OneTime/
             Release_2025.02_Fixes.sql
-
-/Snapshots/                        ← Optional: dacpac versions for comparison
-    DatabaseProject_v1.0.dacpac
 ```
+
+The generated project has exactly two folders: **`Tables/`** (one file per table, grouped by schema) and **`Scripts/`** (the pre- and post-deployment scripts and everything they `:r`-include). There are no separate folders for views, stored procedures, functions, synonyms, or indexes — the generator does not emit those objects, and indexes live in the same file as the table they belong to.
 
 ---
 
@@ -73,90 +48,63 @@ Every database object gets its own file. One file, one object.
 ```sql
 -- /Tables/dbo/dbo.Customer.sql
 
-CREATE TABLE [dbo].[Customer]
-(
-    [CustomerId] INT IDENTITY(1,1) NOT NULL,
-    [FirstName] NVARCHAR(100) NOT NULL,
-    [LastName] NVARCHAR(100) NOT NULL,
-    [Email] NVARCHAR(200) NOT NULL,
-    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_Customer_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_Customer_IsActive] DEFAULT (1),
-    
-    CONSTRAINT [PK_Customer] PRIMARY KEY CLUSTERED ([CustomerId]),
-    CONSTRAINT [UQ_Customer_Email] UNIQUE ([Email])
+CREATE TABLE [dbo].[Customer] (
+    [CustomerId] INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Customer_CustomerId]
+            PRIMARY KEY CLUSTERED,
+    [CreatedAt]  DATETIME2 (7)  NOT NULL
+        CONSTRAINT [DF_Customer_CreatedAt] DEFAULT SYSUTCDATETIME(),
+    [Email]      NVARCHAR (200) NOT NULL,
+    [FirstName]  NVARCHAR (100) NOT NULL,
+    [IsActive]   BIT            NOT NULL
+        CONSTRAINT [DF_Customer_IsActive] DEFAULT 1,
+    [LastName]   NVARCHAR (100) NOT NULL
 )
+
+GO
+
+CREATE UNIQUE INDEX [UIX_Customer_Email]
+    ON [dbo].[Customer]([Email])
 ```
 
-**Note:** Constraints, defaults, and the primary key are defined inline. This keeps everything about the table in one place.
+**How the generator lays a table out — and why it looks like this:**
+
+- **The primary key comes first; the remaining columns follow the order they have in the source model.** The file is regenerated on every export, so change column order in the model, not in the emitted `.sql`.
+- **The primary key, foreign keys, defaults, and single-column checks are written *inline*, laddered beneath the column they belong to** — everything about a column sits with the column. Composite keys and multi-column checks are the exception: they go at the end as table-level constraints, because they span more than one column.
+- **The generator names the primary-key, foreign-key, and default constraints** on a fixed scheme: `PK_<Table>_<Column>`, `FK_<Table>_<Target>_<Column>`, `DF_<Table>_<Column>`. Check-constraint names are carried through from the source model (conventionally `CK_<Table>_<Rule>`).
+- **Uniqueness is a unique index, not a `UNIQUE` constraint** — emitted as `CREATE UNIQUE INDEX [UIX_…]` after the table, in the same file.
 
 ### Foreign Keys
 
-Can be inline or separate. We prefer inline for clarity:
+Foreign keys are written **inline, beneath the column that carries them** — not collected at the bottom of the table:
 
 ```sql
 -- /Tables/dbo/dbo.Order.sql
 
-CREATE TABLE [dbo].[Order]
-(
-    [OrderId] INT IDENTITY(1,1) NOT NULL,
-    [CustomerId] INT NOT NULL,
-    [OrderDate] DATE NOT NULL,
-    [TotalAmount] DECIMAL(18,2) NOT NULL,
-    
-    CONSTRAINT [PK_Order] PRIMARY KEY CLUSTERED ([OrderId]),
-    CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
-        REFERENCES [dbo].[Customer]([CustomerId])
+CREATE TABLE [dbo].[Order] (
+    [OrderId]     INT             IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_Order_OrderId]
+            PRIMARY KEY CLUSTERED,
+    [CustomerId]  INT             NOT NULL
+        CONSTRAINT [FK_Order_Customer_CustomerId]
+            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
+    [OrderDate]   DATE            NOT NULL,
+    [TotalAmount] DECIMAL (18, 2) NOT NULL
 )
 ```
 
+The constraint name carries both ends of the relationship and the column: `FK_<ChildTable>_<ParentTable>_<Column>`. When cascade behaviour is set, it ladders underneath (`ON DELETE …` / `ON UPDATE …`). An untrusted foreign key is still written inline, then re-checked after the table with an `ALTER TABLE … NOCHECK CONSTRAINT` / `WITH NOCHECK CHECK CONSTRAINT` pair.
+
 ### Indexes
 
-Can be inline (in table file) or separate files. Separate is cleaner for complex indexes:
+Indexes live in the **same file as their table**, after the `CREATE TABLE` (separated by `GO`) — there is no separate `Indexes/` folder. They are emitted as `CREATE INDEX` / `CREATE UNIQUE INDEX`; the `NONCLUSTERED` keyword is left implicit:
 
 ```sql
--- /Indexes/IX_Order_CustomerId.sql
+-- /Tables/dbo/dbo.Order.sql  (below the CREATE TABLE)
 
-CREATE NONCLUSTERED INDEX [IX_Order_CustomerId]
-ON [dbo].[Order]([CustomerId])
-INCLUDE ([OrderDate], [TotalAmount])
-```
-
-### Views
-
-```sql
--- /Views/dbo/dbo.vw_ActiveCustomer.sql
-
-CREATE VIEW [dbo].[vw_ActiveCustomer]
-AS
-SELECT 
-    CustomerId,
-    FirstName,
-    LastName,
-    Email,
-    CreatedAt
-FROM dbo.Customer
-WHERE IsActive = 1
-```
-
-### Stored Procedures
-
-```sql
--- /Stored Procedures/dbo/dbo.usp_GetCustomerOrders.sql
-
-CREATE PROCEDURE [dbo].[usp_GetCustomerOrders]
-    @CustomerId INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    
-    SELECT 
-        o.OrderId,
-        o.OrderDate,
-        o.TotalAmount
-    FROM dbo.[Order] o
-    WHERE o.CustomerId = @CustomerId
-    ORDER BY o.OrderDate DESC;
-END
+CREATE INDEX [IX_Order_CustomerId]
+    ON [dbo].[Order]([CustomerId])
+    INCLUDE([OrderDate], [TotalAmount])
 ```
 
 ---
@@ -393,8 +341,7 @@ These are different operations:
 | See/edit a table structure | `/Tables/{schema}/{schema}.{TableName}.sql` |
 | Add a new table | Create file in `/Tables/{schema}/`, add to project |
 | Add a column | Edit the table's `.sql` file, add the column |
-| Add an index | Create in `/Indexes/` or add inline to table file |
-| Add a view | Create file in `/Views/{schema}/` |
+| Add an index | Add it to the table's `.sql` file, below the `CREATE TABLE` |
 | Add seed data | Add to post-deployment script in `/Scripts/PostDeployment/Migrations/` |
 | See deployment settings | Open `.publish.xml` files |
 | Find rename history | Check `.refactorlog` |

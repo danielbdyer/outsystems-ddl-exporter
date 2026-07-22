@@ -18,32 +18,28 @@ description: Use when the developer says "add 'Refunded' to the Status list", "c
 Extend or amend the `VALUES` block of the MERGE in the post-deploy seed. Adding a value = a new `WHEN NOT MATCHED THEN INSERT` row; changing a label = the **guarded** `WHEN MATCHED THEN UPDATE` path fires for that one row. Never write ALTER.
 
 ## The named trap
-An **unconditional `WHEN MATCHED`** that rewrites every row on every deploy (the CDC-silence violation) — this is the idempotent-seed concern; see `../../_index/idempotent-seed/SKILL.md`. (Retiring a referenced value is `delete-seed-value` — route there; that op owns deactivate-don't-delete.)
+An **unconditional `WHEN MATCHED`** that rewrites every row on every deploy — this is the idempotent-seed concern; see `../../_index/idempotent-seed/SKILL.md`. (Retiring a referenced value is `delete-seed-value` — route there; that op owns deactivate-don't-delete.)
 
 ## How it flips (the specifics only)
 - add a new value / change a label → ships as one release; any team member can review it — the change
   is additive and the running application is unaffected.
 - retire a value the app references → route to `../delete-seed-value/SKILL.md` (deactivate, don't delete).
-- **+ CDC-tracked** → the guarded `WHEN MATCHED` is mandatory; added scrutiny, because the table feeds
-  a change-data-capture stream and an unguarded rewrite would surface as phantom changes — see
-  `../../_index/cdc/SKILL.md`.
 
 ## Prove it
-Deploy the new/changed seed, then redeploy unchanged and assert **0 rows affected** + identical data-hash. For a label change, additionally prove the guarded MERGE updates **only the one changed row** — snapshot the `WHEN MATCHED` branch rowcount; it must equal 1, not the table size. If CDC-tracked, the no-op redeploy captures 0. See `prove-on-dacpac` / `talk-to-local-sql` for how. On the sample, add a 'Refunded'-shaped value to `dbo.Category` (STA-02).
+Deploy the new/changed seed, then redeploy unchanged and assert **0 rows affected** + identical data-hash. For a label change, additionally prove the guarded MERGE updates **only the one changed row** — snapshot the `WHEN MATCHED` branch rowcount; it must equal 1, not the table size. See `prove-on-dacpac` / `talk-to-local-sql` for how. On the sample, add a 'Refunded'-shaped value to `dbo.Category` (STA-02).
 
 ## The verdict (to the developer)
 You asked to add 'Refunded' to the Status list. It's in the seed now, and the redeploy proved it
 idempotent — the second deploy added nothing, and the label change touched exactly one row, not the
-whole table. That one-row discipline is what keeps a change-data-capture feed from reporting the edit
-as a table-wide change. Nothing else moves; it's ready to ship.
+whole table. That one-row discipline is what keeps the edit from registering as a table-wide rewrite —
+the guarded MERGE updates only the value that changed. Nothing else moves; it's ready to ship.
 
 ## The reasoning (in conversation)
-A label change has to touch the one row that changed, not rewrite the whole table. If the table is
-CDC-tracked, an unguarded MERGE that rewrites every row on every deploy makes the capture feed report
-the entire table as changed — phantom edits that never happened. That is the failure the guarded `WHEN
-MATCHED` avoids, and it is why the guard compares each column before updating. The full why:
-`../../_index/idempotent-seed/SKILL.md` (the guarded MERGE) and `../../_index/cdc/SKILL.md`
-(over-capture).
+A label change has to touch the one row that changed, not rewrite the whole table. An unguarded MERGE
+that rewrites every row on every deploy is broken even when the values still match — a no-op redeploy
+should touch zero rows, and a real edit exactly one. That is the failure the guarded `WHEN MATCHED`
+avoids, and it is why the guard compares each column before updating. The full why:
+`../../_index/idempotent-seed/SKILL.md` (the guarded MERGE).
 
 ## On the record
 The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
@@ -53,8 +49,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   application is unaffected. The change is additive; existing rows keep their identity.
 - Ships as one release: the seed MERGE in the post-deployment script re-runs, inserting the new row or
   amending the one changed row. The table definition is unchanged.
-- Added scrutiny: if the table feeds a change-data-capture stream, the guarded `WHEN MATCHED` is
-  mandatory so the redeploy captures only the changed row, not the whole table. Otherwise none.
+- Added scrutiny: none — the guarded `WHEN MATCHED` is the standard idempotency requirement, updating
+  only the changed row so a no-op redeploy touches zero rows.
 
 **Verification** — run in each environment after deployment
 ```sql

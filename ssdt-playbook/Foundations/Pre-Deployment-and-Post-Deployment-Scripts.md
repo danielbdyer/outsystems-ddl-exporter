@@ -51,11 +51,11 @@ Pre-deployment scripts run *before* SSDT changes the schema. Use them when:
 
 - **Something blocks the schema change:** A constraint or index prevents the ALTER
 - **Data must be cleaned first:** You need to remove violating rows before adding a constraint
-- **Dependencies must be dropped:** A view or proc must be dropped before the column it references
+- **Dependencies must be dropped:** A dependent index or constraint must be dropped before the column it references can change
 
 ### Examples
 
-**Backfill NULLs before adding NOT NULL constraint** *(corrected: necessary, not sufficient — on a populated table the data-loss guard checks row presence, not NULL content, so the tightening still needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment; see §17.2)*:
+**Backfill NULLs before adding NOT NULL constraint** (necessary, not sufficient — on a populated table the data-loss guard checks row presence, not NULL content, so the tightening still needs a logged `BlockOnPossibleDataLoss` relaxation for that deployment; see §17.2):
 
 ```sql
 -- PreDeployment.sql (or included file)
@@ -82,7 +82,7 @@ GO
 **Remove orphan data before adding FK:**
 
 ```sql
--- We're about to add FK_Order_Customer
+-- We're about to add FK_Order_Customer_CustomerId
 -- First, clean up any orphan orders
 PRINT 'Pre-deployment: Removing orphan orders...'
 
@@ -183,7 +183,7 @@ These stay in the project forever. They must be idempotent — safe to run multi
 
 /*
 Migration: Backfill CreatedAt column
-Ticket: JIRA-1234
+Work item: AB#1234
 Author: Danny
 Date: 2025-01-15
 
@@ -250,7 +250,7 @@ These are for release-specific work. After successful production deployment, the
 One-Time Script: Release 2025.02 data corrections
 Remove after production deployment.
 
-Ticket: JIRA-1456
+Work item: AB#1456
 Description: Fix incorrectly migrated phone numbers from legacy import
 */
 
@@ -324,10 +324,11 @@ END
 ```sql
 CREATE TABLE [dbo].[MigrationHistory]
 (
-    MigrationId NVARCHAR(200) NOT NULL,
+    MigrationId NVARCHAR(200) NOT NULL
+        CONSTRAINT [PK_MigrationHistory_MigrationId]
+            PRIMARY KEY,
     ExecutedAt DATETIME2(7) NOT NULL,
-    ExecutedBy NVARCHAR(128) NOT NULL,
-    CONSTRAINT PK_MigrationHistory PRIMARY KEY (MigrationId)
+    ExecutedBy NVARCHAR(128) NOT NULL
 )
 ```
 
@@ -357,17 +358,13 @@ Before committing, ask: "If I run this twice, what happens?"
 
 | Scenario | Use | Why |
 |----------|-----|-----|
-| Backfill NULLs before NOT NULL constraint | Pre-deployment | Must happen before schema change — and is not sufficient alone: the tightening stays blocked on a populated table without a logged guard-relaxation (see §17.2, corrected) |
+| Backfill NULLs before NOT NULL constraint | Pre-deployment | Must happen before schema change — and is not sufficient alone: the tightening stays blocked on a populated table without a logged guard-relaxation (see §17.2) |
 | Clean orphans before adding FK | Pre-deployment | Must happen before constraint exists |
 | Drop blocking index for column type change | Pre-deployment | Index prevents ALTER |
 | Populate new column from existing data | Post-deployment | New column must exist first |
 | Seed lookup table | Post-deployment | Table must exist first |
 | Transform data to new format | Post-deployment | New structure must exist |
 | One-time data fix | Post-deployment | Usually schema-independent |
-
----
-
-Let me continue with the remaining consolidated Foundations sections.
 
 ---
 

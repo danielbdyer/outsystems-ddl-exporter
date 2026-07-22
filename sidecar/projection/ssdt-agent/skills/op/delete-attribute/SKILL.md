@@ -43,9 +43,7 @@ not re-derive either here.
   deprecation (soft-deprecate → stop writes → verify unused → drop; see
   `../../_index/multi-phase/SKILL.md`), and the running application must change to keep working
 - referenced by a view/proc/index → drop those first → ordered multi-step
-- CDC-enabled / >1M rows → added scrutiny (see `../../_index/cdc/SKILL.md`): a CDC-tracked table
-  freezes its capture instance to the current columns; at >1M rows the drop may run long — schedule
-  a window
+- >1M rows → added scrutiny: at production row counts the drop may run long — schedule a window
 
 ## Prove it
 A Strict publish is blocked on `BlockOnPossibleDataLoss` when the column has data — show the blocked
@@ -81,8 +79,7 @@ The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
 - Ships across releases as the 4-phase deprecation (soft-deprecate → stop writes → verify unused →
   drop) so the running application keeps working while the change is in flight. An empty, unused
   column with no dependents ships as a single schema change, applied in place.
-- Added scrutiny, when the table is CDC-tracked or large: a change-data-capture stream freezes its
-  capture instance to the current columns; at production row counts the drop may block writes or
+- Added scrutiny, when the table is large: at production row counts the drop may block writes or
   run long — schedule a window.
 
 **Verification** — run in each environment after deployment:

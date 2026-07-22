@@ -27,13 +27,6 @@ non-issue.
 - any table state (empty or populated) → ships as a single schema change, applied in place; any team
   member can review it — the change is additive and the running application is unaffected (NULL is
   always a valid existing-row value).
-- table is CDC-enabled and the new column must be tracked → the capture instance does not include the
-  new column, and recreating it cannot be expressed as a table definition. When a capture gap is
-  tolerable it ships as a scripted change (drop and recreate the instance, one release); when the
-  downstream consumer requires no gap it ships across releases, with two capture instances running
-  side by side until the cutover. Added scrutiny either way: the table feeds a change-data-capture
-  stream, so the capture instance is frozen to the table's current columns and needs handling (see
-  `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Strict publish succeeds clean; the delta is a single `ALTER TABLE ... ADD ... NULL`; the deployment
@@ -50,9 +43,9 @@ There's nothing to decide here; it's ready to ship.
 An optional add never gets blocked, because NULL is always a valid value for the rows already in the
 table. What decides whether a change like this flips is whether the existing rows can already satisfy
 the new rule — which is exactly why making a column *mandatory* is the harder sibling: the rows
-already there may not satisfy it. The only case to watch here is CDC (see `../../_index/cdc/SKILL.md`).
-The mistake to avoid is fearing additive columns and putting the risk in the wrong place — for an
-optional add the only real risk is the CDC edge, not the column itself.
+already there may not satisfy it. The mistake to avoid is fearing additive columns and putting the
+risk in the wrong place — an optional add is genuinely additive, and no existing row can conflict
+with it.
 
 ## On the record
 Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
@@ -60,9 +53,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as a single schema change, applied in place. No data is read or written.
-- Added scrutiny: none, unless the table is CDC-tracked — then it feeds a change-data-capture stream,
-  the capture instance is frozen to the table's current columns, and the new column must be added to
-  the capture instance (see `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none — an optional column is additive and every existing row takes NULL.
 
 **Verification** — run in each environment after deployment
 ```sql

@@ -126,11 +126,11 @@ WHERE CustomerId NOT IN (SELECT Id FROM dbo.Customer)
 
 **Schema change (declarative):**
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]),
+CONSTRAINT [FK_Order_Customer_CustomerId] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]),
 ```
 
 **When to use:**
-- Preparing data so a new constraint validates (orphans before an FK; violators before a CHECK). **Not** the NULL → NOT NULL tightening of an existing column on a populated table — corrected (proven, sqlpackage 170.4.83): the data-loss guard checks row presence, not NULL content, so a same-release backfill cannot clear it; that change needs a logged guard-relaxation or the add-new-column shape (see the Null-to-Not-Null pattern)
+- Preparing data so a new constraint validates (orphans before an FK; violators before a CHECK). **Not** the NULL → NOT NULL tightening of an existing column on a populated table: the data-loss guard checks row presence, not NULL content, so a same-release backfill cannot clear it; that change needs a logged guard-relaxation or the add-new-column shape (see the Null-to-Not-Null pattern)
 - Adding FK constraint when orphan data must be cleaned first
 - Adding check constraint when existing data might violate
 - Dropping dependencies before a column change
@@ -148,24 +148,10 @@ CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Cust
 **What SSDT can't handle declaratively:**
 - `ENABLE`/`DISABLE` constraints
 - `ALTER SCHEMA TRANSFER` (moving objects between schemas)
-- CDC enable/disable
 - Online index operations with specific options
 - Complex data transformations that must be atomic with schema changes
 
-**Example:** Enabling CDC on a table
-
-```sql
--- This goes in post-deployment; it's not a schema definition
-EXEC sys.sp_cdc_enable_table
-    @source_schema = 'dbo',
-    @source_name = 'Customer',
-    @role_name = 'cdc_reader',
-    @capture_instance = 'dbo_Customer_v1',
-    @supports_net_changes = 1
-```
-
 **When to use:**
-- CDC management
 - Schema transfers
 - Constraint enable/disable
 - Complex index operations
@@ -185,7 +171,6 @@ EXEC sys.sp_cdc_enable_table
 - Can't rollback safely after certain points
 - Old and new code must coexist during transition
 - Need to verify success before proceeding
-- CDC constraints require sequenced instance management
 
 **Example:** Explicit data type conversion (VARCHAR → DATE)
 
@@ -201,7 +186,6 @@ EXEC sys.sp_cdc_enable_table
 - Explicit type conversions
 - Table structural changes (split, merge)
 - Any breaking change requiring backward compatibility period
-- CDC-enabled table changes in production
 
 **Key discipline:** Each phase must be independently deployable and rollback-able. Document the complete sequence before starting.
 
@@ -256,7 +240,6 @@ Can SSDT handle this change purely through .sql file edits?
 | NOT NULL → NULL | Pure Declarative |
 | Rename column | Pure Declarative (with refactorlog) |
 | Drop column | Pure Declarative (with deprecation workflow) |
-| Enable CDC | Script-Only |
 | Seed lookup table | Declarative + Post-Deployment |
 | Split table | Multi-Phase |
 | Add/remove IDENTITY | Multi-Phase |

@@ -15,9 +15,9 @@
     then the narrowing lands validated — or staged across releases if the data must be
     preserved. A dev lead must review this: existing data is modified. (self-test prompt 5.)
 
-  - add-unique on Code: add CONSTRAINT UQ_Product_Code UNIQUE (Code) (or a unique index). With a
-    duplicate Code in the seed, the unique index build fails on the duplicate. The remedy is a
-    pre-deployment dedupe. Duplicates present vs. absent flips how the change ships. See
+  - add-unique on Code: add a unique index `CREATE UNIQUE INDEX [UIX_Product_Code] ON dbo.Product
+    (Code)`. With a duplicate Code in the seed, the unique index build fails on the duplicate. The
+    remedy is a pre-deployment dedupe. Duplicates present vs. absent flips how the change ships. See
     skills/operations/constraints.md.
 
   Code is intentionally non-unique below — adding uniqueness is the change being proved.
@@ -44,6 +44,6 @@ CREATE TABLE dbo.Product
     -- NOT declared — declaring it is a create-fk proof.
     CategoryId INT           NULL,
 
-    CONSTRAINT PK_Product PRIMARY KEY CLUSTERED (Id)
+    CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id)
 );
 GO

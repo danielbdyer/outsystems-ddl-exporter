@@ -4,19 +4,11 @@
 
 ---
 
-### Create a Lookup Table with Seed Data
+### Create a Static Entity (Lookup Table with Seed Data)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Create a reference/code table with fixed values | 1-2 | Declarative (structure) + Post-Deployment (data) | Usually not CDC-enabled |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Create a reference/code table with fixed values | 1-2 | Declarative (structure) + Post-Deployment (data) |
 
 **Two pieces:**
 1. Table structure (declarative `.sql` file)
@@ -27,15 +19,19 @@
 -- /Tables/dbo/dbo.OrderStatus.sql
 CREATE TABLE [dbo].[OrderStatus]
 (
-    [StatusId] INT NOT NULL,
+    [StatusId] INT NOT NULL
+        CONSTRAINT [PK_OrderStatus_StatusId]
+            PRIMARY KEY CLUSTERED,
     [StatusCode] NVARCHAR(20) NOT NULL,
     [StatusName] NVARCHAR(50) NOT NULL,
     [SortOrder] INT NOT NULL,
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_OrderStatus_IsActive] DEFAULT (1),
-    
-    CONSTRAINT [PK_OrderStatus] PRIMARY KEY CLUSTERED ([StatusId]),
-    CONSTRAINT [UQ_OrderStatus_Code] UNIQUE ([StatusCode])
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_OrderStatus_IsActive] DEFAULT (1)
 )
+
+GO
+
+CREATE UNIQUE INDEX [UIX_OrderStatus_StatusCode]
+    ON [dbo].[OrderStatus]([StatusCode])
 ```
 
 **Seed data:**
@@ -62,10 +58,7 @@ WHEN NOT MATCHED THEN
     VALUES (source.[StatusId], source.[StatusCode], source.[StatusName], source.[SortOrder], source.[IsActive]);
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -80,17 +73,9 @@ WHEN NOT MATCHED THEN
 
 ### Add/Modify Seed Data
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add or update values in a lookup table | 1-2 | Post-Deployment Script | Usually not CDC-enabled |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add or update values in a lookup table | 1-2 | Post-Deployment Script |
 
 **What you do:**
 
@@ -101,33 +86,22 @@ Edit the seed data script. Add new values or modify existing:
     (6, 'RETURNED', 'Returned', 6, 1),  -- New value
 ```
 
-MERGE handles both insert (new) and update (existing).
+MERGE handles both insert (new) and update (existing). The seed is **additive**: it inserts what's missing and updates what changed, but it does **not** delete a value you remove from the VALUES list — the row stays; the seed just stops asserting it. That is deliberate: a value the app still references must not disappear on the next deploy.
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
-| Deleting values | MERGE doesn't delete by default. If you need to deactivate, set `IsActive = 0` rather than deleting. |
-| FK references | Can't delete values that are referenced by FKs. |
+| Removing a value | Deleting a row from the seed does **not** drop it (the seed is additive — no delete-by-source). To actually remove a lookup row, take an explicit step (a scoped `DELETE`); prefer deactivating instead — set `IsActive = 0`. |
+| FK references | An explicit delete is FK-guarded: a value another Entity references is refused (Msg 547) and rolls back. Reconcile the references first, or deactivate (`IsActive = 0`). |
 
 ---
 
-### Extract Values to a Lookup Table
+### Extract a Static Entity (Extract Values to a Lookup Table)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Convert inline values to a normalized lookup table | 3 | Multi-Phase | May affect both tables |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Convert inline values to a normalized lookup table | 3 | Multi-Phase |
 
 **Scenario:** `Order.Status` is `VARCHAR(20)` with values like 'Pending', 'Active'. Extract to `OrderStatus` table.
 
@@ -137,10 +111,7 @@ MERGE handles both insert (new) and update (existing).
 **Phase 4:** Application transitions to FK
 **Phase 5:** Next release: drop `Status` column, add FK constraint
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

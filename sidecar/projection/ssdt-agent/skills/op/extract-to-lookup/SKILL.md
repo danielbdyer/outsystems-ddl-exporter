@@ -33,7 +33,8 @@ Doing it in one publish and silently losing the unmapped values — any source t
 - **unmapped / dirty source values present** → still staged across releases, but a pre-backfill
   reconcile is required so nothing maps to NULL; if any value is lost, a principal must review it,
   because data is removed and the removal cannot be undone.
-- **+ CDC-tracked** / **+ >1M rows** → added scrutiny — see `../../_index/cdc/SKILL.md`.
+- **+ >1M rows** → added scrutiny: the backfill scans the table and may block writes or run long —
+  schedule a window.
 
 ## Prove it
 Prove the mapping is **total** BEFORE dropping the old column:
@@ -68,9 +69,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   existing values, add the FK column, backfill by joining text → lookup key, then drop the old
   free-text column — the old and new representations coexist while readers migrate, and the seed and
   backfill cannot be expressed as a table definition.
-- Added scrutiny: none for a small, clean source; a CDC-tracked table freezes its capture instance to
-  the current columns and needs handling; at >1M rows the backfill scans the table and may block
-  writes or run long — schedule a window (see `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none for a small, clean source; at >1M rows the backfill scans the table and may
+  block writes or run long — schedule a window.
 
 **Verification** — run in each environment after deployment
 ```sql

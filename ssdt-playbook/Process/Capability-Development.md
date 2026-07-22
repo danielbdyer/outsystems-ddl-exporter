@@ -69,7 +69,6 @@ Competence with SSDT develops through practice, not just reading. This path make
 - Add NOT NULL column with default to populated table
 - Add FK to table with verified clean data
 - Widen a column
-- Add CDC consideration to a change
 
 **Support model:**
 - Dev lead available for questions, not actively pairing
@@ -98,7 +97,6 @@ Competence with SSDT develops through practice, not just reading. This path make
 **Tier 3 changes to participate in:**
 - Multi-phase data type conversions
 - Table structural refactoring
-- CDC instance management for production
 - Breaking changes requiring coordination
 
 **Support model:**
@@ -162,7 +160,6 @@ Competence with SSDT develops through practice, not just reading. This path make
 | Gap | Opportunity |
 |-----|-------------|
 | Needs more Tier 2 exposure | Assign Tier 2 changes with support |
-| Uncertain about CDC | Pair on CDC-related change |
 | Hasn't seen a failure | Include in next incident response |
 | Needs to mentor | Pair them with a new team member |
 | Ready for Tier 3 but no opportunities | Create or assign appropriate work |

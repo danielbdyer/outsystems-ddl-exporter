@@ -1,4 +1,4 @@
-# 28.7 Incident Report Template
+# 28.6 Incident Report Template
 
 Use after any incident for blameless post-mortem:
 

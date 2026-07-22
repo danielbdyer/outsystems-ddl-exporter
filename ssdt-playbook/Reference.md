@@ -5,7 +5,6 @@ Lookup materials, standards, and templates.
 ## Standards
 
 - [SSDT Standards](Reference/SSDT-Standards.md) — Naming conventions, data types, structure
-- [CDC Table Registry](Reference/CDC-Table-Registry.md) — Which tables have CDC enabled
 
 ## Templates
 
@@ -15,7 +14,6 @@ Lookup materials, standards, and templates.
 - Seed Data
 - Migration Tracking
 - Validation
-- CDC Scripts
 - Incident Report
 
 ## Documentation

@@ -32,9 +32,8 @@ it is NOT this op — route to `../retype-explicit/SKILL.md`.
 - VARCHAR→NVARCHAR on an indexed column → storage doubles → the index-key byte-limit edge (see
   `../widen/SKILL.md`)
 - direction is actually narrowing/reshaping → **wrong op** → `../retype-explicit/SKILL.md`
-- CDC-enabled / >1M rows → added scrutiny (see `../../_index/cdc/SKILL.md`): a change-data-capture
-  instance is frozen to the table's current columns and needs handling, and at production row
-  counts the `ALTER COLUMN` rewrite may block writes or run long — schedule a window.
+- >1M rows → added scrutiny: at production row counts the `ALTER COLUMN` rewrite may block writes or
+  run long — schedule a window.
 
 ## Prove it
 Strict publishes clean; the delta is one `ALTER COLUMN` to the wider type — not blocked, and no
@@ -60,17 +59,14 @@ convert.
 
 ## On the record
 The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`). The base
-finding holds for any genuine widening; add the added-scrutiny lines only when the table is
-CDC-tracked or large.
+finding holds for any genuine widening; add the added-scrutiny line only when the table is large.
 
 **Review & release**
 - Genuine widening: `Any team member can review this: the change is data-preserving — every value
   already fits the wider type — and the running application is unaffected.` · `Ships as a single
   schema change, applied in place. No data is read or written.`
-- Added scrutiny, when it applies: `Added scrutiny: this table feeds a change-data-capture stream,
-  so the capture instance is frozen to the current columns and needs handling.` · `Added scrutiny:
-  at production row counts the ALTER COLUMN rewrite may block writes or run long — schedule a
-  window.`
+- Added scrutiny, when it applies: `Added scrutiny: at production row counts the ALTER COLUMN
+  rewrite may block writes or run long — schedule a window.`
 
 **Verification** — run in each environment after deployment:
 ```sql

@@ -6,17 +6,9 @@
 
 ### Define the Identifier (Create Primary Key)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Define the unique identifier for a table | 1 (new table) / 2 (existing) | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Define the unique identifier for a table | 1 (new table) / 2 (existing) | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -29,19 +21,19 @@
 **What you do:**
 
 ```sql
--- Inline with table definition
-CONSTRAINT [PK_Customer] PRIMARY KEY CLUSTERED ([CustomerId])
+-- Inline, laddered beneath the column
+[CustomerId] INT NOT NULL
+    CONSTRAINT [PK_Customer_CustomerId]
+        PRIMARY KEY CLUSTERED,
 ```
 
-For composite keys:
+For composite keys, the constraint goes at table level (after the columns):
 ```sql
-CONSTRAINT [PK_OrderLine] PRIMARY KEY CLUSTERED ([OrderId], [LineNumber])
+CONSTRAINT [PK_OrderLine_OrderId_LineNumber]
+    PRIMARY KEY ([OrderId], [LineNumber])
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -53,17 +45,9 @@ CONSTRAINT [PK_OrderLine] PRIMARY KEY CLUSTERED ([OrderId], [LineNumber])
 
 ### Create a Reference to Another Entity (Foreign Key)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Link a column to a parent table's primary key | 2 (clean data) / 3 (orphans exist) | Declarative / Multi-Phase | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Link a column to a parent table's primary key | 2 (clean data) / 3 (orphans exist) | Declarative / Multi-Phase |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -76,8 +60,9 @@ CONSTRAINT [PK_OrderLine] PRIMARY KEY CLUSTERED ([OrderId], [LineNumber])
 **What you do (clean data):**
 
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
-    REFERENCES [dbo].[Customer]([CustomerId])
+[CustomerId] INT NOT NULL
+    CONSTRAINT [FK_Order_Customer_CustomerId]
+        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
 ```
 
 **Pre-flight check:**
@@ -90,14 +75,11 @@ WHERE c.CustomerId IS NULL
 -- Must return 0 rows
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
-| 🔴 **The Forgotten FK Check** | If orphans exist, deploy fails. Always check first. See [Anti-Pattern 19.3](#193-the-forgotten-fk-check). |
+| 🔴 **The Forgotten FK Check** | An orphan doesn't cleanly block: SSDT adds the FK **`WITH NOCHECK`** (so it lands), then **`WITH CHECK CHECK`** fails on the orphan (`Msg 547`) and leaves the constraint present but **untrusted** (`is_not_trusted=1`) — the orphan survives and the optimizer ignores the key. Reconcile the orphans first, then `WITH CHECK CHECK` to end trusted (`is_not_trusted=0`); drop or re-validate any untrusted FK a prior attempt left behind. Always check first. See [Anti-Pattern 19.3](#193-the-forgotten-fk-check). |
 | WITH NOCHECK | Can add FK without validation, but it's untrusted. See pattern for proper handling. |
 | Large tables | FK validation scans the table. May take time. |
 
@@ -109,17 +91,9 @@ WHERE c.CustomerId IS NULL
 
 ### Change Cascade Behavior
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Change what happens when parent record is deleted/updated | 3 | Pure Declarative (DROP + ADD) | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Change what happens when parent record is deleted/updated | 3 | Pure Declarative (DROP + ADD) |
 
 **Options:**
 | Setting | On DELETE | On UPDATE |
@@ -140,16 +114,14 @@ WHERE c.CustomerId IS NULL
 **What you do:**
 
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
-    REFERENCES [dbo].[Customer]([CustomerId])
-    ON DELETE CASCADE
-    ON UPDATE NO ACTION
+[CustomerId] INT NOT NULL
+    CONSTRAINT [FK_Order_Customer_CustomerId]
+        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId])
+            ON DELETE CASCADE
+            ON UPDATE NO ACTION,
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
@@ -161,17 +133,9 @@ CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId])
 
 ### Remove a Reference (Drop Foreign Key)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Remove the link between tables | 2 | Pure Declarative | No impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Remove the link between tables | 2 | Pure Declarative |
 
 **Dimensions:**
 | Dimension | Value | Reasoning |
@@ -185,13 +149,12 @@ CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId])
 
 Remove the constraint from the table definition. SSDT generates:
 ```sql
-ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Customer]
+ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Customer_CustomerId]
 ```
 
----
+Unlike deleting a whole table (a phantom under the production posture), a foreign key removed from the model **does** drop on publish — DacFx's `DropConstraintsNotInSource` defaults to True, so the granular removal happens even with `DropObjectsNotInSource=false`.
 
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|

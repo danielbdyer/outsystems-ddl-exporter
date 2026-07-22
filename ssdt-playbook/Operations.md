@@ -22,7 +22,6 @@ Detailed "how to" for every operation type:
 - Lookup Tables
 - Constraints
 - Structural Changes
-- Views and Abstraction
 - Audit and Temporal
 - Quick Lookup Tables
 
@@ -37,7 +36,6 @@ When changes require multiple releases:
 - FK with Orphan Data
 - Safe Column Removal
 - Table Split/Merge
-- CDC Table Changes
 
 ## Decision Aids & Anti-Patterns
 

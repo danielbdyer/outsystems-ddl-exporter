@@ -42,14 +42,14 @@ Fill every section. A section with nothing to report says so in one line (`No da
 ## Review & release
 - <Who must review, and why — one plain finding. THE_RECORD.md §5.>
 - <How it ships — one plain finding. THE_RECORD.md §5.>
-- <Added scrutiny, if any: CDC / large table / first-time — each its own line, or "None.">
+- <Added scrutiny, if any: large table / first-time — each its own line, or "None.">
 
 ## Changes
 | File | Change |
 |---|---|
 | <path> | <what changed, plainly> |
 <Then one line naming what is NOT touched where a reviewer would wonder: refactorlog unchanged;
- no index/view/procedure changes.>
+ no index or procedure changes.>
 
 ## Data remediation
 <If existing data is changed to let the constraint land: state the violating rows by name and count,
@@ -111,29 +111,29 @@ Fill every section. A section with nothing to report says so in one line (`No da
 
 ## Worked example — the go-live Order hardening
 
-The change: add `FK_Order_Customer` (`Order.CustomerId` → `Customer.Id`) and `CK_Order_Total`
+The change: add `FK_Order_Customer_CustomerId` (`Order.CustomerId` → `Customer.Id`) and `CK_Order_Total`
 (`Total > 0`) to `dbo.[Order]`. One seeded row (`Order 4`, `CustomerId 999`) has no parent; all
 totals are already positive.
 
 ```
-# Order: add FK_Order_Customer and CK_Order_Total (one orphan row remediated)
+# Order: add FK_Order_Customer_CustomerId and CK_Order_Total (one orphan row remediated)
 
 ## Summary
-Two constraints are added to dbo.[Order] ahead of go-live (AB#1234). FK_Order_Customer makes
+Two constraints are added to dbo.[Order] ahead of go-live (AB#1234). FK_Order_Customer_CustomerId makes
 Order.CustomerId a real reference to Customer, so an order can no longer point at a customer that
 does not exist. CK_Order_Total enforces Total > 0, so zero- and negative-value orders are rejected.
 
 ## Review & release
 - A dev lead must review this: existing data is modified (one row) and a cross-table relationship is added.
 - Ships as one release: a pre-deployment remediation, then both constraints land validated and trusted.
-- Added scrutiny: none. dbo.[Order] is not CDC-tracked (cdc.change_tables checked 2026-07-16).
+- Added scrutiny: none. dbo.[Order] is well under the large-table threshold and this operation is routine on this estate.
 
 ## Changes
 | File | Change |
 |---|---|
-| Modules/Order.sql | Adds FK_Order_Customer and CK_Order_Total to the table definition |
+| Modules/Order.sql | Adds FK_Order_Customer_CustomerId and CK_Order_Total to the table definition |
 | Script.PreDeployment.sql | Reassigns one orphan Order row before the foreign key validates |
-No renames (refactorlog unchanged). No index, view, or procedure changes.
+No renames (refactorlog unchanged). No index or procedure changes.
 
 ## Data remediation
 One row violates the foreign key: Order 4 holds CustomerId 999, and no such customer exists.
@@ -144,7 +144,7 @@ One row violates the foreign key: Order 4 holds CustomerId 999, and no such cust
 
 ## Deployment evidence — disposable copy of Dev, 2026-07-16, sqlpackage 170.4.83
 - Without the remediation, the deployment is blocked: Msg 547 — conflicted with FOREIGN KEY
-  constraint "FK_Order_Customer" (dbo.Customer, column Id). This confirms the constraint validates.
+  constraint "FK_Order_Customer_CustomerId" (dbo.Customer, column Id). This confirms the constraint validates.
 - With the remediation, the deployment succeeds. Both constraints end trusted (is_not_trusted = 0).
 - The generated deploy script adds each constraint WITH NOCHECK, then re-validates WITH CHECK CHECK —
   two ADD CONSTRAINT statements and the one remediation UPDATE. No table rebuild, no drops.
@@ -157,14 +157,14 @@ SELECT o.Id, o.CustomerId FROM dbo.[Order] o
 LEFT JOIN dbo.Customer c ON c.Id = o.CustomerId WHERE c.Id IS NULL;
 
 -- expect both rows, is_not_trusted = 0
-SELECT name, is_not_trusted FROM sys.foreign_keys     WHERE name = 'FK_Order_Customer'
+SELECT name, is_not_trusted FROM sys.foreign_keys     WHERE name = 'FK_Order_Customer_CustomerId'
 UNION ALL
 SELECT name, is_not_trusted FROM sys.check_constraints WHERE name = 'CK_Order_Total';
 ```
 
 ## Rollback
 Both constraints drop without data loss:
-ALTER TABLE dbo.[Order] DROP CONSTRAINT FK_Order_Customer;
+ALTER TABLE dbo.[Order] DROP CONSTRAINT FK_Order_Customer_CustomerId;
 ALTER TABLE dbo.[Order] DROP CONSTRAINT CK_Order_Total;
 The remediation UPDATE is not auto-reversed; the original value (Order 4 → 999) is recorded above.
 

@@ -22,7 +22,7 @@ COLUMN [Old]` + `ADD [New]` — all values in that column lost. Edit the CREATE;
 
 ## The named trap
 **A rename with no refactorlog entry** (handbook 16 = §19.1), with its companion **Refactorlog
-Cleanup** (§19.6). This is the identity-vs-name concern — see
+Cleanup** (§19.5). This is the identity-vs-name concern — see
 `../../_index/identity-and-refactorlog/SKILL.md`; do not re-derive the refactorlog mechanics here.
 
 ## How it flips (the specifics only)
@@ -31,10 +31,8 @@ Cleanup** (§19.6). This is the identity-vs-name concern — see
   dev lead or an experienced developer reviews it
 - refactorlog entry missing → delta is `DROP COLUMN`+`ADD`, every value in the column is lost; stop
   and demand the refactorlog (see `../../_index/identity-and-refactorlog/SKILL.md`)
-- CDC-enabled → the capture instance names the old column and is frozen to the table's current
-  columns, so it must be recreated → added scrutiny (see `../../_index/cdc/SKILL.md`)
-- external consumers must keep the old name → a backward-compatibility view holds it
-  (`../compat-view/SKILL.md`) → the change stages across releases so both names coexist
+- external consumers must keep the old name → a computed column carrying the old name holds it
+  → the change stages across releases so both names coexist
 
 ## Prove it
 Script the delta and **read it** — it MUST be `sp_rename ... 'COLUMN'`. If you see `DROP
@@ -50,7 +48,7 @@ one, losing everything in it — so reading the delta is what makes this safe ra
 real cost is that every caller of the old name has to move to the new one: views, procedures, ORM
 mappings, reports, ETL, so a dev lead or an experienced developer should review it. One question
 before it ships — does anything outside this project still read the old name? If so, a
-backward-compatibility view keeps the old name alive while those consumers move; if not, the rename
+computed column carrying the old name keeps it alive while those consumers move; if not, the rename
 is clean once the in-project callers are updated.
 
 ## The reasoning (in conversation)
@@ -70,9 +68,6 @@ The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
   reports, ETL) must move to the new name.
 - Ships as a single schema change, applied in place: a metadata `sp_rename` renames the column and
   preserves its data. No data is read or written.
-- Added scrutiny, when the table is CDC-tracked: the change-data-capture capture instance names the
-  old column and is frozen to the table's current columns, so it must be recreated (see
-  `../../_index/cdc/SKILL.md`).
 
 **Verification** — run in each environment after deployment:
 ```sql
@@ -95,5 +90,3 @@ new name must be reverted with it. Not auto-reversed.
   where Dev does not. Read the delta and run the verification query before each promotion.
 - Reversibility — only the forward rename is exercised on the disposable copy; the backout rename is
   the same metadata operation but is not separately proven.
-- Capture — when the table is CDC-tracked, recreating the capture instance for the new column name is
-  not exercised on the copy (see `../../_index/cdc/SKILL.md`).

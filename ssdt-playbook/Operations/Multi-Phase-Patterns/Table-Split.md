@@ -1,5 +1,7 @@
 # 17.6 Pattern: Table Split (Vertical Partitioning)
 
+*There's no direct OutSystems equivalent for splitting a table — it's a relational refactor the platform abstracted away, so you carry the columns into a new related Entity by hand.*
+
 **When to use:** Extracting columns from one table into a new related table
 
 **Scenario:** Extract address columns from `Customer` into `CustomerAddress`
@@ -10,16 +12,16 @@
 -- Declarative: New table file
 CREATE TABLE [dbo].[CustomerAddress]
 (
-    [CustomerAddressId] INT IDENTITY(1,1) NOT NULL,
-    [CustomerId] INT NOT NULL,
+    [CustomerAddressId] INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_CustomerAddress_CustomerAddressId]
+            PRIMARY KEY CLUSTERED,
+    [CustomerId] INT NOT NULL
+        CONSTRAINT [FK_CustomerAddress_Customer_CustomerId]
+            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
     [Street] NVARCHAR(200) NULL,
     [City] NVARCHAR(100) NULL,
     [State] NVARCHAR(50) NULL,
-    [PostalCode] NVARCHAR(20) NULL,
-    
-    CONSTRAINT [PK_CustomerAddress] PRIMARY KEY CLUSTERED ([CustomerAddressId]),
-    CONSTRAINT [FK_CustomerAddress_Customer] FOREIGN KEY ([CustomerId]) 
-        REFERENCES [dbo].[Customer]([CustomerId])
+    [PostalCode] NVARCHAR(20) NULL
 )
 ```
 

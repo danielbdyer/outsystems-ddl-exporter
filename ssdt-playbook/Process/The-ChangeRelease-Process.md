@@ -21,7 +21,6 @@ Before touching any code, classify the change.
 ### 1.1 Identify Affected Tables
 
 - Which tables will this change touch?
-- Are any of them CDC-enabled? (Check the CDC Table Registry)
 
 ### 1.2 Determine the Dimensions
 
@@ -41,7 +40,7 @@ For each operation in your change, answer:
 **Dependency Scope:**
 - Self-contained (single object)?
 - Intra-table (other objects on same table)?
-- Inter-table (other tables, views, procs)?
+- Inter-table (other tables)?
 - Cross-boundary (external systems, ETL)?
 
 **Application Impact:**
@@ -61,7 +60,6 @@ The tier is the highest risk across any dimension:
 | Data-destructive, Lossy, Cross-boundary | Tier 4 |
 
 **Escalation triggers** (push tier upward regardless of dimensions):
-- CDC-enabled table: +1 tier minimum
 - Large table (>1M rows): +1 tier for operations that scan/modify data
 - Production-critical timing: +1 tier
 - Novel or unprecedented pattern: Tier 4
@@ -80,13 +78,12 @@ You'll include this in your PR. Write it down now:
 
 ```
 Change: Add MiddleName column to Customer table
-Table: dbo.Customer (CDC-enabled)
+Table: dbo.Customer
 Operations: Create column (nullable)
 Dimensions: Schema-only, Symmetric, Self-contained, Additive
 Base Tier: 1
-CDC Impact: Yes — needs instance recreation consideration
-Final Tier: 2 (elevated due to CDC)
-Mechanism: Declarative + Post-deployment (for CDC re-enable)
+Final Tier: 2
+Mechanism: Declarative + Post-deployment
 ```
 
 ---
@@ -129,7 +126,7 @@ If your change requires data work:
 
 /*
 Migration: Add MiddleName column to Customer
-Ticket: JIRA-1234
+Work item: AB#1234
 Author: Your Name
 Date: 2025-01-15
 */
@@ -144,20 +141,6 @@ GO
 ```
 
 Add the `:r` include to the master PostDeployment.sql if needed.
-
-### 2.4 Handle CDC (If Applicable)
-
-For CDC-enabled tables, add the appropriate CDC management:
-
-```sql
--- For development (accept gaps):
--- Pre-deployment: Disable CDC
--- Post-deployment: Re-enable CDC
-
--- For production (no gaps):
--- Post-deployment: Create new capture instance
--- Leave old instance until next release
-```
 
 ---
 
@@ -214,10 +197,9 @@ git add .
 git commit -m "Add MiddleName column to Customer table
 
 - Added nullable NVARCHAR(50) column
-- CDC impact: requires instance recreation
 - Tier 2 change
 
-JIRA-1234"
+AB#1234"
 ```
 
 ### 4.2 Push and Open PR
@@ -234,7 +216,6 @@ Complete the entire template (see Section 23). Don't skip sections.
 
 Key fields:
 - **Classification:** Tier, mechanism, operations
-- **CDC Impact:** Yes/no, affected tables
 - **Generated Script:** Paste key operations
 - **Rollback Plan:** How to reverse if needed
 
@@ -271,7 +252,6 @@ Based on tier:
 - Everything from Tier 1
 - Data validation queries appropriate?
 - Pre/post scripts idempotent?
-- CDC impact correctly identified?
 - Rollback plan viable?
 
 **Tier 3+ Review (30+ minutes):**
@@ -330,8 +310,7 @@ Merge to main
 After pipeline completes:
 1. Verify pipeline succeeded (check Azure DevOps)
 2. Spot-check the database (query to confirm change applied)
-3. If CDC change: verify capture instance status
-4. If OutSystems-impacting: proceed with Integration Studio refresh
+3. If OutSystems-impacting: proceed with Integration Studio refresh
 
 ---
 

@@ -1,17 +1,19 @@
 # 17.4 Pattern: Add FK with Orphan Data
 
+*In OutSystems, adding a Reference Attribute was one click and the platform enforced integrity; here, with existing data, you validate first, then add and trust the foreign key.*
+
 **When to use:** Adding a foreign key when orphan records exist that you can't immediately delete
 
-**Scenario:** Add `FK_Order_Customer` but some orders have invalid `CustomerId` values
+**Scenario:** Add `FK_Order_Customer_CustomerId` but some orders have invalid `CustomerId` values
 
 ### Phase 1 (Release N): Add FK as Untrusted
 
 ```sql
 -- PostDeployment script (not declarative — SSDT doesn't support NOCHECK directly)
-IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Order_Customer')
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Order_Customer_CustomerId')
 BEGIN
     ALTER TABLE dbo.[Order] WITH NOCHECK
-    ADD CONSTRAINT FK_Order_Customer 
+    ADD CONSTRAINT FK_Order_Customer_CustomerId 
         FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(CustomerId)
     
     PRINT 'FK created as untrusted.'
@@ -50,7 +52,7 @@ PRINT 'Orphans handled.'
 -- PostDeployment script
 PRINT 'Enabling FK trust...'
 
-ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer
+ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer_CustomerId
 
 PRINT 'FK is now trusted.'
 ```
@@ -60,8 +62,9 @@ PRINT 'FK is now trusted.'
 Add the FK to your declarative table definition. SSDT will see it already exists and matches.
 
 ```sql
-CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId]) 
-    REFERENCES [dbo].[Customer]([CustomerId])
+[CustomerId] INT NOT NULL
+    CONSTRAINT [FK_Order_Customer_CustomerId]
+        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([CustomerId]),
 ```
 
 **Verification:**
@@ -69,7 +72,7 @@ CONSTRAINT [FK_Order_Customer] FOREIGN KEY ([CustomerId])
 -- Check trust status
 SELECT name, is_not_trusted
 FROM sys.foreign_keys
-WHERE name = 'FK_Order_Customer'
+WHERE name = 'FK_Order_Customer_CustomerId'
 -- is_not_trusted should be 0 after Phase 3
 ```
 

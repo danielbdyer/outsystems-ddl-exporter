@@ -25,7 +25,6 @@ lives in `_index/`. Nothing here restates a guard or the specifics of how a chan
 
 - **Every blocked FK or PK** is a claim about existing data, proven at apply time → `../_index/constraint-is-a-claim/SKILL.md` (orphan probe, duplicate/NULL probe, the NOCHECK→reconcile→WITH CHECK CHECK trust ladder, `is_not_trusted=0` end-state).
 - **Multi-phase** staging when a reconcile spans releases (orphan FK, coexistence) → `../_index/multi-phase/SKILL.md`.
-- **CDC** adds scrutiny on a tracked table → `../_index/cdc/SKILL.md`.
 
 ## Handbook offset reminder
 Uniform +3: file `13` = §16 (Operation Reference), `14` = §17 (patterns), `15` = §18 (decision

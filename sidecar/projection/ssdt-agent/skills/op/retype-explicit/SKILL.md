@@ -44,9 +44,8 @@ coexistence here.
   drop the non-convertible rows rather than reconcile them and a principal must review it, because
   data is removed and cannot be undone.
 - direction is actually widening/lossless → **wrong op** → `../retype-implicit/SKILL.md`
-- CDC-enabled / >1M rows → added scrutiny: a change-data-capture instance is frozen to the table's
-  current columns and needs handling; at production row counts the convert-and-swap may block writes
-  or run long — schedule a window (see `../../_index/cdc/SKILL.md`).
+- >1M rows → added scrutiny: at production row counts the convert-and-swap may block writes or run
+  long — schedule a window.
 
 ## Prove it
 Run a `TRY_CONVERT` probe over the real data — count how many rows return NULL (would not
@@ -86,10 +85,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   migrates, and the conversion cannot be expressed as a table definition.
 - When non-convertible rows are dropped rather than reconciled: a principal must review this — data
   is removed and the removal cannot be undone.
-- Added scrutiny, when it applies: `Added scrutiny: this table feeds a change-data-capture stream,
-  so the capture instance is frozen to the table's current columns and needs handling.` · `Added
-  scrutiny: at production row counts the convert-and-swap may block writes or run long — schedule a
-  window.`
+- Added scrutiny, when it applies: `Added scrutiny: at production row counts the convert-and-swap
+  may block writes or run long — schedule a window.`
 
 **Verification** — run in each environment after deployment:
 ```sql

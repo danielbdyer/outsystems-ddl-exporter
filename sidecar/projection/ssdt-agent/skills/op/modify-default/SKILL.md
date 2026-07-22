@@ -32,8 +32,6 @@ that is a separate backfill (see `../add-default/SKILL.md` and
 - the developer also wants existing rows re-stamped to the new value → a separate op. It ships as
   one release: the schema change, then a post-deployment script that runs an idempotent UPDATE after
   it lands (see `../../_index/idempotent-seed/SKILL.md`).
-- CDC-enabled table → CDC does not track constraints (handbook file 15 = §18.5), so a modified or
-  removed default on a CDC-tracked table needs no added scrutiny on its own.
 
 ## Prove it
 Build + Strict `sqlpackage /Action:Script`; for a *modify*, confirm SSDT emits DROP-then-ADD of
@@ -62,8 +60,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   inserts.
 - Ships as a single schema change, applied in place: SSDT does a DROP-then-ADD for a modify, or a
   plain DROP for a remove. No table rebuild, no row updates.
-- Added scrutiny: none. CDC does not track constraints, so a modified or removed default on a
-  CDC-tracked table adds no scrutiny on its own (handbook file 15 = §18.5).
+- Added scrutiny: none — a modified or removed default changes no existing row values.
 
 **Verification** — run in each environment after deployment
 ```sql

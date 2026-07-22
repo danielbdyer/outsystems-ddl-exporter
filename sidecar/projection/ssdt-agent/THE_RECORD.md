@@ -69,7 +69,7 @@ breaks one is not finished.
    = 0`. Do not write the antithesis tic — *"verified, not assumed"*, *"and that's real"* — which
    performs rigor instead of showing it. State the positive evidential claim.
 6. **Name the exact object.** The table, the column, the constraint, the row — by name.
-   `dbo.[Order]`, `CustomerId`, `FK_Order_Customer`, `Order 4`. Never a headless quantity (`no
+   `dbo.[Order]`, `CustomerId`, `FK_Order_Customer_CustomerId`, `Order 4`. Never a headless quantity (`no
    changes` → `The database is unchanged: the second publish issued zero statements.`).
 7. **Admit the unverified.** Anything the disposable copy could not prove — application behaviour,
    other environments, production-scale timing, reversibility — is named in a standing **Not
@@ -139,8 +139,8 @@ vocabulary never surfaces.
 
 DBA terms of art are **kept**, because the reader is a DBA: *orphan row, trusted / untrusted
 constraint (`is_not_trusted`), pre-deployment script, post-deployment script, refactorlog,
-idempotent, NOT NULL, foreign key, check constraint, unique index, CDC / change data capture,
-sp_rename.* These are precise and legible to the reader. The rule is not "avoid SQL"; it is "avoid
+idempotent, NOT NULL, foreign key, check constraint, unique index, sp_rename.* These are precise
+and legible to the reader. The rule is not "avoid SQL"; it is "avoid
 this tree's private nicknames."
 
 ---
@@ -149,8 +149,8 @@ this tree's private nicknames."
 
 The numbered axes are removed from everything this tree says out loud. The decision logic that
 produced them is sound and is kept — a change's shipping shape and its review need are still
-determined by the same facts (is the table empty, does the data violate the new rule, is the table
-CDC-tracked, must old and new application code coexist). Only the *labels* are retired. Each axis
+determined by the same facts (is the table empty, does the data violate the new rule, must old and
+new application code coexist). Only the *labels* are retired. Each axis
 becomes one plain finding.
 
 **How it ships** (replaces "Mechanism 1–5"):
@@ -160,7 +160,7 @@ becomes one plain finding.
 | in place, no data touched | `Ships as a single schema change, applied in place. No data is read or written.` |
 | schema + a post-deployment script | `Ships as one release: the schema change, then a post-deployment script that runs after it lands.` |
 | a pre-deployment script first | `Ships as one release: a pre-deployment script prepares the data, then the schema change lands validated.` |
-| scripted, not declarative | `Ships as a scripted change — <enabling CDC / reconciling the foreign key / the identity change> cannot be expressed as a table definition.` |
+| scripted, not declarative | `Ships as a scripted change — <reconciling the foreign key / the identity change> cannot be expressed as a table definition.` |
 | staged across releases | `Ships across <N> releases so the running application keeps working while the change is in flight.` |
 
 **Who must review, and why** (replaces "Tier 1–4" and the "+1" escalations):
@@ -172,7 +172,6 @@ becomes one plain finding.
 | existing data is modified | `A dev lead must review this: existing data is modified.` |
 | a cross-table relationship is added | `A dev lead must review this: a cross-table relationship is added.` |
 | data is removed, irreversibly | `A principal must review this: data is removed and the removal cannot be undone.` |
-| the table is CDC-tracked (adds scrutiny) | `Added scrutiny: this table feeds a change-data-capture stream, so the capture instance is frozen to the table's current columns and needs handling.` |
 | the table is large (adds scrutiny) | `Added scrutiny: at production row counts this change may block writes or run long — schedule a window.` |
 | first time on this estate (adds scrutiny) | `Added scrutiny: this operation has not been performed on this estate before.` |
 
@@ -210,8 +209,8 @@ Run this over any line before it lands. If it hits, the line is not finished.
   radius`, `naked` (as in *naked rename* — say `a rename with no refactorlog entry`). The ban is the
   **noun nickname**: the plain verb — *how the outcome flips on the data* — is ordinary English and
   stays. And the handbook's §19 trap names (*Optimistic NOT NULL, Ambitious Narrowing, Forgotten FK
-  Check, CDC Surprise, Refactorlog Cleanup, the SELECT \* view*) are the curriculum's registered
-  terms of art and stay; only *Naked Rename* is retired, for its modifier.
+  Check, Refactorlog Cleanup*) are the curriculum's registered terms of art and stay; only *Naked
+  Rename* is retired, for its modifier.
 - **Ceremony verbs as surfaced words:** `BLESS`, `HAND-BACK`, `REFUSE-ESCALATE` in caps as if they
   were commands. Use the plain dispositions (§6).
 - **Drama:** `destroy(s)`, `fatal`, `catastrophe`, `abort`, `blast`, `veto` as a lead noun (prefer
@@ -238,12 +237,12 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
 - ✓ `You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks whether the table has any rows, not whether Email has blanks, so it blocks the change while the table holds data — even after the blanks are filled. On an empty table it would just apply. With data in the table, this needs a deliberate call: relax the data-loss guard for this one change after proving no blanks remain, or stage it over two releases. Which would you prefer?`
 
 **The same change, on the record (PR body):**
-- ✗ `Mechanism 4 (gate-relaxation) / Tier 2 (+1 CDC). The veto fired as expected — table-has-rows. Magic line: proved 0 NULLs, still vetoed.`
+- ✗ `Mechanism 4 (gate-relaxation) / Tier 2. The veto fired as expected — table-has-rows. Magic line: proved 0 NULLs, still vetoed.`
 - ✓ `Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...), which fires on row presence, not on blank values — verified on a disposable copy, where a backfill to zero blank Emails was still blocked. A dev lead must review this: existing data is affected. Ships as a scripted change — the data-loss guard is relaxed for this one column after the zero-blank count is proven, or the column is filled and tightened across two releases.`
 
 **A dependency-scope finding (review, record):**
-- ✗ `Blast radius: vOrderSummary + nightly ETL read this. BLESS-WITH-NAMED-RISK — the corpse is downstream.`
-- ✓ `Approved with a named risk. Two consumers outside the project read this column — the view vOrderSummary and the nightly ETL job — and neither is in the dacpac, so their behaviour is not verified here. Accept that risk in a line, or hold for confirmation.`
+- ✗ `Blast radius: a downstream reporting job + nightly ETL read this. BLESS-WITH-NAMED-RISK — the corpse is downstream.`
+- ✓ `Approved with a named risk. Two consumers outside the project read this column — a downstream reporting dataset and the nightly ETL job — and neither is in the dacpac, so their behaviour is not verified here. Accept that risk in a line, or hold for confirmation.`
 
 **Admitting a limit (either surface):**
 - ✗ `Reversibility looks fine, shipping it.`

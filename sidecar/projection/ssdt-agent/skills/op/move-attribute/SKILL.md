@@ -36,8 +36,6 @@ A one-column split. ADD the column to the destination CREATE, copy the values ke
   between tables and the source column is dropped.
 - relationship **not 1:1** → STOP: the value is ambiguous — a design decision (which Region wins?),
   not a change in how it ships.
-- **+ CDC on the source** → added scrutiny: a table that feeds a change-data-capture stream has its
-  capture instance frozen to its current columns and needs handling — see `../../_index/cdc/SKILL.md`.
 - **+ >1M rows** → added scrutiny: at production row counts the copy may block writes or run long —
   schedule a window. **+ first time on this estate** → added scrutiny: this move has not been
   performed here before.
@@ -71,10 +69,9 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Ships across multiple releases (multiple pull requests): add the column to the destination and copy
   the values keyed by the relationship, repoint every reader, then drop the source column — the two
   tables coexist while readers migrate, and the copy cannot be expressed as a table definition.
-- Added scrutiny: none for a small, clean, 1:1 move; a CDC-tracked source freezes its capture instance
-  to its current columns and needs handling; at >1M rows the copy scans the table and may block writes
-  or run long — schedule a window; a first-time move on this estate carries added scrutiny (see
-  `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none for a small, clean, 1:1 move; at >1M rows the copy scans the table and may
+  block writes or run long — schedule a window; a first-time move on this estate carries added
+  scrutiny.
 
 **Verification** — run in each environment after deployment
 ```sql

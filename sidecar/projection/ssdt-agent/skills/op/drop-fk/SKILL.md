@@ -20,7 +20,6 @@ Dropping a **trusted** FK removes a hint the **query optimizer** relied on — p
 - permanent removal → ships in place as a single schema change; a dev lead or experienced developer should review it (integrity weakens, plans can shift).
 - dropped as a temporary step inside a larger migration (type change, table drop) → a sub-step of a multi-step / multi-PR plan, not standalone (see `../../_index/multi-phase/SKILL.md`).
 - re-adding it later → that re-add re-runs create-fk orphan validation → can flip then.
-- CDC-enabled → no direct capture impact; the optimizer-plan risk is the real concern.
 
 ## Prove it
 Strict publishes clean; the delta is a single `DROP CONSTRAINT`; nothing blocks it (dropping never loses rows). The proof is mostly confirming the delta touches *only* the constraint and nothing rebuilds. Flag the optimizer-plan and integrity-loss consequences to the developer, since the publish itself cannot fail. See `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
@@ -37,16 +36,16 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 **Review & release**
 - A dev lead or an experienced developer should review this: dropping the constraint weakens referential integrity and can shift query plans; no data is touched.
 - Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`. No data is read or written, and the publish never blocks.
-- Added scrutiny: none. The drop reads and writes no data, so row count is not a factor, and a CDC-tracked table's capture instance is unaffected.
+- Added scrutiny: none. The drop reads and writes no data, so row count is not a factor.
 
 **Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: the foreign key no longer exists
-SELECT name FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>';
+SELECT name FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>_<column>';
 ```
 
 **Rollback**
-Re-creating the constraint reverses the drop: `ALTER TABLE <child> ADD CONSTRAINT FK_<child>_<parent> FOREIGN KEY (<fk>) REFERENCES <parent> (<pk>);`. This re-runs the orphan validation of `../create-fk-orphan/SKILL.md`, so it lands clean only if no orphan rows were written while the constraint was absent; otherwise it is blocked until those rows are reconciled. The original drop loses no data, so nothing else needs restoring.
+Re-creating the constraint reverses the drop: `ALTER TABLE <child> ADD CONSTRAINT FK_<child>_<parent>_<column> FOREIGN KEY (<fk>) REFERENCES <parent> (<pk>);`. This re-runs the orphan validation of `../create-fk-orphan/SKILL.md`, so it lands clean only if no orphan rows were written while the constraint was absent; otherwise it is blocked until those rows are reconciled. The original drop loses no data, so nothing else needs restoring.
 
 **Not verified**
 - Query-plan impact — dropping a trusted foreign key removes a hint the optimizer used; a plan change or regression will not show on a disposable copy, whose statistics and data volume differ from production. Whoever owns query performance confirms this.

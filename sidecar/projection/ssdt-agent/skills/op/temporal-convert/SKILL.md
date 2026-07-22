@@ -26,7 +26,7 @@ Add the (hidden) `GENERATED ALWAYS AS ROW START/END` period columns with backfil
 > without it.
 
 ## The named trap
-Adding the period columns to a populated table needs **sensible historical defaults for `ROW START`**, or every existing row claims to have begun at conversion time. Also conflating temporal with CDC (see `../temporal-new/SKILL.md`). The coexistence WHY is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
+Adding the period columns to a populated table needs **sensible historical defaults for `ROW START`**, or every existing row claims to have begun at conversion time. Also confirm the developer wants point-in-time history, not a row-level change feed (a different mechanism handled outside this agent; see `../temporal-new/SKILL.md`). The coexistence WHY is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
 
 ## How it flips (the specifics only)
 - existing **populated** table (this op) → ships across several releases: add the period columns with
@@ -34,9 +34,6 @@ Adding the period columns to a populated table needs **sensible historical defau
   because existing data is modified.
 - existing **empty** table → collapses to a single schema change applied in place, one release — no
   data to backfill.
-- **+ CDC already on the table** → added scrutiny: the capture instance is frozen to the table's
-  current columns, so the temporal conversion must be sequenced against CDC (stacking two history
-  mechanisms — confirm intent) — see `../../_index/cdc/SKILL.md`.
 - **+ >1M rows / first-time** → added scrutiny: at production row counts the backfill and the
   versioning switch may block writes or run long, and this may be the first temporal conversion on
   the estate.
@@ -58,9 +55,6 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   every existing row on a live table.
 - Ships across several releases so the running application keeps working while the period columns are
   added, backfilled, and system versioning is turned on.
-- Added scrutiny, when it applies: a CDC-tracked table, where the capture instance is frozen to the
-  table's current columns, so the temporal conversion must be sequenced against it (stacking two
-  history mechanisms — confirm intent; see `../../_index/cdc/SKILL.md`).
 - Added scrutiny, when it applies: a large table or a first-time temporal conversion on the estate —
   at production row counts the backfill and the versioning switch may block writes or run long.
 
@@ -83,8 +77,8 @@ Turn `SYSTEM_VERSIONING = OFF`, then drop the period columns and the history tab
 - Application impact — how the running application behaves against a system-versioned table: explicit
   column-list writes, `SELECT *`, and any attempt to write the hidden period columns are not confirmed
   here (@app-owner).
-- Other environments — whether Test/UAT/Prod row counts, or a CDC instance on this table, change the
-  backfill outcome or the timing is not shown by this copy.
+- Other environments — whether Test/UAT/Prod row counts change the backfill outcome or the timing is
+  not shown by this copy.
 - Production scale and timing — enabling versioning and backfilling against a large table may block
   writes or run long; the small copy does not exercise it.
 - Reversibility — only the forward conversion is proven on the disposable copy; disabling versioning

@@ -40,9 +40,6 @@ reads that as drop-and-add and the column's data is lost — see
   review it, because existing data is moved into a new table and a cross-table relationship is added.
   Phase 1 additive CREATE + FK + copy + dual-write · Phase 2 repoint reads · Phase 3 drop the old
   columns, where `BlockOnPossibleDataLoss` blocks the deployment until the copy is proven.
-- **+ CDC on the source** → added scrutiny: the final column drop changes the table's shape, so the
-  capture instance frozen to the current columns needs a refresh — see `../../_index/cdc/SKILL.md`
-  and `../recreate-capture-instance/SKILL.md`.
 - **+ >1M rows / first-time** → added scrutiny: the copy is a long-running batched operation; at
   production row counts it may block writes or run long — schedule a window.
 
@@ -78,11 +75,9 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   columns, cut the application over (repoint reads), then drop the old columns from the source — the
   old and new shapes coexist while readers migrate, and the copy cannot be expressed as a table
   definition.
-- Added scrutiny: none for a greenfield or small, clean split; a CDC-tracked source freezes its
-  capture instance to the current columns, so the final column drop needs a capture-instance refresh
-  (see `../../_index/cdc/SKILL.md` and `../recreate-capture-instance/SKILL.md`); at >1M rows the copy
-  is a long-running batched operation that may block writes or run long — schedule a window; a
-  first-time split on this estate carries added scrutiny.
+- Added scrutiny: none for a greenfield or small, clean split; at >1M rows the copy is a long-running
+  batched operation that may block writes or run long — schedule a window; a first-time split on this
+  estate carries added scrutiny.
 
 **Verification** — run in each environment after deployment
 ```sql

@@ -75,8 +75,8 @@ The rules:
   beats "don't."
 - **Concede visibly when out-argued.** Withdraw fast, no face-saving — the record reads "Objection
   withdrawn. Approved."
-- **Never re-explain basics.** No re-stating a guard, a mechanism, the CDC capture-instance handling,
-  or multi-phase coexistence — point to the `_index` owner and move on.
+- **Never re-explain basics.** No re-stating a guard, a mechanism, or multi-phase coexistence —
+  point to the `_index` owner and move on.
 
 ### Sample lines (the record register, on real ops)
 
@@ -87,16 +87,15 @@ The rules:
   the orphan probe was never run. The fix: NOCHECK → reconcile the 8 → WITH CHECK CHECK, prove
   `is_not_trusted = 0`. It does not need the lead."
 - **Approved with a named risk:** "Approved with a named risk. The change reproduces clean, but two
-  consumers outside the project read this column — the view `vOrderSummary` and the nightly ETL job —
-  and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band
+  consumers outside the project read this column — a downstream reporting dataset and the nightly ETL
+  job — and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band
   consumers in a line, or hold for confirmation."
 - **Escalated — one question for the lead:** "Escalated — one question for the lead. Make Email
-  required, populated at 1.2M rows, CDC-tracked. The backfill clears every NULL (0 remain) and Strict
-  still refuses the publish — the guard is table-has-rows, not column-has-NULLs. This is a design
-  decision: relax the data-loss guard for this one change after the zero-NULL proof, or stage it
-  multi-phase; the change-data-capture stream freezes the capture instance to the current columns,
-  which makes backing it out costly. Dependency map attached. One question: do the downstream
-  consumers tolerate a capture gap, yes or no?"
+  required, populated at 1.2M rows. The backfill clears every NULL (0 remain) and Strict still
+  refuses the publish — the guard is table-has-rows, not column-has-NULLs. This is a design decision:
+  relax the data-loss guard for this one change after the zero-NULL proof, or stage it multi-phase.
+  Dependency map attached. One question: relax the guard after the proven zero-NULL count, or stage it
+  across two releases?"
 - **Sparring (the lead's own change):** "Sparring, the lead's own change — a single-PR drop of
   `ProductLegacy.LegacyCode`. Strongest case against: the column is populated, the Permissive run
   drops 40k rows, and the change is forward-only — a disposable copy proves the forward drop, not the
@@ -107,8 +106,7 @@ The rules:
   at 1:1. Objection withdrawn. Approved."
 
 **Banned in the review record:** "this could lose data" (cite the count + `Msg`), "as you know," and
-re-explaining any guard, mechanism, CDC capture-instance handling, or multi-phase shape (point to its
-`_index` owner).
+re-explaining any guard, mechanism, or multi-phase shape (point to its `_index` owner).
 
 ---
 
@@ -121,7 +119,7 @@ claim in it becomes a **proof obligation** you discharge or reject:
 |---|---|
 | which **persona authored** the change — developer or lead | selects the mode: a developer's authored change runs the gate (all four dispositions); the lead's own change runs sparring (argue, no return to the author) |
 | the named **operation(s)** + target object | resolves to which per-op + `_index` skills bound the review |
-| **how it ships** + **who must review, and why** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line (CDC-tracked / large table / first-time) actually holds |
+| **how it ships** + **who must review, and why** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line (large table / first-time) actually holds |
 | the **generated delta** (`/Action:Script`) | re-generate it on your DB — same delta, or the claim is stale |
 | the **proof** — the named Strict block + row counts, the Permissive snapshot, the clean Strict re-run | re-run the block and the clean publish; the counts must match; a proof that passed once for the author must pass for you |
 | the full **change set** — CREATEs, refactorlog, pre/post-deploy, multi-phase plan | scan for completeness: refactorlog for every rename, guarded MERGE, staged FK ending trusted |
@@ -163,9 +161,7 @@ publish. The hard isolation invariants are **not restated here** — they live i
   the authored tree or the shared catalog;
 - `/TargetDatabaseName:$DB` on **every** `sqlpackage` call;
 - **unconditional teardown** on exit (drop-if-exists DB + `rm -rf` scratch) — a leaked DB degrades
-  the warm container (survival rule 2);
-- **CDC cases serialize** (PROTOCOL §8) — `sp_cdc_enable_db` is instance-wide; the unique DB isolates
-  the state but the capture Agent is a shared throughput resource.
+  the warm container (survival rule 2).
 
 You are a second executor running the same PROTOCOL — nothing more, nothing new.
 
@@ -198,8 +194,8 @@ decisions-only.
 **Escalation reaches the human lead.** You assemble the **dependency map** (the dependency-scope
 pass's closure + row counts) and **the single specific question** — homework done — and hand it up.
 You escalate **only the irreducible judgment:** a design decision (relax the data-loss guard after a
-zero-NULL proof vs stage it multi-phase) or an irreversible step (a populated drop, a CDC capture
-gap). You never escalate something a return to the author would have fixed.
+zero-NULL proof vs stage it multi-phase) or an irreversible step (a populated drop). You never
+escalate something a return to the author would have fixed.
 
 **The peer compact:**
 - On the **developer's** changes you **gate** — the four dispositions, return the fixable, escalate
@@ -222,14 +218,13 @@ gap). You never escalate something a return to the author would have fixed.
   the **disposition** (the four + escalation). Everything else — the per-op skills, the `_index`
   skills, `prove-on-dacpac`'s two moves, `talk-to-local-sql`, `classify-mechanism`, the rubric — you
   **wield**, you do not rebuild.
-- **The review layer is THIN — what you deliberately do NOT build:** no separate cdc-sentinel skill
-  (the adversary references `_index/cdc`); no separate reversibility skill (the sparring counter-design
-  references `_index/multi-phase` + `prove-on-dacpac`'s forward-only edge); no new adversarial move
-  (you wield `prove-on-dacpac`'s two — a blocked change played forward, and an injected violating
-  row); no new grading rubric (you reuse `self-test/rubric.md`); no re-scaffolded isolation harness
-  (you reuse `PROTOCOL.md`).
-- **Handbook citations use the on-disk filename with the +3 offset:** file 13 = §16, 14 = §17,
-  15 = §18, 16 = §19 (the anti-pattern catalog).
+- **The review layer is THIN — what you deliberately do NOT build:** no separate reversibility skill
+  (the sparring counter-design references `_index/multi-phase` + `prove-on-dacpac`'s forward-only
+  edge); no new adversarial move (you wield `prove-on-dacpac`'s two — a blocked change played forward,
+  and an injected violating row); no new grading rubric (you reuse `self-test/rubric.md`); no
+  re-scaffolded isolation harness (you reuse `PROTOCOL.md`).
+- **Cite the handbook by its on-disk filename** (e.g. `16-Anti-Patterns.md`, the anti-pattern
+  catalog) — the filename is the cross-reference the deck readers recognize.
 
 ---
 

@@ -32,7 +32,6 @@ Escalate even if tier seems lower when:
 |-----------|-------------|
 | Uncertain about tier/classification | Dev lead |
 | First time doing a specific operation type | Dev lead or experienced IC for pairing |
-| CDC-related change in production | Dev lead minimum |
 | Multi-phase change spanning releases | Dev lead to verify sequencing |
 | Deployment failure in test/UAT/prod | Dev lead + on-call if prod |
 | Data loss or suspected data corruption | Principal + Danny immediately |
@@ -45,11 +44,11 @@ Escalate even if tier seems lower when:
 ### For PR Review Escalation
 
 1. Tag the appropriate person as a required reviewer
-2. In the PR description, note why you're escalating: "Tagging @DevLead — this is my first FK addition to a CDC table, requesting guidance."
+2. In the PR description, note why you're escalating: "Tagging @DevLead — this is my first FK addition, requesting guidance."
 
 ### For Real-Time Help
 
-1. Post in #ssdt-questions with:
+1. Post in the ssdt-questions channel in Teams with:
    - What you're trying to do
    - What happened
    - What you've already tried
@@ -61,7 +60,7 @@ Escalate even if tier seems lower when:
 
 If something has gone wrong in production:
 
-1. **Immediately:** Notify dev lead and Danny via Slack/phone
+1. **Immediately:** Notify dev lead and Danny via Teams/phone
 2. **Include:** What happened, what environment, what's the impact
 3. **Don't:** Try to fix alone if you're uncertain; more damage can occur
 4. **Do:** Preserve evidence (logs, error messages, current state)
@@ -85,7 +84,7 @@ If something has gone wrong in production:
 Principals should be involved for:
 - Tier 4 changes
 - Novel patterns requiring architectural judgment
-- Cross-system impacts (CDC → Change History → Application)
+- Cross-system impacts
 - Post-incident analysis
 - Playbook evolution (new patterns, new gotchas)
 

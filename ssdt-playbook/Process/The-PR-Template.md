@@ -33,14 +33,6 @@ Be precise. If you're uncertain, say so — reviewers can help calibrate.
 
 **Operations:** Check all that apply. This helps reviewers know what to look for.
 
-### CDC Impact Section
-
-If you're not sure whether a table has CDC, check before filling this out.
-
-**If no CDC tables affected:** Check the first option, move on.
-
-**If CDC tables affected:** List each table, its current capture instance, and what action you're taking (recreate, dual-instance, accepting gap).
-
 ### Script Sections
 
 **Pre-deployment:** If you added pre-deployment work, describe it. Confirm idempotency.
@@ -74,15 +66,13 @@ The final checklist is your self-review. Don't check items you haven't actually 
 ### What to Check First
 
 1. **Classification accuracy:** Is this really Tier 1? Or does something push it higher?
-2. **CDC awareness:** If table is CDC-enabled, is that reflected?
-3. **Refactorlog:** Any renames? Is the entry there?
+2. **Refactorlog:** Any renames? Is the entry there?
 
 ### Red Flags
 
 - Empty or minimal generated script section on Tier 2+ changes
 - "Rollback: revert the PR" without specifics
 - Classification seems too low for the operations listed
-- CDC table affected but no CDC plan documented
 - Pre/post scripts present but no idempotency confirmation
 
 ### When to Request Changes

@@ -49,8 +49,8 @@ reproduce failed? ─── yes ──> is it a design fork / irreversible step?
       │
       ├─ adversary / dependency map found an IRREDUCIBLE judgment?
       │       (populated make-mandatory still blocks after backfill = relax the data-loss
-      │        guard vs stage over releases · CDC no-gap vs tolerable-gap · a deep cascade ·
-      │        an irreversible drop that removes data)
+      │        guard vs stage over releases · a deep cascade · an irreversible drop that
+      │        removes data)
       │            └─ yes ──> Escalated  (attach dependency map + one question)
       │
       ├─ dependency map has an un-scoped external/ETL consumer OR a reversibility
@@ -82,7 +82,7 @@ dispositions stand unchanged.
   dacpac cannot see; a reversibility asserted but not proven — `prove-on-dacpac` proves the forward
   publish only). **Route:** to the lead as a one-line accept/override, not a discussion. The risk is
   logged in the ledger with its artifact.
-  > "Approved with a named risk. vOrderSummary and the nightly ETL both read this column and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band consumers in a line, or hold for confirmation."
+  > "Approved with a named risk. The nightly ETL and a report in another database both read this column and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band consumers in a line, or hold for confirmation."
 
 - **Returned to the author** — a real defect the developer can fix without the lead (missing
   refactorlog, skipped orphan probe, over-length narrow, unguarded seed MERGE, FK left at NOCHECK).
@@ -91,11 +91,11 @@ dispositions stand unchanged.
   > "Returned to the author. Labeled an in-place change, no data touched; reproduced, Strict blocks the publish — 8 orphans (Msg 547), and the orphan probe was never run. Fix: NOCHECK -> reconcile the 8 -> WITH CHECK CHECK, prove is_not_trusted=0. Does not need the lead."
 
 - **Escalated — one question for the lead** — a genuine design fork or irreversible-step judgment
-  (populated make-mandatory that still blocks at zero NULLs; CDC no-gap vs tolerable-gap; a deep
-  cascade; an irreversible drop that removes data). **Route:** to the human lead, with the dependency
+  (populated make-mandatory that still blocks at zero NULLs; a deep cascade; an irreversible drop
+  that removes data). **Route:** to the human lead, with the dependency
   map attached and one specific question, the homework done. Name the escalation plainly — a real
   judgment for the lead, not a hedge.
-  > "Escalated — one question for the lead. Make-mandatory, populated, 1.2M rows, CDC-tracked. Backfill reaches zero NULLs and Strict still blocks — the guard fires on table-has-rows, not column NULLs. The call is between relaxing the data-loss guard once the zero-NULL count is proven and staging over releases; the table is CDC-tracked, so the capture instance is frozen to its current columns and needs handling. Dependency map attached. One question: do downstream consumers tolerate a capture gap, yes or no?"
+  > "Escalated — one question for the lead. Make-mandatory, populated, 1.2M rows. Backfill reaches zero NULLs and Strict still blocks — the guard fires on table-has-rows, not column NULLs. The call is between relaxing the data-loss guard once the zero-NULL count is proven and staging over releases. Dependency map attached. One question: relax the data-loss guard for this one change now that zero NULLs are proven, or stage it across releases?"
 
 ## The refusal ledger
 

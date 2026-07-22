@@ -1,22 +1,14 @@
-# 16.9 Audit and Temporal
+# 16.8 Audit and Temporal
 
-*These patterns track changes over time — the foundation of your Change History feature.*
+*These patterns track changes over time — audit columns and system-versioned temporal tables.*
 
 ---
 
 ### Add System-Versioned Temporal Table
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Enable automatic history tracking | 2 (new) / 3 (existing) | Pure Declarative (new) / Multi-Phase (existing) | Different mechanism than CDC |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Enable automatic history tracking | 2 (new) / 3 (existing) | Pure Declarative (new) / Multi-Phase (existing) |
 
 **For new table:**
 ```sql
@@ -45,32 +37,21 @@ SELECT * FROM dbo.Employee FOR SYSTEM_TIME AS OF '2024-06-15'
 SELECT * FROM dbo.Employee FOR SYSTEM_TIME ALL WHERE EmployeeId = 42
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
-| Existing table | Converting existing table to temporal requires multi-phase approach. |
+| Existing (populated) table | A single publish **blocks**: the period columns are `NOT NULL GENERATED ALWAYS` with no default, so on a populated table DacFx warns `SQL72015` and the row-presence guard terminates it (`Msg 50000`). Ship it staged — (1) `ADD` `ValidFrom`/`ValidTo` **with defaults** (a chosen *historical* floor for `ROW START` — not conversion time, or every existing row falsely claims to have begun at go-live — and the `datetime2` max `9999-12-31 23:59:59.9999999` for `ROW END`) plus `PERIOD FOR SYSTEM_TIME`; then (2) `SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE = …))`. On an **empty** table it collapses to one clean publish (the new-table case above). |
 | History table | System-managed; can't directly modify. |
 | SSDT table rebuilds | If SSDT needs to rebuild table (column reorder), it disables/re-enables versioning. |
 
 ---
 
-### Add Manual Audit Columns
+### Add Audit Attributes (Manual Audit Columns)
 
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Add CreatedAt, UpdatedAt, CreatedBy, UpdatedBy columns | 1 (new) / 2 (existing) | Pure Declarative / Post-Deployment for backfill | No CDC impact |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
+| Summary | Tier | Mechanism |
+|---------|------|-----------|
+| Add CreatedAt, UpdatedAt, CreatedBy, UpdatedBy columns | 1 (new) / 2 (existing) | Pure Declarative / Post-Deployment for backfill |
 
 **Standard audit columns:**
 ```sql
@@ -91,135 +72,11 @@ SET
 WHERE CreatedAt IS NULL
 ```
 
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
+**Gotchas & Edge Cases**
 
 | Gotcha | Details |
 |--------|---------|
 | UpdatedAt/UpdatedBy | Database won't auto-populate. Requires trigger or application code. |
 | Triggers | Can add trigger for auto-update, but adds overhead. |
-
----
-
-### Enable Change Data Capture
-
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Track row-level changes for audit/ETL | 3 | Script-Only | This IS the CDC operation |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
-
-**Enable for database:**
-```sql
-EXEC sys.sp_cdc_enable_db
-```
-
-**Enable for table:**
-```sql
-EXEC sys.sp_cdc_enable_table
-    @source_schema = 'dbo',
-    @source_name = 'Customer',
-    @role_name = 'cdc_reader',
-    @capture_instance = 'dbo_Customer_v1',
-    @supports_net_changes = 1
-```
-
-**Query changes:**
-```sql
-DECLARE @from_lsn binary(10) = sys.fn_cdc_get_min_lsn('dbo_Customer_v1')
-DECLARE @to_lsn binary(10) = sys.fn_cdc_get_max_lsn()
-
-SELECT * FROM cdc.fn_cdc_get_all_changes_dbo_Customer_v1(@from_lsn, @to_lsn, 'all')
-```
-
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
-
-| Gotcha | Details |
-|--------|---------|
-| Enterprise Edition | CDC requires Enterprise (or Developer/Eval). |
-| SQL Agent | Requires SQL Agent running for capture jobs. |
-| Schema changes | Any schema change on CDC table requires capture instance management. See [Section 12](#12-cdc-and-schema-evolution). |
-| 🔴 **The CDC Surprise** | Schema changes without instance recreation leave history incomplete. See [Anti-Pattern 19.5](#195-the-cdc-surprise). |
-
-**Related:**
-- Section: [12. CDC and Schema Evolution](#12-cdc-and-schema-evolution)
-- Anti-pattern: [19.5 The CDC Surprise](#195-the-cdc-surprise)
-- Pattern: [17.9 CDC-Enabled Table Schema Change](#179-pattern-cdc-enabled-table-schema-change-production)
-- Decision aid: [18.5 CDC Impact Checker](#185-cdc-impact-checker)
-
----
-
-### Enable Change Tracking
-
-**Layer 1: Quick Summary**
-*Stop here if you just need tier/mechanism info*
-
-| Summary | Tier | Mechanism | CDC |
-|---------|------|-----------|-----|
-| Lightweight tracking of which rows changed | 2 | Declarative (table) / Script (database) | Alternative to CDC |
-
----
-
-**Layer 2: Full Details**
-*Read this when you're implementing the change*
-
-**Simpler than CDC:** Tracks *that* rows changed, not *what* changed.
-
-**Enable for database:**
-```sql
-ALTER DATABASE [YourDb]
-SET CHANGE_TRACKING = ON
-(CHANGE_RETENTION = 7 DAYS, AUTO_CLEANUP = ON)
-```
-
-**Enable for table:**
-```sql
-CREATE TABLE [dbo].[Customer]
-(
-    -- columns
-)
-WITH (CHANGE_TRACKING = ON)
-```
-
-**Query changes:**
-```sql
-SELECT 
-    ct.CustomerId,
-    ct.SYS_CHANGE_OPERATION,  -- I, U, D
-    c.*
-FROM CHANGETABLE(CHANGES dbo.Customer, @last_sync_version) ct
-LEFT JOIN dbo.Customer c ON ct.CustomerId = c.CustomerId
-```
-
----
-
-**Layer 3: Gotchas & Edge Cases**
-*Read this when something unexpected happens*
-
-| Gotcha | Details |
-|--------|---------|
-| No before/after | Only tells you row changed, not old values. |
-| Sync scenarios | Good for cache invalidation, offline sync. |
-| All editions | Available in all SQL Server editions. |
-
-**CDC vs Change Tracking:**
-| Aspect | CDC | Change Tracking |
-|--------|-----|-----------------|
-| What's tracked | Full before/after row images | Which rows changed |
-| Storage | Separate change tables | Internal tracking |
-| Edition | Enterprise | All editions |
-| Use case | Audit, ETL | Sync, cache invalidation |
-| Overhead | Higher | Lower |
 
 ---

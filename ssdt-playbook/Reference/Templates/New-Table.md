@@ -5,15 +5,19 @@
 Table: dbo.YourTableName
 Description: Brief description of what this table stores
 Created: YYYY-MM-DD
-Ticket: JIRA-XXXX
+Work item: AB#XXXX
 */
 CREATE TABLE [dbo].[YourTableName]
 (
     -- Primary Key
-    [YourTableNameId] INT IDENTITY(1,1) NOT NULL,
+    [YourTableNameId] INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT [PK_YourTableName_YourTableNameId]
+            PRIMARY KEY CLUSTERED,
     
     -- Foreign Keys
-    [RelatedTableId] INT NOT NULL,
+    [RelatedTableId] INT NOT NULL
+        CONSTRAINT [FK_YourTableName_RelatedTable_RelatedTableId]
+            FOREIGN KEY ([RelatedTableId]) REFERENCES [dbo].[RelatedTable] ([RelatedTableId]),
     
     -- Business Columns
     [Name] NVARCHAR(100) NOT NULL,
@@ -25,17 +29,12 @@ CREATE TABLE [dbo].[YourTableName]
     [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_YourTableName_CreatedAt] DEFAULT (SYSUTCDATETIME()),
     [CreatedBy] NVARCHAR(128) NOT NULL CONSTRAINT [DF_YourTableName_CreatedBy] DEFAULT (SYSTEM_USER),
     [UpdatedAt] DATETIME2(7) NULL,
-    [UpdatedBy] NVARCHAR(128) NULL,
-    
-    -- Constraints
-    CONSTRAINT [PK_YourTableName] PRIMARY KEY CLUSTERED ([YourTableNameId]),
-    CONSTRAINT [FK_YourTableName_RelatedTable] FOREIGN KEY ([RelatedTableId]) 
-        REFERENCES [dbo].[RelatedTable]([RelatedTableId])
+    [UpdatedBy] NVARCHAR(128) NULL
 )
 GO
 
 -- Indexes
-CREATE NONCLUSTERED INDEX [IX_YourTableName_RelatedTableId]
+CREATE INDEX [IX_YourTableName_RelatedTableId]
 ON [dbo].[YourTableName]([RelatedTableId])
 GO
 ```

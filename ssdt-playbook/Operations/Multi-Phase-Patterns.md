@@ -8,7 +8,6 @@ Some database changes can't be done atomically in a single deployment. They requ
 
 - **Data dependencies** — Data must exist before constraints can be added
 - **Application coordination** — Code changes must deploy before/after schema changes
-- **CDC constraints** — Capture instances must be managed carefully
 - **Risk minimization** — Breaking changes into phases reduces blast radius
 
 Each pattern in this section provides:
@@ -29,7 +28,6 @@ Each pattern in this section provides:
 - [17.06: Table Split](Multi-Phase-Patterns/Table-Split.md) — Vertical partitioning with data migration
 - [17.07: Table Merge](Multi-Phase-Patterns/Table-Merge.md) — Denormalization with data migration
 - [17.08: Schema Migration with Backward Compatibility](Multi-Phase-Patterns/Schema-Migration-Backward-Compatibility.md) — Maintaining compatibility during breaking changes
-- [17.09: CDC Table Change](Multi-Phase-Patterns/CDC-Table-Change.md) — Schema changes on CDC-enabled tables
 
 ---
 

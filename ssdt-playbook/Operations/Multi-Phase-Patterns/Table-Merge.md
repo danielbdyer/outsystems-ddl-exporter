@@ -1,5 +1,7 @@
 # 17.7 Pattern: Table Merge (Denormalization)
 
+*There's no direct OutSystems equivalent for merging tables — it's a relational refactor the platform abstracted away, so you fold one Entity's columns into another by hand.*
+
 **When to use:** Combining two related tables into one, typically for performance or simplification.
 
 **Scenario:** Merge `CustomerAddress` back into `Customer` (reversing a previous split, or denormalizing for query performance).
@@ -24,8 +26,19 @@
 
 ## Phase 2 (Release N): Migrate Data (Post-Deployment)
 
+**Prove cardinality first — before any copy.** The signature safety property of a merge is that the absorbed side is **1:1** with the survivor: `absorbed rows == distinct parents`. Run this and confirm it *before* the `UPDATE` below:
+
 ```sql
--- PostDeployment script
+-- Must be equal. Unequal (absorbed > parents) means one-to-many — STOP.
+SELECT
+    (SELECT COUNT(*)                   FROM dbo.CustomerAddress) AS absorbed_rows,
+    (SELECT COUNT(DISTINCT CustomerId) FROM dbo.CustomerAddress) AS distinct_parents
+```
+
+If it's one-to-many, a naive copy silently keeps one row per parent and **drops the rest — no error** — and a value/content hash **won't** flag it, because it only compares the rows that survived. The row-count proof has to come first. A one-to-many result isn't a shipping problem to work around; it's a **design decision** (which of the parent's rows wins?) that must be settled before the copy.
+
+```sql
+-- PostDeployment script (runs only after the cardinality proof above passes)
 PRINT 'Migrating address data into Customer...'
 
 UPDATE c
@@ -62,7 +75,7 @@ Application code transitions from querying `CustomerAddress` (with JOIN) to read
 
 - Big bang: Update all code at once (risky)
 - Gradual: Update code over multiple releases while both locations have data
-- Compatibility view: Create view named `CustomerAddress` that reads from `Customer` (see Pattern 17.8)
+- Compatibility shim: Keeping the old `CustomerAddress` name resolvable is out of scope for this project; for backward compatibility during the transition, apply the techniques in Pattern 17.8
 
 ---
 

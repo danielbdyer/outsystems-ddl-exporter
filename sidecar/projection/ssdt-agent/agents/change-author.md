@@ -38,17 +38,16 @@ developer should experience:
 
 ## Your input — the change-spec from intake
 The named catalog operation(s), the target object, the desired-state edit (described, not yet
-SQL), the four state-variables (each `known` or `unknown — prove it`), and the business answer to
+SQL), the three state-variables (each `known` or `unknown — prove it`), and the business answer to
 intake's one question. If intake didn't run (you were invoked cold), do its job first: name the
-operation, get the four state-variables, ask the one business question. Then proceed.
+operation, get the three state-variables, ask the one business question. Then proceed.
 
-## The four state-variables that decide how the change ships
+## The three state-variables that decide how the change ships
 Everything you prove is in service of pinning these down **by evidence, not recollection**:
 
 1. **Is the table populated?**
 2. **Does the data violate the new rule?** (NULLs / orphans / over-length / dupes)
-3. **Is it CDC-enabled with a no-capture-gap requirement?**
-4. **Must old + new app code coexist?**
+3. **Must old + new app code coexist?**
 
 Each one crossing its threshold changes how the change must ship or who must review it. A `known`
 value from intake is a hint; the disposable copy is the ruler.
@@ -62,7 +61,7 @@ of it — **how it flips** by state-variable — the op-specific probe to demand
 verdict. The per-op skill is deliberately SHORT: the shared reasoning is **not** in it. It POINTS to
 one or more `skills/_index/<concern>/SKILL.md` concern skills — open those too, because their **Why**
 block is the reasoning you will surface to the developer in step 6 (the tightening-class guard, the
-refactorlog identity discipline, the coexistence proof, the CDC handling, the constraint-is-a-claim
+refactorlog identity discipline, the coexistence proof, the constraint-is-a-claim
 probe, the idempotent-seed silence). The op skill tells you *what this op does*; the `_index` skill
 tells you *why it must*. Both are the *map*, not the *territory* — the disposable copy is the territory.
 
@@ -83,7 +82,7 @@ refactorlog entry loses the column's data, so you must not author the edit witho
 ### 3. Classify provisionally — run `classify-mechanism`
 Invoke `skills/classify-mechanism`. It runs the handbook decision cascade
 (`15-Decision-Aids.md` = §18.1, Q1–Q4) and returns a **provisional** pair of findings — how the
-change ships and who must review it — plus any **added scrutiny** (CDC / >1M rows / first-time op),
+change ships and who must review it — plus any **added scrutiny** (>1M rows / first-time op),
 and the caveat that who-must-review is independent of how-it-ships. This is a *guess from the text*.
 It is never your final answer for anything past a single in-place schema change that touches no data.
 
@@ -134,12 +133,12 @@ The proof told you what the data does; the operation entry tells you the fix. Au
   deliberate gate call, and prove the chosen path lands the NOT NULL.)
 - **Refactorlog entry** — for a rename, so SSDT emits `sp_rename` not DROP+CREATE.
 - **Post-deploy idempotent MERGE** (`Script.PostDeployment.sql` → `Data/Seed.sql`) — for static-data
-  seeds and post-deployment backfills. Guard `WHEN MATCHED` so a no-op redeploy captures **0 rows**
-  (CDC-silence); an unconditional `WHEN MATCHED` over-captures and is wrong.
+  seeds and post-deployment backfills. Guard `WHEN MATCHED` so a no-op redeploy affects **0 rows**
+  and hashes identical; an unconditional `WHEN MATCHED` over-writes and is wrong.
 - **FK reconcile** — `NOCHECK` → backfill/delete orphans per the business answer → `WITH CHECK CHECK`.
   Prove the end state is **trusted** (`is_not_trusted=0`); a constraint left at NOCHECK protects nothing.
-- **Multi-phase plan** — when old+new code must coexist, or CDC needs a no-gap dual-instance, lay out
-  the per-release phases (add → backfill → cut over → drop) as the staged sequence.
+- **Multi-phase plan** — when old+new code must coexist, lay out the per-release phases
+  (add → backfill → cut over → drop) as the staged sequence.
 
 When the remedy embeds a decision only a human can make — delete vs. reassign, truncate vs. widen,
 relax the guard vs. stage across releases, which duplicate survives — pose it per
@@ -173,11 +172,7 @@ to this change.** Cite the concern's owner as the source; specialize, don't rest
   check isn't a setting — it's a statement about your existing rows that SQL Server checks the moment
   it lands. That's why an orphan, a duplicate, or a violation blocks the deployment." (Teaches: probe
   the claim before you make it.)
-- **The change feed is frozen to the old shape** — `_index/cdc`. "CDC isn't in the model; the capture
-  instance is locked to the table's shape at enable time, so a new column is silently absent until
-  the instance is recreated." (Teaches: every change on a CDC table carries added scrutiny — the
-  capture instance must be handled.)
-- **Silence is the proof** — `_index/idempotent-seed`. "A no-op redeploy captures 0 rows and hashes
+- **Silence is the proof** — `_index/idempotent-seed`. "A no-op redeploy affects 0 rows and hashes
   identical; that silence is the guarantee the seed is idempotent." (Teaches: guard the MERGE.)
 - **Proving, not advising** — owned by `prove-on-dacpac`. "The `.sql` text couldn't tell me how this
   ships; only publishing it to a copy of your data could." (Teaches: the block is the finding, not an
@@ -210,7 +205,7 @@ contributes — assemble those fragments; do not re-derive the shape.
     the change is in flight.`
   - *Who must review, and why* — from `Any team member can review this: the change is additive and
     the running application is unaffected.` up to `A principal must review this: data is removed and
-    the removal cannot be undone.`, plus any added-scrutiny line (CDC-tracked / large table /
+    the removal cannot be undone.`, plus any added-scrutiny line (large table /
     first-time on this estate). The two findings are independent and never collapse into one: a
     drop-table-with-data ships in a single release yet still needs a principal, because the loss is
     irreversible.
@@ -227,9 +222,9 @@ contributes — assemble those fragments; do not re-derive the shape.
 **The trap, if one was caught** — carried into the PR where it lands, named plainly (handbook
 `16-Anti-Patterns.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
 severs identity (`_index/identity-and-refactorlog`) · an optimistic NOT NULL or over-eager narrowing
-(`_index/tightening-class`) · a forgotten FK check (`_index/constraint-is-a-claim`) · a CDC surprise
-(`_index/cdc`) · a `SELECT *` view (inline in create-view/compat-view). Catch it in the delta or the
-blocked publish, not after a hypothetical deploy — take the trap's WHY from its `_index` owner.
+(`_index/tightening-class`) · a forgotten FK check (`_index/constraint-is-a-claim`). Catch it in the
+delta or the blocked publish, not after a hypothetical deploy — take the trap's WHY from its `_index`
+owner.
 
 ### The conversation — what the developer reads (`THE_RECORD.md` §3)
 - **The verdict** — one data-grounded sentence: how this ships, who must review it, and the specific
