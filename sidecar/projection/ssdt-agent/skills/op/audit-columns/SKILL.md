@@ -26,8 +26,6 @@ The *Optimistic NOT NULL* family — if the developer wants the audit columns `N
 - **`NOT NULL` + populated** → ships as one release with a pre-deployment backfill, then the columns
   land validated; the backfill that clears the block is the proof. A dev lead must review, because
   existing data is modified.
-- **+ CDC on the table** → added scrutiny: adding columns to a CDC-enabled table needs a
-  capture-instance refresh — see `../recreate-capture-instance/SKILL.md` and `../../_index/cdc/SKILL.md`.
 - **+ >1M rows** → added scrutiny: the backfill is a batched operation and may run long at production
   row counts.
 
@@ -53,8 +51,6 @@ branch the change actually took.
     lands validated.
   - A dev lead must review this: existing data is modified.
 - Added scrutiny, when it applies:
-  - Added scrutiny: this table feeds a change-data-capture stream, so the capture instance is frozen
-    to the table's current columns and needs handling.
   - Added scrutiny: at production row counts the backfill may block writes or run long — schedule a
     window.
 

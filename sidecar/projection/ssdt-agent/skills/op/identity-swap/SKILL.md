@@ -40,7 +40,7 @@ all recreated or `IDENTITY_INSERT` isn't used, existing keys are re-minted and e
 wrong rows. This is the most dangerous "one-line edit" in the catalog. Adjacent: a rebuild that loses
 the key mapping re-mints keys the way a rename with no refactorlog entry loses a column's data — see
 `../../_index/identity-and-refactorlog/SKILL.md`. This shadow-table-rebuild mechanic is owned here;
-`../retype-explicit/SKILL.md` and `../indexed-view/SKILL.md` cross-reference it.
+`../retype-explicit/SKILL.md` cross-references it.
 
 ## How it flips (the specifics only)
 - table **empty, no FKs** → the rebuild copies nothing; ships as a single schema change (still
@@ -52,8 +52,6 @@ the key mapping re-mints keys the way a rename with no refactorlog entry loses a
 - table populated **WITH incoming FKs** → ships across multiple releases; the FK drop and recreate
   must bracket the rebuild so the running application keeps working. A dev lead must review it, with
   added scrutiny the first time this is done on the estate.
-- **+ CDC** → added scrutiny: the rebuild invalidates the capture instance — disable CDC first,
-  rebuild, re-enable — see `../../_index/cdc/SKILL.md`.
 - **+ >1M rows** → added scrutiny: the data copy is the expensive part and may block writes or run
   long; schedule a window.
 
@@ -99,10 +97,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   application keeps working while the change is in flight. Adding or removing IDENTITY cannot be a
   simple `ALTER` — it is a table property fixed at column creation. On a populated table with no
   incoming foreign keys it ships as one release; on an empty table, as a single schema change.
-- Added scrutiny: the first time this rebuild is performed on the estate; a CDC-tracked table, where
-  the rebuild invalidates the capture instance and CDC must be disabled, the table rebuilt, then CDC
-  re-enabled (see `../../_index/cdc/SKILL.md`); a table above ~1M rows, where the data copy may block
-  writes or run long and needs a scheduled window.
+- Added scrutiny: the first time this rebuild is performed on the estate; a table above ~1M rows,
+  where the data copy may block writes or run long and needs a scheduled window.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -138,8 +134,5 @@ physical rebuild to repeat.
   verification query before promotion.
 - Production scale and timing — the data copy is the expensive part of the rebuild; at production row
   counts it may block writes or run long, which the small copy does not exercise. Schedule a window.
-- CDC — if the table feeds a change-data-capture stream, the rebuild invalidates the capture instance;
-  disabling CDC, rebuilding, and re-enabling it is not exercised on this copy (see
-  `../../_index/cdc/SKILL.md`).
 - Reversibility — only the forward rebuild is proven; the inverse rebuild that removes or re-adds
   IDENTITY is not exercised here.

@@ -29,8 +29,6 @@ recurs only here), so it stays inline — not lifted to an index skill.
   complains → drop/redesign the index → a multi-step single PR
 - very large table on an old SQL version → may rebuild rather than run metadata-only → added scrutiny
   at >1M rows: the rebuild can block writes or run long, so schedule a window
-- CDC-enabled → type change → recreate the capture instance → added scrutiny: the capture instance is
-  frozen to the table's current columns and needs handling (see `../../_index/cdc/SKILL.md`)
 
 ## Prove it
 Strict publishes clean; the delta is `ALTER COLUMN` to the wider type, with nothing blocked and no
@@ -49,7 +47,7 @@ type can't — every existing value still fits. So the risk here is structural �
 not the data. Widen and narrow are mirror images: widening's risk is the byte budget, narrowing's is
 whether the longest existing value (`MAX(LEN)`) still fits. The mistake to avoid is treating a type
 change as obviously safe without looking one hop out at what the column participates in — the index it
-sits in, the capture instance that tracks it.
+sits in.
 
 ## On the record
 The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`).
@@ -62,8 +60,6 @@ The fragment this operation contributes to the pull request (`../../author-pr/SK
     1700-byte limit; the index is redesigned in the same PR, which a dev lead should review.
   - Large table on an older SQL version (>1M rows) — the change rebuilds rather than altering
     metadata and may block writes or run long; schedule a window.
-  - CDC-tracked — the capture instance is frozen to the table's current columns and must be recreated
-    (`../../_index/cdc/SKILL.md`).
 
 **Verification** — run in each environment after deployment
 ```sql

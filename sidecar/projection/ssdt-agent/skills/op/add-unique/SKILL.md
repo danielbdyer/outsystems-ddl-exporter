@@ -14,8 +14,9 @@ description: Use when the developer says "this attribute should be unique", "no 
 "this attribute should be unique", "no two customers can share an email", "stop duplicate codes".
 
 ## SSDT meaning
-`CONSTRAINT UQ_<Table>_<Col> UNIQUE (<Col>)` (or a unique index). SSDT builds the uniqueness
-enforcement over **all existing rows** at deploy.
+A `CREATE UNIQUE INDEX [UIX_<Table>_<Col>] ON <Table> (<Col>)` — uniqueness renders as a unique
+index after the table, not an inline constraint. SSDT builds the uniqueness enforcement over **all
+existing rows** at deploy.
 
 ## The named trap
 **Duplicate values block the build** — the deploy fails the instant two rows share a value. Second
@@ -37,15 +38,13 @@ do not re-derive the claim mechanics here.
   PR if the filtered index suffices.
 - \+ >1M rows → **added scrutiny**: at production row counts the uniqueness build and any de-dupe
   may block writes or run long (schedule a window — build + dedupe cost).
-- \+ CDC-enabled → **added scrutiny**: CDC does not track the constraint, but coordinate with the
-  team's rule for change-data-capture tables (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Run the duplicate probe FIRST: `SELECT <Col>, COUNT(*) FROM <table> GROUP BY <Col> HAVING COUNT(*)
 > 1` (and a NULL count for nullable columns). Then build + Strict publish: clean → uniqueness holds;
 a build failure ("duplicate key was found") means the deployment is blocked. Author the pre-deploy
 de-dupe (or the filtered index), re-run Strict clean. See `../../prove-on-dacpac/SKILL.md` +
-`../../talk-to-local-sql/SKILL.md`. Seed: Status's `UX_Status_Code` is the clean positive; Product's
+`../../talk-to-local-sql/SKILL.md`. Seed: Status's `UIX_Status_Code` is the clean positive; Product's
 `DUPE` rows drive the flip to a blocked deploy.
 
 ## The verdict (to the developer)
@@ -74,24 +73,23 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   as it lands. With remediation, it ships as one release: a pre-deployment de-dupe clears the
   duplicates, then the unique constraint lands validated.
 - Added scrutiny, when it applies: at production row counts the uniqueness build and any de-dupe may
-  block writes or run long (schedule a window); a CDC-tracked table — CDC does not track the
-  constraint, but the team's added-scrutiny rule applies (see `../../_index/cdc/SKILL.md`).
+  block writes or run long (schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: no value is shared across rows, so uniqueness holds
 SELECT <Col>, COUNT(*) FROM <table> GROUP BY <Col> HAVING COUNT(*) > 1;
 
--- expect 1 row, is_unique = 1: the unique constraint or index exists and is enforced
+-- expect 1 row, is_unique = 1: the unique index exists and is enforced
 SELECT name, is_unique FROM sys.indexes
-WHERE object_id = OBJECT_ID('<table>') AND name = 'UQ_<Table>_<Col>';
+WHERE object_id = OBJECT_ID('<table>') AND name = 'UIX_<Table>_<Col>';
 ```
 
 **Rollback**
-The unique constraint drops without data loss:
-`ALTER TABLE <table> DROP CONSTRAINT UQ_<Table>_<Col>;` (or `DROP INDEX UQ_<Table>_<Col> ON
-<table>;` for a unique or filtered index). A pre-deployment de-dupe is not auto-reversed; the rows it
-removed or merged, recorded under Data remediation, are what a manual restore uses.
+The unique index drops without data loss:
+`DROP INDEX [UIX_<Table>_<Col>] ON <table>;` (the same for a filtered unique index). A pre-deployment
+de-dupe is not auto-reversed; the rows it removed or merged, recorded under Data remediation, are
+what a manual restore uses.
 
 **Not verified**
 - Application impact — any insert or update that would create a duplicate value now fails on the

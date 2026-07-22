@@ -39,9 +39,8 @@ the guard here.
   first (a data change) **and** still face the guard. Ships across releases if the values must be
   preserved (see `../../_index/multi-phase/SKILL.md`), or as a scripted change after a
   truncate-with-intent reconcile. A dev lead must review this: existing data is modified.
-- **CDC-enabled / >1M rows** → added scrutiny (see `../../_index/cdc/SKILL.md`): a
-  change-data-capture instance is frozen to the table's current columns and needs handling, and at
-  production row counts the `ALTER COLUMN` rewrite may block writes or run long — schedule a window.
+- **>1M rows** → added scrutiny: at production row counts the `ALTER COLUMN` rewrite may block
+  writes or run long — schedule a window.
 
 ## Prove it
 Run the `MAX(LEN(Col))` probe AND a `WHERE LEN(Col) > <new>` count to **quantify** how many rows
@@ -81,10 +80,8 @@ from the cases above. Take the line the data proves.
 - Populated, values exceed the new size: `A dev lead must review this: existing data is modified —
   over-length values are reconciled before the column narrows.` · `Ships across releases if the
   values must be preserved, or as a scripted change: reconcile the over-length rows, then narrow.`
-- Added scrutiny, when it applies: `Added scrutiny: this table feeds a change-data-capture stream,
-  so the capture instance is frozen to the current columns and needs handling.` · `Added scrutiny:
-  at production row counts the ALTER COLUMN rewrite may block writes or run long — schedule a
-  window.`
+- Added scrutiny, when it applies: `Added scrutiny: at production row counts the ALTER COLUMN
+  rewrite may block writes or run long — schedule a window.`
 
 **Verification** — run in each environment after deployment:
 ```sql

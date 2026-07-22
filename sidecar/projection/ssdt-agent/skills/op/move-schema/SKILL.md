@@ -36,8 +36,6 @@ just an address. Do not re-derive it here.
   TRANSFER`) — one operation, data untouched, `object_id` preserved.
 - refactorlog MISSING → SSDT reads it as drop-and-create and the rows are lost — STOP, same remedy
   as a rename with no refactorlog entry (see `../../_index/identity-and-refactorlog/SKILL.md`).
-- CDC-enabled → the capture instance references the old two-part `schema.Table` name → added
-  scrutiny: it is frozen to that name and must be recreated (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Script the delta. A move must be `sp_rename` (schema-qualified) or your authored `ALTER SCHEMA
@@ -72,10 +70,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   `object_id`, and row counts are preserved), or as a scripted change (`ALTER SCHEMA TRANSFER`) when
   `object_id` preservation is preferred or the table is large — the transfer cannot be expressed as a
   table definition.
-- Added scrutiny: none for a small table with the refactorlog present; a CDC-tracked table has its
-  capture instance frozen to the old two-part `schema.Table` name and must be recreated (see
-  `../../_index/cdc/SKILL.md`); a first-time move on this estate or a large table carries added
-  scrutiny — schedule a window.
+- Added scrutiny: none for a small table with the refactorlog present; a first-time move on this
+  estate or a large table carries added scrutiny — schedule a window.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -107,7 +103,7 @@ rows and cannot be rolled back from the schema alone — restore from a backup.
   is not confirmed here — confirm the refactorlog carries the move, and run the verification query,
   before each promotion.
 - Production scale / timing: `ALTER SCHEMA TRANSFER` is a metadata operation, but any dependent
-  rebuild and the CDC capture-instance recreation are exercised at seed scale only; blocking and
-  duration at production row counts are not shown here.
+  rebuild is exercised at seed scale only; blocking and duration at production row counts are not
+  shown here.
 - Reversibility: only the forward move is proven; transferring the table back and repointing every
   reference is not exercised here.

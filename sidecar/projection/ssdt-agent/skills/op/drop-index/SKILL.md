@@ -29,8 +29,6 @@ don't think anything uses it" without evidence. None material to the publish.
 - Index backs a hot query / FK lookup → still a single in-place schema change, but the silent
   performance regression means a dev lead or an experienced developer should review it; prove
   "unused" from usage evidence first.
-- On a CDC-tracked table → added scrutiny: the table feeds a change-data-capture stream and is
-  high-stakes (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 A disposable copy of Dev carries no production query load, so the real proof is **usage evidence**,
@@ -64,8 +62,6 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 - Added scrutiny, when the index backs a hot query or FK lookup: dropping it is a silent
   performance regression, so a dev lead or an experienced developer should review it — and "unused"
   must be proven from usage evidence first.
-- Added scrutiny, when the table is CDC-tracked: it feeds a change-data-capture stream and is
-  high-stakes (see `../../_index/cdc/SKILL.md`).
 
 **Verification** — run in each environment after deployment
 ```sql

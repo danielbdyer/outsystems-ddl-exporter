@@ -21,7 +21,7 @@ appear and emits `DROP TABLE [Old]` + `CREATE TABLE [New]` — all rows lost. Ne
 
 ## The named trap
 A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Refactorlog Cleanup
-(§19.6). This is the identity-vs-name concern — see
+(§19.5). This is the identity-vs-name concern — see
 `../../_index/identity-and-refactorlog/SKILL.md`; do not re-derive the refactorlog mechanics here.
 
 ## How it flips (the specifics only)
@@ -30,11 +30,8 @@ A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Re
   procs, ETL, reports all reference the name
 - **refactorlog entry missing** → the delta is `DROP`+`CREATE` and every row is lost; stop and demand
   the refactorlog before anything else (see `../../_index/identity-and-refactorlog/SKILL.md`)
-- table is CDC-enabled → the capture instance still names the old table → ships as a scripted, staged
-  change that recreates the capture instance, with added scrutiny because the table feeds a
-  change-data-capture stream (see `../../_index/cdc/SKILL.md`)
-- external consumers must keep the old name → add a backward-compat view (`../compat-view/SKILL.md`),
-  pushing toward a staged, multi-release coexistence
+- external consumers must keep the old name → the rename stages across releases so those consumers
+  can migrate during a transition window
 
 ## Prove it
 Run `sqlpackage /Action:Script` and **read the delta** — it MUST be `sp_rename`. If you see
@@ -49,7 +46,7 @@ without it SSDT would see the old table vanish and a new one appear, DROP and re
 and lose every row. The rename is metadata-only, but the new name breaks every caller — foreign
 keys, views, procedures, ETL, reports — so a dev lead or an experienced developer should review it
 before it ships. One question: does anything outside this project still need the old name? If so,
-this needs a backward-compatible view kept during the transition.
+the rename must stage across releases so those consumers can migrate before the old name goes away.
 
 ## The reasoning (in conversation)
 The refactorlog carries *identity, not text* — see `../../_index/identity-and-refactorlog/SKILL.md`
@@ -66,9 +63,6 @@ The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
   procedures, ETL, reports).
 - Ships as a single schema change, applied in place. The delta is a metadata `sp_rename`; no data is
   read or written.
-- Added scrutiny, if the table is CDC-tracked: it feeds a change-data-capture stream, and the
-  capture instance still names the old table, so it is recreated — ships then as a scripted, staged
-  change (see `../../_index/cdc/SKILL.md`).
 
 **Verification** — run in each environment after deployment
 ```sql

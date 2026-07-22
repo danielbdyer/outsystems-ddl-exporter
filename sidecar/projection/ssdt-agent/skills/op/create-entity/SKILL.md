@@ -32,9 +32,6 @@ concerns caught at build time, not the deployment being blocked by the rows in t
 - table needs seed/lookup rows on creation → ships as one release: the CREATE, then a
   post-deployment script that seeds the rows after the table lands (the guarded MERGE seed — see
   `../create-static-seed/SKILL.md` and `../../_index/idempotent-seed/SKILL.md`).
-- table must be CDC-enabled from birth → CDC is not in the dacpac model, so it ships as a scripted
-  change: enabling capture cannot be expressed as a table definition. Added scrutiny: the table
-  feeds a change-data-capture stream and needs handling from birth (see `../../_index/cdc/SKILL.md`).
 - FK to a parent not yet in the project → still the same single schema change, but the build gates
   it on dependency order (the parent must exist first) — a dependency concern, not the data driving
   a different disposition.
@@ -71,9 +68,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   verbatim. No existing data is read or written. If the table needs seed rows on creation, it ships
   as one release instead: the CREATE, then a post-deployment MERGE seed that runs after it lands
   (see `../create-static-seed/SKILL.md`).
-- Added scrutiny: none for a standalone table. If it must be CDC-enabled from birth, capture cannot
-  be expressed as a table definition, so it ships as a scripted change and the table feeds a
-  change-data-capture stream that needs handling (see `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none for a standalone table.
 
 **Verification** — run in each environment after deployment
 ```sql

@@ -39,8 +39,6 @@ archive both readable during the move) is the multi-phase concern — see
   it relocates existing data.
 - large volume (>1M rows) → batching is mandatory and a principal should review it: at production
   row counts the move may block writes or run long, so schedule a window.
-- source is CDC-enabled → the batched deletes generate capture rows that must be coordinated; added
-  scrutiny (see `../../_index/cdc/SKILL.md`).
 - active queries must see only live data during the move → the coexistence obligation keeps this
   staged across releases.
 
@@ -82,8 +80,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   rows (`DELETE ... OUTPUT DELETED.* INTO archive.X`), then the counts are reconciled — so the
   running application keeps reading live data while the move is in flight.
 - Added scrutiny, when it applies: at large volume (> 1M rows) the move may block writes or run long
-  and batching is mandatory (schedule a window); a CDC-tracked source turns each batched delete into
-  capture rows that must be coordinated (see `../../_index/cdc/SKILL.md`).
+  and batching is mandatory (schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql

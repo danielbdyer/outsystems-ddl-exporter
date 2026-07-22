@@ -40,8 +40,6 @@ NOCHECK mechanics here.
 - \+ >1M rows / first-time on this estate → **added scrutiny**: at production row counts the WITH
   CHECK validation may run long or block writes (schedule a window), and a first-time operation
   warrants an extra reviewer.
-- \+ CDC-enabled → **added scrutiny**: coordinate with the team's rule for change-data-capture
-  tables (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 Run the violation probe FIRST: `SELECT COUNT(*) FROM <table> WHERE NOT (<predicate>)`. Then build +
@@ -77,8 +75,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   lands. With remediation, it ships as one release: a pre-deployment script brings the violating rows
   into compliance, then the check lands validated and trusted.
 - Added scrutiny, when it applies: at production row counts the WITH CHECK validation may block
-  writes or run long (schedule a window); a first-time operation on this estate; a CDC-tracked table
-  (see `../../_index/cdc/SKILL.md`).
+  writes or run long (schedule a window); a first-time operation on this estate.
 
 **Verification** — run in each environment after deployment
 ```sql

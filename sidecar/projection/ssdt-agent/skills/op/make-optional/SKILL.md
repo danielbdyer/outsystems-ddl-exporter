@@ -28,9 +28,6 @@ deployment blocks. None material at the deploy layer.
 - downstream consumers assume the column is always populated → the running application must
   change to tolerate a NULL, so a dev lead or an experienced developer should review — flag the
   consumers (this changes who reviews, not how it ships)
-- CDC-enabled → the nullability change still alters the capture-instance shape → added scrutiny:
-  the capture instance is frozen to the table's current columns and must be recreated (see
-  `../../_index/cdc/SKILL.md`)
 
 ## Prove it
 Strict publishes clean; the delta is a single `ALTER COLUMN ... NULL`; nothing is refused. The
@@ -62,9 +59,6 @@ record register:
   unaffected. If a downstream consumer assumes the column is always populated, a dev lead or an
   experienced developer should review this instead — the running application must change to
   tolerate a NULL.
-- Added scrutiny, only when the table is CDC-tracked: this table feeds a change-data-capture
-  stream, so the capture instance is frozen to the table's current columns and must be recreated
-  (see `../../_index/cdc/SKILL.md`).
 
 **Verification** — run in each environment after deployment
 ```sql

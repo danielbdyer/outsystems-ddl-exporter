@@ -34,8 +34,6 @@ NOT-NULL-with-backfill path).
   `../../_index/idempotent-seed/SKILL.md`). If the column is also becoming NOT NULL, follow
   `../make-mandatory/SKILL.md` instead. The default itself still ships in place and stays reviewable
   by any team member.
-- CDC-enabled table → CDC does not track constraints (handbook file 15 = §18.5), so a default on a
-  CDC-tracked table needs no added scrutiny on its own.
 
 ## Prove it
 Build + Strict `sqlpackage /Action:Script`; confirm the delta is a clean
@@ -63,8 +61,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as a single schema change, applied in place. No data is read or written.
-- Added scrutiny: none. A default is not CDC-tracked (CDC does not track constraints — handbook file
-  15 = §18.5).
+- Added scrutiny: none. Adding a default is additive and touches no existing rows.
 
 **Verification** — run in each environment after deployment
 ```sql

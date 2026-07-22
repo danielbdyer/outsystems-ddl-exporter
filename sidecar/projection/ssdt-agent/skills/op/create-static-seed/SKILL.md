@@ -33,17 +33,13 @@ guarded-MERGE or explicit-ID reasoning here.
 - lookup is an **FK target** for other entities → seed the lookup **before** its children
   (parents-first); still one release, but a missing parent row makes a child's foreign key block the
   deploy.
-- **+ CDC-tracked** (table or downstream consumer) → the `WHEN MATCHED` MUST be guarded or the
-  redeploy over-captures — see `../../_index/cdc/SKILL.md`. Added scrutiny: the table feeds a
-  change-data-capture stream.
 - **+ >1M reference rows** (rare) → added scrutiny: at production row counts the seed may block writes
   or run long — schedule a window.
 
 ## Prove it
 Deploy once (seed lands), then **deploy a SECOND time unchanged** and assert the post-deploy reports
-**0 rows affected** + an **identical data-hash** (order-independent `SHA2_256(FOR XML RAW)` sum). If
-CDC-tracked, assert the second deploy captures **0** rows. A changed hash on an unchanged seed means
-the MERGE is rewriting rows — fix the guard. See `prove-on-dacpac` for the publish loop and
+**0 rows affected** + an **identical data-hash** (order-independent `SHA2_256(FOR XML RAW)` sum). A
+changed hash on an unchanged seed means the MERGE is rewriting rows — fix the guard. See `prove-on-dacpac` for the publish loop and
 `talk-to-local-sql` for the hash probe. On the enriched sample, `dbo.Category` (explicit-id,
 `IsActive DEFAULT 1`) is the ready-made seed target.
 
@@ -67,10 +63,8 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as one release: the schema change, then a post-deployment script that runs the idempotent seed
   after it lands.
-- Added scrutiny: none — unless this table feeds a change-data-capture stream (the capture instance is
-  frozen to the table's current columns and needs handling — see `../../_index/cdc/SKILL.md`), or it
-  holds more than a million reference rows (at production row counts the seed may block writes or run
-  long — schedule a window).
+- Added scrutiny: none — unless it holds more than a million reference rows (at production row counts
+  the seed may block writes or run long — schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql

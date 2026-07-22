@@ -27,11 +27,9 @@ Set `IsActive = 0` on the seed row (the guarded `WHEN MATCHED` fires for that on
   lead or an experienced developer. A hard DELETE that orphans those fact rows removes data
   irreversibly and would need a principal — it is usually wrong; refuse the DELETE and propose
   deactivation.
-- **+ CDC-tracked** → the guarded `WHEN MATCHED` is mandatory; added scrutiny, because the table
-  feeds a change-data-capture stream — see `../../_index/cdc/SKILL.md`.
 
 ## Prove it
-Prove the reference exists before choosing: `SELECT COUNT(*) FROM <factTable> WHERE <fk> = <valueId>` — nonzero means DELETE orphans, deactivate instead. After the `IsActive = 0` edit, redeploy unchanged and assert **0 rows affected** + identical hash + (if CDC-tracked) 0 captures. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, `dbo.Category` is referenced by `dbo.Product.CategoryId`, so a hard DELETE of a Category value fires the orphan negative (STA-04N).
+Prove the reference exists before choosing: `SELECT COUNT(*) FROM <factTable> WHERE <fk> = <valueId>` — nonzero means DELETE orphans, deactivate instead. After the `IsActive = 0` edit, redeploy unchanged and assert **0 rows affected** + identical hash. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, `dbo.Category` is referenced by `dbo.Product.CategoryId`, so a hard DELETE of a Category value fires the orphan negative (STA-04N).
 
 ## The verdict (to the developer)
 You asked to retire that value. Instead of deleting the row, I set `IsActive = 0` on it, so the N rows
@@ -55,8 +53,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   preserved — no fact row is orphaned. (A value nothing references can be reviewed by any team member.)
 - Ships as one release: the seed MERGE in the post-deployment script re-runs and sets `IsActive = 0`
   for the retired row. The table definition is unchanged.
-- Added scrutiny: if the table feeds a change-data-capture stream, the guarded `WHEN MATCHED` is
-  mandatory so only the deactivation is captured. Otherwise none.
+- Added scrutiny: none — the guarded `WHEN MATCHED` sets `IsActive = 0` on only the one retired row.
 
 **Verification** — run in each environment after deployment
 ```sql

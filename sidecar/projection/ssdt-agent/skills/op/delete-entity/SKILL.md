@@ -7,7 +7,7 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 
 > **Default (provisional — the data decides).** Ships as a scripted change in a single release — in
 > production the drop is an explicit pre-deployment `DROP`, not the mere absence of the file,
-> sequenced after any inbound foreign keys are dropped and CDC is disabled. A principal must review
+> sequenced after any inbound foreign keys are dropped. A principal must review
 > this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the
 > release count — one drop in one release still requires a principal. Prove before you classify.
 
@@ -21,10 +21,9 @@ that block is the safety proof, not a failure. In production `DropObjectsNotInSo
 **False**, so the drop needs an explicit pre-deployment `DROP`, not mere absence.
 
 ## The named trap
-Dropping a table with inbound **foreign keys** (the drop fails) or that is **CDC-enabled** (orphans
-the capture instance — see `../../_index/cdc/SKILL.md`). The block on a populated table is the
-row-presence gate — see `../../_index/tightening-class/SKILL.md` for why it is data-blind; do not
-re-derive the guard here.
+Dropping a table with inbound **foreign keys** — the drop fails until they are dropped first. The
+block on a populated table is the row-presence gate — see `../../_index/tightening-class/SKILL.md`
+for why it is data-blind; do not re-derive the guard here.
 
 ## How it flips (the specifics only)
 - table empty, no dependents → mechanically a clean drop, but a principal must still review it if
@@ -35,16 +34,13 @@ re-derive the guard here.
   review it: data is removed and cannot be undone
 - inbound foreign keys exist → drop those foreign keys **first** (the script owns the ordering) → a
   small multi-step script
-- CDC-enabled → **disable CDC first** or orphan the capture objects → added scrutiny: the table
-  feeds a change-data-capture stream, so the capture instance needs handling (see
-  `../../_index/cdc/SKILL.md`)
 - >1M rows or a first-time drop on this estate → added scrutiny: at production row counts the drop
   may block writes or run long, and the operation has not been performed here before
 
 ## Prove it
 A Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exist — show that block with
-the row count as the safety proof. Then prove the ordered remedy (drop foreign keys → disable CDC →
-drop) on a disposable copy of Dev. Run `sys.dm_sql_referencing_entities` against the table to
+the row count as the safety proof. Then prove the ordered remedy (drop foreign keys → drop) on a
+disposable copy of Dev. Run `sys.dm_sql_referencing_entities` against the table to
 enumerate what still points at it. For the publish loop, see `../../prove-on-dacpac/SKILL.md`;
 probes, `../../talk-to-local-sql/SKILL.md`.
 
@@ -54,7 +50,7 @@ kind of change, because once it lands the data is gone for good and there is no 
 disposable copy of Dev, SSDT's BlockOnPossibleDataLoss blocked the publish because the table still
 holds rows; the block reports the exact row count, and that count is the proof of what would be
 lost — the block is the safety net working, not a failure. Before this ships I drop the inbound
-foreign keys and disable CDC first; I proved on the copy that this order clears the block cleanly
+foreign keys first; I proved on the copy that this order clears the block cleanly
 and the table drops. A principal should review it, because the loss can't be undone. One thing to
 settle first: is this data truly needed nowhere — no report, no export, no downstream job still
 reading it?
@@ -75,11 +71,10 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   provably scratch (no business data ever), the review need is lower.
 - Ships as a scripted change in a single release — in production the drop is an explicit
   pre-deployment `DROP` (not the mere absence of the `.sql` file), sequenced after any inbound
-  foreign keys are dropped and CDC is disabled; that ordering cannot be expressed as a table
+  foreign keys are dropped; that ordering cannot be expressed as a table
   definition.
-- Added scrutiny, when it applies: a CDC-tracked table must have CDC disabled first or the drop
-  orphans the capture instance (see `../../_index/cdc/SKILL.md`); at >1M rows the drop may block
-  writes or run long (schedule a window); a first-time drop on this estate.
+- Added scrutiny, when it applies: at >1M rows the drop may block writes or run long (schedule a
+  window); a first-time drop on this estate.
 
 **Verification** — run in each environment after deployment
 ```sql

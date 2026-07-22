@@ -20,7 +20,7 @@ Stopping at `WITH NOCHECK` — the constraint is present but **untrusted** (`is_
 - orphans reconcilable in one release → ships as a scripted change in a single release; a dev lead reviews it, because existing data is modified.
 - reconcile must wait on an app change (orphans still being created) → ships across releases so the running application keeps working while the change is in flight; a coexistence concern (see `../../_index/multi-phase/SKILL.md`).
 - orphan reconcile **deletes** child rows → data is removed and cannot be undone; a principal must review it.
-- CDC-enabled, or >1M rows → added scrutiny: the change-data-capture stream needs handling, or at >1M rows the `WITH CHECK CHECK` re-validation scans the table and may block writes or run long (see `../../_index/cdc/SKILL.md`).
+- >1M rows → added scrutiny: the `WITH CHECK CHECK` re-validation scans the table and may block writes or run long (schedule a window).
 
 ## Prove it
 First prove that the clean FK is blocked, and by how much — the orphan count via `LEFT JOIN ... WHERE p.<pk> IS NULL`. Then prove the full script on a disposable copy of Dev: `NOCHECK` adds the constraint untrusted (`SELECT is_not_trusted FROM sys.foreign_keys WHERE name='FK_...'` → 1), the reconcile clears the orphans, and `WITH CHECK CHECK` flips it back to trusted (`is_not_trusted = 0`) without being blocked. That trusted re-validation is the proof. See `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`. Seed: the `Order.CustomerId=999` orphan drives the whole sequence.
@@ -37,7 +37,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 **Review & release**
 - A dev lead must review this: existing data is modified (the orphans are reconciled) and a cross-table relationship is added. If the reconcile deletes child rows, a principal must review this: data is removed and the removal cannot be undone.
 - Ships as a scripted change in a single release — the foreign key is added `WITH NOCHECK`, the orphans are reconciled, then re-validated `WITH CHECK CHECK` to end trusted; this reconcile cannot be expressed as a table definition. If orphans are still being created by the running application, it ships across releases instead.
-- Added scrutiny: none for a small table; at >1M rows the `WITH CHECK CHECK` re-validation scans the table and may block writes or run long (schedule a window); a CDC-tracked table freezes its capture instance to the current columns and needs handling (see `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none for a small table; at >1M rows the `WITH CHECK CHECK` re-validation scans the table and may block writes or run long (schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -45,11 +45,11 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 SELECT c.<fk> FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE p.<pk> IS NULL;
 
 -- expect one row, is_not_trusted = 0: the foreign key is validated and honored by the optimizer
-SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>';
+SELECT name, is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_<child>_<parent>_<column>';
 ```
 
 **Rollback**
-The foreign key drops without data loss: `ALTER TABLE <child> DROP CONSTRAINT FK_<child>_<parent>;`. The orphan reconcile is not auto-reversed — the original child values (the seeded `Order.CustomerId=999` and any others) are recorded in the remediation for a manual restore.
+The foreign key drops without data loss: `ALTER TABLE <child> DROP CONSTRAINT FK_<child>_<parent>_<column>;`. The orphan reconcile is not auto-reversed — the original child values (the seeded `Order.CustomerId=999` and any others) are recorded in the remediation for a manual restore.
 
 **Not verified**
 - Application impact: once the foreign key is trusted, an insert or update that points a child at a parent that does not exist is rejected with error 547; application-side validation is not confirmed here.

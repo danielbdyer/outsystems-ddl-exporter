@@ -27,7 +27,7 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
 > without it.
 
 ## The named trap
-**Collision and cardinality.** A merge silently assumes the absorbed entity is **1:1 or 1:0..1** with the survivor. If it is actually 1:many, a naive copy keeps one row per parent and **silently drops the rest** — and a value-hash will NOT flag it (the hash only compares surviving rows). Treat any merge as suspected 1:many until proven otherwise. Companion trap: a *SELECT \* View* (see `../create-view/SKILL.md`) over the absorbed entity left unenumerated through the merge. The coexistence and subtractive-licensing why is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
+**Collision and cardinality.** A merge silently assumes the absorbed entity is **1:1 or 1:0..1** with the survivor. If it is actually 1:many, a naive copy keeps one row per parent and **silently drops the rest** — and a value-hash will NOT flag it (the hash only compares surviving rows). Treat any merge as suspected 1:many until proven otherwise. The coexistence and subtractive-licensing why is `../../_index/multi-phase/SKILL.md`; do not re-derive it.
 
 ## How it flips (the specifics only)
 - absorbed entity **empty** → drop it as a clean subtractive change and add the survivor's columns
@@ -38,9 +38,6 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
 - absorbed populated, **1:many** (collision) → still staged across releases, but the merge is
   *semantically wrong as stated*: STOP and tell the developer the cardinality — a design decision,
   not a change in how it ships.
-- **+ CDC on either table** → added scrutiny: each table that feeds a change-data-capture stream has
-  its capture instance frozen to that table's current columns, so both need capture-instance
-  handling — see `../../_index/cdc/SKILL.md`.
 - **+ >1M rows** → added scrutiny: at production row counts the copy may block writes or run long —
   schedule a window. **+ first time on this estate** → added scrutiny: this merge has not been
   performed here before.
@@ -52,8 +49,8 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
   clean. A dev lead or an experienced developer should review this: the running application must
   change to dual-write into the new columns.
 - **Phase 2 (cutover):** repoint app reads, FKs, and views from the absorbed entity to the
-  survivor's new columns. Leave a backward-compat view named for the absorbed entity if any external
-  consumer still references it (`../compat-view/SKILL.md`).
+  survivor's new columns. Any external consumer that still references the absorbed entity by name
+  must be migrated before the Phase-3 drop.
 - **Phase 3 (subtractive):** drop the absorbed table. Strict must block the drop under
   `BlockOnPossibleDataLoss` until the Phase-1 hashes prove every value is now in the survivor.
 
@@ -86,10 +83,9 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
   absorbed table, cut the application over (repoint reads, foreign keys, and views), then drop the
   absorbed table — the two tables coexist while readers migrate, and the copy cannot be expressed as
   a table definition.
-- Added scrutiny: none for a small, clean, 1:1 merge; a CDC-tracked table on either side freezes its
-  capture instance to that table's current columns and needs handling on both; at >1M rows the copy
-  scans the table and may block writes or run long — schedule a window; a first-time merge on this
-  estate carries added scrutiny (see `../../_index/cdc/SKILL.md`).
+- Added scrutiny: none for a small, clean, 1:1 merge; at >1M rows the copy scans the table and may
+  block writes or run long — schedule a window; a first-time merge on this estate carries added
+  scrutiny.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -116,8 +112,8 @@ Before the Phase-3 drop, backing out is lossless: drop the added survivor column
 foreign keys, and views back to the absorbed table, which still holds its data. The Phase-3 drop is
 not auto-reversible — once the absorbed table is dropped it is gone, and recovery means recreating it
 and copying back from the survivor's columns (the values were proven equal to the absorbed originals
-before the drop). Keep the absorbed table's data recoverable — a backup, or the backward-compat view
-— until the drop is confirmed durable.
+before the drop). Keep the absorbed table's data recoverable — a backup — until the drop is confirmed
+durable.
 
 **Not verified**
 - Application impact: the running application must dual-write into the new columns during Phase 1 and
@@ -126,9 +122,8 @@ before the drop). Keep the absorbed table's data recoverable — a backup, or th
 - Other environments: cardinality (1:1) is proven on a disposable copy of Dev only; Test, UAT, and
   Prod may hold a 1:many parent this copy does not — run the cardinality query before the copy in
   each environment.
-- External consumers: a SELECT * view or an outside reference may still read the absorbed table by
-  name; the backward-compat view covers the known ones (`../compat-view/SKILL.md`), unknown ones are
-  not covered.
+- External consumers: an outside reference may still read the absorbed table by name; the known ones
+  are repointed during Phase 2, unknown ones are not covered.
 - Production scale / timing: the copy and drop are exercised at seed scale only; blocking and
   duration at >1M rows are not shown by the small copy.
 - Reversibility: only the forward merge is proven; recreating the dropped absorbed table and copying

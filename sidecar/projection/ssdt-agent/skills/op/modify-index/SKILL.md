@@ -37,8 +37,6 @@ or include change with no uniqueness added is never blocked by the data.
   values, see `../../_index/constraint-is-a-claim/SKILL.md`.
 - \+ >1M rows → **added scrutiny**: at production row counts the rebuild and any de-dupe may block
   writes or run long (schedule a window — rebuild + dedupe cost).
-- \+ CDC-enabled → **added scrutiny**: coordinate with the team's rule for change-data-capture
-  tables (see `../../_index/cdc/SKILL.md`).
 
 ## Prove it
 For a uniqueness change, run the duplicate probe FIRST: `SELECT <keycols>, COUNT(*) FROM <table>
@@ -74,8 +72,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   INDEX`, a full rebuild over all rows. With remediation, it ships as one release: a pre-deployment
   de-dupe clears the duplicates, then the unique index builds validated.
 - Added scrutiny, when it applies: at production row counts the rebuild and any de-dupe may block
-  writes or run long (schedule a window); a CDC-tracked table — coordinate with the team's rule for
-  change-data-capture tables (see `../../_index/cdc/SKILL.md`).
+  writes or run long (schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql

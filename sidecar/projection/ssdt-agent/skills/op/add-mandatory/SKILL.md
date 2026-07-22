@@ -38,7 +38,8 @@ is a genuine can't-insert-NULL on a *new* column, cured by supplying a value.
 - populated, **no DEFAULT** → the deployment is blocked → add a default (back to a single in-place
   schema change) or a **pre-deployment backfill** that fills the rows before the column lands; do
   **not** let `GenerateSmartDefaults` silently decide the value.
-- CDC-enabled / >1M rows → **added scrutiny** (see `../../_index/cdc/SKILL.md`).
+- >1M rows → **added scrutiny**: at production row counts the column add may run long or block
+  writes (schedule a window).
 
 ## Prove it
 With a default, Strict publishes clean and the delta shows the `DEFAULT`. Drop the default and prove
@@ -74,8 +75,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
   the deployment is blocked ("Cannot insert NULL"); shipping then needs an explicit default, or a
   pre-deployment backfill that fills the rows before the column lands.
 - Added scrutiny, when it applies: at production row counts (> 1M) the column add may run long or
-  block writes (schedule a window); a CDC-tracked table freezes its capture instance to the current
-  columns and needs handling (see `../../_index/cdc/SKILL.md`).
+  block writes (schedule a window).
 
 **Verification** — run in each environment after deployment
 ```sql
