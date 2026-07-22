@@ -16,9 +16,14 @@ open Twin.Tests.Integration
 // SECOND time and prove it touches ZERO rows and leaves a byte-identical
 // content-hash. A seed is correct precisely because re-running it changes
 // nothing. Proven against a live Twin (its own container + port 21842) filled
-// with real-shaped synthetic data, with the estate's own guarded MERGE idiom
-// (WHEN MATCHED AND changed THEN UPDATE / WHEN NOT MATCHED BY TARGET THEN
-// INSERT / WHEN NOT MATCHED BY SOURCE THEN DELETE).
+// with real-shaped synthetic data, with the estate's own ADDITIVE guarded MERGE
+// idiom — the canonical v2 static-seed shape (WHEN MATCHED AND changed THEN
+// UPDATE / WHEN NOT MATCHED BY TARGET THEN INSERT): it INSERTs missing rows and
+// UPDATEs changed ones but does NOT prune a row absent from the seed. A
+// table-wide `WHEN NOT MATCHED BY SOURCE … DELETE` is deliberately NOT the
+// default (the emitter's `DeleteScope` defaults to None, and its smart
+// constructor refuses an unscoped delete); removing a value is a separate,
+// bounded step, proven in op 4.
 //
 // Two independent silence signals are used:
 //   1. MERGE-level: re-run the exact guarded MERGE via ExecuteNonQuery and
@@ -42,10 +47,15 @@ open Twin.Tests.Integration
 //      lookup is seeded (idempotent), the distinct source values map 1:1 (0
 //      unmapped, 0 orphan), the FK is trusted. The old text column is retained
 //      here — its retirement is a later phase (a multi-PR shape).
-//   4. delete-seed-value — the WHEN NOT MATCHED BY SOURCE THEN DELETE branch.
-//      Discovered guard: deleting an UNUSED value deletes cleanly + idempotent;
-//      deleting a REFERENCED value is BLOCKED by the FK (Msg 547) and rolled
-//      back. Remove the reference and the same delete succeeds + is idempotent.
+//   4. delete-seed-value — the CANONICAL additive-seed model. Removing a value
+//      from the seed VALUES does NOT delete the row: with no WHEN NOT MATCHED BY
+//      SOURCE arm, the emitted MERGE re-applied to the live table just stops
+//      asserting the value and the row PERSISTS (proven by running the additive
+//      MERGE directly against the live rows). Actually removing a lookup row is a
+//      separate, bounded, FK-guarded step: an explicit DELETE of the now-UNUSED
+//      value succeeds + is idempotent; an explicit DELETE of a REFERENCED value
+//      is BLOCKED by the FK (Msg 547) and rolls back, Status intact. Best
+//      practice: soft-retire (IsActive = 0) over hard-deleting a value in use.
 //
 // Every fact is self-contained and order-independent: it restores every table
 // and the seed lane to baseline, deletes any added file, DROPS the twin
@@ -64,14 +74,18 @@ type SamplePrSeedTests (fixture: SamplePrSeedFixture) =
         "/tmp/claude-0/-home-user-outsystems-ddl-exporter/afabc5b4-cbd5-575f-a8f0-384d4ca8dfa2/scratchpad"
 
     /// The estate's baseline Status seed lane (copied verbatim from
-    /// TwinEstateFixture) — the guarded MERGE for Open/Closed/Pending.
+    /// TwinEstateFixture) — the ADDITIVE guarded MERGE for Open/Closed/Pending:
+    /// WHEN MATCHED UPDATE + WHEN NOT MATCHED BY TARGET INSERT, and deliberately
+    /// NO `WHEN NOT MATCHED BY SOURCE … DELETE` arm. This is the canonical form
+    /// the v2 static-seed emitter emits by default (`DeleteScope = None`): a
+    /// static seed inserts missing rows and updates changed ones, but never
+    /// prunes a row absent from it — removal is a separate, bounded step.
     let baselineSeed =
         """MERGE INTO [dbo].[Status] AS t
 USING (VALUES (1, N'Open'), (2, N'Closed'), (3, N'Pending')) AS s ([Id], [Name])
 ON t.[Id] = s.[Id]
 WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
-WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name])
-WHEN NOT MATCHED BY SOURCE THEN DELETE;
+WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);
 """
 
     /// An order-sensitive content-hash of a table's rows: SHA2_256 over the
@@ -407,110 +421,122 @@ WHEN NOT MATCHED BY SOURCE THEN DELETE;
         }
 
     // =====================================================================
-    // 4) delete-seed-value — the WHEN NOT MATCHED BY SOURCE THEN DELETE branch.
-    //    Deleting an UNUSED value deletes cleanly + idempotent; deleting a
-    //    REFERENCED value is BLOCKED by the FK (Msg 547) and rolled back. Remove
-    //    the reference and the same delete succeeds + is idempotent.
+    // 4) delete-seed-value — the CANONICAL additive-seed model. A static seed
+    //    is ADDITIVE (no WHEN NOT MATCHED BY SOURCE arm): removing a value from
+    //    the seed VALUES does NOT delete the row — the emitted MERGE, re-applied
+    //    to the live table, just stops asserting the value and the row PERSISTS.
+    //    Actually removing a lookup row is a separate, bounded, FK-guarded step:
+    //    an explicit DELETE of an UNUSED value succeeds + is idempotent; an
+    //    explicit DELETE of a REFERENCED value is blocked by the FK (Msg 547) and
+    //    rolls back. Prefer soft-retire (IsActive = 0) over hard-deleting a value
+    //    in use. (The seed's survival is proven by running the emitted additive
+    //    MERGE directly against the live rows — NOT via the Twin's `Runs.up`,
+    //    which is a wipe + reseed full refresh, a different operation.)
     // =====================================================================
     [<Fact>]
-    member this.``delete-seed-value: an unused value deletes cleanly and idempotently; a referenced value is blocked by the FK (Msg 547) until the reference is removed`` () : Task =
+    member this.``delete-seed-value: removing a value from the additive seed does NOT delete the row; the explicit, FK-guarded removal blocks a referenced value (Msg 547)`` () : Task =
         task {
             let evidence = System.Text.StringBuilder()
             let record (s: string) = evidence.AppendLine s |> ignore
             let flush () =
                 try System.IO.File.WriteAllText(System.IO.Path.Combine(scratch, "evidence-delete-seed-value.txt"), evidence.ToString()) with _ -> ()
 
-            // The Status seed with a value removed from the source VALUES -> the
-            // WHEN NOT MATCHED BY SOURCE THEN DELETE branch fires for that Id.
-            let seedNoPending =
+            // The Status seed with 'Pending' REMOVED from the source VALUES, kept
+            // in the CANONICAL ADDITIVE form (WHEN MATCHED UPDATE + WHEN NOT
+            // MATCHED BY TARGET INSERT, and deliberately NO WHEN NOT MATCHED BY
+            // SOURCE arm) — the shape the v2 static-seed emitter emits by default.
+            // Re-run against a table that still holds Pending, it LEAVES Pending
+            // in place: the seed just stops asserting it.
+            let additiveSeedNoPending =
                 """MERGE INTO [dbo].[Status] AS t
 USING (VALUES (1, N'Open'), (2, N'Closed')) AS s ([Id], [Name])
 ON t.[Id] = s.[Id]
 WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
-WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name])
-WHEN NOT MATCHED BY SOURCE THEN DELETE;
-"""
-            let seedNoOpen =
-                """MERGE INTO [dbo].[Status] AS t
-USING (VALUES (2, N'Closed'), (3, N'Pending')) AS s ([Id], [Name])
-ON t.[Id] = s.[Id]
-WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
-WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name])
-WHEN NOT MATCHED BY SOURCE THEN DELETE;
+WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);
 """
             let statusHasSql (id: int) = sprintf "SELECT COUNT(*) FROM [dbo].[Status] WHERE [Id] = %d;" id
             let rowsSql = "SELECT COUNT(*) FROM [dbo].[Status];"
             let refCountSql (id: int) = sprintf "SELECT (SELECT COUNT(*) FROM [dbo].[Customer] WHERE [StatusId] = %d) + (SELECT COUNT(*) FROM [dbo].[Order] WHERE [StatusId] = %d);" id id
-            let shash = hashSql "[dbo].[Status]" "[Id],[Name]" "[Id]"
+            // The explicit, bounded removal of ONE lookup row by its key — the
+            // real "retire a value" step, distinct from the additive seed.
+            let deleteById (id: int) = sprintf "DELETE FROM [dbo].[Status] WHERE [Id] = %d;" id
+            let repointAllTo (id: int) = sprintf "UPDATE [dbo].[Customer] SET [StatusId] = %d; UPDATE [dbo].[Order] SET [StatusId] = %d;" id id
 
-            // BEFORE — baseline Status {1,2,3}; force every fact row to reference
-            // Open(1), leaving Closed(2) and Pending(3) UNREFERENCED.
+            // ---- (a) BASELINE — Status {Open,Closed,Pending}; point every fact
+            //         row at Open(1) so Open is REFERENCED and Pending is UNUSED.
             let! _ = this.Fresh "delete-seed-value/fresh"
-            let! _ = this.Exec "UPDATE [dbo].[Customer] SET [StatusId] = 1;"
-            let! _ = this.Exec "UPDATE [dbo].[Order] SET [StatusId] = 1;"
+            let! _ = this.Exec (repointAllTo 1)
             let! rowsBefore = this.Scalar rowsSql
             let! refToOpen = this.Scalar (refCountSql 1)
             let! refToPending = this.Scalar (refCountSql 3)
             Assert.Equal(3L, rowsBefore)
-            Assert.True(refToOpen > 0L, "Open(1) must be referenced for the block proof")
+            Assert.True(refToOpen > 0L, "Open(1) must be referenced for the FK-block proof")
             Assert.Equal(0L, refToPending)
-            record (sprintf "baseline: Status rows=%d; references to Open(1)=%d, to Pending(3)=%d (unreferenced)" rowsBefore refToOpen refToPending)
+            record (sprintf "baseline: Status rows=%d {Open,Closed,Pending}; references to Open(1)=%d (referenced), to Pending(3)=%d (unreferenced)" rowsBefore refToOpen refToPending)
 
-            // ---- CASE A: delete an UNUSED value (Pending) cleanly ----------
-            let! delPending = this.Exec seedNoPending
-            let! hasPendingAfter = this.Scalar (statusHasSql 3)
-            let! rowsAfterA = this.Scalar rowsSql
-            let! hashAfterA = this.ScalarStr shash
-            record (sprintf "CASE A (delete UNUSED Pending): seed re-run with Pending removed -> WHEN NOT MATCHED BY SOURCE THEN DELETE, rows affected=%d (1), Id=3 present=%d (0 = deleted), Status rows=%d, hash=%s" delPending hasPendingAfter rowsAfterA hashAfterA)
-            // idempotent
-            let! delPendingRerun = this.Exec seedNoPending
-            let! hashARerun = this.ScalarStr shash
-            record (sprintf "  SECOND run (Pending already gone): rows affected=%d (0 = idempotent), hash=%s (identical=%b)" delPendingRerun hashARerun (hashARerun = hashAfterA))
+            // ---- (b) THE KEY CANONICAL FACT — the emitted additive seed, run
+            //         against the LIVE table, does NOT delete a row absent from
+            //         its VALUES. This is what a real SSDT deploy runs: the exact
+            //         MERGE the v2 emitter produces, applied to the existing rows.
+            //
+            //         We run it DIRECTLY (not through `Runs.up`) on purpose. The
+            //         Twin's `Runs.up` convergence is a WIPE + reseed FULL REFRESH
+            //         (it empties the table, re-applies the static lane, then mints)
+            //         — so after removing Pending and converging, Pending is gone
+            //         because the WIPE cleared it, NOT because the seed deleted it.
+            //         That models a full rebuild, not an incremental production
+            //         deploy. To isolate the seed's OWN semantics — what removing a
+            //         value from the VALUES does to a live table — we execute the
+            //         emitted additive MERGE against the seeded {Open,Closed,Pending}
+            //         rows with no wipe. A seed carrying a WHEN NOT MATCHED BY SOURCE
+            //         DELETE arm would drop Pending here; the additive seed does not.
+            let! additiveAffected = this.Exec additiveSeedNoPending
+            let! hasPendingAfterSeed = this.Scalar (statusHasSql 3)
+            let! rowsAfterSeed = this.Scalar rowsSql
+            record (sprintf "REMOVE 'Pending' from the seed VALUES; run the emitted additive MERGE against the live {Open,Closed,Pending} table: rows affected=%d (0 = no WHEN NOT MATCHED BY SOURCE DELETE arm — a delete-arm seed would have dropped Pending here), Id=3 present=%d (1 = SURVIVED), Status rows=%d (still 3) -> removing a value from the seed does NOT drop the row" additiveAffected hasPendingAfterSeed rowsAfterSeed)
 
-            // ---- CASE B: delete a REFERENCED value (Open) is BLOCKED --------
-            // restore Status to {1,2,3}; Open(1) is still referenced by all rows.
-            let! _ = this.Exec baselineSeed
-            let! rowsRestored = this.Scalar rowsSql
-            let! refToOpenB = this.Scalar (refCountSql 1)
-            record (sprintf "CASE B setup: Status restored to rows=%d; references to Open(1)=%d (still referenced)" rowsRestored refToOpenB)
+            // ---- (c) THE EXPLICIT, BOUNDED REMOVAL — an explicit DELETE of the
+            //         now-UNUSED Pending(3) succeeds; a second identical DELETE is
+            //         idempotent (already gone, zero rows).
+            let! _ = this.Exec "UPDATE [dbo].[Customer] SET [StatusId] = 1 WHERE [StatusId] = 3; UPDATE [dbo].[Order] SET [StatusId] = 1 WHERE [StatusId] = 3;"
+            let! refToPendingC = this.Scalar (refCountSql 3)
+            let! delUnused = this.Exec (deleteById 3)
+            let! hasPendingAfterDelete = this.Scalar (statusHasSql 3)
+            let! rowsAfterDelete = this.Scalar rowsSql
+            record (sprintf "explicit DELETE of the now-UNUSED Pending(3) (references=%d): rows affected=%d (1 = removed), Id=3 present=%d (0 = gone), Status rows=%d (3 -> 2)" refToPendingC delUnused hasPendingAfterDelete rowsAfterDelete)
+            let! delUnusedRerun = this.Exec (deleteById 3)
+            let! rowsAfterRerun = this.Scalar rowsSql
+            record (sprintf "  SECOND identical DELETE (Pending already gone): rows affected=%d (0 = idempotent), Status rows=%d" delUnusedRerun rowsAfterRerun)
 
-            let! blockMsg = this.ExecMsg seedNoOpen
+            // ---- (d) THE FK GUARD — an explicit DELETE of the REFERENCED Open(1)
+            //         is refused by the foreign key (Msg 547) and rolls back;
+            //         Status is left intact.
+            let! _ = this.Exec (repointAllTo 1)   // every fact row references Open(1)
+            let! refToOpenD = this.Scalar (refCountSql 1)
+            let! rowsBeforeBlock = this.Scalar rowsSql
+            let! blockMsg = this.ExecMsg (deleteById 1)
             let! hasOpenAfterBlock = this.Scalar (statusHasSql 1)
             let! rowsAfterBlock = this.Scalar rowsSql
-            record (sprintf "CASE B (delete REFERENCED Open): seed re-run with Open removed -> the DELETE is REFUSED by the FK: %s" (if blockMsg = "" then "(no error - UNEXPECTED)" else blockMsg))
-            record (sprintf "  after the blocked delete: Open(1) present=%d (1 = survived, rolled back), Status rows=%d (all 3 intact)" hasOpenAfterBlock rowsAfterBlock)
-
-            // remedy — remove the reference, then the same delete SUCCEEDS.
-            let! _ = this.Exec "UPDATE [dbo].[Customer] SET [StatusId] = 2 WHERE [StatusId] = 1;"
-            let! _ = this.Exec "UPDATE [dbo].[Order] SET [StatusId] = 2 WHERE [StatusId] = 1;"
-            let! refToOpenAfterRepoint = this.Scalar (refCountSql 1)
-            let! delOpen = this.Exec seedNoOpen
-            let! hasOpenFinal = this.Scalar (statusHasSql 1)
-            let! rowsFinal = this.Scalar rowsSql
-            let! hashFinal = this.ScalarStr shash
-            record (sprintf "  remedy: repoint references off Open(1) -> references now=%d; the SAME delete now succeeds, rows affected=%d (1), Open(1) present=%d (0 = deleted), Status rows=%d" refToOpenAfterRepoint delOpen hasOpenFinal rowsFinal)
-            // idempotent
-            let! delOpenRerun = this.Exec seedNoOpen
-            let! hashFinalRerun = this.ScalarStr shash
-            record (sprintf "  SECOND run (Open already gone): rows affected=%d (0 = idempotent), hash=%s (identical=%b)" delOpenRerun hashFinalRerun (hashFinalRerun = hashFinal))
+            record (sprintf "explicit DELETE of the REFERENCED Open(1) (references=%d): %s" refToOpenD (if blockMsg = "" then "(no error - UNEXPECTED)" else blockMsg))
+            record (sprintf "  after the blocked delete: Open(1) present=%d (1 = survived, rolled back), Status rows=%d (intact)" hasOpenAfterBlock rowsAfterBlock)
             flush ()
 
             fixture.Rewrite "Data/StaticSeeds.sql" baselineSeed   // restore so it cannot bleed
 
-            // CASE A — the unused value deletes cleanly and idempotently.
-            Assert.Equal(1, delPending)                    // exactly one row deleted
-            Assert.Equal(0L, hasPendingAfter)              // Pending gone
-            Assert.Equal(2L, rowsAfterA)                   // 3 -> 2
-            Assert.Equal(0, delPendingRerun)               // re-run touched ZERO rows
-            Assert.Equal<string>(hashAfterA, hashARerun)   // identical content-hash
-            // CASE B — the referenced value is blocked, then deletes after remedy.
+            // (b) the additive seed did NOT delete the seed-absent row.
+            Assert.Equal(0, additiveAffected)              // no update/insert, and NO delete arm
+            Assert.Equal(1L, hasPendingAfterSeed)          // Pending survived — the row persists
+            Assert.Equal(3L, rowsAfterSeed)                // still all three
+            // (c) the explicit delete of the unused value succeeds + is idempotent.
+            Assert.Equal(0L, refToPendingC)                // Pending is unreferenced
+            Assert.Equal(1, delUnused)                     // exactly one row removed
+            Assert.Equal(0L, hasPendingAfterDelete)        // Pending gone
+            Assert.Equal(2L, rowsAfterDelete)              // 3 -> 2
+            Assert.Equal(0, delUnusedRerun)                // idempotent — zero rows
+            Assert.Equal(2L, rowsAfterRerun)
+            // (d) the explicit delete of the referenced value is FK-blocked.
+            Assert.True(refToOpenD > 0L, "Open(1) must be referenced for the block proof")
             Assert.Contains("547", blockMsg)               // FK REFERENCE constraint block
             Assert.Equal(1L, hasOpenAfterBlock)            // Open survived the rolled-back delete
-            Assert.Equal(3L, rowsAfterBlock)               // nothing deleted
-            Assert.Equal(0L, refToOpenAfterRepoint)        // reference removed
-            Assert.Equal(1, delOpen)                       // now the delete lands
-            Assert.Equal(0L, hasOpenFinal)                 // Open gone
-            Assert.Equal(2L, rowsFinal)                    // 3 -> 2
-            Assert.Equal(0, delOpenRerun)                  // re-run touched ZERO rows
-            Assert.Equal<string>(hashFinal, hashFinalRerun) // identical content-hash
+            Assert.Equal(rowsBeforeBlock, rowsAfterBlock)  // nothing deleted — Status intact
         }

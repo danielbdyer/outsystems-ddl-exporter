@@ -94,7 +94,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 |---|---|---|
 | [create-static-seed](./create-static-seed.md) | a Static Entity with records | first converge inserts; second is **silent** (0 rows + identical hash + NothingToApply) |
 | [edit-seed](./edit-seed.md) | change a Static Entity record | the guarded MERGE touches **exactly the changed row**; re-run silent |
-| [delete-seed-value](./delete-seed-value.md) | remove a Static Entity record | unused deletes idempotently; a **referenced** value is blocked by the FK (Msg 547) — prefer IsActive=0 |
+| [delete-seed-value](./delete-seed-value.md) | remove a Static Entity record | removing it from the seed does **not** delete the row (the seed is additive); the explicit delete is FK-guarded — a **referenced** value is blocked (Msg 547); prefer IsActive=0 |
 | [extract-to-lookup](./extract-to-lookup.md) | free-text Attribute → Static Entity ref | phase 1: lookup seeded, 0 unmapped, backfill 0 NULL/0 orphan, FK trusted |
 
 ### Tables & Entities (`SamplePrCleanApply2Tests`, `SamplePrRemovalTests`, `SamplePrRenameTests`, `SamplePrSchemaChangeTests`)

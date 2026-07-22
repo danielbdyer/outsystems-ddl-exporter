@@ -94,13 +94,23 @@ type TwinEstateFixture (containerName: string, port: int) =
     CONSTRAINT [FK_OrderLine_Order] FOREIGN KEY ([OrderId]) REFERENCES [dbo].[Order] ([Id])
 );
 """
+        // The estate's Status seed is ADDITIVE — the canonical form the v2
+        // static-seed emitter emits by DEFAULT (`DataEmitOptions.defaults`
+        // carries `DeleteScope = None`; the `DeleteScope.create` smart
+        // constructor refuses an unscoped table-wide delete). It INSERTs missing
+        // rows (WHEN NOT MATCHED BY TARGET) and UPDATEs changed ones (WHEN
+        // MATCHED), but deliberately has NO `WHEN NOT MATCHED BY SOURCE … DELETE`
+        // arm: a row absent from the seed may be referenced, so its removal is a
+        // separate, BOUNDED operator decision (a scoped delete / a manual DELETE),
+        // never an automatic table-wide prune on redeploy. Do NOT add the delete
+        // arm back — it would make the fixture teach an auto-delete-on-seed-removal
+        // the engine does not produce (see `SamplePrSeedTests.delete-seed-value`).
         write "Data/StaticSeeds.sql"
             """MERGE INTO [dbo].[Status] AS t
 USING (VALUES (1, N'Open'), (2, N'Closed'), (3, N'Pending')) AS s ([Id], [Name])
 ON t.[Id] = s.[Id]
 WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
-WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name])
-WHEN NOT MATCHED BY SOURCE THEN DELETE;
+WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);
 """
         write "twin.json" configJson
 
