@@ -31,6 +31,7 @@
     <Compile Include="SamplePrTighteningTests.fs" />
     <Compile Include="SamplePrCleanApplyTests.fs" />
     <Compile Include="SamplePrCleanApply2Tests.fs" />
+    <Compile Include="SamplePrSchemaChangeTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
