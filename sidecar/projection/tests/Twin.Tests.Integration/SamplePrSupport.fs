@@ -48,6 +48,50 @@ module SamplePrPublish =
                         return! EstateModel.publishStrict masterConn dacpac
         }
 
+    /// Generate — WITHOUT executing — the T-SQL deploy script DacFx would run to
+    /// bring the twin from its CURRENT live state to the on-disk estate, under the
+    /// same production-faithful posture as `strict` (BlockOnPossibleDataLoss = true,
+    /// no smart-defaults, permissions/bookkeeping left alone). This is the "read the
+    /// generated delta" step the rebuild/convert skills demand: it reveals whether a
+    /// one-line `.sql` edit expands into a shadow-table rebuild (IDENTITY change) or
+    /// an ADD-period-columns + SET SYSTEM_VERSIONING program (temporal convert). If
+    /// DacFx refuses to script the change (it can throw when it detects possible data
+    /// loss under the strict gate), the refusal text is returned as the error detail
+    /// — itself a finding. Returns the script text on success. DacFx types are fully
+    /// qualified so this shared file needs no new `open`.
+    let strictScript (root: string) (config: TwinConfig) : Task<Result<string>> =
+        task {
+            match EstateFiles.resolve root config.Estate with
+            | Error es -> return Result.failure es
+            | Ok estate ->
+                match TwinContainer.resolvePassword config.Container.PasswordRef with
+                | Error es -> return Result.failure es
+                | Ok password ->
+                    match EstateModel.buildDacpac estate with
+                    | Error es -> return Result.failure es
+                    | Ok dacpac ->
+                        try
+                            let masterConn = TwinContainer.masterConnectionString config.Container password
+                            use stream = new System.IO.MemoryStream(dacpac)
+                            use package = Microsoft.SqlServer.Dac.DacPackage.Load stream
+                            let options = Microsoft.SqlServer.Dac.DacDeployOptions()
+                            options.BlockOnPossibleDataLoss <- true
+                            options.GenerateSmartDefaults <- false
+                            options.IgnoreColumnOrder <- true
+                            options.DropObjectsNotInSource <- false
+                            options.IgnorePermissions <- true
+                            let services = Microsoft.SqlServer.Dac.DacServices masterConn
+                            let script = services.GenerateDeployScript(package, TwinContainer.TwinDatabaseName, options)
+                            return Result.success script
+                        with ex ->
+                            return
+                                Result.failureOf
+                                    (ValidationError.createWithMetadata
+                                        "twin.script.failed"
+                                        "The strict deploy-script generation did not succeed."
+                                        (Map.ofList [ "detail", Some ex.Message ]))
+        }
+
 /// Thin live-SQL probes shared by every sample-PR test — a scalar reader
 /// (`int64`), a scalar string reader, a non-query executor, and the
 /// DacFx-refusal detail extractor. Factored out of the make-mandatory

@@ -37,6 +37,7 @@
     <Compile Include="SamplePrRenameTests.fs" />
     <Compile Include="SamplePrSeedTests.fs" />
     <Compile Include="SamplePrStructuralTests.fs" />
+    <Compile Include="SamplePrRebuildTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
