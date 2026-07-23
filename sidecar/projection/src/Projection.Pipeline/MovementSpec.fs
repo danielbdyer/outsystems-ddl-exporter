@@ -924,7 +924,13 @@ and CheckFidelityFlowArgs =
       /// The approved data corrections (`emission.dataCorrections`) replayed onto
       /// the SOURCE before comparing — a corrected target proves byte-identical
       /// against the replayed source. Empty ⇒ raw byte-identity.
-      Corrections : ApprovedDataCorrection list }
+      Corrections : ApprovedDataCorrection list
+      /// `--correction-receipts <path>` — the RECORDED receipts a prior publish/
+      /// load episode produced (a JSON array, or a run's `fidelity.rows.json`).
+      /// When present, the proof reconciles the replayed receipts against these
+      /// recorded counts, so a drifted/tampered receipt reds the proof by name.
+      /// `None` ⇒ the replay just greens the proof (no reconciliation).
+      CorrectionReceipts : string option }
 
 /// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
 /// --target <ref>`, P2-S3): the portable manifest path, and the target the

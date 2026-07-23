@@ -286,13 +286,20 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                     // 3 — THE PROOF: the flow's live source against the loaded
                     //     stand-in, aligned by the model, modulo the journal's
                     //     recorded interventions (none for the lanes path).
-                    let! proof =
-                        FidelityCompareRun.run
-                            args.FromLabel args.SourceConn
-                            (sprintf "%s stand-in" args.Flow) scratchConn
-                            "the authored model" model
-                            None None args.SampleCap journalForCompare args.Corrections []
-                    return proof |> Result.map (fun report -> outcome, report)
+                    // The RECORDED receipts (--correction-receipts) close the proof
+                    // loop: the replay must reproduce these exact counts, or the
+                    // proof reds by name. A bad receipts file refuses before the run.
+                    match args.CorrectionReceipts |> Option.map FidelityCompareRun.loadCorrectionReceipts with
+                    | Some (Error es) -> return Error es
+                    | recordedLoaded ->
+                        let recorded = match recordedLoaded with Some (Ok rs) -> rs | _ -> []
+                        let! proof =
+                            FidelityCompareRun.run
+                                args.FromLabel args.SourceConn
+                                (sprintf "%s stand-in" args.Flow) scratchConn
+                                "the authored model" model
+                                None None args.SampleCap journalForCompare args.Corrections recorded
+                        return proof |> Result.map (fun report -> outcome, report)
             })
       match (work ()).GetAwaiter().GetResult() with
       | Error errs ->

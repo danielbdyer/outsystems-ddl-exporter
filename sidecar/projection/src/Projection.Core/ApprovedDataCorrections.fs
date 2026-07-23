@@ -51,13 +51,16 @@ module DataCorrectionDerivationSpec =
     let isCrossKind (spec: DataCorrectionDerivationSpec) : bool =
         DataCorrectionDerivation.isCrossKind (toBare spec)
 
-/// A configured extra reference probe: an entity + predicate that, if ANY row
-/// matches, proves an exclusion is UNSAFE (the operator-authored complement to
-/// the formal inbound-FK probe). Consumed by the `NoConfiguredReferenceMatches`
-/// guard.
+/// A configured extra reference probe for `NoConfiguredReferenceMatches`: a
+/// logical attribute (in some entity) that REFERENCES the subject's primary key
+/// but is NOT a formal FK the catalog carries. The exclusion is UNSAFE if any
+/// RETAINED row points — via this attribute — at a subject row about to be
+/// excluded. Correlated to the exact excluded PK values (the same dynamic check
+/// the formal inbound-FK guard performs), NOT a blanket "any row matches the
+/// entity": a probe that only asks "does the entity have rows" would refuse
+/// every exclusion whenever the referencing table is non-empty.
 type ConfiguredReferenceProbe =
-    { Entity    : EntityCoordinate
-      Predicate : Predicate }
+    { ReferencingAttribute : AttributeCoordinate }
 
 /// One approved, publish-time inline data correction. `Subject` is the target
 /// attribute (reusing the operator-authorable `AttributeCoordinate`);
@@ -149,6 +152,29 @@ module ApprovedDataCorrections =
                 let idText = SsKey.serialize r.Identifier
                 let cellText = match StaticRow.value subject r with Some v -> String.concat "" [ "S:"; v ] | None -> "N"
                 String.concat "" [ idText; cellText ])
+            |> List.sort
+            |> String.concat ""
+        let bytes = System.Text.Encoding.UTF8.GetBytes canonical
+        let hash = System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
+        (System.Convert.ToHexString hash).ToLowerInvariant()
+
+    /// A deterministic SHA-256 hex digest over a set of rows' EVIDENCE cells (the
+    /// supporting metadata columns), sorted by row identity — the audit anchor a
+    /// reviewer replays to confirm the derivation stood on the evidence the
+    /// receipt names.
+    let private evidenceDigestOf (evidenceNames: Name list) (rows: StaticRow list) : string =
+        let canonical =
+            rows
+            |> List.map (fun r ->
+                let idText = SsKey.serialize r.Identifier
+                let cells =
+                    evidenceNames
+                    |> List.map (fun n ->
+                        match StaticRow.value n r with
+                        | Some v -> String.concat "" [ Name.value n; "=S:"; v ]
+                        | None   -> String.concat "" [ Name.value n; "=N" ])
+                    |> String.concat ""
+                String.concat "" [ idText; "|"; cells ])
             |> List.sort
             |> String.concat ""
         let bytes = System.Text.Encoding.UTF8.GetBytes canonical
@@ -296,12 +322,23 @@ module ApprovedDataCorrections =
                                 match probes with
                                 | [] -> Result.success ()
                                 | (probe: ConfiguredReferenceProbe) :: rest ->
-                                    match resolveEntity catalog probe.Entity with
-                                    | Error e -> Error e
-                                    | Ok pk ->
-                                        let pRows = rowsOfKind catalog rows pk
-                                        if pRows |> List.exists (fun r -> Predicate.eval r probe.Predicate) then
-                                            err "dataCorrection.exclude.configuredReferenceMatch" (String.concat "" [ "correction '"; c.Id; "': a configured reference probe matched a retained row" ])
+                                    match AttributeCoordinate.resolveFull catalog probe.ReferencingAttribute with
+                                    | Error _ ->
+                                        err "dataCorrection.probe.unresolved" (String.concat "" [ "correction '"; c.Id; "': configured reference probe attribute "; probe.ReferencingAttribute.Module; "/"; probe.ReferencingAttribute.Entity; "/"; probe.ReferencingAttribute.Attribute; " is not in the model" ])
+                                    | Ok (probeKindKey, refAttrName, _) ->
+                                        // Retained rows of the probe's kind (exclude the subject's
+                                        // own about-to-be-excluded rows when the probe points at
+                                        // the same kind). Offending iff any retained row references
+                                        // — via this attribute — an excluded subject PK value.
+                                        let retained =
+                                            let pRows = rowsOfKind catalog rows probeKindKey
+                                            if probeKindKey = kindKey then pRows |> List.filter (fun r -> not (Set.contains r.Identifier excludedIds))
+                                            else pRows
+                                        let offending =
+                                            retained |> List.exists (fun r ->
+                                                match StaticRow.value refAttrName r with Some v -> Set.contains v excludedPkValues | None -> false)
+                                        if offending then
+                                            err "dataCorrection.exclude.configuredReferenceMatch" (String.concat "" [ "correction '"; c.Id; "': a retained row references (via '"; Name.value refAttrName; "') a row about to be excluded" ])
                                         else loop rest
                             loop c.ConfiguredProbes
                         else Result.success ()
@@ -356,20 +393,41 @@ module ApprovedDataCorrections =
                                         | DataCorrectionGuard.ExpectedCoverage     -> Some changeableCount
                                         | _ -> None
                                     DataCorrectionGuardResult.passed g observed)
-                            let receipt =
-                                { CorrectionId        = c.Id
-                                  SourceRemediationId = c.SourceRemediationId
-                                  Subject             = c.Subject
-                                  Derivation          = DataCorrectionDerivationSpec.toBare c.Derivation
-                                  GuardResults        = guardResults
-                                  RowsMatched         = matchedCount
-                                  RowsChanged         = (if isExclude then 0L else changeableCount)
-                                  RowsExcluded        = (if isExclude then changeableCount else 0L)
-                                  BeforeDigest        = beforeDigest
-                                  AfterDigest         = afterDigest
-                                  ApprovedBy          = c.ApprovedBy
-                                  ApprovedAt          = c.ApprovedAt }
-                            Result.success (Map.add kindKey newKindRows rows, receipt)
+                            // Resolve the configured evidence columns FAIL-CLOSED (a
+                            // named-but-absent evidence column is a config error), and
+                            // digest their cells on the changed rows so the receipt
+                            // preserves the evidence the derivation was accepted on.
+                            let evidenceNamesR =
+                                let rec loop acc cols =
+                                    match cols with
+                                    | [] -> Result.success (List.rev acc)
+                                    | (ec: AttributeCoordinate) :: rest ->
+                                        match AttributeCoordinate.resolveFull catalog ec with
+                                        | Ok (_, n, _) -> loop (n :: acc) rest
+                                        | Error _ -> err "dataCorrection.evidence.unresolved" (String.concat "" [ "correction '"; c.Id; "': evidence column "; ec.Module; "/"; ec.Entity; "/"; ec.Attribute; " is not in the model" ])
+                                loop [] c.EvidenceColumns
+                            match evidenceNamesR with
+                            | Error e -> Error e
+                            | Ok evidenceNames ->
+                                let evidenceDigest =
+                                    if List.isEmpty evidenceNames then None
+                                    else Some (evidenceDigestOf evidenceNames changeable)
+                                let receipt =
+                                    { CorrectionId        = c.Id
+                                      SourceRemediationId = c.SourceRemediationId
+                                      Subject             = c.Subject
+                                      Derivation          = DataCorrectionDerivationSpec.toBare c.Derivation
+                                      GuardResults        = guardResults
+                                      RowsMatched         = matchedCount
+                                      RowsChanged         = (if isExclude then 0L else changeableCount)
+                                      RowsExcluded        = (if isExclude then changeableCount else 0L)
+                                      BeforeDigest        = beforeDigest
+                                      AfterDigest         = afterDigest
+                                      EvidenceColumns     = c.EvidenceColumns
+                                      EvidenceDigest      = evidenceDigest
+                                      ApprovedBy          = c.ApprovedBy
+                                      ApprovedAt          = c.ApprovedAt }
+                                Result.success (Map.add kindKey newKindRows rows, receipt)
 
     /// Apply approved corrections to a row map, fail-closed. Disabled corrections
     /// are skipped (no receipt). Returns the corrected rows + receipts, or the

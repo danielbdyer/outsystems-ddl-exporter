@@ -759,3 +759,31 @@ let ``Config.parse: a correction missing its id fails FAIL-CLOSED`` () =
 [<Fact>]
 let ``Config.parse: emission.dataCorrections as a non-array fails FAIL-CLOSED`` () =
     Assert.True(Config.parse (withCorrections "\"nope\"") |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.shape")
+
+[<Fact>]
+let ``Config.parse: a raw predicate under emission.dataCorrections is refused FAIL-CLOSED`` () =
+    let json = withCorrections """[ { "id": "c", "subject": { "module": "M", "entity": "E", "attribute": "A" }, "predicate": { "op": "raw", "sql": "1=1" }, "derivation": { "kind": "excludeRows" } } ]"""
+    Assert.True(Config.parse json |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.predicate.rawRefused")
+
+[<Fact>]
+let ``Config.parse: a configured reference probe parses its referencingAttribute`` () =
+    let json =
+        withCorrections """[
+            { "id": "drop", "subject": { "module": "M", "entity": "Rule", "attribute": "Id" },
+              "derivation": { "kind": "excludeRows" },
+              "guards": [ "noConfiguredReferenceMatches" ],
+              "configuredProbes": [ { "referencingAttribute": { "module": "M", "entity": "Audit", "attribute": "RuleId" } } ] } ]"""
+    let cfg = Config.parse json |> mustOk
+    let c = List.exactlyOne cfg.Emission.DataCorrections
+    let probe = List.exactlyOne c.ConfiguredProbes
+    Assert.Equal("Audit", probe.ReferencingAttribute.Entity)
+    Assert.Equal("RuleId", probe.ReferencingAttribute.Attribute)
+
+[<Fact>]
+let ``Config.parse: a configured probe missing referencingAttribute fails FAIL-CLOSED`` () =
+    let json =
+        withCorrections """[
+            { "id": "drop", "subject": { "module": "M", "entity": "Rule", "attribute": "Id" },
+              "derivation": { "kind": "excludeRows" },
+              "configuredProbes": [ { "entity": { "module": "M", "entity": "Audit" } } ] } ]"""
+    Assert.True(Config.parse json |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.probe.referencingAttribute")

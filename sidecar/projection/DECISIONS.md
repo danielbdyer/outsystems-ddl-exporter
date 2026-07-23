@@ -30435,3 +30435,37 @@ computed column at publish — it now excludes SQL type keywords.
 **Non-negotiable semantics (all tested).** Default config with no corrections is byte-identical.
 Corrections fail closed on: unknown subject, unresolved source/parent/sentinel, guard count
 mismatch, absent sentinel, retained inbound reference, missing `data-correction` signoff.
+
+## 2026-07-23 — Approved data corrections: review hardening (probe correlation · raw refused · receipt-bound proof · evidence non-inert · guard semantics)
+
+Follow-up to the approved-inline-data-corrections entry above, closing an implementation-gap
+review before "configure and go":
+
+- **Configured reference probes now correlate to the excluded PKs.** `ConfiguredReferenceProbe`
+  changed from `{ Entity; Predicate }` (which refused an exclusion whenever the referencing table
+  was merely non-empty) to `{ ReferencingAttribute : AttributeCoordinate }`. The
+  `NoConfiguredReferenceMatches` guard now refuses only when a RETAINED row references — via that
+  attribute — a subject PK about to be excluded (the same dynamic check the formal inbound-FK
+  guard performs, for operator-declared non-formal references).
+
+- **`raw` predicates are refused under `emission.dataCorrections`.** `Predicate.Raw` evaluates to
+  TRUE in the in-memory engine, so it would over-match and rewrite/exclude too much. The
+  correction-config parser refuses it (`…predicate.rawRefused`) until there is a typed evaluator or
+  a SQL-bound correction path; the typed arms (eq / in / isNull / isNotNull / and) stand.
+
+- **The row-fidelity proof consumes the RECORDED receipts.** A `--correction-receipts <path>`
+  option (a JSON array, or a run's `fidelity.rows.json`) loads the receipts a prior publish/load
+  episode recorded and threads them as `recordedReceipts`, so the proof says "target equals source
+  after replaying the EXACT recorded receipts" (reconciled count-for-count), not merely "after
+  replaying the configured corrections". Absent ⇒ the replay just greens the proof.
+
+- **`evidenceColumns` is non-inert.** The receipt now carries `EvidenceColumns` + an
+  `EvidenceDigest` (SHA-256 over the evidence cells on the changed rows), resolved FAIL-CLOSED (a
+  named-but-absent evidence column refuses). Persisted in `LifecycleStore` and the fidelity JSON.
+
+- **Guard semantics documented explicitly.** Row-selector guards (`TargetIsNull`,
+  `SourceIsNotNull`, `ParentExists`, `ParentSourceIsNotNull`, `SourceReferencesExistingTarget`)
+  NARROW the change set (partial coverage — "only where safe"), NOT fail-closed on a per-row miss;
+  assertion guards fail-closed; and `ExpectedCoverage` is the promoter that turns the selector
+  narrowing into an all-or-nothing totality requirement. Configure `ExpectedCoverage` on any
+  correction that must be all-or-nothing.

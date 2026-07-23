@@ -273,6 +273,7 @@ let private sampleReceipts : DataCorrectionReceipt list =
               DataCorrectionGuardResult.passed DataCorrectionGuard.SourceIsNotNull None ]
         RowsMatched = 4120L; RowsChanged = 4118L; RowsExcluded = 0L
         BeforeDigest = Some "abc123"; AfterDigest = Some "def456"
+        EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ]; EvidenceDigest = Some "ev123"
         ApprovedBy = Some "operator"; ApprovedAt = Some "2026-07-23" }
       { CorrectionId = "drop-malformed"; SourceRemediationId = None
         Subject = AttributeCoordinate.create "Ops" "Rule" "Id"
@@ -280,6 +281,7 @@ let private sampleReceipts : DataCorrectionReceipt list =
         GuardResults = [ DataCorrectionGuardResult.passed DataCorrectionGuard.NoFormalInboundReferences None ]
         RowsMatched = 12L; RowsChanged = 0L; RowsExcluded = 12L
         BeforeDigest = Some "ghi789"; AfterDigest = None
+        EvidenceColumns = []; EvidenceDigest = None
         ApprovedBy = None; ApprovedAt = None } ]
 
 let private receiptEpisode : Episode =
@@ -320,3 +322,27 @@ let ``a pre-feature store (no dataCorrectionReceipts field) loads as empty`` () 
         let loaded = LifecycleStore.load path |> mustStoreOk
         for e in EpisodicLifecycle.episodes loaded do
             Assert.Empty e.DataCorrectionReceipts)
+
+// -- item 3: --correction-receipts loads recorded receipts for reconcile ------
+
+[<Fact>]
+let ``loadCorrectionReceipts reads a receipts file; reconcile matches equal counts and reds on drift`` () =
+    withTempFile (fun path ->
+        System.IO.File.WriteAllText(path, """{ "dataCorrectionReceipts": [ { "correctionId": "c1", "rowsChanged": 105, "rowsExcluded": 0 } ] }""")
+        match FidelityCompareRun.loadCorrectionReceipts path with
+        | Error es -> Assert.True(false, sprintf "load failed: %A" es)
+        | Ok recorded ->
+            Assert.Equal("c1", (List.exactlyOne recorded).CorrectionId)
+            Assert.Equal(105L, (List.exactlyOne recorded).RowsChanged)
+            let replayedMatch = [ { List.head recorded with RowsChanged = 105L } ]
+            Assert.True((match ApprovedDataCorrections.reconcile recorded replayedMatch with Ok () -> true | _ -> false))
+            let replayedDrift = [ { List.head recorded with RowsChanged = 104L } ]
+            Assert.True((match ApprovedDataCorrections.reconcile recorded replayedDrift with Error _ -> true | _ -> false)))
+
+[<Fact>]
+let ``loadCorrectionReceipts refuses a malformed receipts file by name`` () =
+    withTempFile (fun path ->
+        System.IO.File.WriteAllText(path, """{ "not": "receipts" }""")
+        match FidelityCompareRun.loadCorrectionReceipts path with
+        | Ok _ -> Assert.True(false, "expected a shape refusal")
+        | Error es -> Assert.Equal("fidelity.correctionReceipts.shape", (List.head es).Code))

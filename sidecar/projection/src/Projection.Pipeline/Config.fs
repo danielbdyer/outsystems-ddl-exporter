@@ -1322,9 +1322,13 @@ module Config =
                 [ for e in a.EnumerateArray() -> dcPredicate e ] |> Result.aggregate |> Result.map Predicate.And
             | _ -> Result.failureOf (configError "emission.dataCorrections.predicate.and" "'and' predicate needs a 'terms' array.")
         | Some "raw" ->
-            match dcStr el "sql" with
-            | Some s -> Result.success (Predicate.Raw s)
-            | None -> Result.failureOf (configError "emission.dataCorrections.predicate.raw" "'raw' predicate needs a 'sql' string.")
+            // A `raw` predicate evaluates to TRUE in the in-memory engine (the
+            // typed evaluator cannot interpret arbitrary SQL), so under
+            // `emission.dataCorrections` it would OVER-match — rewriting or
+            // excluding rows the operator never scoped. Refused fail-closed until
+            // there is a typed evaluator or a SQL-bound correction path; use the
+            // typed arms (eq / in / isNull / isNotNull / and) instead.
+            Result.failureOf (configError "emission.dataCorrections.predicate.rawRefused" "a 'raw' predicate is not allowed under emission.dataCorrections — it evaluates to true in-memory and would over-match; use the typed arms (eq / in / isNull / isNotNull / and).")
         | Some other -> Result.failureOf (configError "emission.dataCorrections.predicate.op" (sprintf "unknown predicate op '%s'." other))
         | None -> Result.failureOf (configError "emission.dataCorrections.predicate.op" "a predicate needs an 'op'.")
 
@@ -1364,15 +1368,11 @@ module Config =
 
     let private dcProbe (e: JsonElement) : Result<ConfiguredReferenceProbe> =
         result {
-            let! ent =
-                match e.TryGetProperty "entity" with
-                | true, en when en.ValueKind = JsonValueKind.Object -> dcEntity en "configuredProbes[].entity"
-                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.entity" "a configured probe needs an 'entity'.")
-            let! pred =
-                match e.TryGetProperty "predicate" with
-                | true, p when p.ValueKind = JsonValueKind.Object -> dcPredicate p
-                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.predicate" "a configured probe needs a 'predicate'.")
-            return ({ Entity = ent; Predicate = pred } : ConfiguredReferenceProbe) }
+            let! ref =
+                match e.TryGetProperty "referencingAttribute" with
+                | true, r when r.ValueKind = JsonValueKind.Object -> dcCoordinate r "configuredProbes[].referencingAttribute"
+                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.referencingAttribute" "a configured probe needs a 'referencingAttribute' { module, entity, attribute } that references the subject's key.")
+            return ({ ReferencingAttribute = ref } : ConfiguredReferenceProbe) }
 
     let private dcProbes (el: JsonElement) : Result<ConfiguredReferenceProbe list> =
         match el.TryGetProperty "configuredProbes" with

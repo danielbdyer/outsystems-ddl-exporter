@@ -270,6 +270,8 @@ let private mkReceipt (id: string) (changed: int64) (excluded: int64) : DataCorr
       RowsExcluded = excluded
       BeforeDigest = None
       AfterDigest = None
+      EvidenceColumns = []
+      EvidenceDigest = None
       ApprovedBy = None
       ApprovedAt = None }
 
@@ -310,3 +312,46 @@ let ``a value correction records before/after digests for the changed rows`` () 
     Assert.True(Option.isSome r.BeforeDigest)
     Assert.True(Option.isSome r.AfterDigest)
     Assert.NotEqual<string option>(r.BeforeDigest, r.AfterDigest)
+
+// -- item 1: configured reference probes correlate to the excluded PKs --------
+
+[<Fact>]
+let ``configured reference probe refuses exclusion only when a retained row references an excluded PK`` () =
+    let excludeC1 =
+        { baseCorrection with
+            Subject = AttributeCoordinate.create "Sales" "Customer" "Id"
+            Predicate = Some (Predicate.Equals (nm "Id", "C1"))
+            Derivation = DataCorrectionDerivationSpec.ExcludeRows
+            Guards = [ DataCorrectionGuard.NoConfiguredReferenceMatches ]
+            ConfiguredProbes = [ { ReferencingAttribute = AttributeCoordinate.create "Sales" "Account" "CustomerId" } ] }
+    // a2.CustomerId = C1 references the excluded row → refuse by name
+    Assert.Equal("dataCorrection.exclude.configuredReferenceMatch", applyErr [ excludeC1 ])
+    // C2 is referenced by no retained row → excluding it passes (the probe does
+    // not fire merely because the referencing table is non-empty)
+    let excludeC2 = { excludeC1 with Predicate = Some (Predicate.Equals (nm "Id", "C2")) }
+    Assert.Equal(1L, (List.exactlyOne (applyOk [ excludeC2 ]).Receipts).RowsExcluded)
+
+// -- item 4: evidence columns are non-inert (recorded + digested, fail-closed) --
+
+[<Fact>]
+let ``evidence columns are recorded on the receipt with a digest`` () =
+    let c =
+        { baseCorrection with
+            Subject = AttributeCoordinate.create "Sales" "Account" "OwnerName"
+            Predicate = Some (Predicate.IsNull (nm "OwnerName"))
+            Derivation = DataCorrectionDerivationSpec.ConstantLiteral "X"
+            Guards = [ DataCorrectionGuard.TargetIsNull ]
+            EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ] }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    Assert.Equal<AttributeCoordinate list>([ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ], r.EvidenceColumns)
+    Assert.True(Option.isSome r.EvidenceDigest)
+
+[<Fact>]
+let ``an unresolved evidence column refuses fail-closed`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.ConstantLiteral "X"
+            Guards = [ DataCorrectionGuard.TargetIsNull ]
+            EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "NoSuchEvidence" ] }
+    Assert.Equal("dataCorrection.evidence.unresolved", applyErr [ c ])

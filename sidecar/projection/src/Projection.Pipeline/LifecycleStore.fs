@@ -155,6 +155,16 @@ module LifecycleStore =
             jw.WriteNumber("rowsExcluded", r.RowsExcluded)
             match r.BeforeDigest with Some d -> jw.WriteString("beforeDigest", d) | None -> jw.WriteNull("beforeDigest")
             match r.AfterDigest with Some d -> jw.WriteString("afterDigest", d) | None -> jw.WriteNull("afterDigest")
+            jw.WritePropertyName "evidenceColumns"
+            jw.WriteStartArray()
+            for ec in r.EvidenceColumns do
+                jw.WriteStartObject()
+                jw.WriteString("module", ec.Module)
+                jw.WriteString("entity", ec.Entity)
+                jw.WriteString("attribute", ec.Attribute)
+                jw.WriteEndObject()
+            jw.WriteEndArray()
+            match r.EvidenceDigest with Some d -> jw.WriteString("evidenceDigest", d) | None -> jw.WriteNull("evidenceDigest")
             match r.ApprovedBy with Some s -> jw.WriteString("approvedBy", s) | None -> jw.WriteNull("approvedBy")
             match r.ApprovedAt with Some s -> jw.WriteString("approvedAt", s) | None -> jw.WriteNull("approvedAt")
             jw.WriteEndObject()
@@ -411,6 +421,15 @@ module LifecycleStore =
                         | Ok grs ->
                             match fieldInt64 el "rowsMatched", fieldInt64 el "rowsChanged", fieldInt64 el "rowsExcluded" with
                             | Ok matched, Ok changed, Ok excluded ->
+                                // Evidence columns — missing (pre-feature store) ⇒ [].
+                                let evidence =
+                                    match el.TryGetProperty "evidenceColumns" with
+                                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                                        [ for ecEl in v.EnumerateArray() do
+                                            match optStr ecEl "module", optStr ecEl "entity", optStr ecEl "attribute" with
+                                            | Some em, Some ee, Some ea -> yield AttributeCoordinate.create em ee ea
+                                            | _ -> () ]
+                                    | _ -> []
                                 Ok { CorrectionId = correctionId
                                      SourceRemediationId = optStr el "sourceRemediationId"
                                      Subject = AttributeCoordinate.create m e a
@@ -421,6 +440,8 @@ module LifecycleStore =
                                      RowsExcluded = excluded
                                      BeforeDigest = optStr el "beforeDigest"
                                      AfterDigest = optStr el "afterDigest"
+                                     EvidenceColumns = evidence
+                                     EvidenceDigest = optStr el "evidenceDigest"
                                      ApprovedBy = optStr el "approvedBy"
                                      ApprovedAt = optStr el "approvedAt" }
                             | Error msg, _, _ -> Error msg
