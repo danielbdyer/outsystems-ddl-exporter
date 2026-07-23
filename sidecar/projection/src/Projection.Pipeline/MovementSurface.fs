@@ -2266,7 +2266,10 @@ module Command =
                                          Module      = valueOf "--module"
                                          SampleCap   = cap
                                          AsJson      = (valueOf "--format" = Some "json")
-                                         Interventions = ledger }))
+                                         Interventions = ledger
+                                         // The raw two-connection rows compare is
+                                         // not tied to a publish config's emission.
+                                         Corrections = [] }))
                      | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data --rows: requires --before <environment> --after <environment> --model <ref>.")
             | "data" :: _ ->
@@ -2609,7 +2612,10 @@ module Command =
                                           Stage      = stg
                                           Capture    = valueOf "--capture"
                                           IdentityPolicy = identityPolicy
-                                          Load       = ld })
+                                          Load       = ld
+                                          // The flow's approved corrections replay
+                                          // onto the source before comparing.
+                                          Corrections = cfg.Shaping.Emission.DataCorrections })
                                | Error es, _, _, _ -> PlanAction.Refused (6, List.head es)
                                | _, Error es, _, _ -> PlanAction.Refused (2, List.head es)
                                | _, _, Error es, _ -> PlanAction.Refused (2, List.head es)

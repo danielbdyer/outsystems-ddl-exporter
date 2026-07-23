@@ -81,7 +81,7 @@ module FidelityRowsDockerTests =
                             task {
                                 // -- identical data in the two renditions → byte-identity across the gap
                                 let! firstR =
-                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None
+                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None [] []
                                 let first = Result.value firstR
                                 Assert.True(RowFidelityReport.agrees first, "identical renditions read as differing")
                                 let verdict = first.Kinds |> List.exactlyOne
@@ -99,7 +99,7 @@ module FidelityRowsDockerTests =
                                         (ColumnRealization.columnNameText (logicalKind.Attributes |> List.find (fun a -> a.IsPrimaryKey)).Column)
                                 let! _ = flip.ExecuteNonQueryAsync()
                                 let! secondR =
-                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None
+                                    FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None [] []
                                 let second = Result.value secondR
                                 Assert.False(RowFidelityReport.agrees second)
                                 let flipped = second.Kinds |> List.exactlyOne
@@ -141,7 +141,7 @@ module FidelityRowsDockerTests =
                                 do! Deploy.executeBatch tgt (seedFor logicalKind rows)
                                 // CAPTURE — the SOURCE's per-kind (logical-aligned) digests, to a portable file.
                                 let! reportR =
-                                    FidelityCompareRun.runWith src tgt "src" "tgt" "the authored model" model None None 20 None
+                                    FidelityCompareRun.runWith src tgt "src" "tgt" "the authored model" model None None 20 None [] []
                                 let report = Result.value reportR
                                 Assert.True(RowFidelityReport.agrees report, "capture precondition: the two renditions must agree")
                                 let manifest =
@@ -173,6 +173,78 @@ module FidelityRowsDockerTests =
                                     finally
                                         try System.IO.File.Delete manifestPath with _ -> ()
                                         try System.IO.File.Delete "fidelity.rows.json" with _ -> ()
+                            }))
+                Assert.Equal(0, result)
+            })
+
+    // -- Approved-data-correction SOURCE replay (the fidelity addendum) --------
+    // A same-row backfill: the source carries the malformed pre-correction state
+    // (Name NULL) and the target the corrected state (Name backfilled from Email,
+    // as publish would load it). Replaying the correction onto the source proves
+    // byte-identity; the raw source diverges; a tampered receipt count reds by name.
+
+    let private seedNullable (kind: Kind) (rows: (int * string * string option) list) : string =
+        let columnOf (a: Attribute) : string = ColumnRealization.columnNameText a.Column
+        let columnDdl (a: Attribute) : string =
+            let sqlType = match a.Type with | Integer -> "INT" | _ -> "NVARCHAR(100)"
+            let nullability = if a.IsPrimaryKey then "NOT NULL PRIMARY KEY" else "NULL"
+            sprintf "[%s] %s %s" (columnOf a) sqlType nullability
+        let table = sprintf "[%s].[%s]" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
+        let create = sprintf "CREATE TABLE %s (%s);" table (kind.Attributes |> List.map columnDdl |> String.concat ", ")
+        let columnList = kind.Attributes |> List.map (fun a -> sprintf "[%s]" (columnOf a)) |> String.concat ","
+        let cell (v: string option) = match v with Some s -> sprintf "N'%s'" s | None -> "NULL"
+        let values =
+            rows
+            |> List.map (fun (id, email, name) -> sprintf "(%d, N'%s', %s)" id email (cell name))
+            |> String.concat ", "
+        sprintf "%s INSERT INTO %s (%s) VALUES %s;" create table columnList values
+
+    let private backfillCorrection : ApprovedDataCorrection =
+        { Id = "backfill-name"
+          SourceRemediationId = Some "D1-name"
+          Enabled = true
+          Subject = AttributeCoordinate.create "Fid" "Thing" "Name"
+          Predicate = Some (Predicate.IsNull (mkName "Name"))
+          Derivation = DataCorrectionDerivationSpec.SameRowAttribute (AttributeCoordinate.create "Fid" "Thing" "Email")
+          Guards = [ DataCorrectionGuard.TargetIsNull; DataCorrectionGuard.SourceIsNotNull ]
+          EvidenceColumns = []
+          ExpectedCount = None
+          ReferencedEntity = None
+          ConfiguredProbes = []
+          ApprovedBy = Some "operator"
+          ApprovedAt = Some "2026-07-23" }
+
+    [<Fact>]
+    let ``fidelity replay: a corrected target proves byte-identical when the correction replays onto the source; raw source reds; a tampered receipt count reds by name`` () =
+        let label = "FidRowsCorr"
+        if not (skipIfNoDocker label) then () else
+        TaskSync.run (fun () ->
+            task {
+                let physicalKind = CatalogRendition.physical model |> Catalog.allKinds |> List.head
+                let logicalKind = CatalogRendition.logical model |> Catalog.allKinds |> List.head
+                let srcSeed = seedNullable physicalKind [ 1, "a@x.example", None; 2, "b@x.example", None ]
+                let tgtSeed = seedNullable logicalKind [ 1, "a@x.example", Some "a@x.example"; 2, "b@x.example", Some "b@x.example" ]
+                let! result =
+                    Deploy.withBootstrappedDatabase "FidCorrSrc" srcSeed (fun source ->
+                        Deploy.withBootstrappedDatabase "FidCorrTgt" tgtSeed (fun target ->
+                            task {
+                                // Raw source (Name NULL) diverges from the corrected target.
+                                let! rawR = FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None [] []
+                                Assert.False(RowFidelityReport.agrees (Result.value rawR), "raw source should diverge from the corrected target")
+                                // The correction replays onto the source → byte-identical, and the ledger names the receipt.
+                                let! greenR = FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None [ backfillCorrection ] []
+                                let green = Result.value greenR
+                                Assert.True(RowFidelityReport.agrees green, "the replayed correction should make the proof byte-identical")
+                                let receipt = green.DataCorrectionReceipts |> List.exactlyOne
+                                Assert.Equal("backfill-name", receipt.CorrectionId)
+                                Assert.Equal(2L, receipt.RowsChanged)
+                                // A tampered recorded receipt count reds the proof BY NAME.
+                                let tampered = { receipt with RowsChanged = 999L }
+                                let! redR = FidelityCompareRun.runWith source target "src" "tgt" "the authored model" model None None 20 None [ backfillCorrection ] [ tampered ]
+                                match redR with
+                                | Ok _ -> Assert.True(false, "a tampered receipt count should fail the proof")
+                                | Error es -> Assert.Equal("dataCorrection.fidelity.receiptMismatch", (List.head es).Code)
+                                return 0
                             }))
                 Assert.Equal(0, result)
             })

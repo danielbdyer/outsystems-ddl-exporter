@@ -838,7 +838,11 @@ and CheckDataRowsArgs =
       /// B4b) — a transfer journal file, or the `--journal` directory that
       /// holds exactly one; `@runId` resolves through the run store's
       /// recorded `JournalRef` (wave B4a). `None` claims strict byte-identity.
-      Interventions : string option }
+      Interventions : string option
+      /// The approved data corrections (`emission.dataCorrections`) replayed onto
+      /// the SOURCE before comparing — a corrected target proves byte-identical
+      /// against the replayed source. Empty ⇒ raw byte-identity.
+      Corrections : ApprovedDataCorrection list }
 
 /// How `check fidelity <flow>` stands the target's shape up on the container
 /// stand-in before the load + proof (P1-S1): apply the emitted DDL batch (the
@@ -916,7 +920,11 @@ and CheckFidelityFlowArgs =
       /// SHIPS reproduces the source byte-identical. A `Lanes` load writes the
       /// source keys directly (the lanes bracket IDENTITY_INSERT) and needs no
       /// transfer journal, so the compare aligns by identity.
-      Load       : LoadMode }
+      Load       : LoadMode
+      /// The approved data corrections (`emission.dataCorrections`) replayed onto
+      /// the SOURCE before comparing — a corrected target proves byte-identical
+      /// against the replayed source. Empty ⇒ raw byte-identity.
+      Corrections : ApprovedDataCorrection list }
 
 /// The OFFLINE reconcile's operands (`check fidelity --against <manifest>
 /// --target <ref>`, P2-S3): the portable manifest path, and the target the

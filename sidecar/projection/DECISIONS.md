@@ -30341,3 +30341,97 @@ before turning `AllowNoCheckCreation` on for a real estate; that blocker is trac
 (`GoldenEmissionTests.ejectFkIntervention`), so this change is byte-invisible to the goldens; the
 source-backed carve-out (`DatabaseConstraintPresent`), the orphan-observed `ScriptWithNoCheck`
 path, and the relaxation-only/override directions are all untouched.
+
+## 2026-07-23 — Approved inline data corrections: publish APPLIES operator-approved row corrections in flight (estate proposes · emission approves · publish applies)
+
+**The posture change (amends the estate chapter's 2026-07-15 non-goal).** The estate chapter
+opened (`CHAPTER_ESTATE_OPEN.md` §3) with "No gated remediation executor: the mode emits
+artifacts; execution stays with revert / transfer / migrate under `--go` +
+`PROJECTION_ALLOW_EXECUTE`." That non-goal governed the ESTATE verb. This decision adds a
+distinct, adjacent capability on the PUBLISH verb: `publish` may apply operator-approved inline
+data corrections to acquired row data *in flight*, before the data composers / load plan see it.
+This is NOT a source-database mutation and NOT a gated executor — the source is never written; the
+correction engine transforms the `Map<SsKey, StaticRow list>` the publish already holds, so the
+emitted bundle, the live seed load, the transfer load, the profile-derived evidence, and the
+row-fidelity proof all see the SAME corrected data. The invariant:
+`emitted_or_loaded_rows = apply(receipts, acquired_source_rows)`.
+
+**The three-surface workflow.** *estate proves and proposes · emission approves · publish applies.*
+The proof/proposal side (`readiness.estate.remediations`, and `check estate` emitting proposed
+`emission.dataCorrections` blocks) is DEFERRED — the `policy.tightening` propose→consume loop
+already exists end-to-end (`EstateOverlayEmitter` emits `$.policy.tightening.interventions[+]`;
+`buildPolicyFromConfig` consumes it), so business requirement 3 (relationship posture exception)
+is served today by the existing tightening/overlay surface, NOT by data corrections. This slice
+builds the approve+apply half: `publish` consumes a hand-authored `emission.dataCorrections`.
+
+**Config split.** `emission.dataCorrections : ApprovedDataCorrection list` (default `[]`,
+byte-identical) parsed FAIL-CLOSED in `Config.parseEmission` — an unknown derivation kind / guard
+token / predicate op is a named config error, never a silent drop. Not part of `renderConfig`'s
+A44 surface (emission is not rendered), so parse-only.
+
+**The signoff gate.** A non-empty `emission.dataCorrections` REQUIRES the new
+`WriteSignoff.WriteMode.DataCorrection` (label `data-correction`) in `emission.signoff`;
+`buildPolicyFromConfig` refuses `emission.dataCorrection.ungreenlit` otherwise — the emission-plane
+counterpart of the `delete-scope` gate. Inline data mutation stays auditable.
+
+**Type reuse over new types (operator decision 2026-07-23).** The design named new
+`LogicalAttributeRef` and `RowPredicate` types; both already existed in near-identical form.
+`Subject` / source / parent / evidence refs REUSE `AttributeCoordinate`
+(`SyntheticCorrection.fs`, with its `resolveFull` named-refusal resolver). The row predicate
+REUSES `SliceSpec.Predicate`, EXTENDED with tri-state `IsNull` / `IsNotNull` arms (over
+`StaticRow.value`, preserving `NULL ≠ ''` — survival rule #14 / finding D1×D5) — the existing
+`Equals`/`In` fold NULL and `''` via `valueOrEmpty` and cannot express the NULL tests every
+correction predicate needs. The extend rippled cleanly into the three `Predicate` consumers
+(`SliceSpec.eval`, `SliceCodec`, `ClosureOracle`).
+
+**The pure engine (Core placement).** `ApprovedDataCorrections.fs` (Core, after `SliceSpec.fs`) is
+pure: `apply : Catalog -> ApprovedDataCorrection list -> Map<SsKey,StaticRow list> ->
+Result<CorrectionOutcome>`. Placed in Core (not Pipeline as the design suggested) because the
+engine is pure, `Episode` must carry `DataCorrectionReceipt` (so the durable value vocabulary —
+derivation / guard / guard-result / receipt — lives in `DataCorrectionReceipt.fs`, compiled
+BEFORE `Episode.fs`), and this avoids the "mirror the receipt in Core" duplication. Four
+derivations (same-row / parent / constant / exclude); row-selector guards narrow the change set,
+whole-set assertion guards fail-close. Every refusal is named. Registered as first-class pillar-9
+metadata (`Domain.Data`, `StageBinding.Pipeline`, one `OperatorIntent Insertion` + two `DataIntent`
+sites) in `RegisteredAllTransforms.all` — not hidden inside the emitters.
+
+**Pipelined path: the NAMED two-phase fallback.** The pipelined publish schedule drains and drops
+rows per-kind and never materializes a cross-kind map, so the correction engine (parent joins,
+reference key sets) needs the whole map in hand. `pipelinedPublishGate` therefore falls back to the
+two-phase schedule whenever `emission.dataCorrections` is non-empty — the emitted bundle is
+identical either way (the pipelined toggle is a schedule choice), and the fallback is explicit in
+the gate, not silent. Corrected static-lane populations are re-grafted onto the catalog; the
+bootstrap map keeps only its original keys, so a corrected static kind is not emitted by both lanes
+(T11 keyset agreement preserved).
+
+**Receipts as a first-class intervention ledger.** `apply` returns count-bearing
+`DataCorrectionReceipt`s (rows matched / changed / excluded, guard results, before/after SHA-256
+digest, approval metadata). They thread onto `Episode.DataCorrectionReceipts` (default `[]`,
+preserved by `durableProjection`, serialized forward-compatibly in `LifecycleStore` exactly like
+`tolerances` / `appliedTransforms`), so a load record explains precisely why target rows differ
+from the raw source — no split-brain proof. Receipts are NOT tolerances: a `ToleratedDivergence`
+is a passive, symmetric representation-equivalence; a correction is an active, asymmetric row
+change with provenance.
+
+**Row-fidelity extension (this slice's bounded half + the deferred streaming half).** The proof
+law becomes `target_rows == replay(receipts, transfer_journal, source_rows)`, not
+`target_rows == raw_source_rows`. `RowFidelityReport` carries the correction-receipt ledger and
+surfaces it in the JSON artifact + text render, so a green proof NAMES its approved corrections as
+noted exceptions rather than claiming raw byte-identity. The load-bearing count-reconciliation law
+`ApprovedDataCorrections.reconcile` (a receipt claiming N changed rows that replays to a different
+N fails the proof BY NAME) is pure and unit-tested. The comparator's SOURCE stream replays the
+corrections for corrected kinds — engine-reuse: `FidelityCompareRun` buffers the subject kinds +
+their declared dependency kinds (referenced entity / parent) from the source, runs the SAME publish
+engine (`ApprovedDataCorrections.apply`), and substitutes the corrected rows, so replayed change
+counts match the recorded receipts exactly (no per-quantum reimplementation that could diverge on
+whole-set guards). Corrections thread parser → `CheckFidelityFlowArgs.Corrections` → the fidelity
+face → `run` → `runWith`. Docker-validated (`FidelityRowsDockerTests`): the raw source reds against
+a corrected target, the replayed correction greens it, a tampered recorded receipt count reds the
+proof by name. Also fixed a shared-predicate false positive the same subsystem uncovered:
+`Kind.unresolvedComputedIdentifiers` counted SQL Server's bracketed CAST/CONVERT type name
+(`CONVERT([nvarchar](20), [Price])`) as an unresolved column, falsely refusing a legitimate
+computed column at publish — it now excludes SQL type keywords.
+
+**Non-negotiable semantics (all tested).** Default config with no corrections is byte-identical.
+Corrections fail closed on: unknown subject, unresolved source/parent/sentinel, guard count
+mismatch, absent sentinel, retained inbound reference, missing `data-correction` signoff.

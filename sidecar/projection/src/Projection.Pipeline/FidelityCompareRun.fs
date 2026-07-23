@@ -373,11 +373,131 @@ module FidelityCompareRun =
     // One kind's comparison — the alignment package applied.
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // Approved-data-correction SOURCE replay (T17 / the intervention ledger's
+    // count-bearing half). A correction rewrote/excluded row VALUES at publish;
+    // the fidelity proof must replay those onto the SOURCE before comparing, or a
+    // corrected target reads as a diverged source. The replay REUSES the publish
+    // engine (`ApprovedDataCorrections.apply`) over buffered source rows, so the
+    // replayed change counts match the recorded receipts exactly — no per-quantum
+    // reimplementation that could diverge on whole-set guards.
+    // ------------------------------------------------------------------
+
+    let private ccEq (a: string) (b: string) = System.String.Equals(a, b, System.StringComparison.OrdinalIgnoreCase)
+
+    /// A pull stream over a materialized quantum list — the substitute source for
+    /// a kind whose rows the correction replay rewrote.
+    let private streamOfList (items: RowQuantum list) : AsyncStream<RowQuantum> =
+        let arr = List.toArray items
+        let mutable i = 0
+        fun () ->
+            task {
+                if i < arr.Length then
+                    let q = arr.[i]
+                    i <- i + 1
+                    return Some q
+                else return None
+            }
+
+    /// Drain a kind's SOURCE rows into logical-name-keyed `StaticRow`s (the grain
+    /// the correction engine consumes). Identity is synthesized per row position —
+    /// the engine keys exclusions on it and the proof re-derives it deterministically.
+    let private bufferKindRows (source: SqlConnection) (physicalKind: Kind) (basis: RowBasis) : Task<StaticRow list> =
+        task {
+            let pull = Ingestion.streamKind source physicalKind
+            let acc = System.Collections.Generic.List<StaticRow>()
+            let mutable go = true
+            let mutable idx = 0
+            while go do
+                match! pull () with
+                | Some q ->
+                    acc.Add { Identifier = StaticRow.readsideIdentity "fidelity" (Name.value physicalKind.Name) idx
+                              Values = RowQuantum.toValues basis q }
+                    idx <- idx + 1
+                | None -> go <- false
+            return List.ofSeq acc
+        }
+
+    /// The logical kinds one correction reads: its subject kind, its referenced
+    /// entity (reference/sentinel guards), and its parent kind (parentAttribute) —
+    /// buffered so the engine's guards see real key sets in the fidelity context.
+    let private neededKindKeys (model: Catalog) (c: ApprovedDataCorrection) : Set<SsKey> =
+        let subjectKey =
+            match AttributeCoordinate.resolveFull model c.Subject with
+            | Ok (k, _, _) -> Set.singleton k
+            | Error _ -> Set.empty
+        let referencedKey =
+            match c.ReferencedEntity with
+            | Some ent ->
+                Catalog.allModulesKinds model
+                |> List.tryPick (fun (m, k) ->
+                    if (ent.Module = "" || ccEq (Name.value m.Name) ent.Module) && ccEq (Name.value k.Name) ent.Entity
+                    then Some k.SsKey else None)
+                |> Option.map Set.singleton |> Option.defaultValue Set.empty
+            | None -> Set.empty
+        let parentKey =
+            match c.Derivation with
+            | DataCorrectionDerivationSpec.ParentAttribute (rel, _) ->
+                match AttributeCoordinate.resolveFull model c.Subject with
+                | Ok (k, _, _) ->
+                    match Catalog.tryFindKind k model with
+                    | Some kind ->
+                        kind.References
+                        |> List.tryFind (fun r -> ccEq (Name.value r.Name) rel)
+                        |> Option.map (fun r -> Set.singleton r.TargetKind)
+                        |> Option.defaultValue Set.empty
+                    | None -> Set.empty
+                | Error _ -> Set.empty
+            | _ -> Set.empty
+        Set.unionMany [ subjectKey; referencedKey; parentKey ]
+
+    let private correctedKindKeys (model: Catalog) (enabled: ApprovedDataCorrection list) : Set<SsKey> =
+        enabled
+        |> List.choose (fun c -> match AttributeCoordinate.resolveFull model c.Subject with Ok (k, _, _) -> Some k | Error _ -> None)
+        |> Set.ofList
+
+    /// Replay approved corrections onto the source: buffer each needed kind's
+    /// source rows, run the publish engine, and return the corrected rows FOR THE
+    /// SUBJECT KINDS (the ones whose source stream is substituted in the compare)
+    /// plus the count-bearing receipts. Empty corrections ⇒ identity. A named
+    /// engine refusal (e.g. a parent-derived correction whose parent evidence is
+    /// unavailable) fails the proof BY NAME rather than silently comparing raw.
+    let private replayCorrections
+        (source: SqlConnection)
+        (physical: Catalog)
+        (model: Catalog)
+        (renamesByKind: Map<SsKey, Map<Name, Name>>)
+        (corrections: ApprovedDataCorrection list)
+        : Task<Result<Map<SsKey, StaticRow list> * DataCorrectionReceipt list>> =
+        task {
+            let enabled = corrections |> List.filter (fun c -> c.Enabled)
+            if List.isEmpty enabled then return Result.success (Map.empty, [])
+            else
+                let needed = enabled |> List.map (neededKindKeys model) |> Set.unionMany
+                let acc = System.Collections.Generic.Dictionary<SsKey, StaticRow list>()
+                for logicalKey in Set.toList needed do
+                    match Catalog.tryFindKind logicalKey physical, Catalog.tryFindKind logicalKey model with
+                    | Some physKind, Some _ ->
+                        let renameMap = RenameProjection.forKind logicalKey renamesByKind
+                        let basis = RowBasis.rename renameMap (Kind.rowBasis physKind)
+                        let! rows = bufferKindRows source physKind basis
+                        acc.[logicalKey] <- rows
+                    | _ -> ()
+                let rowMap = acc |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                match ApprovedDataCorrections.apply model enabled rowMap with
+                | Error e -> return Error e
+                | Ok outcome ->
+                    let corrected = correctedKindKeys model enabled
+                    let correctedByKind = outcome.CorrectedRows |> Map.filter (fun k _ -> Set.contains k corrected)
+                    return Result.success (correctedByKind, outcome.Receipts)
+        }
+
     let private compareKind
         (source: SqlConnection)
         (target: SqlConnection)
         (renamesByKind: Map<SsKey, Map<Name, Name>>)
         (replayMaps: Map<string, Map<string, string>>)
+        (correctedByKind: Map<SsKey, StaticRow list>)
         (sampleCap: int)
         (physicalKind: Kind)
         (logicalKind: Kind)
@@ -426,7 +546,15 @@ module FidelityCompareRun =
                     | _ -> None)
             let transformSource (q: RowQuantum) : RowQuantum =
                 canonicalize (RowFidelity.replayQuantum keyRewrite fkRewrites q)
-            let sourceStream = mapStream transformSource (Ingestion.streamKind source physicalKind)
+            // Approved-correction replay: when this kind's rows were corrected,
+            // the source stream is the ENGINE-corrected rows (rebased onto the
+            // source basis), so `target == replay(corrections, source)`. Otherwise
+            // the live source streams as before.
+            let sourcePull =
+                match Map.tryFind logicalKind.SsKey correctedByKind with
+                | Some correctedRows -> streamOfList (correctedRows |> List.map (RowQuantum.ofStaticRow sourceBasis))
+                | None -> Ingestion.streamKind source physicalKind
+            let sourceStream = mapStream transformSource sourcePull
             let targetStream = mapStream canonicalize (Ingestion.streamKind target logicalKind)
             match RowFidelity.keyPlanOf logicalKind with
             | RowFidelity.KeyPlan.Int64Key pkName ->
@@ -585,6 +713,7 @@ module FidelityCompareRun =
         (target: SqlConnection)
         (renamesByKind: Map<SsKey, Map<Name, Name>>)
         (replayMaps: Map<string, Map<string, string>>)
+        (correctedByKind: Map<SsKey, StaticRow list>)
         (sampleCap: int)
         (pairs: (Kind * Kind) list)
         (acc: KindRowVerdict list)
@@ -593,8 +722,8 @@ module FidelityCompareRun =
             match pairs with
             | [] -> return List.rev acc
             | (physicalKind, logicalKind) :: rest ->
-                let! verdict = compareKind source target renamesByKind replayMaps sampleCap physicalKind logicalKind
-                return! compareKinds source target renamesByKind replayMaps sampleCap rest (verdict :: acc)
+                let! verdict = compareKind source target renamesByKind replayMaps correctedByKind sampleCap physicalKind logicalKind
+                return! compareKinds source target renamesByKind replayMaps correctedByKind sampleCap rest (verdict :: acc)
         }
 
     // ------------------------------------------------------------------
@@ -615,6 +744,8 @@ module FidelityCompareRun =
         (moduleFilter: string option)
         (sampleCap: int)
         (interventions: (string * Map<string, Map<string, string>>) option)
+        (corrections: ApprovedDataCorrection list)
+        (recordedReceipts: DataCorrectionReceipt list)
         : Task<Result<RowFidelityReport>> =
         task {
             try
@@ -650,16 +781,32 @@ module FidelityCompareRun =
                         |> List.choose (fun logicalKind ->
                             Catalog.tryFindKind logicalKind.SsKey physical
                             |> Option.map (fun physicalKind -> physicalKind, logicalKind))
-                    let! verdicts = compareKinds source target renamesByKind replayMaps sampleCap paired []
-                    return
-                        Result.success
-                            { BeforeLabel = beforeLabel
-                              AfterLabel = afterLabel
-                              ModelBasis = modelBasis
-                              Interventions = interventions |> Option.map fst
-                              TolerancesInForce = tolerancesInForce |> List.map ToleratedDivergence.name
-                              DataCorrectionReceipts = []
-                              Kinds = verdicts }
+                    // Replay approved corrections onto the source (engine-reuse) —
+                    // the subject kinds' streams become the corrected rows, so a
+                    // corrected target proves byte-identical against the replayed
+                    // source. A named engine refusal fails the proof by name.
+                    match! replayCorrections source physical model renamesByKind corrections with
+                    | Error es -> return Result.failure es
+                    | Ok (correctedByKind, replayedReceipts) ->
+                        // The count-bounded reconciliation: when recorded receipts
+                        // are supplied, the replay must reproduce them count-for-count
+                        // (a tampered / drifted count reds the proof by name).
+                        let reconciliation =
+                            if List.isEmpty recordedReceipts then Result.success ()
+                            else ApprovedDataCorrections.reconcile recordedReceipts replayedReceipts
+                        match reconciliation with
+                        | Error es -> return Result.failure es
+                        | Ok () ->
+                            let! verdicts = compareKinds source target renamesByKind replayMaps correctedByKind sampleCap paired []
+                            return
+                                Result.success
+                                    { BeforeLabel = beforeLabel
+                                      AfterLabel = afterLabel
+                                      ModelBasis = modelBasis
+                                      Interventions = interventions |> Option.map fst
+                                      TolerancesInForce = tolerancesInForce |> List.map ToleratedDivergence.name
+                                      DataCorrectionReceipts = DataCorrectionReceipt.sorted replayedReceipts
+                                      Kinds = verdicts }
             with ex ->
                 return Result.failureOf (ValidationError.create "fidelity.rows.readFailed" ex.Message)
         }
@@ -675,6 +822,8 @@ module FidelityCompareRun =
         (moduleFilter: string option)
         (sampleCap: int)
         (interventionsPath: string option)
+        (corrections: ApprovedDataCorrection list)
+        (recordedReceipts: DataCorrectionReceipt list)
         : Task<Result<RowFidelityReport>> =
         task {
             // The ledger loads BEFORE the connections open — a bad path is a
@@ -691,7 +840,7 @@ module FidelityCompareRun =
                     use target = new SqlConnection(afterConn)
                     do! source.OpenAsync()
                     do! target.OpenAsync()
-                    return! runWith source target beforeLabel afterLabel modelBasis model kindFilter moduleFilter sampleCap interventions
+                    return! runWith source target beforeLabel afterLabel modelBasis model kindFilter moduleFilter sampleCap interventions corrections recordedReceipts
                 with ex ->
                     return Result.failureOf (ValidationError.create "fidelity.rows.readFailed" ex.Message)
         }
