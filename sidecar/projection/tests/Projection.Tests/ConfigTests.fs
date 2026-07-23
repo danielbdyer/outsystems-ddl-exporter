@@ -678,3 +678,84 @@ let ``Config.parse: read-concurrency below 1 is a named refusal`` () =
     let jsonProfiler = """{ "model": { "path": "m.json" }, "profiler": { "maxConcurrency": -1 } }"""
     let errors2 = Config.parse jsonProfiler |> mustFail
     Assert.True(errors2 |> List.exists (fun e -> e.Code.Contains "profiler.maxConcurrency.invalid"))
+
+// -----------------------------------------------------------------------
+// emission.dataCorrections — approved inline data corrections (parse /
+// default / fail-closed). The signoff GATE is exercised in WriteSignoffTests
+// and the Pipeline layer; here we prove the config surface parses and refuses.
+// -----------------------------------------------------------------------
+
+let private withCorrections (arrJson: string) : string =
+    sprintf """{ "model": { "path": "m.json" }, "emission": { "dataCorrections": %s } }""" arrJson
+
+[<Fact>]
+let ``Config.parse: emission.dataCorrections absent is the empty default (byte-identical)`` () =
+    let cfg = Config.parse """{ "model": { "path": "m.json" } }""" |> mustOk
+    Assert.Empty cfg.Emission.DataCorrections
+
+[<Fact>]
+let ``Config.parse: a same-row correction parses its subject, predicate, derivation, and guards`` () =
+    let json =
+        withCorrections """[
+            { "id": "backfill-customerid",
+              "sourceRemediationId": "D1-legacy",
+              "subject": { "module": "Sales", "entity": "Account", "attribute": "CustomerId" },
+              "predicate": { "op": "isNull", "column": "CustomerId" },
+              "derivation": { "kind": "sameRowAttribute", "source": { "module": "Sales", "entity": "Account", "attribute": "LegacyCustomerId" } },
+              "guards": [ "targetIsNull", "sourceIsNotNull" ],
+              "expectedCount": 4120 } ]"""
+    let cfg = Config.parse json |> mustOk
+    let c = List.exactlyOne cfg.Emission.DataCorrections
+    Assert.Equal("backfill-customerid", c.Id)
+    Assert.Equal(Some "D1-legacy", c.SourceRemediationId)
+    Assert.True(c.Enabled) // default true
+    Assert.Equal("CustomerId", c.Subject.Attribute)
+    Assert.Equal(Some 4120L, c.ExpectedCount)
+    (match c.Predicate with
+     | Some (Predicate.IsNull n) -> Assert.Equal("CustomerId", Name.value n)
+     | other -> Assert.Fail(sprintf "expected IsNull predicate, got %A" other))
+    (match c.Derivation with
+     | DataCorrectionDerivationSpec.SameRowAttribute src -> Assert.Equal("LegacyCustomerId", src.Attribute)
+     | other -> Assert.Fail(sprintf "expected SameRowAttribute, got %A" other))
+    Assert.Equal<DataCorrectionGuard list>([ DataCorrectionGuard.TargetIsNull; DataCorrectionGuard.SourceIsNotNull ], c.Guards)
+
+[<Fact>]
+let ``Config.parse: a parent-derived and an exclude correction parse their derivations`` () =
+    let json =
+        withCorrections """[
+            { "id": "parent-actor", "subject": { "module": "M", "entity": "Child", "attribute": "AddedBy" },
+              "derivation": { "kind": "parentAttribute", "relationship": "ParentRef", "parentSource": { "module": "M", "entity": "Parent", "attribute": "CreatedBy" } } },
+            { "id": "drop-malformed", "enabled": false, "subject": { "module": "M", "entity": "Rule", "attribute": "Id" },
+              "derivation": { "kind": "excludeRows" } } ]"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Equal(2, List.length cfg.Emission.DataCorrections)
+    let parent = cfg.Emission.DataCorrections |> List.find (fun c -> c.Id = "parent-actor")
+    (match parent.Derivation with
+     | DataCorrectionDerivationSpec.ParentAttribute (rel, ps) ->
+         Assert.Equal("ParentRef", rel)
+         Assert.Equal("CreatedBy", ps.Attribute)
+     | other -> Assert.Fail(sprintf "expected ParentAttribute, got %A" other))
+    let excl = cfg.Emission.DataCorrections |> List.find (fun c -> c.Id = "drop-malformed")
+    Assert.False excl.Enabled
+    (match excl.Derivation with
+     | DataCorrectionDerivationSpec.ExcludeRows -> ()
+     | other -> Assert.Fail(sprintf "expected ExcludeRows, got %A" other))
+
+[<Fact>]
+let ``Config.parse: an unknown derivation kind fails FAIL-CLOSED`` () =
+    let json = withCorrections """[ { "id": "c", "subject": { "module": "M", "entity": "E", "attribute": "A" }, "derivation": { "kind": "teleport" } } ]"""
+    Assert.True(Config.parse json |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.derivation.kind")
+
+[<Fact>]
+let ``Config.parse: an unknown guard token fails FAIL-CLOSED`` () =
+    let json = withCorrections """[ { "id": "c", "subject": { "module": "M", "entity": "E", "attribute": "A" }, "derivation": { "kind": "excludeRows" }, "guards": [ "vibeCheck" ] } ]"""
+    Assert.True(Config.parse json |> mustFail |> hasCode "dataCorrection.guard.unknown")
+
+[<Fact>]
+let ``Config.parse: a correction missing its id fails FAIL-CLOSED`` () =
+    let json = withCorrections """[ { "subject": { "module": "M", "entity": "E", "attribute": "A" }, "derivation": { "kind": "excludeRows" } } ]"""
+    Assert.True(Config.parse json |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.id")
+
+[<Fact>]
+let ``Config.parse: emission.dataCorrections as a non-array fails FAIL-CLOSED`` () =
+    Assert.True(Config.parse (withCorrections "\"nope\"") |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.shape")

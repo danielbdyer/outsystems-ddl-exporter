@@ -36,7 +36,7 @@ let runCheckDataRows (args: CheckDataRowsArgs) : int =
                 args.BeforeLabel args.BeforeConn
                 args.AfterLabel args.AfterConn
                 args.ModelRef model
-                args.Kind args.Module args.SampleCap args.Interventions).GetAwaiter().GetResult()
+                args.Kind args.Module args.SampleCap args.Interventions args.Corrections []).GetAwaiter().GetResult()
         match outcome with
         | Error errs ->
             printErrors Console.Error errs
@@ -291,7 +291,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                             args.FromLabel args.SourceConn
                             (sprintf "%s stand-in" args.Flow) scratchConn
                             "the authored model" model
-                            None None args.SampleCap journalForCompare
+                            None None args.SampleCap journalForCompare args.Corrections []
                     return proof |> Result.map (fun report -> outcome, report)
             })
       match (work ()).GetAwaiter().GetResult() with

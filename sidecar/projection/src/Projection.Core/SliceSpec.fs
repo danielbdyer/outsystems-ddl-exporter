@@ -19,6 +19,15 @@ type Predicate =
     | Equals of column: Name * value: string
     /// `<column> IN (<values>)`.
     | In of column: Name * values: string list
+    /// `<column> IS NULL`. Tri-state: matches a genuine SQL NULL (or an
+    /// absent cell), NOT the empty string — the `value`/`valueOrEmpty` split
+    /// the write path keeps (`NULL ≠ ''`). Grown here (not a `Raw` escape)
+    /// because the second consumer — approved data corrections — gates every
+    /// derivation on a NULL test that MUST distinguish NULL from `''`.
+    | IsNull of column: Name
+    /// `<column> IS NOT NULL`. The tri-state complement of `IsNull`: matches
+    /// any present value, including the empty string.
+    | IsNotNull of column: Name
     /// Conjunction of sub-predicates (empty `And` ≡ `All`).
     | And of Predicate list
     /// A terminal raw-SQL escape hatch for predicates the typed arms cannot yet
@@ -39,6 +48,8 @@ module Predicate =
         | Predicate.All            -> true
         | Predicate.Equals (c, v)  -> StaticRow.valueOrEmpty c row = v
         | Predicate.In (c, vs)     -> List.contains (StaticRow.valueOrEmpty c row) vs
+        | Predicate.IsNull c       -> Option.isNone (StaticRow.value c row)
+        | Predicate.IsNotNull c    -> Option.isSome (StaticRow.value c row)
         | Predicate.And ps         -> List.forall (eval row) ps
         | Predicate.Raw _          -> true
 

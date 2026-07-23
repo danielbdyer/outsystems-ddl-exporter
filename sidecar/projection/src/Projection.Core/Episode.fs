@@ -82,6 +82,14 @@ type Episode =
         /// a skeleton-only run; populated when the Pipeline threads the
         /// composed run's overlay enumeration onto the episode.
         AppliedTransforms : (SsKey * OverlayAxis option) list
+        /// The approved **data-correction receipts** applied to the row data
+        /// this run emitted/loaded (the addendum's first-class intervention
+        /// ledger). Empty for a run with no `emission.dataCorrections`; populated
+        /// when the Pipeline threads the correction engine's receipts onto the
+        /// episode — so a load record can explain exactly why target rows differ
+        /// from the raw source (`emitted_or_loaded_rows = apply(receipts,
+        /// acquired_source_rows)`), and no split-brain proof is possible.
+        DataCorrectionReceipts : DataCorrectionReceipt list
     }
 
 [<RequireQualifiedAccess>]
@@ -106,7 +114,8 @@ module Episode =
           RefactorLogRef = refactorLogRef
           Data = data
           Tolerances = Tolerance.strict
-          AppliedTransforms = [] }
+          AppliedTransforms = []
+          DataCorrectionReceipts = [] }
 
     /// A schema-only episode (no profiling, no data movement, no refactorlog,
     /// no accepted divergence, no applied overlay) — the genesis shape and the
@@ -125,6 +134,19 @@ module Episode =
         (episode: Episode)
         : Episode =
         { episode with Tolerances = tolerances; AppliedTransforms = appliedTransforms }
+
+    /// Thread the approved data-correction receipts onto an episode — the
+    /// count-bearing intervention ledger for the row data this run emitted or
+    /// loaded. Like the other provenance planes, Core only stamps the value; the
+    /// Pipeline computes it from the correction engine's output. Kept separate
+    /// from `withProvenance` so the receipts plane threads independently of the
+    /// tolerance/applied-transform planes (a publish-and-load leg records
+    /// receipts without touching tolerances).
+    let withDataCorrectionReceipts
+        (receipts: DataCorrectionReceipt list)
+        (episode: Episode)
+        : Episode =
+        { episode with DataCorrectionReceipts = DataCorrectionReceipt.sorted receipts }
 
     let schema (e: Episode) : Catalog = e.Schema
     let profile (e: Episode) : Profile = e.Profile

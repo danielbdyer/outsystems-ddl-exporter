@@ -89,6 +89,14 @@
          enumeration (SsKey × OverlayAxis option) — the same outcome shape the
          SSDT ManifestEmitter records — at the change-manifest level. -->
     <Compile Include="Classification.fs" />
+    <!-- DataCorrectionReceipt.fs: the durable value vocabulary for approved
+         inline data corrections (derivation / guard / guard-result / receipt).
+         Compiled before Episode.fs so an Episode can carry a
+         DataCorrectionReceipts provenance plane beside Tolerances /
+         AppliedTransforms. Needs only AttributeCoordinate (SyntheticCorrection.fs)
+         + Catalog identity types; the config type + pure engine that lean on the
+         NULL-aware SliceSpec.Predicate live later in ApprovedDataCorrections.fs. -->
+    <Compile Include="DataCorrectionReceipt.fs" />
     <Compile Include="Episode.fs" />
     <Compile Include="ChangeManifest.fs" />
     <Compile Include="Migration.fs" />
@@ -157,6 +165,12 @@
          indifferent; consumed by Closure.fs (directive-aware walk) and the
          slice codec/verb. Depends only on Catalog.fs identity types. -->
     <Compile Include="SliceSpec.fs" />
+    <!-- ApprovedDataCorrections.fs: the config type + pure engine for approved
+         inline data corrections. Sits after SliceSpec.fs because a correction
+         gates rows on the NULL-aware Predicate and resolves AttributeCoordinates;
+         the durable receipt vocabulary it emits is defined earlier
+         (DataCorrectionReceipt.fs) so Episode can carry it. -->
+    <Compile Include="ApprovedDataCorrections.fs" />
     <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
          portability front-end). Pure planner over the FK graph (Catalog.fs);
          materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,

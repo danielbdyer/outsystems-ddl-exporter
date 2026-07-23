@@ -19,7 +19,9 @@ let private sample : SliceSpec =
     let roots =
         [ { Entity = EntityCoordinate.create "Sales" "Order"
             Predicate = Predicate.And [ Predicate.Equals (mkName "REGION", "West")
-                                        Predicate.In (mkName "STATUS", [ "open"; "shipped" ]) ] }
+                                        Predicate.In (mkName "STATUS", [ "open"; "shipped" ])
+                                        Predicate.IsNull (mkName "CLOSEDON")
+                                        Predicate.IsNotNull (mkName "CREATEDON") ] }
           { Entity = EntityCoordinate.ofEntity "Invoice"
             Predicate = Predicate.Raw "[YEAR] >= 2025" } ]
     let directives =

@@ -119,6 +119,47 @@ module LifecycleStore =
             jw.WriteEndObject()
         jw.WriteEndArray()
 
+    let private writeGuardResult (jw: Utf8JsonWriter) (gr: DataCorrectionGuardResult) : unit =
+        jw.WriteStartObject()
+        jw.WriteString("guard", DataCorrectionGuard.name gr.Guard)
+        jw.WriteBoolean("passed", gr.Passed)
+        match gr.Observed with Some n -> jw.WriteNumber("observed", n) | None -> jw.WriteNull("observed")
+        match gr.Detail with Some d -> jw.WriteString("detail", d) | None -> jw.WriteNull("detail")
+        jw.WriteEndObject()
+
+    /// The episode's **approved data-correction receipts** — the count-bearing
+    /// intervention ledger for the row data this run emitted/loaded. Sorted by
+    /// `DataCorrectionReceipt.sortKey` for byte-determinism (T1), the same
+    /// discipline `writeTolerances` follows. Empty ⇒ `[]`, so a run with no
+    /// `emission.dataCorrections` writes an empty array and stays byte-identical
+    /// to a pre-feature store save modulo the one new (empty) field.
+    let private writeDataCorrectionReceipts (jw: Utf8JsonWriter) (receipts: DataCorrectionReceipt list) : unit =
+        jw.WriteStartArray()
+        for r in DataCorrectionReceipt.sorted receipts do
+            jw.WriteStartObject()
+            jw.WriteString("correctionId", r.CorrectionId)
+            match r.SourceRemediationId with Some s -> jw.WriteString("sourceRemediationId", s) | None -> jw.WriteNull("sourceRemediationId")
+            jw.WritePropertyName "subject"
+            jw.WriteStartObject()
+            jw.WriteString("module", r.Subject.Module)
+            jw.WriteString("entity", r.Subject.Entity)
+            jw.WriteString("attribute", r.Subject.Attribute)
+            jw.WriteEndObject()
+            jw.WriteString("derivation", DataCorrectionDerivation.name r.Derivation)
+            jw.WritePropertyName "guardResults"
+            jw.WriteStartArray()
+            for gr in r.GuardResults do writeGuardResult jw gr
+            jw.WriteEndArray()
+            jw.WriteNumber("rowsMatched", r.RowsMatched)
+            jw.WriteNumber("rowsChanged", r.RowsChanged)
+            jw.WriteNumber("rowsExcluded", r.RowsExcluded)
+            match r.BeforeDigest with Some d -> jw.WriteString("beforeDigest", d) | None -> jw.WriteNull("beforeDigest")
+            match r.AfterDigest with Some d -> jw.WriteString("afterDigest", d) | None -> jw.WriteNull("afterDigest")
+            match r.ApprovedBy with Some s -> jw.WriteString("approvedBy", s) | None -> jw.WriteNull("approvedBy")
+            match r.ApprovedAt with Some s -> jw.WriteString("approvedAt", s) | None -> jw.WriteNull("approvedAt")
+            jw.WriteEndObject()
+        jw.WriteEndArray()
+
     let private writeEpisode (jw: Utf8JsonWriter) (e: Episode) : unit =
         jw.WriteStartObject()
         jw.WritePropertyName "coordinate"
@@ -144,6 +185,12 @@ module LifecycleStore =
         writeTolerances jw e.Tolerances
         jw.WritePropertyName "appliedTransforms"
         writeAppliedTransforms jw e.AppliedTransforms
+        // The approved data-correction receipts plane — persisted (and KEPT by
+        // `durableProjection`) so a stored episode equals its own durable
+        // projection, and a load record can explain why target rows differ from
+        // the raw source.
+        jw.WritePropertyName "dataCorrectionReceipts"
+        writeDataCorrectionReceipts jw e.DataCorrectionReceipts
         jw.WriteEndObject()
 
     let private serialize (lifecycle: EpisodicLifecycle) : byte[] =
@@ -214,6 +261,22 @@ module LifecycleStore =
                 | true, n -> Ok n
                 | _ -> Error (sprintf "field '%s' is not an int32" name)
             else Error (sprintf "field '%s': expected number, got %A" name v.ValueKind)
+
+    let private fieldInt64 (el: JsonElement) (name: string) : Result<int64, string> =
+        match prop el name with
+        | Error m -> Error m
+        | Ok v ->
+            if v.ValueKind = JsonValueKind.Number then
+                match v.TryGetInt64() with
+                | true, n -> Ok n
+                | _ -> Error (sprintf "field '%s' is not an int64" name)
+            else Error (sprintf "field '%s': expected number, got %A" name v.ValueKind)
+
+    let private optInt64 (el: JsonElement) (name: string) : int64 option =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.Number ->
+            match v.TryGetInt64() with true, n -> Some n | _ -> None
+        | _ -> None
 
     let private readEnvironment (el: JsonElement) : Result<Environment, string> =
         fieldStr el "kind"
@@ -306,6 +369,86 @@ module LifecycleStore =
         | true, v -> Error (sprintf "field 'appliedTransforms': expected array, got %A" v.ValueKind)
         | _ -> Ok []
 
+    let private readGuardResult (el: JsonElement) : Result<DataCorrectionGuardResult, string> =
+        match fieldStr el "guard" with
+        | Error m -> Error m
+        | Ok token ->
+            match DataCorrectionGuard.parse token with
+            | Error errs -> Error (errorsToMessage errs)
+            | Ok guard ->
+                let passed =
+                    match el.TryGetProperty "passed" with
+                    | true, v when v.ValueKind = JsonValueKind.True || v.ValueKind = JsonValueKind.False -> v.GetBoolean()
+                    | _ -> true
+                Ok { Guard = guard; Passed = passed; Observed = optInt64 el "observed"; Detail = optStr el "detail" }
+
+    let private readReceipt (el: JsonElement) : Result<DataCorrectionReceipt, string> =
+        match fieldStr el "correctionId" with
+        | Error m -> Error m
+        | Ok correctionId ->
+            match prop el "subject" with
+            | Error m -> Error m
+            | Ok subjEl ->
+                match fieldStr subjEl "module", fieldStr subjEl "entity", fieldStr subjEl "attribute" with
+                | Ok m, Ok e, Ok a ->
+                    match fieldStr el "derivation" |> bindR (fun t -> match DataCorrectionDerivation.parse t with Ok d -> Ok d | Error errs -> Error (errorsToMessage errs)) with
+                    | Error msg -> Error msg
+                    | Ok derivation ->
+                        let guardResults =
+                            match el.TryGetProperty "guardResults" with
+                            | true, v when v.ValueKind = JsonValueKind.Array ->
+                                let rec loop acc rows =
+                                    match rows with
+                                    | [] -> Ok (List.rev acc)
+                                    | row :: rest ->
+                                        match readGuardResult row with
+                                        | Error m -> Error m
+                                        | Ok gr -> loop (gr :: acc) rest
+                                loop [] (v.EnumerateArray() |> Seq.toList)
+                            | _ -> Ok []
+                        match guardResults with
+                        | Error msg -> Error msg
+                        | Ok grs ->
+                            match fieldInt64 el "rowsMatched", fieldInt64 el "rowsChanged", fieldInt64 el "rowsExcluded" with
+                            | Ok matched, Ok changed, Ok excluded ->
+                                Ok { CorrectionId = correctionId
+                                     SourceRemediationId = optStr el "sourceRemediationId"
+                                     Subject = AttributeCoordinate.create m e a
+                                     Derivation = derivation
+                                     GuardResults = grs
+                                     RowsMatched = matched
+                                     RowsChanged = changed
+                                     RowsExcluded = excluded
+                                     BeforeDigest = optStr el "beforeDigest"
+                                     AfterDigest = optStr el "afterDigest"
+                                     ApprovedBy = optStr el "approvedBy"
+                                     ApprovedAt = optStr el "approvedAt" }
+                            | Error msg, _, _ -> Error msg
+                            | _, Error msg, _ -> Error msg
+                            | _, _, Error msg -> Error msg
+                | Error msg, _, _ -> Error msg
+                | _, Error msg, _ -> Error msg
+                | _, _, Error msg -> Error msg
+
+    /// The episode's approved data-correction receipts. A **missing**
+    /// `dataCorrectionReceipts` field reads as `[]` (forward-compatible with
+    /// pre-feature stores), exactly like the `tolerances`/`appliedTransforms`
+    /// planes. A malformed receipt (unknown derivation/guard token, bad counts)
+    /// is a hard error — the store is never silently partial.
+    let private readDataCorrectionReceipts (el: JsonElement) : Result<DataCorrectionReceipt list, string> =
+        match el.TryGetProperty "dataCorrectionReceipts" with
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            let rec loop acc rows =
+                match rows with
+                | [] -> Ok (List.rev acc)
+                | row :: rest ->
+                    match readReceipt row with
+                    | Error m -> Error m
+                    | Ok r -> loop (r :: acc) rest
+            loop [] (v.EnumerateArray() |> Seq.toList)
+        | true, v -> Error (sprintf "field 'dataCorrectionReceipts': expected array, got %A" v.ValueKind)
+        | _ -> Ok []
+
     let private readEpisode (el: JsonElement) : Result<Episode, string> =
         match prop el "coordinate" |> bindR readCoordinate with
         | Error m -> Error m
@@ -324,12 +467,14 @@ module LifecycleStore =
                         // provenance planes (NM-34) ARE persisted and KEPT by
                         // `durableProjection`, so they are re-threaded here via
                         // `withProvenance` — that is what makes stored = durable.
-                        match readTolerances el, readAppliedTransforms el with
-                        | Error m, _ -> Error m
-                        | _, Error m -> Error m
-                        | Ok tolerances, Ok appliedTransforms ->
+                        match readTolerances el, readAppliedTransforms el, readDataCorrectionReceipts el with
+                        | Error m, _, _ -> Error m
+                        | _, Error m, _ -> Error m
+                        | _, _, Error m -> Error m
+                        | Ok tolerances, Ok appliedTransforms, Ok receipts ->
                             Episode.create coordinate schema Profile.empty (optStr el "refactorLogRef") data
                             |> Episode.withProvenance tolerances appliedTransforms
+                            |> Episode.withDataCorrectionReceipts receipts
                             |> Ok
 
     /// Reconstruct the chain from a non-empty episode list, enforcing the

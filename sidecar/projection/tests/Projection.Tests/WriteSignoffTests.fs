@@ -20,7 +20,8 @@ let private allModes : WriteSignoff.WriteMode list =
       WriteSignoff.WriteMode.Drops
       WriteSignoff.WriteMode.Cdc
       WriteSignoff.WriteMode.IdentityInsert
-      WriteSignoff.WriteMode.DeleteScope ]
+      WriteSignoff.WriteMode.DeleteScope
+      WriteSignoff.WriteMode.DataCorrection ]
 
 [<Fact>]
 let ``parseMode ∘ modeLabel = Some for every mode (the label bridge round-trips)`` () =
@@ -34,10 +35,10 @@ let ``parseMode is case/whitespace-insensitive and rejects an unknown label`` ()
     Assert.Equal(None, WriteSignoff.parseMode "wipe")
 
 [<Fact>]
-let ``the six canonical labels are the operator-writable vocabulary`` () =
+let ``the seven canonical labels are the operator-writable vocabulary`` () =
     let labels = allModes |> List.map WriteSignoff.modeLabel
     Assert.Equal<string list>(
-        [ "replace"; "fresh"; "drops"; "cdc"; "identity-insert"; "delete-scope" ],
+        [ "replace"; "fresh"; "drops"; "cdc"; "identity-insert"; "delete-scope"; "data-correction" ],
         labels)
 
 // -- the impact register: stative, evidence-grounded (THE_VOICE) -------------

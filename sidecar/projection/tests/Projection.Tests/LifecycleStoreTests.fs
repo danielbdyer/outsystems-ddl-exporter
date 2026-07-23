@@ -261,3 +261,62 @@ let ``NM-34: an unknown tolerated-divergence token fails the load (fail-closed, 
         match LifecycleStore.load path with
         | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
         | other -> Assert.Fail(sprintf "expected ParseFailure on an unknown divergence token, got %A" other))
+
+// -- approved data-correction receipts: the intervention-ledger plane ---------
+
+let private sampleReceipts : DataCorrectionReceipt list =
+    [ { CorrectionId = "backfill-customerid"; SourceRemediationId = Some "D1-legacy"
+        Subject = AttributeCoordinate.create "Sales" "Account" "CustomerId"
+        Derivation = DataCorrectionDerivation.SameRowAttribute
+        GuardResults =
+            [ DataCorrectionGuardResult.passed DataCorrectionGuard.TargetIsNull (Some 4120L)
+              DataCorrectionGuardResult.passed DataCorrectionGuard.SourceIsNotNull None ]
+        RowsMatched = 4120L; RowsChanged = 4118L; RowsExcluded = 0L
+        BeforeDigest = Some "abc123"; AfterDigest = Some "def456"
+        ApprovedBy = Some "operator"; ApprovedAt = Some "2026-07-23" }
+      { CorrectionId = "drop-malformed"; SourceRemediationId = None
+        Subject = AttributeCoordinate.create "Ops" "Rule" "Id"
+        Derivation = DataCorrectionDerivation.ExcludeRows
+        GuardResults = [ DataCorrectionGuardResult.passed DataCorrectionGuard.NoFormalInboundReferences None ]
+        RowsMatched = 12L; RowsChanged = 0L; RowsExcluded = 12L
+        BeforeDigest = Some "ghi789"; AfterDigest = None
+        ApprovedBy = None; ApprovedAt = None } ]
+
+let private receiptEpisode : Episode =
+    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    |> Episode.withDataCorrectionReceipts sampleReceipts
+
+let private receiptChain : EpisodicLifecycle =
+    EpisodicLifecycle.genesis (tl "dev") e0
+    |> (fun lc -> EpisodicLifecycle.append receiptEpisode lc |> mustResultOk)
+
+[<Fact>]
+let ``data-correction receipts survive the store round-trip (counts, guards, digests)`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path receiptChain |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let loadedE1 = EpisodicLifecycle.episodes loaded |> List.item 1
+        Assert.Equal<DataCorrectionReceipt list>(DataCorrectionReceipt.sorted sampleReceipts, loadedE1.DataCorrectionReceipts))
+
+[<Fact>]
+let ``a receipt-bearing loaded episode equals its own durableProjection (stored = durable)`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path receiptChain |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let expected =
+            EpisodicLifecycle.genesis (tl "dev") (Episode.durableProjection e0)
+            |> (fun lc -> EpisodicLifecycle.append (Episode.durableProjection receiptEpisode) lc |> mustResultOk)
+        Assert.Equal<EpisodicLifecycle>(expected, loaded))
+
+[<Fact>]
+let ``a pre-feature store (no dataCorrectionReceipts field) loads as empty`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path chain |> mustStoreOk
+        let stripped =
+            (System.IO.File.ReadAllText path)
+                .Replace(",\n      \"dataCorrectionReceipts\": []", "")
+        Assert.DoesNotContain("dataCorrectionReceipts", stripped)
+        System.IO.File.WriteAllText(path, stripped)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        for e in EpisodicLifecycle.episodes loaded do
+            Assert.Empty e.DataCorrectionReceipts)
