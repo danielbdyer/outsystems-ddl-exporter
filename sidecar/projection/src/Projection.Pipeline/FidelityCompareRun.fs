@@ -26,6 +26,14 @@ type RowFidelityReport =
         /// The canonical row form's named erasures, in force on every
         /// `--rows` proof (T17/B4b) — declared, never silent.
         TolerancesInForce : string list
+        /// The approved data-correction receipts replayed onto the source before
+        /// comparing (the intervention ledger's count-bearing half). Empty ⇒ the
+        /// proof claims byte-identity with no approved corrections; non-empty ⇒
+        /// every non-identical raw-source difference is accounted for by a named,
+        /// counted receipt. `TolerancesInForce` are representation erasures;
+        /// `DataCorrectionReceipts` are approved semantic row changes — distinct
+        /// planes (a correction is never a tolerance).
+        DataCorrectionReceipts : DataCorrectionReceipt list
         Kinds       : KindRowVerdict list
     }
 
@@ -43,6 +51,14 @@ module RowFidelityReport =
     /// The exact difference total across every kind.
     let differenceTotal (report: RowFidelityReport) : int64 =
         report.Kinds |> List.sumBy (fun k -> k.DifferenceTotal)
+
+    /// Attach the approved data-correction receipts the publish recorded — the
+    /// intervention ledger the proof's noted-exceptions cite (sorted for
+    /// determinism). The fidelity face threads the episode's receipts here so a
+    /// green proof NAMES its approved corrections rather than claiming raw
+    /// byte-identity.
+    let withDataCorrectionReceipts (receipts: DataCorrectionReceipt list) (report: RowFidelityReport) : RowFidelityReport =
+        { report with DataCorrectionReceipts = DataCorrectionReceipt.sorted receipts }
 
     /// The kinds that disagree, largest difference first.
     let disagreeing (report: RowFidelityReport) : KindRowVerdict list =
@@ -560,6 +576,7 @@ module FidelityCompareRun =
                   ModelBasis = "the portable proof manifest"
                   Interventions = None
                   TolerancesInForce = tolerancesInForce
+                  DataCorrectionReceipts = []
                   Kinds = List.ofSeq verdicts }
         }
 
@@ -641,6 +658,7 @@ module FidelityCompareRun =
                               ModelBasis = modelBasis
                               Interventions = interventions |> Option.map fst
                               TolerancesInForce = tolerancesInForce |> List.map ToleratedDivergence.name
+                              DataCorrectionReceipts = []
                               Kinds = verdicts }
             with ex ->
                 return Result.failureOf (ValidationError.create "fidelity.rows.readFailed" ex.Message)
@@ -709,6 +727,13 @@ module FidelityCompareRun =
           | Some ledger ->
               yield sprintf "  Interventions: %s — the journal's key remaps replay onto the source before comparing." ledger
           | None -> ()
+          match report.DataCorrectionReceipts with
+          | [] -> ()
+          | receipts ->
+              let changed = receipts |> List.sumBy (fun r -> r.RowsChanged)
+              let excluded = receipts |> List.sumBy (fun r -> r.RowsExcluded)
+              yield sprintf "  Interventions: approved data corrections replayed onto the source before comparing — %s correction(s), %s row(s) changed, %s excluded; every difference cites its receipt."
+                        (humane64 (int64 (List.length receipts))) (humane64 changed) (humane64 excluded)
           for verdict in report.Kinds do
               if KindRowVerdict.agrees verdict then
                   yield sprintf "  %s — %s row(s), byte-identical." verdict.KindName (humane64 verdict.Source.Count)
@@ -762,6 +787,20 @@ module FidelityCompareRun =
         let tolerances = JsonArray()
         for t in report.TolerancesInForce do tolerances.Add(JsonValue.Create t)
         root.["tolerancesInForce"] <- tolerances
+        // The approved data-correction receipts — the count-bearing ledger a green
+        // proof's noted-exceptions cite (distinct from the representation erasures
+        // in `tolerancesInForce`). Deterministic (sorted at attach time).
+        let receipts = JsonArray()
+        for r in report.DataCorrectionReceipts do
+            let o = JsonObject()
+            o.["correctionId"] <- JsonValue.Create r.CorrectionId
+            (match r.SourceRemediationId with Some s -> o.["sourceRemediationId"] <- JsonValue.Create s | None -> ())
+            o.["derivation"] <- JsonValue.Create(DataCorrectionDerivation.name r.Derivation)
+            o.["rowsMatched"] <- JsonValue.Create r.RowsMatched
+            o.["rowsChanged"] <- JsonValue.Create r.RowsChanged
+            o.["rowsExcluded"] <- JsonValue.Create r.RowsExcluded
+            receipts.Add o
+        root.["dataCorrectionReceipts"] <- receipts
         root.["agrees"] <- JsonValue.Create(RowFidelityReport.agrees report)
         root.["rowsCompared"] <- JsonValue.Create(RowFidelityReport.rowsCompared report)
         root.["differenceTotal"] <- JsonValue.Create(RowFidelityReport.differenceTotal report)

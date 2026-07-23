@@ -1409,6 +1409,23 @@ module Compose =
                             (ValidationError.create "emission.deleteScope.ungreenlit"
                                 (sprintf "the emission's convergent-delete arm (`emission.deleteScope`) is not greenlit — %s Declare { \"mode\": \"delete-scope\" } in `emission.signoff` (with the impact acknowledged) before emitting." reason))
                 | None -> Result.success ()
+            // The approved-inline-data-corrections gate (the emission-plane
+            // counterpart of the delete-scope gate). A NON-empty
+            // `emission.dataCorrections` rewrites/excludes row VALUES before
+            // emission/load, so the emitted or loaded rows differ from the raw
+            // source — REFUSED until the emission plane greenlights
+            // `data-correction`. Presence-gated (the blast radius is the receipts,
+            // not a table set).
+            let! () =
+                if List.isEmpty cfg.Emission.DataCorrections then Result.success ()
+                else
+                    match WriteSignoff.verify "emission" cfg.Emission.Signoff WriteSignoff.WriteMode.DataCorrection [] with
+                    | WriteSignoff.Confirmed _ -> Result.success ()
+                    | WriteSignoff.Missing (reason, _)
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Result.failureOf
+                            (ValidationError.create "emission.dataCorrection.ungreenlit"
+                                (sprintf "approved inline data corrections (`emission.dataCorrections`) rewrite or exclude row data before emission/load, but are not greenlit — %s Declare { \"mode\": \"data-correction\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
             return {
                 Policy.empty with
                     Tightening = tightening
@@ -2218,6 +2235,13 @@ module Compose =
             | Config.ProfilerProvider.Live -> true
             | _ -> false)
         && connectionString <> ""
+        // Approved data corrections take the NAMED two-phase fallback: the
+        // pipelined path drains and drops rows per-kind and never materializes a
+        // cross-kind row map, so the correction engine (which needs the whole map
+        // in hand for parent joins / reference key sets) runs on the two-phase
+        // schedule. The emitted bundle is identical either way (the pipelined
+        // toggle is a schedule choice); the fallback is explicit, not silent.
+        && List.isEmpty cfg.Emission.DataCorrections
 
     /// Phase A of the pipelined arm: bind the run's shaping (the SAME
     /// superset `runWithConfigCore` binds, so a binding failure surfaces the
@@ -2473,7 +2497,38 @@ module Compose =
         /// renders the seed plan against ITS catalog + topology, so the
         /// deployed seed cannot drift from the published bundle.
         FinalState    : ComposeState
+        /// The approved data-correction receipts applied to this acquisition's
+        /// row data (empty when `emission.dataCorrections` is empty). The
+        /// load/store legs reuse the SAME corrected data + receipts, so the
+        /// recorded episode explains exactly why loaded rows differ from the raw
+        /// source — no split-brain proof.
+        Receipts      : DataCorrectionReceipt list
     }
+
+    /// Apply approved inline data corrections on the TWO-PHASE schedule (the
+    /// whole `Map<SsKey, StaticRow list>` in hand). Returns the corrected catalog
+    /// (static-lane populations re-grafted), the corrected bootstrap-lane map
+    /// (restricted to the ORIGINAL bootstrap keys so a corrected static kind is
+    /// not emitted by BOTH lanes), and the receipts. Empty corrections ⇒ identity
+    /// (byte-identical). FAIL-CLOSED: the engine's named refusal surfaces as the
+    /// extract stage's failure. Module-level (FS3511).
+    let private applyDataCorrectionsTwoPhase
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        (rows: Map<SsKey, StaticRow list>)
+        : Result<Catalog * Map<SsKey, StaticRow list> * DataCorrectionReceipt list> =
+        if List.isEmpty cfg.Emission.DataCorrections then Result.success (catalog, rows, [])
+        else
+            ApprovedDataCorrections.apply catalog cfg.Emission.DataCorrections rows
+            |> Result.map (fun outcome ->
+                // Static-lane kinds are emitted from the catalog (StaticSeedsEmitter);
+                // re-graft their corrected rows there. The bootstrap lane keeps only
+                // the kinds it originally carried, so a corrected static kind that the
+                // engine added to the output map is not ALSO emitted by the bootstrap
+                // lane (T11 keyset agreement preserved).
+                let correctedCatalog = Hydration.graftStaticPopulations outcome.CorrectedRows catalog
+                let bootstrapMap = outcome.CorrectedRows |> Map.filter (fun k _ -> Map.containsKey k rows)
+                (correctedCatalog, bootstrapMap, outcome.Receipts))
 
     /// The publish, returning the `EstateAcquisition` beside the report —
     /// the combined verbs (`runWithConfigAndLoad` / `runWithConfigAndStore`)
@@ -2541,7 +2596,11 @@ module Compose =
                                               Hydrated = extracted.Hydrated
                                               BootstrapLane = lane
                                               Migration = extracted.Migration
-                                              FinalState = finalState })
+                                              FinalState = finalState
+                                              // The pipelined arm never runs with corrections
+                                              // (the gate forces the two-phase fallback), so its
+                                              // receipts are always empty.
+                                              Receipts = [] })
                                     emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                     return result
                                 })
@@ -2559,13 +2618,21 @@ module Compose =
                                     let! parsed = readAndHydrateConfigModel cfg
                                     match parsed with
                                     | Ok (readCatalog, catalog, bootRows, migration) ->
-                                        emitStageMarker LogSink.Extract "extract.completed" LogSink.End
-                                            (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                                        return Ok (readCatalog, catalog, bootRows, migration)
+                                        // Approved inline data corrections applied in-flight
+                                        // (two-phase: the whole row map is in hand). Empty ⇒
+                                        // identity (byte-identical); a named refusal fails the
+                                        // extract stage.
+                                        match applyDataCorrectionsTwoPhase cfg catalog bootRows with
+                                        | Ok (catalog', bootRows', receipts) ->
+                                            emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                                                (Map.ofList [ "moduleCount", box (List.length catalog'.Modules) ])
+                                            return Ok (readCatalog, catalog', bootRows', migration, receipts)
+                                        | Error errors ->
+                                            return Error errors
                                     | Error errors ->
                                         return Error errors
                                 })
-                        let readCatalog, catalog, bootstrapRows, migration = extracted
+                        let readCatalog, catalog, bootstrapRows, migration, receipts = extracted
                         let! profile =
                             Staged.stage Stages.profile (fun () ->
                                 task {
@@ -2593,7 +2660,8 @@ module Compose =
                                               Hydrated = catalog
                                               BootstrapLane = lane
                                               Migration = migration
-                                              FinalState = finalState })
+                                              FinalState = finalState
+                                              Receipts = receipts })
                                     emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                     return result
                                 })
@@ -2711,7 +2779,13 @@ module Compose =
             return
                 match parsed with
                 | Error es -> Result.failure es
-                | Ok (readCatalog, hydrated, bootRows, migration) ->
+                | Ok (readCatalog, hydrated0, bootRows0, migration) ->
+                    // Apply approved data corrections so the standalone seed plan
+                    // reflects the SAME corrected rows the publish path emits
+                    // (identity-gate parity). Empty ⇒ byte-identical.
+                    match applyDataCorrectionsTwoPhase cfg hydrated0 bootRows0 with
+                    | Error es -> Result.failure es
+                    | Ok (hydrated, bootRows, receipts) ->
                     match applyRenames cfg hydrated with
                     | Error es -> Result.failure es
                     | Ok renamed ->
@@ -2726,7 +2800,8 @@ module Compose =
                                   Hydrated = hydrated
                                   BootstrapLane = DataComposer.BootstrapLane.Rows bootRows
                                   Migration = migration
-                                  FinalState = composePrefixState pins policy groups renamed }
+                                  FinalState = composePrefixState pins policy groups renamed
+                                  Receipts = receipts }
         }
 
     /// PL-1 (S51) — the ONE durable read per store leg. `None` is genesis (no
@@ -2898,6 +2973,7 @@ module Compose =
         (data: DataObservation)
         (tolerances: Tolerance)
         (appliedTransforms: (SsKey * OverlayAxis option) list)
+        (receipts: DataCorrectionReceipt list)
         (emitted: Catalog)
         : Result<FullExportStoreLeg, FullExportStoreError> =
         let loaded = storePrior.Loaded
@@ -2920,6 +2996,7 @@ module Compose =
                             let episode =
                                 Episode.create coordinate emitted Profile.empty refactorLogRef data
                                 |> Episode.withProvenance tolerances appliedTransforms
+                                |> Episode.withDataCorrectionReceipts receipts
                             match recordEpisodeOnChain path timeline episode loaded with
                             | Error e -> Error e
                             | Ok chain ->
@@ -2976,7 +3053,7 @@ module Compose =
         | Error errors -> Result.failure errors
         | Ok emitted ->
             let physicalNamed = operatorRenamedKinds cfg acquired.ReadCatalog
-            match runStoreLegOnPrior storePath storePrior physicalNamed timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
+            match runStoreLegOnPrior storePath storePrior physicalNamed timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms acquired.Receipts emitted with
             | Ok leg -> Result.success (Some leg)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
 
@@ -3085,6 +3162,7 @@ module Compose =
         (emitted: Catalog)
         (cdcDelta: int)
         (pins: Set<SsKey>)
+        (receipts: DataCorrectionReceipt list)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
@@ -3110,7 +3188,7 @@ module Compose =
             match loadStorePrior path with
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
             | Ok storePrior ->
-                match runStoreLegOnPrior path storePrior pins timeline environment at None data (emittedToleranceResidual Tolerance.permissive emitted) [] emitted with
+                match runStoreLegOnPrior path storePrior pins timeline environment at None data (emittedToleranceResidual Tolerance.permissive emitted) [] receipts emitted with
                 | Ok leg -> Result.success (Some leg, cdcDelta)
                 | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
@@ -3126,6 +3204,7 @@ module Compose =
         (emitted: Catalog)
         (sink: SqlConnection)
         (pins: Set<SsKey>)
+        (receipts: DataCorrectionReceipt list)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
@@ -3142,7 +3221,7 @@ module Compose =
                 match! cdcCaptureTotal sink with
                 | Error es -> return Result.failure es
                 | Ok post ->
-                    return recordLoad emitted (post - baseline) pins storePath timeline environment at
+                    return recordLoad emitted (post - baseline) pins receipts storePath timeline environment at
         }
 
     /// The fused-string load shape — what an operator executing the
@@ -3171,7 +3250,7 @@ module Compose =
                 // An empty seed loads nothing.
                 if System.String.IsNullOrWhiteSpace seed then Task.FromResult ()
                 else executeBatch sink seed)
-            emitted sink Set.empty storePath timeline environment at
+            emitted sink Set.empty [] storePath timeline environment at
 
     /// Card P2 — the LEVELED production load: same CDC bracket, same
     /// episode recording, but the seed deploys as the leveled plan
@@ -3181,6 +3260,7 @@ module Compose =
     /// own pooled connection; `sink` stays the CDC measure's connection).
     let private loadLeveledSeedAndRecordWithPins
         (pins: Set<SsKey>)
+        (receipts: DataCorrectionReceipt list)
         (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (emitted: Catalog)
@@ -3199,7 +3279,7 @@ module Compose =
                 // whitespace gate.
                 if DataComposer.LeveledDeploymentText.isEmpty plan then Task.FromResult ()
                 else executeLeveled plan)
-            emitted sink pins storePath timeline environment at
+            emitted sink pins receipts storePath timeline environment at
 
     let loadLeveledSeedAndRecord
         (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
@@ -3214,7 +3294,7 @@ module Compose =
         : Task<Result<FullExportStoreLeg option * int>> =
         // Config-less witness surface (pins parity with `loadSeedAndRecord`);
         // the production path threads real pins via `loadFromAcquisition`.
-        loadLeveledSeedAndRecordWithPins Set.empty cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
+        loadLeveledSeedAndRecordWithPins Set.empty [] cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
 
     /// AC-X1 (part B) — `runWithConfig` PLUS the live data-load leg the W1-B
     /// store leg deferred. After the bundle is published (unchanged), the
@@ -3247,7 +3327,7 @@ module Compose =
             // G3 — the production record leg carries this run's operator-renamed
             // kind set so its deployed-vocabulary entries agree with the bundle's.
             let physicalNamed = operatorRenamedKinds cfg acquired.ReadCatalog
-            loadLeveledSeedAndRecordWithPins physicalNamed cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
+            loadLeveledSeedAndRecordWithPins physicalNamed acquired.Receipts cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
 
     /// Card P2 re-threaded seam: the second argument is the LEVELED seed
     /// executor (`Deploy.executeLeveledSeed <connection string>` at the CLI

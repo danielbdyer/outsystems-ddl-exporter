@@ -1670,6 +1670,13 @@ module Kind =
             System.Text.RegularExpressions.Regex.Matches(cfg.Expression, @"\[([^\]]+)\]")
             |> Seq.map (fun m -> m.Groups.[1].Value)
             |> Seq.filter (fun t -> not (Set.contains (t.ToUpperInvariant()) known))
+            // SQL Server's `sys.computed_columns.definition` BRACKETS the type
+            // name in a CAST/CONVERT target (`CONVERT([nvarchar](20), [Price])`),
+            // so a legitimate conversion would otherwise read as an unresolved
+            // COLUMN. Exclude bracketed tokens that name a SQL type keyword — the
+            // `known`-column check ran first, so a real column named like a type
+            // already resolved; only a non-column type token is dropped here.
+            |> Seq.filter (fun t -> Option.isNone (SqlStorageType.ofSqlType t None None None))
             |> Seq.distinct
             |> List.ofSeq
 

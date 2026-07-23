@@ -362,6 +362,16 @@ module Config =
         /// the toggle is a SCHEDULE choice (equivalence pinned by test) and
         /// exists as the named diagnostic opt-out.
         PipelinedBootstrap    : bool
+        /// `emission.dataCorrections` — the APPROVED, publish-time inline data
+        /// corrections applied to acquired row data before the data composers /
+        /// load plan see it (`ApprovedDataCorrections.fs`). Empty (the default)
+        /// leaves the emitted/loaded rows byte-identical. A NON-empty list REQUIRES
+        /// the `data-correction` write-signoff (`Compose.buildPolicyFromConfig`
+        /// refuses `emission.dataCorrection.ungreenlit` otherwise) and threads
+        /// count-bearing receipts onto the episode + row-fidelity proof. Parsed
+        /// FAIL-CLOSED: an unknown derivation kind / guard / predicate op is a
+        /// named config error, never a silent drop.
+        DataCorrections       : ApprovedDataCorrection list
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -566,6 +576,9 @@ module Config =
         // P2 production wiring — acquisition-overlapped Bootstrap render +
         // evidence derivation on by default (identical bundle; schedule only).
         PipelinedBootstrap = true
+        // Approved inline data corrections default to none — a config with no
+        // corrections emits/loads byte-identical rows.
+        DataCorrections = []
     }
 
     let private defaultPolicy : PolicySection = {
@@ -1247,7 +1260,7 @@ module Config =
                     | None -> Result.failureOf (configError "emission.signoff.noMode" "each emission.signoff entry needs a 'mode'.")
                     | Some m ->
                         match WriteSignoff.parseMode m with
-                        | None -> Result.failureOf (configError "emission.signoff.modeUnknown" (sprintf "emission.signoff mode '%s' is not one of replace/fresh/drops/cdc/identity-insert/delete-scope." m))
+                        | None -> Result.failureOf (configError "emission.signoff.modeUnknown" (sprintf "emission.signoff mode '%s' is not one of replace/fresh/drops/cdc/identity-insert/delete-scope/data-correction." m))
                         | Some mode ->
                             Result.success
                                 { WriteSignoff.Mode = mode
@@ -1261,6 +1274,171 @@ module Config =
             else Result.success (parsed |> List.choose (function Ok a -> Some a | _ -> None))
         | Some _ ->
             Result.failureOf (configError "emission.signoff.shape" "emission.signoff must be an array of { mode, ... } objects.")
+
+    // --- emission.dataCorrections — approved inline data corrections ---
+    // FAIL-CLOSED: an unknown derivation kind / guard token / predicate op is a
+    // named config error, never a silent drop. Absent ⇒ `[]` (byte-identical
+    // default). Not part of `renderConfig`'s A44 surface, so parse-only.
+
+    let private dcStr (el: JsonElement) (name: string) : string option =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.String -> Option.ofObj (v.GetString())
+        | _ -> None
+
+    let private dcCoordinate (el: JsonElement) (ctx: string) : Result<AttributeCoordinate> =
+        match dcStr el "module", dcStr el "entity", dcStr el "attribute" with
+        | Some m, Some e, Some a -> Result.success (AttributeCoordinate.create m e a)
+        | _ -> Result.failureOf (configError "emission.dataCorrections.coordinate" (sprintf "%s needs { module, entity, attribute }." ctx))
+
+    let private dcEntity (el: JsonElement) (ctx: string) : Result<EntityCoordinate> =
+        match dcStr el "module", dcStr el "entity" with
+        | Some m, Some e -> Result.success (EntityCoordinate.create m e)
+        | _ -> Result.failureOf (configError "emission.dataCorrections.entity" (sprintf "%s needs { module, entity }." ctx))
+
+    let private dcColumnName (el: JsonElement) : Result<Name> =
+        match dcStr el "column" with
+        | Some c -> Name.create c
+        | None -> Result.failureOf (configError "emission.dataCorrections.predicate.column" "a column predicate needs a 'column'.")
+
+    let rec private dcPredicate (el: JsonElement) : Result<Predicate> =
+        match dcStr el "op" with
+        | Some "all" -> Result.success Predicate.All
+        | Some "eq" ->
+            dcColumnName el |> Result.bind (fun c ->
+                match dcStr el "value" with
+                | Some v -> Result.success (Predicate.Equals (c, v))
+                | None -> Result.failureOf (configError "emission.dataCorrections.predicate.eq" "'eq' predicate needs a 'value'."))
+        | Some "in" ->
+            dcColumnName el |> Result.bind (fun c ->
+                match el.TryGetProperty "values" with
+                | true, a when a.ValueKind = JsonValueKind.Array ->
+                    Result.success (Predicate.In (c, [ for e in a.EnumerateArray() do if e.ValueKind = JsonValueKind.String then match Option.ofObj (e.GetString()) with Some s -> yield s | None -> () ]))
+                | _ -> Result.failureOf (configError "emission.dataCorrections.predicate.in" "'in' predicate needs a 'values' array."))
+        | Some "isNull" -> dcColumnName el |> Result.map Predicate.IsNull
+        | Some "isNotNull" -> dcColumnName el |> Result.map Predicate.IsNotNull
+        | Some "and" ->
+            match el.TryGetProperty "terms" with
+            | true, a when a.ValueKind = JsonValueKind.Array ->
+                [ for e in a.EnumerateArray() -> dcPredicate e ] |> Result.aggregate |> Result.map Predicate.And
+            | _ -> Result.failureOf (configError "emission.dataCorrections.predicate.and" "'and' predicate needs a 'terms' array.")
+        | Some "raw" ->
+            match dcStr el "sql" with
+            | Some s -> Result.success (Predicate.Raw s)
+            | None -> Result.failureOf (configError "emission.dataCorrections.predicate.raw" "'raw' predicate needs a 'sql' string.")
+        | Some other -> Result.failureOf (configError "emission.dataCorrections.predicate.op" (sprintf "unknown predicate op '%s'." other))
+        | None -> Result.failureOf (configError "emission.dataCorrections.predicate.op" "a predicate needs an 'op'.")
+
+    let private dcDerivation (el: JsonElement) : Result<DataCorrectionDerivationSpec> =
+        match dcStr el "kind" with
+        | Some "sameRowAttribute" ->
+            match el.TryGetProperty "source" with
+            | true, s when s.ValueKind = JsonValueKind.Object -> dcCoordinate s "derivation.source" |> Result.map DataCorrectionDerivationSpec.SameRowAttribute
+            | _ -> Result.failureOf (configError "emission.dataCorrections.derivation.source" "'sameRowAttribute' needs a 'source' coordinate.")
+        | Some "parentAttribute" ->
+            match dcStr el "relationship", el.TryGetProperty "parentSource" with
+            | Some rel, (true, ps) when ps.ValueKind = JsonValueKind.Object ->
+                dcCoordinate ps "derivation.parentSource" |> Result.map (fun c -> DataCorrectionDerivationSpec.ParentAttribute (rel, c))
+            | _ -> Result.failureOf (configError "emission.dataCorrections.derivation.parent" "'parentAttribute' needs a 'relationship' and a 'parentSource' coordinate.")
+        | Some "constantLiteral" ->
+            match dcStr el "value" with
+            | Some v -> Result.success (DataCorrectionDerivationSpec.ConstantLiteral v)
+            | None -> Result.failureOf (configError "emission.dataCorrections.derivation.constant" "'constantLiteral' needs a 'value'.")
+        | Some "excludeRows" -> Result.success DataCorrectionDerivationSpec.ExcludeRows
+        | Some other -> Result.failureOf (configError "emission.dataCorrections.derivation.kind" (sprintf "unknown derivation kind '%s'." other))
+        | None -> Result.failureOf (configError "emission.dataCorrections.derivation.kind" "a derivation needs a 'kind'.")
+
+    let private dcGuards (el: JsonElement) : Result<DataCorrectionGuard list> =
+        match el.TryGetProperty "guards" with
+        | true, a when a.ValueKind = JsonValueKind.Array ->
+            [ for e in a.EnumerateArray() do
+                if e.ValueKind = JsonValueKind.String then
+                    match Option.ofObj (e.GetString()) with Some s -> yield DataCorrectionGuard.parse s | None -> () ]
+            |> Result.aggregate
+        | _ -> Result.success []
+
+    let private dcEvidence (el: JsonElement) : Result<AttributeCoordinate list> =
+        match el.TryGetProperty "evidenceColumns" with
+        | true, a when a.ValueKind = JsonValueKind.Array ->
+            [ for e in a.EnumerateArray() do if e.ValueKind = JsonValueKind.Object then yield dcCoordinate e "evidenceColumns[]" ] |> Result.aggregate
+        | _ -> Result.success []
+
+    let private dcProbe (e: JsonElement) : Result<ConfiguredReferenceProbe> =
+        result {
+            let! ent =
+                match e.TryGetProperty "entity" with
+                | true, en when en.ValueKind = JsonValueKind.Object -> dcEntity en "configuredProbes[].entity"
+                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.entity" "a configured probe needs an 'entity'.")
+            let! pred =
+                match e.TryGetProperty "predicate" with
+                | true, p when p.ValueKind = JsonValueKind.Object -> dcPredicate p
+                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.predicate" "a configured probe needs a 'predicate'.")
+            return ({ Entity = ent; Predicate = pred } : ConfiguredReferenceProbe) }
+
+    let private dcProbes (el: JsonElement) : Result<ConfiguredReferenceProbe list> =
+        match el.TryGetProperty "configuredProbes" with
+        | true, a when a.ValueKind = JsonValueKind.Array ->
+            [ for e in a.EnumerateArray() do if e.ValueKind = JsonValueKind.Object then yield dcProbe e ] |> Result.aggregate
+        | _ -> Result.success []
+
+    let private dcOne (el: JsonElement) : Result<ApprovedDataCorrection> =
+        if el.ValueKind <> JsonValueKind.Object then
+            Result.failureOf (configError "emission.dataCorrections.shape" "each emission.dataCorrections entry must be an object.")
+        else
+            let boolOr (name: string) (d: bool) =
+                match el.TryGetProperty name with
+                | true, v when v.ValueKind = JsonValueKind.True -> true
+                | true, v when v.ValueKind = JsonValueKind.False -> false
+                | _ -> d
+            let int64Opt (name: string) =
+                match el.TryGetProperty name with
+                | true, v when v.ValueKind = JsonValueKind.Number -> (match v.TryGetInt64() with true, n -> Some n | _ -> None)
+                | _ -> None
+            result {
+                let! id =
+                    match dcStr el "id" with
+                    | Some i -> Result.success i
+                    | None -> Result.failureOf (configError "emission.dataCorrections.id" "each correction needs an 'id'.")
+                let! subject =
+                    match el.TryGetProperty "subject" with
+                    | true, s when s.ValueKind = JsonValueKind.Object -> dcCoordinate s "subject"
+                    | _ -> Result.failureOf (configError "emission.dataCorrections.subject" "each correction needs a 'subject' coordinate.")
+                let! predicate =
+                    match el.TryGetProperty "predicate" with
+                    | true, p when p.ValueKind = JsonValueKind.Object -> dcPredicate p |> Result.map Some
+                    | _ -> Result.success None
+                let! derivation =
+                    match el.TryGetProperty "derivation" with
+                    | true, d when d.ValueKind = JsonValueKind.Object -> dcDerivation d
+                    | _ -> Result.failureOf (configError "emission.dataCorrections.derivation" "each correction needs a 'derivation'.")
+                let! guards = dcGuards el
+                let! evidence = dcEvidence el
+                let! probes = dcProbes el
+                let! referencedEntity =
+                    match el.TryGetProperty "referencedEntity" with
+                    | true, r when r.ValueKind = JsonValueKind.Object -> dcEntity r "referencedEntity" |> Result.map Some
+                    | _ -> Result.success None
+                return
+                    { Id = id
+                      SourceRemediationId = dcStr el "sourceRemediationId"
+                      Enabled = boolOr "enabled" true
+                      Subject = subject
+                      Predicate = predicate
+                      Derivation = derivation
+                      Guards = guards
+                      EvidenceColumns = evidence
+                      ExpectedCount = int64Opt "expectedCount"
+                      ReferencedEntity = referencedEntity
+                      ConfiguredProbes = probes
+                      ApprovedBy = dcStr el "approvedBy"
+                      ApprovedAt = dcStr el "approvedAt" } }
+
+    let private parseDataCorrections (emission: JsonElement) : Result<ApprovedDataCorrection list> =
+        match tryGetProperty emission "dataCorrections" with
+        | None -> Result.success []
+        | Some arr when arr.ValueKind = JsonValueKind.Array ->
+            [ for e in arr.EnumerateArray() -> dcOne e ] |> Result.aggregate
+        | Some _ ->
+            Result.failureOf (configError "emission.dataCorrections.shape" "emission.dataCorrections must be an array of correction objects.")
 
     /// Wave-3 slice 3.4 (now WIRED) — parse `emission.tolerance`: an array of
     /// `ToleratedDivergence` name tokens → `Tolerance option`. Absent ⇒ `None`
@@ -1378,6 +1556,7 @@ module Config =
                                 (sprintf "emission.dataReadConcurrency must be >= 1; got %d." c))
                     | other -> other
                 let! pipelinedBootstrap = read "pipelinedBootstrap" defaultEmission.PipelinedBootstrap
+                let! dataCorrections = parseDataCorrections element
                 return {
                     Ssdt = ssdt
                     Dacpac = dacpac
@@ -1402,6 +1581,7 @@ module Config =
                     DataStaging = dataStaging
                     DataReadConcurrency = dataReadConcurrency
                     PipelinedBootstrap = pipelinedBootstrap
+                    DataCorrections = dataCorrections
                 }
             }
 

@@ -36,6 +36,10 @@ module SliceCodec =
              jw.WriteStartArray("values")
              for v in vs do jw.WriteStringValue v
              jw.WriteEndArray()
+         | Predicate.IsNull c ->
+             jw.WriteString("op", "isNull"); jw.WriteString("column", Name.value c)
+         | Predicate.IsNotNull c ->
+             jw.WriteString("op", "isNotNull"); jw.WriteString("column", Name.value c)
          | Predicate.And ps ->
              jw.WriteString("op", "and")
              jw.WriteStartArray("terms")
@@ -108,6 +112,8 @@ module SliceCodec =
                     | true, vs when vs.ValueKind = JsonValueKind.Array ->
                         vs.EnumerateArray() |> Seq.map asString |> Result.collect |> Result.map (fun vals -> Predicate.In (c, vals))
                     | _ -> fail "slice.predicate.in.values" "'in' predicate missing a 'values' array")
+            | "isNull"    -> field el "column" readName |> Result.map Predicate.IsNull
+            | "isNotNull" -> field el "column" readName |> Result.map Predicate.IsNotNull
             | "and" ->
                 (match el.TryGetProperty "terms" with
                  | true, ts when ts.ValueKind = JsonValueKind.Array ->

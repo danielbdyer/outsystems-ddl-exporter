@@ -85,6 +85,10 @@ module ClosureOracle =
                 else
                     let names = vs |> List.map (fun v -> let nm = nextName () in pars.Add(nm, v); nm)
                     System.String.Concat(physicalOf kind c, " IN (", String.concat ", " names, ")")  // LINT-ALLOW: terminal SQL-text boundary; column encoded, values parameterized
+            | Predicate.IsNull c ->
+                System.String.Concat(physicalOf kind c, " IS NULL")  // LINT-ALLOW: terminal SQL-text boundary; column encoded, no value
+            | Predicate.IsNotNull c ->
+                System.String.Concat(physicalOf kind c, " IS NOT NULL")  // LINT-ALLOW: terminal SQL-text boundary; column encoded, no value
             | Predicate.And ps ->
                 if List.isEmpty ps then "1 = 1"  // LINT-ALLOW: terminal SQL-text boundary; constant-true predicate
                 else

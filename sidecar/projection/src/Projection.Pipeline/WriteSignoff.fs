@@ -42,6 +42,10 @@ module WriteSignoff =
         | IdentityInsert
         /// A convergent `WHEN NOT MATCHED BY SOURCE … DELETE` arm (emission lane).
         | DeleteScope
+        /// Approved inline data corrections rewrite/exclude row VALUES in flight
+        /// before emission/load — the emitted or loaded rows differ from the raw
+        /// source by the approved receipts (`emission.dataCorrections`).
+        | DataCorrection
 
     /// One authored `signoff` entry — the mode approved, an optional table scope
     /// (empty = the flow's whole set for this mode), the operator's acknowledged
@@ -92,6 +96,7 @@ module WriteSignoff =
         | WriteMode.Cdc            -> "cdc"
         | WriteMode.IdentityInsert -> "identity-insert"
         | WriteMode.DeleteScope    -> "delete-scope"
+        | WriteMode.DataCorrection -> "data-correction"
 
     /// Parse a config label to a mode (case/whitespace-insensitive).
     let parseMode (s: string) : WriteMode option =
@@ -102,6 +107,7 @@ module WriteSignoff =
         | "cdc"             -> Some WriteMode.Cdc
         | "identity-insert" -> Some WriteMode.IdentityInsert
         | "delete-scope"    -> Some WriteMode.DeleteScope
+        | "data-correction" -> Some WriteMode.DataCorrection
         | _                 -> None
 
     /// The default IMPACT statement a mode carries — stative, evidence-grounded
@@ -122,6 +128,8 @@ module WriteSignoff =
             "Source surrogate keys are written directly under SET IDENTITY_INSERT — explicit primary keys that can collide with keys the target already minted."
         | WriteMode.DeleteScope ->
             "A convergent MERGE arm deletes every target row absent from the source within the scope predicate — the target converges to the source, losing the rows outside it."
+        | WriteMode.DataCorrection ->
+            "Approved inline data corrections rewrite required attributes and exclude malformed rows in flight — the emitted or loaded rows differ from the raw source by the approved receipts, each of which names its rows-changed count."
 
     /// The verdict of checking ONE destructive mode a run performs against the
     /// flow's approvals.

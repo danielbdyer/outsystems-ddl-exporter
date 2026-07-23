@@ -873,7 +873,7 @@ module ProjectionConfig =
                                        Date = field o "date" } : WriteSignoff.ActBlessing))
                     | None, Some modeStr ->
                         match WriteSignoff.parseMode modeStr with
-                        | None -> Result.failureOf (err "cli.config.signoffModeUnknown" (sprintf "flow '%s' signoff mode '%s' is not replace | fresh | drops | cdc | identity-insert | delete-scope." name modeStr))
+                        | None -> Result.failureOf (err "cli.config.signoffModeUnknown" (sprintf "flow '%s' signoff mode '%s' is not replace | fresh | drops | cdc | identity-insert | delete-scope | data-correction." name modeStr))
                         | Some mode ->
                             Result.success (Choice1Of2
                                 { WriteSignoff.Mode = mode
