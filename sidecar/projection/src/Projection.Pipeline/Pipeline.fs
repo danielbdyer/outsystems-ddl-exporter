@@ -364,53 +364,11 @@ module Compose =
         |> Seq.map snd
         |> String.concat "\nGO\n\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-table SsdtBundle entries; segments are typed (each `Body` is the rendered ScriptDom output from SsdtDdlEmitter); BCL `String.concat` IS the use-case-specific library at the SQL-batch concatenation boundary. Reconciliation slice 2 — blank line on BOTH sides of GO (V1 StatementBatchFormatter spacing)
 
-    /// Run the three sibling Π's against a Catalog. Pure: same Catalog
-    /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
-    /// for the dogfood frame; M2 onward will thread real profile
-    /// evidence.
-    ///
-    /// **Chapter A.4.7' slice δ** wires `RegisteredTransforms.allChainSteps`
-    /// in front of the emitter fan-out per A41 (registry as load-bearing
-    /// execution surface). Catalog flows: raw → `compose allChainSteps`
-    /// → emitters. With skeleton-friendly defaults (Mask = empty;
-    /// Morphism = identity; RenameSpec = []; Policy = Policy.empty;
-    /// Profile = Profile.empty), Catalog-rewriting passes contribute
-    /// only the canonicalization / closure they would apply
-    /// unconditionally; decision-set passes write back evidence the
-    /// emitters do not yet consume (decision-set consumption is a
-    /// future-chapter concern).
-    /// Chapter C slice C.3 — apply operator-supplied emission-folder
-    /// overrides to the typed per-kind SSDT bundle. The rewrite
-    /// preserves each `SsdtFile`'s basename (the cross-platform-
-    /// deterministic `<Schema>.<Table>.sql` suffix) and replaces the
-    /// directory prefix with the operator-named folder.
-    /// `EmissionFolders.empty` short-circuits to the input unchanged.
-    ///
-    /// The rewrite fires at the typed `ArtifactByKind<SsdtFile>` layer
-    /// — operator overlay sits outside Π (pillar 9: emitters are
-    /// `DataIntent`; operator opinion enters at the Pipeline-layer
-    /// realization boundary). Reconstructs through
-    /// `ArtifactByKind.create` against the same catalog so the
-    /// strict-equality keyset invariant is preserved.
-    let private applyEmissionFolderOverrides
-        (folders: EmissionFolders)
-        (catalog: Catalog)
-        (files: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
-        : ArtifactByKind<SsdtDdlEmitter.SsdtFile> =
-        if EmissionFolders.isEmpty folders then files
-        else
-            use _ = Bench.scope "compose.applyEmissionFolderOverrides"
-            // PL-4 (S56) — key-preserving rewrite: the proven keyset carries
-            // over via `mapValues`; no re-validation, no unreachable arm.
-            files
-            |> ArtifactByKind.mapValues (fun key file ->
-                match Map.tryFind key folders.ByKind with
-                | None        -> file
-                | Some folder ->
-                    let segments = file.RelativePath.Split('/')
-                    let basename = segments.[segments.Length - 1]
-                    { file with
-                        RelativePath = System.String.Concat(folder, "/", basename) })
+    // Emission-folder targeting (`overrides.emissionFolders`) moved to the
+    // registered `SsdtArtifactSeam` (the post-emit ArtifactByKind<SsdtFile> analog
+    // of EmissionSeam), so the operator-intent SSDT-bundle rewrite is registered ⇔
+    // executed rather than a bare call here. The SSDT emit step calls
+    // `SsdtArtifactSeam.apply`.
 
     /// Chapter C slice C.4 — filter the pass chain by operator-supplied
     /// `TransformGroups`. Each chain entry's name is looked up against
@@ -607,7 +565,7 @@ module Compose =
                 let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
                 match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering ctx.EmitIdentityAnnotations decisionOverlay ctx.EmittedCatalog with
                 | Ok ssdtFiles ->
-                    let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
+                    let rewritten = SsdtArtifactSeam.apply ctx.Folders ctx.EmittedCatalog ssdtFiles
                     let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
                     let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
                     let manifest =

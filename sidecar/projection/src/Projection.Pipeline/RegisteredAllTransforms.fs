@@ -113,6 +113,12 @@ module RegisteredAllTransforms =
         // pairing it with the bidirectional E5 test, makes the emit seam a BOUND
         // source of the totality proof (closing the F2 counterexample's class).
         @ EmissionSeam.metadata
+        // The post-emit SSDT-ARTIFACT SEAM's registered rewrites, projected from
+        // the SAME `SsdtArtifactSeam.rewrites` the SSDT emit step executes
+        // (`SsdtArtifactSeam.apply`). Emission-folder targeting today; formerly a
+        // bare `applyEmissionFolderOverrides` call, now a bound source (registered ⇔
+        // executed, its own bidirectional test).
+        @ SsdtArtifactSeam.metadata
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
         // Transfer epic — the one named bound source `transferEpic` (above), so

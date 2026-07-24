@@ -67,6 +67,13 @@
          ApprovedDataCorrections (Core); compiles before Pipeline.fs, which calls
          DataCorrectionSeam.apply at the extract seam. -->
     <Compile Include="DataCorrectionSeam.fs" />
+    <!-- SsdtArtifactSeam.fs: the post-emit SSDT-artifact seam (the
+         ArtifactByKind<SsdtFile> analog of EmissionSeam). Folds the operator-intent
+         SSDT-bundle rewrites (emission-folder targeting today) as ONE bound source
+         so registered ⇔ executed holds. Needs EmissionFolders (EmissionFoldersBinding,
+         line 37) + SsdtDdlEmitter (Targets.SSDT); compiles before Pipeline.fs, whose
+         SSDT emit step calls SsdtArtifactSeam.apply. -->
+    <Compile Include="SsdtArtifactSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

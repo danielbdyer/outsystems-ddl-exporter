@@ -542,3 +542,27 @@ let ``the DataCorrectionSeam registration set equals its executed set (registere
     // Non-empty — the seam actually holds a bound override (a vacuous seam would
     // pass both arms trivially).
     Assert.NotEmpty DataCorrectionSeam.executedNames
+
+// ---------------------------------------------------------------------------
+// The post-emit SSDT-ARTIFACT SEAM is a BOUND source too — the E5 discipline
+// extended from the catalog / row planes to the emitted-artifact plane. The SSDT
+// emit step routes its post-emit bundle rewrites through `SsdtArtifactSeam.apply`,
+// whose `rewrites` list ALSO projects the seam's `metadata` and `executedNames`,
+// so `registered ⇔ executed` holds by construction. Formerly emission-folder
+// targeting ran as a bare `applyEmissionFolderOverrides` call (an F2/F3-shaped
+// unregistered operator-intent mutation); these pin both halves.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``every SsdtArtifactSeam rewrite executes through a registered transform (no orphan artifact rewrite)`` () =
+    for name in SsdtArtifactSeam.executedNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "ssdt-artifact-seam rewrite '%s' executes (SsdtArtifactSeam.apply) but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``the SsdtArtifactSeam registration set equals its executed set (registered <-> executed for the seam)`` () =
+    let executed = SsdtArtifactSeam.executedNames |> Set.ofList
+    let registered = SsdtArtifactSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(executed, registered)
+    Assert.NotEmpty SsdtArtifactSeam.executedNames

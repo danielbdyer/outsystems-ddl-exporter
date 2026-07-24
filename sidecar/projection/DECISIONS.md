@@ -30544,3 +30544,25 @@ source — those enter as `overrides.bridgeRetargets` config (and, later, inject
   plugins" ask dissolves into: a closed set of declared override archetypes, each landing in its
   plane's fold, selected + parameterized by config, specialized (the proprietary UserProfile/Graph
   specifics) purely at the config + injected-evidence layer — never in the generic engine.
+
+---
+
+## 2026-07-24 — Emission-folder targeting promoted to a registered seam (`SsdtArtifactSeam`): "move a table's .sql to a different module-folder" is now registered ⇔ executed
+
+`overrides.emissionFolders` (relocate a kind's emitted SSDT `.sql` from its default `Modules/<Module>/`
+folder to an operator-named folder, preserving the `<Schema>.<Table>.sql` basename; only the directory
+prefix is rewritten) already moved a specific table into a different module-folder emission target —
+but it ran as a BARE `applyEmissionFolderOverrides` call inside the SSDT emit step, unregistered: the
+exact F2/F3-shaped "operator-intent mutation runs outside every bound source" pattern `EmissionSeam`
+was created to retire.
+
+`SsdtArtifactSeam` — the `ArtifactByKind<SsdtFile>` analog of `EmissionSeam` (`Catalog → Catalog`) and
+`DataCorrectionSeam` (the row plane) — now folds the post-emit SSDT-bundle rewrites as ONE bound
+source: `apply` folds the registered `rewrites`, `metadata` / `executedNames` project from the same
+list, and the SSDT emit step calls `SsdtArtifactSeam.apply`. So the emission-folder rewrite
+(`OperatorIntent Emission`, `"emissionFolderTargeting"`) is BOTH executed and registered by
+construction, with its own bidirectional totality test — `registered ⇔ executed` for the emitted-
+artifact plane. This completes the seam trilogy across the three planes (catalog / row / artifact),
+each an operator-declared override riding the TransformRegistry as a bound fold. Behavior is
+verbatim-preserved (`EmissionFolders.empty` ⇒ byte-identical); no config or emitter behavior changed,
+only the registration binding.
