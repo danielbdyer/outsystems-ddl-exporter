@@ -468,12 +468,14 @@ module Deploy =
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
-                | Statement.Merge _ | Statement.Update _ ->
-                    // The MERGE/UPDATE data-population variants. The SSDT-DDL
-                    // deploy stream does not currently carry these (the data
-                    // lane deploys via its own rendered path); they are
-                    // executable SQL, so route them through the same
-                    // flush-then-execute shape as the other non-bulk statements.
+                | Statement.Merge _ | Statement.Update _ | InsertRowIfAbsent _ ->
+                    // The MERGE/UPDATE data-population variants and the staging
+                    // lane's guarded insert. The SSDT-DDL deploy stream does not
+                    // currently carry these (the data lane deploys via its own
+                    // rendered path); they are executable SQL, so route them
+                    // through the same flush-then-execute shape as the other
+                    // non-bulk statements. (`InsertRowIfAbsent` is an IF-guarded
+                    // conditional — never bulk-appendable like a bare InsertRow.)
                     do! flushBulk ()
                     appendDdl s
                 | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ ->

@@ -2002,9 +2002,14 @@ module ScriptDomBuild =
             spec.SetClauses.Add(setClause :> SetClause)
 
         // WHERE-clause: [pk1] = <litpk1> [AND [pk2] = <litpk2> ...]
+        //               [AND [guard] IS NULL ...]
         //               [AND (<set-cell-differs> OR ...)]
         //
-        // The change-detection term is appended when CdcAware = true
+        // The fill-only guard terms (`NullGuardColumns`) are appended after
+        // the key equalities: each restricts the UPDATE to rows where the
+        // named cell is still NULL, so an existing value is structurally
+        // unreachable (the bridge-row staging lane's safety rule). The
+        // change-detection term is appended when CdcAware = true
         // and SetCells is non-empty; an UPDATE with no SET cells
         // can't fire CDC (it's a no-op statement at the parser
         // boundary), so the predicate-append guard skips that
@@ -2016,11 +2021,15 @@ module ScriptDomBuild =
                 cells
                 |> List.map (fun (col, lit) ->
                     whereEquality col lit :> BooleanExpression)
+            let guardTerms =
+                args.NullGuardColumns
+                |> List.map (fun col ->
+                    singlePartIsNullCheck col false :> BooleanExpression)
             let allTerms =
                 if args.CdcAware && not (List.isEmpty args.SetCells) then
-                    pkTerms @ [ phase2DifferencePredicate args.SetCells ]
+                    pkTerms @ guardTerms @ [ phase2DifferencePredicate args.SetCells ]
                 else
-                    pkTerms
+                    pkTerms @ guardTerms
             let where = WhereClause()
             where.SearchCondition <- foldBool BooleanBinaryExpressionType.And allTerms
             spec.WhereClause <- where
@@ -2031,6 +2040,54 @@ module ScriptDomBuild =
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildUpdateStatement (args: UpdateBuildArgs) : Diagnostics<UpdateStatement> =
         Diagnostics.ofValue (buildUpdateStatementCore args)
+
+    // -----------------------------------------------------------------------
+    // Guarded single-row INSERT (the bridge-row staging lane's supplement
+    // shape). Placed after the UPDATE section so the single-part WHERE
+    // primitives (`whereEquality`) are in scope.
+    // -----------------------------------------------------------------------
+
+    /// Build `IF NOT EXISTS (SELECT 1 FROM [schema].[table] WHERE [key] =
+    /// <lit>) INSERT INTO [schema].[table] ([key], [col]…) VALUES (…)` for an
+    /// `InsertRowIfAbsent` statement. The key cell supplies BOTH the guard
+    /// predicate and the row's first column, so guard and payload cannot
+    /// disagree. The `EXISTS (SELECT 1 FROM …)` subquery mirrors
+    /// `buildValidateBeforeApplyGuard`'s `targetHasRows` shape; the inner
+    /// insert is `buildInsertRow` verbatim.
+    let buildInsertRowIfAbsent
+        (table: TableId)
+        (keyCell: CellValue)
+        (cells: CellValue list)
+        : IfStatement =
+        use _ = Bench.scope "emit.scriptDom.build.insertRowIfAbsent"
+        // `SELECT 1 FROM [schema].[table] WHERE [key] = <lit>`.
+        let qs = QuerySpecification()
+        let one = SelectScalarExpression()
+        let lit = IntegerLiteral()
+        lit.Value <- "1"
+        one.Expression <- lit :> ScalarExpression
+        qs.SelectElements.Add(one :> SelectElement)
+        let fc = FromClause()
+        let t = NamedTableReference()
+        t.SchemaObject <- schemaObjectFromTableId table
+        fc.TableReferences.Add(t :> TableReference)
+        qs.FromClause <- fc
+        let where = WhereClause()
+        where.SearchCondition <-
+            (whereEquality keyCell.Column (SqlLiteral.ofRaw keyCell.Type keyCell.Raw) :> BooleanExpression)
+        qs.WhereClause <- where
+        // `NOT EXISTS (…)`.
+        let sub = ScalarSubquery()
+        sub.QueryExpression <- qs :> QueryExpression
+        let ex = ExistsPredicate()
+        ex.Subquery <- sub
+        let notEx = BooleanNotExpression()
+        notEx.Expression <- (ex :> BooleanExpression)
+        // `IF <predicate> <insert>`.
+        let ifStmt = IfStatement()
+        ifStmt.Predicate <- (notEx :> BooleanExpression)
+        ifStmt.ThenStatement <- (buildInsertRow table (keyCell :: cells) :> TSqlStatement)
+        ifStmt
 
     // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
@@ -2704,6 +2761,8 @@ module ScriptDomBuild =
             Some ((buildCreateIndex idx).Value :> TSqlStatement)
         | InsertRow (table, cells) ->
             Some (buildInsertRow table cells :> TSqlStatement)
+        | InsertRowIfAbsent (table, keyCell, cells) ->
+            Some (buildInsertRowIfAbsent table keyCell cells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
         | Statement.Merge args ->

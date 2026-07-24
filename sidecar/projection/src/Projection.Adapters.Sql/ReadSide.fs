@@ -608,7 +608,12 @@ module ReadSide =
     /// formatter only ever sees non-null cells. The `isNullish -> ""`
     /// arm below is defensive (a provider surfacing `DBNull` through
     /// `GetValue` off the null-checked path), not a sentinel contract.
-    let private formatRawValue (typ: PrimitiveType) (value: obj | null) : string =
+    ///
+    /// PUBLIC at the second consumer (`BridgeSnapshotReader`'s
+    /// referenced-key reads must format cells with the SAME canonical
+    /// raw-form contract this reader uses, so a key read here round-trips
+    /// through the keyed `WHERE … IN` parameters byte-identically).
+    let formatRawValue (typ: PrimitiveType) (value: obj | null) : string =
         // Format rules flow through `RawValueCodec` so the V2 raw-
         // form contract is single-sourced across emit / parse /
         // readback.

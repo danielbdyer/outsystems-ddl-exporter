@@ -86,6 +86,10 @@
          Policy.fs (which carries the BridgeRetarget axis) and before the passes;
          needs only SsKey. -->
     <Compile Include="BridgeRetarget.fs" />
+    <!-- Dynamic bridge-row staging: the pure delta kernel (snapshots -> per-key
+         verdicts -> staged changes -> planned evidence). After BridgeRetarget.fs
+         (consumes BridgeIdentityEvidence + BridgeRetargetEvidence); needs Name. -->
+    <Compile Include="BridgeRowDelta.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="EmissionMode.fs" />
     <Compile Include="SurrogateRemap.fs" />

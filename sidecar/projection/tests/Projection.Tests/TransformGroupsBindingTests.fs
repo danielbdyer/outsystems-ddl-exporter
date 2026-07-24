@@ -30,6 +30,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             EmissionFolders        = []
             BridgeRetargets        = []
             BridgeRetargetEvidence = None
+            BridgeRowStaging       = []
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true

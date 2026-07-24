@@ -5,22 +5,11 @@ open System.Text.Json
 open Projection.Core
 open FsToolkit.ErrorHandling
 
-/// Operator-supplied profiling evidence for ONE bridge retarget — the DATA-derived
-/// readiness facts a catalog inspection cannot know (they need the actual data:
-/// how values resolve through the bridge, the real uniqueness / null counts,
-/// orphans, payload conflicts, and identity provenance). Read from
-/// `overrides.bridgeRetargetEvidence.path`; the binder overrides a retarget's
-/// fail-closed `unproven` data facts with these so the retarget can CLEAR. The
-/// Graph auto-supplement (real tenant data) is a future source that would write
-/// this same file.
-type BridgeRetargetEvidence =
-    { UnresolvedThroughBridge : int64
-      BrokenOriginalParent    : int64
-      OrphanedBridgeRows      : int64
-      PayloadConflicts        : int64
-      BridgeKeyDuplicates     : int64
-      BridgeKeyNulls          : int64
-      IdentityEvidence        : BridgeIdentityEvidence }
+// `BridgeRetargetEvidence` — the DATA-half readiness facts for one retarget —
+// moved to Core (`BridgeRetarget.fs`) when the dynamic bridge-row staging
+// companion became a second producer: the pure delta kernel (`BridgeRowDelta`)
+// derives the same record from live snapshots that the operator supplement file
+// supplies here, and both feed `applyEvidence` below.
 
 /// Binds `overrides.bridgeRetargets` (textual config) into the typed
 /// `BridgeRetargetPolicy` the decision pass reads off `Policy`. Fail-closed: an
@@ -333,12 +322,48 @@ module BridgeRetargetBinding =
         |> Result.aggregate
         |> Result.map (fun plans -> { Plans = plans })
 
+    /// Merge the two evidence sources — the operator FILE supplement and the
+    /// staging companion's DERIVED planned-state evidence — refusing overlap: a
+    /// retarget id claimed by BOTH would carry two competing accounts of the
+    /// same data facts, and silently preferring either would be an unnamed
+    /// downgrade. The operator resolves it by removing the file entry (the
+    /// derived evidence is fresher) or the staging link. Public like `bindAll`
+    /// — the pure merge is unit-testable without the file-read boundary.
+    let mergeEvidence
+        (fileEvidence: Map<string, BridgeRetargetEvidence>)
+        (derived: Map<string, BridgeRetargetEvidence>)
+        : Result<Map<string, BridgeRetargetEvidence>> =
+        let overlap =
+            derived
+            |> Map.toList
+            |> List.map fst
+            |> List.filter (fun id -> Map.containsKey id fileEvidence)
+        if List.isEmpty overlap then
+            Result.success (Map.fold (fun m k v -> Map.add k v m) fileEvidence derived)
+        else
+            err "pipeline.config.bridgeRetargetEvidence.sourceConflict"
+                (String.concat "" [ "retarget id(s) carry BOTH file evidence (`overrides.bridgeRetargetEvidence`) and staging-derived evidence (`overrides.bridgeRowStaging`): "; String.concat ", " overlap; " — remove one source; competing accounts of the same data facts are refused" ])
+
     /// Bind `overrides.bridgeRetargets` into the typed `BridgeRetargetPolicy`,
     /// reading the DATA-half evidence from `overrides.bridgeRetargetEvidence.path`
-    /// first. A malformed / unreadable evidence file short-circuits before binding
-    /// (a gate-level failure); otherwise each declared retarget is resolved against
-    /// the catalog and the supplied evidence. No entries + no evidence ⇒
+    /// and merging the staging companion's DERIVED planned-state evidence
+    /// (`derived` — per retarget id; overlap with the file is refused). A
+    /// malformed / unreadable evidence file short-circuits before binding (a
+    /// gate-level failure); otherwise each declared retarget is resolved against
+    /// the catalog and the merged evidence. No entries + no evidence ⇒
     /// `BridgeRetargetPolicy.empty` (byte-identical emission).
-    let fromConfig (catalog: Catalog) (cfg: Config.Config) : Result<BridgeRetargetPolicy> =
+    let fromConfigWith
+        (derived: Map<string, BridgeRetargetEvidence>)
+        (catalog: Catalog)
+        (cfg: Config.Config)
+        : Result<BridgeRetargetPolicy> =
         loadEvidence cfg.Overrides.BridgeRetargetEvidence
+        |> Result.bind (fun fileEvidence -> mergeEvidence fileEvidence derived)
         |> Result.bind (fun evidence -> bindAll catalog evidence cfg.Overrides.BridgeRetargets)
+
+    /// The no-derived-evidence form — callers with no staging companion in
+    /// play (the `policy-diff` verb; the shaping-triple binder). Supplies the
+    /// default the caller could not meaningfully compute (the F# default-
+    /// argument idiom).
+    let fromConfig (catalog: Catalog) (cfg: Config.Config) : Result<BridgeRetargetPolicy> =
+        fromConfigWith Map.empty catalog cfg

@@ -566,3 +566,27 @@ let ``the SsdtArtifactSeam registration set equals its executed set (registered 
     let registered = SsdtArtifactSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
     Assert.Equal<Set<string>>(executed, registered)
     Assert.NotEmpty SsdtArtifactSeam.executedNames
+
+// ---------------------------------------------------------------------------
+// The dynamic BRIDGE-ROW STAGING SEAM is a BOUND source too — the E5 discipline
+// on the live-derivation companion. The Pipeline extract stage runs
+// `BridgeRowStagingSeam.execute`, whose `companions` list ALSO projects the
+// seam's `metadata` and `executedNames`, so `registered ⇔ executed` holds by
+// construction: the acquisition + delta + staged-SQL + planned-state-evidence
+// companion cannot run outside the registry, and its registration cannot exist
+// without the execution. These pin both halves.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``every BridgeRowStagingSeam companion executes through a registered transform (no orphan staging companion)`` () =
+    for name in BridgeRowStagingSeam.executedNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "bridge-row-staging companion '%s' executes (BridgeRowStagingSeam.execute) but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``the BridgeRowStagingSeam registration set equals its executed set (registered <-> executed for the seam)`` () =
+    let executed = BridgeRowStagingSeam.executedNames |> Set.ofList
+    let registered = BridgeRowStagingSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(executed, registered)
+    Assert.NotEmpty BridgeRowStagingSeam.executedNames

@@ -81,6 +81,7 @@ let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries toda
             SetCells = [ ("Name", setLit) ]
             WhereCells = [ ("Id", pkLit) ]
             CdcAware = false
+            NullGuardColumns = []
         }
     let result = ScriptDomBuild.buildUpdateStatement args
     Assert.Empty result.Entries
@@ -168,11 +169,68 @@ let ``Statement.Update renders identically to buildUpdateStatement (DU dispatch 
         { Target     = mkTable "dbo" "Widget"
           SetCells   = [ "Name", SqlLiteral.ofRaw Text (Some "a") ]
           WhereCells = [ "Id", SqlLiteral.ofRaw Integer (Some "1") ]
-          CdcAware   = false }
+          CdcAware   = false
+          NullGuardColumns = [] }
     let direct =
         ScriptDomGenerate.generateOne
             ((ScriptDomBuild.buildUpdateStatement args).Value :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
     Assert.Equal(direct, renderViaStatement (Statement.Update args))
+
+// ---------------------------------------------------------------------------
+// The bridge-row staging lane's two typed shapes (dynamic staging companion):
+//   * `Statement.Update` with `NullGuardColumns` — the FILL-ONLY update: the
+//     WHERE carries `[col] IS NULL`, so an existing non-null cell is
+//     structurally unreachable (the safety rule, in the statement's own shape);
+//   * `Statement.InsertRowIfAbsent` — the GUARDED insert: `IF NOT EXISTS
+//     (SELECT 1 … WHERE [key] = <lit>)` wraps the row insert, so a redeploy
+//     over an already-staged row is a no-op (idempotent, CDC-silent).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NullGuardColumns renders the fill-only IS NULL guard in the UPDATE's WHERE`` () =
+    let args : UpdateBuildArgs =
+        { Target     = mkTable "dbo" "Widget"
+          SetCells   = [ "ExternalRef", SqlLiteral.ofRaw Text (Some "abc") ]
+          WhereCells = [ "Id", SqlLiteral.ofRaw Integer (Some "7") ]
+          CdcAware   = false
+          NullGuardColumns = [ "ExternalRef" ] }
+    let sql = renderViaStatement (Statement.Update args)
+    Assert.Contains("UPDATE", sql)
+    Assert.Contains("[dbo].[Widget]", sql)
+    Assert.Contains("[ExternalRef] = N'abc'", sql)
+    Assert.Contains("[Id] = 7", sql)
+    Assert.Contains("[ExternalRef] IS NULL", sql)
+
+[<Fact>]
+let ``empty NullGuardColumns is byte-identical to the pre-extension UPDATE shape`` () =
+    let mk guards : UpdateBuildArgs =
+        { Target     = mkTable "dbo" "Widget"
+          SetCells   = [ "Name", SqlLiteral.ofRaw Text (Some "a") ]
+          WhereCells = [ "Id", SqlLiteral.ofRaw Integer (Some "1") ]
+          CdcAware   = false
+          NullGuardColumns = guards }
+    let plain = renderViaStatement (Statement.Update (mk []))
+    Assert.DoesNotContain("IS NULL", plain)
+    // and the guarded form differs ONLY by the appended guard term
+    Assert.NotEqual<string>(plain, renderViaStatement (Statement.Update (mk [ "Name" ])))
+
+[<Fact>]
+let ``InsertRowIfAbsent renders the NOT EXISTS guard around the row insert`` () =
+    let keyCell : CellValue = { Column = "RefKey"; Type = Integer; Raw = Some "7" }
+    let cells : CellValue list =
+        [ { Column = "ExternalRef"; Type = Text; Raw = Some "abc" }
+          { Column = "FullName";    Type = Text; Raw = None } ]
+    let sql = renderViaStatement (Statement.InsertRowIfAbsent (mkTable "dbo" "Widget", keyCell, cells))
+    Assert.Contains("IF NOT EXISTS", sql)
+    Assert.Contains("SELECT 1", sql)
+    Assert.Contains("[RefKey] = 7", sql)
+    Assert.Contains("INSERT", sql)
+    Assert.Contains("[dbo].[Widget]", sql)
+    // The key cell leads the column list (structural: guard and payload share it).
+    Assert.Contains("[RefKey]", sql)
+    Assert.Contains("N'abc'", sql)
+    // A None cell renders SQL NULL — never an empty-string overwrite.
+    Assert.Contains("NULL", sql)
 
 // ---------------------------------------------------------------------------
 // Staged-source primitives — `buildCreateTempTable` + `buildInsertBatches`

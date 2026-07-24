@@ -50,6 +50,11 @@ module WriteSignoff =
         /// attribute instead of its original parent's PK — the emitted constraint
         /// references a DIFFERENT table (`overrides.bridgeRetargets`).
         | BridgeRetarget
+        /// The dynamic staging companion derives bridge rows from the LIVE
+        /// estate and emits staged data changes — guarded inserts + fill-only
+        /// identity updates — for the operator to apply
+        /// (`overrides.bridgeRowStaging`).
+        | BridgeRowStaging
 
     /// One authored `signoff` entry — the mode approved, an optional table scope
     /// (empty = the flow's whole set for this mode), the operator's acknowledged
@@ -102,6 +107,7 @@ module WriteSignoff =
         | WriteMode.DeleteScope    -> "delete-scope"
         | WriteMode.DataCorrection -> "data-correction"
         | WriteMode.BridgeRetarget -> "bridge-retarget"
+        | WriteMode.BridgeRowStaging -> "bridge-row-staging"
 
     /// Parse a config label to a mode (case/whitespace-insensitive).
     let parseMode (s: string) : WriteMode option =
@@ -114,6 +120,7 @@ module WriteSignoff =
         | "delete-scope"    -> Some WriteMode.DeleteScope
         | "data-correction" -> Some WriteMode.DataCorrection
         | "bridge-retarget" -> Some WriteMode.BridgeRetarget
+        | "bridge-row-staging" -> Some WriteMode.BridgeRowStaging
         | _                 -> None
 
     /// The default IMPACT statement a mode carries — stative, evidence-grounded
@@ -138,6 +145,8 @@ module WriteSignoff =
             "Approved inline data corrections rewrite required attributes and exclude malformed rows in flight — the emitted or loaded rows differ from the raw source by the approved receipts, each of which names its rows-changed count."
         | WriteMode.BridgeRetarget ->
             "A declared foreign key is retargeted to resolve through a bridge attribute instead of its original parent's primary key — the emitted constraint references a different table, and only retargets whose evidence-backed readiness clears are applied. The child foreign-key value is unchanged; the constraint target moves."
+        | WriteMode.BridgeRowStaging ->
+            "The staging companion reads the live source estate and emits staged bridge-row data changes — inserts guarded on row absence and identity updates guarded on the cell being NULL — plus the planned-state evidence its linked retargets clear against. No existing non-null bridge value is reachable by a staged statement; a blocked derivation stages nothing and the linked retargets stay unproven."
 
     /// The verdict of checking ONE destructive mode a run performs against the
     /// flow's approvals.

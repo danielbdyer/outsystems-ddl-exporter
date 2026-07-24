@@ -22,6 +22,9 @@
     <Compile Include="ServerDigest.fs" />
     <Compile Include="DataIntegrityChecker.fs" />
     <Compile Include="ReadSide.fs" />
+    <!-- Bridge-row staging acquisition: referenced-key + keyed-snapshot +
+         wide-key-stats reads feeding the pure BridgeRowDelta kernel. -->
+    <Compile Include="BridgeSnapshotReader.fs" />
     <Compile Include="ClosureOracle.fs" />
     <Compile Include="Ingestion.fs" />
   </ItemGroup>
