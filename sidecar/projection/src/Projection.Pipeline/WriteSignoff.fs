@@ -96,6 +96,27 @@ module WriteSignoff =
     let blessed (token: string) (fp: ActConsent.ActFingerprint) : ActBlessing =
         { Act = token; Fingerprint = fp; AcknowledgedImpact = None; ApprovedBy = None; Date = None }
 
+    /// Every write mode, in declaration order — the SINGLE enumeration both the
+    /// parser (`parseMode`) and the operator-facing "known modes" hint
+    /// (`knownModeLabels`) derive from. Before this, three lists said what a mode
+    /// was — this one, a second label match inside `parseMode`, and a literal in
+    /// `Config.fs`'s refusal — and the third had already drifted: it omitted
+    /// `data-correction` / `bridge-retarget` / `bridge-row-staging`, telling an
+    /// operator that modes the parser accepts did not exist. Now a mode is
+    /// accepted ⇔ it is listed here ⇔ the refusal advertises it, and `modeLabel`'s
+    /// total match forces every DU case to be named. (The `BridgeCheck.all` /
+    /// `Binding.ofClosedName` precedent — the known-set is derived, never restated.)
+    let allModes : WriteMode list =
+        [ WriteMode.Replace
+          WriteMode.Fresh
+          WriteMode.Drops
+          WriteMode.Cdc
+          WriteMode.IdentityInsert
+          WriteMode.DeleteScope
+          WriteMode.DataCorrection
+          WriteMode.BridgeRetarget
+          WriteMode.BridgeRowStaging ]
+
     /// The canonical config label for a mode.
     let modeLabel (m: WriteMode) : string =
         match m with
@@ -109,19 +130,22 @@ module WriteSignoff =
         | WriteMode.BridgeRetarget -> "bridge-retarget"
         | WriteMode.BridgeRowStaging -> "bridge-row-staging"
 
-    /// Parse a config label to a mode (case/whitespace-insensitive).
+    /// Parse a config label to a mode (case/whitespace-insensitive). DERIVED from
+    /// `allModes` × `modeLabel` rather than a second hand-written label match: the
+    /// parser therefore accepts EXACTLY the modes `allModes` names and
+    /// `knownModeLabels` advertises, so "what parses" and "what the refusal lists"
+    /// cannot disagree. (Every label in `modeLabel` is already lowercase, so
+    /// comparing against the normalized input preserves the prior behavior exactly.)
     let parseMode (s: string) : WriteMode option =
-        match s.Trim().ToLowerInvariant() with
-        | "replace"         -> Some WriteMode.Replace
-        | "fresh"           -> Some WriteMode.Fresh
-        | "drops"           -> Some WriteMode.Drops
-        | "cdc"             -> Some WriteMode.Cdc
-        | "identity-insert" -> Some WriteMode.IdentityInsert
-        | "delete-scope"    -> Some WriteMode.DeleteScope
-        | "data-correction" -> Some WriteMode.DataCorrection
-        | "bridge-retarget" -> Some WriteMode.BridgeRetarget
-        | "bridge-row-staging" -> Some WriteMode.BridgeRowStaging
-        | _                 -> None
+        let normalized = s.Trim().ToLowerInvariant()
+        allModes |> List.tryFind (fun m -> modeLabel m = normalized)
+
+    /// The known-mode hint an unrecognized-mode refusal renders — DERIVED from
+    /// `allModes` so it lists every mode the parser accepts, always. Replaces the
+    /// hand-maintained literal that had already drifted (it omitted the two newest
+    /// modes, telling an operator they did not exist).
+    let knownModeLabels : string =
+        allModes |> List.map modeLabel |> String.concat "/"  // LINT-ALLOW: terminal operator-diagnostic listing the known modes; derived from the closed DU, no typed AST applies to a free-text refusal hint
 
     /// The default IMPACT statement a mode carries — stative, evidence-grounded
     /// (THE_VOICE), the same register `SupportingScope.guaranteeOf` uses. The go

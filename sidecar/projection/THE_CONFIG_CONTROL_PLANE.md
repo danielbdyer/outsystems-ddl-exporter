@@ -250,9 +250,12 @@ of claim, and the distinction is load-bearing:
   `--allow-cdc` authorization family — where those are transient per-run flags, `signoff` is a
   standing declaration in `projection.json`.
 
-The `signoff` array enumerates the destructive modes a flow may perform
-(`replace/fresh/drops/cdc/identity-insert` transfer-side; `delete-scope` emission-lane — its
-gate a named follow-on). Default-on: a destructive Execute is refused until the mode is
+The `signoff` array enumerates the destructive modes a flow may perform — the transfer-side
+wipe/identity family and the emission-lane modes (the destructive emission arm, approved row
+corrections, and the bridge lanes). The mode vocabulary is OWNED by `WriteSignoff.allModes`
+and rendered into every refusal via `WriteSignoff.knownModeLabels`; read it there rather than
+from a list restated here, which is how this sentence went stale once already. Default-on: a
+destructive Execute is refused until the mode is
 greenlit. A declared `tables` scope is VERIFIED to cover the actual wipe (a stale, too-narrow
 approval cannot rubber-stamp a wider blast radius). A44 holds — `signoff` renders omit-when-empty,
 so `parse ∘ render = id`. See `DECISIONS 2026-07-08 — The write-signoff greenlight`.

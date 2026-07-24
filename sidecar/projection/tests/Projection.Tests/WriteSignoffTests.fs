@@ -2,7 +2,7 @@ module Projection.Tests.WriteSignoffTests
 
 // The write-signoff greenlight (2026-07-08, the greenlight program): the
 // declarative, first-class APPROVAL for a destructive write mode. This pins
-// the pure vocabulary — the six modes' string ⇔ DU round-trip, the impact
+// the pure vocabulary — the mode alphabet's string ⇔ DU round-trip, the impact
 // register (THE_VOICE: stative, agentless), the `verify` verdict across
 // missing / covering / scope-mismatched, and the config parse + render
 // round-trip (A44: `parse ∘ render = id` on the `signoff` array). No database.
@@ -13,19 +13,17 @@ open Projection.Pipeline
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
 // -- the mode alphabet: closed, and the string bridge round-trips ------------
-
-let private allModes : WriteSignoff.WriteMode list =
-    [ WriteSignoff.WriteMode.Replace
-      WriteSignoff.WriteMode.Fresh
-      WriteSignoff.WriteMode.Drops
-      WriteSignoff.WriteMode.Cdc
-      WriteSignoff.WriteMode.IdentityInsert
-      WriteSignoff.WriteMode.DeleteScope
-      WriteSignoff.WriteMode.DataCorrection ]
+//
+// These consume the PRODUCTION enumeration (`WriteSignoff.allModes`) rather than a
+// local copy. A local copy is what let the vocabulary drift once already: it sat at
+// seven modes while the DU had nine, so the round-trip below silently never covered
+// `bridge-retarget` / `bridge-row-staging`, and the refusal hint that restated the
+// same list shipped stale. Consuming `allModes` means a new mode extends this
+// coverage the moment it is declared.
 
 [<Fact>]
 let ``parseMode ∘ modeLabel = Some for every mode (the label bridge round-trips)`` () =
-    for m in allModes do
+    for m in WriteSignoff.allModes do
         Assert.Equal(Some m, WriteSignoff.parseMode (WriteSignoff.modeLabel m))
 
 [<Fact>]
@@ -35,18 +33,30 @@ let ``parseMode is case/whitespace-insensitive and rejects an unknown label`` ()
     Assert.Equal(None, WriteSignoff.parseMode "wipe")
 
 [<Fact>]
-let ``the seven canonical labels are the operator-writable vocabulary`` () =
-    let labels = allModes |> List.map WriteSignoff.modeLabel
+let ``the canonical labels are the operator-writable vocabulary (the copy is pinned)`` () =
+    // The explicit expectation is the POINT: it pins operator-facing copy, so a
+    // rename of an existing label is a failing test, not a silent config break.
+    let labels = WriteSignoff.allModes |> List.map WriteSignoff.modeLabel
     Assert.Equal<string list>(
-        [ "replace"; "fresh"; "drops"; "cdc"; "identity-insert"; "delete-scope"; "data-correction" ],
+        [ "replace"; "fresh"; "drops"; "cdc"; "identity-insert"
+          "delete-scope"; "data-correction"; "bridge-retarget"; "bridge-row-staging" ],
         labels)
+
+[<Fact>]
+let ``the refusal hint advertises EXACTLY what parses (code ⇔ copy, derived not restated)`` () =
+    // The drift this pins: `knownModeLabels` feeds the `emission.signoff.modeUnknown`
+    // refusal, so an operator reading it must see every mode `parseMode` accepts —
+    // no more, no less. Both derive from `allModes`, and this proves they agree.
+    let advertised = WriteSignoff.knownModeLabels.Split('/') |> List.ofArray
+    Assert.Equal<string list>(WriteSignoff.allModes |> List.map WriteSignoff.modeLabel, advertised)
+    Assert.All(advertised, fun label -> Assert.True((WriteSignoff.parseMode label).IsSome, label))
 
 // -- the impact register: stative, evidence-grounded (THE_VOICE) -------------
 
 [<Fact>]
 let ``impactOf carries a non-empty, first-person-free impact for every mode`` () =
     // THE_VOICE: no pronouns, stative. A blank impact would be a silent gate.
-    for m in allModes do
+    for m in WriteSignoff.allModes do
         let impact = WriteSignoff.impactOf m
         Assert.False(System.String.IsNullOrWhiteSpace impact)
         let lowered = impact.ToLowerInvariant()

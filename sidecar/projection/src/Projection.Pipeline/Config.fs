@@ -1497,7 +1497,7 @@ module Config =
                     | None -> Result.failureOf (configError "emission.signoff.noMode" "each emission.signoff entry needs a 'mode'.")
                     | Some m ->
                         match WriteSignoff.parseMode m with
-                        | None -> Result.failureOf (configError "emission.signoff.modeUnknown" (sprintf "emission.signoff mode '%s' is not one of replace/fresh/drops/cdc/identity-insert/delete-scope/data-correction." m))
+                        | None -> Result.failureOf (configError "emission.signoff.modeUnknown" (sprintf "emission.signoff mode '%s' is not one of %s." m WriteSignoff.knownModeLabels))
                         | Some mode ->
                             Result.success
                                 { WriteSignoff.Mode = mode
