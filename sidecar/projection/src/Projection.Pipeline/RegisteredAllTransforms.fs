@@ -107,6 +107,13 @@ module RegisteredAllTransforms =
         // `registered ⇔ executed` holds for the correction seam by construction
         // (the E5 discipline extended to the row plane; its own bidirectional test).
         @ DataCorrectionSeam.metadata
+        // The dynamic BRIDGE-ROW STAGING SEAM's registered companions, projected
+        // from the SAME `BridgeRowStagingSeam.companions` the Pipeline executes
+        // (`BridgeRowStagingSeam.execute` at the extract seam, after the
+        // correction seam). Derives bridge-row supply + planned-state retarget
+        // evidence from the live estate — registered ⇔ executed by construction
+        // (its own bidirectional test).
+        @ BridgeRowStagingSeam.metadata
         // F2 + F3 (audit 2026-06-17) — the post-chain EMISSION SEAM's registered
         // rewrites, projected from the SAME `EmissionSeam.rewrites` the Pipeline
         // executes (`EmissionSeam.apply`). Splicing the seam's metadata here, and

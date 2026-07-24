@@ -44,6 +44,9 @@
          readiness profile (data facts stay fail-closed until profiling). Consumed
          by buildPolicyFromConfig (Pipeline.fs). -->
     <Compile Include="BridgeRetargetBinding.fs" />
+    <!-- Dynamic bridge-row staging: the config binder (coordinates + auto-linked
+         retarget scope + mandatory-coverage guard, fail-closed). -->
+    <Compile Include="BridgeRowStagingBinding.fs" />
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
@@ -67,6 +70,9 @@
          ApprovedDataCorrections (Core); compiles before Pipeline.fs, which calls
          DataCorrectionSeam.apply at the extract seam. -->
     <Compile Include="DataCorrectionSeam.fs" />
+    <!-- Dynamic bridge-row staging: the registered companion seam (acquire ->
+         pure delta -> staged SQL -> audit artifacts -> planned-state evidence). -->
+    <Compile Include="BridgeRowStagingSeam.fs" />
     <!-- SsdtArtifactSeam.fs: the post-emit SSDT-artifact seam (the
          ArtifactByKind<SsdtFile> analog of EmissionSeam). Folds the operator-intent
          SSDT-bundle rewrites (emission-folder targeting today) as ONE bound source

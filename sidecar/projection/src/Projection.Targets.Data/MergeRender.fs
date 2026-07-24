@@ -247,10 +247,11 @@ module MergeRender =
                     |> Option.defaultValue SqlLiteral.NullLit
                 ColumnRealization.columnNameText a.Column, lit
             let args : UpdateBuildArgs =
-                { Target     = table
-                  SetCells   = setAttrs |> List.map cellOf
-                  WhereCells = whereAttrs |> List.map cellOf
-                  CdcAware   = cdcAware }
+                { Target           = table
+                  SetCells         = setAttrs |> List.map cellOf
+                  WhereCells       = whereAttrs |> List.map cellOf
+                  CdcAware         = cdcAware
+                  NullGuardColumns = [] }
             ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
 
     /// The one-row compute-then-delegate form (single-shot callers; the

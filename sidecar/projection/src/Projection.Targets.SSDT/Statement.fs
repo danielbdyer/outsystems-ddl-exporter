@@ -300,6 +300,16 @@ type Statement =
     /// emission.
     | CreateIndex of IndexDef
     | InsertRow of TableId * CellValue list
+    /// The GUARDED single-row insert the bridge-row staging lane emits —
+    /// `IF NOT EXISTS (SELECT 1 FROM <table> WHERE <key> = <lit>) INSERT …`.
+    /// The key cell is carried STRUCTURALLY (first position, also the guard
+    /// predicate's column + literal), so the guard can never name a column the
+    /// row does not carry. Idempotent by construction: a redeploy over an
+    /// already-staged row emits no INSERT (CDC-silent), unlike a bare
+    /// `InsertRow` which would violate the key on re-run. Deliberately NOT a
+    /// `Merge`: the staging lane must never carry a WHEN MATCHED UPDATE arm —
+    /// an existing row's cells are not this statement's to touch.
+    | InsertRowIfAbsent of TableId * keyCell: CellValue * cells: CellValue list
     | SetIdentityInsert of TableId * enabled: bool
     /// The idempotent change-detecting MERGE for a kind's data population —
     /// the typed form the data-emission lanes (static seeds / migration

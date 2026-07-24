@@ -87,10 +87,11 @@ module DacpacEmitter =
         // declarative .dacpac model's. DacFx owns the ALTER/DROP at publish.
         | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _
         | AlterTableDropColumn _ | AlterTableDropConstraint _ | DropIndex _ | DropSequence _ -> false
-        // Data statements (incl. the MERGE/UPDATE data-population variants) are
-        // not declarative model objects — they belong to the data-load executor,
-        // never the schema-only `.dacpac`.
-        | InsertRow _ | SetIdentityInsert _ | Statement.Merge _ | Statement.Update _
+        // Data statements (incl. the MERGE/UPDATE data-population variants and
+        // the staging lane's guarded insert) are not declarative model objects —
+        // they belong to the data-load executor, never the schema-only `.dacpac`.
+        | InsertRow _ | InsertRowIfAbsent _ | SetIdentityInsert _
+        | Statement.Merge _ | Statement.Update _
         | Comment _ | Blank | BatchSeparator -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via

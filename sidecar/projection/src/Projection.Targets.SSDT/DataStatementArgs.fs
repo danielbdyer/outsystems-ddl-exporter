@@ -134,4 +134,14 @@ type UpdateBuildArgs =
         /// non-empty, the UPDATE fires unconditionally on PK match — the
         /// pre-slice shape, preserved for non-CDC-tracked tables.
         CdcAware   : bool
+        /// FILL-ONLY guard columns: each appends `AND [col] IS NULL` to the
+        /// WHERE clause, so the UPDATE can only land where the named cell is
+        /// still empty — an existing non-null value is never overwritten, by
+        /// the STATEMENT's own shape rather than by caller discipline. The
+        /// bridge-row staging lane's targeted identity backfill sets its
+        /// identity column both here and in `SetCells` (fill it, only where
+        /// it is missing); the guard also makes the UPDATE idempotent and
+        /// CDC-silent on redeploy (the second run matches zero rows). `[]`
+        /// (every pre-existing caller) is byte-identical to the prior shape.
+        NullGuardColumns : string list
     }

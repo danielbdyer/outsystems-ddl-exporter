@@ -75,6 +75,7 @@ let private emptyOverrides : Config.OverridesSection = {
     EmissionFolders        = []
     BridgeRetargets        = []
     BridgeRetargetEvidence = None
+    BridgeRowStaging       = []
 }
 
 let private mkConfig (overrides: Config.OverridesSection) : Config.Config =

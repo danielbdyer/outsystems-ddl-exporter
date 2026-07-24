@@ -31,6 +31,7 @@ let private mkConfig (insertion: string) : Config.Config =
             EmissionFolders        = []
             BridgeRetargets        = []
             BridgeRetargetEvidence = None
+            BridgeRowStaging       = []
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true

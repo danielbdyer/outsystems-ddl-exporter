@@ -149,10 +149,11 @@ module TransferCellShaping =
                 if setCells |> List.forall (fun (_, lit) -> lit = SqlLiteral.NullLit) then None
                 else
                     Some (renderPhase2Update
-                        { Target     = kind.Physical
-                          SetCells   = setCells
-                          WhereCells = whereGetters |> List.map (fun g -> g row)
-                          CdcAware   = true })
+                        { Target           = kind.Physical
+                          SetCells         = setCells
+                          WhereCells       = whereGetters |> List.map (fun g -> g row)
+                          CdcAware         = true
+                          NullGuardColumns = [] })
 
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
@@ -186,7 +187,8 @@ module TransferCellShaping =
                 if setCells |> List.forall (fun (_, lit) -> lit = SqlLiteral.NullLit) then None
                 else
                     Some (renderPhase2Update
-                        { Target     = kind.Physical
-                          SetCells   = setCells
-                          WhereCells = whereGetters |> List.map (fun g -> g q)
-                          CdcAware   = true })
+                        { Target           = kind.Physical
+                          SetCells         = setCells
+                          WhereCells       = whereGetters |> List.map (fun g -> g q)
+                          CdcAware         = true
+                          NullGuardColumns = [] })

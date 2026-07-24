@@ -30642,3 +30642,84 @@ deferred, and the file the operator authors is exactly the file a future Graph p
   supplement), which needs the real estate to compute the counts. The engine, the file supplement, the
   fail-closed defaults, and the audit narration are all complete and estate-independent; feeding them
   real numbers is the operator's file today and a profiling pass tomorrow.
+
+---
+
+## 2026-07-24 — Dynamic bridge-row staging: the retarget's bridge-row supply derives from the LIVE estate (a registered, config-driven companion seam); the staged-change vocabulary makes overwriting unrepresentable
+
+The bridge-retarget evidence layer's LIVE half lands — the deferral above ("a profiling pass
+tomorrow") is now cashed out as a full companion: instead of an operator hand-authoring the evidence
+file AND the bridge-row supplement, the pipeline derives both from the estate itself, per an
+operator-declared, fully generic `overrides.bridgeRowStaging` entry. Nothing estate-specific lives in
+the engine: tables enter as logical `{module, entity}` (espace-safe — a managed cloud table's
+physical name differs per environment) or physical `{schema, table}` coordinates; key/identity
+attributes, insert mappings, and insert constants are all config. The whole feature rides the
+TransformRegistry and is inert (byte-identical) when undeclared.
+
+- **The flow (per declaration).** (1) REFERENCED KEYS: the distinct non-null values of the linked
+  retargets' FK columns — the exact set the retarget invariant must resolve; the links AUTO-DERIVE
+  from `overrides.bridgeRetargets` (reference parent = source kind, bridge attribute = the staging
+  bridge KEY), zero links refused as inert config (A44), a retarget claimed by two stagings refused as
+  ambiguous evidence. (2) SNAPSHOTS: keyed reads of source + bridge rows for those keys
+  (`BridgeSnapshotReader`, the `ReadSide.readRowsKeyedStream` composition; cells minimized to
+  key + identity + mapped attributes at the persistence boundary), plus the bridge-WIDE key
+  nullness/duplication aggregates the keyed snapshot cannot see. (3) PURE DELTA (`BridgeRowDelta`, a
+  zero-I/O Core kernel like `BridgeRetarget`): per key, a CLOSED verdict — `AlreadyComplete`
+  (verified/unverified) / `StageInsert` / `StageIdentityUpdate` / `SourceRowMissing` /
+  `SourceIdentityMissing` / `IdentityConflict` / `AmbiguousBridgeRows` / `AmbiguousSourceRows` — the
+  last five BLOCKING. (4) STAGED SQL + the audit sextet. (5) PLANNED-STATE EVIDENCE for the linked
+  retargets.
+
+- **The safety rule is structural, not procedural.** A staged change can only be an INSERT of an
+  absent row or a FILL of a NULL identity cell — the verdict vocabulary has no case that would touch
+  an existing non-null value (a disagreeing bridge identity is an `IdentityConflict` BLOCK, never an
+  update), and the statements re-assert it at apply time: the insert is the new
+  `Statement.InsertRowIfAbsent` (`IF NOT EXISTS (SELECT 1 … WHERE key = lit) INSERT …` — the key cell
+  carried structurally so guard and payload cannot disagree; idempotent + CDC-silent on redeploy);
+  the update rides the new `UpdateBuildArgs.NullGuardColumns` (`… AND [identity] IS NULL` — an
+  existing value is unreachable by the statement's own WHERE). This is deliberately NOT the
+  migration-dependency MERGE: a sparse row through that lane would NULL omitted cells on matched rows
+  — the exact overwrite the operator's safety rule names — so the staging lane got its own two typed
+  shapes instead.
+
+- **Complete-row inserts proven at BIND time.** A bridge kind's mandatory, non-identity,
+  non-defaulted attributes must each be covered by key ∪ identity ∪ mappings ∪ constants
+  (`insertMappings` map bridge cells from source cells; `insertConstants` supply what no derivation
+  can know — a lookup FK, a discriminator) — refused before any SQL runs, alongside: key-type match,
+  reserved-attribute protection (mappings may not name key/identity), duplicate coverage, duplicate
+  ids, path-safe ids.
+
+- **Evidence against the PLANNED post-staging state, fail-closed.** `BridgeRowDelta.plannedEvidence`
+  yields the derived `BridgeRetargetEvidence` ONLY when every key's verdict is clean — coverage and
+  parent resolution total by construction, the bridge-wide key stats passed through (an unsound
+  bridge key still gates even when the unsoundness sits outside the referenced subset), identity
+  provenance `Present` only when corroborated-or-freshly-staged (`Ambiguous` warn otherwise). ANY
+  block withholds the evidence entirely: the linked retargets stay `unproven`, the retarget does not
+  land, and the delta artifact names exactly why. The derived map merges with the file supplement in
+  `BridgeRetargetBinding.fromConfigWith` — an id claimed by BOTH sources is a NAMED refusal
+  (`…sourceConflict`), never a silent preference. (`BridgeRetargetEvidence` moved to Core with the
+  second producer.)
+
+- **Registered ⇔ executed; gated; two-phase.** `BridgeRowStagingSeam` is the fourth seam
+  (catalog / row / artifact / **staging**): `execute` / `metadata` / `executedNames` project from ONE
+  companion list, spliced into `RegisteredAllTransforms.all`, its own bidirectional test;
+  classification `OperatorIntent Insertion`, `Domain Data`, `StageBinding Pipeline` (the corrections
+  precedent — staged rows are content the estate gains by operator declaration). Signoff-gated
+  (`emission.signoff` mode `"bridge-row-staging"` — the companion READS the live estate and emits
+  staged data changes). Runs in the two-phase extract stage after `DataCorrectionSeam.apply`
+  (declared staging forces the pipelined arm's named fallback, like corrections); the outcome threads
+  to the emit stage where the retarget binder consumes it.
+
+- **The audit sextet ("no more, no less" on the staging plane).** Per declaration, under
+  `BridgeStaging/<id>/` in the bundle (the atomic staging→move write path): `referenced-keys.json`,
+  `source-snapshot.json` (key + identity + mapped cells ONLY — data minimization; NULL-vs-empty
+  preserved as JSON null), `bridge-snapshot.json` (+ wide stats), `delta.json` (the per-key verdict
+  ledger), `staged.sql`, `evidence.json` (derived, or `withheldBecause` naming each blocking key).
+  So the operator reads exactly what was observed, exactly what will change, and exactly why a
+  retarget cleared or stayed blocked.
+
+  Acceptance mapping: all-complete ⇒ empty staged SQL + evidence derived ⇒ retarget clears;
+  safely-derivable ⇒ only those guarded inserts / fill-only updates + clears on planned state;
+  missing/conflicting ⇒ named blocks, nothing staged, retarget does not land; no existing non-blank
+  bridge payload reachable, structurally. The estate-specific instantiation (which module, which
+  tables, which columns) lives ONLY in the operator's config on their network.

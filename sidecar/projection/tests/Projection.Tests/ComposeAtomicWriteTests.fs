@@ -51,6 +51,7 @@ let private trivialOutputs () : Compose.Outputs =
         {
             SsdtBundle        = bundle
             DataBundle        = Map.empty
+            BridgeStaging     = Map.empty
             Json              = j
             Distributions     = d
             RemediationSql    = "-- no remediation candidates"

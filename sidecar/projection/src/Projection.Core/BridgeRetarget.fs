@@ -212,6 +212,25 @@ type BridgeIdentityEvidence =
     | Missing
     | Ambiguous
 
+/// The DATA-half readiness facts for ONE bridge retarget — the profiling
+/// evidence a catalog inspection cannot know (it needs the actual data): how
+/// values resolve through the bridge, the real uniqueness / null counts,
+/// orphans, payload conflicts, and identity provenance. SOURCE-AGNOSTIC by
+/// design: an operator-authored supplement file supplies it today
+/// (`overrides.bridgeRetargetEvidence.path`), and the dynamic bridge-row
+/// staging companion DERIVES it from the live snapshots' planned post-staging
+/// state (`BridgeRowDelta.plannedEvidence`) — both feed the same binder seam
+/// (`BridgeRetargetBinding.applyEvidence`), which overrides a retarget's
+/// fail-closed `unproven` data facts so the retarget can CLEAR.
+type BridgeRetargetEvidence =
+    { UnresolvedThroughBridge : int64
+      BrokenOriginalParent    : int64
+      OrphanedBridgeRows      : int64
+      PayloadConflicts        : int64
+      BridgeKeyDuplicates     : int64
+      BridgeKeyNulls          : int64
+      IdentityEvidence        : BridgeIdentityEvidence }
+
 /// The aggregated evidence a bridge-retarget decision is taken over — gathered
 /// by a binder from the catalog (resolvability, declared uniqueness/nullability,
 /// type match, constraint state) and from live profiling (resolution coverage,

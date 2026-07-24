@@ -219,3 +219,38 @@ let ``identity is case-insensitive`` () =
     match loadText json with
     | Ok m -> Assert.Equal(BridgeIdentityEvidence.Ambiguous, (Map.find "x" m).IdentityEvidence)
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
+
+// ---------------------------------------------------------------------------
+// mergeEvidence — the two evidence sources (file supplement vs staging-derived)
+// join disjointly; an id claimed by BOTH is a NAMED refusal (two competing
+// accounts of the same data facts, never silently preferred).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``disjoint file and derived evidence union`` () =
+    let fileEv = Map.ofList [ "a", allClear ]
+    let derived = Map.ofList [ "b", { allClear with OrphanedBridgeRows = 1L } ]
+    match BridgeRetargetBinding.mergeEvidence fileEv derived with
+    | Ok merged ->
+        Assert.Equal(2, Map.count merged)
+        Assert.Equal(0L, (Map.find "a" merged).OrphanedBridgeRows)
+        Assert.Equal(1L, (Map.find "b" merged).OrphanedBridgeRows)
+    | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
+
+[<Fact>]
+let ``an id claimed by BOTH sources is a named refusal (no silent preference)`` () =
+    let fileEv = Map.ofList [ "a", allClear ]
+    let derived = Map.ofList [ "a", allClear ]
+    match BridgeRetargetBinding.mergeEvidence fileEv derived with
+    | Ok _ -> Assert.Fail "expected a source-conflict refusal"
+    | Error errs -> Assert.True(hasErrorCode "pipeline.config.bridgeRetargetEvidence.sourceConflict" errs)
+
+[<Fact>]
+let ``derived evidence alone flows through (the staging companion's normal path)`` () =
+    match BridgeRetargetBinding.mergeEvidence Map.empty (Map.ofList [ "a", allClear ]) with
+    | Ok merged ->
+        // ...and applying it clears the structurally-sound retarget, exactly as
+        // file evidence would — the two sources are indistinguishable past the merge.
+        let proven = BridgeRetargetBinding.applyEvidence (Map.find "a" merged) structural
+        Assert.True(cleared proven)
+    | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)

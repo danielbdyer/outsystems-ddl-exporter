@@ -94,6 +94,14 @@ module Compose =
             /// rows (the PROD-empty premise). Empty when data emission is off
             /// (byte-identical to the schema-only bundle).
             DataBundle : Map<string, string>
+            /// The dynamic bridge-row staging companion's durable AUDIT SEXTET
+            /// (`BridgeRowStagingSeam`), keyed by bundle-relative path under
+            /// `BridgeStaging/<id>/`: referenced keys, source/bridge snapshots,
+            /// the per-key delta ledger, the staged SQL (guarded inserts +
+            /// fill-only identity updates), and the evidence disposition.
+            /// Empty when `overrides.bridgeRowStaging` is undeclared
+            /// (byte-identical bundle).
+            BridgeStaging : Map<string, string>
             /// V2 IR JSON from `JsonEmitter`, typed as `JsonNode` so
             /// consumers (drift detection, structural diff, post-write
             /// enrichment) query the doc tree without a `JsonNode
@@ -531,6 +539,7 @@ module Compose =
     let private seedOutputs (ctx: EmitContext) : Outputs =
         { SsdtBundle        = Map.empty
           DataBundle        = Map.empty
+          BridgeStaging     = Map.empty
           Json              = emptyJsonNode ()
           Distributions     = emptyJsonNode ()
           RemediationSql    = ""
@@ -1027,6 +1036,21 @@ module Compose =
                 | parent -> Directory.CreateDirectory parent |> ignore
                 writeFile stagingPath body
                 Path.Combine(outputDir, relPath))
+        // The bridge-row staging companion's audit sextet (`BridgeStaging/<id>/`
+        // — referenced keys / snapshots / delta / staged SQL / evidence). Empty
+        // unless `overrides.bridgeRowStaging` is declared; same per-path staging
+        // + directory-creation discipline as the data bundle.
+        let bridgeStagingFinalPaths =
+            outputs.BridgeStaging
+            |> Map.toList
+            |> List.map (fun (relPath, body) ->
+                let stagingPath = Path.Combine(stagingDir, relPath)
+                match Path.GetDirectoryName stagingPath with
+                | null -> ()
+                | parent when System.String.IsNullOrEmpty parent -> ()
+                | parent -> Directory.CreateDirectory parent |> ignore
+                writeFile stagingPath body
+                Path.Combine(outputDir, relPath))
         // V2 IR JSON
         let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         let jsonStaging = Path.Combine(stagingDir, ArtifactPath.json)
@@ -1094,7 +1118,7 @@ module Compose =
         let fidelityJsonFinal  = Path.Combine(outputDir, ArtifactPath.fidelityJson)
         let fidelityTextFinal  = Path.Combine(outputDir, ArtifactPath.fidelityText)
         let catalogSnapshotFinal = Path.Combine(outputDir, ArtifactPath.catalogSnapshot)
-        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ sqlprojFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal; catalogSnapshotFinal ]
+        bundleFinalPaths @ dataFinalPaths @ bridgeStagingFinalPaths @ dacpacFinalPaths @ sqlprojFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal; catalogSnapshotFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -1314,14 +1338,21 @@ module Compose =
     /// **Second consumer (§5.6).** Made public for the `policy-diff` verb,
     /// which binds two operator `Policy` values from two configs against a
     /// shared catalog. Previously private to `runWithConfigCore`.
-    let buildPolicyFromConfig
+    ///
+    /// `derivedBridgeEvidence` — the staging companion's planned-state evidence
+    /// per retarget id (`BridgeRowStagingSeam`), merged with the file
+    /// supplement inside `BridgeRetargetBinding.fromConfigWith` (overlap
+    /// refused). Callers with no companion in play use
+    /// `buildPolicyFromConfig` (the `Map.empty` default form).
+    let buildPolicyFromConfigWith
+        (derivedBridgeEvidence: Map<string, BridgeRetargetEvidence>)
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Policy> =
         validation {
             let! tightening = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
             and! insertion  = InsertionPolicyBinding.fromConfig cfg
-            and! bridgeRetarget = BridgeRetargetBinding.fromConfig catalog cfg
+            and! bridgeRetarget = BridgeRetargetBinding.fromConfigWith derivedBridgeEvidence catalog cfg
             // AC-X1 — translate the config's data-emission toggles into the
             // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
             // `bootstrap` turning on enables `EmitData`; `DataComposition`
@@ -1401,6 +1432,20 @@ module Compose =
                         Result.failureOf
                             (ValidationError.create "emission.bridgeRetarget.ungreenlit"
                                 (sprintf "declared bridge retargets (`overrides.bridgeRetargets`) reroute a foreign key to a different table before emission, but are not greenlit — %s Declare { \"mode\": \"bridge-retarget\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
+            // The bridge-row-staging gate (the companion's own authorization,
+            // distinct from the retarget's: staging READS the live estate and
+            // emits staged DATA changes for the operator to apply). Presence-
+            // gated on `overrides.bridgeRowStaging`.
+            let! () =
+                if List.isEmpty cfg.Overrides.BridgeRowStaging then Result.success ()
+                else
+                    match WriteSignoff.verify "emission" cfg.Emission.Signoff WriteSignoff.WriteMode.BridgeRowStaging [] with
+                    | WriteSignoff.Confirmed _ -> Result.success ()
+                    | WriteSignoff.Missing (reason, _)
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Result.failureOf
+                            (ValidationError.create "emission.bridgeRowStaging.ungreenlit"
+                                (sprintf "declared bridge row staging (`overrides.bridgeRowStaging`) reads the live estate and emits staged data changes, but is not greenlit — %s Declare { \"mode\": \"bridge-row-staging\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
             return {
                 Policy.empty with
                     Tightening     = tightening
@@ -1447,6 +1492,16 @@ module Compose =
                                      DataStaging = cfg.Emission.DataStaging }
             }
         }
+
+    /// The no-companion default form (`derivedBridgeEvidence = Map.empty`) —
+    /// the `policy-diff` verb's and the shaping-triple binder's shape. Supplies
+    /// the default those callers could not meaningfully compute (no staging
+    /// companion runs in their paths).
+    let buildPolicyFromConfig
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Result<Policy> =
+        buildPolicyFromConfigWith Map.empty cfg catalog
 
     /// THE_CONFIG_CONTROL_PLANE §6 — the SINGLE shaping-overlay bind-all
     /// combinator. Binds the policy / emission-folders / transform-groups
@@ -1616,6 +1671,7 @@ module Compose =
         (parsed: Result<Catalog>)
         (bootstrapLane: DataComposer.BootstrapLane)
         (migration: Projection.Targets.Data.MigrationDependencyContext)
+        (staging: BridgeRowStagingSeam.StagingOutcome)
         (profile: Profile)
         : Result<RunReport * ComposeState> =
         match parsed with
@@ -1636,7 +1692,10 @@ module Compose =
                 // the binding SET is unchanged from before the M9 compression.
                 let boundR =
                     validation {
-                        let! policy    = buildPolicyFromConfig cfg renamedCatalog
+                        // The staging companion's derived planned-state evidence
+                        // feeds the retarget binder here — the retarget readiness
+                        // is evaluated against current-plus-staged bridge rows.
+                        let! policy    = buildPolicyFromConfigWith staging.DerivedEvidence cfg renamedCatalog
                         and! overrides = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
                         and! folders   = EmissionFoldersBinding.fromConfig renamedCatalog cfg
                         and! groups    = TransformGroupsBinding.fromConfig cfg
@@ -1646,6 +1705,9 @@ module Compose =
                 | Ok (policy, overrides, folders, groups) ->
                     let outputs, finalState =
                         projectWithStateWithPinsAndBootstrapLane pins policy profile folders groups migration bootstrapLane renamedCatalog
+                    // The staging companion's durable audit sextet rides the
+                    // bundle (`BridgeStaging/<id>/…`); empty ⇒ byte-identical.
+                    let outputs = { outputs with BridgeStaging = staging.Artifacts }
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
                     // emitted catalog the SSDT step projected (the post-chain
                     // catalog under the identical platform-auto-index filter —
@@ -2218,6 +2280,11 @@ module Compose =
         // schedule. The emitted bundle is identical either way (the pipelined
         // toggle is a schedule choice); the fallback is explicit, not silent.
         && List.isEmpty cfg.Emission.DataCorrections
+        // The bridge-row staging companion likewise runs on the two-phase
+        // schedule (its acquisition + evidence derivation lives in the
+        // two-phase extract seam); declared staging forces the fallback,
+        // explicit, not silent.
+        && List.isEmpty cfg.Overrides.BridgeRowStaging
 
     /// Phase A of the pipelined arm: bind the run's shaping (the SAME
     /// superset `runWithConfigCore` binds, so a binding failure surfaces the
@@ -2539,8 +2606,11 @@ module Compose =
                                 task {
                                     let lane = DataComposer.BootstrapLane.Prerendered extracted.Prerendered
                                     let result =
+                                        // The pipelined arm never runs with staging (the
+                                        // gate forces the two-phase fallback), so the
+                                        // outcome is always empty here.
                                         runWithConfigCore cfg refactorCtx (Ok extracted.Hydrated)
-                                            lane extracted.Migration profile
+                                            lane extracted.Migration BridgeRowStagingSeam.emptyOutcome profile
                                         |> Result.map (fun (report, finalState) ->
                                             report,
                                             { ReadCatalog = extracted.ReadCatalog
@@ -2575,15 +2645,30 @@ module Compose =
                                         // extract stage.
                                         match DataCorrectionSeam.apply cfg catalog bootRows with
                                         | Ok (catalog', bootRows', receipts) ->
-                                            emitStageMarker LogSink.Extract "extract.completed" LogSink.End
-                                                (Map.ofList [ "moduleCount", box (List.length catalog'.Modules) ])
-                                            return Ok (readCatalog, catalog', bootRows', migration, receipts)
+                                            // The bridge-row staging companion: derive
+                                            // referenced keys + snapshots from the live
+                                            // source, compute the pure delta, stage the
+                                            // safe changes, and carry the planned-state
+                                            // evidence into the emit stage (where the
+                                            // retarget binder consumes it). Undeclared ⇒
+                                            // the empty outcome (no acquisition, byte-
+                                            // identical); a named refusal fails the
+                                            // extract stage.
+                                            let! stagingResult =
+                                                BridgeRowStagingSeam.execute cfg catalog' sourceConnectionString
+                                            match stagingResult with
+                                            | Ok staging ->
+                                                emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                                                    (Map.ofList [ "moduleCount", box (List.length catalog'.Modules) ])
+                                                return Ok (readCatalog, catalog', bootRows', migration, receipts, staging)
+                                            | Error errors ->
+                                                return Error errors
                                         | Error errors ->
                                             return Error errors
                                     | Error errors ->
                                         return Error errors
                                 })
-                        let readCatalog, catalog, bootstrapRows, migration, receipts = extracted
+                        let readCatalog, catalog, bootstrapRows, migration, receipts, staging = extracted
                         let! profile =
                             Staged.stage Stages.profile (fun () ->
                                 task {
@@ -2604,7 +2689,7 @@ module Compose =
                                     let lane = DataComposer.BootstrapLane.Rows bootstrapRows
                                     let result =
                                         runWithConfigCore cfg refactorCtx (Ok catalog)
-                                            lane migration profile
+                                            lane migration staging profile
                                         |> Result.map (fun (report, finalState) ->
                                             report,
                                             { ReadCatalog = readCatalog

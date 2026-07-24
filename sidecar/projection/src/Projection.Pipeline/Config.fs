@@ -244,6 +244,48 @@ module Config =
         Bridge       : AttributeCoordinate
     }
 
+    /// One insert-payload MAPPING row of `overrides.bridgeRowStaging[]
+    /// .insertMappings` — the staged bridge row's `bridge` attribute takes the
+    /// source row's `from` attribute (both logical attribute names, resolved
+    /// against the catalog at bind time).
+    type BridgeStagingMappingEntry = {
+        Bridge : string
+        From   : string
+    }
+
+    /// One insert-payload CONSTANT row of `…insertConstants` — the staged
+    /// bridge row's `bridge` attribute takes the operator's declared raw value
+    /// (a mandatory bridge column not derivable from the source — a lookup FK,
+    /// a discriminator). `None` (JSON `null`) is SQL NULL.
+    type BridgeStagingConstantEntry = {
+        Bridge : string
+        Value  : string option
+    }
+
+    /// One row of `overrides.bridgeRowStaging` — a declared dynamic bridge-row
+    /// staging companion (chapter: bridge retargeting). `Source` / `Bridge`
+    /// name the two tables in EITHER logical `{ module, entity }` (espace-safe;
+    /// physical names differ per environment for managed cloud tables) OR
+    /// physical `{ schema, table }` form — the `tableRenames[].from` idiom.
+    /// Each side also names its `key` and `identity` attributes (logical
+    /// names). The binder (`BridgeRowStagingBinding`) resolves everything
+    /// against the catalog fail-closed and auto-links the declared
+    /// `overrides.bridgeRetargets` whose reference parent is the source kind
+    /// and whose bridge attribute lives on the bridge kind — that linked set
+    /// IS the staging scope (the FK columns whose referenced values drive the
+    /// derivation).
+    type BridgeRowStagingEntry = {
+        Id              : string
+        Source          : RenameSource
+        SourceKey       : string
+        SourceIdentity  : string
+        Bridge          : RenameSource
+        BridgeKey       : string
+        BridgeIdentity  : string
+        InsertMappings  : BridgeStagingMappingEntry list
+        InsertConstants : BridgeStagingConstantEntry list
+    }
+
     type OverridesSection = {
         TableRenames           : TableRename list
         MigrationDependencies  : FilePathOverride option
@@ -263,6 +305,14 @@ module Config =
         /// identical). The Graph auto-supplement (real tenant data) is a future
         /// source that would write this same file.
         BridgeRetargetEvidence : FilePathOverride option
+        /// `overrides.bridgeRowStaging` — the declared dynamic bridge-row
+        /// staging companions (chapter: bridge retargeting). Each derives the
+        /// bridge-row supply for its linked retargets from the LIVE estate:
+        /// referenced keys → source/bridge snapshots → pure delta
+        /// (`BridgeRowDelta`) → staged inserts + fill-only identity updates +
+        /// planned-state evidence. Opt-in + signoff-gated; `[]` (the default)
+        /// runs no acquisition and leaves emission byte-identical.
+        BridgeRowStaging       : BridgeRowStagingEntry list
         CircularDependencies   : CircularDependenciesSection option
         /// Chapter C slice C.2 — operator allowlist of kinds whose
         /// missing primary key is acknowledged. Entries are typed
@@ -563,6 +613,7 @@ module Config =
         EmissionFolders        = []
         BridgeRetargets        = []
         BridgeRetargetEvidence = None
+        BridgeRowStaging       = []
     }
 
     let private defaultEmission : EmissionSection = {
@@ -1038,14 +1089,18 @@ module Config =
             return { Module = m; Entity = e }
         }
 
-    let private parseRenameSource (element: JsonElement) : Result<RenameSource> =
+    /// Parse an either/or table coordinate — logical `{ module, entity }` OR
+    /// physical `{ schema, table }`, exactly one. `fieldDesc` is the operator-
+    /// facing config path (e.g. `"tableRenames[].from"`) so the refusal copy
+    /// names the right key regardless of which override reuses the idiom.
+    let private parseRenameSource (fieldDesc: string) (element: JsonElement) : Result<RenameSource> =
         let hasModule = element.TryGetProperty("module") |> fst
         let hasSchema = element.TryGetProperty("schema") |> fst
         if hasModule && hasSchema then
             Result.failureOf (
                 configError
                     "renameSourceAmbiguous"
-                    "tableRenames[].from carries both 'module' and 'schema'; pick exactly one form.")
+                    (sprintf "%s carries both 'module' and 'schema'; pick exactly one form." fieldDesc))
         elif hasModule then
             parseLogicalName element |> Result.map LogicalSource
         elif hasSchema then
@@ -1054,12 +1109,12 @@ module Config =
             Result.failureOf (
                 configError
                     "renameSourceMissing"
-                    "tableRenames[].from must carry either { module, entity } or { schema, table }.")
+                    (sprintf "%s must carry either { module, entity } or { schema, table }." fieldDesc))
 
     let private parseTableRename (element: JsonElement) : Result<TableRename> =
         result {
             let! fromElement = getProperty element "from"
-            let! source = parseRenameSource fromElement
+            let! source = parseRenameSource "tableRenames[].from" fromElement
             let! toElement = getProperty element "to"
             let! target = parsePhysicalName toElement
             return { From = source; To = target }
@@ -1239,6 +1294,109 @@ module Config =
             | _ ->
                 Result.failureOf (configError "typeMismatch" "overrides.bridgeRetargets must be an array.")
 
+    /// Read one raw scalar cell for an insert-constant: string passes through,
+    /// number / bool render raw (invariant per `System.Text.Json`), JSON `null`
+    /// (or an absent `value`) is SQL NULL. Objects / arrays are refused — a
+    /// staged cell is a scalar.
+    let private parseStagingConstantValue (el: JsonElement) : Result<string option> =
+        match el.TryGetProperty("value") with
+        | false, _ -> Result.success None
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success None
+            | JsonValueKind.String -> Result.success (Option.ofObj (v.GetString()))
+            | JsonValueKind.Number
+            | JsonValueKind.True | JsonValueKind.False -> Result.success (Some (v.GetRawText()))
+            | _ ->
+                Result.failureOf (
+                    configError "overrides.bridgeRowStaging.constantNotScalar"
+                        "a bridgeRowStaging insertConstants 'value' must be a string, number, boolean, or null.")
+
+    /// Parse one `overrides.bridgeRowStaging` entry into its textual shape (the
+    /// binder resolves every coordinate against the catalog). Fail-closed: a
+    /// missing `id` / `source` / `bridge` / key / identity (or a malformed
+    /// mapping/constant row) is a named config refusal, never a silent skip.
+    let private parseBridgeRowStagingEntry (el: JsonElement) : Result<BridgeRowStagingEntry> =
+        let sideStr (side: JsonElement) (sideDesc: string) (key: string) : Result<string> =
+            match brStr side key with
+            | Some s -> Result.success s
+            | None ->
+                Result.failureOf (
+                    configError "overrides.bridgeRowStaging.side"
+                        (sprintf "a bridgeRowStaging entry's `%s` needs a non-blank string '%s'." sideDesc key))
+        result {
+            let! id = getString el "id"
+            let! sourceEl = getProperty el "source"
+            let! bridgeEl = getProperty el "bridge"
+            let! source = parseRenameSource "bridgeRowStaging[].source" sourceEl
+            let! sourceKey = sideStr sourceEl "source" "key"
+            let! sourceIdentity = sideStr sourceEl "source" "identity"
+            let! bridge = parseRenameSource "bridgeRowStaging[].bridge" bridgeEl
+            let! bridgeKey = sideStr bridgeEl "bridge" "key"
+            let! bridgeIdentity = sideStr bridgeEl "bridge" "identity"
+            let! mappings =
+                match el.TryGetProperty("insertMappings") with
+                | false, _ -> Result.success []
+                | true, v when v.ValueKind = JsonValueKind.Array ->
+                    v.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (fun m ->
+                        match brStr m "bridge", brStr m "from" with
+                        | Some b, Some f -> Result.success { Bridge = b; From = f }
+                        | _ ->
+                            Result.failureOf (
+                                configError "overrides.bridgeRowStaging.mapping"
+                                    "a bridgeRowStaging insertMappings row needs { bridge, from }."))
+                    |> Result.aggregate
+                | _ ->
+                    Result.failureOf (
+                        configError "typeMismatch" "bridgeRowStaging[].insertMappings must be an array.")
+            let! constants =
+                match el.TryGetProperty("insertConstants") with
+                | false, _ -> Result.success []
+                | true, v when v.ValueKind = JsonValueKind.Array ->
+                    v.EnumerateArray()
+                    |> Seq.toList
+                    |> List.map (fun c ->
+                        match brStr c "bridge" with
+                        | Some b -> parseStagingConstantValue c |> Result.map (fun value -> { Bridge = b; Value = value })
+                        | None ->
+                            Result.failureOf (
+                                configError "overrides.bridgeRowStaging.constant"
+                                    "a bridgeRowStaging insertConstants row needs a non-blank string 'bridge'."))
+                    |> Result.aggregate
+                | _ ->
+                    Result.failureOf (
+                        configError "typeMismatch" "bridgeRowStaging[].insertConstants must be an array.")
+            return {
+                Id              = id
+                Source          = source
+                SourceKey       = sourceKey
+                SourceIdentity  = sourceIdentity
+                Bridge          = bridge
+                BridgeKey       = bridgeKey
+                BridgeIdentity  = bridgeIdentity
+                InsertMappings  = mappings
+                InsertConstants = constants
+            }
+        }
+
+    let private parseBridgeRowStaging (element: JsonElement) : Result<BridgeRowStagingEntry list> =
+        match element.TryGetProperty("bridgeRowStaging") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then parseBridgeRowStagingEntry e
+                    else Result.failureOf (configError "typeMismatch" "overrides.bridgeRowStaging entries must be { id, source, bridge, … } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (configError "typeMismatch" "overrides.bridgeRowStaging must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -1252,6 +1410,7 @@ module Config =
                 let! folders = parseEmissionFolders element
                 let! bridgeRetargets = parseBridgeRetargets element
                 let! bridgeRetargetEvidence = parseOptionalFilePathOverride element "bridgeRetargetEvidence"
+                let! bridgeRowStaging = parseBridgeRowStaging element
                 return {
                     TableRenames           = renames
                     MigrationDependencies  = migDeps
@@ -1261,6 +1420,7 @@ module Config =
                     EmissionFolders        = folders
                     BridgeRetargets        = bridgeRetargets
                     BridgeRetargetEvidence = bridgeRetargetEvidence
+                    BridgeRowStaging       = bridgeRowStaging
                 }
             }
 
