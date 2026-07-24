@@ -30469,3 +30469,78 @@ review before "configure and go":
   assertion guards fail-closed; and `ExpectedCoverage` is the promoter that turns the selector
   narrowing into an all-or-nothing totality requirement. Configure `ExpectedCoverage` on any
   correction that must be all-or-nothing.
+
+---
+
+## 2026-07-24 — Generic bridge retargeting: a foreign key retargets THROUGH a bridge attribute as a DecisionOverlay decision (not a source-IR lift) · fail-closed · opt-in · signoff-gated
+
+The generic form of "retarget an FK to resolve through a bridge table's business key instead of its
+original parent's primary key" (a proprietary UserProfile case is one config instance). Built
+generic-at-the-base, specialized-at-config: the engine bakes in no table, no bridge, no identity
+source — those enter as `overrides.bridgeRetargets` config (and, later, injected evidence).
+
+- **The retarget rides `DecisionOverlay`, NOT a `Reference.TargetAttribute` IR lift.** The design
+  first proposed lifting the shared IR so a `Reference` could name a non-PK target. Rejected
+  mid-build (audit-during-the-work): a retarget is a POLICY-DERIVED decision, so per A18 it stays OUT
+  of the source IR and rides `DecisionOverlay.RetargetFk : Map<SsKey, SsKey>` (reference key →
+  bridge-attribute key), exactly like `DropFk` / `NoCheckFk`. The SSDT emitter (`fkDef` effective-
+  target) and `PhysicalSchema.toPhysicalForeignKeys` both consume it, so the emitted constraint and
+  the round-trip comparator agree; `Map.empty` is byte-identical (the golden-emission + adjunction-law
+  guards prove it). This retired the high-blast every-`Reference`-construction-site lift entirely —
+  the lower-blast AND more correct decomposition (policy out of source truth).
+
+- **The child FK value is unchanged; only the constraint target moves.** The success invariant: each
+  retargeted value is NULL, or resolves to exactly one source row AND exactly one bridge row. The
+  emitter renders `FOREIGN KEY (childcol) REFERENCES [bridge]([bridgecol])`; the stored child value is
+  untouched.
+
+- **A registered, config-driven, group-toggled decision pass.** `BridgeRetargetPass` (OperatorIntent
+  Selection — the same axis as `UserFkReflowPass`, since a retarget reroutes which target a reference
+  resolves through) reads the resolved retargets off the new `Policy.BridgeRetarget` axis, evaluates
+  each one's readiness, and writes the CLEARED retargets into `ComposeState.BridgeRetargets` (→
+  `RetargetFk`). Wired into `chainStepsWithPins`; toggled by the new opt-in (default-off)
+  `TransformGroup.BridgeRetarget`; each retarget's cleared/blocked outcome is an `Annotated` lineage
+  event (no silent downgrade). Registered ⇔ executed by construction.
+
+- **Readiness is a TOTAL pure function over SUPPLIED evidence (`BridgeRetarget.evaluate`).** A closed
+  quality-control check taxonomy (9 blocks + 6 warnings, each a stable diagnostic code) rolls up into
+  three INDEPENDENT verdicts — `Retargeting` / `BridgeRows` / `PayloadSync` — each from only the
+  checks that inform it. No live-data dependency in the kernel: it decides over a supplied
+  `BridgeRetargetProfile`, so it is unit-tested against synthetic profiles and bakes in no estate.
+  (This is exactly the "inferable and buildable-to-completion without the real tables" boundary the
+  scoping question named: the generic engine is total over evidence; the evidence itself needs the
+  real data.)
+
+- **Fail-closed: a retarget is BLOCKED until profiling evidence proves the data half.** The binder
+  (`BridgeRetargetBinding`) resolves the reference + bridge coordinates fail-closed and assembles only
+  the STRUCTURAL catalog facts (source/bridge type match, targets-bridge-PK, existing constraint
+  trust); every DATA-derived fact (resolution coverage, actual uniqueness/nullness, orphans, payload
+  conflicts, identity evidence) stays at its fail-closed `BridgeRetargetProfile.unproven` default, so
+  a configured retarget never clears on the catalog declaration alone — `RetargetFk` stays empty,
+  emission byte-identical — until evidence supplies the data half. **The evidence-supply layer is the
+  deliberately-deferred next slice** (a live-profiling pass and/or an operator supplement; the Graph
+  auto-supplement specifically needs real tenant data, so it cannot be built to completion here). The
+  fail-closed default IS the safe interim: the feature is inert-and-correct until fed real evidence.
+
+- **Signoff-gated.** A non-empty `overrides.bridgeRetargets` is refused unless `emission.signoff`
+  greenlights `{ "mode": "bridge-retarget" }` (`WriteMode.BridgeRetarget`, the emission-plane
+  counterpart of the data-correction / delete-scope gates). Three orthogonal controls: the TOGGLE
+  governs whether the pass runs at all, the GATE governs whether the feature is authorized, and the
+  per-retarget READINESS governs whether a given retarget is safe to land.
+
+- **The correction seam was promoted to a registered fold in the same program.** Approved data
+  corrections were registered-as-metadata but EXECUTED by two hand-placed `apply` calls — the exact
+  F2/F3-shaped "registered but not execution-bound" gap `EmissionSeam` was created to close.
+  `DataCorrectionSeam` — the row-plane analog of `EmissionSeam` — now folds the publish-time row-data
+  overrides as ONE bound source, so `registered ⇔ executed` holds for the correction seam by
+  construction (its own bidirectional test). Corrections, and future row-plane overrides, ride it.
+
+  The whole thread's feature space (corrections + bridge retargeting) now rides the TransformRegistry
+  as declared operator overrides across their natural planes: corrections at the row-plane
+  `DataCorrectionSeam`; bridge retargeting as a schema-plane `DecisionOverlay` decision (pass +
+  overlay) with bridge-row supply riding the existing MigrationData lane. Each plane keeps its own
+  homogeneous fold — no boxing across heterogeneous carriers, per the `Binding.fs` rejected-registry
+  rationale. That is the shape the "satisfy this feature space through the TransformRegistry as
+  plugins" ask dissolves into: a closed set of declared override archetypes, each landing in its
+  plane's fold, selected + parameterized by config, specialized (the proprietary UserProfile/Graph
+  specifics) purely at the config + injected-evidence layer — never in the generic engine.
