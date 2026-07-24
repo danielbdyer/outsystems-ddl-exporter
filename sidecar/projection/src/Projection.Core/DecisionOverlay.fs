@@ -38,6 +38,16 @@ type DecisionOverlay =
         /// `EnforceConstraint NoCheckWithoutEvidence` — emit the FK but
         /// `WITH NOCHECK` (untrusted).
         NoCheckFk : Set<SsKey>
+        /// ReferenceKeys decided to RETARGET through a bridge attribute — each maps
+        /// to the target ATTRIBUTE key (on the bridge kind) the FK resolves through
+        /// INSTEAD of the original parent's primary key. The child FK cell value is
+        /// unchanged; only the constraint target moves. The emitter renders the FK
+        /// against the bridge attribute's kind + column, and `PhysicalSchema`
+        /// reflects the same, so the round-trip comparator stays consistent — the
+        /// exact discipline `DropFk` / `NoCheckFk` follow. `Map.empty` ⇒ no retarget
+        /// (byte-identical). Policy-derived (A18): a retarget is a decided fact,
+        /// kept OUT of the source IR and threaded as overlay.
+        RetargetFk : Map<SsKey, SsKey>
     }
 
 [<RequireQualifiedAccess>]
@@ -52,6 +62,7 @@ module DecisionOverlay =
             EnforceUnique = Set.empty
             DropFk = Set.empty
             NoCheckFk = Set.empty
+            RetargetFk = Map.empty
         }
 
     let private nullabilityKeys (decisions: NullabilityDecisionSet option) : Set<SsKey> =
@@ -124,4 +135,5 @@ module DecisionOverlay =
             EnforceUnique = uniqueKeys state.UniqueIndexDecisions
             DropFk = fkKeys isDropFk state.ForeignKeyDecisions
             NoCheckFk = fkKeys isNoCheckFk state.ForeignKeyDecisions
+            RetargetFk = state.BridgeRetargets |> Option.defaultValue Map.empty
         }
