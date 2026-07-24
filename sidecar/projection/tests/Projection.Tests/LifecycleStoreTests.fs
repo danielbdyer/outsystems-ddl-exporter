@@ -272,6 +272,10 @@ let private sampleReceipts : DataCorrectionReceipt list =
             [ DataCorrectionGuardResult.passed DataCorrectionGuard.TargetIsNull (Some 4120L)
               DataCorrectionGuardResult.passed DataCorrectionGuard.SourceIsNotNull None ]
         RowsMatched = 4120L; RowsChanged = 4118L; RowsExcluded = 0L
+        ChangedRows =
+            [ { RowIdentity = "Account:1001"; Before = None; After = Some "C-1001" }
+              { RowIdentity = "Account:1002"; Before = None; After = Some "C-1002" } ]
+        ExcludedRows = []
         BeforeDigest = Some "abc123"; AfterDigest = Some "def456"
         EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ]; EvidenceDigest = Some "ev123"
         ApprovedBy = Some "operator"; ApprovedAt = Some "2026-07-23" }
@@ -280,6 +284,8 @@ let private sampleReceipts : DataCorrectionReceipt list =
         Derivation = DataCorrectionDerivation.ExcludeRows
         GuardResults = [ DataCorrectionGuardResult.passed DataCorrectionGuard.NoFormalInboundReferences None ]
         RowsMatched = 12L; RowsChanged = 0L; RowsExcluded = 12L
+        ChangedRows = []
+        ExcludedRows = [ { RowIdentity = "Rule:9"; Before = Some "malformed"; After = None } ]
         BeforeDigest = Some "ghi789"; AfterDigest = None
         EvidenceColumns = []; EvidenceDigest = None
         ApprovedBy = None; ApprovedAt = None } ]

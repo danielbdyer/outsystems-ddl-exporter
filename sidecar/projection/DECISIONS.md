@@ -30566,3 +30566,20 @@ artifact plane. This completes the seam trilogy across the three planes (catalog
 each an operator-declared override riding the TransformRegistry as a bound fold. Behavior is
 verbatim-preserved (`EmissionFolders.empty` ⇒ byte-identical); no config or emitter behavior changed,
 only the registration binding.
+
+---
+
+## 2026-07-24 — Data-correction receipts enumerate the EXACT changed / excluded rows (audit: "no more, no less")
+
+The `DataCorrectionReceipt` already carried counts (`RowsChanged` / `RowsExcluded`) + a deterministic
+SHA-256 digest over the affected subject cells — a compact proof of the changed SET, but not an
+enumeration. To let an operator confirm a correction is neither over- nor under-reaching (precisely
+remediating, not overdoing or underdoing), the receipt now also carries the EXACT rows:
+`ChangedRows` (per changed row: serialized `SsKey` identity + subject cell before → after) and
+`ExcludedRows` (per excluded row: identity + the subject cell at exclusion, `After = None`), with the
+by-construction invariant `List.length ChangedRows = RowsChanged` and `List.length ExcludedRows =
+RowsExcluded`. Populated by `ApprovedDataCorrections.applyOne` from the same `changeable` set the
+counts are derived from; persisted in `LifecycleStore` and emitted in the `fidelity.rows.json` audit
+artifact (both forward-compatible — a pre-feature store reads `[]`). The digest stays the compact
+proof; the enumeration is the precise audit detail beside it. (The same enumeration pattern will carry
+onto the bridge-retarget supplemental rows when the evidence-supply layer lands.)

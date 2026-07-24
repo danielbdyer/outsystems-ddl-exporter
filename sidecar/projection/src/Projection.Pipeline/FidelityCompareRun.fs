@@ -890,6 +890,8 @@ module FidelityCompareRun =
                                           RowsMatched = int64Of el "rowsMatched"
                                           RowsChanged = int64Of el "rowsChanged"
                                           RowsExcluded = int64Of el "rowsExcluded"
+                                          ChangedRows = []
+                                          ExcludedRows = []
                                           BeforeDigest = None
                                           AfterDigest = None
                                           EvidenceColumns = []
@@ -1006,6 +1008,19 @@ module FidelityCompareRun =
             o.["rowsMatched"] <- JsonValue.Create r.RowsMatched
             o.["rowsChanged"] <- JsonValue.Create r.RowsChanged
             o.["rowsExcluded"] <- JsonValue.Create r.RowsExcluded
+            // The EXACT rows touched — the precise audit log ("no more, no less"):
+            // each entry names the row identity + subject before → after.
+            let rowArray (rows: DataCorrectionRowChange list) : JsonArray =
+                let arr = JsonArray()
+                for rc in rows do
+                    let ro = JsonObject()
+                    ro.["rowIdentity"] <- JsonValue.Create rc.RowIdentity
+                    (match rc.Before with Some b -> ro.["before"] <- JsonValue.Create b | None -> ())
+                    (match rc.After with Some a -> ro.["after"] <- JsonValue.Create a | None -> ())
+                    arr.Add ro
+                arr
+            (if not (List.isEmpty r.ChangedRows) then o.["changedRows"] <- rowArray r.ChangedRows)
+            (if not (List.isEmpty r.ExcludedRows) then o.["excludedRows"] <- rowArray r.ExcludedRows)
             (match r.EvidenceDigest with Some d -> o.["evidenceDigest"] <- JsonValue.Create d | None -> ())
             (if not (List.isEmpty r.EvidenceColumns) then
                 let ev = JsonArray()

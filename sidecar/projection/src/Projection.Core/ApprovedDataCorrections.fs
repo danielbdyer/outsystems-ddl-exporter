@@ -412,6 +412,22 @@ module ApprovedDataCorrections =
                                 let evidenceDigest =
                                     if List.isEmpty evidenceNames then None
                                     else Some (evidenceDigestOf evidenceNames changeable)
+                                // Enumerate the EXACT rows touched — one entry per
+                                // changeable row (identity + subject before → after),
+                                // so the receipt names precisely which rows were
+                                // remediated (no more, no less). By construction
+                                // `List.length ChangedRows = RowsChanged` and
+                                // `List.length ExcludedRows = RowsExcluded`.
+                                let rowChange (r: StaticRow) (after: string option) : DataCorrectionRowChange =
+                                    { RowIdentity = SsKey.serialize r.Identifier
+                                      Before      = StaticRow.value subjectName r
+                                      After       = after }
+                                let changedRows =
+                                    if isExclude then []
+                                    else changeable |> List.map (fun r -> rowChange r (StaticRow.value subjectName (transform r)))
+                                let excludedRows =
+                                    if isExclude then changeable |> List.map (fun r -> rowChange r None)
+                                    else []
                                 let receipt =
                                     { CorrectionId        = c.Id
                                       SourceRemediationId = c.SourceRemediationId
@@ -421,6 +437,8 @@ module ApprovedDataCorrections =
                                       RowsMatched         = matchedCount
                                       RowsChanged         = (if isExclude then 0L else changeableCount)
                                       RowsExcluded        = (if isExclude then changeableCount else 0L)
+                                      ChangedRows         = changedRows
+                                      ExcludedRows        = excludedRows
                                       BeforeDigest        = beforeDigest
                                       AfterDigest         = afterDigest
                                       EvidenceColumns     = c.EvidenceColumns

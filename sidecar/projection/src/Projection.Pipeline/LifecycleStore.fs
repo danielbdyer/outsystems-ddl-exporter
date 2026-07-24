@@ -153,6 +153,18 @@ module LifecycleStore =
             jw.WriteNumber("rowsMatched", r.RowsMatched)
             jw.WriteNumber("rowsChanged", r.RowsChanged)
             jw.WriteNumber("rowsExcluded", r.RowsExcluded)
+            let writeRowChanges (name: string) (rows: DataCorrectionRowChange list) =
+                jw.WritePropertyName name
+                jw.WriteStartArray()
+                for rc in rows do
+                    jw.WriteStartObject()
+                    jw.WriteString("rowIdentity", rc.RowIdentity)
+                    match rc.Before with Some b -> jw.WriteString("before", b) | None -> jw.WriteNull("before")
+                    match rc.After with Some a -> jw.WriteString("after", a) | None -> jw.WriteNull("after")
+                    jw.WriteEndObject()
+                jw.WriteEndArray()
+            writeRowChanges "changedRows" r.ChangedRows
+            writeRowChanges "excludedRows" r.ExcludedRows
             match r.BeforeDigest with Some d -> jw.WriteString("beforeDigest", d) | None -> jw.WriteNull("beforeDigest")
             match r.AfterDigest with Some d -> jw.WriteString("afterDigest", d) | None -> jw.WriteNull("afterDigest")
             jw.WritePropertyName "evidenceColumns"
@@ -430,6 +442,15 @@ module LifecycleStore =
                                             | Some em, Some ee, Some ea -> yield AttributeCoordinate.create em ee ea
                                             | _ -> () ]
                                     | _ -> []
+                                // Row enumeration — missing (pre-feature store) ⇒ [].
+                                let rowChanges (name: string) : DataCorrectionRowChange list =
+                                    match el.TryGetProperty name with
+                                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                                        [ for rcEl in v.EnumerateArray() do
+                                            match optStr rcEl "rowIdentity" with
+                                            | Some rid -> yield { RowIdentity = rid; Before = optStr rcEl "before"; After = optStr rcEl "after" }
+                                            | None -> () ]
+                                    | _ -> []
                                 Ok { CorrectionId = correctionId
                                      SourceRemediationId = optStr el "sourceRemediationId"
                                      Subject = AttributeCoordinate.create m e a
@@ -438,6 +459,8 @@ module LifecycleStore =
                                      RowsMatched = matched
                                      RowsChanged = changed
                                      RowsExcluded = excluded
+                                     ChangedRows = rowChanges "changedRows"
+                                     ExcludedRows = rowChanges "excludedRows"
                                      BeforeDigest = optStr el "beforeDigest"
                                      AfterDigest = optStr el "afterDigest"
                                      EvidenceColumns = evidence

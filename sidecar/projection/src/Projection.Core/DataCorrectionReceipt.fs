@@ -167,6 +167,19 @@ module DataCorrectionGuardResult =
     let passed (guard: DataCorrectionGuard) (observed: int64 option) : DataCorrectionGuardResult =
         create guard true observed None
 
+/// One row a correction TOUCHED — the EXACT audit detail complementing the
+/// receipt's count + digest ("no more, no less"). `RowIdentity` is the durable
+/// serialized row identity (`SsKey.serialize` — the precise "which row"); `Before`
+/// is the subject cell before the correction (the malformed value being
+/// remediated); `After` is the subject cell after — `Some v` for a value
+/// correction, `None` for an excluded (dropped) row. A reviewer reads exactly
+/// which rows were remediated and how, so they can confirm the correction is
+/// neither over- nor under-reaching.
+type DataCorrectionRowChange =
+    { RowIdentity : string
+      Before      : string option
+      After       : string option }
+
 /// The durable, count-bearing provenance of ONE applied approved correction — a
 /// first-class intervention ledger entry. For same-row / parent-derived /
 /// constant derivations, `RowsChanged` counts the transformed rows; for an
@@ -187,6 +200,15 @@ type DataCorrectionReceipt =
       RowsMatched         : int64
       RowsChanged         : int64
       RowsExcluded        : int64
+      /// The EXACT rows this correction CHANGED — one entry per row (identity +
+      /// subject cell before → after). `List.length ChangedRows = RowsChanged` by
+      /// construction, so the enumeration is provably complete: a reviewer reads
+      /// precisely which rows were remediated and how, not just a count + digest.
+      ChangedRows         : DataCorrectionRowChange list
+      /// The EXACT rows this correction EXCLUDED (dropped from the emitted/loaded
+      /// set) — one entry per row (identity + the subject cell at exclusion time;
+      /// `After = None`). `List.length ExcludedRows = RowsExcluded`.
+      ExcludedRows        : DataCorrectionRowChange list
       BeforeDigest        : string option
       AfterDigest         : string option
       /// The supporting evidence columns the correction was configured with

@@ -144,6 +144,36 @@ let ``same-row backfill copies source into null target, source-not-null narrows 
     Assert.Equal(DataCorrectionDerivation.SameRowAttribute, r.Derivation)
 
 [<Fact>]
+let ``the receipt enumerates the EXACT changed rows — identity + before -> after, length = RowsChanged (no more, no less)`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.SameRowAttribute (AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId")
+            Guards = [ DataCorrectionGuard.SourceIsNotNull ] }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    // The enumeration is provably complete: exactly the changed rows, no more, no less.
+    Assert.Equal(r.RowsChanged, int64 (List.length r.ChangedRows))
+    Assert.Empty r.ExcludedRows
+    // Exactly a1, a4 — subject NULL before, the copied legacy value after (C1, C9).
+    Assert.All(r.ChangedRows, fun rc -> Assert.Equal(None, rc.Before))
+    Assert.Equal<string option list>([ Some "C1"; Some "C9" ], r.ChangedRows |> List.map (fun rc -> rc.After) |> List.sort)
+    Assert.Equal(2, r.ChangedRows |> List.map (fun rc -> rc.RowIdentity) |> List.distinct |> List.length)
+
+[<Fact>]
+let ``the receipt enumerates the EXACT excluded rows — length = RowsExcluded, no value carried after`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.ExcludeRows }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    Assert.True(r.RowsExcluded > 0L)
+    Assert.Equal(r.RowsExcluded, int64 (List.length r.ExcludedRows))
+    Assert.Empty r.ChangedRows
+    Assert.All(r.ExcludedRows, fun rc -> Assert.Equal(None, rc.After))
+    // Distinct identities — one entry per excluded row.
+    Assert.Equal(List.length r.ExcludedRows, r.ExcludedRows |> List.map (fun rc -> rc.RowIdentity) |> List.distinct |> List.length)
+
+[<Fact>]
 let ``source-references-existing-target excludes rows whose copied value is absent from the key set`` () =
     let c =
         { baseCorrection with
@@ -268,6 +298,8 @@ let private mkReceipt (id: string) (changed: int64) (excluded: int64) : DataCorr
       RowsMatched = changed + excluded
       RowsChanged = changed
       RowsExcluded = excluded
+      ChangedRows = []
+      ExcludedRows = []
       BeforeDigest = None
       AfterDigest = None
       EvidenceColumns = []
