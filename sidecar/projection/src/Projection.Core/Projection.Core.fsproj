@@ -171,6 +171,16 @@
          the durable receipt vocabulary it emits is defined earlier
          (DataCorrectionReceipt.fs) so Episode can carry it. -->
     <Compile Include="ApprovedDataCorrections.fs" />
+    <!-- BridgeRetarget.fs: the generic pure kernel of bridge retargeting — the
+         evidence-shaped readiness engine (profile → decision) that decides whether
+         a foreign key can safely resolve through a bridge attribute instead of its
+         original parent, without rewriting any child FK value. A TOTAL function over
+         a supplied BridgeRetargetProfile: no live-data dependency, no proprietary
+         estate baked in (the tables/bridge/identity source enter later, at config +
+         injected evidence). Sits beside ApprovedDataCorrections.fs as the sibling
+         operator-declared-override archetype; needs only the coordinate / identity
+         types compiled far earlier. -->
+    <Compile Include="BridgeRetarget.fs" />
     <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
          portability front-end). Pure planner over the FK graph (Catalog.fs);
          materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,
