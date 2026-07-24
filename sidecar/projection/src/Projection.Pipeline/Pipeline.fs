@@ -1321,7 +1321,7 @@ module Compose =
         validation {
             let! tightening = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
             and! insertion  = InsertionPolicyBinding.fromConfig cfg
-            and! bridgeRetarget = BridgeRetargetBinding.fromConfig catalog cfg.Overrides.BridgeRetargets
+            and! bridgeRetarget = BridgeRetargetBinding.fromConfig catalog cfg
             // AC-X1 — translate the config's data-emission toggles into the
             // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
             // `bootstrap` turning on enables `EmitData`; `DataComposition`

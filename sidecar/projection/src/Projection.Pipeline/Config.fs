@@ -253,6 +253,16 @@ module Config =
         /// and evaluated by `BridgeRetargetPass`; opt-in + signoff-gated. `[]` (the
         /// default) leaves emission byte-identical.
         BridgeRetargets        : BridgeRetargetEntry list
+        /// `overrides.bridgeRetargetEvidence.path` — an operator-supplied profiling
+        /// SUPPLEMENT file (the `migrationDependencies.path` file idiom) that
+        /// supplies, per retarget id, the DATA-derived readiness evidence
+        /// (resolution coverage / actual uniqueness / nulls / orphans / payload
+        /// conflicts / identity). The binder overrides each retarget's fail-closed
+        /// `unproven` data facts with the supplied evidence, so a retarget can
+        /// CLEAR. Absent (the default) ⇒ every retarget stays blocked (byte-
+        /// identical). The Graph auto-supplement (real tenant data) is a future
+        /// source that would write this same file.
+        BridgeRetargetEvidence : FilePathOverride option
         CircularDependencies   : CircularDependenciesSection option
         /// Chapter C slice C.2 — operator allowlist of kinds whose
         /// missing primary key is acknowledged. Entries are typed
@@ -552,6 +562,7 @@ module Config =
         AllowMissingPrimaryKey = []
         EmissionFolders        = []
         BridgeRetargets        = []
+        BridgeRetargetEvidence = None
     }
 
     let private defaultEmission : EmissionSection = {
@@ -1240,6 +1251,7 @@ module Config =
                 let! allowedPks = parseAllowMissingPrimaryKey element
                 let! folders = parseEmissionFolders element
                 let! bridgeRetargets = parseBridgeRetargets element
+                let! bridgeRetargetEvidence = parseOptionalFilePathOverride element "bridgeRetargetEvidence"
                 return {
                     TableRenames           = renames
                     MigrationDependencies  = migDeps
@@ -1248,6 +1260,7 @@ module Config =
                     AllowMissingPrimaryKey = allowedPks
                     EmissionFolders        = folders
                     BridgeRetargets        = bridgeRetargets
+                    BridgeRetargetEvidence = bridgeRetargetEvidence
                 }
             }
 

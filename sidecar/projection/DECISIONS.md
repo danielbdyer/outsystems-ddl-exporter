@@ -30583,3 +30583,62 @@ counts are derived from; persisted in `LifecycleStore` and emitted in the `fidel
 artifact (both forward-compatible — a pre-feature store reads `[]`). The digest stays the compact
 proof; the enumeration is the precise audit detail beside it. (The same enumeration pattern will carry
 onto the bridge-retarget supplemental rows when the evidence-supply layer lands.)
+
+---
+
+## 2026-07-24 — Bridge-retarget evidence supply: the file-based operator SUPPLEMENT lands (a retarget can now CLEAR); the Graph auto-supplement stays deferred; supplemental evidence is logged "no more, no less"
+
+The bridge-retarget chapter shipped fail-closed: the binder assembled only the STRUCTURAL catalog
+facts, every DATA-derived fact stayed at its `BridgeRetargetProfile.unproven` default, so no configured
+retarget could clear — `RetargetFk` empty, emission byte-identical — "until evidence supplies the data
+half." That evidence-supply layer was the deliberately-deferred next slice. Its **operator-supplied,
+file-based half now lands**; the Graph auto-supplement (which genuinely needs real tenant data) stays
+deferred, and the file the operator authors is exactly the file a future Graph pass would write.
+
+- **`overrides.bridgeRetargetEvidence.path` — the `migrationDependencies.path` file idiom.** A JSON
+  supplement, id-keyed to the declared retargets, carrying the DATA half a catalog inspection cannot
+  know: resolution coverage (`unresolvedThroughBridge`), broken-parent count, orphan / payload-conflict
+  tallies, actual bridge-key duplicate / null counts, and identity provenance. `BridgeRetargetBinding
+  .loadEvidence` reads it into a per-id map; `applyEvidence` overrides each retarget's fail-closed data
+  facts with the supplied ones, so a retarget can CLEAR. A retarget with **no matching evidence entry
+  stays blocked** — the safe posture is preserved per-retarget, not just globally.
+
+- **Fail-closed by default, at every seam.** No `path` ⇒ the empty evidence map ⇒ every retarget stays
+  blocked (byte-identical). Within a supplied entry, the BLOCKING counts (`unresolvedThroughBridge` /
+  `brokenOriginalParent` / `bridgeKeyDuplicates` / `bridgeKeyNulls`) default to `1` when OMITTED, so a
+  partial entry cannot accidentally clear a retarget; the warning-only counts default to `0`;
+  `identityEvidence` defaults to `missing`. A present-but-unreadable / malformed / duplicate-id /
+  non-numeric-count / unrecognized-identity file is a NAMED refusal
+  (`pipeline.config.bridgeRetargetEvidence.*`), never a silent skip — the operator declared the file, so
+  it is honored strictly (standing law §4).
+
+- **`TrustedConstraintPossible` is DERIVED from the evidence, never separately declared.** A trusted
+  (checked) constraint is achievable exactly when every in-scope value resolves through the bridge AND
+  no bridge key is NULL — the two data conditions that would otherwise force a permanent `WITH NOCHECK`.
+  So it is computed from the coverage + nullness facts it depends on and can never contradict them.
+  `applyEvidence` moves ONLY the DATA half; the STRUCTURAL facts the binder computed from the catalog
+  (`BridgeKeyPresent` / `TargetsBridgePrimaryKey` / `KeyTypesMatch` / `ExistingConstraintTrusted`) are
+  left untouched.
+
+- **`fromConfig` now takes the whole `cfg` (the `MigrationDependenciesBinding.fromConfig` shape).** It
+  reads the evidence file first (a malformed / unreadable file short-circuits as a gate-level failure),
+  then binds each declared retarget against the catalog + the evidence map. The pure binding
+  (`bindAll : Catalog → evidence map → entries → policy`) and the file boundary (`loadEvidence`) and the
+  fact-override (`applyEvidence`) are each public and unit-tested in isolation, so the "clears WITH
+  evidence, stays blocked WITHOUT" invariant is proven at the exact seam the binder applies it.
+
+- **The supplemental evidence is logged "no more, no less" — the retarget-plane analog of the
+  data-correction row enumeration.** `BridgeRetarget.evidenceNarration` renders the EXACT evidence basis
+  a decision was taken over: the landing outcome (`cleared` / `blocked`) followed by every
+  quality-control check that did NOT hold — each tagged `block` / `warn` with its factual detail — and
+  nothing that did. `BridgeRetargetPass` carries it on each retarget's `Annotated` lineage label
+  (`bridgeRetarget.cleared` / `bridgeRetarget.blocked` prefix kept stable + greppable, enumeration
+  appended). So an operator reads precisely which supplemental facts cleared a retarget, and precisely
+  which data facts a still-blocked retarget is missing — the same "precisely remediating, not overdoing
+  or underdoing" audit posture the correction receipts carry, now on the schema plane. Strings emerge
+  only at that rendering boundary; the typed `BridgeRetargetDecision` is the structure.
+
+  What remains deferred is only the AUTOMATIC evidence source (the Graph / live-profiling auto-
+  supplement), which needs the real estate to compute the counts. The engine, the file supplement, the
+  fail-closed defaults, and the audit narration are all complete and estate-independent; feeding them
+  real numbers is the operator's file today and a profiling pass tomorrow.

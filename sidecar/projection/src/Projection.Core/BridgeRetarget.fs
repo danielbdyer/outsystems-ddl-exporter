@@ -473,6 +473,32 @@ module BridgeRetarget =
         | BridgeReadiness.Ready
         | BridgeReadiness.ReadyWithWarnings _ -> true
 
+    /// Render the EXACT evidence basis a decision was taken over — the stable,
+    /// audit-readable "no more, no less" narration the retarget pass annotates each
+    /// declared retarget with. It names the landing outcome (`cleared` / `blocked`)
+    /// and then enumerates EVERY quality-control check that did not hold — each
+    /// tagged `block` / `warn` with its factual detail — and nothing that did. A
+    /// fully clean retarget renders bare `cleared`; a fail-closed (no-evidence)
+    /// retarget renders `blocked [...]` listing precisely the data facts still
+    /// missing. So an operator reads exactly why a retarget landed or did not, and
+    /// exactly which supplemental evidence closed (or has yet to close) each gap —
+    /// no more, no less. Strings emerge ONLY here (the rendering boundary), per the
+    /// supreme operating discipline; the typed `BridgeRetargetDecision` IS the
+    /// structure.
+    let evidenceNarration (decision: BridgeRetargetDecision) : string =
+        let landing = if retargetCleared decision then "cleared" else "blocked"
+        let failed = decision.Checks |> List.filter (fun r -> not r.Passed)
+        match failed with
+        | [] -> landing
+        | _ ->
+            let render (r: BridgeCheckResult) : string =
+                let sev =
+                    match r.Severity with
+                    | BridgeCheckSeverity.Block -> "block"
+                    | BridgeCheckSeverity.Warn  -> "warn"
+                String.concat "" [ BridgeCheck.name r.Check; " ("; sev; "): "; r.Detail ]  // LINT-ALLOW: terminal audit-narration rendering; the typed BridgeCheckResult IS the structure, no SQL/JSON applies
+            String.concat "" [ landing; " ["; (failed |> List.map render |> String.concat "; "); "]" ]  // LINT-ALLOW: terminal audit-narration join; free-text diagnostic detail
+
     /// The decision-pass core: evaluate every plan's readiness and collect the
     /// CLEARED retargets into the reference→bridge-attribute map the emitter
     /// consumes (via `ComposeState.BridgeRetargets` → `DecisionOverlay.RetargetFk`),

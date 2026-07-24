@@ -32,13 +32,18 @@ module BridgeRetargetPass =
 
     let private classification : Classification = OperatorIntent Selection
 
-    /// One `Annotated` lineage event per declared retarget — `cleared` when its
-    /// readiness let it land, `blocked` otherwise — keyed by the reference SsKey.
-    /// The label is the stable audit narration (annotate-don't-suppress).
+    /// One `Annotated` lineage event per declared retarget — `bridgeRetarget.cleared`
+    /// when its readiness let it land, `bridgeRetarget.blocked` otherwise — keyed by
+    /// the reference SsKey. The label carries the FULL evidence narration
+    /// (`BridgeRetarget.evidenceNarration`): the landing outcome plus the exact set
+    /// of quality-control checks that did not hold (each tagged block/warn with its
+    /// factual detail). So the audit trail records precisely which supplemental
+    /// evidence each retarget cleared on, and precisely which data facts a
+    /// still-blocked retarget is missing — no more, no less (annotate-don't-suppress).
+    /// The `bridgeRetarget.cleared` / `bridgeRetarget.blocked` prefix stays stable
+    /// (greppable) with the enumeration appended.
     let private outcomeEvent (plan: BridgeRetargetPlan) (decision: BridgeRetargetDecision) : LineageEvent =
-        let label =
-            if BridgeRetarget.retargetCleared decision then "bridgeRetarget.cleared"
-            else "bridgeRetarget.blocked"
+        let label = String.concat "" [ "bridgeRetarget."; BridgeRetarget.evidenceNarration decision ]  // LINT-ALLOW: terminal lineage-label composition; typed BridgeRetargetDecision rendered at the annotation boundary
         LineageEvent.forPass passName version classification plan.ReferenceKey (Annotated (Label label))
 
     let private run (_catalog: Catalog) (policy: Policy) (_profile: Profile) : Lineage<Diagnostics<Map<SsKey, SsKey>>> =

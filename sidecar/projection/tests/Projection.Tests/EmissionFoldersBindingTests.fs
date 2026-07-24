@@ -81,6 +81,7 @@ let private emptyOverrides : Config.OverridesSection = {
     AllowMissingPrimaryKey = []
     EmissionFolders        = []
     BridgeRetargets        = []
+    BridgeRetargetEvidence = None
 }
 
 let private mkConfig (overrides: Config.OverridesSection) : Config.Config =

@@ -29,6 +29,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             AllowMissingPrimaryKey = []
             EmissionFolders        = []
             BridgeRetargets        = []
+            BridgeRetargetEvidence = None
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true
