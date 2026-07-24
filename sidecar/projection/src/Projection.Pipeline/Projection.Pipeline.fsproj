@@ -54,6 +54,13 @@
          emitter (OperationalDiagnostics) consumes the Core carrier. -->
     <Compile Include="EstatePosture.fs" />
     <Compile Include="EmissionSeam.fs" />
+    <!-- DataCorrectionSeam.fs: the row-plane override seam (the Map<SsKey,StaticRow
+         list> analog of EmissionSeam). Folds the publish-time row-data overrides
+         (approved data corrections today) as ONE bound source so registered ⇔
+         executed holds by construction. Needs Hydration (line 41) +
+         ApprovedDataCorrections (Core); compiles before Pipeline.fs, which calls
+         DataCorrectionSeam.apply at the extract seam. -->
+    <Compile Include="DataCorrectionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

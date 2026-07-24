@@ -516,3 +516,29 @@ let ``E5 (F3): the EmissionSeam registration set equals its executed set (regist
     // Non-empty — the test actually exercises the binding (a vacuous seam would
     // pass both arms trivially).
     Assert.NotEmpty EmissionSeam.executedNames
+
+// ---------------------------------------------------------------------------
+// The row-plane DATA CORRECTION SEAM is a BOUND source too — the E5 discipline
+// extended from the post-chain catalog plane to the row plane. The Pipeline
+// applies its publish-time row-data overrides through `DataCorrectionSeam.apply`,
+// whose `overrides` list ALSO projects the seam's `metadata` and `executedNames`,
+// so `registered ⇔ executed` holds for the correction seam by construction.
+// Formerly `ApprovedDataCorrections.registeredMetadata` was registered while its
+// execution was a bare Pipeline call (an F2/F3-shaped gap); these pin both halves.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``every DataCorrectionSeam override executes through a registered transform (no orphan row-plane override)`` () =
+    for name in DataCorrectionSeam.executedNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "data-correction-seam override '%s' executes (DataCorrectionSeam.apply) but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``the DataCorrectionSeam registration set equals its executed set (registered <-> executed for the seam)`` () =
+    let executed = DataCorrectionSeam.executedNames |> Set.ofList
+    let registered = DataCorrectionSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(executed, registered)
+    // Non-empty — the seam actually holds a bound override (a vacuous seam would
+    // pass both arms trivially).
+    Assert.NotEmpty DataCorrectionSeam.executedNames

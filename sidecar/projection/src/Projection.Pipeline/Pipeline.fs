@@ -2505,31 +2505,6 @@ module Compose =
         Receipts      : DataCorrectionReceipt list
     }
 
-    /// Apply approved inline data corrections on the TWO-PHASE schedule (the
-    /// whole `Map<SsKey, StaticRow list>` in hand). Returns the corrected catalog
-    /// (static-lane populations re-grafted), the corrected bootstrap-lane map
-    /// (restricted to the ORIGINAL bootstrap keys so a corrected static kind is
-    /// not emitted by BOTH lanes), and the receipts. Empty corrections ⇒ identity
-    /// (byte-identical). FAIL-CLOSED: the engine's named refusal surfaces as the
-    /// extract stage's failure. Module-level (FS3511).
-    let private applyDataCorrectionsTwoPhase
-        (cfg: Config.Config)
-        (catalog: Catalog)
-        (rows: Map<SsKey, StaticRow list>)
-        : Result<Catalog * Map<SsKey, StaticRow list> * DataCorrectionReceipt list> =
-        if List.isEmpty cfg.Emission.DataCorrections then Result.success (catalog, rows, [])
-        else
-            ApprovedDataCorrections.apply catalog cfg.Emission.DataCorrections rows
-            |> Result.map (fun outcome ->
-                // Static-lane kinds are emitted from the catalog (StaticSeedsEmitter);
-                // re-graft their corrected rows there. The bootstrap lane keeps only
-                // the kinds it originally carried, so a corrected static kind that the
-                // engine added to the output map is not ALSO emitted by the bootstrap
-                // lane (T11 keyset agreement preserved).
-                let correctedCatalog = Hydration.graftStaticPopulations outcome.CorrectedRows catalog
-                let bootstrapMap = outcome.CorrectedRows |> Map.filter (fun k _ -> Map.containsKey k rows)
-                (correctedCatalog, bootstrapMap, outcome.Receipts))
-
     /// The publish, returning the `EstateAcquisition` beside the report —
     /// the combined verbs (`runWithConfigAndLoad` / `runWithConfigAndStore`)
     /// ride this so one verb pays for ONE estate acquisition (PL-1).
@@ -2622,7 +2597,7 @@ module Compose =
                                         // (two-phase: the whole row map is in hand). Empty ⇒
                                         // identity (byte-identical); a named refusal fails the
                                         // extract stage.
-                                        match applyDataCorrectionsTwoPhase cfg catalog bootRows with
+                                        match DataCorrectionSeam.apply cfg catalog bootRows with
                                         | Ok (catalog', bootRows', receipts) ->
                                             emitStageMarker LogSink.Extract "extract.completed" LogSink.End
                                                 (Map.ofList [ "moduleCount", box (List.length catalog'.Modules) ])
@@ -2783,7 +2758,7 @@ module Compose =
                     // Apply approved data corrections so the standalone seed plan
                     // reflects the SAME corrected rows the publish path emits
                     // (identity-gate parity). Empty ⇒ byte-identical.
-                    match applyDataCorrectionsTwoPhase cfg hydrated0 bootRows0 with
+                    match DataCorrectionSeam.apply cfg hydrated0 bootRows0 with
                     | Error es -> Result.failure es
                     | Ok (hydrated, bootRows, receipts) ->
                     match applyRenames cfg hydrated with
