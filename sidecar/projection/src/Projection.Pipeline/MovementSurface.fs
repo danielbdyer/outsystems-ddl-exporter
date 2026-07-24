@@ -2546,7 +2546,7 @@ module Command =
                     let rec walk (a: string list) =
                         match a with
                         | [] -> []
-                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" || f = "--data" -> walk tl
+                        | f :: _ :: tl when f = "--format" || f = "--sample" || f = "--stage" || f = "--capture" || f = "--against" || f = "--target" || f = "--data" || f = "--correction-receipts" -> walk tl
                         | f :: tl when f.StartsWith "--" -> walk tl
                         | f :: tl -> f :: walk tl
                     walk rest
@@ -2615,7 +2615,8 @@ module Command =
                                           Load       = ld
                                           // The flow's approved corrections replay
                                           // onto the source before comparing.
-                                          Corrections = cfg.Shaping.Emission.DataCorrections })
+                                          Corrections = cfg.Shaping.Emission.DataCorrections
+                                          CorrectionReceipts = valueOf "--correction-receipts" })
                                | Error es, _, _, _ -> PlanAction.Refused (6, List.head es)
                                | _, Error es, _, _ -> PlanAction.Refused (2, List.head es)
                                | _, _, Error es, _ -> PlanAction.Refused (2, List.head es)
@@ -2631,7 +2632,7 @@ module Command =
                  | [] ->
                      PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: name a flow (check fidelity <flow>) or a source DDL path (check <source.sql>).")
                  | _ ->
-                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--capture <path>] [--format json])."))
+                     PlanAction.Refused (2, err "cli.check.fidelityArgs" "projection check fidelity: requires exactly one flow name (check fidelity <flow> [--sample N] [--stage ddl|dacfx] [--capture <path>] [--correction-receipts <path>] [--format json])."))
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)

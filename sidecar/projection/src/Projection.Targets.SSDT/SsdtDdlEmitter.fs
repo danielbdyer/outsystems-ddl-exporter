@@ -240,7 +240,13 @@ module SsdtDdlEmitter =
     type FkEmissionLookups =
         { AllKinds    : Kind list
           TargetByKey : Map<SsKey, Kind>
-          PkAttrByKey : Map<SsKey, Attribute> }
+          PkAttrByKey : Map<SsKey, Attribute>
+          /// Bridge-retarget resolver: an attribute SsKey → its owning kind + the
+          /// attribute itself. `overlay.RetargetFk` maps a reference to the bridge
+          /// ATTRIBUTE key; this resolves that key to the bridge TABLE (owning
+          /// kind) + COLUMN (attribute) the retargeted FK references instead of the
+          /// parent's PK.
+          AttrOwnerByKey : Map<SsKey, Kind * Attribute> }
 
     [<RequireQualifiedAccess>]
     module FkEmissionLookups =
@@ -254,6 +260,10 @@ module SsdtDdlEmitter =
                     k.Attributes
                     |> List.tryFind (fun a -> a.IsPrimaryKey)
                     |> Option.map (fun pk -> k.SsKey, pk))
+                |> Map.ofList
+              AttrOwnerByKey =
+                allKinds
+                |> List.collect (fun k -> k.Attributes |> List.map (fun a -> a.SsKey, (k, a)))
                 |> Map.ofList }
 
     /// Resolve a `Reference` to a `ForeignKeyDef` for inline FK
@@ -278,6 +288,8 @@ module SsdtDdlEmitter =
     /// cashed out). (Honoring a present `Reference.Name` over this
     /// synthesized form is the open WP7 remainder, not the cap.)
     let private fkDef
+        (overlay: DecisionOverlay)
+        (attrOwnerByKey: Map<SsKey, Kind * Attribute>)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
@@ -287,20 +299,30 @@ module SsdtDdlEmitter =
             k.Attributes
             |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
             |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
-        match sourceColumnOpt,
-              Map.tryFind r.TargetKind targetByKey,
-              Map.tryFind r.TargetKind pkAttrByKey with
-        | Some sourceColumn, Some target, Some pkAttr ->
-            // V1 FK naming: `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`.
-            // Per pillar 7 four-question analysis: the use-case-specific
-            // library is V1's `ForeignKeyNameFactory.CreateEvidenceName`,
-            // which is C# trunk code V2 cannot reference (cherry-pick
-            // discipline per `DECISIONS 2026-05-06`). The naming convention
-            // is documented; mirroring it here is the V1↔V2 ubiquitous-
-            // language commitment per pillar 8. String.Concat with
-            // explicit underscore separator; segments are typed
-            // (k.Physical.Table from Coordinates.TableId; target.Physical
-            // .Table likewise; sourceColumn from k.Attributes).
+        // Effective FK target: the BRIDGE attribute's kind + column when the
+        // reference is retargeted (`overlay.RetargetFk`), else the parent kind's
+        // PK attribute. The child FK cell value is unchanged; only the constraint
+        // target moves. Empty RetargetFk ⇒ the parent-PK target (byte-identical).
+        // A retarget whose mapped attribute key does not resolve falls through to
+        // None (the drop-witness path) — never a silent mis-target; the decision
+        // pass resolves the key fail-closed before it ever reaches the overlay.
+        let targetKindOpt, targetColumnOpt =
+            match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
+            | Some (bridgeKind, bridgeAttr) ->
+                Some bridgeKind, Some (ColumnRealization.columnNameText bridgeAttr.Column)
+            | None ->
+                Map.tryFind r.TargetKind targetByKey,
+                (Map.tryFind r.TargetKind pkAttrByKey |> Option.map (fun pk -> ColumnRealization.columnNameText pk.Column))
+        match sourceColumnOpt, targetKindOpt, targetColumnOpt with
+        | Some sourceColumn, Some target, Some targetColumn ->
+            // V1 FK naming: `FK_<OwnerTable>_<TargetTable>_<SourceColumn>` — the
+            // target segment names the EFFECTIVE target (the bridge table when the
+            // reference is retargeted). Per pillar 7 four-question analysis: the
+            // use-case-specific library is V1's `ForeignKeyNameFactory
+            // .CreateEvidenceName`, which is C# trunk code V2 cannot reference
+            // (cherry-pick discipline per `DECISIONS 2026-05-06`). The naming
+            // convention is documented; mirroring it here is the V1↔V2 ubiquitous-
+            // language commitment per pillar 8.
             let fkName =
                 // Slice 3b — generated names ride the identifier budget
                 // (≤128 byte-identical; over ⇒ 115-char head + hash12;
@@ -318,7 +340,7 @@ module SsdtDdlEmitter =
                     Name         = fkName
                     SourceColumn = sourceColumn
                     Target       = toTableId target
-                    TargetColumn = ColumnRealization.columnNameText pkAttr.Column
+                    TargetColumn = targetColumn
                     OnDelete     = toReferenceActionSql r.OnDelete
                     // Slice 5.13.fk-features-emit (matrix rows 58 + 59).
                     // OnUpdate threads through to ScriptDom's
@@ -347,6 +369,7 @@ module SsdtDdlEmitter =
     /// overlay by `r.SsKey`.
     let private resolvedFksOf
         (overlay: DecisionOverlay)
+        (attrOwnerByKey: Map<SsKey, Kind * Attribute>)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
         (k: Kind)
@@ -364,7 +387,7 @@ module SsdtDdlEmitter =
         k.References
         |> List.filter Reference.isDeployable
         |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
-        |> List.choose (fun r -> fkDef targetByKey pkAttrByKey k r |> Option.map (fun fk -> r, fk))
+        |> List.choose (fun r -> fkDef overlay attrOwnerByKey targetByKey pkAttrByKey k r |> Option.map (fun fk -> r, fk))
 
     let private createTableStatementUsing
         (overlay: DecisionOverlay)
@@ -894,7 +917,7 @@ module SsdtDdlEmitter =
         // (S47): the kind's FK resolutions likewise derive once and feed
         // the CREATE TABLE inline FKs + the NOCHECK alter pair.
         let emittedNamesForKind = emittedIndexNames overlay k
-        let resolvedFks = resolvedFksOf overlay lookups.TargetByKey lookups.PkAttrByKey k
+        let resolvedFks = resolvedFksOf overlay lookups.AttrOwnerByKey lookups.TargetByKey lookups.PkAttrByKey k
         let statements =
             seq {
                 yield! moduleSchemaPropertyStatementsUsing firstKindBySchema m k
@@ -975,7 +998,7 @@ module SsdtDdlEmitter =
     /// FK) — the migration emitter then refuses the add fail-loud rather
     /// than emitting a dangling constraint.
     let foreignKeyDefOfUsing (lookups: FkEmissionLookups) (k: Kind) (r: Reference) : ForeignKeyDef option =
-        fkDef lookups.TargetByKey lookups.PkAttrByKey k r
+        fkDef DecisionOverlay.empty lookups.AttrOwnerByKey lookups.TargetByKey lookups.PkAttrByKey k r
 
     /// The catalog-taking compute-then-delegate form — for one-off
     /// resolutions only; per-reference loops thread `FkEmissionLookups`.
@@ -1060,7 +1083,7 @@ module SsdtDdlEmitter =
                 // three index-facing consumers below; one FK resolution per
                 // kind shared by CREATE TABLE + the NOCHECK alters (PL-4).
                 let emittedNamesForKind = emittedIndexNames overlay k
-                let resolvedFks = resolvedFksOf overlay lookups.TargetByKey lookups.PkAttrByKey k
+                let resolvedFks = resolvedFksOf overlay lookups.AttrOwnerByKey lookups.TargetByKey lookups.PkAttrByKey k
                 yield! yieldWithSeparator (createTableStatementUsing overlay resolvedFks k)
                 // Slice 5.13.fk-features-emit — mirrors the per-kind
                 // emission order in `kindToSsdtFile`: post-CREATE-TABLE
@@ -1279,7 +1302,7 @@ module SsdtDdlEmitter =
         |> List.collect (fun k ->
             k.References
             |> List.filter Reference.isDeployable
-            |> List.map (fun r -> k, r, fkDef lookups.TargetByKey lookups.PkAttrByKey k r))
+            |> List.map (fun r -> k, r, fkDef DecisionOverlay.empty lookups.AttrOwnerByKey lookups.TargetByKey lookups.PkAttrByKey k r))
 
     let foreignKeyDropDiagnosticsUsing
         (lookups: FkEmissionLookups)

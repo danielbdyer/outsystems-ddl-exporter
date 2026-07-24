@@ -98,19 +98,27 @@ module RegisteredAllTransforms =
             // F13 (audit 2026-06-17) — the static-row hydration adapter
             // (`fullExportHydration`) was already authored but never wired into
             // this totality view — registered-in-isolation; the wiring closes it.
-            Hydration.registeredMetadata
-            // Approved inline data corrections — the publish-time row-correction
-            // transform (Domain.Data, StageBinding.Pipeline). Registered as a
-            // first-class metadata surface (not hidden inside the emitters), like
-            // the data-bundle emitters above; executed at the correction seam
-            // between acquisition and the data composers.
-            ApprovedDataCorrections.registeredMetadata ]
+            Hydration.registeredMetadata ]
+        // The row-plane DATA CORRECTION SEAM's registered overrides, projected
+        // from the SAME `DataCorrectionSeam.overrides` the Pipeline executes
+        // (`DataCorrectionSeam.apply` at the extract seam). Formerly the bare
+        // `ApprovedDataCorrections.registeredMetadata` was spliced here while its
+        // execution was hand-wired — now both flow through the one seam, so
+        // `registered ⇔ executed` holds for the correction seam by construction
+        // (the E5 discipline extended to the row plane; its own bidirectional test).
+        @ DataCorrectionSeam.metadata
         // F2 + F3 (audit 2026-06-17) — the post-chain EMISSION SEAM's registered
         // rewrites, projected from the SAME `EmissionSeam.rewrites` the Pipeline
         // executes (`EmissionSeam.apply`). Splicing the seam's metadata here, and
         // pairing it with the bidirectional E5 test, makes the emit seam a BOUND
         // source of the totality proof (closing the F2 counterexample's class).
         @ EmissionSeam.metadata
+        // The post-emit SSDT-ARTIFACT SEAM's registered rewrites, projected from
+        // the SAME `SsdtArtifactSeam.rewrites` the SSDT emit step executes
+        // (`SsdtArtifactSeam.apply`). Emission-folder targeting today; formerly a
+        // bare `applyEmissionFolderOverrides` call, now a bound source (registered ⇔
+        // executed, its own bidirectional test).
+        @ SsdtArtifactSeam.metadata
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
         // Transfer epic — the one named bound source `transferEpic` (above), so

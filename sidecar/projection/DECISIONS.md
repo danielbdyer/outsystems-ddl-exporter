@@ -30435,3 +30435,210 @@ computed column at publish — it now excludes SQL type keywords.
 **Non-negotiable semantics (all tested).** Default config with no corrections is byte-identical.
 Corrections fail closed on: unknown subject, unresolved source/parent/sentinel, guard count
 mismatch, absent sentinel, retained inbound reference, missing `data-correction` signoff.
+
+## 2026-07-23 — Approved data corrections: review hardening (probe correlation · raw refused · receipt-bound proof · evidence non-inert · guard semantics)
+
+Follow-up to the approved-inline-data-corrections entry above, closing an implementation-gap
+review before "configure and go":
+
+- **Configured reference probes now correlate to the excluded PKs.** `ConfiguredReferenceProbe`
+  changed from `{ Entity; Predicate }` (which refused an exclusion whenever the referencing table
+  was merely non-empty) to `{ ReferencingAttribute : AttributeCoordinate }`. The
+  `NoConfiguredReferenceMatches` guard now refuses only when a RETAINED row references — via that
+  attribute — a subject PK about to be excluded (the same dynamic check the formal inbound-FK
+  guard performs, for operator-declared non-formal references).
+
+- **`raw` predicates are refused under `emission.dataCorrections`.** `Predicate.Raw` evaluates to
+  TRUE in the in-memory engine, so it would over-match and rewrite/exclude too much. The
+  correction-config parser refuses it (`…predicate.rawRefused`) until there is a typed evaluator or
+  a SQL-bound correction path; the typed arms (eq / in / isNull / isNotNull / and) stand.
+
+- **The row-fidelity proof consumes the RECORDED receipts.** A `--correction-receipts <path>`
+  option (a JSON array, or a run's `fidelity.rows.json`) loads the receipts a prior publish/load
+  episode recorded and threads them as `recordedReceipts`, so the proof says "target equals source
+  after replaying the EXACT recorded receipts" (reconciled count-for-count), not merely "after
+  replaying the configured corrections". Absent ⇒ the replay just greens the proof.
+
+- **`evidenceColumns` is non-inert.** The receipt now carries `EvidenceColumns` + an
+  `EvidenceDigest` (SHA-256 over the evidence cells on the changed rows), resolved FAIL-CLOSED (a
+  named-but-absent evidence column refuses). Persisted in `LifecycleStore` and the fidelity JSON.
+
+- **Guard semantics documented explicitly.** Row-selector guards (`TargetIsNull`,
+  `SourceIsNotNull`, `ParentExists`, `ParentSourceIsNotNull`, `SourceReferencesExistingTarget`)
+  NARROW the change set (partial coverage — "only where safe"), NOT fail-closed on a per-row miss;
+  assertion guards fail-closed; and `ExpectedCoverage` is the promoter that turns the selector
+  narrowing into an all-or-nothing totality requirement. Configure `ExpectedCoverage` on any
+  correction that must be all-or-nothing.
+
+---
+
+## 2026-07-24 — Generic bridge retargeting: a foreign key retargets THROUGH a bridge attribute as a DecisionOverlay decision (not a source-IR lift) · fail-closed · opt-in · signoff-gated
+
+The generic form of "retarget an FK to resolve through a bridge table's business key instead of its
+original parent's primary key" (a proprietary UserProfile case is one config instance). Built
+generic-at-the-base, specialized-at-config: the engine bakes in no table, no bridge, no identity
+source — those enter as `overrides.bridgeRetargets` config (and, later, injected evidence).
+
+- **The retarget rides `DecisionOverlay`, NOT a `Reference.TargetAttribute` IR lift.** The design
+  first proposed lifting the shared IR so a `Reference` could name a non-PK target. Rejected
+  mid-build (audit-during-the-work): a retarget is a POLICY-DERIVED decision, so per A18 it stays OUT
+  of the source IR and rides `DecisionOverlay.RetargetFk : Map<SsKey, SsKey>` (reference key →
+  bridge-attribute key), exactly like `DropFk` / `NoCheckFk`. The SSDT emitter (`fkDef` effective-
+  target) and `PhysicalSchema.toPhysicalForeignKeys` both consume it, so the emitted constraint and
+  the round-trip comparator agree; `Map.empty` is byte-identical (the golden-emission + adjunction-law
+  guards prove it). This retired the high-blast every-`Reference`-construction-site lift entirely —
+  the lower-blast AND more correct decomposition (policy out of source truth).
+
+- **The child FK value is unchanged; only the constraint target moves.** The success invariant: each
+  retargeted value is NULL, or resolves to exactly one source row AND exactly one bridge row. The
+  emitter renders `FOREIGN KEY (childcol) REFERENCES [bridge]([bridgecol])`; the stored child value is
+  untouched.
+
+- **A registered, config-driven, group-toggled decision pass.** `BridgeRetargetPass` (OperatorIntent
+  Selection — the same axis as `UserFkReflowPass`, since a retarget reroutes which target a reference
+  resolves through) reads the resolved retargets off the new `Policy.BridgeRetarget` axis, evaluates
+  each one's readiness, and writes the CLEARED retargets into `ComposeState.BridgeRetargets` (→
+  `RetargetFk`). Wired into `chainStepsWithPins`; toggled by the new opt-in (default-off)
+  `TransformGroup.BridgeRetarget`; each retarget's cleared/blocked outcome is an `Annotated` lineage
+  event (no silent downgrade). Registered ⇔ executed by construction.
+
+- **Readiness is a TOTAL pure function over SUPPLIED evidence (`BridgeRetarget.evaluate`).** A closed
+  quality-control check taxonomy (9 blocks + 6 warnings, each a stable diagnostic code) rolls up into
+  three INDEPENDENT verdicts — `Retargeting` / `BridgeRows` / `PayloadSync` — each from only the
+  checks that inform it. No live-data dependency in the kernel: it decides over a supplied
+  `BridgeRetargetProfile`, so it is unit-tested against synthetic profiles and bakes in no estate.
+  (This is exactly the "inferable and buildable-to-completion without the real tables" boundary the
+  scoping question named: the generic engine is total over evidence; the evidence itself needs the
+  real data.)
+
+- **Fail-closed: a retarget is BLOCKED until profiling evidence proves the data half.** The binder
+  (`BridgeRetargetBinding`) resolves the reference + bridge coordinates fail-closed and assembles only
+  the STRUCTURAL catalog facts (source/bridge type match, targets-bridge-PK, existing constraint
+  trust); every DATA-derived fact (resolution coverage, actual uniqueness/nullness, orphans, payload
+  conflicts, identity evidence) stays at its fail-closed `BridgeRetargetProfile.unproven` default, so
+  a configured retarget never clears on the catalog declaration alone — `RetargetFk` stays empty,
+  emission byte-identical — until evidence supplies the data half. **The evidence-supply layer is the
+  deliberately-deferred next slice** (a live-profiling pass and/or an operator supplement; the Graph
+  auto-supplement specifically needs real tenant data, so it cannot be built to completion here). The
+  fail-closed default IS the safe interim: the feature is inert-and-correct until fed real evidence.
+
+- **Signoff-gated.** A non-empty `overrides.bridgeRetargets` is refused unless `emission.signoff`
+  greenlights `{ "mode": "bridge-retarget" }` (`WriteMode.BridgeRetarget`, the emission-plane
+  counterpart of the data-correction / delete-scope gates). Three orthogonal controls: the TOGGLE
+  governs whether the pass runs at all, the GATE governs whether the feature is authorized, and the
+  per-retarget READINESS governs whether a given retarget is safe to land.
+
+- **The correction seam was promoted to a registered fold in the same program.** Approved data
+  corrections were registered-as-metadata but EXECUTED by two hand-placed `apply` calls — the exact
+  F2/F3-shaped "registered but not execution-bound" gap `EmissionSeam` was created to close.
+  `DataCorrectionSeam` — the row-plane analog of `EmissionSeam` — now folds the publish-time row-data
+  overrides as ONE bound source, so `registered ⇔ executed` holds for the correction seam by
+  construction (its own bidirectional test). Corrections, and future row-plane overrides, ride it.
+
+  The whole thread's feature space (corrections + bridge retargeting) now rides the TransformRegistry
+  as declared operator overrides across their natural planes: corrections at the row-plane
+  `DataCorrectionSeam`; bridge retargeting as a schema-plane `DecisionOverlay` decision (pass +
+  overlay) with bridge-row supply riding the existing MigrationData lane. Each plane keeps its own
+  homogeneous fold — no boxing across heterogeneous carriers, per the `Binding.fs` rejected-registry
+  rationale. That is the shape the "satisfy this feature space through the TransformRegistry as
+  plugins" ask dissolves into: a closed set of declared override archetypes, each landing in its
+  plane's fold, selected + parameterized by config, specialized (the proprietary UserProfile/Graph
+  specifics) purely at the config + injected-evidence layer — never in the generic engine.
+
+---
+
+## 2026-07-24 — Emission-folder targeting promoted to a registered seam (`SsdtArtifactSeam`): "move a table's .sql to a different module-folder" is now registered ⇔ executed
+
+`overrides.emissionFolders` (relocate a kind's emitted SSDT `.sql` from its default `Modules/<Module>/`
+folder to an operator-named folder, preserving the `<Schema>.<Table>.sql` basename; only the directory
+prefix is rewritten) already moved a specific table into a different module-folder emission target —
+but it ran as a BARE `applyEmissionFolderOverrides` call inside the SSDT emit step, unregistered: the
+exact F2/F3-shaped "operator-intent mutation runs outside every bound source" pattern `EmissionSeam`
+was created to retire.
+
+`SsdtArtifactSeam` — the `ArtifactByKind<SsdtFile>` analog of `EmissionSeam` (`Catalog → Catalog`) and
+`DataCorrectionSeam` (the row plane) — now folds the post-emit SSDT-bundle rewrites as ONE bound
+source: `apply` folds the registered `rewrites`, `metadata` / `executedNames` project from the same
+list, and the SSDT emit step calls `SsdtArtifactSeam.apply`. So the emission-folder rewrite
+(`OperatorIntent Emission`, `"emissionFolderTargeting"`) is BOTH executed and registered by
+construction, with its own bidirectional totality test — `registered ⇔ executed` for the emitted-
+artifact plane. This completes the seam trilogy across the three planes (catalog / row / artifact),
+each an operator-declared override riding the TransformRegistry as a bound fold. Behavior is
+verbatim-preserved (`EmissionFolders.empty` ⇒ byte-identical); no config or emitter behavior changed,
+only the registration binding.
+
+---
+
+## 2026-07-24 — Data-correction receipts enumerate the EXACT changed / excluded rows (audit: "no more, no less")
+
+The `DataCorrectionReceipt` already carried counts (`RowsChanged` / `RowsExcluded`) + a deterministic
+SHA-256 digest over the affected subject cells — a compact proof of the changed SET, but not an
+enumeration. To let an operator confirm a correction is neither over- nor under-reaching (precisely
+remediating, not overdoing or underdoing), the receipt now also carries the EXACT rows:
+`ChangedRows` (per changed row: serialized `SsKey` identity + subject cell before → after) and
+`ExcludedRows` (per excluded row: identity + the subject cell at exclusion, `After = None`), with the
+by-construction invariant `List.length ChangedRows = RowsChanged` and `List.length ExcludedRows =
+RowsExcluded`. Populated by `ApprovedDataCorrections.applyOne` from the same `changeable` set the
+counts are derived from; persisted in `LifecycleStore` and emitted in the `fidelity.rows.json` audit
+artifact (both forward-compatible — a pre-feature store reads `[]`). The digest stays the compact
+proof; the enumeration is the precise audit detail beside it. (The same enumeration pattern will carry
+onto the bridge-retarget supplemental rows when the evidence-supply layer lands.)
+
+---
+
+## 2026-07-24 — Bridge-retarget evidence supply: the file-based operator SUPPLEMENT lands (a retarget can now CLEAR); the Graph auto-supplement stays deferred; supplemental evidence is logged "no more, no less"
+
+The bridge-retarget chapter shipped fail-closed: the binder assembled only the STRUCTURAL catalog
+facts, every DATA-derived fact stayed at its `BridgeRetargetProfile.unproven` default, so no configured
+retarget could clear — `RetargetFk` empty, emission byte-identical — "until evidence supplies the data
+half." That evidence-supply layer was the deliberately-deferred next slice. Its **operator-supplied,
+file-based half now lands**; the Graph auto-supplement (which genuinely needs real tenant data) stays
+deferred, and the file the operator authors is exactly the file a future Graph pass would write.
+
+- **`overrides.bridgeRetargetEvidence.path` — the `migrationDependencies.path` file idiom.** A JSON
+  supplement, id-keyed to the declared retargets, carrying the DATA half a catalog inspection cannot
+  know: resolution coverage (`unresolvedThroughBridge`), broken-parent count, orphan / payload-conflict
+  tallies, actual bridge-key duplicate / null counts, and identity provenance. `BridgeRetargetBinding
+  .loadEvidence` reads it into a per-id map; `applyEvidence` overrides each retarget's fail-closed data
+  facts with the supplied ones, so a retarget can CLEAR. A retarget with **no matching evidence entry
+  stays blocked** — the safe posture is preserved per-retarget, not just globally.
+
+- **Fail-closed by default, at every seam.** No `path` ⇒ the empty evidence map ⇒ every retarget stays
+  blocked (byte-identical). Within a supplied entry, the BLOCKING counts (`unresolvedThroughBridge` /
+  `brokenOriginalParent` / `bridgeKeyDuplicates` / `bridgeKeyNulls`) default to `1` when OMITTED, so a
+  partial entry cannot accidentally clear a retarget; the warning-only counts default to `0`;
+  `identityEvidence` defaults to `missing`. A present-but-unreadable / malformed / duplicate-id /
+  non-numeric-count / unrecognized-identity file is a NAMED refusal
+  (`pipeline.config.bridgeRetargetEvidence.*`), never a silent skip — the operator declared the file, so
+  it is honored strictly (standing law §4).
+
+- **`TrustedConstraintPossible` is DERIVED from the evidence, never separately declared.** A trusted
+  (checked) constraint is achievable exactly when every in-scope value resolves through the bridge AND
+  no bridge key is NULL — the two data conditions that would otherwise force a permanent `WITH NOCHECK`.
+  So it is computed from the coverage + nullness facts it depends on and can never contradict them.
+  `applyEvidence` moves ONLY the DATA half; the STRUCTURAL facts the binder computed from the catalog
+  (`BridgeKeyPresent` / `TargetsBridgePrimaryKey` / `KeyTypesMatch` / `ExistingConstraintTrusted`) are
+  left untouched.
+
+- **`fromConfig` now takes the whole `cfg` (the `MigrationDependenciesBinding.fromConfig` shape).** It
+  reads the evidence file first (a malformed / unreadable file short-circuits as a gate-level failure),
+  then binds each declared retarget against the catalog + the evidence map. The pure binding
+  (`bindAll : Catalog → evidence map → entries → policy`) and the file boundary (`loadEvidence`) and the
+  fact-override (`applyEvidence`) are each public and unit-tested in isolation, so the "clears WITH
+  evidence, stays blocked WITHOUT" invariant is proven at the exact seam the binder applies it.
+
+- **The supplemental evidence is logged "no more, no less" — the retarget-plane analog of the
+  data-correction row enumeration.** `BridgeRetarget.evidenceNarration` renders the EXACT evidence basis
+  a decision was taken over: the landing outcome (`cleared` / `blocked`) followed by every
+  quality-control check that did NOT hold — each tagged `block` / `warn` with its factual detail — and
+  nothing that did. `BridgeRetargetPass` carries it on each retarget's `Annotated` lineage label
+  (`bridgeRetarget.cleared` / `bridgeRetarget.blocked` prefix kept stable + greppable, enumeration
+  appended). So an operator reads precisely which supplemental facts cleared a retarget, and precisely
+  which data facts a still-blocked retarget is missing — the same "precisely remediating, not overdoing
+  or underdoing" audit posture the correction receipts carry, now on the schema plane. Strings emerge
+  only at that rendering boundary; the typed `BridgeRetargetDecision` is the structure.
+
+  What remains deferred is only the AUTOMATIC evidence source (the Graph / live-profiling auto-
+  supplement), which needs the real estate to compute the counts. The engine, the file supplement, the
+  fail-closed defaults, and the audit narration are all complete and estate-independent; feeding them
+  real numbers is the operator's file today and a profiling pass tomorrow.

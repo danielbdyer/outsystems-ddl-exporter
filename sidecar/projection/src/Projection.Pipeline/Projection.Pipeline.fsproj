@@ -38,6 +38,12 @@
     <Compile Include="MigrationDependenciesBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
+    <!-- BridgeRetargetBinding.fs: binds overrides.bridgeRetargets (textual config)
+         into Policy.BridgeRetarget — resolves the reference + bridge coordinates
+         fail-closed and assembles the structural catalog facts of each retarget's
+         readiness profile (data facts stay fail-closed until profiling). Consumed
+         by buildPolicyFromConfig (Pipeline.fs). -->
+    <Compile Include="BridgeRetargetBinding.fs" />
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
@@ -54,6 +60,20 @@
          emitter (OperationalDiagnostics) consumes the Core carrier. -->
     <Compile Include="EstatePosture.fs" />
     <Compile Include="EmissionSeam.fs" />
+    <!-- DataCorrectionSeam.fs: the row-plane override seam (the Map<SsKey,StaticRow
+         list> analog of EmissionSeam). Folds the publish-time row-data overrides
+         (approved data corrections today) as ONE bound source so registered ⇔
+         executed holds by construction. Needs Hydration (line 41) +
+         ApprovedDataCorrections (Core); compiles before Pipeline.fs, which calls
+         DataCorrectionSeam.apply at the extract seam. -->
+    <Compile Include="DataCorrectionSeam.fs" />
+    <!-- SsdtArtifactSeam.fs: the post-emit SSDT-artifact seam (the
+         ArtifactByKind<SsdtFile> analog of EmissionSeam). Folds the operator-intent
+         SSDT-bundle rewrites (emission-folder targeting today) as ONE bound source
+         so registered ⇔ executed holds. Needs EmissionFolders (EmissionFoldersBinding,
+         line 37) + SsdtDdlEmitter (Targets.SSDT); compiles before Pipeline.fs, whose
+         SSDT emit step calls SsdtArtifactSeam.apply. -->
+    <Compile Include="SsdtArtifactSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

@@ -144,6 +144,36 @@ let ``same-row backfill copies source into null target, source-not-null narrows 
     Assert.Equal(DataCorrectionDerivation.SameRowAttribute, r.Derivation)
 
 [<Fact>]
+let ``the receipt enumerates the EXACT changed rows — identity + before -> after, length = RowsChanged (no more, no less)`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.SameRowAttribute (AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId")
+            Guards = [ DataCorrectionGuard.SourceIsNotNull ] }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    // The enumeration is provably complete: exactly the changed rows, no more, no less.
+    Assert.Equal(r.RowsChanged, int64 (List.length r.ChangedRows))
+    Assert.Empty r.ExcludedRows
+    // Exactly a1, a4 — subject NULL before, the copied legacy value after (C1, C9).
+    Assert.All(r.ChangedRows, fun rc -> Assert.Equal(None, rc.Before))
+    Assert.Equal<string option list>([ Some "C1"; Some "C9" ], r.ChangedRows |> List.map (fun rc -> rc.After) |> List.sort)
+    Assert.Equal(2, r.ChangedRows |> List.map (fun rc -> rc.RowIdentity) |> List.distinct |> List.length)
+
+[<Fact>]
+let ``the receipt enumerates the EXACT excluded rows — length = RowsExcluded, no value carried after`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.ExcludeRows }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    Assert.True(r.RowsExcluded > 0L)
+    Assert.Equal(r.RowsExcluded, int64 (List.length r.ExcludedRows))
+    Assert.Empty r.ChangedRows
+    Assert.All(r.ExcludedRows, fun rc -> Assert.Equal(None, rc.After))
+    // Distinct identities — one entry per excluded row.
+    Assert.Equal(List.length r.ExcludedRows, r.ExcludedRows |> List.map (fun rc -> rc.RowIdentity) |> List.distinct |> List.length)
+
+[<Fact>]
 let ``source-references-existing-target excludes rows whose copied value is absent from the key set`` () =
     let c =
         { baseCorrection with
@@ -268,8 +298,12 @@ let private mkReceipt (id: string) (changed: int64) (excluded: int64) : DataCorr
       RowsMatched = changed + excluded
       RowsChanged = changed
       RowsExcluded = excluded
+      ChangedRows = []
+      ExcludedRows = []
       BeforeDigest = None
       AfterDigest = None
+      EvidenceColumns = []
+      EvidenceDigest = None
       ApprovedBy = None
       ApprovedAt = None }
 
@@ -310,3 +344,46 @@ let ``a value correction records before/after digests for the changed rows`` () 
     Assert.True(Option.isSome r.BeforeDigest)
     Assert.True(Option.isSome r.AfterDigest)
     Assert.NotEqual<string option>(r.BeforeDigest, r.AfterDigest)
+
+// -- item 1: configured reference probes correlate to the excluded PKs --------
+
+[<Fact>]
+let ``configured reference probe refuses exclusion only when a retained row references an excluded PK`` () =
+    let excludeC1 =
+        { baseCorrection with
+            Subject = AttributeCoordinate.create "Sales" "Customer" "Id"
+            Predicate = Some (Predicate.Equals (nm "Id", "C1"))
+            Derivation = DataCorrectionDerivationSpec.ExcludeRows
+            Guards = [ DataCorrectionGuard.NoConfiguredReferenceMatches ]
+            ConfiguredProbes = [ { ReferencingAttribute = AttributeCoordinate.create "Sales" "Account" "CustomerId" } ] }
+    // a2.CustomerId = C1 references the excluded row → refuse by name
+    Assert.Equal("dataCorrection.exclude.configuredReferenceMatch", applyErr [ excludeC1 ])
+    // C2 is referenced by no retained row → excluding it passes (the probe does
+    // not fire merely because the referencing table is non-empty)
+    let excludeC2 = { excludeC1 with Predicate = Some (Predicate.Equals (nm "Id", "C2")) }
+    Assert.Equal(1L, (List.exactlyOne (applyOk [ excludeC2 ]).Receipts).RowsExcluded)
+
+// -- item 4: evidence columns are non-inert (recorded + digested, fail-closed) --
+
+[<Fact>]
+let ``evidence columns are recorded on the receipt with a digest`` () =
+    let c =
+        { baseCorrection with
+            Subject = AttributeCoordinate.create "Sales" "Account" "OwnerName"
+            Predicate = Some (Predicate.IsNull (nm "OwnerName"))
+            Derivation = DataCorrectionDerivationSpec.ConstantLiteral "X"
+            Guards = [ DataCorrectionGuard.TargetIsNull ]
+            EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ] }
+    let r = List.exactlyOne (applyOk [ c ]).Receipts
+    Assert.Equal<AttributeCoordinate list>([ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ], r.EvidenceColumns)
+    Assert.True(Option.isSome r.EvidenceDigest)
+
+[<Fact>]
+let ``an unresolved evidence column refuses fail-closed`` () =
+    let c =
+        { baseCorrection with
+            Predicate = Some (Predicate.IsNull (nm "CustomerId"))
+            Derivation = DataCorrectionDerivationSpec.ConstantLiteral "X"
+            Guards = [ DataCorrectionGuard.TargetIsNull ]
+            EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "NoSuchEvidence" ] }
+    Assert.Equal("dataCorrection.evidence.unresolved", applyErr [ c ])

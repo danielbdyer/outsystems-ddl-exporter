@@ -28,6 +28,8 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             CircularDependencies   = None
             AllowMissingPrimaryKey = []
             EmissionFolders        = []
+            BridgeRetargets        = []
+            BridgeRetargetEvidence = None
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true
@@ -125,7 +127,11 @@ let ``C.4 (uat-users collapse): UserReflow runs only when explicitly opted in`` 
 let ``C.4: disabledGroups returns only groups explicitly disabled`` () =
     let cfg = mkConfig
                   [ { Name = "Tightening"; Enabled = false }
-                    { Name = "UserReflow"; Enabled = true } ]
+                    { Name = "UserReflow"; Enabled = true }
+                    // BridgeRetarget is opt-in (default off); enable it explicitly so
+                    // it is not auto-seeded into the disabled set, isolating the
+                    // explicitly-disabled Tightening under test.
+                    { Name = "BridgeRetarget"; Enabled = true } ]
     match TransformGroupsBinding.fromConfig cfg with
     | Ok groups ->
         let disabled = TransformGroups.disabledGroups groups

@@ -230,10 +230,39 @@ module Config =
         Folder : string
     }
 
+    /// One row of `overrides.bridgeRetargets` — a declared foreign-key retarget.
+    /// `Entity` + `Relationship` name the FK to retarget (its owning entity and
+    /// the reference/relationship name); `Bridge` is the attribute the FK should
+    /// resolve THROUGH instead of the original parent's primary key. The binder
+    /// (`BridgeRetargetBinding`) resolves these to SsKeys against the catalog
+    /// (fail-closed) and assembles the readiness evidence the decision pass
+    /// evaluates.
+    type BridgeRetargetEntry = {
+        Id           : string
+        Entity       : EntityCoordinate
+        Relationship : string
+        Bridge       : AttributeCoordinate
+    }
+
     type OverridesSection = {
         TableRenames           : TableRename list
         MigrationDependencies  : FilePathOverride option
         StaticData             : FilePathOverride option
+        /// `overrides.bridgeRetargets` — the declared foreign-key bridge retargets
+        /// (chapter: generic bridge retargeting). Bound into `Policy.BridgeRetarget`
+        /// and evaluated by `BridgeRetargetPass`; opt-in + signoff-gated. `[]` (the
+        /// default) leaves emission byte-identical.
+        BridgeRetargets        : BridgeRetargetEntry list
+        /// `overrides.bridgeRetargetEvidence.path` — an operator-supplied profiling
+        /// SUPPLEMENT file (the `migrationDependencies.path` file idiom) that
+        /// supplies, per retarget id, the DATA-derived readiness evidence
+        /// (resolution coverage / actual uniqueness / nulls / orphans / payload
+        /// conflicts / identity). The binder overrides each retarget's fail-closed
+        /// `unproven` data facts with the supplied evidence, so a retarget can
+        /// CLEAR. Absent (the default) ⇒ every retarget stays blocked (byte-
+        /// identical). The Graph auto-supplement (real tenant data) is a future
+        /// source that would write this same file.
+        BridgeRetargetEvidence : FilePathOverride option
         CircularDependencies   : CircularDependenciesSection option
         /// Chapter C slice C.2 — operator allowlist of kinds whose
         /// missing primary key is acknowledged. Entries are typed
@@ -532,6 +561,8 @@ module Config =
         CircularDependencies   = None
         AllowMissingPrimaryKey = []
         EmissionFolders        = []
+        BridgeRetargets        = []
+        BridgeRetargetEvidence = None
     }
 
     let private defaultEmission : EmissionSection = {
@@ -1166,6 +1197,48 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "overrides.emissionFolders must be an array.")
 
+    let private brStr (el: JsonElement) (name: string) : string option =
+        match el.TryGetProperty(name) with
+        | true, v when v.ValueKind = JsonValueKind.String -> Option.ofObj (v.GetString())
+        | _ -> None
+
+    /// Parse one `overrides.bridgeRetargets` entry into its textual shape (the
+    /// binder resolves the coordinates against the catalog). Fail-closed: a missing
+    /// `id` / `reference` / `bridge` (or a malformed sub-object) is a named config
+    /// refusal, never a silent skip.
+    let private parseBridgeRetargetEntry (el: JsonElement) : Result<BridgeRetargetEntry> =
+        result {
+            let! id = getString el "id"
+            let! refEl = getProperty el "reference"
+            let! bridgeEl = getProperty el "bridge"
+            let! refPair =
+                match brStr refEl "module", brStr refEl "entity", brStr refEl "relationship" with
+                | Some m, Some e, Some r -> Result.success (EntityCoordinate.create m e, r)
+                | _ -> Result.failureOf (configError "overrides.bridgeRetargets.reference" "a bridge retarget's `reference` needs { module, entity, relationship }.")
+            let entity, relationship = refPair
+            let! bridge =
+                match brStr bridgeEl "module", brStr bridgeEl "entity", brStr bridgeEl "attribute" with
+                | Some m, Some e, Some a -> Result.success (AttributeCoordinate.create m e a)
+                | _ -> Result.failureOf (configError "overrides.bridgeRetargets.bridge" "a bridge retarget's `bridge` needs { module, entity, attribute }.")
+            return { Id = id; Entity = entity; Relationship = relationship; Bridge = bridge }
+        }
+
+    let private parseBridgeRetargets (element: JsonElement) : Result<BridgeRetargetEntry list> =
+        match element.TryGetProperty("bridgeRetargets") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then parseBridgeRetargetEntry e
+                    else Result.failureOf (configError "typeMismatch" "overrides.bridgeRetargets entries must be { id, reference, bridge } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (configError "typeMismatch" "overrides.bridgeRetargets must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -1177,6 +1250,8 @@ module Config =
                 let! cycles = parseCircularDependencies element
                 let! allowedPks = parseAllowMissingPrimaryKey element
                 let! folders = parseEmissionFolders element
+                let! bridgeRetargets = parseBridgeRetargets element
+                let! bridgeRetargetEvidence = parseOptionalFilePathOverride element "bridgeRetargetEvidence"
                 return {
                     TableRenames           = renames
                     MigrationDependencies  = migDeps
@@ -1184,6 +1259,8 @@ module Config =
                     CircularDependencies   = cycles
                     AllowMissingPrimaryKey = allowedPks
                     EmissionFolders        = folders
+                    BridgeRetargets        = bridgeRetargets
+                    BridgeRetargetEvidence = bridgeRetargetEvidence
                 }
             }
 
@@ -1322,9 +1399,13 @@ module Config =
                 [ for e in a.EnumerateArray() -> dcPredicate e ] |> Result.aggregate |> Result.map Predicate.And
             | _ -> Result.failureOf (configError "emission.dataCorrections.predicate.and" "'and' predicate needs a 'terms' array.")
         | Some "raw" ->
-            match dcStr el "sql" with
-            | Some s -> Result.success (Predicate.Raw s)
-            | None -> Result.failureOf (configError "emission.dataCorrections.predicate.raw" "'raw' predicate needs a 'sql' string.")
+            // A `raw` predicate evaluates to TRUE in the in-memory engine (the
+            // typed evaluator cannot interpret arbitrary SQL), so under
+            // `emission.dataCorrections` it would OVER-match — rewriting or
+            // excluding rows the operator never scoped. Refused fail-closed until
+            // there is a typed evaluator or a SQL-bound correction path; use the
+            // typed arms (eq / in / isNull / isNotNull / and) instead.
+            Result.failureOf (configError "emission.dataCorrections.predicate.rawRefused" "a 'raw' predicate is not allowed under emission.dataCorrections — it evaluates to true in-memory and would over-match; use the typed arms (eq / in / isNull / isNotNull / and).")
         | Some other -> Result.failureOf (configError "emission.dataCorrections.predicate.op" (sprintf "unknown predicate op '%s'." other))
         | None -> Result.failureOf (configError "emission.dataCorrections.predicate.op" "a predicate needs an 'op'.")
 
@@ -1364,15 +1445,11 @@ module Config =
 
     let private dcProbe (e: JsonElement) : Result<ConfiguredReferenceProbe> =
         result {
-            let! ent =
-                match e.TryGetProperty "entity" with
-                | true, en when en.ValueKind = JsonValueKind.Object -> dcEntity en "configuredProbes[].entity"
-                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.entity" "a configured probe needs an 'entity'.")
-            let! pred =
-                match e.TryGetProperty "predicate" with
-                | true, p when p.ValueKind = JsonValueKind.Object -> dcPredicate p
-                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.predicate" "a configured probe needs a 'predicate'.")
-            return ({ Entity = ent; Predicate = pred } : ConfiguredReferenceProbe) }
+            let! ref =
+                match e.TryGetProperty "referencingAttribute" with
+                | true, r when r.ValueKind = JsonValueKind.Object -> dcCoordinate r "configuredProbes[].referencingAttribute"
+                | _ -> Result.failureOf (configError "emission.dataCorrections.probe.referencingAttribute" "a configured probe needs a 'referencingAttribute' { module, entity, attribute } that references the subject's key.")
+            return ({ ReferencingAttribute = ref } : ConfiguredReferenceProbe) }
 
     let private dcProbes (el: JsonElement) : Result<ConfiguredReferenceProbe list> =
         match el.TryGetProperty "configuredProbes" with

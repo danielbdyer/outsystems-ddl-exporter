@@ -845,6 +845,66 @@ module FidelityCompareRun =
                     return Result.failureOf (ValidationError.create "fidelity.rows.readFailed" ex.Message)
         }
 
+    /// Load the RECORDED correction receipts the publish/load episode produced,
+    /// so the proof reconciles against the EXACT counts recorded (not merely the
+    /// configured corrections). Accepts either a bare JSON array of receipt
+    /// objects or an object carrying a `dataCorrectionReceipts` array (so an
+    /// operator can point `--correction-receipts` at a run's `fidelity.rows.json`
+    /// or a `manifest.data-corrections.json`). Only the reconcile-relevant fields
+    /// (`correctionId`, `rowsChanged`, `rowsExcluded`) are read; the rest default.
+    let loadCorrectionReceipts (path: string) : Result<DataCorrectionReceipt list> =
+        try
+            let text = System.IO.File.ReadAllText path
+            use doc = System.Text.Json.JsonDocument.Parse text
+            let root = doc.RootElement
+            let arr : System.Text.Json.JsonElement option =
+                match root.ValueKind with
+                | System.Text.Json.JsonValueKind.Array -> Some root
+                | System.Text.Json.JsonValueKind.Object ->
+                    match root.TryGetProperty "dataCorrectionReceipts" with
+                    | true, v when v.ValueKind = System.Text.Json.JsonValueKind.Array -> Some v
+                    | _ -> None
+                | _ -> None
+            match arr with
+            | None ->
+                Result.failureOf (ValidationError.create "fidelity.correctionReceipts.shape"
+                    (sprintf "the correction-receipts file '%s' must be a JSON array of receipts, or an object with a 'dataCorrectionReceipts' array." path))
+            | Some a ->
+                let int64Of (el: System.Text.Json.JsonElement) (name: string) : int64 =
+                    match el.TryGetProperty name with
+                    | true, v when v.ValueKind = System.Text.Json.JsonValueKind.Number -> (match v.TryGetInt64() with true, n -> n | _ -> 0L)
+                    | _ -> 0L
+                let receipts =
+                    [ for el in a.EnumerateArray() do
+                        if el.ValueKind = System.Text.Json.JsonValueKind.Object then
+                            match el.TryGetProperty "correctionId" with
+                            | true, cid when cid.ValueKind = System.Text.Json.JsonValueKind.String ->
+                                match Option.ofObj (cid.GetString()) with
+                                | Some id ->
+                                    yield
+                                        { CorrectionId = id
+                                          SourceRemediationId = None
+                                          Subject = AttributeCoordinate.create "" "" ""
+                                          Derivation = DataCorrectionDerivation.ExcludeRows
+                                          GuardResults = []
+                                          RowsMatched = int64Of el "rowsMatched"
+                                          RowsChanged = int64Of el "rowsChanged"
+                                          RowsExcluded = int64Of el "rowsExcluded"
+                                          ChangedRows = []
+                                          ExcludedRows = []
+                                          BeforeDigest = None
+                                          AfterDigest = None
+                                          EvidenceColumns = []
+                                          EvidenceDigest = None
+                                          ApprovedBy = None
+                                          ApprovedAt = None }
+                                | None -> ()
+                            | _ -> () ]
+                Result.success receipts
+        with ex ->
+            Result.failureOf (ValidationError.create "fidelity.correctionReceipts.unreadable"
+                (sprintf "the correction-receipts file '%s' did not load: %s" path ex.Message))
+
     // ------------------------------------------------------------------
     // The renderer — the lines beneath the voiced verdict (one report
     // value; the JSON codec is its sibling).
@@ -948,6 +1008,25 @@ module FidelityCompareRun =
             o.["rowsMatched"] <- JsonValue.Create r.RowsMatched
             o.["rowsChanged"] <- JsonValue.Create r.RowsChanged
             o.["rowsExcluded"] <- JsonValue.Create r.RowsExcluded
+            // The EXACT rows touched — the precise audit log ("no more, no less"):
+            // each entry names the row identity + subject before → after.
+            let rowArray (rows: DataCorrectionRowChange list) : JsonArray =
+                let arr = JsonArray()
+                for rc in rows do
+                    let ro = JsonObject()
+                    ro.["rowIdentity"] <- JsonValue.Create rc.RowIdentity
+                    (match rc.Before with Some b -> ro.["before"] <- JsonValue.Create b | None -> ())
+                    (match rc.After with Some a -> ro.["after"] <- JsonValue.Create a | None -> ())
+                    arr.Add ro
+                arr
+            (if not (List.isEmpty r.ChangedRows) then o.["changedRows"] <- rowArray r.ChangedRows)
+            (if not (List.isEmpty r.ExcludedRows) then o.["excludedRows"] <- rowArray r.ExcludedRows)
+            (match r.EvidenceDigest with Some d -> o.["evidenceDigest"] <- JsonValue.Create d | None -> ())
+            (if not (List.isEmpty r.EvidenceColumns) then
+                let ev = JsonArray()
+                for ec in r.EvidenceColumns do
+                    ev.Add(JsonValue.Create(System.String.Concat(ec.Module, "/", ec.Entity, "/", ec.Attribute)))  // LINT-ALLOW: terminal display projection of an evidence-column coordinate in the fidelity JSON artifact
+                o.["evidenceColumns"] <- ev)
             receipts.Add o
         root.["dataCorrectionReceipts"] <- receipts
         root.["agrees"] <- JsonValue.Create(RowFidelityReport.agrees report)

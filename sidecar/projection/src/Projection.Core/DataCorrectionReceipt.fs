@@ -66,11 +66,26 @@ module DataCorrectionDerivation =
         | DataCorrectionDerivation.ConstantLiteral
         | DataCorrectionDerivation.ExcludeRows -> false
 
-/// A guard that must hold for an approved correction to apply. Every correction
-/// is FAIL-CLOSED: a failed guard refuses the correction by name; it never
-/// silently skips. The guards split into per-row predicates (evaluated against
-/// each matched row) and whole-set probes (evaluated once against the acquired
-/// evidence — counts, reference sets).
+/// A guard on an approved correction. The guards fall into TWO classes with
+/// DIFFERENT semantics — read this before configuring:
+///
+/// * **Row-selector guards** NARROW the change set: `TargetIsNull`,
+///   `SourceIsNotNull`, `ParentExists`, `ParentSourceIsNotNull`,
+///   `SourceReferencesExistingTarget`. A matched row that fails a selector is
+///   left UNCHANGED (partial coverage), not a refusal — this is the "only where
+///   safe" intent ("copy only where the target is null AND the value resolves").
+///   `RowsMatched` counts the predicate matches; `RowsChanged` counts the subset
+///   that also passed every selector.
+///
+/// * **Assertion guards** are whole-set invariants that REFUSE the correction by
+///   name (fail-closed) when violated: `SentinelExists`,
+///   `NoFormalInboundReferences`, `NoConfiguredReferenceMatches`,
+///   `ExpectedFindingCount`, and — the promoter — `ExpectedCoverage`.
+///   **`ExpectedCoverage` turns the selector narrowing into a fail-closed
+///   totality requirement**: it refuses unless `RowsChanged = RowsMatched`, i.e.
+///   EVERY matched row passed every selector. Configure `ExpectedCoverage` on any
+///   correction that must be all-or-nothing rather than best-effort; without it,
+///   selectors are explicitly partial coverage.
 [<RequireQualifiedAccess>]
 type DataCorrectionGuard =
     /// The subject cell is NULL on the row (never overwrite a present value).
@@ -152,6 +167,19 @@ module DataCorrectionGuardResult =
     let passed (guard: DataCorrectionGuard) (observed: int64 option) : DataCorrectionGuardResult =
         create guard true observed None
 
+/// One row a correction TOUCHED — the EXACT audit detail complementing the
+/// receipt's count + digest ("no more, no less"). `RowIdentity` is the durable
+/// serialized row identity (`SsKey.serialize` — the precise "which row"); `Before`
+/// is the subject cell before the correction (the malformed value being
+/// remediated); `After` is the subject cell after — `Some v` for a value
+/// correction, `None` for an excluded (dropped) row. A reviewer reads exactly
+/// which rows were remediated and how, so they can confirm the correction is
+/// neither over- nor under-reaching.
+type DataCorrectionRowChange =
+    { RowIdentity : string
+      Before      : string option
+      After       : string option }
+
 /// The durable, count-bearing provenance of ONE applied approved correction — a
 /// first-class intervention ledger entry. For same-row / parent-derived /
 /// constant derivations, `RowsChanged` counts the transformed rows; for an
@@ -172,8 +200,26 @@ type DataCorrectionReceipt =
       RowsMatched         : int64
       RowsChanged         : int64
       RowsExcluded        : int64
+      /// The EXACT rows this correction CHANGED — one entry per row (identity +
+      /// subject cell before → after). `List.length ChangedRows = RowsChanged` by
+      /// construction, so the enumeration is provably complete: a reviewer reads
+      /// precisely which rows were remediated and how, not just a count + digest.
+      ChangedRows         : DataCorrectionRowChange list
+      /// The EXACT rows this correction EXCLUDED (dropped from the emitted/loaded
+      /// set) — one entry per row (identity + the subject cell at exclusion time;
+      /// `After = None`). `List.length ExcludedRows = RowsExcluded`.
+      ExcludedRows        : DataCorrectionRowChange list
       BeforeDigest        : string option
       AfterDigest         : string option
+      /// The supporting evidence columns the correction was configured with
+      /// (`evidenceColumns`) — recorded so a reviewer can audit WHY the
+      /// derivation was accepted (the context-recovery requirement: a derivation
+      /// is accepted on the strength of the metadata columns it stands on).
+      EvidenceColumns     : AttributeCoordinate list
+      /// A deterministic SHA-256 digest over the evidence columns' cells on the
+      /// changed rows — the audit anchor for the evidence the receipt names.
+      /// `None` when no evidence columns were configured.
+      EvidenceDigest      : string option
       ApprovedBy          : string option
       ApprovedAt          : string option }
 

@@ -177,11 +177,12 @@ module ComprehensiveCanaryTests =
             EmissionPolicy.create true true true AllRemaining
             |> Result.value
         {
-            Selection    = SelectionPolicy.empty
-            Emission     = emission
-            Insertion    = InsertionPolicy.empty
-            Tightening   = { Interventions = interventions }
-            UserMatching = UserMatchingStrategy.empty
+            Selection      = SelectionPolicy.empty
+            Emission       = emission
+            Insertion      = InsertionPolicy.empty
+            Tightening     = { Interventions = interventions }
+            UserMatching   = UserMatchingStrategy.empty
+            BridgeRetarget = BridgeRetargetPolicy.empty
         }
 
     /// Build a non-empty Profile with at least one entry on every axis

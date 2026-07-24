@@ -87,6 +87,7 @@ module RegisteredTransformTags =
             "foreignKey",            Set.singleton TransformGroup.Tightening
             "categoricalUniqueness", Set.singleton TransformGroup.Tightening
             "userFkReflow",          Set.singleton TransformGroup.UserReflow
+            "bridgeRetarget",        Set.singleton TransformGroup.BridgeRetarget
         ]
 
     /// NM-44 — the partial `OverlayAxis → TransformGroup` map: which
@@ -149,7 +150,8 @@ module TransformGroupsBinding =
     let private parseGroupName (name: string) : Result<TransformGroup> =
         Binding.ofClosedName ConfigAxis.TransformGroups "unknownGroup" "policy.transformGroups entry" "TransformGroup"
             [ "Tightening", TransformGroup.Tightening
-              "UserReflow", TransformGroup.UserReflow ]
+              "UserReflow", TransformGroup.UserReflow
+              "BridgeRetarget", TransformGroup.BridgeRetarget ]
             name
 
     /// Build the typed `TransformGroups` runtime value from a parsed
@@ -180,4 +182,11 @@ module TransformGroupsBinding =
             let withUserReflowOptIn =
                 if Set.contains TransformGroup.UserReflow explicit then pairs
                 else (TransformGroup.UserReflow, false) :: pairs
-            { ByGroup = Map.ofList withUserReflowOptIn })
+            // BridgeRetarget is likewise OPT-IN (off by default): the pass is
+            // excluded from the chain unless the operator explicitly names it in
+            // `policy.transformGroups` (alongside `overrides.bridgeRetargets` +
+            // the emission signoff). Absent ⇒ disabled; explicit entries honored.
+            let withBridgeRetargetOptIn =
+                if Set.contains TransformGroup.BridgeRetarget explicit then withUserReflowOptIn
+                else (TransformGroup.BridgeRetarget, false) :: withUserReflowOptIn
+            { ByGroup = Map.ofList withBridgeRetargetOptIn })

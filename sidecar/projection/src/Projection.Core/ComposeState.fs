@@ -42,6 +42,15 @@ type ComposeState = {
     /// its `topology.cascadeShock` Warning DiagnosticEntries reach the
     /// decision-log / diagnostics surface like the other advisory passes.
     CascadeShockZones : CascadeShockZone list option
+    /// Bridge-retarget decisions: for each reference whose bridge retarget
+    /// CLEARED (`BridgeRetarget` readiness not `Blocked`), the target ATTRIBUTE
+    /// key (on the bridge kind) the FK should resolve through instead of the
+    /// original parent's primary key. Populated when the bridge-retarget decision
+    /// pass fires; `None` (and the empty map) leaves emission byte-identical.
+    /// Flattened into `DecisionOverlay.RetargetFk` and consumed by the SSDT
+    /// emitter + PhysicalSchema round-trip exactly like `DropFk` / `NoCheckFk` — a
+    /// policy-derived decision kept out of the source IR (A18).
+    BridgeRetargets : Map<SsKey, SsKey> option
 }
 
 [<RequireQualifiedAccess>]
@@ -62,7 +71,8 @@ module ComposeState =
           ProfileAnomalies = None
           SchemaComplexity = None
           QueryHints = None
-          CascadeShockZones = None }
+          CascadeShockZones = None
+          BridgeRetargets = None }
 
     let withCatalog (catalog: Catalog) (state: ComposeState) : ComposeState =
         { state with Catalog = catalog }
@@ -105,3 +115,10 @@ module ComposeState =
 
     let withCascadeShockZones (value: CascadeShockZone list) (state: ComposeState) : ComposeState =
         { state with CascadeShockZones = Some value }
+
+    /// The bridge-retarget decision pass writes the reference→target-attribute map
+    /// (only cleared retargets) here; `DecisionOverlay.ofComposeState` flattens it
+    /// into `RetargetFk`. An empty map is the observable identity (byte-identical
+    /// emission).
+    let withBridgeRetargets (value: Map<SsKey, SsKey>) (state: ComposeState) : ComposeState =
+        { state with BridgeRetargets = Some value }

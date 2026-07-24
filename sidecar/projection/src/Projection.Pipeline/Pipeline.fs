@@ -364,53 +364,11 @@ module Compose =
         |> Seq.map snd
         |> String.concat "\nGO\n\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-table SsdtBundle entries; segments are typed (each `Body` is the rendered ScriptDom output from SsdtDdlEmitter); BCL `String.concat` IS the use-case-specific library at the SQL-batch concatenation boundary. Reconciliation slice 2 — blank line on BOTH sides of GO (V1 StatementBatchFormatter spacing)
 
-    /// Run the three sibling Π's against a Catalog. Pure: same Catalog
-    /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
-    /// for the dogfood frame; M2 onward will thread real profile
-    /// evidence.
-    ///
-    /// **Chapter A.4.7' slice δ** wires `RegisteredTransforms.allChainSteps`
-    /// in front of the emitter fan-out per A41 (registry as load-bearing
-    /// execution surface). Catalog flows: raw → `compose allChainSteps`
-    /// → emitters. With skeleton-friendly defaults (Mask = empty;
-    /// Morphism = identity; RenameSpec = []; Policy = Policy.empty;
-    /// Profile = Profile.empty), Catalog-rewriting passes contribute
-    /// only the canonicalization / closure they would apply
-    /// unconditionally; decision-set passes write back evidence the
-    /// emitters do not yet consume (decision-set consumption is a
-    /// future-chapter concern).
-    /// Chapter C slice C.3 — apply operator-supplied emission-folder
-    /// overrides to the typed per-kind SSDT bundle. The rewrite
-    /// preserves each `SsdtFile`'s basename (the cross-platform-
-    /// deterministic `<Schema>.<Table>.sql` suffix) and replaces the
-    /// directory prefix with the operator-named folder.
-    /// `EmissionFolders.empty` short-circuits to the input unchanged.
-    ///
-    /// The rewrite fires at the typed `ArtifactByKind<SsdtFile>` layer
-    /// — operator overlay sits outside Π (pillar 9: emitters are
-    /// `DataIntent`; operator opinion enters at the Pipeline-layer
-    /// realization boundary). Reconstructs through
-    /// `ArtifactByKind.create` against the same catalog so the
-    /// strict-equality keyset invariant is preserved.
-    let private applyEmissionFolderOverrides
-        (folders: EmissionFolders)
-        (catalog: Catalog)
-        (files: ArtifactByKind<SsdtDdlEmitter.SsdtFile>)
-        : ArtifactByKind<SsdtDdlEmitter.SsdtFile> =
-        if EmissionFolders.isEmpty folders then files
-        else
-            use _ = Bench.scope "compose.applyEmissionFolderOverrides"
-            // PL-4 (S56) — key-preserving rewrite: the proven keyset carries
-            // over via `mapValues`; no re-validation, no unreachable arm.
-            files
-            |> ArtifactByKind.mapValues (fun key file ->
-                match Map.tryFind key folders.ByKind with
-                | None        -> file
-                | Some folder ->
-                    let segments = file.RelativePath.Split('/')
-                    let basename = segments.[segments.Length - 1]
-                    { file with
-                        RelativePath = System.String.Concat(folder, "/", basename) })
+    // Emission-folder targeting (`overrides.emissionFolders`) moved to the
+    // registered `SsdtArtifactSeam` (the post-emit ArtifactByKind<SsdtFile> analog
+    // of EmissionSeam), so the operator-intent SSDT-bundle rewrite is registered ⇔
+    // executed rather than a bare call here. The SSDT emit step calls
+    // `SsdtArtifactSeam.apply`.
 
     /// Chapter C slice C.4 — filter the pass chain by operator-supplied
     /// `TransformGroups`. Each chain entry's name is looked up against
@@ -607,7 +565,7 @@ module Compose =
                 let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
                 match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering ctx.EmitIdentityAnnotations decisionOverlay ctx.EmittedCatalog with
                 | Ok ssdtFiles ->
-                    let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
+                    let rewritten = SsdtArtifactSeam.apply ctx.Folders ctx.EmittedCatalog ssdtFiles
                     let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
                     let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
                     let manifest =
@@ -1363,6 +1321,7 @@ module Compose =
         validation {
             let! tightening = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
             and! insertion  = InsertionPolicyBinding.fromConfig cfg
+            and! bridgeRetarget = BridgeRetargetBinding.fromConfig catalog cfg
             // AC-X1 — translate the config's data-emission toggles into the
             // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
             // `bootstrap` turning on enables `EmitData`; `DataComposition`
@@ -1426,10 +1385,27 @@ module Compose =
                         Result.failureOf
                             (ValidationError.create "emission.dataCorrection.ungreenlit"
                                 (sprintf "approved inline data corrections (`emission.dataCorrections`) rewrite or exclude row data before emission/load, but are not greenlit — %s Declare { \"mode\": \"data-correction\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
+            // The bridge-retarget gate (the emission-plane counterpart). A non-empty
+            // `overrides.bridgeRetargets` reroutes a foreign key to a DIFFERENT table
+            // before emission — REFUSED until the emission plane greenlights
+            // `bridge-retarget`. Presence-gated. (A retarget still only LANDS when its
+            // evidence-backed readiness clears; the gate governs whether the feature
+            // is authorized at all, not whether a given retarget is safe.)
+            let! () =
+                if List.isEmpty cfg.Overrides.BridgeRetargets then Result.success ()
+                else
+                    match WriteSignoff.verify "emission" cfg.Emission.Signoff WriteSignoff.WriteMode.BridgeRetarget [] with
+                    | WriteSignoff.Confirmed _ -> Result.success ()
+                    | WriteSignoff.Missing (reason, _)
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Result.failureOf
+                            (ValidationError.create "emission.bridgeRetarget.ungreenlit"
+                                (sprintf "declared bridge retargets (`overrides.bridgeRetargets`) reroute a foreign key to a different table before emission, but are not greenlit — %s Declare { \"mode\": \"bridge-retarget\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
             return {
                 Policy.empty with
-                    Tightening = tightening
-                    Insertion  = insertion
+                    Tightening     = tightening
+                    Insertion      = insertion
+                    BridgeRetarget = bridgeRetarget
                     // AC-D7 — the operator's convergent-delete scope rides the
                     // Emission axis; absent (the default) the MERGE stays
                     // upsert-only, byte-identical. Reconciliation slice 2 —
@@ -2505,31 +2481,6 @@ module Compose =
         Receipts      : DataCorrectionReceipt list
     }
 
-    /// Apply approved inline data corrections on the TWO-PHASE schedule (the
-    /// whole `Map<SsKey, StaticRow list>` in hand). Returns the corrected catalog
-    /// (static-lane populations re-grafted), the corrected bootstrap-lane map
-    /// (restricted to the ORIGINAL bootstrap keys so a corrected static kind is
-    /// not emitted by BOTH lanes), and the receipts. Empty corrections ⇒ identity
-    /// (byte-identical). FAIL-CLOSED: the engine's named refusal surfaces as the
-    /// extract stage's failure. Module-level (FS3511).
-    let private applyDataCorrectionsTwoPhase
-        (cfg: Config.Config)
-        (catalog: Catalog)
-        (rows: Map<SsKey, StaticRow list>)
-        : Result<Catalog * Map<SsKey, StaticRow list> * DataCorrectionReceipt list> =
-        if List.isEmpty cfg.Emission.DataCorrections then Result.success (catalog, rows, [])
-        else
-            ApprovedDataCorrections.apply catalog cfg.Emission.DataCorrections rows
-            |> Result.map (fun outcome ->
-                // Static-lane kinds are emitted from the catalog (StaticSeedsEmitter);
-                // re-graft their corrected rows there. The bootstrap lane keeps only
-                // the kinds it originally carried, so a corrected static kind that the
-                // engine added to the output map is not ALSO emitted by the bootstrap
-                // lane (T11 keyset agreement preserved).
-                let correctedCatalog = Hydration.graftStaticPopulations outcome.CorrectedRows catalog
-                let bootstrapMap = outcome.CorrectedRows |> Map.filter (fun k _ -> Map.containsKey k rows)
-                (correctedCatalog, bootstrapMap, outcome.Receipts))
-
     /// The publish, returning the `EstateAcquisition` beside the report —
     /// the combined verbs (`runWithConfigAndLoad` / `runWithConfigAndStore`)
     /// ride this so one verb pays for ONE estate acquisition (PL-1).
@@ -2622,7 +2573,7 @@ module Compose =
                                         // (two-phase: the whole row map is in hand). Empty ⇒
                                         // identity (byte-identical); a named refusal fails the
                                         // extract stage.
-                                        match applyDataCorrectionsTwoPhase cfg catalog bootRows with
+                                        match DataCorrectionSeam.apply cfg catalog bootRows with
                                         | Ok (catalog', bootRows', receipts) ->
                                             emitStageMarker LogSink.Extract "extract.completed" LogSink.End
                                                 (Map.ofList [ "moduleCount", box (List.length catalog'.Modules) ])
@@ -2783,7 +2734,7 @@ module Compose =
                     // Apply approved data corrections so the standalone seed plan
                     // reflects the SAME corrected rows the publish path emits
                     // (identity-gate parity). Empty ⇒ byte-identical.
-                    match applyDataCorrectionsTwoPhase cfg hydrated0 bootRows0 with
+                    match DataCorrectionSeam.apply cfg hydrated0 bootRows0 with
                     | Error es -> Result.failure es
                     | Ok (hydrated, bootRows, receipts) ->
                     match applyRenames cfg hydrated with

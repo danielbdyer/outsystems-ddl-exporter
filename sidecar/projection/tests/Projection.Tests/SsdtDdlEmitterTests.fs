@@ -650,6 +650,77 @@ let ``Slice 5: T1 byte-determinism holds for FK fixture`` () =
     Assert.Equal<string> (childBody1.Body, childBody2.Body)
 
 // ---------------------------------------------------------------------------
+// Bridge retargeting — the DecisionOverlay.RetargetFk axis. A child FK whose
+// reference is in `overlay.RetargetFk` resolves through the BRIDGE attribute's
+// kind + column instead of the parent's PK; the child FK cell value is
+// unchanged, only the constraint target moves. Empty RetargetFk ⇒ the parent-PK
+// target (byte-identical) — the exact discipline DropFk/NoCheckFk follow (an
+// overlay-carried, A18 policy decision consumed at emission).
+// ---------------------------------------------------------------------------
+
+let private bridgeKindKey = kindKey ["Bridge"]
+let private bridgeUpnAttrKey = attrKey ["Bridge"; "Upn"]
+
+let private bridgeKind : Kind =
+    {
+        SsKey = bridgeKindKey
+        Name = mkName "Bridge"
+        Origin = Native
+        Modality = []
+        Physical = mkTableId "dbo" "OSUSR_X_BRIDGE"
+        Attributes = [
+            { Attribute.create (attrKey ["Bridge"; "Id"]) (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+            { Attribute.create bridgeUpnAttrKey (mkName "Upn") Text with Column = ColumnRealization.create ("UPN") (false) |> Result.value; IsMandatory = true }
+        ]
+        References = []
+        Indexes = []; Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+let private bridgeFkCatalog : Catalog =
+    { fkCatalog with
+        Modules = [
+            { (List.head fkCatalog.Modules) with
+                Kinds = [ parentKind; childKind; bridgeKind ] } ] }
+
+let private retargetOverlay : DecisionOverlay =
+    { DecisionOverlay.empty with RetargetFk = Map.ofList [ childParentFkKey, bridgeUpnAttrKey ] }
+
+[<Fact>]
+let ``Bridge retarget: child FK resolves through the bridge attribute, not the parent PK`` () =
+    let enriched = enrich bridgeFkCatalog
+    let artifact = SsdtDdlEmitter.emitSlicesWith retargetOverlay enriched |> mustOk
+    let childBody =
+        match Map.tryFind childKindKey (ArtifactByKind.toMap artifact) with
+        | Some f -> f.Body
+        | None -> Assert.Fail "expected slice for childKind"; ""
+    Assert.Contains ("FOREIGN KEY", childBody)
+    // Target is now the BRIDGE table + its UPN column, not the parent PK.
+    Assert.Contains ("[OSUSR_X_BRIDGE]", childBody)
+    Assert.Contains ("UPN", childBody)
+    // FK name names the BRIDGE as the target segment (FK_<owner>_<target>_<srccol>).
+    Assert.Contains ("FK_OSUSR_X_CHILD_OSUSR_X_BRIDGE_PARENT_ID", childBody)
+    // The child FK SOURCE column (PARENT_ID) is unchanged — only the target moved.
+    Assert.Contains ("PARENT_ID", childBody)
+    // The parent is no longer referenced by the retargeted FK.
+    Assert.DoesNotContain ("OSUSR_X_PARENT", childBody)
+
+[<Fact>]
+let ``Bridge retarget: empty RetargetFk leaves the FK targeting the parent (byte-identical)`` () =
+    let enriched = enrich bridgeFkCatalog
+    let bodyEmpty : SsdtDdlEmitter.SsdtFile =
+        SsdtDdlEmitter.emitSlicesWith DecisionOverlay.empty enriched |> mustOk |> ArtifactByKind.toMap |> Map.find childKindKey
+    let bodyPlain : SsdtDdlEmitter.SsdtFile =
+        SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap |> Map.find childKindKey
+    Assert.Equal<string> (bodyPlain.Body, bodyEmpty.Body)
+    // With no retarget, the child FK still targets the PARENT, not the bridge.
+    Assert.Contains ("OSUSR_X_PARENT", bodyPlain.Body)
+    Assert.DoesNotContain ("OSUSR_X_BRIDGE", bodyPlain.Body)
+
+// ---------------------------------------------------------------------------
 // Slice 4.3 — cross-DB FK emission (three-part name; L3-S10 / L3-I10).
 //
 // The only IR-present-but-unemitted feature pre-slice: when an FK's target

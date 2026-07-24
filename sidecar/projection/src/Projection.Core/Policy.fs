@@ -689,11 +689,17 @@ type UserMatchingStrategy =
 /// `Policy.empty`); pattern-match sites destructuring `Policy` (zero
 /// today; consumers read fields by name) are unaffected.
 type Policy = {
-    Selection    : SelectionPolicy
-    Emission     : EmissionPolicy
-    Insertion    : InsertionPolicy
-    Tightening   : TighteningPolicy
-    UserMatching : UserMatchingStrategy
+    Selection      : SelectionPolicy
+    Emission       : EmissionPolicy
+    Insertion      : InsertionPolicy
+    Tightening     : TighteningPolicy
+    UserMatching   : UserMatchingStrategy
+    /// The bridge-retarget axis — the resolved retargets the operator declared
+    /// (`overrides.bridgeRetargets`). Read by `BridgeRetargetPass`, which
+    /// evaluates each plan's readiness and writes the cleared retargets into
+    /// `ComposeState.BridgeRetargets`. `BridgeRetargetPolicy.empty` (no plans) is
+    /// byte-identical (the pass writes an empty map).
+    BridgeRetarget : BridgeRetargetPolicy
 }
 
 
@@ -1240,11 +1246,12 @@ module Policy =
     /// for any pass; passes that consume Policy must produce sensible
     /// behavior on `Policy.empty`.
     let empty : Policy =
-        { Selection    = SelectionPolicy.empty
-          Emission     = EmissionPolicy.empty
-          Insertion    = InsertionPolicy.empty
-          Tightening   = TighteningPolicy.empty
-          UserMatching = UserMatchingStrategy.empty }
+        { Selection      = SelectionPolicy.empty
+          Emission       = EmissionPolicy.empty
+          Insertion      = InsertionPolicy.empty
+          Tightening     = TighteningPolicy.empty
+          UserMatching   = UserMatchingStrategy.empty
+          BridgeRetarget = BridgeRetargetPolicy.empty }
 
     /// Merge two policies on a "right wins on non-default axes" basis
     /// — H-054's "applyDelta union for independent axes" semantics
@@ -1284,11 +1291,16 @@ module Policy =
             if b.UserMatching = UserMatchingStrategy.empty then a.UserMatching else b.UserMatching
         let tightening =
             { Interventions = a.Tightening.Interventions @ b.Tightening.Interventions }
-        { Selection    = selection
-          Emission     = emission
-          Insertion    = insertion
-          Tightening   = tightening
-          UserMatching = userMatching }
+        // Bridge retargets accumulate like Tightening interventions (both sides'
+        // declared retargets persist) — the intervention-registry axis semantics.
+        let bridgeRetarget =
+            { BridgeRetargetPolicy.Plans = a.BridgeRetarget.Plans @ b.BridgeRetarget.Plans }
+        { Selection      = selection
+          Emission       = emission
+          Insertion      = insertion
+          Tightening     = tightening
+          UserMatching   = userMatching
+          BridgeRetarget = bridgeRetarget }
 
 
 [<RequireQualifiedAccess>]

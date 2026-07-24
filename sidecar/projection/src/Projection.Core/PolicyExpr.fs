@@ -102,14 +102,16 @@ module PolicyExpr =
         | ExcludeOnly ka, IncludeOnly kb -> ExcludeOnly (Set.difference ka kb)
 
     /// Sequential merge of two evaluated policies. `b` wins on all axes
-    /// except Tightening, which accumulates (left then right). This is the
-    /// primitive composition used by `Seq`, `And`, and `Or`.
+    /// except Tightening and BridgeRetarget, which accumulate (left then
+    /// right) — both are intervention registries. This is the primitive
+    /// composition used by `Seq`, `And`, and `Or`.
     let private mergePolicy (a: Policy) (b: Policy) : Policy =
-        { Selection    = b.Selection
-          Emission     = b.Emission
-          Insertion    = b.Insertion
-          Tightening   = { Interventions = a.Tightening.Interventions @ b.Tightening.Interventions }
-          UserMatching = b.UserMatching }
+        { Selection      = b.Selection
+          Emission       = b.Emission
+          Insertion      = b.Insertion
+          Tightening     = { Interventions = a.Tightening.Interventions @ b.Tightening.Interventions }
+          UserMatching   = b.UserMatching
+          BridgeRetarget = { BridgeRetargetPolicy.Plans = a.BridgeRetarget.Plans @ b.BridgeRetarget.Plans } }
 
     /// Evaluate a `PolicyExpr` to a concrete `Policy`.
     ///

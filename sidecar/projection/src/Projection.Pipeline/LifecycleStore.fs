@@ -153,8 +153,30 @@ module LifecycleStore =
             jw.WriteNumber("rowsMatched", r.RowsMatched)
             jw.WriteNumber("rowsChanged", r.RowsChanged)
             jw.WriteNumber("rowsExcluded", r.RowsExcluded)
+            let writeRowChanges (name: string) (rows: DataCorrectionRowChange list) =
+                jw.WritePropertyName name
+                jw.WriteStartArray()
+                for rc in rows do
+                    jw.WriteStartObject()
+                    jw.WriteString("rowIdentity", rc.RowIdentity)
+                    match rc.Before with Some b -> jw.WriteString("before", b) | None -> jw.WriteNull("before")
+                    match rc.After with Some a -> jw.WriteString("after", a) | None -> jw.WriteNull("after")
+                    jw.WriteEndObject()
+                jw.WriteEndArray()
+            writeRowChanges "changedRows" r.ChangedRows
+            writeRowChanges "excludedRows" r.ExcludedRows
             match r.BeforeDigest with Some d -> jw.WriteString("beforeDigest", d) | None -> jw.WriteNull("beforeDigest")
             match r.AfterDigest with Some d -> jw.WriteString("afterDigest", d) | None -> jw.WriteNull("afterDigest")
+            jw.WritePropertyName "evidenceColumns"
+            jw.WriteStartArray()
+            for ec in r.EvidenceColumns do
+                jw.WriteStartObject()
+                jw.WriteString("module", ec.Module)
+                jw.WriteString("entity", ec.Entity)
+                jw.WriteString("attribute", ec.Attribute)
+                jw.WriteEndObject()
+            jw.WriteEndArray()
+            match r.EvidenceDigest with Some d -> jw.WriteString("evidenceDigest", d) | None -> jw.WriteNull("evidenceDigest")
             match r.ApprovedBy with Some s -> jw.WriteString("approvedBy", s) | None -> jw.WriteNull("approvedBy")
             match r.ApprovedAt with Some s -> jw.WriteString("approvedAt", s) | None -> jw.WriteNull("approvedAt")
             jw.WriteEndObject()
@@ -411,6 +433,24 @@ module LifecycleStore =
                         | Ok grs ->
                             match fieldInt64 el "rowsMatched", fieldInt64 el "rowsChanged", fieldInt64 el "rowsExcluded" with
                             | Ok matched, Ok changed, Ok excluded ->
+                                // Evidence columns — missing (pre-feature store) ⇒ [].
+                                let evidence =
+                                    match el.TryGetProperty "evidenceColumns" with
+                                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                                        [ for ecEl in v.EnumerateArray() do
+                                            match optStr ecEl "module", optStr ecEl "entity", optStr ecEl "attribute" with
+                                            | Some em, Some ee, Some ea -> yield AttributeCoordinate.create em ee ea
+                                            | _ -> () ]
+                                    | _ -> []
+                                // Row enumeration — missing (pre-feature store) ⇒ [].
+                                let rowChanges (name: string) : DataCorrectionRowChange list =
+                                    match el.TryGetProperty name with
+                                    | true, v when v.ValueKind = JsonValueKind.Array ->
+                                        [ for rcEl in v.EnumerateArray() do
+                                            match optStr rcEl "rowIdentity" with
+                                            | Some rid -> yield { RowIdentity = rid; Before = optStr rcEl "before"; After = optStr rcEl "after" }
+                                            | None -> () ]
+                                    | _ -> []
                                 Ok { CorrectionId = correctionId
                                      SourceRemediationId = optStr el "sourceRemediationId"
                                      Subject = AttributeCoordinate.create m e a
@@ -419,8 +459,12 @@ module LifecycleStore =
                                      RowsMatched = matched
                                      RowsChanged = changed
                                      RowsExcluded = excluded
+                                     ChangedRows = rowChanges "changedRows"
+                                     ExcludedRows = rowChanges "excludedRows"
                                      BeforeDigest = optStr el "beforeDigest"
                                      AfterDigest = optStr el "afterDigest"
+                                     EvidenceColumns = evidence
+                                     EvidenceDigest = optStr el "evidenceDigest"
                                      ApprovedBy = optStr el "approvedBy"
                                      ApprovedAt = optStr el "approvedAt" }
                             | Error msg, _, _ -> Error msg

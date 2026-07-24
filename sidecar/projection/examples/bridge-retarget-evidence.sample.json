@@ -1,0 +1,27 @@
+{
+  "_comment": "The DATA-half readiness profiling for overrides.bridgeRetargets — referenced from projection.json by overrides.bridgeRetargetEvidence.path. A configured bridge retarget assembles its STRUCTURAL facts from the catalog (bridge attribute present, type match, targets-bridge-PK, existing constraint trust), but the DATA facts (how values resolve through the bridge, real uniqueness / null counts, orphans, payload conflicts, identity provenance) need the actual data — a catalog inspection cannot know them. This file supplies them, id-keyed to each declared retarget. A retarget stays BLOCKED (RetargetFk empty, emission byte-identical) until its evidence proves the data half: every OMITTED blocking count defaults fail-closed (1), so a partial entry keeps a retarget blocked; a retarget CLEARS only when its four blocking counts (unresolvedThroughBridge / brokenOriginalParent / bridgeKeyDuplicates / bridgeKeyNulls) are all 0. orphanedBridgeRows / payloadConflicts / identityEvidence are WARNINGS — surfaced in the lineage narration, never blocking. identityEvidence is present | missing | ambiguous (case-insensitive). This is the operator-authored source today; the Graph / live-profiling auto-supplement is a future source that writes this same file. Authoritative format: src/Projection.Pipeline/BridgeRetargetBinding.fs.",
+  "retargets": [
+    {
+      "_comment": "CLEARS — every value resolves to exactly one bridge row, the bridge key is unique + non-null, the original parent relationship is preserved. Two orphaned bridge rows + present identity evidence are surfaced as warnings but do not block; the retarget lands (FK retargets through the bridge attribute).",
+      "id": "user-createdby",
+      "unresolvedThroughBridge": 0,
+      "brokenOriginalParent": 0,
+      "orphanedBridgeRows": 2,
+      "payloadConflicts": 0,
+      "bridgeKeyDuplicates": 0,
+      "bridgeKeyNulls": 0,
+      "identityEvidence": "present"
+    },
+    {
+      "_comment": "STAYS BLOCKED — 14 in-scope values do not resolve to exactly one bridge row (the coverage half of the success invariant fails) and 3 bridge rows carry a NULL key. The retarget is inert (its FK stays on the original parent); the lineage narration enumerates exactly these gaps so the operator sees what evidence is still missing.",
+      "id": "order-approvedby",
+      "unresolvedThroughBridge": 14,
+      "brokenOriginalParent": 0,
+      "orphanedBridgeRows": 0,
+      "payloadConflicts": 0,
+      "bridgeKeyDuplicates": 0,
+      "bridgeKeyNulls": 3,
+      "identityEvidence": "ambiguous"
+    }
+  ]
+}
