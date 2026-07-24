@@ -292,6 +292,32 @@ module BridgeRetargetProfile =
           OnlyAuditReferences          = true
           ExistingConstraintTrusted    = None }
 
+    /// The FAIL-CLOSED default a binder starts from before any profiling evidence
+    /// is gathered: every DATA-derived check is unproven, so the retarget is
+    /// BLOCKED — nothing is asserted to hold. A binder overrides the
+    /// catalog-derivable facts it CAN compute (key presence, declared
+    /// uniqueness/nullability, type match, targets-bridge-PK, constraint trust);
+    /// the data facts (coverage, broken-parent, orphans, conflicts, identity) stay
+    /// fail-closed until live evidence supplies them. So a configured retarget with
+    /// no evidence NEVER clears — `RetargetFk` stays empty and emission is
+    /// byte-identical. Evidence (a later slice) is what lets a retarget clear.
+    let unproven (retargetId: string) : BridgeRetargetProfile =
+        { RetargetId                   = retargetId
+          BridgeKeyPresent             = false
+          BridgeKeyDuplicateCount      = 1L
+          BridgeKeyNullCount           = 1L
+          KeyTypesMatch                = false
+          TargetsBridgePrimaryKey      = false
+          UnresolvedThroughBridgeCount = 1L
+          BrokenOriginalParentCount    = 1L
+          ExistingRetargetConflict     = false
+          TrustedConstraintPossible    = false
+          OrphanedBridgeRowCount       = 0L
+          PayloadConflictCount         = 0L
+          IdentityEvidence             = BridgeIdentityEvidence.Missing
+          OnlyAuditReferences          = true
+          ExistingConstraintTrusted    = None }
+
 /// The evaluated outcome of one check: whether it held over the profile, its
 /// intrinsic severity (echoed so a report needs no second lookup), and a factual
 /// one-line detail (the observed evidence). Prose polish is the Voice layer's
@@ -324,6 +350,29 @@ type BridgeRetargetDecision =
       BridgeRows  : BridgeReadiness
       /// Readiness to reconcile shared payload columns.
       PayloadSync : BridgeReadiness }
+
+/// A RESOLVED bridge retarget — the binder's output, ready for the decision pass.
+/// `ReferenceKey` is the FK to retarget (resolved from the operator's
+/// module/entity/relationship); `BridgeAttributeKey` is the target attribute on
+/// the bridge kind (resolved from the operator's module/entity/attribute); the
+/// `Profile` bundles the assembled evidence the pass evaluates. When the
+/// retarget's `Retargeting` verdict clears, the pass emits
+/// `ReferenceKey → BridgeAttributeKey` into `ComposeState.BridgeRetargets`.
+type BridgeRetargetPlan =
+    { ReferenceKey       : SsKey
+      BridgeAttributeKey : SsKey
+      Profile            : BridgeRetargetProfile }
+
+/// The bridge-retarget policy axis — the resolved plans the operator declared,
+/// carried on `Policy` and read by the decision pass. `empty` (no plans) is the
+/// observable identity: the pass writes an empty retarget map, byte-identical.
+type BridgeRetargetPolicy =
+    { Plans : BridgeRetargetPlan list }
+
+[<RequireQualifiedAccess>]
+module BridgeRetargetPolicy =
+
+    let empty : BridgeRetargetPolicy = { Plans = [] }
 
 [<RequireQualifiedAccess>]
 module BridgeRetarget =
@@ -423,3 +472,18 @@ module BridgeRetarget =
         | BridgeReadiness.Blocked _ -> false
         | BridgeReadiness.Ready
         | BridgeReadiness.ReadyWithWarnings _ -> true
+
+    /// The decision-pass core: evaluate every plan's readiness and collect the
+    /// CLEARED retargets into the reference→bridge-attribute map the emitter
+    /// consumes (via `ComposeState.BridgeRetargets` → `DecisionOverlay.RetargetFk`),
+    /// alongside the full decision ledger for the diagnostics plane. A plan whose
+    /// `Retargeting` verdict is `Blocked` contributes NO map entry — its FK stays
+    /// on the original parent, so an unproven or unsafe retarget is inert, never a
+    /// silent mis-retarget. Empty policy ⇒ empty map (byte-identical emission).
+    let decide (policy: BridgeRetargetPolicy) : Map<SsKey, SsKey> * BridgeRetargetDecision list =
+        let decisions = policy.Plans |> List.map (fun p -> p, evaluate p.Profile)
+        let cleared =
+            decisions
+            |> List.choose (fun (p, d) -> if retargetCleared d then Some (p.ReferenceKey, p.BridgeAttributeKey) else None)
+            |> Map.ofList
+        cleared, (decisions |> List.map snd)

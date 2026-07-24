@@ -155,3 +155,39 @@ let ``absent bridge key blocks both retargeting and bridge-rows (shared check)``
     let d = eval { clean with BridgeKeyPresent = false }
     Assert.Contains(BridgeCheck.BridgeKeyExists, failed d.Retargeting)
     Assert.Contains(BridgeCheck.BridgeKeyExists, failed d.BridgeRows)
+
+// ---------------------------------------------------------------------------
+// The decision-pass core: `BridgeRetarget.decide` collects the CLEARED retargets
+// into the reference→bridge-attribute map (the emitter consumes) and returns the
+// full decision ledger. A blocked/unproven plan contributes no map entry.
+// ---------------------------------------------------------------------------
+
+let private brKey (s: string) : SsKey = SsKey.synthesizedComposite "BR" [ s ] |> Result.value
+
+[<Fact>]
+let ``decide: a cleared plan yields a retarget map entry; a blocked plan yields none`` () =
+    let refA, bridgeA = brKey "refA", brKey "bridgeA"
+    let refB, bridgeB = brKey "refB", brKey "bridgeB"
+    let cleared = { ReferenceKey = refA; BridgeAttributeKey = bridgeA; Profile = BridgeRetargetProfile.clean "A" }
+    let blocked = { ReferenceKey = refB; BridgeAttributeKey = bridgeB; Profile = BridgeRetargetProfile.unproven "B" }
+    let map, decisions = BridgeRetarget.decide { Plans = [ cleared; blocked ] }
+    Assert.Equal<Map<SsKey, SsKey>>(Map.ofList [ refA, bridgeA ], map)
+    Assert.Equal(2, List.length decisions)
+
+[<Fact>]
+let ``decide: empty policy is the empty map (byte-identical)`` () =
+    let map, decisions = BridgeRetarget.decide BridgeRetargetPolicy.empty
+    Assert.True(Map.isEmpty map)
+    Assert.Empty decisions
+
+[<Fact>]
+let ``unproven profile is BLOCKED (fail-closed) even after the binder fills good catalog facts`` () =
+    // The binder overrides the structural catalog facts but leaves the DATA facts
+    // unproven, so a configured retarget with no profiling evidence never clears.
+    let p =
+        { BridgeRetargetProfile.unproven "x" with
+            BridgeKeyPresent        = true
+            TargetsBridgePrimaryKey = false
+            KeyTypesMatch           = true
+            ExistingConstraintTrusted = Some true }
+    Assert.False(BridgeRetarget.retargetCleared (BridgeRetarget.evaluate p))

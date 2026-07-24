@@ -156,3 +156,7 @@ type TransformGroup =
     /// `UserFkReflowPass`. Operator disables user-FK reflow when
     /// user-migration is out of scope for the run.
     | UserReflow
+    /// `BridgeRetargetPass`. Opt-in (default off): the operator enables
+    /// bridge retargeting for the run only when `overrides.bridgeRetargets`
+    /// is declared and greenlit.
+    | BridgeRetarget

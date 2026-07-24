@@ -1363,6 +1363,7 @@ module Compose =
         validation {
             let! tightening = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
             and! insertion  = InsertionPolicyBinding.fromConfig cfg
+            and! bridgeRetarget = BridgeRetargetBinding.fromConfig catalog cfg.Overrides.BridgeRetargets
             // AC-X1 — translate the config's data-emission toggles into the
             // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
             // `bootstrap` turning on enables `EmitData`; `DataComposition`
@@ -1426,10 +1427,27 @@ module Compose =
                         Result.failureOf
                             (ValidationError.create "emission.dataCorrection.ungreenlit"
                                 (sprintf "approved inline data corrections (`emission.dataCorrections`) rewrite or exclude row data before emission/load, but are not greenlit — %s Declare { \"mode\": \"data-correction\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
+            // The bridge-retarget gate (the emission-plane counterpart). A non-empty
+            // `overrides.bridgeRetargets` reroutes a foreign key to a DIFFERENT table
+            // before emission — REFUSED until the emission plane greenlights
+            // `bridge-retarget`. Presence-gated. (A retarget still only LANDS when its
+            // evidence-backed readiness clears; the gate governs whether the feature
+            // is authorized at all, not whether a given retarget is safe.)
+            let! () =
+                if List.isEmpty cfg.Overrides.BridgeRetargets then Result.success ()
+                else
+                    match WriteSignoff.verify "emission" cfg.Emission.Signoff WriteSignoff.WriteMode.BridgeRetarget [] with
+                    | WriteSignoff.Confirmed _ -> Result.success ()
+                    | WriteSignoff.Missing (reason, _)
+                    | WriteSignoff.ScopeMismatch (reason, _) ->
+                        Result.failureOf
+                            (ValidationError.create "emission.bridgeRetarget.ungreenlit"
+                                (sprintf "declared bridge retargets (`overrides.bridgeRetargets`) reroute a foreign key to a different table before emission, but are not greenlit — %s Declare { \"mode\": \"bridge-retarget\" } in `emission.signoff` (with the impact acknowledged) before publishing." reason))
             return {
                 Policy.empty with
-                    Tightening = tightening
-                    Insertion  = insertion
+                    Tightening     = tightening
+                    Insertion      = insertion
+                    BridgeRetarget = bridgeRetarget
                     // AC-D7 — the operator's convergent-delete scope rides the
                     // Emission axis; absent (the default) the MERGE stays
                     // upsert-only, byte-identical. Reconciliation slice 2 —

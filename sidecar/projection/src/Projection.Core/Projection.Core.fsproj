@@ -77,6 +77,15 @@
     <Compile Include="EvidenceCache.fs" />
     <Compile Include="SyntheticData.fs" />
     <Compile Include="SyntheticCorrection.fs" />
+    <!-- BridgeRetarget.fs: the generic pure kernel of bridge retargeting (the
+         evidence-shaped profile → decision readiness engine) PLUS the resolved
+         BridgeRetargetPlan / BridgeRetargetPolicy the decision pass reads off
+         Policy. A TOTAL function over a supplied BridgeRetargetProfile — no
+         live-data dependency, no proprietary estate baked in (tables/bridge/
+         identity enter later at config + injected evidence). Compiled before
+         Policy.fs (which carries the BridgeRetarget axis) and before the passes;
+         needs only SsKey. -->
+    <Compile Include="BridgeRetarget.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="EmissionMode.fs" />
     <Compile Include="SurrogateRemap.fs" />
@@ -171,16 +180,6 @@
          the durable receipt vocabulary it emits is defined earlier
          (DataCorrectionReceipt.fs) so Episode can carry it. -->
     <Compile Include="ApprovedDataCorrections.fs" />
-    <!-- BridgeRetarget.fs: the generic pure kernel of bridge retargeting — the
-         evidence-shaped readiness engine (profile → decision) that decides whether
-         a foreign key can safely resolve through a bridge attribute instead of its
-         original parent, without rewriting any child FK value. A TOTAL function over
-         a supplied BridgeRetargetProfile: no live-data dependency, no proprietary
-         estate baked in (the tables/bridge/identity source enter later, at config +
-         injected evidence). Sits beside ApprovedDataCorrections.fs as the sibling
-         operator-declared-override archetype; needs only the coordinate / identity
-         types compiled far earlier. -->
-    <Compile Include="BridgeRetarget.fs" />
     <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
          portability front-end). Pure planner over the FK graph (Catalog.fs);
          materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,
@@ -222,6 +221,12 @@
     <Compile Include="Passes/ForeignKeyPass.fs" />
     <Compile Include="Passes/CategoricalUniquenessPass.fs" />
     <Compile Include="Passes/UserFkReflowPass.fs" />
+    <!-- BridgeRetargetPass.fs: the bridge-retarget decision pass. Reads the
+         resolved retargets off Policy.BridgeRetarget, evaluates readiness, and
+         writes the cleared reference→bridge-attribute map into
+         ComposeState.BridgeRetargets (→ DecisionOverlay.RetargetFk). Registered +
+         toggled like userFkReflow; needs BridgeRetarget (Core) + Policy. -->
+    <Compile Include="Passes/BridgeRetargetPass.fs" />
     <!-- Pure profile-evidence diagnostic scans (Profile -> DiagnosticEntry list).
          Lifted out of Projection.Pipeline (the I/O shell) — they depend only on
          Core types, so they belong with the other Profile/Catalog scans. -->

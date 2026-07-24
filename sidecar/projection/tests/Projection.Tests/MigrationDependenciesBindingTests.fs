@@ -73,6 +73,7 @@ let private emptyOverrides : Config.OverridesSection = {
     CircularDependencies   = None
     AllowMissingPrimaryKey = []
     EmissionFolders        = []
+    BridgeRetargets        = []
 }
 
 let private mkConfig (overrides: Config.OverridesSection) : Config.Config =

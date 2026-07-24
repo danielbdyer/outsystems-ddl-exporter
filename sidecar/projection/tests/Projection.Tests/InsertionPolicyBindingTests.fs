@@ -29,6 +29,7 @@ let private mkConfig (insertion: string) : Config.Config =
             CircularDependencies   = None
             AllowMissingPrimaryKey = []
             EmissionFolders        = []
+            BridgeRetargets        = []
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Sqlproj = false; Json = true; Distributions = true

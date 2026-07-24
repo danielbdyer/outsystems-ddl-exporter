@@ -38,6 +38,12 @@
     <Compile Include="MigrationDependenciesBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
+    <!-- BridgeRetargetBinding.fs: binds overrides.bridgeRetargets (textual config)
+         into Policy.BridgeRetarget — resolves the reference + bridge coordinates
+         fail-closed and assembles the structural catalog facts of each retarget's
+         readiness profile (data facts stay fail-closed until profiling). Consumed
+         by buildPolicyFromConfig (Pipeline.fs). -->
+    <Compile Include="BridgeRetargetBinding.fs" />
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />

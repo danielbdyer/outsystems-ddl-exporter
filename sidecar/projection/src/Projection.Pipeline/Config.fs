@@ -230,10 +230,29 @@ module Config =
         Folder : string
     }
 
+    /// One row of `overrides.bridgeRetargets` — a declared foreign-key retarget.
+    /// `Entity` + `Relationship` name the FK to retarget (its owning entity and
+    /// the reference/relationship name); `Bridge` is the attribute the FK should
+    /// resolve THROUGH instead of the original parent's primary key. The binder
+    /// (`BridgeRetargetBinding`) resolves these to SsKeys against the catalog
+    /// (fail-closed) and assembles the readiness evidence the decision pass
+    /// evaluates.
+    type BridgeRetargetEntry = {
+        Id           : string
+        Entity       : EntityCoordinate
+        Relationship : string
+        Bridge       : AttributeCoordinate
+    }
+
     type OverridesSection = {
         TableRenames           : TableRename list
         MigrationDependencies  : FilePathOverride option
         StaticData             : FilePathOverride option
+        /// `overrides.bridgeRetargets` — the declared foreign-key bridge retargets
+        /// (chapter: generic bridge retargeting). Bound into `Policy.BridgeRetarget`
+        /// and evaluated by `BridgeRetargetPass`; opt-in + signoff-gated. `[]` (the
+        /// default) leaves emission byte-identical.
+        BridgeRetargets        : BridgeRetargetEntry list
         CircularDependencies   : CircularDependenciesSection option
         /// Chapter C slice C.2 — operator allowlist of kinds whose
         /// missing primary key is acknowledged. Entries are typed
@@ -532,6 +551,7 @@ module Config =
         CircularDependencies   = None
         AllowMissingPrimaryKey = []
         EmissionFolders        = []
+        BridgeRetargets        = []
     }
 
     let private defaultEmission : EmissionSection = {
@@ -1166,6 +1186,48 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "overrides.emissionFolders must be an array.")
 
+    let private brStr (el: JsonElement) (name: string) : string option =
+        match el.TryGetProperty(name) with
+        | true, v when v.ValueKind = JsonValueKind.String -> Option.ofObj (v.GetString())
+        | _ -> None
+
+    /// Parse one `overrides.bridgeRetargets` entry into its textual shape (the
+    /// binder resolves the coordinates against the catalog). Fail-closed: a missing
+    /// `id` / `reference` / `bridge` (or a malformed sub-object) is a named config
+    /// refusal, never a silent skip.
+    let private parseBridgeRetargetEntry (el: JsonElement) : Result<BridgeRetargetEntry> =
+        result {
+            let! id = getString el "id"
+            let! refEl = getProperty el "reference"
+            let! bridgeEl = getProperty el "bridge"
+            let! refPair =
+                match brStr refEl "module", brStr refEl "entity", brStr refEl "relationship" with
+                | Some m, Some e, Some r -> Result.success (EntityCoordinate.create m e, r)
+                | _ -> Result.failureOf (configError "overrides.bridgeRetargets.reference" "a bridge retarget's `reference` needs { module, entity, relationship }.")
+            let entity, relationship = refPair
+            let! bridge =
+                match brStr bridgeEl "module", brStr bridgeEl "entity", brStr bridgeEl "attribute" with
+                | Some m, Some e, Some a -> Result.success (AttributeCoordinate.create m e a)
+                | _ -> Result.failureOf (configError "overrides.bridgeRetargets.bridge" "a bridge retarget's `bridge` needs { module, entity, attribute }.")
+            return { Id = id; Entity = entity; Relationship = relationship; Bridge = bridge }
+        }
+
+    let private parseBridgeRetargets (element: JsonElement) : Result<BridgeRetargetEntry list> =
+        match element.TryGetProperty("bridgeRetargets") with
+        | false, _ -> Result.success []
+        | true, v ->
+            match v.ValueKind with
+            | JsonValueKind.Null | JsonValueKind.Undefined -> Result.success []
+            | JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.toList
+                |> List.map (fun e ->
+                    if e.ValueKind = JsonValueKind.Object then parseBridgeRetargetEntry e
+                    else Result.failureOf (configError "typeMismatch" "overrides.bridgeRetargets entries must be { id, reference, bridge } objects."))
+                |> Result.aggregate
+            | _ ->
+                Result.failureOf (configError "typeMismatch" "overrides.bridgeRetargets must be an array.")
+
     let private parseOverrides (root: JsonElement) : Result<OverridesSection> =
         match tryGetProperty root "overrides" with
         | None -> Result.success defaultOverrides
@@ -1177,6 +1239,7 @@ module Config =
                 let! cycles = parseCircularDependencies element
                 let! allowedPks = parseAllowMissingPrimaryKey element
                 let! folders = parseEmissionFolders element
+                let! bridgeRetargets = parseBridgeRetargets element
                 return {
                     TableRenames           = renames
                     MigrationDependencies  = migDeps
@@ -1184,6 +1247,7 @@ module Config =
                     CircularDependencies   = cycles
                     AllowMissingPrimaryKey = allowedPks
                     EmissionFolders        = folders
+                    BridgeRetargets        = bridgeRetargets
                 }
             }
 
