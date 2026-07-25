@@ -634,6 +634,12 @@ type PlanAction =
     | CheckCanary of ddl: string * cdcSilence: bool
     | CheckDrift of model: string * conn: string
     | CheckData of before: string * after: string
+    /// `check deploy <bundleDir>` — the deploy-feasibility gate as a verb:
+    /// apply the emitted bundle's .sql files to a disposable database and
+    /// report every batch the server refuses (green exit 0 / findings exit 5
+    /// / no Docker exit 4). Read-only toward the estate: the only writes land
+    /// in the verb's own reaped scratch database.
+    | CheckDeploy of bundleDir: string
     | CheckReady
     /// `check shape` — the espace-safe cross-environment readiness gate
     /// (CROSS_ENVIRONMENT_READINESS.md). The agreed shape (an env's OSSYS model)

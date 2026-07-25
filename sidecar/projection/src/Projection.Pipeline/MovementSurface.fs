@@ -2276,6 +2276,12 @@ module Command =
                 match valueOf "--before", valueOf "--after" with
                 | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
+            | "deploy" :: rest ->
+                // The deploy-feasibility gate (rehearse-the-deploy): one
+                // positional, the emitted bundle directory.
+                (match rest |> List.tryFind (fun (a: string) -> not (a.StartsWith "--")) with
+                 | Some dir -> PlanAction.CheckDeploy dir
+                 | None -> PlanAction.Refused (2, err "cli.check.deployArgs" "projection check deploy: requires <bundleDir> — the emitted bundle directory whose .sql files the gate applies to a disposable database."))
             | "ready" :: _ -> PlanAction.CheckReady
             | "go" :: rest ->
                 // THE GO BOARD — resolve the named flow through the SAME
