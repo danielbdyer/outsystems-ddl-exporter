@@ -49,6 +49,7 @@
     <!-- EstateFingerprintProbeDockerTests.fs: the estate evidence store's
          one-batch staleness probe witness (wave A2.5, 2026-07-15). -->
     <Compile Include="EstateFingerprintProbeDockerTests.fs" />
+    <Compile Include="DeployFeasibilityDockerTests.fs" />
     <!-- FidelityRowsDockerTests.fs: T17's live witness (wave B2) — two
          renditions of one estate prove byte-identical; a flipped cell
          names its key. -->

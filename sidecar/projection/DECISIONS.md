@@ -30780,3 +30780,46 @@ config places — the key pair, the identity pair, `insertMappings`, `insertCons
 refuses unless those cover every mandatory, non-identity, non-defaulted bridge column, naming the
 uncovered ones. None of the four can touch an EXISTING row: the only edit to an existing row remains
 the NULL-identity fill.
+
+---
+
+## 2026-07-25 — Cutover-readiness hardening: the unstage inverse, the acquisition cache, the generated config schema, and the deploy-feasibility gate
+
+Four slices, one posture: before the cutover, reversibility / iteration speed /
+config validity / deploy validity each get a structural owner instead of a
+procedure.
+
+- **`unstage.sql`** (with `Statement.DeleteRowIfMatches`, the structural inverse
+  of `InsertRowIfAbsent`): every staging run's exact recorded inverse, derived
+  from the SAME plan ledger as `staged.sql` so the two cannot disagree. Guarded
+  like the forward lane's mirror image — an identity un-fill requires the cell
+  to still equal the staged value; a staged-row delete requires the row to
+  still match what staging inserted — so post-staging application edits are
+  unreachable by the undo. NOT a general revert.
+
+- **The staging acquisition cache** (`bridgeRowStaging[].cache`: off | auto |
+  pinned): caches exactly the acquisition stage; every downstream stage is a
+  pure derivation and deliberately uncached (discover-once, derive-pure).
+  Two-keyed validity — declaration digest ALWAYS (even pinned), involved-kind
+  estate fingerprints under auto (the shared `EvidenceFingerprint.probe`;
+  survival rule 14's basis inherited, not re-derived). `cache.json` states the
+  acquisition basis every run. Store-root rule extracted to
+  `EstateStoreLocation` (one owner; `EstateEvidenceStore` delegates).
+
+- **The generated config schema** (`projection.schema.json` ←
+  `ConfigSchema.generate`): the operator surface as a generated projection
+  (T-IV), closed vocabularies DERIVED from the parser's own enumerations
+  (`WriteSignoff.allModes`; the new `TransformGroup.all`, which
+  `TransformGroupsBinding` now also derives from — the allModes discipline at
+  its second instance). Drift-tested byte-for-byte; every schema-advertised
+  enum value proven to parse; the shipped samples proven schema-known.
+
+- **The deploy-feasibility gate** (`DeployFeasibility.applyBundle`): apply the
+  RENDERED bundle to a disposable database and report what the server refused,
+  per batch, at a dependency-blind fixed point (a batch that eventually
+  applies was ordering, not infeasibility; the residue is genuine). The
+  hand-run probe behind `bridgeKeyDeclaredUnique` is now an automated Docker
+  witness: the FK-to-non-unique-column bundle is rejected live with the
+  server's own error, and the same bundle with the unique constraint is green.
+  This converts the "IR cannot see server-side constraints" class from
+  unknown-unknowns into a measured pass/fail.

@@ -48,6 +48,7 @@
     <!-- Dynamic bridge-row staging: the config binder (coordinates + auto-linked
          retarget scope + mandatory-coverage guard, fail-closed). -->
     <Compile Include="BridgeRowStagingBinding.fs" />
+    <Compile Include="DeployFeasibility.fs" />
     <Compile Include="EstateStoreLocation.fs" />
     <Compile Include="BridgeStagingCache.fs" />
     <Compile Include="Hydration.fs" />
