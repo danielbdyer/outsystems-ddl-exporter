@@ -160,3 +160,25 @@ type TransformGroup =
     /// bridge retargeting for the run only when `overrides.bridgeRetargets`
     /// is declared and greenlit.
     | BridgeRetarget
+
+/// Companion enumeration + config-name projection — the SINGLE list both the
+/// config parser (`TransformGroupsBinding.parseGroupName`) and the generated
+/// config schema derive their known-group vocabulary from, so "what parses"
+/// and "what the schema advertises" cannot disagree (the
+/// `WriteSignoff.allModes` precedent). `configName` is a total match: a new
+/// group fails to compile until it is named here, and `all` is the one list
+/// to extend.
+[<RequireQualifiedAccess>]
+module TransformGroup =
+
+    let all : TransformGroup list =
+        [ TransformGroup.Tightening
+          TransformGroup.UserReflow
+          TransformGroup.BridgeRetarget ]
+
+    /// The operator-writable config name — the DU case name verbatim.
+    let configName (g: TransformGroup) : string =
+        match g with
+        | TransformGroup.Tightening     -> "Tightening"
+        | TransformGroup.UserReflow     -> "UserReflow"
+        | TransformGroup.BridgeRetarget -> "BridgeRetarget"

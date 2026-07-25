@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="WriteSignoff.fs" />
     <Compile Include="Config.fs" />
+    <Compile Include="ConfigSchema.fs" />
     <Compile Include="CatalogResolution.fs" />
     <Compile Include="Binding.fs" />
     <Compile Include="LogSink.fs" />

@@ -43,6 +43,12 @@ projection explain policy  <projectionA.json> <projectionB.json> # the five-axis
 
 ## The full schema
 
+> **Editor validation:** `projection.schema.json` at the repo root is the GENERATED
+> JSON-Schema projection of this surface (`ConfigSchema.generate`; drift-tested
+> byte-for-byte, closed vocabularies derived from the parser's own enumerations).
+> Reference it from your config as `"$schema": "./projection.schema.json"` for
+> as-you-type validation.
+
 Every key, with type · required? · default. Unknown keys are ignored; type mismatches are refused (`pipeline.config.typeMismatch`).
 
 ### `model` — the source and what's in scope
