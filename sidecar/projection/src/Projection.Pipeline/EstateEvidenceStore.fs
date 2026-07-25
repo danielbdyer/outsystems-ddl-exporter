@@ -66,21 +66,15 @@ module EstateEvidenceStore =
     // live-only, and the report says so (never a silent degradation).
     // ------------------------------------------------------------------
 
-    /// The pure resolution over the two variables' values (testable without
-    /// process-global environment mutation).
+    /// The pure resolution — DELEGATES to `EstateStoreLocation`, the rule's one
+    /// owner since the bridge-staging cache became a second, earlier-compiled
+    /// consumer. Kept here as a re-export so existing callers are unchanged.
     let storeDirFrom (estateDir: string option) (ledgerDir: string option) : string option =
-        match estateDir with
-        | Some d when not (String.IsNullOrWhiteSpace d) -> Some d
-        | _ ->
-            match ledgerDir with
-            | Some l when not (String.IsNullOrWhiteSpace l) -> Some (Path.Combine(l, "estate"))
-            | _ -> None
+        EstateStoreLocation.storeDirFrom estateDir ledgerDir
 
-    /// The boundary read: resolve from the process environment.
+    /// The boundary read: resolve from the process environment (delegated).
     let storeDir () : string option =
-        storeDirFrom
-            (Option.ofObj (Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"))
-            (Option.ofObj (Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"))
+        EstateStoreLocation.storeDir ()
 
     let private evidenceDir (root: string) (env: string) : string =
         Path.Combine(root, "evidence", env)

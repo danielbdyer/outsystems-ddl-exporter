@@ -2655,7 +2655,7 @@ module Compose =
                                             // identical); a named refusal fails the
                                             // extract stage.
                                             let! stagingResult =
-                                                BridgeRowStagingSeam.execute cfg catalog' sourceConnectionString
+                                                BridgeRowStagingSeam.execute cfg catalog' sourceConnectionString (EstateStoreLocation.storeDir ())
                                             match stagingResult with
                                             | Ok staging ->
                                                 emitStageMarker LogSink.Extract "extract.completed" LogSink.End

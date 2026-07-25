@@ -280,12 +280,14 @@ module BridgeRowStagingSeam =
     // evidence) for ONE resolved declaration.
     // ------------------------------------------------------------------
 
-    let private runOne
+    /// Read the acquisition LIVE from the estate — the uncached path, and the
+    /// path every cache miss falls back to.
+    let private acquireLive
         (cnn: SqlConnection)
         (resolved: BridgeRowStagingBinding.ResolvedStaging)
-        : Task<Map<string, BridgeRetargetEvidence> * Map<string, string>> =
+        : Task<BridgeStagingAcquisition> =
         task {
-            use _ = Bench.scope "pipeline.bridgeRowStaging.runOne"
+            use _ = Bench.scope "pipeline.bridgeRowStaging.acquire"
             // 1. The key set the companion covers, per the declaration's `scope`:
             //      * `referenced` (default) — the union of each linked FK column's
             //        distinct non-null values. Minimal blast radius, and sound for
@@ -329,6 +331,116 @@ module BridgeRowStagingSeam =
                         { BridgeSnapshotRow.Key = key
                           Identity = StaticRow.value resolved.BridgeIdentity.Name row }))
             let! wide = BridgeSnapshotReader.wideKeyStats cnn resolved.BridgeKind resolved.BridgeKey
+            return { ReferencedKeys = referencedKeys; SourceRows = sourceRows; BridgeRows = bridgeRows; Wide = wide }
+        }
+
+    /// Resolve the acquisition THROUGH the declared cache policy — the smart
+    /// policy in one total decision. `off` / no store root ⇒ live (named as
+    /// `Disabled`, never silent). `auto` ⇒ one fingerprint round-trip over the
+    /// involved kinds decides reuse vs refresh. `pinned` ⇒ reuse without
+    /// probing (declared staleness acceptance) — but a DECLARATION change
+    /// still refreshes, because differently-shaped cached data must never
+    /// feed the delta. A failed staleness probe disables the cache for the
+    /// run (the live path surfaces any real connectivity error itself).
+    let private acquireCached
+        (cnn: SqlConnection)
+        (cacheRoot: string option)
+        (resolved: BridgeRowStagingBinding.ResolvedStaging)
+        : Task<BridgeStagingAcquisition * BridgeStagingCacheOutcome> =
+        task {
+            match resolved.Cache, cacheRoot with
+            | Config.BridgeStagingCachePolicy.Off, _ ->
+                let! acq = acquireLive cnn resolved
+                return acq, BridgeStagingCacheOutcome.Disabled "cache policy off"
+            | _, None ->
+                let! acq = acquireLive cnn resolved
+                return acq, BridgeStagingCacheOutcome.Disabled "no store root (PROJECTION_ESTATE_DIR / PROJECTION_LEDGER_DIR unset) — live-only"
+            | policy, Some root ->
+                let digest = BridgeStagingCache.digestOf resolved
+                let entryExists = System.IO.File.Exists(BridgeStagingCache.entryPath root resolved.StagingId)
+                let entry = if entryExists then BridgeStagingCache.tryReadEntry root resolved.StagingId else None
+                let! probeOutcome =
+                    task {
+                        match policy with
+                        | Config.BridgeStagingCachePolicy.Auto ->
+                            let! probed = EvidenceFingerprint.probe cnn (BridgeStagingCache.involvedKinds resolved)
+                            return
+                                (match probed with
+                                 | Ok readings -> Some (Some (BridgeStagingCache.fingerprintMap readings))
+                                 | Error _ -> None)
+                        | _ ->
+                            // `pinned` skips the probe by declared intent
+                            // (`off` never reaches this arm).
+                            return Some None
+                    }
+                match probeOutcome with
+                | None ->
+                    let! acq = acquireLive cnn resolved
+                    return acq, BridgeStagingCacheOutcome.Disabled "fingerprint probe failed — cache not consulted this run"
+                | Some liveFps ->
+                    let verdict =
+                        if entryExists && Option.isNone entry then Choice2Of2 BridgeStagingCacheMiss.Unreadable
+                        else BridgeStagingCache.validity digest entry liveFps
+                    match verdict with
+                    | Choice1Of2 hit ->
+                        let capturedAt, acq = hit
+                        return acq, BridgeStagingCacheOutcome.Hit (capturedAt, policy = Config.BridgeStagingCachePolicy.Pinned)
+                    | Choice2Of2 miss ->
+                        let! acq = acquireLive cnn resolved
+                        let! fpsForSave =
+                            task {
+                                match liveFps with
+                                | Some fps -> return fps
+                                | None ->
+                                    let! probed = EvidenceFingerprint.probe cnn (BridgeStagingCache.involvedKinds resolved)
+                                    return
+                                        (match probed with
+                                         | Ok readings -> BridgeStagingCache.fingerprintMap readings
+                                         | Error _ -> Map.empty)
+                            }
+                        BridgeStagingCache.save root resolved System.DateTimeOffset.UtcNow fpsForSave acq
+                        return acq, BridgeStagingCacheOutcome.Refreshed miss
+        }
+
+    /// The acquisition-basis artifact — every run states whether its snapshots
+    /// came from the live estate or the cache, and why (the
+    /// masthead-states-the-basis discipline): a `pinned` reuse is VISIBLE
+    /// staleness acceptance, never silence, and a disabled cache names its
+    /// reason.
+    let private cacheJson (policy: Config.BridgeStagingCachePolicy) (outcome: BridgeStagingCacheOutcome) : string =
+        let root = JsonObject()
+        root["policy"] <-
+            JsonValue.Create(
+                match policy with
+                | Config.BridgeStagingCachePolicy.Off -> "off"
+                | Config.BridgeStagingCachePolicy.Auto -> "auto"
+                | Config.BridgeStagingCachePolicy.Pinned -> "pinned")
+        (match outcome with
+         | BridgeStagingCacheOutcome.Disabled reason ->
+             root["outcome"] <- JsonValue.Create("liveOnly")
+             root["reason"] <- JsonValue.Create(reason)
+         | BridgeStagingCacheOutcome.Hit (capturedAt, pinned) ->
+             root["outcome"] <- JsonValue.Create("cacheHit")
+             root["capturedAtUtc"] <- JsonValue.Create(capturedAt.ToString("O"))
+             root["probeSkippedByPin"] <- JsonValue.Create(pinned)
+         | BridgeStagingCacheOutcome.Refreshed miss ->
+             root["outcome"] <- JsonValue.Create("refreshed")
+             root["reason"] <- JsonValue.Create(BridgeStagingCache.missLabel miss))
+        root.ToJsonString(jsonOpts)
+
+    let private runOne
+        (cnn: SqlConnection)
+        (cacheRoot: string option)
+        (resolved: BridgeRowStagingBinding.ResolvedStaging)
+        : Task<Map<string, BridgeRetargetEvidence> * Map<string, string>> =
+        task {
+            use _ = Bench.scope "pipeline.bridgeRowStaging.runOne"
+            let! acquired = acquireCached cnn cacheRoot resolved
+            let acq, cacheOutcome = acquired
+            let referencedKeys = acq.ReferencedKeys
+            let sourceRows = acq.SourceRows
+            let bridgeRows = acq.BridgeRows
+            let wide = acq.Wide
             // 3. The pure delta + planned evidence.
             let spec = BridgeRowStagingBinding.toSpec resolved
             let plan = BridgeRowDelta.compute spec referencedKeys sourceRows bridgeRows
@@ -376,6 +488,7 @@ module BridgeRowStagingSeam =
                       at "delta.json", deltaJson plan
                       at "staged.sql", stagedSql
                       at "unstage.sql", unstageSql
+                      at "cache.json", cacheJson resolved.Cache cacheOutcome
                       at "evidence.json", evidenceJson resolved.Links plan evidence ]
             // 6. The derived evidence per linked retarget — ONLY when the plan
             //    is clean (fail-closed: a blocked plan leaves the linked
@@ -395,7 +508,7 @@ module BridgeRowStagingSeam =
     /// `DataCorrectionSeam` discipline).
     type private Companion =
         { Metadata : RegisteredTransformMetadata
-          Run      : Config.Config -> Catalog -> string -> Task<Result<StagingOutcome>> }
+          Run      : Config.Config -> Catalog -> string -> string option -> Task<Result<StagingOutcome>> }
 
     let private dynamicBridgeRowStaging : Companion =
         { Metadata =
@@ -407,7 +520,7 @@ module BridgeRowStagingSeam =
                 [ TransformSite.operatorIntent "bridgeRowStaging" Insertion
                     "Derive the bridge-row supply for the declared bridge retargets from the LIVE estate (`overrides.bridgeRowStaging`): referenced keys from the retargeting FK columns, source/bridge snapshots, a pure per-key delta, staged GUARDED inserts + FILL-ONLY identity updates (never the full-row MERGE — an existing non-null bridge cell is structurally unreachable), planned-state retarget evidence, and the durable audit sextet. OperatorIntent Insertion: the staged rows are content the estate gains, driven entirely by operator declaration. Empty ⇒ identity (no acquisition, byte-identical); any block ⇒ the linked retargets stay unproven." ] }
           Run =
-            fun cfg catalog sourceConnectionString ->
+            fun cfg catalog sourceConnectionString cacheRoot ->
                 task {
                     if List.isEmpty cfg.Overrides.BridgeRowStaging then
                         return Result.success emptyOutcome
@@ -429,7 +542,7 @@ module BridgeRowStagingSeam =
                                     for r in resolved do
                                         // FS3511 (survival rule): bind the single
                                         // value, destructure OUTSIDE the let!.
-                                        let! outcome = runOne cnn r
+                                        let! outcome = runOne cnn cacheRoot r
                                         let evidenceMap, artifacts = outcome
                                         evidenceAcc <- Map.fold (fun m k v -> Map.add k v m) evidenceAcc evidenceMap
                                         artifactAcc <- Map.fold (fun m k v -> Map.add k v m) artifactAcc artifacts
@@ -452,6 +565,7 @@ module BridgeRowStagingSeam =
         (cfg: Config.Config)
         (catalog: Catalog)
         (sourceConnectionString: string)
+        (cacheRoot: string option)
         : Task<Result<StagingOutcome>> =
         task {
             let mutable state = Result.success emptyOutcome
@@ -459,7 +573,7 @@ module BridgeRowStagingSeam =
                 match state with
                 | Error _ -> ()
                 | Ok acc ->
-                    let! next = c.Run cfg catalog sourceConnectionString
+                    let! next = c.Run cfg catalog sourceConnectionString cacheRoot
                     state <-
                         next
                         |> Result.map (fun o ->

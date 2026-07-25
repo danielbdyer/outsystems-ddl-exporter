@@ -294,10 +294,28 @@ module Config =
         | Referenced
         | AllSourceRows
 
+    /// The staging acquisition's cache posture — the quick-iteration lever.
+    /// `Off` (default): every run reads the live estate (current behavior,
+    /// byte-identical). `Auto`: reuse the cached acquisition when BOTH the
+    /// declaration digest AND the involved kinds' estate fingerprints (row
+    /// count / max-pk / content hash — survival rule 14's basis) still match;
+    /// any movement re-acquires and rewrites. `Pinned`: reuse the cached
+    /// acquisition WITHOUT probing the estate (fastest; the operator accepts
+    /// staleness, and the cache.json artifact says so) — a changed DECLARATION
+    /// still invalidates even a pin, because differently-shaped cached data
+    /// must never feed the delta.
+    [<RequireQualifiedAccess>]
+    type BridgeStagingCachePolicy =
+        | Off
+        | Auto
+        | Pinned
+
     type BridgeRowStagingEntry = {
         Id              : string
         /// `scope` — `"referenced"` (default) or `"allSourceRows"`.
         Scope           : BridgeStagingScope
+        /// `cache` — `"off"` (default) | `"auto"` | `"pinned"`.
+        Cache           : BridgeStagingCachePolicy
         Source          : RenameSource
         SourceKey       : string
         SourceIdentity  : string
@@ -1371,6 +1389,20 @@ module Config =
                     else
                         Result.failureOf (configError "overrides.bridgeRowStaging.scopeUnknown"
                             (sprintf "bridgeRowStaging scope '%s' is not recognized. Known: referenced | allSourceRows." raw))
+            let! cache =
+                match brStr el "cache" with
+                | None -> Result.success BridgeStagingCachePolicy.Off
+                | Some raw ->
+                    let t = raw.Trim()
+                    if   System.String.Equals(t, "off", System.StringComparison.OrdinalIgnoreCase) then
+                        Result.success BridgeStagingCachePolicy.Off
+                    elif System.String.Equals(t, "auto", System.StringComparison.OrdinalIgnoreCase) then
+                        Result.success BridgeStagingCachePolicy.Auto
+                    elif System.String.Equals(t, "pinned", System.StringComparison.OrdinalIgnoreCase) then
+                        Result.success BridgeStagingCachePolicy.Pinned
+                    else
+                        Result.failureOf (configError "overrides.bridgeRowStaging.cacheUnknown"
+                            (sprintf "bridgeRowStaging cache '%s' is not recognized. Known: off | auto | pinned." raw))
             let! sourceEl = getProperty el "source"
             let! bridgeEl = getProperty el "bridge"
             let! source = parseRenameSource "bridgeRowStaging[].source" sourceEl
@@ -1416,6 +1448,7 @@ module Config =
             return {
                 Id              = id
                 Scope           = scope
+                Cache           = cache
                 Source          = source
                 SourceKey       = sourceKey
                 SourceIdentity  = sourceIdentity
