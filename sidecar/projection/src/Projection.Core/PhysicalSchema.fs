@@ -812,11 +812,23 @@ module PhysicalSchema =
         // `overlay.RetargetFk` maps a reference to the bridge attribute key; this
         // resolves it to the bridge table (owning kind) + column, so the round-trip
         // comparator reflects a retargeted FK exactly as the SSDT emitter emits it.
+        //
+        // BUILT ONLY WHEN A RETARGET EXISTS. `toPhysicalForeignKeys` consults this
+        // map exclusively through `Map.tryFind r.SsKey overlay.RetargetFk |>
+        // Option.bind (…)`, so an EMPTY `RetargetFk` short-circuits before the map
+        // is ever read — and the retarget feature is opt-in and off by default, so
+        // the common path built a whole-estate map (every attribute of every kind,
+        // one column-name projection each, an n-log-n tree) that nothing consulted.
+        // The perf gate caught it: `physicalSchema.ofCatalog` at 518 ms against a
+        // 373 ms threshold on the 150-table canary. Empty ⇒ `Map.empty` is
+        // behavior-identical by that same short-circuit, not an approximation.
         let attrOwnerByKey =
-            kinds
-            |> List.collect (fun k ->
-                k.Attributes |> List.map (fun a -> a.SsKey, (k, ColumnRealization.columnNameText a.Column)))
-            |> Map.ofList
+            if Map.isEmpty overlay.RetargetFk then Map.empty
+            else
+                kinds
+                |> List.collect (fun k ->
+                    k.Attributes |> List.map (fun a -> a.SsKey, (k, ColumnRealization.columnNameText a.Column)))
+                |> Map.ofList
         let columns =
             kinds
             |> Bench.iterMap "physicalSchema.kind" toPhysicalColumns

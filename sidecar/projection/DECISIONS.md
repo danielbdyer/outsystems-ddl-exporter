@@ -30823,3 +30823,37 @@ procedure.
   server's own error, and the same bundle with the unique constraint is green.
   This converts the "IR cannot see server-side constraints" class from
   unknown-unknowns into a measured pass/fail.
+
+---
+
+## 2026-07-25 — An opt-in feature's lookup table must be built opt-in too (`physicalSchema.ofCatalog` regression, found + fixed)
+
+The perf gate tripped `physicalSchema.ofCatalog` at **518 ms against a 373 ms threshold** (baseline
+mean 186.6 ms — ~2.8×), solo on a quiet host. Real, and mine: bridge-retarget slice 4 (`7c41a23`,
+merged) added `attrOwnerByKey` — attribute SsKey → (owning kind, column name) — so a retargeted FK
+can resolve to its bridge table, and built it **unconditionally**: every attribute of every kind,
+one `columnNameText` projection each, an n-log-n tree, on every `ofCatalog` call.
+
+The only consumer reads it behind `Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (…)`. With
+`RetargetFk` empty — the default, since bridge retargeting is opt-in and off — that lookup
+short-circuits and the map is **never consulted**. Every estate paid whole-estate map construction
+for a feature nobody had enabled.
+
+Fixed by building it only when a retarget exists (`if Map.isEmpty overlay.RetargetFk then Map.empty`).
+Behavior-identical rather than an approximation, by the same short-circuit that made the map dead
+weight: when `RetargetFk` is empty the map is unreadable by construction, so empty is
+indistinguishable. Gate clean solo after the fix; the adjunction-law + golden-emission byte-identity
+guards (the ones that would catch any change to what the comparator or emitter produces) stayed green.
+
+**The generalizable rule: when a feature is opt-in, its precomputed lookup structures are opt-in too.**
+The overlay-carried decision axes (`DropFk` / `NoCheckFk` / `RetargetFk`) all share this shape — a map
+consulted only when non-empty — so any resolver keyed off one belongs behind the same emptiness guard.
+The `Map.empty` default that makes a feature *inert* must also make its scaffolding *unbuilt*, or the
+"byte-identical when off" guarantee holds on output while quietly failing on cost.
+
+**And the process note that let it through.** The regression shipped two PRs before it was caught,
+because survival rule #13 (a gate verdict taken under concurrent load is VOID) had been read as
+license to *discount* trips rather than as an obligation to *re-run solo*. A void reading is not a
+pass; it is an absent measurement, and the only correct response is to re-measure on a quiet host.
+Both readings that mattered here — the concurrent trip and the solo trip — pointed at the same real
+defect, and only the solo one was evidence.
