@@ -90,7 +90,7 @@ module DacpacEmitter =
         // Data statements (incl. the MERGE/UPDATE data-population variants and
         // the staging lane's guarded insert) are not declarative model objects —
         // they belong to the data-load executor, never the schema-only `.dacpac`.
-        | InsertRow _ | InsertRowIfAbsent _ | SetIdentityInsert _
+        | InsertRow _ | InsertRowIfAbsent _ | DeleteRowIfMatches _ | SetIdentityInsert _
         | Statement.Merge _ | Statement.Update _
         | Comment _ | Blank | BatchSeparator -> false
 

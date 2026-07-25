@@ -232,6 +232,46 @@ let ``InsertRowIfAbsent renders the NOT EXISTS guard around the row insert`` () 
     // A None cell renders SQL NULL — never an empty-string overwrite.
     Assert.Contains("NULL", sql)
 
+[<Fact>]
+let ``DeleteRowIfMatches renders the key AND every guard equality in the WHERE (the unstage inverse)`` () =
+    // The structural inverse of InsertRowIfAbsent: the delete reaches only a row
+    // that STILL matches what staging inserted, so a row the application edited
+    // after staging is unreachable by the undo.
+    let keyCell : CellValue = { Column = "RefKey"; Type = Integer; Raw = Some "7" }
+    let guard : CellValue = { Column = "ExternalRef"; Type = Text; Raw = Some "abc" }
+    let sql = renderViaStatement (Statement.DeleteRowIfMatches (mkTable "dbo" "Widget", keyCell, [ guard ]))
+    Assert.Contains("DELETE", sql)
+    Assert.Contains("[dbo].[Widget]", sql)
+    Assert.Contains("[RefKey] = 7", sql)
+    Assert.Contains("[ExternalRef] = N'abc'", sql)
+    Assert.Contains("AND", sql)
+
+[<Fact>]
+let ``DeleteRowIfMatches: a NULL-valued guard renders IS NULL, never the always-false = NULL`` () =
+    // `[col] = NULL` matches nothing in SQL Server — rendering it would make the
+    // undo a silent no-op for NULL-guarded rows. The builder renders IS NULL.
+    let keyCell : CellValue = { Column = "RefKey"; Type = Integer; Raw = Some "7" }
+    let nullGuard : CellValue = { Column = "ExternalRef"; Type = Text; Raw = None }
+    let sql = renderViaStatement (Statement.DeleteRowIfMatches (mkTable "dbo" "Widget", keyCell, [ nullGuard ]))
+    Assert.Contains("[ExternalRef] IS NULL", sql)
+    Assert.DoesNotContain("= NULL", sql)
+
+[<Fact>]
+let ``the identity un-fill inverse: SET NULL guarded by equality with the staged value`` () =
+    // The inverse of the fill-only update — un-fill only while the cell still
+    // carries exactly the value staging set.
+    let args : UpdateBuildArgs =
+        { Target     = mkTable "dbo" "Widget"
+          SetCells   = [ "ExternalRef", SqlLiteral.ofRaw Text None ]
+          WhereCells = [ "Id",          SqlLiteral.ofRaw Integer (Some "7")
+                         "ExternalRef", SqlLiteral.ofRaw Text (Some "abc") ]
+          CdcAware   = false
+          NullGuardColumns = [] }
+    let sql = renderViaStatement (Statement.Update args)
+    Assert.Contains("SET [ExternalRef] = NULL", sql)
+    Assert.Contains("[Id] = 7", sql)
+    Assert.Contains("[ExternalRef] = N'abc'", sql)
+
 // ---------------------------------------------------------------------------
 // Staged-source primitives — `buildCreateTempTable` + `buildInsertBatches`
 // (the rows that feed the `MERGE … USING #temp`).

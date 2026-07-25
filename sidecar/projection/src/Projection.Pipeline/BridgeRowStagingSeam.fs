@@ -126,6 +126,50 @@ module BridgeRowStagingSeam =
                       NullGuardColumns = [ identityCol ] })
         insertBlock @ updates
 
+    /// The EXACT INVERSE of `stagedStatements`, derived from the SAME plan —
+    /// the `unstage.sql` artifact, so "how do I undo this staging run" is
+    /// answered with recorded evidence, never improvised. Two shapes, each
+    /// guarded so the undo can only reach rows still in their staged state:
+    ///
+    ///   * an identity FILL inverts to `UPDATE … SET [identity] = NULL WHERE
+    ///     [key] = k AND [identity] = <the value staging set>` — an equality
+    ///     guard, so a value the application changed after staging is
+    ///     structurally unreachable by the undo;
+    ///   * a staged INSERT inverts to `DeleteRowIfMatches` guarded by the
+    ///     staged identity value — a row edited since staging is not deleted.
+    ///
+    /// Emitted in REVERSE of the forward order (fills un-fill before inserts
+    /// delete — inverse composition), and idempotent like the forward lane.
+    /// NOT a general revert: it inverts one recorded staging run only.
+    let private unstageStatements
+        (resolved: BridgeRowStagingBinding.ResolvedStaging)
+        (plan: BridgeRowStagingPlan)
+        : Statement list =
+        let table = TableId.withoutCatalog resolved.BridgeKind.Physical
+        let keyCol = ColumnRealization.columnNameText resolved.BridgeKey.Column
+        let identityCol = ColumnRealization.columnNameText resolved.BridgeIdentity.Column
+        let unfills =
+            plan.IdentityUpdates
+            |> List.map (fun upd ->
+                Statement.Update
+                    { Target           = table
+                      SetCells         = [ identityCol, SqlLiteral.ofRaw resolved.BridgeIdentity.Type None ]
+                      WhereCells       = [ keyCol, SqlLiteral.ofRaw resolved.BridgeKey.Type (Some upd.Key)
+                                           identityCol, SqlLiteral.ofRaw resolved.BridgeIdentity.Type (Some upd.Identity) ]
+                      CdcAware         = false
+                      NullGuardColumns = [] })
+        let deletes =
+            plan.Inserts
+            |> List.map (fun ins ->
+                let keyCell : CellValue =
+                    { Column = keyCol; Type = resolved.BridgeKey.Type; Raw = Some ins.Key }
+                let identityGuard : CellValue =
+                    { Column = identityCol
+                      Type   = resolved.BridgeIdentity.Type
+                      Raw    = Map.tryFind resolved.BridgeIdentity.Name ins.Cells |> Option.flatten }
+                Statement.DeleteRowIfMatches (table, keyCell, [ identityGuard ]))
+        unfills @ deletes
+
     // ------------------------------------------------------------------
     // Durable artifacts (typed JSON via JsonNode; A44's audit sextet).
     // ------------------------------------------------------------------
@@ -303,7 +347,25 @@ module BridgeRowStagingSeam =
             let stagedSql =
                 if List.isEmpty statements then ""
                 else ScriptDomGenerate.renderDataBatch statements
-            // 5. The audit sextet under BridgeStaging/<id>/.
+            // The exact inverse of the SAME plan — empty exactly when staged.sql
+            // is empty (a no-op staging needs no undo; a blocked plan staged
+            // nothing to undo). The header names the one ordering hazard the
+            // artifact cannot guard structurally: once the retargeted FK
+            // constraints have been applied to the target, deleting bridge rows
+            // may be refused by those child constraints — the undo runs BEFORE
+            // the retargeted DDL lands, or after dropping it.
+            let unstageSql =
+                if List.isEmpty statements then ""
+                else
+                    System.String.Concat(  // LINT-ALLOW: terminal artifact framing — a fixed comment header prepended to the typed-AST-rendered batch; renderDataBatch cannot carry comments (buildStatement maps Comment to None)
+                        "-- unstage.sql — the exact inverse of staged.sql, derived from the same recorded plan.\n",
+                        "-- Guarded: an identity un-fill requires the cell to still equal the staged value; a\n",
+                        "-- staged-row delete requires the row to still match what staging inserted. Rows the\n",
+                        "-- application edited after staging are unreachable. Idempotent.\n",
+                        "-- ORDERING: run BEFORE the retargeted FK constraints are applied to the target (or\n",
+                        "-- after dropping them) — a landed retargeted constraint may refuse these deletes.\n",
+                        ScriptDomGenerate.renderDataBatch (unstageStatements resolved plan))
+            // 5. The audit artifacts under BridgeStaging/<id>/.
             let dir = System.String.Concat("BridgeStaging/", resolved.StagingId, "/")  // LINT-ALLOW: terminal bundle-relative artifact path composition (the DataBundle relPath idiom)
             let at (name: string) = System.String.Concat(dir, name)  // LINT-ALLOW: terminal bundle-relative artifact path composition
             let artifacts =
@@ -313,6 +375,7 @@ module BridgeRowStagingSeam =
                       at "bridge-snapshot.json", bridgeSnapshotJson wide bridgeRows
                       at "delta.json", deltaJson plan
                       at "staged.sql", stagedSql
+                      at "unstage.sql", unstageSql
                       at "evidence.json", evidenceJson resolved.Links plan evidence ]
             // 6. The derived evidence per linked retarget — ONLY when the plan
             //    is clean (fail-closed: a blocked plan leaves the linked

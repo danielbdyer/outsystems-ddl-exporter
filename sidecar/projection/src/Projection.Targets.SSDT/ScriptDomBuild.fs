@@ -2089,6 +2089,35 @@ module ScriptDomBuild =
         ifStmt.ThenStatement <- (buildInsertRow table (keyCell :: cells) :> TSqlStatement)
         ifStmt
 
+    /// Build `DELETE FROM [schema].[table] WHERE [key] = <lit> [AND [guard] =
+    /// <lit> …]` for a `DeleteRowIfMatches` statement — the structural inverse
+    /// of `buildInsertRowIfAbsent`, emitted by the staging lane's `unstage.sql`.
+    /// Every guard cell ANDs into the WHERE, so the delete reaches only a row
+    /// that still matches what staging inserted; a guard cell whose value is
+    /// NULL renders `IS NULL` (an `= NULL` predicate never matches — it would
+    /// silently make the undo a no-op for NULL-valued guards).
+    let buildDeleteRowIfMatches
+        (table: TableId)
+        (keyCell: CellValue)
+        (guardCells: CellValue list)
+        : DeleteStatement =
+        use _ = Bench.scope "emit.scriptDom.build.deleteRowIfMatches"
+        let stmt = DeleteStatement()
+        let spec = DeleteSpecification()
+        let target = NamedTableReference()
+        target.SchemaObject <- schemaObjectFromTableId table
+        spec.Target <- target
+        let term (c: CellValue) : BooleanExpression =
+            match c.Raw with
+            | None -> singlePartIsNullCheck c.Column false :> BooleanExpression
+            | Some _ -> whereEquality c.Column (SqlLiteral.ofRaw c.Type c.Raw) :> BooleanExpression
+        let where = WhereClause()
+        where.SearchCondition <-
+            foldBool BooleanBinaryExpressionType.And (term keyCell :: (guardCells |> List.map term))
+        spec.WhereClause <- where
+        stmt.DeleteSpecification <- spec
+        stmt
+
     // -----------------------------------------------------------------------
     // SET IDENTITY_INSERT statement.
     // -----------------------------------------------------------------------
@@ -2763,6 +2792,8 @@ module ScriptDomBuild =
             Some (buildInsertRow table cells :> TSqlStatement)
         | InsertRowIfAbsent (table, keyCell, cells) ->
             Some (buildInsertRowIfAbsent table keyCell cells :> TSqlStatement)
+        | DeleteRowIfMatches (table, keyCell, guardCells) ->
+            Some (buildDeleteRowIfMatches table keyCell guardCells :> TSqlStatement)
         | SetIdentityInsert (table, enabled) ->
             Some (buildSetIdentityInsert table enabled :> TSqlStatement)
         | Statement.Merge args ->

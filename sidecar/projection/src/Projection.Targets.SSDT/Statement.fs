@@ -310,6 +310,17 @@ type Statement =
     /// `Merge`: the staging lane must never carry a WHEN MATCHED UPDATE arm —
     /// an existing row's cells are not this statement's to touch.
     | InsertRowIfAbsent of TableId * keyCell: CellValue * cells: CellValue list
+    /// The GUARDED single-row delete — the structural INVERSE of
+    /// `InsertRowIfAbsent`, emitted only by the bridge-row staging lane's
+    /// `unstage.sql` artifact: `DELETE FROM <table> WHERE <key> = <lit> [AND
+    /// <guard> = <lit> …]`. The guard cells restrict the delete to a row that
+    /// STILL matches what staging inserted (the staged identity value), so a row
+    /// the application has since edited is structurally unreachable — the undo
+    /// can never destroy post-staging work, the mirror of the forward lane's
+    /// fill-only rule. Idempotent: re-running deletes nothing the first run
+    /// didn't. A guard cell whose value is NULL renders `IS NULL`, not `= NULL`
+    /// (which never matches).
+    | DeleteRowIfMatches of TableId * keyCell: CellValue * guardCells: CellValue list
     | SetIdentityInsert of TableId * enabled: bool
     /// The idempotent change-detecting MERGE for a kind's data population —
     /// the typed form the data-emission lanes (static seeds / migration
