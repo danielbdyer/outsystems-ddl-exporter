@@ -468,7 +468,7 @@ module Deploy =
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
-                | Statement.Merge _ | Statement.Update _ | InsertRowIfAbsent _ ->
+                | Statement.Merge _ | Statement.Update _ | InsertRowIfAbsent _ | DeleteRowIfMatches _ ->
                     // The MERGE/UPDATE data-population variants and the staging
                     // lane's guarded insert. The SSDT-DDL deploy stream does not
                     // currently carry these (the data lane deploys via its own
