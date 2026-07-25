@@ -361,3 +361,115 @@ let ``the shipped evidence sample parses (the file-based alternative)`` () =
         Assert.Equal(2, Map.count loaded)
         Assert.True(loaded |> Map.exists (fun _ e -> e.UnresolvedThroughBridge = 0L && e.BridgeKeyNulls = 0L))
         Assert.True(loaded |> Map.exists (fun _ e -> e.UnresolvedThroughBridge > 0L))
+
+// ===========================================================================
+// The staging acquisition CACHE (BridgeStagingCache) — the quick-iteration
+// lever. Laws exercised WITHOUT a database (the smart policy is pure):
+//   * config: `cache` defaults off; auto/pinned parse case-insensitively; an
+//     unrecognized value is refused, never silently defaulted;
+//   * the declaration digest is deterministic and moves exactly when the
+//     acquisition-relevant shape moves (scope, constants);
+//   * save → tryReadEntry round-trips, preserving NULL-vs-empty on identity
+//     cells (the cell-fidelity rule);
+//   * validity: NoEntry / DeclarationChanged / EstateMoved / Hit — and the
+//     pinned path (no live fingerprints) still honors the declaration digest.
+// ===========================================================================
+
+let private resolvedWith (extras: string) : BridgeRowStagingBinding.ResolvedStaging =
+    let catalog = loadCatalog SingleColumnUnique false
+    List.exactlyOne (mustOk (BridgeRowStagingBinding.fromConfig catalog (cfg explicitRef extras)))
+
+[<Fact>]
+let ``cache config: absent defaults to Off; auto and pinned parse case-insensitively`` () =
+    Assert.Equal(Config.BridgeStagingCachePolicy.Off, (List.exactlyOne (cfg explicitRef "").Overrides.BridgeRowStaging).Cache)
+    Assert.Equal(Config.BridgeStagingCachePolicy.Auto, (List.exactlyOne (cfg explicitRef """, "cache": "auto" """).Overrides.BridgeRowStaging).Cache)
+    Assert.Equal(Config.BridgeStagingCachePolicy.Pinned, (List.exactlyOne (cfg explicitRef """, "cache": "Pinned" """).Overrides.BridgeRowStaging).Cache)
+
+[<Fact>]
+let ``cache config: an unrecognized value is a named refusal, never a silent default`` () =
+    let json = """{ "model": { "path": "m.json" }, "output": { "dir": "out/" },
+                    "overrides": { "bridgeRowStaging": [
+                      { "id": "x", "cache": "always",
+                        "source": { "module": "Core", "entity": "Party",       "key": "Id",       "identity": "ExternalRef" },
+                        "bridge": { "module": "Core", "entity": "PartyBridge", "key": "PartyRef", "identity": "ExternalRef" } } ] } }"""
+    let errs = mustFail (Config.parse json)
+    Assert.True(errs |> List.exists (fun e -> e.Code.EndsWith "cacheUnknown"))
+
+[<Fact>]
+let ``cache digest: deterministic for the same declaration, moves when the shape moves`` () =
+    let a = BridgeStagingCache.digestOf (resolvedWith "")
+    Assert.Equal(a, BridgeStagingCache.digestOf (resolvedWith ""))
+    // scope is acquisition-relevant: the digest must move.
+    Assert.NotEqual<string>(a, BridgeStagingCache.digestOf (resolvedWith """, "scope": "allSourceRows" """))
+    // a constant changes the staged row shape: the digest must move. (Direct
+    // record modification — appending a second `insertConstants` key to the
+    // fixture JSON would be a DUPLICATE key the parser ignores, testing nothing.)
+    let baseResolved = resolvedWith ""
+    let withConst = { baseResolved with Constants = baseResolved.Constants |> List.map (fun (attr, _) -> attr, Some "2") }
+    Assert.NotEqual<string>(a, BridgeStagingCache.digestOf withConst)
+
+let private sampleAcq : BridgeStagingAcquisition =
+    { ReferencedKeys = [ "101"; "102" ]
+      SourceRows =
+        [ { Key = "101"; Identity = Some "ext-101"; Cells = Map.ofList [ (Name.create "Label" |> Result.value), Some "Ada" ] }
+          { Key = "102"; Identity = None; Cells = Map.ofList [ (Name.create "Label" |> Result.value), None ] } ]
+      BridgeRows = [ { Key = "101"; Identity = Some "ext-101" }; { Key = "102"; Identity = None } ]
+      Wide = { KeyNullCount = 0L; KeyDuplicateCount = 3L } }
+
+[<Fact>]
+let ``cache store: save then tryReadEntry round-trips, preserving NULL identity as None`` () =
+    let resolved = resolvedWith ""
+    let root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "brcache_%s" (System.Guid.NewGuid().ToString("N")))
+    try
+        let fps = Map.ofList [ "kind-a", (10L, Some "99", Some "abc"); "kind-b", (0L, None, None) ]
+        let captured = System.DateTimeOffset.Parse("2026-07-25T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+        BridgeStagingCache.save root resolved captured fps sampleAcq
+        match BridgeStagingCache.tryReadEntry root resolved.StagingId with
+        | None -> Assert.Fail "expected a readable entry"
+        | Some (digest, capturedAt, storedFps, acq) ->
+            Assert.Equal(BridgeStagingCache.digestOf resolved, digest)
+            Assert.Equal(captured, capturedAt)
+            Assert.Equal<Map<string, int64 * string option * string option>>(fps, storedFps)
+            Assert.Equal<string list>([ "101"; "102" ], acq.ReferencedKeys)
+            // NULL-vs-empty survives the round-trip on identity AND cells.
+            let r102 = acq.SourceRows |> List.find (fun r -> r.Key = "102")
+            Assert.Equal(None, r102.Identity)
+            Assert.Equal(Some None, Map.tryFind (Name.create "Label" |> Result.value) r102.Cells)
+            Assert.Equal(None, (acq.BridgeRows |> List.find (fun r -> r.Key = "102")).Identity)
+            Assert.Equal(3L, acq.Wide.KeyDuplicateCount)
+    finally
+        try System.IO.Directory.Delete(root, true) with _ -> ()
+
+[<Fact>]
+let ``cache validity: the four dispositions, and pinned still honors the declaration digest`` () =
+    let entry = Some ("DIGEST", System.DateTimeOffset.UnixEpoch, Map.ofList [ "k", (1L, None, None) ], sampleAcq)
+    let live = Map.ofList [ "k", (1L, None, None) ]
+    let moved = Map.ofList [ "k", (2L, None, None) ]
+    // no entry at all
+    match BridgeStagingCache.validity "DIGEST" None (Some live) with
+    | Choice2Of2 m -> Assert.Equal(BridgeStagingCacheMiss.NoEntry, m)
+    | _ -> Assert.Fail "expected NoEntry"
+    // declaration changed — invalidates EVEN with matching data (and under pin)
+    match BridgeStagingCache.validity "OTHER" entry None with
+    | Choice2Of2 m -> Assert.Equal(BridgeStagingCacheMiss.DeclarationChanged, m)
+    | _ -> Assert.Fail "expected DeclarationChanged"
+    // estate moved (auto probe supplied, differs)
+    match BridgeStagingCache.validity "DIGEST" entry (Some moved) with
+    | Choice2Of2 m -> Assert.Equal(BridgeStagingCacheMiss.EstateMoved, m)
+    | _ -> Assert.Fail "expected EstateMoved"
+    // hit: matching digest + matching fingerprints
+    match BridgeStagingCache.validity "DIGEST" entry (Some live) with
+    | Choice1Of2 _ -> ()
+    | _ -> Assert.Fail "expected a hit"
+    // pinned hit: probe skipped, digest alone decides
+    match BridgeStagingCache.validity "DIGEST" entry None with
+    | Choice1Of2 _ -> ()
+    | _ -> Assert.Fail "expected a pinned hit"
+
+[<Fact>]
+let ``cache miss labels are distinct (the cache-json vocabulary)`` () =
+    let labels =
+        [ BridgeStagingCacheMiss.NoEntry; BridgeStagingCacheMiss.DeclarationChanged
+          BridgeStagingCacheMiss.EstateMoved; BridgeStagingCacheMiss.Unreadable ]
+        |> List.map BridgeStagingCache.missLabel
+    Assert.Equal(4, labels |> List.distinct |> List.length)

@@ -53,6 +53,8 @@ module BridgeRowStagingBinding =
           /// `referenced` (default) or `allSourceRows` — which source rows the
           /// companion derives bridge rows for.
           Scope          : Config.BridgeStagingScope
+          /// The acquisition cache posture (`off` default | `auto` | `pinned`).
+          Cache          : Config.BridgeStagingCachePolicy
           SourceKind     : Kind
           SourceKey      : Attribute
           SourceIdentity : Attribute
@@ -260,6 +262,7 @@ module BridgeRowStagingBinding =
             return
                 { StagingId      = entry.Id
                   Scope          = entry.Scope
+                  Cache          = entry.Cache
                   SourceKind     = sourceKind
                   SourceKey      = sourceKey
                   SourceIdentity = sourceIdentity
