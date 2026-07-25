@@ -237,10 +237,19 @@ module Config =
     /// (`BridgeRetargetBinding`) resolves these to SsKeys against the catalog
     /// (fail-closed) and assembles the readiness evidence the decision pass
     /// evaluates.
+    /// How a `bridgeRetargets[]` entry names the foreign key(s) it retargets.
+    /// `Explicit` is one named reference. `AllReferencesTo` is DISCOVERY: every
+    /// reference in the resolved model scope (`model.modules`) whose target is the
+    /// named entity — the binder expands it to one plan per discovered reference
+    /// and ENUMERATES what it matched, so the expansion is auditable, never implicit.
+    [<RequireQualifiedAccess>]
+    type BridgeRetargetReference =
+        | Explicit of entity: EntityCoordinate * relationship: string
+        | AllReferencesTo of target: EntityCoordinate
+
     type BridgeRetargetEntry = {
         Id           : string
-        Entity       : EntityCoordinate
-        Relationship : string
+        Reference    : BridgeRetargetReference
         Bridge       : AttributeCoordinate
     }
 
@@ -274,8 +283,21 @@ module Config =
     /// and whose bridge attribute lives on the bridge kind — that linked set
     /// IS the staging scope (the FK columns whose referenced values drive the
     /// derivation).
+    /// Which source rows a staging declaration derives bridge rows for.
+    /// `Referenced` (the default) is the minimal blast radius: only the key values
+    /// the in-scope retargeting FK columns actually reference — sound for the FK
+    /// constraint, since an unreferenced source row needs no bridge row.
+    /// `AllSourceRows` covers EVERY row of the source table, so a later child insert
+    /// naming any source row cannot violate the retargeted FK.
+    [<RequireQualifiedAccess>]
+    type BridgeStagingScope =
+        | Referenced
+        | AllSourceRows
+
     type BridgeRowStagingEntry = {
         Id              : string
+        /// `scope` — `"referenced"` (default) or `"allSourceRows"`.
+        Scope           : BridgeStagingScope
         Source          : RenameSource
         SourceKey       : string
         SourceIdentity  : string
@@ -1266,16 +1288,27 @@ module Config =
             let! id = getString el "id"
             let! refEl = getProperty el "reference"
             let! bridgeEl = getProperty el "bridge"
-            let! refPair =
-                match brStr refEl "module", brStr refEl "entity", brStr refEl "relationship" with
-                | Some m, Some e, Some r -> Result.success (EntityCoordinate.create m e, r)
-                | _ -> Result.failureOf (configError "overrides.bridgeRetargets.reference" "a bridge retarget's `reference` needs { module, entity, relationship }.")
-            let entity, relationship = refPair
+            let! reference =
+                match refEl.TryGetProperty("allReferencesTo") with
+                | true, tgt when tgt.ValueKind = JsonValueKind.Object ->
+                    match brStr tgt "module", brStr tgt "entity" with
+                    | Some m, Some e ->
+                        Result.success (BridgeRetargetReference.AllReferencesTo (EntityCoordinate.create m e))
+                    | _ ->
+                        Result.failureOf (configError "overrides.bridgeRetargets.reference"
+                            "a bridge retarget's `reference.allReferencesTo` needs { module, entity }.")
+                | _ ->
+                    match brStr refEl "module", brStr refEl "entity", brStr refEl "relationship" with
+                    | Some m, Some e, Some r ->
+                        Result.success (BridgeRetargetReference.Explicit (EntityCoordinate.create m e, r))
+                    | _ ->
+                        Result.failureOf (configError "overrides.bridgeRetargets.reference"
+                            "a bridge retarget's `reference` needs either { module, entity, relationship } or { allReferencesTo: { module, entity } }.")
             let! bridge =
                 match brStr bridgeEl "module", brStr bridgeEl "entity", brStr bridgeEl "attribute" with
                 | Some m, Some e, Some a -> Result.success (AttributeCoordinate.create m e a)
                 | _ -> Result.failureOf (configError "overrides.bridgeRetargets.bridge" "a bridge retarget's `bridge` needs { module, entity, attribute }.")
-            return { Id = id; Entity = entity; Relationship = relationship; Bridge = bridge }
+            return { Id = id; Reference = reference; Bridge = bridge }
         }
 
     let private parseBridgeRetargets (element: JsonElement) : Result<BridgeRetargetEntry list> =
@@ -1326,6 +1359,18 @@ module Config =
                         (sprintf "a bridgeRowStaging entry's `%s` needs a non-blank string '%s'." sideDesc key))
         result {
             let! id = getString el "id"
+            let! scope =
+                match brStr el "scope" with
+                | None -> Result.success BridgeStagingScope.Referenced
+                | Some raw ->
+                    let t = raw.Trim()
+                    if   System.String.Equals(t, "referenced", System.StringComparison.OrdinalIgnoreCase) then
+                        Result.success BridgeStagingScope.Referenced
+                    elif System.String.Equals(t, "allSourceRows", System.StringComparison.OrdinalIgnoreCase) then
+                        Result.success BridgeStagingScope.AllSourceRows
+                    else
+                        Result.failureOf (configError "overrides.bridgeRowStaging.scopeUnknown"
+                            (sprintf "bridgeRowStaging scope '%s' is not recognized. Known: referenced | allSourceRows." raw))
             let! sourceEl = getProperty el "source"
             let! bridgeEl = getProperty el "bridge"
             let! source = parseRenameSource "bridgeRowStaging[].source" sourceEl
@@ -1370,6 +1415,7 @@ module Config =
                         configError "typeMismatch" "bridgeRowStaging[].insertConstants must be an array.")
             return {
                 Id              = id
+                Scope           = scope
                 Source          = source
                 SourceKey       = sourceKey
                 SourceIdentity  = sourceIdentity

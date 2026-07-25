@@ -50,6 +50,9 @@ module BridgeRowStagingBinding =
     /// linked retargets. `toSpec` projects the pure-kernel spec from it.
     type ResolvedStaging =
         { StagingId      : string
+          /// `referenced` (default) or `allSourceRows` — which source rows the
+          /// companion derives bridge rows for.
+          Scope          : Config.BridgeStagingScope
           SourceKind     : Kind
           SourceKey      : Attribute
           SourceIdentity : Attribute
@@ -119,33 +122,53 @@ module BridgeRowStagingBinding =
         (bridgeKey: Attribute)
         (retargets: Config.BridgeRetargetEntry list)
         : ResolvedRetargetLink list =
+        // A link exists when the retarget's FK parent IS this staging source AND the
+        // retarget resolves through exactly this staging bridge key. Both reference
+        // forms are handled: an EXPLICIT reference contributes at most one link; a
+        // DISCOVERY entry (`allReferencesTo`) contributes one per matched reference,
+        // so "retarget every FK to this table" feeds one staging lane.
+        let bridgeMatches (entry: Config.BridgeRetargetEntry) =
+            match AttributeCoordinate.resolveFull catalog entry.Bridge with
+            | Ok (_, _, bridgeAttrKey) -> bridgeAttrKey = bridgeKey.SsKey
+            | Error _ -> false
+        let linkOf (declaredId: string) (moduleName: string) (childKind: Kind) (reference: Reference) =
+            if reference.TargetKind <> sourceKind.SsKey then None
+            else
+                childKind.Attributes
+                |> List.tryFind (fun a -> a.SsKey = reference.SourceAttribute)
+                |> Option.map (fun fkAttr ->
+                    { RetargetId   = declaredId
+                      ChildKind    = childKind
+                      FkAttribute  = fkAttr
+                      ReferenceKey = reference.SsKey })
         retargets
-        |> List.choose (fun entry ->
-            let kindMatches =
+        |> List.filter bridgeMatches
+        |> List.collect (fun entry ->
+            match entry.Reference with
+            | Config.BridgeRetargetReference.Explicit (coord, relationship) ->
+                let kindMatches =
+                    Catalog.allModulesKinds catalog
+                    |> List.filter (fun (m, k) ->
+                        (coord.Module = "" || ciEq (Name.value m.Name) coord.Module)
+                        && ciEq (Name.value k.Name) coord.Entity)
+                    |> List.distinctBy (fun (_, k) -> k.SsKey)
+                match kindMatches with
+                | [ (m, childKind) ] ->
+                    childKind.References
+                    |> List.tryFind (fun r -> ciEq (Name.value r.Name) relationship)
+                    |> Option.bind (linkOf entry.Id (Name.value m.Name) childKind)
+                    |> Option.toList
+                | _ -> []
+            | Config.BridgeRetargetReference.AllReferencesTo _ ->
+                // The retarget binder owns the discovery expansion + its refusals;
+                // here we mirror it so the staging scope covers every discovered FK.
                 Catalog.allModulesKinds catalog
-                |> List.filter (fun (m, k) ->
-                    (entry.Entity.Module = "" || ciEq (Name.value m.Name) entry.Entity.Module)
-                    && ciEq (Name.value k.Name) entry.Entity.Entity)
-                |> List.map snd
-                |> List.distinctBy (fun k -> k.SsKey)
-            match kindMatches with
-            | [ childKind ] ->
-                childKind.References
-                |> List.tryFind (fun r -> ciEq (Name.value r.Name) entry.Relationship)
-                |> Option.bind (fun reference ->
-                    if reference.TargetKind <> sourceKind.SsKey then None
-                    else
-                        match AttributeCoordinate.resolveFull catalog entry.Bridge with
-                        | Ok (_, _, bridgeAttrKey) when bridgeAttrKey = bridgeKey.SsKey ->
-                            childKind.Attributes
-                            |> List.tryFind (fun a -> a.SsKey = reference.SourceAttribute)
-                            |> Option.map (fun fkAttr ->
-                                { RetargetId   = entry.Id
-                                  ChildKind    = childKind
-                                  FkAttribute  = fkAttr
-                                  ReferenceKey = reference.SsKey })
-                        | _ -> None)
-            | _ -> None)
+                |> List.collect (fun (m, childKind) ->
+                    childKind.References
+                    |> List.filter (fun r -> r.TargetKind = sourceKind.SsKey)
+                    |> List.choose (fun r ->
+                        linkOf (BridgeRetargetBinding.discoveredIdOf entry.Id (Name.value m.Name) childKind r) (Name.value m.Name) childKind r))
+                |> List.sortBy (fun l -> l.ChildKind.SsKey, l.ReferenceKey))
 
     /// Resolve one staging declaration (fail-closed; see the module doc for
     /// the guards).
@@ -236,6 +259,7 @@ module BridgeRowStagingBinding =
                 else Result.success ()
             return
                 { StagingId      = entry.Id
+                  Scope          = entry.Scope
                   SourceKind     = sourceKind
                   SourceKey      = sourceKey
                   SourceIdentity = sourceIdentity

@@ -343,6 +343,7 @@
     <Compile Include="ApprovedDataCorrectionsTests.fs" />
     <Compile Include="BridgeRetargetTests.fs" />
     <Compile Include="BridgeRetargetEvidenceBindingTests.fs" />
+    <Compile Include="BridgeRowStagingBindingTests.fs" />
     <Compile Include="BridgeRowDeltaTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />

@@ -31,6 +31,10 @@ let private structural : BridgeRetargetProfile =
         BridgeKeyPresent          = true
         TargetsBridgePrimaryKey   = false
         KeyTypesMatch             = true
+        // A single-column UNIQUE index IS declared on the bridge key — without it
+        // SQL Server refuses the retargeted FK at deploy time, so these tests (which
+        // exercise the DATA half) model a bridge whose declared uniqueness is sound.
+        BridgeKeyDeclaredUnique   = true
         ExistingConstraintTrusted = Some true }
 
 let private allClear : BridgeRetargetEvidence =
