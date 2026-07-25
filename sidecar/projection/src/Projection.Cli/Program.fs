@@ -329,6 +329,10 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             Shell.Bracket.Bracketed (Some Spines.canary) (fun () -> runCanaryCdcSilence ddl)
     | PlanAction.CheckDrift (m, conn)      -> shellRun "projection check drift" Shell.ReadOnly (fun () -> runDrift m conn)
     | PlanAction.CheckData (before, after) -> shellRun "projection check data" Shell.ReadOnly (fun () -> runVerifyData before after)
+    | PlanAction.CheckDeploy bundleDir ->
+        // The deploy-feasibility gate (rehearse-the-deploy): read-only toward
+        // the estate — the only writes land in the verb's own reaped scratch.
+        shellRun "projection check deploy" Shell.ReadOnly (fun () -> Faces.Deploy.runCheckDeploy bundleDir)
     | PlanAction.CheckDataRows args -> shellRun "projection check data --rows" Shell.ReadOnly (fun () -> runCheckDataRows args)
     | PlanAction.CheckFidelityFlow (model, modelOssys, args) ->
         // THE CONTAINER PROOF (wave B5) — the model rides the shared

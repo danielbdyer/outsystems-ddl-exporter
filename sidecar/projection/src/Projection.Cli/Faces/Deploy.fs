@@ -92,3 +92,40 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
         // one aggregated batch (no per-table count to honestly report), so the
         // board shows the stage going Applying → Deploy complete, not a bar.
         Face.staged "deploy" true Spines.deploy runBody
+
+/// `projection check deploy <bundleDir>` — the deploy-feasibility gate as a
+/// verb: apply every `.sql` under the emitted bundle directory to a DISPOSABLE
+/// database (the verb's own reaped scratch — read-only toward the estate) and
+/// report exactly what the server refused, per batch, at the dependency-blind
+/// fixed point. The rehearse-the-deploy loop: emit, `check deploy`, read the
+/// findings, fix, re-run. Exit 0 green · 5 findings · 4 Docker unreachable ·
+/// 1 bundle directory missing or empty.
+let runCheckDeploy (bundleDir: string) : int =
+    if not (Directory.Exists bundleDir) then
+        eprintfn "check deploy: bundle directory '%s' does not exist." bundleDir
+        1
+    elif not (Deploy.Docker.ensureRunning ()) then
+        eprintfn "check deploy: the Docker daemon is not reachable — the gate applies the bundle to a disposable SQL Server and cannot run without one."
+        4
+    else
+        let files =
+            Directory.EnumerateFiles(bundleDir, "*.sql", SearchOption.AllDirectories)
+            |> Seq.sort
+            |> Seq.map (fun path -> Path.GetRelativePath(bundleDir, path), File.ReadAllText path)
+            |> List.ofSeq
+        if List.isEmpty files then
+            eprintfn "check deploy: no .sql files under '%s' — nothing to prove." bundleDir
+            1
+        else
+            let report =
+                (Deploy.withBootstrappedDatabase "check-deploy" "SELECT 1;" (fun cnn ->
+                    DeployFeasibility.applyBundle cnn files)).GetAwaiter().GetResult()
+            printfn "check deploy: %d file(s), %d batch(es) applied." (List.length files) report.BatchesApplied
+            if DeployFeasibility.Report.green report then
+                printfn "check deploy: GREEN — the server accepted the whole bundle."
+                0
+            else
+                printfn "check deploy: %d batch(es) REFUSED at the fixed point:" (List.length report.Findings)
+                for f in report.Findings do
+                    printfn "  %s (batch %d): %s" f.File f.BatchOrdinal f.Error
+                5
