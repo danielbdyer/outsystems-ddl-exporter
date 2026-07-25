@@ -149,9 +149,7 @@ module TransformGroupsBinding =
     /// before the filter fires.
     let private parseGroupName (name: string) : Result<TransformGroup> =
         Binding.ofClosedName ConfigAxis.TransformGroups "unknownGroup" "policy.transformGroups entry" "TransformGroup"
-            [ "Tightening", TransformGroup.Tightening
-              "UserReflow", TransformGroup.UserReflow
-              "BridgeRetarget", TransformGroup.BridgeRetarget ]
+            (TransformGroup.all |> List.map (fun g -> TransformGroup.configName g, g))
             name
 
     /// Build the typed `TransformGroups` runtime value from a parsed
