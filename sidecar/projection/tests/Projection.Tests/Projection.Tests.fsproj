@@ -66,6 +66,7 @@
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ConfigSchemaTests.fs" />
+    <Compile Include="DeployFeasibilityTests.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="ModuleFilterTests.fs" />
     <Compile Include="MetadataContractOverridesTests.fs" />
