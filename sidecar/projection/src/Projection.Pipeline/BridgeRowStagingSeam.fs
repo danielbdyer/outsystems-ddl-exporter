@@ -242,11 +242,22 @@ module BridgeRowStagingSeam =
         : Task<Map<string, BridgeRetargetEvidence> * Map<string, string>> =
         task {
             use _ = Bench.scope "pipeline.bridgeRowStaging.runOne"
-            // 1. Referenced keys — union of each linked FK column's distinct
-            //    non-null values.
+            // 1. The key set the companion covers, per the declaration's `scope`:
+            //      * `referenced` (default) — the union of each linked FK column's
+            //        distinct non-null values. Minimal blast radius, and sound for
+            //        the FK constraint: an unreferenced source row needs no bridge
+            //        row for the constraint to hold.
+            //      * `allSourceRows` — every source key. Wider, but it also covers
+            //        rows a LATER child insert might name, so a future insert
+            //        naming any source row cannot violate the retargeted FK.
             let keyAcc = System.Collections.Generic.List<string>()
-            for link in resolved.Links do
-                let! ks = BridgeSnapshotReader.distinctColumnValues cnn link.ChildKind link.FkAttribute
+            match resolved.Scope with
+            | Config.BridgeStagingScope.Referenced ->
+                for link in resolved.Links do
+                    let! ks = BridgeSnapshotReader.distinctColumnValues cnn link.ChildKind link.FkAttribute
+                    keyAcc.AddRange ks
+            | Config.BridgeStagingScope.AllSourceRows ->
+                let! ks = BridgeSnapshotReader.distinctColumnValues cnn resolved.SourceKind resolved.SourceKey
                 keyAcc.AddRange ks
             let referencedKeys = keyAcc |> List.ofSeq |> List.distinct
             // 2. Snapshots (source cells minimized to key + identity + mapped).

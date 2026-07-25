@@ -245,72 +245,148 @@ module BridgeRetargetBinding =
     // ------------------------------------------------------------------
     // The config binding — declared retarget → resolved plan (fail-closed).
     // ------------------------------------------------------------------
+    /// The synthesized retarget id for a DISCOVERED reference — the declared id
+    /// plus the reference's own coordinate, so every expanded plan is separately
+    /// addressable (evidence keying, artifacts, lineage) and the operator can read
+    /// which FK each verdict belongs to. Deterministic: same model ⇒ same ids.
+    let discoveredIdOf (declaredId: string) (moduleName: string) (kind: Kind) (reference: Reference) : string =
+        String.concat "" [ declaredId; "/"; moduleName; "."; Name.value kind.Name; "."; Name.value reference.Name ]  // LINT-ALLOW: terminal identity composition for an operator-facing retarget id; no typed AST applies
 
-    /// Resolve one config entry to a `BridgeRetargetPlan` (fail-closed). The profile
-    /// is assembled from the catalog's STRUCTURAL facts plus the supplied `evidence`
-    /// for the DATA facts (its fail-closed defaults when no matching entry exists).
-    let private bindOne (catalog: Catalog) (evidence: Map<string, BridgeRetargetEvidence>) (entry: Config.BridgeRetargetEntry) : Result<BridgeRetargetPlan> =
-        // Resolve the FK to retarget: the owning kind (entity coordinate) + the
-        // reference (relationship name) on it.
-        let kindMatches =
+    /// Resolve an entry's `reference` to the (retargetId, owning kind, reference)
+    /// triples it names. `Explicit` yields exactly one (fail-closed: an entity or
+    /// relationship not in the model is a NAMED refusal). `AllReferencesTo` is
+    /// DISCOVERY: every reference in the resolved model scope whose target kind is
+    /// the named entity — so "retarget every FK pointing at this table" needs no
+    /// hand enumeration. Discovery that matches NOTHING is a refusal, not a silent
+    /// no-op: the operator asked for all references to a table and there are none,
+    /// which means the coordinate is wrong or the scope excludes them.
+    let private resolveReferences
+        (catalog: Catalog)
+        (entry: Config.BridgeRetargetEntry)
+        : Result<(string * Kind * Reference) list> =
+        let kindsMatching (coord: EntityCoordinate) =
             Catalog.allModulesKinds catalog
             |> List.filter (fun (m, k) ->
-                (entry.Entity.Module = "" || ciEq (Name.value m.Name) entry.Entity.Module)
-                && ciEq (Name.value k.Name) entry.Entity.Entity)
-            |> List.map snd
-            |> List.distinctBy (fun k -> k.SsKey)
-        match kindMatches with
-        | [] ->
-            err "pipeline.config.bridgeRetargets.entity.notFound"
-                (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; entry.Entity.Module; "/"; entry.Entity.Entity; " is not in the model" ])
-        | _ :: _ :: _ ->
-            err "pipeline.config.bridgeRetargets.entity.ambiguous"
-                (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; entry.Entity.Module; "/"; entry.Entity.Entity; " is ambiguous across the resolved scope" ])
-        | [ kind ] ->
-            match kind.References |> List.tryFind (fun r -> ciEq (Name.value r.Name) entry.Relationship) with
-            | None ->
-                err "pipeline.config.bridgeRetargets.relationship.notFound"
-                    (String.concat "" [ "bridge retarget '"; entry.Id; "': relationship '"; entry.Relationship; "' is not a reference on "; entry.Entity.Entity ])
-            | Some reference ->
-                let sourceAttr = kind.Attributes |> List.tryFind (fun a -> a.SsKey = reference.SourceAttribute)
-                match AttributeCoordinate.resolveFull catalog entry.Bridge with
-                | Error _ ->
-                    err "pipeline.config.bridgeRetargets.bridge.notFound"
-                        (String.concat "" [ "bridge retarget '"; entry.Id; "': bridge attribute "; entry.Bridge.Module; "/"; entry.Bridge.Entity; "/"; entry.Bridge.Attribute; " is not in the model" ])
-                | Ok (bridgeKindKey, _, bridgeAttrKey) ->
-                    let bridgeAttr =
-                        Catalog.tryFindKind bridgeKindKey catalog
-                        |> Option.bind (fun bk -> bk.Attributes |> List.tryFind (fun a -> a.SsKey = bridgeAttrKey))
-                    match sourceAttr, bridgeAttr with
-                    | Some sa, Some ba ->
-                        // Structural catalog facts. The data facts come from the
-                        // supplied evidence (below) or stay fail-closed (unproven).
-                        let existingConstraintTrusted =
-                            if Reference.hasDbConstraint reference then Some (Reference.isConstraintTrusted reference)
-                            else None
-                        let structural =
-                            { BridgeRetargetProfile.unproven entry.Id with
-                                BridgeKeyPresent          = true
-                                TargetsBridgePrimaryKey   = ba.IsPrimaryKey
-                                KeyTypesMatch             = (sa.Type = ba.Type)
-                                ExistingConstraintTrusted = existingConstraintTrusted }
-                        // The evidence supplement overrides the fail-closed DATA
-                        // facts when the operator supplied an entry for this id;
-                        // absent, the retarget stays blocked (byte-identical).
-                        let profile =
-                            match Map.tryFind entry.Id evidence with
-                            | Some ev -> applyEvidence ev structural
-                            | None    -> structural
-                        Result.success
-                            { ReferenceKey       = reference.SsKey
-                              BridgeAttributeKey = bridgeAttrKey
-                              Profile            = profile }
-                    | None, _ ->
-                        err "pipeline.config.bridgeRetargets.sourceAttribute.missing"
-                            (String.concat "" [ "bridge retarget '"; entry.Id; "': the reference's source attribute is missing from its kind" ])
-                    | _, None ->
-                        err "pipeline.config.bridgeRetargets.bridge.attributeMissing"
-                            (String.concat "" [ "bridge retarget '"; entry.Id; "': the resolved bridge attribute is missing from its kind" ])
+                (coord.Module = "" || ciEq (Name.value m.Name) coord.Module)
+                && ciEq (Name.value k.Name) coord.Entity)
+            |> List.distinctBy (fun (_, k) -> k.SsKey)
+        match entry.Reference with
+        | Config.BridgeRetargetReference.Explicit (coord, relationship) ->
+            match kindsMatching coord with
+            | [] ->
+                err "pipeline.config.bridgeRetargets.entity.notFound"
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is not in the model" ])
+            | _ :: _ :: _ ->
+                err "pipeline.config.bridgeRetargets.entity.ambiguous"
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is ambiguous across the resolved scope" ])
+            | [ (_, kind) ] ->
+                match kind.References |> List.tryFind (fun r -> ciEq (Name.value r.Name) relationship) with
+                | None ->
+                    err "pipeline.config.bridgeRetargets.relationship.notFound"
+                        (String.concat "" [ "bridge retarget '"; entry.Id; "': relationship '"; relationship; "' is not a reference on "; coord.Entity ])
+                | Some reference -> Result.success [ entry.Id, kind, reference ]
+        | Config.BridgeRetargetReference.AllReferencesTo target ->
+            match kindsMatching target with
+            | [] ->
+                err "pipeline.config.bridgeRetargets.entity.notFound"
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is not in the model" ])
+            | _ :: _ :: _ ->
+                err "pipeline.config.bridgeRetargets.entity.ambiguous"
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is ambiguous across the resolved scope" ])
+            | [ (_, targetKind) ] ->
+                // Every reference in the RESOLVED scope (the catalog is already
+                // narrowed by `model.modules`) whose target is that kind. Ordered by
+                // the child kind's SsKey then the reference's, so expansion is
+                // deterministic (the determinism-is-constructed discipline).
+                let discovered =
+                    Catalog.allModulesKinds catalog
+                    |> List.collect (fun (m, childKind) ->
+                        childKind.References
+                        |> List.filter (fun r -> r.TargetKind = targetKind.SsKey)
+                        |> List.map (fun r -> Name.value m.Name, childKind, r))
+                    |> List.sortBy (fun (_, k, r) -> k.SsKey, r.SsKey)
+                if List.isEmpty discovered then
+                    err "pipeline.config.bridgeRetargets.discoveryEmpty"
+                        (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo "; target.Module; "/"; target.Entity; " matched no references in the resolved model scope — check the coordinate and `model.modules`" ])
+                else
+                    discovered
+                    |> List.map (fun (moduleName, childKind, reference) ->
+                        discoveredIdOf entry.Id moduleName childKind reference, childKind, reference)
+                    |> Result.success
+
+    /// Build the plan for ONE resolved (retargetId, kind, reference) triple. The
+    /// profile is assembled from the catalog's STRUCTURAL facts plus the supplied
+    /// `evidence` for the DATA facts (fail-closed defaults when no entry exists).
+    let private buildPlan
+        (catalog: Catalog)
+        (evidence: Map<string, BridgeRetargetEvidence>)
+        (entry: Config.BridgeRetargetEntry)
+        (retargetId: string)
+        (kind: Kind)
+        (reference: Reference)
+        : Result<BridgeRetargetPlan> =
+        let sourceAttr = kind.Attributes |> List.tryFind (fun a -> a.SsKey = reference.SourceAttribute)
+        match AttributeCoordinate.resolveFull catalog entry.Bridge with
+        | Error _ ->
+            err "pipeline.config.bridgeRetargets.bridge.notFound"
+                (String.concat "" [ "bridge retarget '"; retargetId; "': bridge attribute "; entry.Bridge.Module; "/"; entry.Bridge.Entity; "/"; entry.Bridge.Attribute; " is not in the model" ])
+        | Ok (bridgeKindKey, _, bridgeAttrKey) ->
+            let bridgeKind = Catalog.tryFindKind bridgeKindKey catalog
+            let bridgeAttr =
+                bridgeKind |> Option.bind (fun bk -> bk.Attributes |> List.tryFind (fun a -> a.SsKey = bridgeAttrKey))
+            // Is a SINGLE-COLUMN unique index / constraint DECLARED on the bridge
+            // key? SQL Server refuses `REFERENCES <bridge>(<col>)` without one, so
+            // this gates the DEPLOY — a data-uniqueness count cannot substitute for
+            // it. A COMPOSITE unique index does not qualify: a single-column FK
+            // cannot target one member of a multi-column key.
+            let declaredUnique =
+                bridgeKind
+                |> Option.map (fun bk ->
+                    bk.Indexes
+                    |> List.exists (fun ix ->
+                        IndexUniqueness.isUnique ix.Uniqueness
+                        && (match ix.Columns with
+                            | [ single ] -> single.Attribute = bridgeAttrKey
+                            | _ -> false)))
+                |> Option.defaultValue false
+            match sourceAttr, bridgeAttr with
+            | Some sa, Some ba ->
+                let existingConstraintTrusted =
+                    if Reference.hasDbConstraint reference then Some (Reference.isConstraintTrusted reference)
+                    else None
+                let structural =
+                    { BridgeRetargetProfile.unproven retargetId with
+                        BridgeKeyPresent          = true
+                        TargetsBridgePrimaryKey   = ba.IsPrimaryKey
+                        KeyTypesMatch             = (sa.Type = ba.Type)
+                        BridgeKeyDeclaredUnique   = declaredUnique
+                        ExistingConstraintTrusted = existingConstraintTrusted }
+                // The evidence supplement overrides the fail-closed DATA facts when
+                // the operator supplied an entry for this id; absent, the retarget
+                // stays blocked (byte-identical emission).
+                let profile =
+                    match Map.tryFind retargetId evidence with
+                    | Some ev -> applyEvidence ev structural
+                    | None    -> structural
+                Result.success
+                    { ReferenceKey       = reference.SsKey
+                      BridgeAttributeKey = bridgeAttrKey
+                      Profile            = profile }
+            | None, _ ->
+                err "pipeline.config.bridgeRetargets.sourceAttribute.missing"
+                    (String.concat "" [ "bridge retarget '"; retargetId; "': the reference's source attribute is missing from its kind" ])
+            | _, None ->
+                err "pipeline.config.bridgeRetargets.bridge.attributeMissing"
+                    (String.concat "" [ "bridge retarget '"; retargetId; "': the resolved bridge attribute is missing from its kind" ])
+
+    /// Resolve one config entry to its plan(s) — one for an explicit reference, N
+    /// for a discovery expansion.
+    let private bindOne (catalog: Catalog) (evidence: Map<string, BridgeRetargetEvidence>) (entry: Config.BridgeRetargetEntry) : Result<BridgeRetargetPlan list> =
+        resolveReferences catalog entry
+        |> Result.bind (fun triples ->
+            triples
+            |> List.map (fun (rid, kind, reference) -> buildPlan catalog evidence entry rid kind reference)
+            |> Result.aggregate)
 
     /// Bind every declared retarget against the supplied evidence map, accumulating
     /// named refusals. `[]` ⇒ `BridgeRetargetPolicy.empty` (byte-identical — the
@@ -320,7 +396,7 @@ module BridgeRetargetBinding =
         entries
         |> List.map (bindOne catalog evidence)
         |> Result.aggregate
-        |> Result.map (fun plans -> { Plans = plans })
+        |> Result.map (fun perEntry -> { Plans = List.concat perEntry })
 
     /// Merge the two evidence sources — the operator FILE supplement and the
     /// staging companion's DERIVED planned-state evidence — refusing overlap: a

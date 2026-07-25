@@ -66,6 +66,16 @@ type BridgeCheck =
     /// The bridge key is unique — a value resolves to at most one bridge row.
     /// Non-uniqueness breaks the "exactly one bridge row" half of the invariant.
     | BridgeKeyUnique
+    /// A single-column UNIQUE index or constraint is DECLARED on the bridge key.
+    /// Distinct from `BridgeKeyUnique`, which is a DATA fact (no duplicates today):
+    /// SQL Server refuses `REFERENCES <bridge>(<col>)` outright unless the target
+    /// column carries a declared unique constraint or unique index — verified
+    /// empirically, "Could not create constraint or index". So data-uniqueness
+    /// without DECLARED uniqueness would clear every other check and then fail at
+    /// DEPLOY time, which is the worst failure shape this feature has: a green gate
+    /// and a red deploy. A COMPOSITE unique index does not satisfy it — a
+    /// single-column FK cannot target one member of a multi-column key.
+    | BridgeKeyDeclaredUnique
     /// The bridge key is non-null — a NULL bridge key cannot be a resolution
     /// target for any non-null child value.
     | BridgeKeyNonNull
@@ -123,6 +133,7 @@ module BridgeCheck =
     let all : BridgeCheck list =
         [ BridgeCheck.BridgeKeyExists
           BridgeCheck.BridgeKeyUnique
+          BridgeCheck.BridgeKeyDeclaredUnique
           BridgeCheck.BridgeKeyNonNull
           BridgeCheck.SourceAndBridgeKeyTypesMatch
           BridgeCheck.RetargetWouldUseBridgePrimaryKey
@@ -143,6 +154,7 @@ module BridgeCheck =
         match check with
         | BridgeCheck.BridgeKeyExists                           -> "bridgeKeyExists"
         | BridgeCheck.BridgeKeyUnique                           -> "bridgeKeyUnique"
+        | BridgeCheck.BridgeKeyDeclaredUnique                   -> "bridgeKeyDeclaredUnique"
         | BridgeCheck.BridgeKeyNonNull                          -> "bridgeKeyNonNull"
         | BridgeCheck.SourceAndBridgeKeyTypesMatch              -> "sourceAndBridgeKeyTypesMatch"
         | BridgeCheck.RetargetWouldUseBridgePrimaryKey          -> "retargetWouldUseBridgePrimaryKey"
@@ -162,6 +174,7 @@ module BridgeCheck =
         match check with
         | BridgeCheck.BridgeKeyExists
         | BridgeCheck.BridgeKeyUnique
+        | BridgeCheck.BridgeKeyDeclaredUnique
         | BridgeCheck.BridgeKeyNonNull
         | BridgeCheck.SourceAndBridgeKeyTypesMatch
         | BridgeCheck.RetargetWouldUseBridgePrimaryKey
@@ -185,6 +198,7 @@ module BridgeCheck =
         | BridgeCheck.BridgeKeyExists ->
             ofList [ BridgeVerdictKind.Retargeting; BridgeVerdictKind.BridgeRows ]
         | BridgeCheck.BridgeKeyUnique
+        | BridgeCheck.BridgeKeyDeclaredUnique
         | BridgeCheck.BridgeKeyNonNull
         | BridgeCheck.SourceAndBridgeKeyTypesMatch
         | BridgeCheck.RetargetWouldUseBridgePrimaryKey
@@ -246,6 +260,11 @@ type BridgeRetargetProfile =
       /// `BridgeKeyUnique`: count of bridge keys occurring on more than one row.
       /// Zero ⇒ unique.
       BridgeKeyDuplicateCount : int64
+      /// `BridgeKeyDeclaredUnique`: a single-column UNIQUE index/constraint is
+      /// DECLARED on the bridge key (a STRUCTURAL catalog fact, not a data fact —
+      /// SQL Server refuses the FK without it, so this gates the DEPLOY, not the
+      /// data). Composite unique indexes do not satisfy it.
+      BridgeKeyDeclaredUnique : bool
       /// `BridgeKeyNonNull`: count of bridge rows whose key cell is NULL. Zero ⇒
       /// non-null.
       BridgeKeyNullCount : int64
@@ -298,6 +317,7 @@ module BridgeRetargetProfile =
         { RetargetId                   = retargetId
           BridgeKeyPresent             = true
           BridgeKeyDuplicateCount      = 0L
+          BridgeKeyDeclaredUnique      = true
           BridgeKeyNullCount           = 0L
           KeyTypesMatch                = true
           TargetsBridgePrimaryKey      = false
@@ -324,6 +344,7 @@ module BridgeRetargetProfile =
         { RetargetId                   = retargetId
           BridgeKeyPresent             = false
           BridgeKeyDuplicateCount      = 1L
+          BridgeKeyDeclaredUnique      = false
           BridgeKeyNullCount           = 1L
           KeyTypesMatch                = false
           TargetsBridgePrimaryKey      = false
@@ -413,6 +434,10 @@ module BridgeRetarget =
                 profile.BridgeKeyDuplicateCount = 0L,
                 (if profile.BridgeKeyDuplicateCount = 0L then "bridge key unique"
                  else System.String.Concat(plural profile.BridgeKeyDuplicateCount "duplicated bridge key" "duplicated bridge keys", " — resolution would be ambiguous"))
+            | BridgeCheck.BridgeKeyDeclaredUnique ->
+                profile.BridgeKeyDeclaredUnique,
+                (if profile.BridgeKeyDeclaredUnique then "a single-column unique index or constraint is declared on the bridge key"
+                 else "no single-column unique index or constraint is declared on the bridge key — SQL Server would refuse the retargeted foreign key at deploy time")
             | BridgeCheck.BridgeKeyNonNull ->
                 profile.BridgeKeyNullCount = 0L,
                 (if profile.BridgeKeyNullCount = 0L then "bridge key non-null"

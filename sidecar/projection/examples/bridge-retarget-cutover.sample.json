@@ -1,0 +1,88 @@
+{
+  "_comment": "WHOLESALE worked example — the complete bridge-retarget cutover: discover every foreign key pointing at a parent table, derive the bridge-row supply for them from the live estate, and move the constraints to the bridge's business key. Copy the `overrides.bridgeRetargets` / `overrides.bridgeRowStaging` / `policy.transformGroups` / `emission.signoff` blocks into your own projection.json and swap the coordinates. Nothing here is estate-specific: every table, key, identity column, mapping, and constant is config. Authoritative formats: src/Projection.Pipeline/Config.fs (parse), BridgeRetargetBinding.fs (retarget bind + evidence), BridgeRowStagingBinding.fs (staging bind), BridgeRowStagingSeam.fs (acquisition + staging + artifacts).",
+
+  "model": {
+    "_comment": "The retarget + discovery scope is the RESOLVED model scope. `modules` therefore bounds discovery: `allReferencesTo` finds references only in the modules listed here, so widening this list widens the retarget's blast radius. Keep it to the modules you intend to cut over.",
+    "path": "osm_model.json",
+    "modules": [ "Ordering", "Billing", "Directory" ]
+  },
+
+  "overrides": {
+    "bridgeRetargets": [
+      {
+        "_comment": "DISCOVERY: every reference in scope whose target is Directory.Party retargets through PartyBridge.PartyRef — no hand enumeration, so an FK added later is picked up rather than missed. The binder expands this to one plan per discovered reference with the id `party-bridge/<Module>.<Entity>.<Relationship>` (deterministic), and `BridgeStaging/<id>/delta.json` records a verdict per key so you can read exactly which FK each outcome belongs to. Matching nothing is a named refusal, never a silent no-op. For a single FK instead, replace `reference` with { \"module\": \"Ordering\", \"entity\": \"Order\", \"relationship\": \"CreatedBy\" }.",
+        "id": "party-bridge",
+        "reference": { "allReferencesTo": { "module": "Directory", "entity": "Party" } },
+        "bridge": { "module": "Directory", "entity": "PartyBridge", "attribute": "PartyRef" }
+      }
+    ],
+
+    "bridgeRowStaging": [
+      {
+        "_comment": "THE COLUMN MAP. A newly-inserted bridge row draws every cell from exactly four places: the KEY pair (source.key -> bridge.key), the IDENTITY pair (source.identity -> bridge.identity), `insertMappings` (copied from the source row), and `insertConstants` (values the source cannot supply). Bind time REFUSES the declaration unless those four cover every mandatory, non-identity, non-defaulted column on the bridge — and the refusal names the uncovered columns, so you discover what to add rather than hitting a runtime error. None of the four can modify an EXISTING row: the only edit to a row that already exists is filling a NULL identity cell.",
+        "id": "party-supply",
+
+        "_comment_scope": "`referenced` (the default) stages only key values the retargeting FK columns actually reference — the minimal blast radius, and sufficient for the constraint, since an unreferenced parent row needs no bridge row. `allSourceRows` stages EVERY source row, so a LATER child insert naming any parent cannot violate the retargeted FK. Choose allSourceRows when the application can create a reference to any parent row.",
+        "scope": "allSourceRows",
+
+        "source": {
+          "_comment": "Either logical { module, entity } (espace-safe — physical names differ per environment for managed cloud tables; prefer this) or physical { schema, table }. `key` is the column the child FKs currently point at; `identity` is the value copied onto the bridge row as its business-key evidence.",
+          "module": "Directory",
+          "entity": "Party",
+          "key": "Id",
+          "identity": "ExternalRef"
+        },
+
+        "bridge": {
+          "_comment": "`key` is the business key the FKs retarget THROUGH — it must be a non-primary-key column carrying a SINGLE-COLUMN UNIQUE index or constraint. Without that declared uniqueness SQL Server refuses the retargeted foreign key at deploy time, so the readiness check `bridgeKeyDeclaredUnique` BLOCKS rather than letting a green gate produce a red deploy. A composite unique index does not qualify.",
+          "module": "Directory",
+          "entity": "PartyBridge",
+          "key": "PartyRef",
+          "identity": "SourceExternalRef"
+        },
+
+        "insertMappings": [
+          { "_comment": "bridge column <- source column, for rows being inserted.", "bridge": "DisplayLabel", "from": "Label" },
+          { "bridge": "ContactEmail", "from": "Email" }
+        ],
+
+        "insertConstants": [
+          { "_comment": "Mandatory bridge columns the source cannot supply — lookup FKs, discriminators, flags. `null` is SQL NULL.", "bridge": "ProfileTypeRef", "value": 1 },
+          { "bridge": "IsActive", "value": true }
+        ]
+      }
+    ],
+
+    "_comment_evidence": "overrides.bridgeRetargetEvidence.path is the ALTERNATIVE to bridgeRowStaging — an operator-authored file supplying the same readiness facts by hand (see bridge-retarget-evidence.sample.json). A retarget id may carry evidence from ONE source only; declaring both for the same id is refused rather than silently preferring one. Use the file when you cannot reach the estate from the run; use bridgeRowStaging when you can."
+  },
+
+  "policy": {
+    "_comment": "Opt-in. The pass does not run unless BridgeRetarget is enabled here, so an absent block leaves emission byte-identical. Note the PascalCase name — it is the transform-group case name, not the camelCase pass name.",
+    "transformGroups": [ { "name": "BridgeRetarget", "enabled": true } ]
+  },
+
+  "emission": {
+    "signoff": [
+      {
+        "_comment": "Authorizes the staging lane to write to the bridge table. Guarded inserts of absent rows and fill-only identity updates are the only shapes it can emit.",
+        "mode": "bridge-row-staging",
+        "acknowledgedImpact": "Inserts bridge rows that are absent and fills identity cells that are NULL. Existing values are unreachable: the insert carries an IF NOT EXISTS guard and the update carries an IS NULL guard.",
+        "approvedBy": "<name>",
+        "date": "<yyyy-mm-dd>"
+      },
+      {
+        "_comment": "Authorizes moving the foreign-key constraint target. Child FK values are never rewritten.",
+        "mode": "bridge-retarget",
+        "acknowledgedImpact": "Moves the foreign-key constraint target from the parent primary key to the bridge business key. Stored child values are unchanged; only the constraint target moves.",
+        "approvedBy": "<name>",
+        "date": "<yyyy-mm-dd>"
+      }
+    ]
+  },
+
+  "output": { "dir": "out/" },
+
+  "_comment_what_happens": "Per staging declaration, in one pass: (1) the key set is derived — every discovered FK column's distinct non-null values, or every source key under allSourceRows; (2) the source rows for those keys, all bridge rows by key, and the bridge-WIDE key null/duplicate counts are read; (3) a pure per-key delta assigns exactly one verdict — alreadyComplete / stageInsert / stageIdentityUpdate, or one of the five BLOCKING verdicts (sourceRowMissing, sourceIdentityMissing, identityConflict, ambiguousBridgeRows, ambiguousSourceRows); (4) only guarded inserts and fill-only updates are staged; (5) readiness evidence is derived from the PLANNED post-staging state and fed to the retarget decision. Any blocking verdict withholds the evidence entirely AND stages nothing for that declaration, so the retargets stay unproven and the constraints do not move. Everything is written under BridgeStaging/<id>/ in the bundle: referenced-keys.json, source-snapshot.json, bridge-snapshot.json, delta.json, staged.sql, evidence.json.",
+
+  "_comment_first_run": "Expect the first run to refuse. Two refusals are the intended discovery path: `bridgeRowStaging.mandatoryUncovered` names the mandatory bridge columns your insertMappings/insertConstants still need, and `bridgeKeyDeclaredUnique` blocks if the bridge key carries no single-column unique index. Both are cheap to read and fix; both would otherwise be deploy-time failures."
+}

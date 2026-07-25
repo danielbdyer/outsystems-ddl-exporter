@@ -30723,3 +30723,60 @@ TransformRegistry and is inert (byte-identical) when undeclared.
   missing/conflicting ⇒ named blocks, nothing staged, retarget does not land; no existing non-blank
   bridge payload reachable, structurally. The estate-specific instantiation (which module, which
   tables, which columns) lives ONLY in the operator's config on their network.
+
+---
+
+## 2026-07-25 — Bridge retargeting hardens on three axes: FK DISCOVERY, a DEPLOY-time declared-uniqueness block, and a config-driven staging SCOPE
+
+Operator review of the dynamic staging companion surfaced three gaps in one pass. All three are
+config-driven and generic; none embeds an estate specific.
+
+- **`bridgeKeyDeclaredUnique` — a new BLOCK, and the most important of the three.** The check
+  taxonomy proved the bridge key unique *in the data* (`bridgeKeyDuplicates = 0`) but nothing
+  verified a **declared** single-column UNIQUE index or constraint on it. SQL Server refuses
+  `REFERENCES <bridge>(<col>)` outright without one — verified empirically on the warm container
+  ("Could not create constraint or index"; the same FK succeeds once a unique index exists). So a
+  retarget could clear **every** readiness check — data unique, no nulls, full coverage, evidence
+  derived — and then fail at DEPLOY. A green gate with a red deploy is the worst failure shape
+  this feature can have, and it was reachable. The binder now computes the fact structurally from
+  the catalog's indexes (no evidence file, no live probe); a COMPOSITE unique index deliberately
+  does NOT satisfy it, because a single-column FK cannot target one member of a multi-column key.
+  This is a *behavior change*: a retarget that cleared before can now block — which is the correct
+  outcome, since it was going to fail at deploy anyway. Three test fixtures modelling a
+  "structurally sound" bridge legitimately broke and were corrected to declare uniqueness.
+
+- **FK discovery (`reference.allReferencesTo`).** `bridgeRetargets[].reference` was one explicit
+  `{ module, entity, relationship }`, so retargeting every FK that points at a parent meant hand
+  enumeration — friction for a cutover that means *all of them*, and a silent miss when one is
+  added later. The reference is now a closed two-case DU: `Explicit` (unchanged; keeps the
+  declared id verbatim, so existing evidence files keep working) or `AllReferencesTo`, which
+  expands at bind time to one plan per reference in the RESOLVED model scope whose target is the
+  named entity. `model.modules` therefore bounds discovery — widening the scope widens the blast
+  radius, which is the honest place for that lever. Expansion is deterministic (ordered by child
+  kind then reference SsKey) and each plan carries a synthesized id
+  `<declaredId>/<Module>.<Entity>.<Relationship>` so evidence, artifacts, and lineage stay
+  separately addressable and an operator can read which FK a verdict belongs to. Matching NOTHING
+  is a named refusal (`discoveryEmpty`), never a silent no-op: asking for all references to a
+  table and getting none means the coordinate or the scope is wrong. The staging binder mirrors the
+  expansion, so N discovered FKs feed ONE supply lane and one acquisition.
+
+- **`bridgeRowStaging[].scope` — `referenced` (default) | `allSourceRows`.** The companion derived
+  bridge rows only for key values the retargeting FK columns actually reference. That is sound for
+  the FK constraint — an unreferenced source row needs no bridge row — but it is NOT "every source
+  row has a bridge row", so after cutover a NEW child row naming a source row with no bridge row
+  violates the FK at insert time. `allSourceRows` reads every source key instead, at the cost of a
+  wider write. Default unchanged (minimal blast radius); the wider posture is the operator's
+  explicit choice, and an unrecognized value is refused rather than silently defaulted.
+
+**Executable documentation.** `examples/bridge-retarget-cutover.sample.json` is the wholesale
+worked example (discovery + `allSourceRows` + the four-place column map + both signoff gates), and
+a test now PARSES the shipped bridge samples through the live parser. No sample was previously
+covered by a test, so one could drift from the parser silently and an operator copying it would
+hit a refusal that looks like their own mistake — the same drift class as the signoff-hint fix
+earlier in this chapter, and closed the same way: one source of truth, checked.
+
+**The column map, for the record.** A newly-inserted bridge row draws every cell from exactly four
+config places — the key pair, the identity pair, `insertMappings`, `insertConstants` — and bind time
+refuses unless those cover every mandatory, non-identity, non-defaulted bridge column, naming the
+uncovered ones. None of the four can touch an EXISTING row: the only edit to an existing row remains
+the NULL-identity fill.
