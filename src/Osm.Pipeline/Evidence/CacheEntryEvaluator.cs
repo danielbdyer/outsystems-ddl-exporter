@@ -15,13 +15,13 @@ internal sealed class CacheEntryEvaluator
     private readonly IFileSystem _fileSystem;
     private readonly ManifestEvaluator _manifestEvaluator;
     private readonly Func<DateTimeOffset> _timestampProvider;
-    private readonly CacheMetadataBuilder _metadataBuilder;
+    private readonly CacheOutcomeMetadataBuilder _metadataBuilder;
 
     public CacheEntryEvaluator(
         IFileSystem fileSystem,
         ManifestEvaluator manifestEvaluator,
         Func<DateTimeOffset> timestampProvider,
-        CacheMetadataBuilder metadataBuilder)
+        CacheOutcomeMetadataBuilder metadataBuilder)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _manifestEvaluator = manifestEvaluator ?? throw new ArgumentNullException(nameof(manifestEvaluator));

@@ -233,7 +233,7 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         var tableValue = userTableInput ?? "User";
         if (tableValue.Contains('.', StringComparison.Ordinal))
         {
-            var parts = SplitTableIdentifier(tableValue);
+            var parts = UatUsersOptionBinder.SplitTableIdentifier(tableValue);
             userSchema = parts.Schema;
             tableValue = parts.Table;
             if (!parseResult.HasOption(_userTableOption) && !string.IsNullOrWhiteSpace(configuration.UserTable))
@@ -362,84 +362,5 @@ internal sealed class UatUsersCommandFactory : ICommandFactory
         }
 
         return (defaultValue, false);
-    }
-
-    private static (string Schema, string Table) SplitTableIdentifier(string identifier)
-    {
-        if (string.IsNullOrWhiteSpace(identifier))
-        {
-            return ("dbo", "User");
-        }
-
-        var parts = ParseIdentifierParts(identifier.Trim());
-        if (parts.Count == 0)
-        {
-            return ("dbo", "User");
-        }
-
-        if (parts.Count == 1)
-        {
-            var tableOnly = parts[0];
-            var singleTable = string.IsNullOrWhiteSpace(tableOnly) ? "User" : tableOnly;
-            return ("dbo", singleTable);
-        }
-
-        var schemaPart = parts[^2];
-        var tablePart = parts[^1];
-        var resolvedSchema = string.IsNullOrWhiteSpace(schemaPart) ? "dbo" : schemaPart;
-        var resolvedTable = string.IsNullOrWhiteSpace(tablePart) ? "User" : tablePart;
-        return (resolvedSchema, resolvedTable);
-    }
-
-    private static List<string> ParseIdentifierParts(string identifier)
-    {
-        var parts = new List<string>();
-        if (string.IsNullOrWhiteSpace(identifier))
-        {
-            return parts;
-        }
-
-        var span = identifier.AsSpan();
-        var builder = new StringBuilder();
-        var bracketDepth = 0;
-        var inQuotes = false;
-
-        for (var i = 0; i < span.Length; i++)
-        {
-            var ch = span[i];
-            switch (ch)
-            {
-                case '[':
-                    bracketDepth++;
-                    continue;
-                case ']':
-                    if (bracketDepth > 0)
-                    {
-                        bracketDepth--;
-                    }
-                    continue;
-                case '"':
-                    if (bracketDepth == 0)
-                    {
-                        inQuotes = !inQuotes;
-                        continue;
-                    }
-                    break;
-                case '.':
-                    if (bracketDepth == 0 && !inQuotes)
-                    {
-                        parts.Add(builder.ToString().Trim());
-                        builder.Clear();
-                        continue;
-                    }
-                    break;
-            }
-
-            builder.Append(ch);
-        }
-
-        parts.Add(builder.ToString().Trim());
-
-        return parts;
     }
 }

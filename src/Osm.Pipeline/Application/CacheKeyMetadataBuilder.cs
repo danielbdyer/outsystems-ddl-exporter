@@ -12,11 +12,11 @@ using Osm.Smo;
 
 namespace Osm.Pipeline.Application;
 
-internal sealed class CacheMetadataBuilder
+internal sealed class CacheKeyMetadataBuilder
 {
     private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public CacheMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
+    public CacheKeyMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
     {
         _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
     }

@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Osm.Domain.Tests;
 
-public class EntityEmissionSnapshotTests
+public class EmittableEntityProjectionTests
 {
     [Fact]
     public void Create_FiltersInactiveAttributesAndSelectsIdentifiers()
@@ -37,7 +37,7 @@ public class EntityEmissionSnapshotTests
             inactiveAttribute,
             regularAttribute);
 
-        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+        var snapshot = EmittableEntityProjection.Create("Sales", entity);
 
         Assert.Equal(new[] { "CustomerId", "Name" }, snapshot.EmittableAttributes.Select(a => a.LogicalName.Value));
         Assert.Single(snapshot.IdentifierAttributes);

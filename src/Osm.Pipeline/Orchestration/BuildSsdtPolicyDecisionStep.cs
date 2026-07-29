@@ -10,7 +10,7 @@ using Osm.Validation.Tightening.Validations;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepared, DecisionsSynthesized>
+public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly TighteningPolicy _tighteningPolicy;
     private readonly ITighteningAnalyzer _analyzer;
@@ -21,8 +21,8 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
         _analyzer = analyzer ?? throw new ArgumentNullException(nameof(analyzer));
     }
 
-    public Task<Result<DecisionsSynthesized>> ExecuteAsync(
-        EvidencePrepared state,
+    public Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -57,16 +57,14 @@ public sealed class BuildSsdtPolicyDecisionStep : IBuildSsdtStep<EvidencePrepare
 
         var moduleInsights = BuildModuleInsights(report);
 
-        return Task.FromResult(Result<DecisionsSynthesized>.Success(new DecisionsSynthesized(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            decisions,
-            report,
-            findings.Opportunities,
-            findings.Validations,
-            moduleInsights)));
+        return Task.FromResult(Result<BuildSsdtState>.Success(state with
+        {
+            Decisions = decisions,
+            Report = report,
+            Opportunities = findings.Opportunities,
+            Validations = findings.Validations,
+            Insights = moduleInsights,
+        }));
     }
 
     private static ImmutableArray<PipelineInsight> BuildModuleInsights(PolicyDecisionReport report)

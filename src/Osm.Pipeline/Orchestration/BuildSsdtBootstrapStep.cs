@@ -9,7 +9,7 @@ using Osm.Pipeline.Profiling;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized, BootstrapCompleted>
+public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly IPipelineBootstrapper _bootstrapper;
     private readonly IDataProfilerFactory _profilerFactory;
@@ -22,8 +22,8 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
         _profilerFactory = profilerFactory ?? throw new ArgumentNullException(nameof(profilerFactory));
     }
 
-    public async Task<Result<BootstrapCompleted>> ExecuteAsync(
-        PipelineInitialized state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -48,13 +48,13 @@ public sealed class BuildSsdtBootstrapStep : IBuildSsdtStep<PipelineInitialized,
             .ConfigureAwait(false);
         if (bootstrapResult.IsFailure)
         {
-            return Result<BootstrapCompleted>.Failure(bootstrapResult.Errors);
+            return Result<BuildSsdtState>.Failure(bootstrapResult.Errors);
         }
 
-        return Result<BootstrapCompleted>.Success(new BootstrapCompleted(
-            state.Request,
-            state.Log,
-            bootstrapResult.Value));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            Bootstrap = bootstrapResult.Value,
+        });
     }
 
     private static PipelineBootstrapTelemetry CreateTelemetry(BuildSsdtPipelineRequest request)

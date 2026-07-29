@@ -9,8 +9,12 @@ CREATE TABLE [dbo].[JobRun] (
 
 GO
 
-ALTER TABLE [dbo].[JobRun]  WITH NOCHECK ADD CONSTRAINT [FK_JobRun_User_TriggeredByUserId]
-    FOREIGN KEY ([TriggeredByUserId]) REFERENCES [dbo].[ossys_User] ([Id])
+ALTER TABLE [dbo].[JobRun] WITH NOCHECK
+    ADD CONSTRAINT [FK_JobRun_User_TriggeredByUserId] FOREIGN KEY ([TriggeredByUserId]) REFERENCES [dbo].[User] ([Id])
+
+GO
+
+ALTER TABLE [dbo].[JobRun] NOCHECK CONSTRAINT [FK_JobRun_User_TriggeredByUserId]
 
 GO
 

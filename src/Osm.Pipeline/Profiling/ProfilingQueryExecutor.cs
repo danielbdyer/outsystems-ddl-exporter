@@ -95,8 +95,12 @@ internal sealed class ProfilingQueryExecutor : IProfilingQueryExecutor
             tableCancellation,
             cancellationToken).ConfigureAwait(false);
 
+        // Orphan-reality and no-check metadata are produced by the same probe execution, so they
+        // share a single status dictionary. (Computing it twice was redundant; the consumer only
+        // uses NoCheckStatuses as a fallback for keys absent from Statuses, which never occurs
+        // because both are keyed by plan.ForeignKeys.)
         var foreignKeyStatuses = BuildForeignKeyStatusDictionary(plan, foreignKeyReality.Status, foreignKeyReality.Value.Trusted);
-        var foreignKeyNoCheckStatuses = BuildForeignKeyStatusDictionary(plan, foreignKeyReality.Status, foreignKeyReality.Value.Trusted);
+        var foreignKeyNoCheckStatuses = foreignKeyStatuses;
 
         var foreignKeySamples = await ComputeForeignKeyOrphanSamplesAsync(
             connection,

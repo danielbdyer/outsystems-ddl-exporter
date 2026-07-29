@@ -259,7 +259,7 @@ public sealed class BuildSsdtEmissionStepTests
             MultiEnvironmentProfileReport.Empty);
     }
 
-    private static DecisionsSynthesized CreateDecisionState(
+    private static BuildSsdtState CreateDecisionState(
         BuildSsdtPipelineRequest request,
         PipelineBootstrapContext bootstrap)
     {
@@ -297,16 +297,18 @@ public sealed class BuildSsdtEmissionStepTests
 
         var validations = ValidationReport.Empty(generatedAt);
 
-        return new DecisionsSynthesized(
-            request,
-            new PipelineExecutionLogBuilder(TimeProvider.System),
-            bootstrap,
-            EvidenceCache: null,
-            decisions,
-            report,
-            opportunities,
-            validations,
-            ImmutableArray<PipelineInsight>.Empty);
+        return new BuildSsdtState
+        {
+            Request = request,
+            Log = new PipelineExecutionLogBuilder(TimeProvider.System),
+            Bootstrap = bootstrap,
+            EvidenceCache = null,
+            Decisions = decisions,
+            Report = report,
+            Opportunities = opportunities,
+            Validations = validations,
+            Insights = ImmutableArray<PipelineInsight>.Empty,
+        };
     }
 
     private static SmoModel CreateSampleSmoModel()

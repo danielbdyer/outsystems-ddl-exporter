@@ -18,22 +18,8 @@ internal sealed class ExtendedPropertyDocumentMapper
     }
 
     public Result<ImmutableArray<ExtendedProperty>> Map(ExtendedPropertyDocument[]? docs, DocumentPathContext path)
-    {
-        if (docs is null || docs.Length == 0)
+        => _context.MapArray<ExtendedPropertyDocument, ExtendedProperty>(docs, path, (doc, propertyPath) =>
         {
-            return Result<ImmutableArray<ExtendedProperty>>.Success(ExtendedProperty.EmptyArray);
-        }
-
-        var builder = ImmutableArray.CreateBuilder<ExtendedProperty>(docs.Length);
-        for (var i = 0; i < docs.Length; i++)
-        {
-            var doc = docs[i];
-            if (doc is null)
-            {
-                continue;
-            }
-
-            var propertyPath = path.Index(i);
             var value = doc.Value.ValueKind switch
             {
                 JsonValueKind.Undefined => null,
@@ -43,15 +29,8 @@ internal sealed class ExtendedPropertyDocumentMapper
             };
 
             var propertyResult = ExtendedProperty.Create(doc.Name, value);
-            if (propertyResult.IsFailure)
-            {
-                return Result<ImmutableArray<ExtendedProperty>>.Failure(
-                    _context.WithPath(propertyPath, propertyResult.Errors));
-            }
-
-            builder.Add(propertyResult.Value);
-        }
-
-        return Result<ImmutableArray<ExtendedProperty>>.Success(builder.ToImmutable());
-    }
+            return propertyResult.IsFailure
+                ? Result<ExtendedProperty>.Failure(_context.WithPath(propertyPath, propertyResult.Errors))
+                : propertyResult;
+        });
 }
