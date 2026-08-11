@@ -186,6 +186,37 @@ def gate_mirror():
 
 
 # --------------------------------------------------------------------------
+# packaging
+# --------------------------------------------------------------------------
+
+FRONTMATTER = re.compile(r"\A---\n(.*?\n)---\n", re.S)
+
+
+def gate_packaging():
+    import subprocess
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+    src = (glob.glob(os.path.join(TREE, "skills", "**", "SKILL.md"), recursive=True)
+           + glob.glob(os.path.join(TREE, "agents", "*.md")))
+    for p in sorted(src):
+        m = FRONTMATTER.match(read(p))
+        if not m:
+            find(p, "no frontmatter block")
+            continue
+        if yaml:
+            try:
+                d = yaml.safe_load(m.group(1))
+                assert isinstance(d, dict) and d.get("name") and d.get("description")
+            except Exception:
+                find(p, "frontmatter is not valid YAML with name + description (quote the description)")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "ssdt-agent-package.py"), "check"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        for line in (r.stdout + r.stderr).strip().splitlines()[1:]:
+            find(os.path.join(REPO, ".claude"), line.strip())
+
 
 def main():
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
@@ -195,6 +226,8 @@ def main():
         gate_register()
     if which in ("mirror", "all"):
         gate_mirror()
+    if which in ("packaging", "all"):
+        gate_packaging()
     if findings:
         print(f"ssdt-agent gates ({which}): {len(findings)} finding(s)")
         for f in findings:

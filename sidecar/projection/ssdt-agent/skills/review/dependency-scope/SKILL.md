@@ -1,6 +1,6 @@
 ---
 name: dependency-scope
-description: Scope before judgment — the dependency-closure pass that bounds every review disposition. Use after review-change reproduces a change and before the adversary attacks. Enumerates the dependency closure (FKs in/out, procs, indexes, external/ETL consumers) and counts affected rows on the isolated DB. Owns the hard invariant: no disposition may exceed the scope this establishes — an unscoped cascade cannot be approved; an unscoped external consumer forces at least Approved with a named risk. Produces the dependency map an escalation carries to the lead. Points to _index/constraint-is-a-claim + _index/multi-phase for the reasoning; owns none of it.
+description: "Scope before judgment — the dependency-closure pass that bounds every review disposition. Use after review-change reproduces a change and before the adversary attacks. Enumerates the dependency closure (FKs in/out, procs, indexes, external/ETL consumers) and counts affected rows on the isolated DB. Owns the hard invariant: no disposition may exceed the scope this establishes — an unscoped cascade cannot be approved; an unscoped external consumer forces at least Approved with a named risk. Produces the dependency map an escalation carries to the lead. Points to _index/constraint-is-a-claim + _index/multi-phase for the reasoning; owns none of it."
 ---
 
 # Dependency scope (scope before judgment)

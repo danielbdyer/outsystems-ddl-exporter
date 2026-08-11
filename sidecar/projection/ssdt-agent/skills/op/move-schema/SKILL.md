@@ -1,6 +1,6 @@
 ---
 name: move-schema
-description: Use when the developer says "move the entity to the archive schema", "put this table under a different namespace/module", "change its schema" — a schema change on an existing table, carrying the same refactorlog trap as a rename: with the refactorlog entry SSDT moves the data, without one it drops and recreates.
+description: "Use when the developer says \"move the entity to the archive schema\", \"put this table under a different namespace/module\", \"change its schema\" — a schema change on an existing table, carrying the same refactorlog trap as a rename: with the refactorlog entry SSDT moves the data, without one it drops and recreates."
 ---
 
 # Move schema (between schemas)

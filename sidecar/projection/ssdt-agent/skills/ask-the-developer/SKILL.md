@@ -1,6 +1,6 @@
 ---
 name: ask-the-developer
-description: Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy.
+description: "Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy."
 ---
 
 # Ask the developer (the mid-flow decision)

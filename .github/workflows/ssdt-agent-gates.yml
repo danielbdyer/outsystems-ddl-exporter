@@ -3,7 +3,8 @@
 # ENABLEMENT_PROGRAM.md §5: no fix lands without the detector that would have
 # caught its absence. This workflow is that detector for the ssdt-agent tree:
 #   truth-gates          citations resolve · record register holds · the PR
-#                        template mirrors author-pr (seconds; no toolchain)
+#                        template mirrors author-pr · the .claude/ packaging
+#                        stays generated-and-in-sync (seconds; no toolchain)
 #   build-proving-ground the sample project always compiles (SDK pinned by
 #                        global.json; Microsoft.Build.Sql restores from nuget)
 #
@@ -19,8 +20,11 @@ on:
       - "sidecar/projection/ssdt-agent/**"
       - "ssdt-playbook/**"
       - "handbook/**"
+      - ".claude/skills/**"
+      - ".claude/agents/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
       - "sidecar/projection/scripts/ssdt-agent-gates.py"
+      - "sidecar/projection/scripts/ssdt-agent-package.py"
       - ".github/workflows/ssdt-agent-gates.yml"
   push:
     branches: [main]
@@ -28,8 +32,11 @@ on:
       - "sidecar/projection/ssdt-agent/**"
       - "ssdt-playbook/**"
       - "handbook/**"
+      - ".claude/skills/**"
+      - ".claude/agents/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
       - "sidecar/projection/scripts/ssdt-agent-gates.py"
+      - "sidecar/projection/scripts/ssdt-agent-package.py"
       - ".github/workflows/ssdt-agent-gates.yml"
 
 jobs:
