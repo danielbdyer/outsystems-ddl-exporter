@@ -81,6 +81,7 @@ ssdt-agent/
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
+├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
 ├── agents/
 │   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the three facts
 │   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
