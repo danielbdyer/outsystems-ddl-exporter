@@ -326,8 +326,10 @@ flag it against the op skill, not the run.
 - **Outcome:** the agent runs `MAX(LEN(Code))` (=16) and a `WHERE LEN(Code)>10` count to quantify the
   truncation, proves the Strict data-loss block (the tightening-class row-presence guard; see
   `_index/tightening-class`), runs Permissive + before/after hash to show exactly which value chops,
-  authors the reconcile, and re-runs Strict clean. The verdict names the longest value and the count
-  that truncates.
+  authors the reconcile, and shows the relaxed-gate publish landing it — Strict still blocks after
+  the reconcile (the guard is row-presence, not fit; proven `../sample-prs/narrow.md`), so the
+  logged gate call stays in the packet. The verdict names the longest value and the count that
+  truncates.
 - **Fail mode:** reports "might lose data" without quantifying; or runs Permissive and silently
   truncates `'STANDARD-SKU-001'` to `'STANDARD-S'` without surfacing it.
 
