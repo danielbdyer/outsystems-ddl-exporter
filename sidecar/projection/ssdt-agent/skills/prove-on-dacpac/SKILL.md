@@ -64,18 +64,22 @@ executors. (Single-developer, one-at-a-time use can target `ProvingGround` direc
 
 ## The proving loop (scaffolded here; the developer's agent runs each command)
 
-> All commands assume the repo root as the working directory and a warm disposable copy — see
-> `talk-to-local-sql` for the container, the connection string, and the **runtime shim** (the
-> `DOTNET_ROOT` + `DOTNET_ROLL_FORWARD=Major` exports are **required on this machine**, because
-> `sqlpackage` targets .NET 8 and the box has .NET 9 at a non-standard path). On Git Bash also
-> export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and any `/opt/...`
-> docker-exec paths are not mangled.
+> All commands assume **`sidecar/projection/` as the working directory** (the paths below —
+> `scripts/…`, `ssdt-agent/…` — resolve from there, not from the repo root) and a warm disposable
+> copy — see `talk-to-local-sql` for the container, the connection string, and the **runtime
+> shim**: `sqlpackage` is a .NET-8 dotnet tool, so point `DOTNET_ROOT` at the real local dotnet
+> root and keep `DOTNET_ROLL_FORWARD=Major` whenever the installed runtime is newer. On Git Bash
+> only, also export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and any
+> `/opt/...` docker-exec paths are not mangled (the flag is inert on other shells).
 
 ```bash
-# 0. Runtime shim (REQUIRED here) + warm DB — details in talk-to-local-sql
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
-export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1                  # Git Bash: keep /Action: + /opt/... paths intact
+# 0. Runtime shim (REQUIRED in every shell that calls sqlpackage) + warm DB
+export DOTNET_ROOT=/root/.dotnet           # wherever the local dotnet root really is
+export DOTNET_ROLL_FORWARD=Major           # a .NET-8 tool on a newer installed runtime
+# Git Bash only: export MSYS_NO_PATHCONV=1   (keeps /Action: + /opt/... paths intact)
+# One worked Windows box, verbatim, for contrast (Git Bash):
+#   export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+#   export MSYS_NO_PATHCONV=1
 scripts/warm-sql.sh start                 # container projection-mssql-warm, localhost,11433
 
 # 1. Establish the BEFORE state once: deploy current CREATEs + seed (the 'real-shaped data')
@@ -108,6 +112,18 @@ sqlpackage /Action:Publish \
 
 > For a **parallel** run, every command above also carries `/TargetDatabaseName:PG_<testId>_<rand>`
 > and points at a scratch copy of the tree — see `self-test/PROTOCOL.md`.
+
+## Reading a publish outcome — the block lives in the TEXT, never the exit code
+
+A blocked `sqlpackage` publish does **not** reliably exit non-zero — and through any pipeline
+(`| tail`, `| tee`) the shell reports the last stage's status anyway, so a naive `$?` check reads
+a blocked publish as a success and **inverts the verdict**. Capture the publish output and read
+it: the block is the presence of `Could not deploy package` (with the `Error SQL72014` / `Msg`
+lines beneath it); a clean publish is the absence of that text plus the completing
+`Successfully published database` line. Treat the **text** as the signal, every time — most of
+all at the Strict block check (step 5) and the make-mandatory gate below, where the entire
+finding turns on whether the publish was blocked. (`self-test/PROTOCOL.md` §0 states the same
+rule for fleet runs.)
 
 ## Reading the result -> how it ships
 
@@ -181,9 +197,11 @@ The **honest, corrected recipe:**
   - **(a) Targeted gate-relaxation** — **ships as a scripted change with a named relaxation,**
     because relaxing the guard for one column cannot be expressed as a table definition. Having
     proven zero NULLs remain, deliberately disable `BlockOnPossibleDataLoss` for **this one targeted
-    change** (a scoped profile override or a script-only path), so the `ALTER COLUMN NOT NULL`
-    proceeds against the now-clean column. The proof packet must carry **both** the zero-NULL probe
-    AND the explicit record of the relaxation decision.
+    change** — the concrete form is the flag on that single publish invocation,
+    `sqlpackage /Action:Publish … /p:BlockOnPossibleDataLoss=False`, named in the deployment
+    record, never a permanent profile edit — so the `ALTER COLUMN NOT NULL` proceeds against the
+    now-clean column. The proof packet must carry **both** the zero-NULL probe AND the explicit
+    record of the relaxation decision.
   - **(b) Restructure to stage it across releases** — **ships across multiple releases so the
     running application keeps working** and the engine never has to relax its guard. A dev lead or
     an experienced developer must review this: the running application must change to keep working.
@@ -229,6 +247,18 @@ to miss:
   CustomerId 999 and re-breaking the foreign key. **The reconcile must be durable at source:** fix
   the seed data (or the pre-deployment remediation script), not just the row on the copy. A reconcile
   that lives only on the disposable copy is undone by the next deploy.
+
+## Re-prove from a reset copy (the clean re-run must start clean)
+
+A Permissive publish **mutates** the disposable copy by design, and a blocked Strict publish is
+**non-atomic** (the FK findings above: a constraint can land untrusted mid-block). So the clean
+Strict re-run that serves as the proof must never be taken on a copy those runs already altered —
+it would prove the remedy against contaminated state. After any Permissive run, and after any
+blocked publish, **reset before re-proving**: drop and recreate the disposable database and
+re-establish the BEFORE state (`proving-ground/README.md` steps 1 and 3 — the drop/recreate, then
+the unedited publish + seed), then apply the remedy build and take the Strict re-run. Parallel
+executors get this for free (a fresh unique DB per case, `self-test/PROTOCOL.md`); the
+single-developer path must do it deliberately.
 
 ## Strict vs Permissive — what the diff reveals
 
@@ -294,8 +324,8 @@ assemble into the pull request the reviewer approves by reading:
 - **What the disposable copy could not prove** — reversibility, application impact, production scale
   — as standing **Not verified** items.
 
-Re-run the Strict publish after applying the remedy: that clean re-run is the evidence the change
-now lands.
+Re-run the Strict publish after applying the remedy — **from a reset copy** (see "Re-prove from a
+reset copy" above): that clean re-run is the evidence the change now lands.
 
 The developer is owed the same finding in conversation — plain, in their terms, with the one
 decision that is genuinely theirs. For the make-mandatory case:

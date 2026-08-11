@@ -32,10 +32,27 @@ the instance grain.
 
 ## 0 — The runtime environment (REQUIRED, every shell)
 
-`sqlpackage` is a .NET-8 dotnet tool and must find a runtime before it starts. The block below is
-**one developer's box** — a .NET-8 tool on a .NET-9 runtime at a non-standard Windows path,
-invoked from Git Bash — kept verbatim as the worked example. Export its equivalents in **every**
-shell you call `sqlpackage` from, or it fails to start:
+`sqlpackage` is a .NET-8 dotnet tool and must find a runtime before it starts. Three concerns
+settle the setup — a runtime for the tool, `sqlpackage` on the PATH, and (Git Bash only) the
+path rewriting. **The portable, normative form:**
+
+```bash
+export DOTNET_ROOT=/root/.dotnet        # point at the REAL local dotnet root
+export DOTNET_ROLL_FORWARD=Major        # a .NET-8 tool on a newer installed runtime
+# sqlpackage is expected on PATH — `dotnet tool install -g microsoft.sqlpackage` puts it there
+# Git Bash only: export MSYS_NO_PATHCONV=1  (stops rewriting of /Action: and /opt/... paths; inert elsewhere)
+```
+
+Export the equivalents in **every** shell you call `sqlpackage` from, or it fails to start. The
+host has **no sqlcmd** — issue SQL through the container:
+
+```bash
+docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Projection@Strong1' -C -Q "<sql>"
+```
+
+**One worked box, verbatim, for contrast** — a .NET-8 tool on a .NET-9 runtime at a non-standard
+Windows path, invoked from Git Bash:
 
 ```bash
 export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
@@ -43,32 +60,9 @@ export DOTNET_ROLL_FORWARD=Major
 export MSYS_NO_PATHCONV=1   # REQUIRED on Git Bash for sqlpackage /Action: args AND docker-exec /opt/... paths
 ```
 
-`sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe`. The host has **no
-sqlcmd** — issue SQL through the container:
-
-```bash
-docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'Projection@Strong1' -C -Q "<sql>"
-```
-
-(`MSYS_NO_PATHCONV=1` keeps Git Bash from mangling the `/opt/...` path and the `/Action:` /
-`/SourceFile:` switches.)
-
-**The portable form (any box that is not that one).** Three concerns settle the setup — a runtime
-for the tool, `sqlpackage` on the path, and Git Bash's path rewriting — and each resolves
-differently off Windows. On Linux or macOS:
-
-```bash
-export DOTNET_ROOT=/root/.dotnet        # or wherever the local dotnet root is
-export DOTNET_ROLL_FORWARD=Major        # still needed: a .NET-8 tool on a newer (.NET-9) runtime
-# sqlpackage is expected on PATH — a global `dotnet tool install` puts it there; no absolute .exe path
-# no MSYS_NO_PATHCONV off Git Bash — it only stops Git Bash rewriting /Action: and /opt/... paths, and is inert elsewhere
-```
-
-Stated plainly: point `DOTNET_ROOT` at the real dotnet root, put `sqlpackage` on PATH, and drop
-`MSYS_NO_PATHCONV` on any shell that is not Git Bash. The rest of this protocol — the
-`docker exec ... sqlcmd` line, every `/Action:` switch, every `/TargetDatabaseName:"$DB"` — is
-identical on every box.
+(there, `sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe`). The rest of this
+protocol — the `docker exec ... sqlcmd` line, every `/Action:` switch, every
+`/TargetDatabaseName:"$DB"` — is identical on every box.
 
 **Reading the result of a publish — never trust `$?` alone.** A blocked `sqlpackage` publish does
 not reliably exit non-zero. Piped through `| tail`, or any pipeline, the shell reports the exit
@@ -86,7 +80,7 @@ TESTID="COL-03"                        # the test-matrix id you are proving
 RAND=$(openssl rand -hex 4)            # 8 hex chars; uniqueness across parallel executors
 DB="PG_${TESTID//-/_}_${RAND}"         # e.g. PG_COL_03_9f2a1c4e  (no dashes — valid DB identifier)
 SCRATCH="$CLAUDE_SCRATCHPAD/pg-${TESTID}-${RAND}"   # your private scratch dir
-SRC="C:/Users/danny/code/outsystems-ddl-exporter/sidecar/projection/ssdt-agent/proving-ground"
+SRC="$(pwd)/ssdt-agent/proving-ground"   # run from sidecar/projection/ — resolve ONCE to an absolute path and reuse the literal
 ```
 
 `DB` and `SCRATCH` both carry `TESTID` + `RAND`, so they are globally unique among parallel
@@ -157,9 +151,10 @@ edit `$SCRATCH/Data/Seed.sql` (or run a one-off `docker exec` SQL against `$DB`)
      /SourceFile:"$SCRATCH/bin/Release/SampleCatalog.dacpac" \
      /Profile:"$SCRATCH/profiles/ProvingGround.Strict.publish.xml" \
      /TargetDatabaseName:"$DB" \
-     /OutputPath:"$SCRATCH/bin/delta.sql"
+     /OutputPath:"$SCRATCH/bin/Release/delta.sql"
    ```
-   Read `$SCRATCH/bin/delta.sql` — your private artifact. Look for DROP+CREATE on a rename
+   Read `$SCRATCH/bin/Release/delta.sql` — your private artifact, at the canonical delta path
+   (beside the dacpac it was scripted from). Look for DROP+CREATE on a rename
    (a rename with no refactorlog entry — STOP, that loses the column's data), a shadow-table
    rebuild, the table-has-rows `IF EXISTS(...) RAISERROR` guard before an `ALTER COLUMN ... NOT
    NULL`, drop-by-absence.

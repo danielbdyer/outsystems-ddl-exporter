@@ -37,8 +37,10 @@ and Strict still blocked the change.
   prod-strict gate by backfill alone (see `../../_index/tightening-class/SKILL.md`). After proving
   `COUNT(*) WHERE Col IS NULL = 0` (necessary, not sufficient), choose ONE:
     - **(a) a named gate relaxation** — ships as a scripted change: disable
-      `BlockOnPossibleDataLoss` for this one targeted change, logged, with the proof packet
-      carrying **both** the zero-NULL probe and the relaxation decision. **The remediation must be
+      `BlockOnPossibleDataLoss` for this one targeted change — concretely, the flag on that
+      single publish invocation, `sqlpackage /Action:Publish … /p:BlockOnPossibleDataLoss=False`,
+      named in the deployment record, never a permanent profile edit — logged, with the proof
+      packet carrying **both** the zero-NULL probe and the relaxation decision. **The remediation must be
       durable at source:** a post-deployment seed that still writes NULLs into the tightened column
       fails after the ALTER lands (`Msg 515` — the publish is not atomic across the schema
       transaction and the post-deployment script), so the corrected seed rows are part of the

@@ -37,10 +37,12 @@ developer should experience:
 > would you prefer? Here's the proof."
 
 ## Your input — the change-spec from intake
-The named catalog operation(s), the target object, the desired-state edit (described, not yet
-SQL), the three state-variables (each `known` or `unknown — prove it`), and the business answer to
-intake's one question. If intake didn't run (you were invoked cold), do its job first: name the
-operation, get the three state-variables, ask the one business question. Then proceed.
+The **op-slug(s)** with their per-op skill paths (`skills/op/<op-slug>/SKILL.md`), the pre-flagged
+**shared concern** (`skills/_index/<concern>/SKILL.md`, when one governs), the target object, the
+desired-state edit (described, not yet SQL), the three state-variables (each `known` or
+`unknown — prove it`), and the business answer to intake's one question. If intake didn't run (you
+were invoked cold), do its job first: name the op-slug via `skills/confirm-intent`, get the three
+state-variables, ask the one business question. Then proceed.
 
 ## The three state-variables that decide how the change ships
 Everything you prove is in service of pinning these down **by evidence, not recollection**:

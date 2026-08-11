@@ -22,22 +22,26 @@ The commands and SQL are scaffolded here; the developer's agent runs them. There
 script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and
 `sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
 
-## The runtime shim (REQUIRED on this machine)
+## The runtime shim (REQUIRED before any sqlpackage call)
 
-`sqlpackage` targets .NET 8; this box has .NET 9 at a non-standard path. Export these **before**
-any `dotnet`/`sqlpackage` call in the session, or the tool fails to start. On Git Bash also export
-`MSYS_NO_PATHCONV=1` so the `sqlpackage /Action:` switches **and** the `docker exec /opt/...`
-sqlcmd paths below are not mangled:
+`sqlpackage` is a .NET-8 dotnet tool. Export these **before** any `dotnet`/`sqlpackage` call in
+the session, or the tool fails to start: point `DOTNET_ROOT` at the real local dotnet root, and
+keep `DOTNET_ROLL_FORWARD=Major` whenever the installed runtime is newer than .NET 8. On Git Bash
+only, also export `MSYS_NO_PATHCONV=1` so the `sqlpackage /Action:` switches **and** the
+`docker exec /opt/...` sqlcmd paths below are not mangled (the flag is inert on other shells):
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
+export DOTNET_ROOT=/root/.dotnet    # or wherever the local dotnet root is
 export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: + /SourceFile: + /opt/... paths intact
+# Git Bash only:
+export MSYS_NO_PATHCONV=1   # keep /Action: + /SourceFile: + /opt/... paths intact
 ```
 
-(The durable alternative is installing the .NET 8 runtime; until then, these exports are the fix.)
-`sqlpackage` itself is the dotnet tool `microsoft.sqlpackage` at
-`C:\Users\danny\.dotnet\tools\sqlpackage.exe`.
+`sqlpackage` is the dotnet tool `microsoft.sqlpackage`, expected on PATH (a global
+`dotnet tool install -g microsoft.sqlpackage` puts it there). One worked Windows box, verbatim,
+for contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
+`C:\Users\danny\.dotnet\tools\sqlpackage.exe`, invoked from Git Bash with `MSYS_NO_PATHCONV=1`.
+(The durable alternative is installing the .NET 8 runtime; then the roll-forward is unnecessary.)
 
 ## sqlcmd lives in the CONTAINER, not on the host (IMPORTANT)
 
