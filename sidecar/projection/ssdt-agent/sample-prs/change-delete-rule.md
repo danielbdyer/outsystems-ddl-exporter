@@ -25,7 +25,7 @@ records go with it — that is the point of the change, but it is the part to re
 - It ships as a single schema change, applied in place: the foreign key is dropped and re-added to set its
   `ON DELETE` action. No existing data is modified by the publish. No gate relaxation, no staging.
 - Map the full cascade graph before shipping. Here the chain is one hop (`Order` → `OrderLine`); in a deeper
-  reference graph a single parent delete could chain through several tables. Confirm the blast radius is what
+  reference graph a single parent delete could chain through several tables. Confirm the dependency scope is what
   you intend.
 - Added scrutiny: first time this operation is proven on the Twin. At production row counts a large cascade may
   remove many rows and run long or block writes — schedule a window.
@@ -78,7 +78,7 @@ Reading the facts:
   it in place. `OrderLine` held **25 rows** before and **25 rows** after — the schema change touched no data.
 - **After (Delete).** `delete_referential_action = 1` (`CASCADE`). Deleting the busiest parent `Order` now
   **removed its 4 child `OrderLine` rows** — the cascade in action. That probe ran inside a transaction that was
-  rolled back, so the table returned to **25 rows** intact; the number 4 is the measured blast radius, not a
+  rolled back, so the table returned to **25 rows** intact; the number 4 is the measured dependency scope, not a
   permanent change.
 
 ## Verification — run in each environment after deployment

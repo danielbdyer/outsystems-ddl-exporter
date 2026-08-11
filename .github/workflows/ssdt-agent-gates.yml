@@ -1,0 +1,55 @@
+# ssdt-agent truth gates — the ratchet rule made executable.
+#
+# ENABLEMENT_PROGRAM.md §5: no fix lands without the detector that would have
+# caught its absence. This workflow is that detector for the ssdt-agent tree:
+#   truth-gates          citations resolve · record register holds · the PR
+#                        template mirrors author-pr (seconds; no toolchain)
+#   build-proving-ground the sample project always compiles (SDK pinned by
+#                        global.json; Microsoft.Build.Sql restores from nuget)
+#
+# The Docker-gated proof lane (the 41 Twin facts) lives in
+# ssdt-agent-proof-lane.yml with its own schedule/path triggers — the runner
+# budget for it is an operator decision (ENABLEMENT_PROGRAM.md §6.2).
+
+name: ssdt-agent gates
+
+on:
+  pull_request:
+    paths:
+      - "sidecar/projection/ssdt-agent/**"
+      - "ssdt-playbook/**"
+      - "handbook/**"
+      - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
+      - "sidecar/projection/scripts/ssdt-agent-gates.py"
+      - ".github/workflows/ssdt-agent-gates.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sidecar/projection/ssdt-agent/**"
+      - "ssdt-playbook/**"
+      - "handbook/**"
+      - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
+      - "sidecar/projection/scripts/ssdt-agent-gates.py"
+      - ".github/workflows/ssdt-agent-gates.yml"
+
+jobs:
+  truth-gates:
+    name: citations · register · mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the gates
+        run: python3 sidecar/projection/scripts/ssdt-agent-gates.py all
+
+  build-proving-ground:
+    name: proving ground compiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build SampleCatalog (Release)
+        run: dotnet build sidecar/projection/ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release

@@ -223,7 +223,7 @@ escalate something a return to the author would have fixed.
   edge); no new adversarial move (you wield `prove-on-dacpac`'s two — a blocked change played forward,
   and an injected violating row); no new grading rubric (you reuse `self-test/rubric.md`); no
   re-scaffolded isolation harness (you reuse `PROTOCOL.md`).
-- **Cite the handbook by its on-disk filename** (e.g. `16-Anti-Patterns.md`, the anti-pattern
+- **Cite the handbook by its on-disk filename** (e.g. `16-Anti-Patterns-Gallery.md`, the anti-pattern
   catalog) — the filename is the cross-reference the deck readers recognize.
 
 ---

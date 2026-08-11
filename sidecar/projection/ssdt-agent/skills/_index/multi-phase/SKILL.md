@@ -117,5 +117,6 @@ equality that licenses the drop) and the row-count / mapping probes, see
 ## Handbook
 
 Cite by **filename**: **11-Multi-Phase-Evolution.md** (the additive→cutover→subtractive contract)
-and handbook **14** (= §17; the operation recipes — note §17.7 merge-entities has a missing handbook
-body and is AUTHORED in the per-op skill `../op/merge-tables/`).
+and handbook **14** (= §17; the operation recipes — §17.7 Table-Merge's curriculum home is the
+playbook's `Table-Merge.md`; the proven working contract is the per-op skill
+`../../op/merge-tables/`).

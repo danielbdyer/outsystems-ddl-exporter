@@ -138,7 +138,7 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 ## Two operating notes
 
 - **Cite the handbook by filename.** When a skill points at the playbook, cite the current
-  playbook **filename** (e.g. `16-Anti-Patterns.md`); that is the cross-reference the deck
+  playbook **filename** (e.g. `16-Anti-Patterns-Gallery.md`); that is the cross-reference the deck
   readers will recognize.
 - **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
   loop. Skills give the commands as worked examples plus the reasoning; the developer's agent

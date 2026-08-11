@@ -168,7 +168,7 @@ carry an empirical adjudication from the Twin-proven corpus.
   the record register. (Grep across `.github/workflows/` for `ssdt-agent|proving-ground|twin`:
   none.)
 - **F17 Citation drift is structural.** The convention's own exemplar names a file that does
-  not exist (`16-Anti-Patterns.md`, cited at `README.md:140`, `change-author.md:223`,
+  not exist ("16-Anti-Patterns.md", cited at `README.md:140`, `change-author.md:223`,
   `reviewer.md:226` ✱); the "+3 offset" arithmetic taught in nine files is wrong past
   handbook file 18; skills silently depend on playbook-only content while naming the
   handbook; two incompatible relative-path conventions split `agents/` from `skills/`;

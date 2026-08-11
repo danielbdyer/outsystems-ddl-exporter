@@ -228,7 +228,7 @@ contributes — assemble those fragments; do not re-derive the shape.
   (application impact, other environments, production scale, reversibility).
 
 **The trap, if one was caught** — carried into the PR where it lands, named plainly (handbook
-`16-Anti-Patterns.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
+`16-Anti-Patterns-Gallery.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
 severs identity (`_index/identity-and-refactorlog`) · an optimistic NOT NULL or over-eager narrowing
 (`_index/tightening-class`) · a forgotten FK check (`_index/constraint-is-a-claim`). Catch it in the
 delta or the blocked publish, not after a hypothetical deploy — take the trap's WHY from its `_index`
