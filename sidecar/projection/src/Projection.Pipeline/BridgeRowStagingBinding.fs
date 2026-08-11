@@ -95,10 +95,10 @@ module BridgeRowStagingBinding =
         | [ kind ] -> Result.success kind
         | [] ->
             err "pipeline.config.bridgeRowStaging.kind.notFound"
-                (String.concat "" [ "bridge row staging '"; entryId; "': the "; side; " table is not in the model" ])
+                (String.concat "" [ "bridge row staging '"; entryId; "': the "; side; " table is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         | _ ->
             err "pipeline.config.bridgeRowStaging.kind.ambiguous"
-                (String.concat "" [ "bridge row staging '"; entryId; "': the "; side; " table is ambiguous across the resolved scope" ])
+                (String.concat "" [ "bridge row staging '"; entryId; "': the "; side; " table is ambiguous across the resolved scope" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Resolve a logical attribute name on a kind to exactly one attribute.
     let private resolveAttr (entryId: string) (side: string) (kind: Kind) (name: string) : Result<Attribute> =
@@ -106,10 +106,10 @@ module BridgeRowStagingBinding =
         | [ attr ] -> Result.success attr
         | [] ->
             err "pipeline.config.bridgeRowStaging.attribute.notFound"
-                (String.concat "" [ "bridge row staging '"; entryId; "': "; side; " attribute '"; name; "' is not on the resolved kind" ])
+                (String.concat "" [ "bridge row staging '"; entryId; "': "; side; " attribute '"; name; "' is not on the resolved kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         | _ ->
             err "pipeline.config.bridgeRowStaging.attribute.ambiguous"
-                (String.concat "" [ "bridge row staging '"; entryId; "': "; side; " attribute '"; name; "' is ambiguous on the resolved kind" ])
+                (String.concat "" [ "bridge row staging '"; entryId; "': "; side; " attribute '"; name; "' is ambiguous on the resolved kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Auto-link the declared retargets this staging declaration serves: the
     /// retarget's reference PARENT is the source kind AND its bridge attribute
@@ -191,7 +191,7 @@ module BridgeRowStagingBinding =
                 if idSafe then Result.success ()
                 else
                     err "pipeline.config.bridgeRowStaging.idShape"
-                        (String.concat "" [ "bridge row staging id '"; entry.Id; "' must be a non-empty token of letters, digits, '-' or '_' (it names the artifact folder)" ])
+                        (String.concat "" [ "bridge row staging id '"; entry.Id; "' must be a non-empty token of letters, digits, '-' or '_' (it names the artifact folder)" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             let! sourceKind = resolveKind catalog entry.Id "source" entry.Source
             let! bridgeKind = resolveKind catalog entry.Id "bridge" entry.Bridge
             let! sourceKey = resolveAttr entry.Id "source key" sourceKind entry.SourceKey
@@ -202,7 +202,7 @@ module BridgeRowStagingBinding =
                 if sourceKey.Type = bridgeKey.Type then Result.success ()
                 else
                     err "pipeline.config.bridgeRowStaging.keyTypesDiffer"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': the source and bridge key types differ — the staged key cell is the source key value, so the types must match" ])
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': the source and bridge key types differ — the staged key cell is the source key value, so the types must match" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             let! mappings =
                 entry.InsertMappings
                 |> List.map (fun m ->
@@ -226,7 +226,7 @@ module BridgeRowStagingBinding =
                 | [] -> Result.success ()
                 | offending ->
                     err "pipeline.config.bridgeRowStaging.reservedAttribute"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mappings/constants may not name the bridge key or identity attribute ("; offending |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; ")" ])
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mappings/constants may not name the bridge key or identity attribute ("; offending |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; ")" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             let! () =
                 let dups =
                     covered
@@ -235,7 +235,7 @@ module BridgeRowStagingBinding =
                 if List.isEmpty dups then Result.success ()
                 else
                     err "pipeline.config.bridgeRowStaging.duplicateCoverage"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': a bridge attribute is covered by more than one mapping/constant" ])
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': a bridge attribute is covered by more than one mapping/constant" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             // Mandatory-coverage: every mandatory, non-identity, non-defaulted
             // bridge attribute must be covered by key ∪ identity ∪ mappings ∪
             // constants — a staged INSERT must be able to produce a complete row.
@@ -252,12 +252,12 @@ module BridgeRowStagingBinding =
                 if List.isEmpty uncovered then Result.success ()
                 else
                     err "pipeline.config.bridgeRowStaging.mandatoryUncovered"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mandatory bridge attribute(s) not covered by key/identity/mappings/constants: "; uncovered |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; " — a staged insert could not produce a complete row" ])
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mandatory bridge attribute(s) not covered by key/identity/mappings/constants: "; uncovered |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; " — a staged insert could not produce a complete row" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             let links = linkRetargets catalog sourceKind bridgeKey retargets
             let! () =
                 if List.isEmpty links then
                     err "pipeline.config.bridgeRowStaging.linksNone"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': no declared bridge retarget links to it (reference parent = source kind, bridge attribute = the staging bridge key) — the declaration would be inert" ])
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': no declared bridge retarget links to it (reference parent = source kind, bridge attribute = the staging bridge key) — the declaration would be inert" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                 else Result.success ()
             return
                 { StagingId      = entry.Id
@@ -284,7 +284,7 @@ module BridgeRowStagingBinding =
             entries |> List.countBy (fun e -> e.Id) |> List.filter (fun (_, n) -> n > 1) |> List.map fst
         if not (List.isEmpty dupIds) then
             err "pipeline.config.bridgeRowStaging.duplicateId"
-                (String.concat "" [ "overrides.bridgeRowStaging has duplicate id(s): "; String.concat ", " dupIds ])
+                (String.concat "" [ "overrides.bridgeRowStaging has duplicate id(s): "; String.concat ", " dupIds ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         else
             entries
             |> List.map (bindOne catalog cfg.Overrides.BridgeRetargets)
@@ -299,4 +299,4 @@ module BridgeRowStagingBinding =
                 if List.isEmpty claimedTwice then Result.success resolved
                 else
                     err "pipeline.config.bridgeRowStaging.retargetClaimedTwice"
-                        (String.concat "" [ "bridge retarget(s) claimed by more than one staging declaration: "; String.concat ", " claimedTwice ]))
+                        (String.concat "" [ "bridge retarget(s) claimed by more than one staging declaration: "; String.concat ", " claimedTwice ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent

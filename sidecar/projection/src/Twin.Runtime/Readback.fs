@@ -1,4 +1,9 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE-MUTATION: the twin read-back adapter's ADO.NET reader loop
+//   (the sys.views probe) — CommandText assignment, the reader's mutable
+//   advance flag, and the HashSet accumulator are the ADO-boundary idiom for
+//   a single-pass result drain, isolated in this module; the catalog the
+//   kernel sees is the immutable Set/Catalog this module returns.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

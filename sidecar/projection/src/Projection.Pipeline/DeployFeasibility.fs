@@ -1,4 +1,10 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: the deploy-feasibility gate's fixed-point
+//   batch-apply driver at the ADO.NET boundary — the pending/applied/
+//   progress/lastErrors loop state IS the dependency-blind fixed-point
+//   algorithm (re-apply until no batch makes progress), and CommandText/
+//   CommandTimeout assignment is the ADO idiom; the findings report the
+//   caller consumes is immutable.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
