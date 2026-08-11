@@ -128,7 +128,9 @@ Then invoke `change-author` with this spec. You are done.
 - **Do not declare a state-variable "known" to avoid asking.** A guessed row state defeats the
   entire system. `unknown — prove it` is always a valid, honest answer — it is the *default*.
 - **Every file you reference lives under `ssdt-agent/`.** You don't write files here, but if you
-  capture the developer's request anywhere, it stays in this tree.
+  capture the developer's request anywhere, it stays in this tree — the specified home for a
+  captured change-spec is `estate/handoffs/<change-id>/` (transient; swept when the change's
+  pull request merges — see `estate/README.md`).
 
 ## Adaptive shortcut
 If the request is an unmistakable, no-business-choice loosening (e.g. "make Email optional" =

@@ -119,7 +119,7 @@ claim in it becomes a **proof obligation** you discharge or reject:
 |---|---|
 | which **persona authored** the change — developer or lead | selects the mode: a developer's authored change runs the gate (all four dispositions); the lead's own change runs sparring (argue, no return to the author) |
 | the named **operation(s)** + target object | resolves to which per-op + `_index` skills bound the review |
-| **how it ships** + **who must review, and why** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line (large table / first-time) actually holds |
+| **how it ships** + **who must review, and why** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line against the estate ledger — `estate/operations.md` answers first-time, `estate/row-tiers.md` answers the tier; a line the ledger contradicts is a packet defect |
 | the **generated delta** (`/Action:Script`) | re-generate it on your DB — same delta, or the claim is stale |
 | the **proof** — the named Strict block + row counts, the Permissive snapshot, the clean Strict re-run | re-run the block and the clean publish; the counts must match; a proof that passed once for the author must pass for you |
 | the full **change set** — CREATEs, refactorlog, pre/post-deploy, multi-phase plan | scan for completeness: refactorlog for every rename, guarded MERGE, staged FK ending trusted |

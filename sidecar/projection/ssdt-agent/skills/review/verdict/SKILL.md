@@ -113,6 +113,10 @@ LEDGER — <op> on <object>
 A downgrade is never silent: a risk without its artifact in the ledger is not a named risk — it is an
 un-discharged obligation, and the change is not approved.
 
+The ledger's named file is **`../../../estate/refusals.md`** — blocks append newest-last, in
+exactly the format above; the CI gate holds the not-silent rule (every block carries its
+`disposition:` and `proof artifact:` fields).
+
 ## The escalation contract (the two routes, exactly)
 
 - **Returned to the author -> persona-1.** The finding is terse and peer-level, but it does not reach

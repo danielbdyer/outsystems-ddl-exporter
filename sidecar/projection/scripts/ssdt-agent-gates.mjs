@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ssdt-agent truth gates — citations | register | mirror | packaging | all.
+// ssdt-agent truth gates — citations | register | mirror | packaging | estate | all.
 //
 // The CI face of the ssdt-agent tree's ratchet rule (ENABLEMENT_PROGRAM.md §5:
 // no fix lands without the detector that would have caught its absence). Four
@@ -23,6 +23,10 @@
 //              escaped double-quoted scalar — the exact class a strict skill
 //              loader refuses), and the generated .claude/ packages are in
 //              sync (ssdt-agent-package.mjs check)
+//   estate     the estate ledgers stay machine-readable (consistent table
+//              rows), no in-flight phase sits past its window date, and
+//              every refusal block after the separator carries its
+//              disposition + proof artifact with no unfilled placeholders
 //
 // Node ≥ 18, zero dependencies. Run from anywhere; paths resolve from this
 // file's location.
@@ -272,6 +276,65 @@ function gatePackaging() {
 }
 
 // --------------------------------------------------------------------------
+// estate
+// --------------------------------------------------------------------------
+
+function tableRows(text) {
+  // Pipe-table rows outside code fences, split into cells; separator rows dropped.
+  return stripFences(text)
+    .split("\n")
+    .filter((l) => l.trim().startsWith("|"))
+    .map((l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim()))
+    .filter((cells) => !cells.every((c) => /^:?-+:?$/.test(c)));
+}
+
+function gateEstate() {
+  const estate = join(TREE, "estate");
+  if (!existsSync(estate)) { find(estate, "estate/ ledger directory is missing"); return; }
+
+  // Ledger tables stay machine-readable: every row matches its header's width.
+  for (const name of ["operations.md", "row-tiers.md", "in-flight.md"]) {
+    const p = join(estate, name);
+    if (!existsSync(p)) { find(p, "ledger file is missing"); continue; }
+    const rows = tableRows(read(p));
+    if (rows.length === 0) { find(p, "ledger has no header row"); continue; }
+    const width = rows[0].length;
+    rows.slice(1).forEach((cells, i) => {
+      if (cells.length !== width) {
+        find(p, `ledger row ${i + 1} has ${cells.length} cells; the header has ${width} — the ledger must stay machine-readable`);
+      }
+    });
+  }
+
+  // No in-flight phase sits past its window (column 6: `window closes`, YYYY-MM-DD).
+  const inflight = join(estate, "in-flight.md");
+  if (existsSync(inflight)) {
+    const today = new Date().toISOString().slice(0, 10);
+    for (const cells of tableRows(read(inflight)).slice(1)) {
+      const when = cells[5] ?? "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(when)) {
+        find(inflight, `in-flight row \`${cells[0] ?? "?"}\`: window-closes is not YYYY-MM-DD (\`${when}\`)`);
+      } else if (when < today) {
+        find(inflight, `in-flight row \`${cells[0] ?? "?"}\`: window closed ${when} — advance the phase or consciously re-date it with the reviewer's sign-off`);
+      }
+    }
+  }
+
+  // Every refusal block after the separator is complete and placeholder-free.
+  const refusals = join(estate, "refusals.md");
+  if (existsSync(refusals)) {
+    const after = read(refusals).split(/\n---\n/).slice(1).join("\n---\n");
+    for (const m of after.matchAll(/```[\s\S]*?```/g)) {
+      const block = m[0];
+      if (!/^\s*LEDGER — /m.test(block)) continue;
+      if (!/disposition:\s*\S/.test(block)) find(refusals, "refusal block is missing its `disposition:` line");
+      if (!/proof artifact:\s*\S/.test(block)) find(refusals, "refusal block is missing its `proof artifact:` line — a risk without its artifact is not a named risk");
+      if (block.includes("<")) find(refusals, "refusal block carries unfilled `<placeholder>` fields");
+    }
+  }
+}
+
+// --------------------------------------------------------------------------
 
 function main() {
   const which = process.argv[2] ?? "all";
@@ -279,6 +342,7 @@ function main() {
   if (which === "register" || which === "all") gateRegister();
   if (which === "mirror" || which === "all") gateMirror();
   if (which === "packaging" || which === "all") gatePackaging();
+  if (which === "estate" || which === "all") gateEstate();
   if (findings.length) {
     console.log(`ssdt-agent gates (${which}): ${findings.length} finding(s)`);
     for (const f of findings) console.log(`  ${f}`);

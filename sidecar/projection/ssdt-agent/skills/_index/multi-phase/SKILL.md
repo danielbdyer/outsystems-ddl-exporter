@@ -114,6 +114,15 @@ For the publish loop that runs each phase and shows the Phase-3 drop being block
 equality that licenses the drop) and the row-count / mapping probes, see
 `../../talk-to-local-sql/SKILL.md`.
 
+## The in-flight register (the forgotten Phase 2 is a red gate, not a memory)
+
+Every change this concern governs holds a row in **`../../../estate/in-flight.md`** from the
+merge of its first phase until the final phase ships: phase N of M, what ships next, and the
+date the current window closes. Advancing a phase updates the row; the CI gate fails the
+build on an expired window, so re-dating one is a conscious, reviewer-signed act; shipping
+the final phase deletes the row. A multi-phase change without its register row is incomplete
+— the same standing as a rename without its refactorlog entry.
+
 ## Handbook
 
 Cite by **filename**: **11-Multi-Phase-Evolution.md** (the additive→cutover→subtractive contract)

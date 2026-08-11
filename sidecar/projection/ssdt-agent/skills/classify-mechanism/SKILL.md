@@ -100,6 +100,13 @@ prior rollback to lean on).
 > the metadata edit becomes a blocking build" stops being ambushed at deploy time by a window they
 > did not plan for.
 
+Both added-scrutiny facts are **lookups against the estate ledger, never recollections**:
+`../../estate/operations.md` answers whether the op-slug has shipped on this estate before (no
+row → first-time, the line stands; a row → cite it and the line is discharged), and
+`../../estate/row-tiers.md` answers the table's row tier (`>1M` → the scale line stands, with
+the tier row as its basis). A scrutiny line that contradicts the ledger is a defect in one of
+the two — fixed in the same change, never waved through (`../../estate/README.md`).
+
 ## The three state-variable flips
 
 The **same operation** changes how it ships as the data crosses a threshold. This is the

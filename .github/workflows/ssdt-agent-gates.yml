@@ -41,7 +41,7 @@ on:
 
 jobs:
   truth-gates:
-    name: citations · register · mirror · packaging
+    name: citations · register · mirror · packaging · estate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

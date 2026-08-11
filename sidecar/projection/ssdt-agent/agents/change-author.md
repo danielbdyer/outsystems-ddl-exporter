@@ -289,7 +289,9 @@ its `Msg` and row counts + the clean Strict re-run), the full change set, the na
 reproduces every claim on its own isolated DB rather than trusting your word — and it is the source
 of the PR body (`skills/author-pr`; the Azure DevOps connector in `CONNECTORS.md`). Hand the packet
 to `reviewer` and let its disposition — approved, approved with a named risk, returned to the author,
-or escalated (`THE_RECORD.md` §6) — gate the change.
+or escalated (`THE_RECORD.md` §6) — gate the change. When the packet or the change-spec is captured
+as a file (a real handoff between separate sessions), its home is `estate/handoffs/<change-id>/` —
+transient, swept at merge; the pull request is the durable record (`estate/README.md`).
 
 ### The return leg — a change sent back to the author (you are the fix-renderer)
 When the reviewer returns the change to the author — a real defect fixable without the lead (a
