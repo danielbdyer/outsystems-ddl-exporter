@@ -23,8 +23,8 @@ on:
       - ".claude/skills/**"
       - ".claude/agents/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
-      - "sidecar/projection/scripts/ssdt-agent-gates.py"
-      - "sidecar/projection/scripts/ssdt-agent-package.py"
+      - "sidecar/projection/scripts/ssdt-agent-gates.mjs"
+      - "sidecar/projection/scripts/ssdt-agent-package.mjs"
       - ".github/workflows/ssdt-agent-gates.yml"
   push:
     branches: [main]
@@ -35,19 +35,19 @@ on:
       - ".claude/skills/**"
       - ".claude/agents/**"
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
-      - "sidecar/projection/scripts/ssdt-agent-gates.py"
-      - "sidecar/projection/scripts/ssdt-agent-package.py"
+      - "sidecar/projection/scripts/ssdt-agent-gates.mjs"
+      - "sidecar/projection/scripts/ssdt-agent-package.mjs"
       - ".github/workflows/ssdt-agent-gates.yml"
 
 jobs:
   truth-gates:
-    name: citations · register · mirror
+    name: citations · register · mirror · packaging
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Run the gates
-        run: python3 sidecar/projection/scripts/ssdt-agent-gates.py all
+        run: node sidecar/projection/scripts/ssdt-agent-gates.mjs all
 
   build-proving-ground:
     name: proving ground compiles

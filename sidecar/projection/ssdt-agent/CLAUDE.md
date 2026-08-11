@@ -13,7 +13,7 @@ hands `change-author` a change-spec to prove. A review request ("look at this sc
 "reproduce this change") is **Persona 2**: the `reviewer` agent over `skills/review/`.
 
 The tree is packaged into `.claude/skills/` and `.claude/agents/` as **generated dispatch
-pointers** (`sidecar/projection/scripts/ssdt-agent-package.py apply`; the `packaging` gate keeps
+pointers** (`sidecar/projection/scripts/ssdt-agent-package.mjs apply`; the `packaging` gate keeps
 them in sync). The canonical bodies live here, where their relative citations resolve — a
 packaged skill's body routes you to its in-tree file; follow it.
 
