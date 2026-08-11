@@ -12,6 +12,9 @@ description: Use when the developer says "rename the attribute", "change FirstNa
 > a refactorlog entry SSDT instead drops the old column and adds the new one, and every value in the
 > column is lost — stop and demand the refactorlog before this ships.
 
+> **Proven precedent:** `../../../sample-prs/rename-attribute.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "rename the attribute", "change FirstName to GivenName", "I renamed the field in Service Studio".
 

@@ -11,6 +11,9 @@ description: Use when the developer says "make Email required", "tick the Mandat
 > a pre-deployment backfill either; it needs a conscious gate decision, and a dev lead must
 > review it because existing data is affected. Prove before you classify.
 
+> **Proven precedent:** `../../../sample-prs/make-mandatory.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "make Email required", "tick the Mandatory checkbox on this attribute".
 

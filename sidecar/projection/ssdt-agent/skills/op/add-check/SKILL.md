@@ -10,6 +10,9 @@ description: Use when the developer says "Total must be positive", "Status has t
 > a single schema change, applied in place, when every existing row already satisfies the predicate.
 > Prove zero violations on a disposable copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/add-check.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "Total must be positive", "Status has to be one of these values", "age can't be negative" — any
 business rule the developer wants enforced at the data layer.

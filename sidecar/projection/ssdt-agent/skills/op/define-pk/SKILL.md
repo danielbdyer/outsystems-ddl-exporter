@@ -12,6 +12,9 @@ description: Use when the developer says "set the primary key", "the Identifier"
 > single in-place schema change, but a dev lead or an experienced developer should review it,
 > because the build runs over live data. Prove the key is unique and non-NULL before you classify.
 
+> **Proven precedent:** `../../../sample-prs/define-pk.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "the Identifier", "set the primary key", "make this the unique key for the entity", "use a composite
 key on OrderId + LineNumber".

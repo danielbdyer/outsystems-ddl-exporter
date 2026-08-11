@@ -113,6 +113,27 @@ sqlpackage /Action:Publish \
 > For a **parallel** run, every command above also carries `/TargetDatabaseName:PG_<testId>_<rand>`
 > and points at a scratch copy of the tree — see `self-test/PROTOCOL.md`.
 
+### On the Twin substrate (when `proving-ground/twin.json` + the `twin` CLI are present)
+
+The loop is unchanged; only the BEFORE state and the publish target move. Replace step 1 (deploy the
+current CREATEs + seed on the warm container) with `twin up` from `proving-ground/`, which stands up
+the deterministic base on `localhost,21434 / twin` (DacFx, no sqlpackage — see
+`../talk-to-local-sql/SKILL.md`). Then point every `sqlpackage` publish at the Twin by overriding the
+profile's connection:
+
+```bash
+sqlpackage /Action:Publish \
+  /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
+  /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml \
+  /TargetConnectionString:"Server=localhost,21434;Initial Catalog=twin;User ID=sa;Password=Twin@Strong1;TrustServerCertificate=True;Encrypt=False"
+```
+
+The `/TargetConnectionString` overrides the profile's `TargetConnectionString`; the block/smart-default
+settings (Strict vs Permissive) still come from the profile. Obey the isolation rules in
+`../talk-to-local-sql/SKILL.md`: the Twin sets BEFORE, then only sqlpackage touches `twin` until
+teardown (`twin reset`). The Twin is the base data, never the verdict — the refactorlog / rename /
+pre-post-deploy semantics are proven by *this* sqlpackage publish on top of it.
+
 ## Reading a publish outcome — the block lives in the TEXT, never the exit code
 
 A blocked `sqlpackage` publish does **not** reliably exit non-zero — and through any pipeline
@@ -415,9 +436,21 @@ Both aim at the **same disposable copy**. They differ only in the block + smart-
 Why each setting: `BlockOnPossibleDataLoss=True` mirrors prod's refusal — it is the block to trip
 (and, per the finding above, it fires on table-has-rows for a `NULL -> NOT NULL` change, not on the
 column's NULL count). `GenerateSmartDefaults=False` means SSDT will **not** quietly paper over a
-NOT-NULL gap, so the block surfaces instead of a silent stamp. `DropObjectsNotInSource=True` is safe
-**because this copy is disposable** — drop-by-absence is visible here, where production never would
-allow it. `IgnoreColumnOrder=True` keeps cosmetic ordering from masquerading as a real change.
+NOT-NULL gap, so the block surfaces instead of a silent stamp. `DropObjectsNotInSource=True` is the
+**diagnostic posture**, safe only because this copy is disposable — it makes drop-by-absence
+*visible* here. `IgnoreColumnOrder=True` keeps cosmetic ordering from masquerading as a real change.
+
+**The posture split (read this before carrying any drop/rename finding forward).** Production runs
+the opposite drop axis — `DropObjectsNotInSource=False` — and there, absence produces **no drop at
+all**: a renamed or removed object becomes a **phantom**. A header-edit rename with no refactorlog
+returns `Ok` and creates the new table **empty**, stranding the populated original; removing an
+entity's file drops nothing — the table and its rows survive the green publish. Both are proven at
+the production posture in the Twin corpus (`../../sample-prs/rename-entity.md`,
+`../../sample-prs/delete-entity.md`, `../../sample-prs/move-schema.md`; DacFx 162.5.57). So: the
+block and smart-default axes of Strict mirror production; **the drop axis deliberately does not** —
+never present the diagnostic posture's DROP+CREATE as the production outcome. The production drop is
+always an explicit, ordered pre-deployment script; the diagnostic posture exists to make the
+would-be drop visible on the disposable copy.
 
 **Permissive — the profile that proceeds past the block to reveal the consequence**
 (`proving-ground/profiles/ProvingGround.Permissive.publish.xml`): identical to Strict except the
@@ -453,7 +486,15 @@ proves the refusal; Permissive, only after, shows the consequence.
 
 ## Connector points
 
-The hand-authored `SampleCatalog` can be replaced by the F# engine's `SqlprojEmitter` /
+The substrate of record is the **Twin** (`../../../THE_TWIN.md`) when present: `twin up` mints a
+deterministic, evidence-profiled dataset over the estate definition, evolving with the schema, and
+the proving loop above runs against it **unchanged**. The trust is the Twin's own determinism
+(`twin check` = π∘σ≈id, T1 byte-identical, S-stable) — the base data is reproducible by
+construction, so the proof rests on a dataset a reviewer regenerates identically without re-running
+the agent. See `../talk-to-local-sql/SKILL.md`'s substrate-of-record section; the hand-authored
+`SampleCatalog` is the fallback.
+
+The hand-authored `SampleCatalog` can also be replaced by the F# engine's `SqlprojEmitter` /
 `DacpacEmitter` / `PostDeployEmitter` output (in `src/Projection.Targets.SSDT`) from a **real**
 OutSystems catalog — same proving loop, real schema. The engine emits the artifacts but never
 *drives* `sqlpackage`; **this skill is that missing driver**, kept as agent-run commands by

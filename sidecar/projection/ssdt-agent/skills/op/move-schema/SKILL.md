@@ -13,15 +13,21 @@ description: Use when the developer says "move the entity to the archive schema"
 > every fully-qualified `schema.Table` reference must follow the move, so the running application must
 > change to keep working.
 
+> **Proven precedent:** `../../../sample-prs/move-schema.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "move the entity to the archive schema", "put this table under a different namespace/module".
 
 ## SSDT meaning
 Change the schema in the `CREATE TABLE` header. With a **refactorlog** entry SSDT treats it as a
 move and preserves the data; the cleaner, `object_id`-preserving path is a script:
-`ALTER SCHEMA target TRANSFER source.Table`. Without a refactorlog entry, SSDT reads it as **drop
-the old table and create the new** — the rows are lost, the same shape as a rename with no
-refactorlog entry. Never write `ALTER COLUMN` here.
+`ALTER SCHEMA target TRANSFER source.Table`. Without a refactorlog entry SSDT sees two different
+addresses, and the outcome follows the deploy's drop posture — the same split as a rename with no
+refactorlog entry: under the **production posture** (`DropObjectsNotInSource=False`, proven on the
+Twin) the publish returns Ok and performs a **phantom move** — the table created empty under the
+new schema, the populated original stranded under the old one; under the **diagnostic posture**
+the delta is drop-and-create and the rows are lost. Never write `ALTER COLUMN` here.
 
 ## The named trap
 Same family as a rename with no refactorlog entry — no refactorlog → `DROP`+`CREATE`, and every
@@ -34,8 +40,11 @@ just an address. Do not re-derive it here.
   refactorlog carries the move, so the data is preserved and `object_id` is unchanged.
 - prefer `object_id` preservation / large table → ships as a scripted change (`ALTER SCHEMA
   TRANSFER`) — one operation, data untouched, `object_id` preserved.
-- refactorlog MISSING → SSDT reads it as drop-and-create and the rows are lost — STOP, same remedy
-  as a rename with no refactorlog entry (see `../../_index/identity-and-refactorlog/SKILL.md`).
+- refactorlog MISSING → the move does not happen: a phantom under the production posture (empty
+  table at the new address, populated original stranded — proven:
+  `../../../sample-prs/move-schema.md`), drop-and-create data loss under the diagnostic posture —
+  STOP, same remedy as a rename with no refactorlog entry (see
+  `../../_index/identity-and-refactorlog/SKILL.md`).
 
 ## Prove it
 Script the delta. A move must be `sp_rename` (schema-qualified) or your authored `ALTER SCHEMA

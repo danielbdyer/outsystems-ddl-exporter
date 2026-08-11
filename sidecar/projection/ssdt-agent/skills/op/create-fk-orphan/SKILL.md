@@ -7,6 +7,9 @@ description: Use when the developer says "add a reference to Customer" but the d
 
 > **Default (provisional — the data decides).** Ships as a scripted change in a single release — the orphans force a reconcile before the constraint can be honest, and that reconcile cannot be expressed as a table definition. A dev lead must review this: existing data is modified and a cross-table relationship is added. Prove before you classify. If the reconcile must stage across releases, it ships across releases instead, so the running application keeps working while the change is in flight.
 
+> **Proven precedent:** `../../../sample-prs/create-fk-orphan.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 Same as create-fk-clean ("add a reference to Customer", "Order belongs to a Customer"), but some child rows point at parents that do not exist.
 

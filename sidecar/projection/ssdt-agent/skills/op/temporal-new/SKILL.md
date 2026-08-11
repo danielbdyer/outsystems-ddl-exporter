@@ -13,6 +13,9 @@ description: Use when the developer says "I want full history on this new entity
 > two period columns — clean. Prove the clean publish on a disposable copy before classifying.
 > (Converting an EXISTING populated table is a different op — route to `../temporal-convert/SKILL.md`.)
 
+> **Proven precedent:** `../../../sample-prs/temporal-new.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "I want full history on this new entity", "keep every version of every row (new table)", "point-in-time history from birth".
 

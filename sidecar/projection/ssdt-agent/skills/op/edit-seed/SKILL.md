@@ -11,6 +11,9 @@ description: Use when the developer says "add 'Refunded' to the Status list", "c
 > application is unaffected. Prove the redeploy is silent and the label change touches exactly one row
 > before classifying.
 
+> **Proven precedent:** `../../../sample-prs/edit-seed.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add 'Refunded' to the Status list", "change the label on this lookup value", "we have a new order type".
 

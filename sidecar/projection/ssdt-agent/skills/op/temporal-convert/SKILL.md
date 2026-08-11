@@ -13,6 +13,9 @@ description: Use when the developer says "add full history to our existing popul
 > values on a disposable copy before classifying. (A new entity is `../temporal-new/SKILL.md`, a
 > single release.)
 
+> **Proven precedent:** `../../../sample-prs/temporal-convert.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add full history to our existing populated entity", "turn on system versioning for Customer which already has data", "make this live table temporal".
 

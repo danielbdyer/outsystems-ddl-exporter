@@ -11,6 +11,9 @@ description: Use when the developer says "change to a bigger number", "INT to BI
 > since the running application is unaffected. Prove the direction is widening — not
 > value-reshaping — before classifying it.
 
+> **Proven precedent:** `../../../sample-prs/retype-implicit.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "change to a bigger number", "INT to BIGINT", "make this VARCHAR into NVARCHAR".
 

@@ -19,8 +19,13 @@ consuming that data. Where intuition and reality disagree, these PRs teach reali
   the block text, the row counts, the `sys.*` facts, the content digests — pasted verbatim, never
   asserted.
 - **Where the proofs live.** `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` (11 classes, 41
-  facts, all green). Run one class:
+  facts, all green). Run one class from `sidecar/projection/`:
   `dotnet test tests/Twin.Tests.Integration/Twin.Tests.Integration.fsproj --filter "FullyQualifiedName~SamplePrTighteningTests"`.
+- **The engine pair, reconciled 2026-08-11.** This corpus is proven on **DacFx 162.5.57** — the
+  library `sqlpackage` wraps; the proving-ground runbook and the golden were captured on
+  **sqlpackage 170.4.83**. No divergence between the two has been observed on these findings.
+  Every proof stamps the engine and version it actually ran, and an engine bump re-runs the
+  `SamplePr*` facts before the findings are re-trusted.
 
 ## Read these first — the fidelity findings that surprise people
 
@@ -57,7 +62,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 | [make-optional](./make-optional.md) | uncheck Is Mandatory | NOT NULL → NULL applies clean |
 | [make-mandatory](./make-mandatory.md) | check Is Mandatory | **blocks** a populated table (row-presence guard) even at 0 NULLs; empty applies |
 | [widen](./widen.md) | enlarge a Text Attribute's length | applies clean; every value preserved (digest identical) |
-| [narrow](./narrow.md) | shrink a Text Attribute's length | over-length data **blocks**; a width that fits applies |
+| [narrow](./narrow.md) | shrink a Text Attribute's length | refused on any **populated** table (row-presence) even when every value fits; the `MAX(LEN)` proof decides the remedy — relax the gate, or reconcile over-length data first |
 | [retype-implicit](./retype-implicit.md) | widen a numeric type | applies in place; every value preserved |
 | [retype-explicit](./retype-explicit.md) | lossy type change | narrowing **blocks** (overflow); widening applies |
 | [delete-attribute](./delete-attribute.md) | delete an Attribute | column drop **blocks** on a populated table; the scripted DROP is the irreversible step |

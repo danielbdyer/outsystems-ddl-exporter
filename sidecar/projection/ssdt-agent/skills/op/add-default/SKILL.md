@@ -10,25 +10,42 @@ description: Use when the developer says "give this attribute a default value", 
 > place — adding a default never touches existing row values. Prove it on a disposable copy before
 > classifying.
 
+> **Proven precedent:** `../../../sample-prs/add-default.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "give this attribute a default value", "new rows should default to Active", "everything new should
 start as Pending".
 
 ## SSDT meaning
 A named default constraint on the column — `CONSTRAINT DF_<Table>_<Col> DEFAULT (<value>) FOR <Col>`
-(or inline). SSDT emits `ADD CONSTRAINT`. It affects **future inserts only** — it does NOT backfill
-existing rows.
+(or inline). Two shapes share this vocabulary, and they behave **oppositely** on existing rows:
+
+- **On an EXISTING column** (this file's primary): SSDT emits `ADD CONSTRAINT`. It affects
+  **future inserts only** — it does NOT backfill existing rows.
+- **Riding a NEW `NOT NULL` column** (the `add-mandatory` remedy): the
+  `ADD [Col] ... NOT NULL CONSTRAINT ... DEFAULT` **backfills every existing row from the default
+  as the column lands** — that stamp is exactly why a populated table applies clean (proven:
+  `../../../sample-prs/add-default.md`, DacFx 162.5.57).
 
 ## The named trap
 The **unnamed default**: letting SSDT auto-name the constraint (`DF__Table__Col__<hash>`) yields a
 name that differs per environment, and diffing and refactoring become fragile — always name it
-`DF_<Table>_<Col>`. Second surprise: the default does not fill existing NULLs. It touches only new
-rows; backfilling the existing rows is a separate op (see `../make-mandatory/SKILL.md` for the
-NOT-NULL-with-backfill path).
+`DF_<Table>_<Col>`. Second surprise: on an **existing** column the default does not fill existing
+NULLs — it touches only new rows; backfilling the existing rows is a separate op (see
+`../make-mandatory/SKILL.md` for the NOT-NULL-with-backfill path). The mirror surprise: on a
+**new** NOT NULL column the engine does the opposite and stamps every existing row (the second
+shape above) — the two shapes are different operations wearing one word, and the record must name
+which one shipped.
 
 ## How it flips (the specifics only)
-- adding a default → ships as a single schema change, applied in place; any team member can review
-  it, in any data state.
+- adding a default to an existing column → ships as a single schema change, applied in place; any
+  team member can review it, in any data state — no existing row is touched.
+- the default rides a NEW mandatory column (the `add-mandatory` remedy) → ships as a single schema
+  change, applied in place, **and the default stamps every existing row as the column lands**
+  (proven: `../../../sample-prs/add-default.md`). The stamped values are data the record names; a
+  dev lead or an experienced developer reviews it, because the application must now supply or
+  accept that value.
 - the developer also wants existing rows backfilled → a separate op. It ships as one release: the
   schema change, then a post-deployment script that runs an idempotent UPDATE after it lands (see
   `../../_index/idempotent-seed/SKILL.md`). If the column is also becoming NOT NULL, follow

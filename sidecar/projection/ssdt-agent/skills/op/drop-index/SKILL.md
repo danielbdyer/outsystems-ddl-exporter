@@ -11,6 +11,9 @@ description: Use when the developer says "we don't need that index anymore", "re
 > query), not structural (lost rows), so the honest proof lives outside the dacpac: usage
 > evidence, not a clean publish. Prove "unused" before classifying.
 
+> **Proven precedent:** `../../../sample-prs/drop-index.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "we don't need that index anymore", "remove the index, it's not used".
 

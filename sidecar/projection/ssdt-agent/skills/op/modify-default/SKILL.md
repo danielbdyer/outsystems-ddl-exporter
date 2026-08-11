@@ -10,6 +10,9 @@ description: Use when the developer says "change the default value", "new orders
 > in place: SSDT does a DROP-then-ADD for a change, or a plain DROP to remove it. Prove it on a
 > disposable copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/modify-default.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "change the default value", "new orders should default to Shipped now, not Pending", "stop
 defaulting this attribute".

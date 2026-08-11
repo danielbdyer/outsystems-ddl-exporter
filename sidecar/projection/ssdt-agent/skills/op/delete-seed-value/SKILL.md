@@ -11,6 +11,9 @@ description: Use when the developer says "delete the Cancelled status value", "r
 > retirement of a value nothing points at. Prove the reference before classifying: a hard DELETE is
 > refused when fact rows or the application point at the value.
 
+> **Proven precedent:** `../../../sample-prs/delete-seed-value.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "delete the Cancelled status value", "retire this lookup value", "remove this order type from the list".
 

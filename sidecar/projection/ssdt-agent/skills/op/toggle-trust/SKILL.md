@@ -12,6 +12,9 @@ description: Use when the developer says "trust the constraint now that the data
 > change; who must review is inherited from the change this step serves. Prove the *ending* trust
 > state before classifying it as a schema change.
 
+> **Proven precedent:** `../../../sample-prs/toggle-trust.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "trust the constraint now that the data is clean", "turn the FK back on", "temporarily disable the
 check so this load can run".

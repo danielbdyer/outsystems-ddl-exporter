@@ -10,6 +10,9 @@ description: Use when the developer says "this attribute should be unique", "no 
 > Ships as a single schema change, applied in place, when the data already satisfies uniqueness.
 > Prove no duplicates — and no multi-NULL on a nullable column — before classifying.
 
+> **Proven precedent:** `../../../sample-prs/add-unique.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "this attribute should be unique", "no two customers can share an email", "stop duplicate codes".
 

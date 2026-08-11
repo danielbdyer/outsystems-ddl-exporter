@@ -10,6 +10,9 @@ description: Use when the developer says "add a Status lookup", "create a static
 > this — the change is additive and the running application is unaffected. Prove the redeploy is
 > silent before the classification holds.
 
+> **Proven precedent:** `../../../sample-prs/create-static-seed.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add a Status lookup", "create a static entity for order types", "a reference table with these fixed values", "a lookup with Active/Inactive".
 

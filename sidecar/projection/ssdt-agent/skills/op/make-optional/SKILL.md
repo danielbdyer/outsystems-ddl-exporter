@@ -10,6 +10,9 @@ description: Use when the developer says "make this attribute optional", "unchec
 > assumes the column is always populated; a dev lead or an experienced developer should review it
 > when consumers must change to tolerate a NULL. A loosening never blocks the deployment.
 
+> **Proven precedent:** `../../../sample-prs/make-optional.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "make this attribute optional", "uncheck Mandatory", "let MiddleName be blank now".
 

@@ -12,6 +12,9 @@ description: Use when the developer says "archive old orders", "move the histori
 > the volume is large. Create destination → migrate (batched) → verify counts. Prove it on a
 > disposable copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/archive-entity.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "archive old orders", "move the historical rows out to an archive table".
 

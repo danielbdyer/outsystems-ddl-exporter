@@ -19,6 +19,26 @@ worked commands; read them, then run them in order.
 > That is how a hundred provers share the warm container without colliding on the same `.sql`,
 > the same `bin/`, or the same DB.
 
+## The Twin substrate (preferred) vs this warm-container runbook
+
+`twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
+evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present,
+prefer it for the BEFORE state:
+
+```bash
+cd ssdt-agent/proving-ground     # from sidecar/projection/
+twin up      # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+             # applies Data/Seed.sql; mints deterministically (no sqlpackage). `twin reset` tears down.
+```
+
+The Twin establishes the deterministic BEFORE state; the sqlpackage proving loop below then targets
+`localhost,21434 / twin` (see `../skills/talk-to-local-sql/SKILL.md` §"substrate of record" and
+`../skills/prove-on-dacpac/SKILL.md` §"On the Twin substrate"). This warm-container runbook
+(`localhost,11433 / ProvingGround`) is the **fallback** when the Twin is not wired. The Twin gives
+the sample its reproducible base; the flip-twin variants (empty / clean / violating) stay
+**seed-based** here — the Twin's scenario/pin flip mechanism is for synthetically-minted estates,
+not the static seed.
+
 ## 0 — The working directory and the runtime shim (REQUIRED)
 
 Run everything below from **`sidecar/projection/`** — the paths in the commands (`scripts/…`,
@@ -207,6 +227,25 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 > table — without empirically discovering on the disposable copy that SSDT STILL blocks it — has
 > classified from stale recipe text and the run FAILS. Same edit, three seeds, decided by
 > ROW PRESENCE.
+
+## Deployment-script class folders (the folder is the contract)
+
+The proving ground carries the deployment-script class folders the lifecycle rails require
+(`../skills/deploy-scripts/SKILL.md`) so a script's *permanence class is its location*:
+
+- `Migrations/` · `ReferenceData/` — **permanent · idempotent** (model-restoring backfills, guarded
+  reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
+- `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
+  or the phase that ends it). Swept on the deprecation train once prod-confirmed.
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). Principal review; the four
+  obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+
+Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
+`OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in
+`Script.PostDeployment.sql` are **commented** so the standing seed the self-test pins is not
+perturbed — when you prove a real script, author it in the right folder and add its include under
+the matching class heading. The `SampleCatalog.sqlproj` reclassifies all four folders' `*.sql` out
+of the schema build (they are data, not model).
 
 ## Trap watch (handbook 16 = §19) — catch these in the delta, not after
 

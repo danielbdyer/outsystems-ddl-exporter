@@ -10,6 +10,9 @@ description: Use when the developer says "change the index to cover these column
 > claim over the data — prove no duplicates before classifying; with duplicates present it flips to a
 > pre-deployment de-dupe plus the declarative change.
 
+> **Proven precedent:** `../../../sample-prs/modify-index.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "change the index to cover these columns too", "make this index unique so we stop getting duplicates", "the index should be on a different attribute now".
 

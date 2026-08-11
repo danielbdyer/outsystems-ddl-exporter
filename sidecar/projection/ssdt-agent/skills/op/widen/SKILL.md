@@ -9,6 +9,9 @@ description: Use when the developer says "make the field longer", "increase Emai
 > no data is read or written. Any team member can review it: the change is additive and the running
 > application is unaffected. Prove before you classify — the couplings below can move both findings.
 
+> **Proven precedent:** `../../../sample-prs/widen.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "make the field longer", "increase Email to 256", "give Total more precision".
 

@@ -7,6 +7,9 @@ description: Use when the developer says "add an index on Customer.Email", "make
 
 > **Default (provisional — the data decides).** Ships as a single declarative schema change, applied in place — additive, nothing lost. Any team member can review it: the change is additive and the running application is unaffected. But the *build cost* — a write-blocking lock whose duration scales with row count — lives in the data, not the `.sql`.
 
+> **Proven precedent:** `../../../sample-prs/add-index.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add an index on Customer.Email", "make this attribute searchable", "the list screen is slow, can we index it".
 

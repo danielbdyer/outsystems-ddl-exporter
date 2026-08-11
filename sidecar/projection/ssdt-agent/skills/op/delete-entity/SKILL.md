@@ -11,14 +11,20 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 > this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the
 > release count — one drop in one release still requires a principal. Prove before you classify.
 
+> **Proven precedent:** `../../../sample-prs/delete-entity.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "delete the Entity", "drop the table, we don't need it", "remove the old AuditLog".
 
 ## SSDT meaning
-Remove the `.sql` file; with `DropObjectsNotInSource=True` SSDT emits `DROP TABLE
-[schema].[Name]`. On a populated table `BlockOnPossibleDataLoss=True` **blocks** the publish —
-that block is the safety proof, not a failure. In production `DropObjectsNotInSource` is usually
-**False**, so the drop needs an explicit pre-deployment `DROP`, not mere absence.
+Remove the `.sql` file; with `DropObjectsNotInSource=True` (the diagnostic posture) SSDT emits
+`DROP TABLE [schema].[Name]`, and on a populated table `BlockOnPossibleDataLoss=True` **blocks**
+the publish — that block is the safety proof, not a failure. In production
+`DropObjectsNotInSource` is **False**, and there removing the file alone does **nothing**: a
+**phantom removal** — the table and every row survive and the publish returns Ok (proven:
+`../../../sample-prs/delete-entity.md`, DacFx 162.5.57). The drop the change intends is therefore
+an explicit pre-deployment `DROP`, never mere absence.
 
 ## The named trap
 Dropping a table with inbound **foreign keys** — the drop fails until they are dropped first. The
@@ -38,11 +44,15 @@ for why it is data-blind; do not re-derive the guard here.
   may block writes or run long, and the operation has not been performed here before
 
 ## Prove it
-A Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exist — show that block with
-the row count as the safety proof. Then prove the ordered remedy (drop foreign keys → drop) on a
-disposable copy of Dev. Run `sys.dm_sql_referencing_entities` against the table to
-enumerate what still points at it. For the publish loop, see `../../prove-on-dacpac/SKILL.md`;
-probes, `../../talk-to-local-sql/SKILL.md`.
+Two postures, two proofs. Under the **diagnostic posture** (drop-not-in-source on the disposable
+copy) a Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exist — show that
+block with the row count as the safety proof of what would be lost. Under the **production
+posture**, prove the phantom: removing the file publishes green and the table survives untouched
+— which is why the shipped change is the explicit, ordered pre-deployment script, whose safety
+rests on the enumerated references and the principal's review, not on an engine guard. Then prove
+the ordered remedy (drop foreign keys → drop) on a disposable copy of Dev. Run
+`sys.dm_sql_referencing_entities` against the table to enumerate what still points at it. For the
+publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
 You asked to delete the table. Mechanically this is one drop in one release — but it's the gravest

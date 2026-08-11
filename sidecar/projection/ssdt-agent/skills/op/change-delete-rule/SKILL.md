@@ -12,6 +12,9 @@ description: Use when the developer changes the Delete Rule on a reference — "
 > no existing data is modified. Prove the delta and the cascade's dependency scope on a disposable
 > copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/change-delete-rule.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 The **Delete Rule** on the reference — **Protect** ("can't delete a Customer with Orders"),
 **Ignore** ("let the Customer go, leave the Orders"), **Delete** ("delete the Customer and its

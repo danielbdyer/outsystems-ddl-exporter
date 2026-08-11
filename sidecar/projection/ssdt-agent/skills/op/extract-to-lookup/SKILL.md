@@ -12,6 +12,9 @@ description: Use when the developer says "turn this text Status column into a pr
 > cross-table relationship is added. Prove the mapping is total before the drop, so no value silently
 > becomes NULL.
 
+> **Proven precedent:** `../../../sample-prs/extract-to-lookup.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "turn this text Status column into a proper Status entity", "these string values should be a lookup so we stop typos".
 

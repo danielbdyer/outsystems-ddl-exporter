@@ -11,6 +11,9 @@ description: Use when the developer says "move the Region attribute from Custome
 > lead must review this: existing data is moved between tables and the source column is dropped. Prove
 > the relationship is 1:1 before copying anything, so no moved value is ambiguous.
 
+> **Proven precedent:** `../../../sample-prs/move-attribute.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "move the Region attribute from Customer to Account", "this field is on the wrong entity", "relocate DiscountRate to the parent".
 

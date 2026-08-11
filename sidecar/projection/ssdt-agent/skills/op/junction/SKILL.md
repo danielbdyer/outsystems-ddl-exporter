@@ -12,6 +12,9 @@ description: Use when the developer says "make this a many-to-many", "a Student 
 > seeded with pairs referencing missing parents, the publish is blocked and it routes to
 > `../create-fk-orphan/SKILL.md`.
 
+> **Proven precedent:** `../../../sample-prs/junction.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "make this a many-to-many", "a Student can have many Courses and a Course many Students", "add a bridge entity".
 

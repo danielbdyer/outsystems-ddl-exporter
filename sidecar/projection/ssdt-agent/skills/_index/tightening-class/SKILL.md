@@ -130,6 +130,13 @@ PRESENCE** — the guard never looks at a value. Collapsing the two would re-los
 distinction the disposable-copy runs exist to teach. When a constraint op refuses on a *populated
 but clean* table, that is this class; when it refuses on *dirty data*, that is the claim.
 
+And not the same as **Optimistic NOT NULL on a NEW column** (`add-mandatory` / `audit-columns`):
+that block is a value-needed refusal the remedy **cures** — an explicit `DEFAULT` stamps every
+existing row as the column lands, and a populated table applies clean (proven:
+`../../../sample-prs/add-default.md`, DacFx 162.5.57). This class's row-presence guard clears for no
+remedy short of the logged relaxation or the multi-release restructure. The discriminator is one
+sentence: **if a DEFAULT can fix it, it is not the tightening class.**
+
 ## Handbook
 
 Cite by **filename** (offset +3): handbook **16** (= §19) for the Optimistic NOT NULL / Ambitious

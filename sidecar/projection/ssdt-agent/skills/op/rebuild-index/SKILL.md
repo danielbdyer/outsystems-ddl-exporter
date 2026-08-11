@@ -11,6 +11,9 @@ description: Use when the developer says "the index is fragmented, rebuild it", 
 > it to a scheduled maintenance job keyed to measured fragmentation. Prove the no-delta before
 > classifying it as a schema change.
 
+> **Proven precedent:** `../../../sample-prs/rebuild-index.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "the index is fragmented, rebuild it", "reorganize the index to fix performance", "run index maintenance on this table".
 

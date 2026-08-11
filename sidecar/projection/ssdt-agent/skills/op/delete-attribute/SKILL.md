@@ -13,6 +13,9 @@ description: Use when the developer says "remove the attribute", "delete the Leg
 > column is proven dead. A dev lead reviews at minimum; a principal must review once the column
 > holds data whose loss cannot be undone — *danger is not release-count.*
 
+> **Proven precedent:** `../../../sample-prs/delete-attribute.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "remove the attribute", "delete the LegacyCode field, we don't use it".
 

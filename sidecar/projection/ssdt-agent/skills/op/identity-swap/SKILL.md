@@ -16,6 +16,9 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 > `SET IDENTITY_INSERT` before promising anything — the danger drives the review need, not the
 > release count. Prove before you classify.
 
+> **Proven precedent:** `../../../sample-prs/identity-swap.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "turn on Auto Number for this entity's Id", "make the Id auto-increment", "stop auto-numbering, I
 want to set Ids myself".

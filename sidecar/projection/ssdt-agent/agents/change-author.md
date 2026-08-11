@@ -92,8 +92,10 @@ It is never your final answer for anything past a single in-place schema change 
 Invoke `skills/prove-on-dacpac`. It builds the `.sqlproj` to a dacpac, previews the **real**
 SSDT-generated delta (`/Action:Script`), then publishes to the disposable `ProvingGround` DB under:
 - **Strict** profile — the one that blocks on possible data loss (BlockOnPossibleDataLoss=True,
-  GenerateSmartDefaults=False, DropObjectsNotInSource=True). A clean Strict publish ⇒ the data does
-  not change how the change ships.
+  GenerateSmartDefaults=False, DropObjectsNotInSource=True — the first two mirror production; the
+  drop axis is the **diagnostic posture**: production runs DropObjectsNotInSource=False, where
+  absence is a phantom, not a drop — see prove-on-dacpac's posture split). A clean Strict publish ⇒
+  the data does not change how the change ships.
 - **Permissive** profile — run only when Strict is blocked; it lets the change proceed so the data
   hash can be captured before and after, showing *exactly* what the block was protecting against.
 
@@ -127,8 +129,12 @@ DB is warm before proving.
 - Delta shows a **shadow-table rebuild / drop-by-absence** → name it to the developer explicitly.
 
 ### 5. Remediate per the operation knowledge
-The proof told you what the data does; the operation entry tells you the fix. Author it as a
-**change set**, not a verbal recommendation:
+The proof told you what the data does; the operation entry tells you the fix. When the remedy is a
+**deployment script** (pre-deploy, post-deploy, or ad-hoc), walk `skills/deploy-scripts` — its six
+gates decide whether a script is needed at all (pure-declarative first — the precise change is often
+*no script*), where it goes, its permanence class and header (the folder is the contract), the
+idempotency proof, and its retirement condition. Author the fix as a **change set**, not a verbal
+recommendation:
 - **Pre-deploy backfill** (`Script.PreDeployment.sql`) — fill the NULLs / dedupe before the
   declarative NOT NULL or unique constraint lands. Use the business answer from intake for the value.
   (For make-mandatory, remember the backfill is *necessary but not sufficient* — pair it with the

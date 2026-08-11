@@ -14,6 +14,9 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 > dropped. Prove cardinality (1:1) before copying anything, so a one-to-many absorbed side cannot
 > silently drop rows.
 
+> **Proven precedent:** `../../../sample-prs/merge-tables.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "merge CustomerAddress back into Customer", "we don't need two entities, combine them", "fold the lookup into its parent".
 

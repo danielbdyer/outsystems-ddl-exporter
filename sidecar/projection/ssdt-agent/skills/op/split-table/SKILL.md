@@ -12,6 +12,9 @@ description: Use when the developer says "split Customer into Customer and Custo
 > cross-table relationship is added. Prove the source table is empty first — an empty source
 > collapses this to a single additive release any team member can review.
 
+> **Proven precedent:** `../../../sample-prs/split-table.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "split Customer into Customer and CustomerAddress", "pull the address fields out into their own entity", "break this entity up".
 

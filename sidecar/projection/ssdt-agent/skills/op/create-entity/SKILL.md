@@ -11,6 +11,9 @@ description: Use when the developer says "add a new Entity", "create a new table
 > is emitted verbatim, and no existing data is read or written. Prove the clean publish on a
 > disposable copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/create-entity.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add a new Entity", "create a new table", "I need a new CustomerPreference entity".
 

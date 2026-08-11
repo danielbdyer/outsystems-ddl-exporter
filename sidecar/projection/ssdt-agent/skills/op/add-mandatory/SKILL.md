@@ -11,6 +11,9 @@ description: Use when the developer says "add a required attribute", "add a Stat
 > Server fills every existing row from the default as the column is added. Populated with no
 > default: the deployment is blocked. Prove it on a disposable copy before classifying.
 
+> **Proven precedent:** `../../../sample-prs/add-mandatory.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add a required attribute", "add a Status field, everyone must have one".
 
@@ -32,12 +35,15 @@ is a genuine can't-insert-NULL on a *new* column, cured by supplying a value.
 - table empty → ships as a single schema change, applied in place; any team member can review it
   (no rows to fill, so the default is optional).
 - populated + explicit DEFAULT → ships as a single schema change, applied in place — SQL Server
-  fills existing rows from the default as the column is added; a dev lead or an experienced
-  developer reviews it, because adding a required attribute means the running application must
-  change to keep working.
-- populated, **no DEFAULT** → the deployment is blocked → add a default (back to a single in-place
-  schema change) or a **pre-deployment backfill** that fills the rows before the column lands; do
-  **not** let `GenerateSmartDefaults` silently decide the value.
+  fills existing rows from the default as the column is added (proven:
+  `../../../sample-prs/add-default.md` — every existing row stamped, the publish clean); a dev
+  lead or an experienced developer reviews it, because adding a required attribute means the
+  running application must change to keep working.
+- populated, **no DEFAULT** → the deployment is blocked (proven:
+  `../../../sample-prs/add-mandatory.md` — refused at 25 rows, applied on the emptied table) →
+  add a default (back to a single in-place schema change) or a **pre-deployment backfill** that
+  stages the rows before the column tightens; do **not** let `GenerateSmartDefaults` silently
+  decide the value.
 - >1M rows → **added scrutiny**: at production row counts the column add may run long or block
   writes (schedule a window).
 

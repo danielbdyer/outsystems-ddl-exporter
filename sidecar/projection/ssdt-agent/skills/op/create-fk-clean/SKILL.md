@@ -7,6 +7,9 @@ description: Use when the developer says "add a reference to Customer", "draw th
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place — one `ADD CONSTRAINT` that validates every existing child row against the parent; no data is modified. A dev lead must review this: a cross-table relationship is added. Prove zero orphans first. If orphans exist, this op does not apply — route to `../create-fk-orphan/SKILL.md`.
 
+> **Proven precedent:** `../../../sample-prs/create-fk-clean.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add a reference to Customer", "draw the relationship from Order to Customer", "Order belongs to a Customer".
 

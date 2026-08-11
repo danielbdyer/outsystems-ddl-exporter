@@ -10,6 +10,9 @@ description: Use when the developer says "shorten Code to 10 chars", "tighten th
 > On a populated table it is not a clean in-place change: the data-blind guard blocks it regardless
 > of whether every value fits. Prove first.
 
+> **Proven precedent:** `../../../sample-prs/narrow.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "shorten Code to 10 characters", "tighten this field", "reduce the precision".
 

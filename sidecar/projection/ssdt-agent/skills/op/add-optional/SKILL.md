@@ -10,6 +10,9 @@ description: Use when the developer says "add an optional attribute", "add a Mid
 > place — existing rows just get NULL, no data is read or written. Prove it on a disposable copy
 > before classifying.
 
+> **Proven precedent:** `../../../sample-prs/add-optional.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "add an optional attribute", "add a MiddleName field, it can be blank".
 

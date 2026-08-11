@@ -13,6 +13,9 @@ description: Use when the developer says "change the text field to a date", "sto
 > rather than reconciled, a principal must review it, because data is removed and cannot be undone.
 > Count the non-convertible rows before promising anything.
 
+> **Proven precedent:** `../../../sample-prs/retype-explicit.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "change the Text attribute to a Date", "make this an Integer", "store it as a number now".
 

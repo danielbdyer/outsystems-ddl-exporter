@@ -7,6 +7,9 @@ description: Use when the developer says "remove the reference", "we don't need 
 
 > **Default (provisional — the data decides; prove before you classify).** Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never blocks. A dev lead or an experienced developer should review this: dropping the constraint weakens referential integrity and can shift (regress) query plans.
 
+> **Proven precedent:** `../../../sample-prs/drop-fk.md` — the Twin-proven worked example
+> for this op; its Deployment evidence names the exact green fact.
+
 ## OutSystems phrasing
 "remove the reference", "we don't need the link to Customer anymore", "unhook these entities".
 
