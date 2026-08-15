@@ -25,6 +25,11 @@
     <Compile Include="MetadataExtractionError.fs" />
     <Compile Include="Retry.fs" />
     <Compile Include="MetadataSnapshotRunner.fs" />
+    <!-- Sink chapter S3: the snapshot codec — the persisted form of the
+         acquisition witness. Compiles after the runner (it round-trips
+         MetadataSnapshot); same assembly as the types because Targets.Json
+         cannot see this adapter's records (hexagonal direction). -->
+    <Compile Include="MetadataSnapshotCodec.fs" />
   </ItemGroup>
 
   <ItemGroup>
