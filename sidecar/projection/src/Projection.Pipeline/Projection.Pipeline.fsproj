@@ -51,6 +51,10 @@
          minus the wire). After SinkStore (the scan) and LiveModelRead (the
          docstring's parity referent); before Source.fs (ofSink calls it). -->
     <Compile Include="SinkRead.fs" />
+    <!-- SinkDiffView.fs (S10): the Catalog-grain view of a displacement
+         window — parse both editions, CatalogDiff.between. A derived view
+         over the journal, bounded by the erasure-witness inequality. -->
+    <Compile Include="SinkDiffView.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />

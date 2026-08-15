@@ -359,6 +359,7 @@
     <Compile Include="SinkDisplacementTests.fs" />
     <Compile Include="SinkStoreTests.fs" />
     <Compile Include="SinkReadTests.fs" />
+    <Compile Include="SinkDiffViewTests.fs" />
     <Compile Include="SinkFreshnessTests.fs" />
     <Compile Include="SinkBindingTests.fs" />
   </ItemGroup>

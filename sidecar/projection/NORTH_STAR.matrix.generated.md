@@ -10,8 +10,8 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tole
 
 | Class | Meaning | Count |
 |---|---|---:|
-| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 83 |
-| Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 7 |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 84 |
+| Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
 | **total axiom entries** | | **122** |
 
@@ -70,4 +70,4 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > eject). Both are out-of-ladder by construction (a non-round-trip dimension is a category
 > error in a round-trip `ToleratedDivergence`), named here per THE VECTOR Wave 5 honesty.
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=83/7/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 12 (3 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=84/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 12 (3 open)_

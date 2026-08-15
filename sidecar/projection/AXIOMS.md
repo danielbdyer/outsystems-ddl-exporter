@@ -2275,14 +2275,19 @@ structural assert.
 
 ## T19 — the sink journal replays: fold = latest at acquisition grain (the data sink chapter open, 2026-08-15)
 
-*Status: CANDIDATE (chapter open 2026-08-15 — the data sink chapter, `CHAPTER_SINK_OPEN.md`;
-promotion trigger: the journal FTC witness lands through `Ledger.replay` at slice S10).*
+*Status: LIVE (promoted at slice S10, 2026-08-15 — enumerated + FsCheck chain laws replay
+through `Ledger.replay` over the SinkJournal LedgerSpec instance; the erasure-witness
+inequality is executable in `SinkDiffViewTests`. One amendment at promotion, from S7's K2
+ruling: the store persists the snapshot RAW (wire order), so the replay equality is stated
+at CANONICAL grain — `canonical(latest) = fold` — the fold's states being canonical by
+construction.)*
 
 **Statement.** The sink journal is the acquisition grain's ledger (S8's fourth instance,
 after the chunk, episode, and marker grains): folding `applyDisplacement` over the journal's
-verified entries from the genesis snapshot reproduces the latest witnessed snapshot,
+verified entries from the genesis snapshot reproduces the latest witnessed snapshot at
+canonical grain,
 
-    fold ⊕ genesis (journal) = latest        (the FTC at acquisition grain)
+    fold ⊕ genesis (journal) = canonical(latest)        (the FTC at acquisition grain)
 
 with the displacement stream TOTAL over row identities (every row-identity delta yields
 exactly one record carrying its after-image fragment; the domain transition vocabulary is a

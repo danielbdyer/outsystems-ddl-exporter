@@ -31104,3 +31104,32 @@ acquisition had already paid for, erased with no lineage — are now a registere
   shifted eight pre-existing LINT-ALLOW entries' line numbers, so the delta gate now
   compares with line numbers normalized (file + rationale substance) — zero new
   violations remains the bar; the baseline recording (`825671c`) is unchanged.
+
+## 2026-08-15 — sink S10: the journal FTC goes live (T19 promotes; the erasure-witness inequality is executable)
+
+- **T19 promotes to LIVE** with one amendment inherited from S7's K2 ruling: the store
+  persists the snapshot RAW (wire order), so the replay equality is stated at CANONICAL
+  grain — `fold ⊕ genesis (journal) = canonical(latest)` (the fold's states are canonical
+  by construction; the raw at-rest form is the parity guarantee, the canonical form the
+  algebra's). Witnesses: an enumerated chain family (duplicates exercising mid-chain
+  CDC-silence; reorderings exercising non-monotone estates) plus an FsCheck chain law,
+  both through `Ledger.replay` over the SinkJournal LedgerSpec instance; the standing
+  CDC-silence and syncId-regression witnesses join the citation set.
+- **`SinkDiffView.catalogDiffOf`** (Pipeline): the Catalog-grain view of a displacement
+  window — parse both editions through the exact sink-read pipeline, `CatalogDiff.between`.
+  A derived VIEW over the journal, never a second truth. **The erasure-witness inequality
+  is executable and HELD on first run** over the mutation family (tombstone, logical
+  rename, removal, addition, sequence addition): `CatalogDiff.norm(view) ≤
+  SinkDisplacement.norm(journal)` — every catalog-visible change is carried by at least
+  one rowset-row displacement; the view can understate the journal (the named erasures),
+  never invent. S13's `diff sink:e@a sink:e@b` stands on this.
+- **R6 closed (second half):** the sink diff legs ride the ROWSET path exclusively
+  (`toBundle → parse SnapshotRowsets`), whose sequence identity is the
+  `OSSYS_SEQUENCE "schema.name"` synthesis — the `OS_SEQ` composite lives only on the
+  V1-json path no sink leg takes. Pinned: a sequence present in both editions carries one
+  identity and zero sequence channel counts.
+- **A builder fact recorded:** `OssysSnapshotBuilders.fullyPopulated` deliberately does
+  NOT parse (`catalog.reference.danglingTarget` — it is codec/displacement-oriented), so
+  the view laws run over a hand-built parseable edition family; the T19 chain laws keep
+  `fullyPopulated` (replay never parses). A parse-true builder family is a named follow-on
+  if a future law needs FsCheck at the catalog grain.

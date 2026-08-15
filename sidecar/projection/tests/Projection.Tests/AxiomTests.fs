@@ -1723,17 +1723,23 @@ let ``A46: refusal completeness — one ordering predicate on three surfaces, ce
 // A49 + T19 — the data sink chapter (2026-08-15) — candidates at chapter open
 // ===========================================================================
 
-[<Fact(Skip = "T19 candidate (Bucket C; the data sink chapter opens 2026-08-15 — \
-CHAPTER_SINK_OPEN.md; DECISIONS 'The data sink chapter opens'). The sink journal replays: \
-folding applyDisplacement over the journal's verified entries from the genesis snapshot \
-reproduces the latest witnessed snapshot (the FTC at acquisition grain); the displacement \
-stream is total over row identities; a zero-displacement sync appends nothing (the metadata \
-plane's CDC-silence); a regressing syncId is refused by name on the Ledger.resumeAdmit drift \
-channel; the derived Catalog view is bounded by the journal (the erasure-witness inequality). \
-Promotion trigger: slice S10 lands the live witnesses (FsCheck snapshot chains through \
-Ledger.replay over the SinkJournal LedgerSpec instance + the inequality law) — flip this \
-entry to citationOf pointers in that commit.")>]
-let ``T19: the sink journal replays — fold applyDisplacement from genesis = latest (FTC at acquisition grain)`` () = ()
+[<Fact>]
+let ``T19: the sink journal replays — fold applyDisplacement from genesis = latest (FTC at acquisition grain)`` () =
+    // Promoted at S10 (the data-sink chapter): the chain laws replay
+    // arbitrary witnessed chains through Ledger.replay over the SinkJournal
+    // LedgerSpec instance (the fourth instance); CDC-silence appends
+    // nothing; a regressing syncId refuses on the drift channel; and the
+    // derived Catalog view is bounded by the journal (the erasure-witness
+    // inequality) — the view can understate the journal, never invent.
+    // (Replay equality is stated at CANONICAL grain: the store persists the
+    // snapshot raw/wire-ordered per S7's K2 ruling; the fold's states are
+    // canonical by construction.)
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "T19 chain law: witnessing any snapshot chain, the journal replays to the latest canonical state"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "T19 chain law (FsCheck): random two-to-four-edition chains replay to the latest canonical state"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "a second unchanged witness is Unchanged and appends nothing (CDC-silence at the store)"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "journal: a regressing syncId refuses on the drift channel (sink.journal.syncRegression)"
+    citationOf "tests/Projection.Tests/SinkDiffViewTests.fs" "erasure witness: the view's norm never exceeds the journal's displacement count (per mutation)"
+    citationOf "tests/Projection.Tests/SinkDisplacementTests.fs" "CDC-silence at acquisition grain: diff a a = []"
 
 [<Fact>]
 let ``A49: acquisition is total; selection is pure (the three-way commuting law)`` () =

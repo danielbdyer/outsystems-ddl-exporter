@@ -11,6 +11,7 @@ open System.IO
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open FsCheck.Xunit
 open Projection.Adapters.OssysSql
 
 module SinkStoreTests =
@@ -247,3 +248,55 @@ module SinkStoreTests =
         // (AXIOMS A49 promotes over this at S9).
         Assert.Equal(MetadataSnapshotRunner.defaultParameters, SinkSyncRun.acquisitionParameters)
         Assert.True(SinkStore.isTotalAcquisition SinkSyncRun.acquisitionParameters)
+
+    // ------------------------------------------------------------------
+    // T19's chain law (S10): the journal replays — fold from genesis =
+    // latest, at canonical grain, for ANY witnessed chain.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    let ``T19 chain law: witnessing any snapshot chain, the journal replays to the latest canonical state`` () =
+        // An enumerated chain family over the fully-populated builder
+        // (16 rowsets, seed-varied): duplicates exercise CDC-silence
+        // mid-chain (an Unchanged witness appends nothing and must not
+        // disturb the fold); reorderings exercise non-monotone estates.
+        let chains =
+            [ [ 1 ]
+              [ 1; 1 ]
+              [ 1; 2 ]
+              [ 1; 2; 1 ]
+              [ 3; 3; 4; 5; 4 ]
+              [ 9; 8; 7; 6; 5; 4 ] ]
+        for chain in chains do
+            withTempStore (fun root ->
+                let digest = SinkStore.connDigest16 "server" "db"
+                for seed in chain do
+                    SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (OssysSnapshotBuilders.fullyPopulated seed) |> ignore
+                let verified =
+                    SinkJournal.load (SinkStore.journalPath root digest)
+                    |> Result.defaultValue []
+                    |> SinkJournal.admitChain
+                    |> Result.defaultWith (fun e -> failwithf "chain %A refused: %A" chain e)
+                let latest =
+                    match SinkStore.loadLatest root digest with
+                    | Some (_, snapshot) -> snapshot
+                    | None -> failwithf "chain %A left no witnessed state" chain
+                Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
+                    SinkDisplacement.canonical latest, SinkJournal.replay verified))
+
+    [<Property(MaxTest = 30)>]
+    let ``T19 chain law (FsCheck): random two-to-four-edition chains replay to the latest canonical state`` (a: int) (b: int) (c: int) =
+        withTempStore (fun root ->
+            let digest = SinkStore.connDigest16 "server" "db"
+            for seed in [ a; b; c ] do
+                SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (OssysSnapshotBuilders.fullyPopulated seed) |> ignore
+            let verified =
+                SinkJournal.load (SinkStore.journalPath root digest)
+                |> Result.defaultValue []
+                |> SinkJournal.admitChain
+                |> Result.defaultWith (fun e -> failwithf "chain refused: %A" e)
+            match SinkStore.loadLatest root digest with
+            | Some (_, latest) ->
+                Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
+                    SinkDisplacement.canonical latest, SinkJournal.replay verified)
+            | None -> Assert.Fail "no witnessed state")
