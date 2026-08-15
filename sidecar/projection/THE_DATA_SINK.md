@@ -1,12 +1,12 @@
 # THE_DATA_SINK — the acquisition-grain ledger (charter proposal)
 
-> **Epistemic status: first-draft charter, chapter-prescope grade.** Authored 2026-08-15 from
-> the operator's architectural prompt plus a four-agent code-and-document audit (V1 extraction,
-> V2 acquisition boundary, the persistence/freshness inventory, the strategic surfaces). Treat
-> it the way the house treats a pre-scope: a proposal of record to refine under empirical
-> pressure, not a decision. Nothing in this document changes behavior; no code, no DECISIONS,
-> no AXIOMS, no CLAUDE.md edits ride with it. Adoption, if it comes, opens as a chapter with
-> the usual ritual. Every code claim below is cited; every platform claim is labeled as such.
+> **Epistemic status: ADOPTED 2026-08-15** (operator approval of the execution master plan;
+> `DECISIONS.md` "The data sink chapter opens"; `CHAPTER_SINK_OPEN.md` is the chapter frame
+> and carries the wave map). Originally authored 2026-08-15 as a first-draft charter from the
+> operator's architectural prompt plus a four-agent code-and-document audit; the proposal
+> grade is superseded. Three adoption amendments are marked inline `[amended at adoption —
+> see DECISIONS]`: the persisted grain (§4.1), the store keying (§4.1), and the read seam
+> (§4.2). Every code claim below is cited; every platform claim is labeled as such.
 
 ---
 
@@ -159,9 +159,19 @@ chapter open can cite them.
 Under the existing store root (`EstateStoreLocation.storeDirFrom`; env-var resolution and
 "disabled ⇒ live-only, named" semantics inherited unchanged):
 
-    <store>/sink/<env>/manifest.json                 — latest pointer; capability vector; source identity
-    <store>/sink/<env>/snapshots/<syncId>/rowsets.json — the RowsetBundle at rest (typed codec, digest-stamped)
-    <store>/sink/<env>/journal.ndjson                — append-only displacement records, one per observed transition
+    <store>/sink/<connDigest16>/manifest.json                   — latest pointer; env label; capability vector; source identity
+    <store>/sink/<connDigest16>/snapshots/<syncId>/snapshot.json — the MetadataSnapshot at rest (typed codec, digest-stamped)
+    <store>/sink/<connDigest16>/journal.ndjson                  — append-only displacement records, one per observed transition
+
+[amended at adoption — see DECISIONS] Two amendments over the draft: the persisted grain is
+the full **`MetadataSnapshot`** (15 rowsets), not the `RowsetBundle` — `toBundle` is lossy
+(it drops `PhysColsPresent` and the FK-reality rowsets, folds `ColumnReality`'s axes, and
+collapses raw `Data_Kind` to `IsStatic`), so the bundle is not the source-shaped witness and
+the snapshot is; and the store keys on **`connDigest16`** (SHA-256/16 over the normalized
+DataSource + InitialCatalog pair — credential-rotation invariant), not the env label, because
+the witness hook knows the connection while only the sync verb knows the name. The manifest
+carries `EnvLabel`; `projection sync <env>` is the act that makes an environment addressable
+by name.
 
 - `syncId` monotone; `capturedAtUtc` from the boundary clock; writes atomic
   (`.tmp` + move), reads fail-closed — all four idioms already worked precedents
@@ -176,9 +186,12 @@ Under the existing store root (`EstateStoreLocation.storeDirFrom`; env-var resol
 
 ### 4.2 Seams (all additive)
 
-- `SnapshotSource` gains one variant (naming owed to DECISIONS; candidates:
-  `SnapshotSink of SinkRef`, `SnapshotStored`). Closed-DU expansion; exhaustiveness errors
-  localize per the house test.
+- [amended at adoption — see DECISIONS] **No `SnapshotSource` variant after all.** A sink
+  read is load → `toBundle` → `normalizeBundle` → `parse (SnapshotRowsets …)` — the exact
+  live pipeline minus the wire. The persisted-grain amendment makes the DU expansion
+  unnecessary, keeps the `ICatalogReader` deferral untouched (a *variant* of the OSSYS
+  source, still not a second source), and lets divergence diagnostics replay from the store.
+  Provenance rides `Source.Identity` (`sink:…`) and the notices, not the DU.
 - `Ref.parse` gains a scheme: `sink:<env>[@<syncId>]` beside `live:` / `ossys:` / `@runId` /
   `json:` (`Ref.fs:28-33`). `projection diff sink:uat@s41 sink:uat@s42` becomes the temporal
   diff the estate board cannot ask for today (`diff` currently warns on two `live:` reads

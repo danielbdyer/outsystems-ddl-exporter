@@ -1718,3 +1718,30 @@ let ``A46: refusal completeness — one ordering predicate on three surfaces, ce
     citationOf "tests/Projection.Tests/EstateTests.fs" "A46: refusal completeness — one predicate on three surfaces (resolver ⟺ gate ⟺ board), certificate carried (#669 v7)"
     citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "v7 I3 refusal precision: the exact resolver refuses exactly when the strong-only subgraph is cyclic"
     citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "A46 lemma — refusal invariance: SchemaMinimal and any weighted member refuse exactly the same SCCs"
+
+// ===========================================================================
+// A49 + T19 — the data sink chapter (2026-08-15) — candidates at chapter open
+// ===========================================================================
+
+[<Fact(Skip = "T19 candidate (Bucket C; the data sink chapter opens 2026-08-15 — \
+CHAPTER_SINK_OPEN.md; DECISIONS 'The data sink chapter opens'). The sink journal replays: \
+folding applyDisplacement over the journal's verified entries from the genesis snapshot \
+reproduces the latest witnessed snapshot (the FTC at acquisition grain); the displacement \
+stream is total over row identities; a zero-displacement sync appends nothing (the metadata \
+plane's CDC-silence); a regressing syncId is refused by name on the Ledger.resumeAdmit drift \
+channel; the derived Catalog view is bounded by the journal (the erasure-witness inequality). \
+Promotion trigger: slice S10 lands the live witnesses (FsCheck snapshot chains through \
+Ledger.replay over the SinkJournal LedgerSpec instance + the inequality law) — flip this \
+entry to citationOf pointers in that commit.")>]
+let ``T19: the sink journal replays — fold applyDisplacement from genesis = latest (FTC at acquisition grain)`` () = ()
+
+[<Fact(Skip = "A49 candidate (Bucket C; the data sink chapter opens 2026-08-15 — \
+CHAPTER_SINK_OPEN.md; DECISIONS 'The data sink chapter opens'). Acquisition is total; \
+selection is pure: the sync path binds MetadataSnapshotRunner.defaultParameters exactly (no \
+WHERE-clause policy on the sync path), and module/entity selection commutes across the three \
+legs — pushdown ≡ SelectionSuppression∘live ≡ SelectionSuppression∘sink — with the \
+OnlyActiveAttributes axis a NAMED RESIDUAL per the extraction canary's own scope note. \
+Promotion trigger: slice S9 lands the SelectionSuppression pass and extends the pushdown \
+equivalence law in OssysExtractionCanaryTests to the three-way form — flip this entry to \
+citationOf pointers in that commit.")>]
+let ``A49: acquisition is total; selection is pure (the three-way commuting law)`` () = ()

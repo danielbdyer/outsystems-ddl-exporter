@@ -30823,3 +30823,81 @@ procedure.
   server's own error, and the same bundle with the unique constraint is green.
   This converts the "IR cannot see server-side constraints" class from
   unknown-unknowns into a measured pass/fail.
+
+---
+
+## 2026-08-15 — The data sink chapter opens (THE_DATA_SINK adopted; the acquisition grain gets its ledger)
+
+Operator approval of the execution master plan (plan-mode review over three reconnaissance
+briefs plus a design pass). `THE_DATA_SINK.md` flips from first-draft charter to ADOPTED with
+three inline amendments; `CHAPTER_SINK_OPEN.md` carries the strategic frame and the wave map
+(S0 → S16); axiom candidates A49 + T19 land with their `AxiomTests.fs` Bucket-C stubs in the
+opening commit. The rulings, each operator-decided this date:
+
+- **Pillar-8 naming: "sink."** The concept, the modules (`SinkStore` / `SinkJournal` /
+  `SinkDisplacement` / `SinkSyncRun`), the ref scheme (`sink:<env>[@<syncId>]`), the store
+  child (`<store>/sink/`), the error-code family (`sink.*`), and the verb (`projection
+  sync`). Considered: *mirror* (DBA resonance), *store* (house resonance — rejected as
+  overloaded: the estate store, the episode store, and the evidence store already carry it).
+  The operator's own term wins; it is also the data-engineering term for a durable
+  destination of a sync.
+- **The persisted grain is `MetadataSnapshot`, not `RowsetBundle`.** `toBundle`
+  (`MetadataSnapshotRunner.fs`) is lossy — `PhysColsPresent`, `#FkReality`, `#FkColumns`
+  never reach the bundle; `ColumnReality`'s independent axes fold; raw `Data_Kind` collapses
+  to `IsStatic` — so the bundle is not the source-shaped witness. Persisting the snapshot
+  makes `toBundle` a replayable pure projection (future bundle evolution re-derives from old
+  witnesses), lets the divergence diagnostics replay from the store, and removes the need
+  for any `SnapshotSource` DU change: a sink read is load → `toBundle` → `normalizeBundle` →
+  `parse (SnapshotRowsets …)`. The codec (`MetadataSnapshotCodec`, codecVersion 1) lives in
+  `Projection.Adapters.OssysSql` beside the types (`Targets.Json` references Core only and
+  cannot see them).
+- **Witness depth: every live OSSYS read.** One internal, advisory call in
+  `LiveModelRead.fromConnectionWith` after the runner succeeds — the single funnel all seven
+  production acquisition sites flow through (including the Twin's evidence import,
+  `Twin.Runtime/EvidenceImport.fs`, named here so a `sink/<twin-digest>` directory never
+  reads as a surprise). Store disabled ⇒ named live-only no-op; a store write failure is
+  advisory and never fails a read. `LiveModelRead` already writes notice artifacts on every
+  live read; the sink snapshot is a second artifact on an existing write seam.
+- **The totality gate.** Only `defaultParameters`-shaped acquisitions (all modules,
+  `IncludeSystem = 1`, `IncludeInactive = 1`, `OnlyActiveAttributes = 0`, no entity filter)
+  become sink states and journal entries; a scoped read skips witnessing with a named
+  reason. A scoped read diffed against a total predecessor would fabricate removals — the
+  gate is what keeps the journal a ledger rather than a log of query shapes.
+- **Store keying: `connDigest16`, label in the manifest.** SHA-256 (first 16 hex, lowercase)
+  over the normalized (DataSource, InitialCatalog) pair — credential rotation must not fork
+  the store. The passive hook writes `EnvLabel = None`; `projection sync <env>` stamps the
+  label — the sync verb is the act that makes an environment addressable by name. Ref
+  resolution (`sink:<env>`) scans manifests for the label, config-free and offline-true; two
+  manifests claiming one label refuse by name (`sink.envAmbiguous`).
+- **Freshness policy ≠ witness gate.** `sink.policy = off | auto | pinned` (the
+  `bridgeRowStaging[].cache` vocabulary at its second instance) governs the reuse/probe axis
+  only; witnessing is gated by store presence + totality. One lever, one meaning; an
+  operator who wants no witnessing disables the store.
+- **Exit codes: none new.** `sink.journal.syncRegression` → 9 (the fail-loud family, the
+  `transfer.resume.sourceDrift` sibling), placed before a generic `sink.*` → 2 arm;
+  `sink.writeFailed` → 1 falls out of the existing `.writeFailed` rule; a no-store `sync`
+  refuses at 2 (config-shape, the `estate.history.sinceNoStore` precedent).
+- **Deferrals cited as NOT firing.** `ICatalogReader` (Position B → A): a sink read is a
+  *variant* of the OSSYS source — with the grain ruling it is not even a `SnapshotSource`
+  variant, just a persisted producer of the existing rowset path — so the second-source
+  trigger stays unfired. `LiveOssysConnection` (reserved variant): untouched; the sink is
+  the complement (operating without the *source* in the loop, not without V1's chain).
+- **One plan correction recorded (R1).** The witness hook compiles at
+  `Projection.Pipeline.fsproj` position ~25 (`LiveModelRead.fs`); `EstateStoreLocation.fs`
+  compiled at ~52. `EstateStoreLocation.fs` opens only `System`, so it MOVES UP to directly
+  after `NoticeSink.fs`, and the sink modules insert between it and `LiveModelRead.fs`, each
+  entry carrying the house compile-order rationale comment (lands at slice S4a).
+- **Fixture posture.** The 14-consumer `ossys-edge-case.seed.sql` is never edited; a second
+  embedded resource (`ossys-lifecycle.seed.sql`) carries the tombstone / extension-pair /
+  contested / orphan scenarios, authored fresh (no V1 carbon-copy ⇒ no ADMIRE row); pure
+  `MetadataSnapshot` builders land in `Projection.Tests.Support` so claim adjudication is
+  pure-pool property-tested and Docker holds one end-to-end witness per scenario.
+
+Chapter-open findings (named, not fixed): the lint guardrail red on the inherited tree (82
+unmarked violations across five rules in the 2026-07-22..25 arc files, landed against a red
+gate via direct pushes — this chapter self-enforces a zero-new-violations delta gate plus a
+manual perf-gate per commit, uses the explicit-deviance hatch named per commit, and owes the
+82-site disposition as a standing follow-on); the three Docker-touching files resident in the
+pure pool with summary-invisible soft-skips; the dual sequence-SsKey synthesis conventions;
+the EstateHistory double-`estate` nesting; the absence of ConfigSchema regen tooling. Each is
+listed in `CHAPTER_SINK_OPEN.md` §3 with its disposition.

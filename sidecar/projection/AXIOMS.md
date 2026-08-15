@@ -2241,3 +2241,59 @@ foreign version / foreign plane / garbage document fails closed to a named `Erro
 then reconcile a byte-identical target (exit 0) and a tampered target (exit 5) — both decided
 from the manifest + the target alone, the source torn down. `AxiomTests.fs` carries the
 axiom-file pointer to those facts.
+
+## A49 — acquisition is total; selection is pure (the data sink chapter open, 2026-08-15)
+
+*Status: CANDIDATE (chapter open 2026-08-15 — the data sink chapter, `CHAPTER_SINK_OPEN.md`;
+promotion trigger: the three-way equivalence witness lands with the `SelectionSuppression`
+pass at slice S9).*
+
+**Statement.** The engine's acquisition of the OSSYS metadata plane carries no operator
+Selection: the sync path binds `MetadataSnapshotRunner.defaultParameters` exactly (all
+modules, `IncludeSystem = true`, `IncludeInactive = true`, `OnlyActiveAttributes = false`,
+no entity filter), and Selection is a pure, registered pass over the acquired value.
+Module/entity selection commutes across the three legs:
+
+    pushdown(scope) ∘ live ≡ SelectionSuppression(scope) ∘ live ≡ SelectionSuppression(scope) ∘ sink
+
+The SQL pushdown remains a latency optimization for interactive scoped reads, licensed by
+this equivalence — never the definition of the model. The attribute-activity axis
+(`OnlyActiveAttributes`) is a NAMED RESIDUAL: it has no in-memory sibling seam (the
+extraction canary's own scope note), so the law binds it equal across legs until a
+suppression sibling lands; the sync path is unconditionally total on it.
+
+**Enforcement.** The sync path constructs `defaultParameters` literally (structural assert:
+the sync verb's parameters equal `MetadataSnapshotRunner.defaultParameters`); the witness
+hook's totality gate refuses journal entry to any scoped acquisition; `SelectionSuppression`
+registers as `OperatorIntent Selection` in `chainSteps`, so the registered ⇔ executed sweep
+covers it.
+
+**Property test.** (at promotion) the three-way extension of the pushdown ≡
+`ModuleFilter.apply` law in `OssysExtractionCanaryTests`, plus the sync-parameters
+structural assert.
+
+## T19 — the sink journal replays: fold = latest at acquisition grain (the data sink chapter open, 2026-08-15)
+
+*Status: CANDIDATE (chapter open 2026-08-15 — the data sink chapter, `CHAPTER_SINK_OPEN.md`;
+promotion trigger: the journal FTC witness lands through `Ledger.replay` at slice S10).*
+
+**Statement.** The sink journal is the acquisition grain's ledger (S8's fourth instance,
+after the chunk, episode, and marker grains): folding `applyDisplacement` over the journal's
+verified entries from the genesis snapshot reproduces the latest witnessed snapshot,
+
+    fold ⊕ genesis (journal) = latest        (the FTC at acquisition grain)
+
+with the displacement stream TOTAL over row identities (every row-identity delta yields
+exactly one record carrying its after-image fragment; the domain transition vocabulary is a
+classification over total row-grain carriers, never a filter), a zero-displacement sync
+appending nothing (the metadata plane's CDC-silence), and a regressing syncId refused by
+name on the `Ledger.resumeAdmit` drift channel. The derived Catalog view is bounded by the
+journal — `CatalogDiff.norm (between (parse b₁) (parse b₂)) ≤ |entries(sync)|` — and a
+strict inequality is accounted for by named erasures (the erasure witness, executable).
+
+**Enforcement.** `SinkJournal` instantiates `Ledger.LedgerSpec` (Genesis / Apply /
+FingerprintOf), so replay IS `Ledger.replay` and regression-refusal IS `resumeAdmit`;
+fsync append; a torn trailing line tolerated, an interior corrupt line thrown.
+
+**Property test.** (at promotion) FsCheck snapshot chains through `Ledger.replay`; the
+erasure-witness inequality; the zero-displacement silence law.
