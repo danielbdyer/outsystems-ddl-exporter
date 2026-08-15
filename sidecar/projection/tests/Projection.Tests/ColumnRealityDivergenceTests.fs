@@ -34,7 +34,8 @@ let private snapshotOf
     { Modules = []; Entities = []; Attributes = attrs; References = []
       PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
-      ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = [] }
+      ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = []
+      Capabilities = [] }
 
 let private divergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnRealityDivergences s

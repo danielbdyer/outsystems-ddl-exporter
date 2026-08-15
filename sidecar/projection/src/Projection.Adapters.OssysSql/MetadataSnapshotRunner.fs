@@ -18,10 +18,11 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 /// surface: V1 layers `IDbConnectionFactory` + `IDbCommandExecutor` +
 /// per-processor abstractions over a generic V1-domain pipeline; V2 ships
 /// a direct `SqlConnection`-receiving function because V2's runner is the
-/// canary's offline-extraction surface — it walks the carbon-copied SQL's
-/// 22 result sets, parses the first 5 into typed F# records mirroring V1's
-/// DTOs, and assembles a `OssysRowsetTypes.RowsetBundle` consumable by V2's
-/// existing `CatalogReader.parse` JSON / rowset adapter.
+/// canary's offline-extraction surface — it walks the script's
+/// `ExpectedResultSets` result sets (the count lives on that constant
+/// alone), parses the V2-consumed rowsets into typed F# records mirroring
+/// V1's DTOs, and assembles a `OssysRowsetTypes.RowsetBundle` consumable
+/// by V2's existing `CatalogReader.parse` JSON / rowset adapter.
 ///
 /// **Chapter 5.0 slice γ.** The canary's bootstrap+extract flow:
 ///   1. Caller deploys `MetadataExtractionSql.readEdgeCaseSeed()` against
@@ -31,12 +32,11 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 ///      `SqlConnection` to that database + the V1 parameters.
 ///   3. This module reads `MetadataExtractionSql.read()` (the rowsets SQL),
 ///      executes it via `SqlCommand`, and walks `DbDataReader.NextResultAsync`
-///      to enumerate all 22 result sets.
-///   4. The first 5 result sets (Modules / Entities / Attributes /
-///      References / PhysicalTables) parse into typed F# records; the
-///      remaining 17 are skipped (the SQL still emits them but V2's
-///      current consumption surface is the narrow 4-rowset
-///      `OssysRowsetTypes.RowsetBundle`).
+///      to enumerate all `ExpectedResultSets` result sets.
+///   4. The V2-consumed result sets (logical metadata, physical
+///      reflection, sequences/temporal, the capability vector) parse into
+///      typed F# records; the V1-SUNSET JSON-aggregation tail is skipped
+///      (the SQL still emits those sets in order).
 ///   5. Slice δ composes the typed records into the `RowsetBundle` via
 ///      JOIN logic (PhysicalTables → KindRow.DbSchema; ForeignKey reality
 ///      → ReferenceRow.DeleteRuleCode / HasDbConstraint).
@@ -375,6 +375,35 @@ module MetadataSnapshotRunner =
           RetentionValue : int option
           RetentionUnit  : string option }
 
+    /// Rowset 26 — the capability vector (the data-sink chapter, S2
+    /// 2026-08-15). The script's @Has* COL_LENGTH probes, finally
+    /// returned: which optional `ossys_Entity_Attr` columns THIS estate's
+    /// platform version exposes, plus which entity-description column the
+    /// extraction chose. One row per run; the sink persists it with every
+    /// witnessed snapshot so ossys-schema drift is data (the journal's
+    /// ShapeChanged transition), never surprise. `toBundle` deliberately
+    /// ignores it — the vector informs the sink, never the Catalog.
+    type OssysCapabilityRow =
+        { HasDataType           : bool
+          HasType               : bool
+          HasPrecision          : bool
+          HasScale              : bool
+          HasDecimals           : bool
+          HasOriginalName       : bool
+          HasExternalColumnType : bool
+          HasPhysicalColumnName : bool
+          HasDatabaseName       : bool
+          HasIsIdentifier       : bool
+          HasRefEntityId        : bool
+          HasIsAutoNumber       : bool
+          HasDefaultValue       : bool
+          HasDeleteRule         : bool
+          HasOriginalType       : bool
+          HasAttrSsKey          : bool
+          HasLength             : bool
+          HasOrderNum           : bool
+          HasEntityDescription  : bool }
+
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
     /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
@@ -397,6 +426,11 @@ module MetadataSnapshotRunner =
             Triggers           : OssysTriggerRow list
             Sequences          : OssysSequenceRow list
             Temporal           : OssysTemporalRow list
+            /// Rowset 26 — one row in practice (a list for uniformity
+            /// with every other rowset field). Sink-plane evidence only;
+            /// `toBundle` ignores it by design (capability-invariance is
+            /// property-tested).
+            Capabilities       : OssysCapabilityRow list
         }
 
     // -------------------------------------------------------------------
@@ -741,6 +775,27 @@ module MetadataSnapshotRunner =
           RetentionValue = readIntOpt    r 5
           RetentionUnit  = readStringOpt r 6 }
 
+    let private mapCapabilityRow (r: RowAtRest) : OssysCapabilityRow =
+        { HasDataType           = readBool r 0
+          HasType               = readBool r 1
+          HasPrecision          = readBool r 2
+          HasScale              = readBool r 3
+          HasDecimals           = readBool r 4
+          HasOriginalName       = readBool r 5
+          HasExternalColumnType = readBool r 6
+          HasPhysicalColumnName = readBool r 7
+          HasDatabaseName       = readBool r 8
+          HasIsIdentifier       = readBool r 9
+          HasRefEntityId        = readBool r 10
+          HasIsAutoNumber       = readBool r 11
+          HasDefaultValue       = readBool r 12
+          HasDeleteRule         = readBool r 13
+          HasOriginalType       = readBool r 14
+          HasAttrSsKey          = readBool r 15
+          HasLength             = readBool r 16
+          HasOrderNum           = readBool r 17
+          HasEntityDescription  = readBool r 18 }
+
     /// Number of user-visible result sets the carbon-copied OSSYS rowsets
     /// script emits. V1's documentation describes 22 user-visible rowsets
     /// (rowsets 0..21); the canary's empirical walk observes **23** —
@@ -754,15 +809,17 @@ module MetadataSnapshotRunner =
     /// instead of silently accepting partial data. Matrix row 35.
     /// **25 as of the extraction fork** (DECISIONS 2026-07-18; #669
     /// EF-22 + EF-23): the appended `sys.sequences` and temporal-
-    /// configuration rowsets join the walk.
+    /// configuration rowsets join the walk. **26 as of the data-sink
+    /// chapter** (S2, 2026-08-15; CHAPTER_SINK_OPEN.md): the appended
+    /// capability-vector rowset joins the walk.
     [<Literal>]
-    let ExpectedResultSets = 25
+    let ExpectedResultSets = 26
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
-    /// `ExpectedResultSets` result sets; parses the first 5 into typed
-    /// records and skips the remaining. Returns a `MetadataSnapshot`
-    /// carrying the 5 V2-relevant rowsets.
+    /// `ExpectedResultSets` result sets; parses every V2-consumed rowset
+    /// into typed records and skips the V1-SUNSET JSON-aggregation tail.
+    /// Returns the full `MetadataSnapshot`.
     ///
     /// **Determinism.** The SQL script is deterministic by construction
     /// (V1's pillar 1 / T1 commitment); parameter inputs + database state
@@ -949,6 +1006,12 @@ module MetadataSnapshotRunner =
                 let! sequences = read "sequences" mapSequenceRow
                 let! temporal  = read "temporal"  mapTemporalRow
 
+                // Rowset 26 — the capability vector (the data-sink
+                // chapter, S2 2026-08-15): the @Has* COL_LENGTH probes,
+                // finally returned. Sink-plane evidence; `toBundle`
+                // ignores it by design.
+                let! capabilities = read "capabilities" mapCapabilityRow
+
                 // Drain any trailing rowsets the SQL might emit beyond
                 // the documented 23. Per matrix row 35: a SQL-contract
                 // drift adds rowsets here; the contract check below
@@ -993,6 +1056,7 @@ module MetadataSnapshotRunner =
                         Triggers           = triggers
                         Sequences          = sequences
                         Temporal           = temporal
+                        Capabilities       = capabilities
                     }
             with
             | ex ->

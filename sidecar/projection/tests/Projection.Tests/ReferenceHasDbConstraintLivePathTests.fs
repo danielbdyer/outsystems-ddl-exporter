@@ -66,7 +66,8 @@ let private twoReferenceSnapshot () : MetadataSnapshotRunner.MetadataSnapshot =
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = [ fkRealityRow 5000 ]
       ForeignKeyColumns  = [ fkColumnRow 201 5000 ]
-      Triggers = [] }
+      Triggers = []
+      Capabilities = [] }
 
 let private referenceByAttrId (bundle: OssysRowsetTypes.RowsetBundle) (attrId: int) : OssysRowsetTypes.ReferenceRow =
     bundle.References |> List.find (fun r -> r.AttrId = attrId)

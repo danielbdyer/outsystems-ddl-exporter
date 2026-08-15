@@ -196,6 +196,28 @@ module OssysSnapshotBuilders =
           RetentionValue = Some 6
           RetentionUnit  = Some "Months" }
 
+    /// The everything-present capability vector (a modern estate).
+    let capabilityRow : MetadataSnapshotRunner.OssysCapabilityRow =
+        { HasDataType           = true
+          HasType               = true
+          HasPrecision          = true
+          HasScale              = true
+          HasDecimals           = true
+          HasOriginalName       = true
+          HasExternalColumnType = true
+          HasPhysicalColumnName = true
+          HasDatabaseName       = true
+          HasIsIdentifier       = true
+          HasRefEntityId        = true
+          HasIsAutoNumber       = true
+          HasDefaultValue       = true
+          HasDeleteRule         = true
+          HasOriginalType       = true
+          HasAttrSsKey          = true
+          HasLength             = true
+          HasOrderNum           = true
+          HasEntityDescription  = true }
+
     let emptySnapshot : MetadataSnapshotRunner.MetadataSnapshot =
         { Modules            = []
           Entities           = []
@@ -211,7 +233,8 @@ module OssysSnapshotBuilders =
           ForeignKeyColumns  = []
           Triggers           = []
           Sequences          = []
-          Temporal           = [] }
+          Temporal           = []
+          Capabilities       = [] }
 
     /// The common trio — modules + entities + attributes, physical axes empty.
     let snapshotOf
@@ -229,7 +252,9 @@ module OssysSnapshotBuilders =
     /// any reconstruction site) drops cannot survive
     /// `deserialize (serialize (fullyPopulated seed))` against this value.
     let fullyPopulated (seed: int) : MetadataSnapshotRunner.MetadataSnapshot =
-        let s = abs seed % 10000
+        // abs AFTER the modulo: `abs Int32.MinValue` throws, and FsCheck
+        // generates the extremes by design.
+        let s = abs (seed % 10000)
         let tag (label: string) = sprintf "%s_%d" label s
         { Modules =
             [ { EspaceId       = 800 + s
@@ -375,4 +400,27 @@ module OssysSnapshotBuilders =
                 PeriodStart    = Some "VALIDFROM"
                 PeriodEnd      = Some "VALIDTO"
                 RetentionValue = Some (1 + s % 12)
-                RetentionUnit  = Some "Weeks" } ] }
+                RetentionUnit  = Some "Weeks" } ]
+          Capabilities =
+            // Every field written explicitly; two bits vary by seed
+            // parity so a codec that hardcodes either polarity cannot
+            // round-trip both.
+            [ { HasDataType           = true
+                HasType               = (s % 2 = 0)
+                HasPrecision          = true
+                HasScale              = true
+                HasDecimals           = false
+                HasOriginalName       = true
+                HasExternalColumnType = true
+                HasPhysicalColumnName = true
+                HasDatabaseName       = false
+                HasIsIdentifier       = true
+                HasRefEntityId        = true
+                HasIsAutoNumber       = true
+                HasDefaultValue       = true
+                HasDeleteRule         = true
+                HasOriginalType       = false
+                HasAttrSsKey          = true
+                HasLength             = true
+                HasOrderNum           = (s % 2 = 1)
+                HasEntityDescription  = true } ] }

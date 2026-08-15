@@ -229,10 +229,11 @@ let ``5.1.γ row 35: ExpectedResultSets is pinned per empirical canary observati
     // per-processor approach skipped but V2's NextResultAsync loop
     // enumerates). The extraction fork (DECISIONS 2026-07-18; #669
     // EF-22 + EF-23) appended the sequences and temporal rowsets: 25.
-    // The constant pins V2's observation — if a future SQL refactor
-    // changes the count, this test surfaces it before the contract
-    // check would silently drift.
-    Assert.Equal(25, MetadataSnapshotRunner.ExpectedResultSets)
+    // The data-sink chapter (S2, 2026-08-15) appended the capability
+    // vector: 26. The constant pins V2's observation — if a future SQL
+    // refactor changes the count, this test surfaces it before the
+    // contract check would silently drift.
+    Assert.Equal(26, MetadataSnapshotRunner.ExpectedResultSets)
 
 [<Fact>]
 let ``5.1.γ row 35: resultSetContractCheck succeeds on matching count`` () =

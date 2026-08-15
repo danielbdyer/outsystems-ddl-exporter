@@ -353,6 +353,7 @@
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="PerfHarnessCatalogTests.fs" />
     <Compile Include="ProofManifestTests.fs" />
+    <Compile Include="MetadataSnapshotCapabilityTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
