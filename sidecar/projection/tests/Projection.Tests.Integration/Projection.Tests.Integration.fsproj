@@ -87,6 +87,7 @@
     <Compile Include="CentralityVolumeCanaryTests.fs" />
     <Compile Include="ModelResolutionDockerTests.fs" />
     <Compile Include="SinkLifecycleSeedTests.fs" />
+    <Compile Include="SinkWitnessTests.fs" />
     <Compile Include="T18CycleBreakCanaryTests.fs" />
   </ItemGroup>
 

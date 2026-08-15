@@ -126,6 +126,26 @@ module LiveModelRead =
             match! MetadataSnapshotRunner.runAsyncWithOptions cnn parameters options with
             | Error es -> return Result.failure es
             | Ok snapshot ->
+                // The sink witness (S5; CHAPTER_SINK_OPEN.md — witness
+                // depth: every live OSSYS read). Store presence and the
+                // totality gate live inside `SinkStore.witness`; the call
+                // is ADVISORY by construction — a store write failure
+                // surfaces through the same notice rollup as every other
+                // finding on this read, and no outcome ever fails the
+                // read. A second artifact on this function's existing
+                // write seam (the notice artifacts below). Quiet on
+                // success: the sync verb (S6) is the surface that REPORTS
+                // witness outcomes; ambient reads witness silently.
+                let witnessNotices =
+                    match SinkStore.witness System.DateTimeOffset.UtcNow cnn.DataSource cnn.Database parameters snapshot with
+                    | SinkStore.WitnessOutcome.Failed (code, message) ->
+                        [ DiagnosticEntry.create
+                            "sink:witness" DiagnosticSeverity.Warning code
+                            (sprintf "the sink witness could not persist this read's snapshot: %s — the read proceeds; the store is advisory" message) ]
+                    | SinkStore.WitnessOutcome.Persisted _
+                    | SinkStore.WitnessOutcome.Unchanged _
+                    | SinkStore.WitnessOutcome.SkippedScoped _
+                    | SinkStore.WitnessOutcome.Disabled _ -> []
                 // The bundle normalization (2026-07-07, the live partial-
                 // transfer program): inactive-shadow duplicate-kind
                 // resolution + the entity-less module skip, each a NAMED
@@ -160,7 +180,8 @@ module LiveModelRead =
                      // reflected/reality value; the operator is told the model
                      // diverged).
                      @ MetadataSnapshotRunner.deleteRuleDivergences snapshot
-                     @ erasureNotices)
+                     @ erasureNotices
+                     @ witnessNotices)
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
                 // (the cross-scope edges). `ModuleFilter.apply` applies
