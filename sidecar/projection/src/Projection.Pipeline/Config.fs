@@ -609,6 +609,62 @@ module Config =
         Dir : string
     }
 
+    /// The sink's freshness/reuse posture (the data-sink chapter, S8 — the
+    /// `BridgeStagingCachePolicy` vocabulary at its second instance; R2:
+    /// this lever governs the REUSE axis only, never witnessing — the
+    /// witness is gated by store presence + acquisition totality, so an
+    /// operator who wants no witnessing disables the store, not this).
+    /// `Off` (default): every model read pays the wire (current behavior,
+    /// byte-identical). `Auto`: reuse the witnessed state when the three
+    /// ossys fingerprint targets still match the manifest's recording; any
+    /// movement reads live (which witnesses the fresh state). `Pinned`:
+    /// reuse WITHOUT probing (offline-true; the operator accepts staleness
+    /// and the mandatory freshness line says so); `--refresh` overrides
+    /// even a pin for one run.
+    [<RequireQualifiedAccess>]
+    type SinkPolicy =
+        | Off
+        | Auto
+        | Pinned
+
+    [<RequireQualifiedAccess>]
+    module SinkPolicy =
+
+        /// Every policy, in schema order — the generated-schema enum derives
+        /// from THIS list (never restated; the `TransformGroup.all` idiom).
+        let all : SinkPolicy list = [ SinkPolicy.Off; SinkPolicy.Auto; SinkPolicy.Pinned ]
+
+        let label (p: SinkPolicy) : string =
+            match p with
+            | SinkPolicy.Off -> "off"
+            | SinkPolicy.Auto -> "auto"
+            | SinkPolicy.Pinned -> "pinned"
+
+        let parse (raw: string) : SinkPolicy option =
+            all |> List.tryFind (fun p -> label p = raw)
+
+    /// `sink` — the sink freshness section. `PerEnvironment` refines the
+    /// standing policy for named environments (the label `projection sync`
+    /// stamped); an environment not listed rides `Policy`.
+    type SinkSection = {
+        Policy         : SinkPolicy
+        PerEnvironment : (string * SinkPolicy) list
+    }
+
+    [<RequireQualifiedAccess>]
+    module SinkSection =
+
+        /// The effective policy for one environment — the per-env refinement
+        /// when named, the standing policy otherwise. Total.
+        let effective (env: string option) (section: SinkSection) : SinkPolicy =
+            match env with
+            | None -> section.Policy
+            | Some name ->
+                section.PerEnvironment
+                |> List.tryFind (fun (n, _) -> n = name)
+                |> Option.map snd
+                |> Option.defaultValue section.Policy
+
     type Config = {
         Model        : ModelSection
         Profile      : ProfileSection
@@ -617,6 +673,7 @@ module Config =
         Emission     : EmissionSection
         Policy       : PolicySection
         Output       : OutputSection
+        Sink         : SinkSection
     }
 
     /// The single derivation of `DataComposition` from the config's data-lane
@@ -713,6 +770,13 @@ module Config =
         Dir = "out/"
     }
 
+    /// The sink freshness default — `off`: every model read pays the wire
+    /// (byte-identical standing behavior); witnessing is unaffected (R2).
+    let defaultSink : SinkSection = {
+        Policy         = SinkPolicy.Off
+        PerEnvironment = []
+    }
+
     /// A no-source `ModelSection` — the lenient default when the `model`
     /// section is absent (or present without `path`/`ossys`). The strict
     /// parser refuses this (`modelNoSource`); the lenient parser (used by the
@@ -748,6 +812,7 @@ module Config =
         Emission    = defaultEmission
         Policy      = defaultPolicy
         Output      = defaultOutput
+        Sink        = defaultSink
     }
 
     /// THE_CONFIG_CONTROL_PLANE §4/§7 (S6.4 — operator decision 2, "Global +
@@ -769,7 +834,8 @@ module Config =
           Overrides   = pick (fun c -> c.Overrides)
           Emission    = pick (fun c -> c.Emission)
           Policy      = pick (fun c -> c.Policy)
-          Output      = pick (fun c -> c.Output) }
+          Output      = pick (fun c -> c.Output)
+          Sink        = pick (fun c -> c.Sink) }
 
     // -----------------------------------------------------------------------
     // Error helpers — `pipeline.config.<problem>` dot-namespace.
@@ -2082,6 +2148,57 @@ module Config =
             | Ok None -> Result.success defaultOutput
             | Ok (Some d) -> Result.success { Dir = d }
 
+    /// `sink` — the sink freshness section (the data-sink chapter, S8).
+    /// `policy` is the closed off|auto|pinned vocabulary (A44: an
+    /// unrecognized value is a NAMED refusal listing the known set, never a
+    /// silent default); `perEnvironment` maps environment labels to policy
+    /// refinements under the same vocabulary. Absent ⇒ `defaultSink` (off).
+    let private parseSinkPolicyValue (context: string) (raw: string) : Result<SinkPolicy> =
+        match SinkPolicy.parse raw with
+        | Some p -> Result.success p
+        | None ->
+            Result.failureOf (configError "sink.policyUnknown"
+                (sprintf "%s '%s' is not recognized. Known: off | auto | pinned." context raw))
+
+    let private parseSink (root: JsonElement) : Result<SinkSection> =
+        match tryGetProperty root "sink" with
+        | None -> Result.success defaultSink
+        | Some element when element.ValueKind = JsonValueKind.Object ->
+            validation {
+                let! policy =
+                    match getOptionalString element "policy" with
+                    | Error es -> Error es
+                    | Ok None -> Result.success defaultSink.Policy
+                    | Ok (Some raw) -> parseSinkPolicyValue "sink.policy" raw
+                and! perEnvironment =
+                    match tryGetProperty element "perEnvironment" with
+                    | None -> Result.success []
+                    | Some pe when pe.ValueKind = JsonValueKind.Object ->
+                        let parsed =
+                            [ for prop in pe.EnumerateObject() ->
+                                if prop.Value.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (prop.Value.GetString()) with
+                                    | Some raw ->
+                                        parseSinkPolicyValue
+                                            (sprintf "sink.perEnvironment['%s']" prop.Name) raw
+                                        |> Result.map (fun p -> prop.Name, p)
+                                    | None ->
+                                        Result.failureOf (configError "sink.policyUnknown"
+                                            (sprintf "sink.perEnvironment['%s'] must be a policy string. Known: off | auto | pinned." prop.Name))
+                                else
+                                    Result.failureOf (configError "sink.policyUnknown"
+                                        (sprintf "sink.perEnvironment['%s'] must be a policy string. Known: off | auto | pinned." prop.Name)) ]
+                        let errors = parsed |> List.collect (function Error es -> es | Ok _ -> [])
+                        if not (List.isEmpty errors) then Result.failure errors
+                        else Result.success (parsed |> List.choose (function Ok p -> Some p | _ -> None))
+                    | Some _ ->
+                        Result.failureOf (configError "sink.perEnvironmentShape"
+                            "sink.perEnvironment must be an object mapping environment labels to policy strings.")
+                return { Policy = policy; PerEnvironment = perEnvironment }
+            }
+        | Some _ ->
+            Result.failureOf (configError "sink.shape" "sink must be an object with an optional 'policy' and 'perEnvironment'.")
+
     // -----------------------------------------------------------------------
     // Top-level parser
     // -----------------------------------------------------------------------
@@ -2107,6 +2224,7 @@ module Config =
                 and! emission  = parseEmission root
                 and! policy    = parsePolicy root
                 and! output    = parseOutput root
+                and! sink      = parseSink root
                 return {
                     Model       = model
                     Profile     = profile
@@ -2115,6 +2233,7 @@ module Config =
                     Emission    = emission
                     Policy      = policy
                     Output      = output
+                    Sink        = sink
                 }
             }
 

@@ -190,6 +190,22 @@ module ConfigSchema =
             objectOf "" []
                 [ "provider", enumOf "" [ "live"; "fixture" ]
                   "maxConcurrency", integer "" ]
+        // The sink freshness section (the data-sink chapter, S8). The policy
+        // enum DERIVES from `Config.SinkPolicy.all` — the same list the
+        // parser accepts — so schema and parser cannot drift (A44).
+        let sinkPolicies = Config.SinkPolicy.all |> List.map Config.SinkPolicy.label
+        props["sink"] <-
+            let o =
+                objectOf "the sink freshness posture (reuse axis only — witnessing is gated by store presence, never by policy)" []
+                    [ "policy", enumOf "off (default: every model read pays the wire) | auto (reuse the witnessed state while the ossys fingerprints match) | pinned (reuse without probing; --refresh overrides)" sinkPolicies ]
+            let perEnv = JsonObject()
+            perEnv["type"] <- JsonValue.Create "object"
+            perEnv["description"] <- JsonValue.Create "per-environment policy refinements, keyed by the label `projection sync <env>` stamped"
+            perEnv["additionalProperties"] <- enumOf "" sinkPolicies
+            (match o["properties"] with
+             | :? JsonObject as p -> p["perEnvironment"] <- perEnv
+             | _ -> ())
+            o
         props["output"] <- objectOf "" [ "dir" ] [ "dir", str "where emitted artifacts land" ]
         root["properties"] <- props
         root["additionalProperties"] <- JsonValue.Create true

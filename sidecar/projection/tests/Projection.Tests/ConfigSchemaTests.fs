@@ -65,6 +65,31 @@ let ``the schema's transform-group enum IS TransformGroup.all (derived, cannot d
     Assert.Equal<string list>(TransformGroup.all |> List.map TransformGroup.configName, advertised)
 
 [<Fact>]
+let ``the schema's sink-policy enum IS SinkPolicy.all (derived, cannot drift) and every advertised value parses`` () =
+    use doc = JsonDocument.Parse(ConfigSchema.generate ())
+    let sinkProps =
+        doc.RootElement
+            .GetProperty("properties").GetProperty("sink")
+            .GetProperty("properties")
+    let advertised =
+        sinkProps.GetProperty("policy").GetProperty("enum").EnumerateArray()
+        |> Seq.choose (fun v -> Option.ofObj (v.GetString()))
+        |> List.ofSeq
+    Assert.Equal<string list>(Config.SinkPolicy.all |> List.map Config.SinkPolicy.label, advertised)
+    for v in advertised do
+        Assert.True((Config.SinkPolicy.parse v).IsSome, v)
+        match Config.parse (sprintf """{ "model": { "path": "m.json" }, "sink": { "policy": "%s" } }""" v) with
+        | Ok _ -> ()
+        | Error es -> Assert.Fail(sprintf "schema advertises sink policy '%s' but the parser refuses it: %A" v es)
+    // The perEnvironment map's VALUES ride the same derived enum.
+    let perEnvValues =
+        sinkProps.GetProperty("perEnvironment").GetProperty("additionalProperties")
+            .GetProperty("enum").EnumerateArray()
+        |> Seq.choose (fun v -> Option.ofObj (v.GetString()))
+        |> List.ofSeq
+    Assert.Equal<string list>(advertised, perEnvValues)
+
+[<Fact>]
 let ``every schema-advertised scope and cache value parses (and only those)`` () =
     let stagingWith (kv: string) =
         sprintf """{ "model": { "path": "m.json" }, "output": { "dir": "out/" },

@@ -79,6 +79,13 @@ module SinkStore =
             /// SHA-256 over the latest snapshot's serialized text — the
             /// torn-write detector (the estate sidecar's binding rule).
             SnapshotSha256 : string
+            /// The freshness bellwethers recorded AT witness time (S8):
+            /// rendered (target, fingerprint) pairs over the three ossys
+            /// tables, matched by `SinkFreshness.decide` under `auto`.
+            /// `[]` when the capture-time probe failed or the state
+            /// predates S8 — `auto` then always reads live (the safe
+            /// direction; a pin never consults these).
+            SourceFingerprints : (string * string) list
         }
 
     let private sha256Text (text: string) : string =
@@ -97,6 +104,13 @@ module SinkStore =
             jw.WriteString("sourceDatabase", m.SourceDatabase)
             jw.WriteString("capturedAtUtc", m.CapturedAtUtc.ToString("O", Globalization.CultureInfo.InvariantCulture))
             jw.WriteString("snapshotSha256", m.SnapshotSha256)
+            jw.WriteStartArray("sourceFingerprints")
+            for (target, fingerprint) in m.SourceFingerprints do
+                jw.WriteStartObject()
+                jw.WriteString("target", target)
+                jw.WriteString("fingerprint", fingerprint)
+                jw.WriteEndObject()
+            jw.WriteEndArray()
             jw.WriteEndObject())
 
     let private tryParseManifest (text: string) : Manifest option =
@@ -122,6 +136,23 @@ module SinkStore =
                     | s -> Some (Some s)
                 | true, v when v.ValueKind = JsonValueKind.Null -> Some None
                 | _ -> None
+            // Total over older manifests: a state witnessed before S8
+            // carries no `sourceFingerprints` array and reads as [] (auto
+            // then always reads live — the safe direction).
+            let fingerprints =
+                match root.TryGetProperty "sourceFingerprints" with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    [ for e in arr.EnumerateArray() do
+                        if e.ValueKind = JsonValueKind.Object then
+                            let field (name: string) =
+                                match e.TryGetProperty name with
+                                | true, v when v.ValueKind = JsonValueKind.String ->
+                                    match v.GetString() with null -> None | s -> Some s
+                                | _ -> None
+                            match field "target", field "fingerprint" with
+                            | Some t, Some f -> yield t, f
+                            | _ -> () ]
+                | _ -> []
             match strOf "connDigest", intOf "latestSyncId", optStrOf "envLabel", strOf "sourceDataSource", strOf "sourceDatabase", strOf "capturedAtUtc", strOf "snapshotSha256" with
             | Some digest, Some latest, Some envLabel, Some ds, Some db, Some at, Some sha ->
                 match DateTimeOffset.TryParse(at, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) with
@@ -133,7 +164,8 @@ module SinkStore =
                           SourceDataSource = ds
                           SourceDatabase = db
                           CapturedAtUtc = dto
-                          SnapshotSha256 = sha }
+                          SnapshotSha256 = sha
+                          SourceFingerprints = fingerprints }
                 | _ -> None
             | _ -> None
         with _ -> None
@@ -235,6 +267,7 @@ module SinkStore =
         (dataSource: string)
         (database: string)
         (envLabel: string option)
+        (fingerprints: (string * string) list)
         (parameters: MetadataSnapshotRunner.SnapshotParameters)
         (snapshot: MetadataSnapshotRunner.MetadataSnapshot)
         : WitnessOutcome =
@@ -295,6 +328,18 @@ module SinkStore =
                         else false
                     let displacements = SinkDisplacement.diff previousSnapshot snapshot
                     if List.isEmpty displacements && Option.isSome previous then
+                        // CDC-silence — nothing journaled. The freshness
+                        // recording still RE-ANCHORS when the probe moved
+                        // while the projected state did not (a mutation in a
+                        // column the rowsets never read): the state is
+                        // confirmed identical, so refreshing the bellwethers
+                        // keeps `auto` from degenerating into always-live
+                        // for such estates. A failed probe ([]) never
+                        // clobbers good recordings.
+                        (match previousManifest with
+                         | Some m when not (List.isEmpty fingerprints) && fingerprints <> m.SourceFingerprints ->
+                             writeAtomic (manifestPath root digest) (manifestJson { m with SourceFingerprints = fingerprints })
+                         | _ -> ())
                         WitnessOutcome.Unchanged previousSyncId
                     else
                         let syncId = previousSyncId + 1
@@ -325,21 +370,25 @@ module SinkStore =
                                   SourceDataSource = dataSource
                                   SourceDatabase = database
                                   CapturedAtUtc = nowUtc
-                                  SnapshotSha256 = sha256Text text }
+                                  SnapshotSha256 = sha256Text text
+                                  SourceFingerprints = fingerprints }
                             writeAtomic (manifestPath root digest) (manifestJson manifest)
                             WitnessOutcome.Persisted (syncId, List.length displacements, reconciled)
                 with ex ->
                     WitnessOutcome.Failed ("sink.writeFailed", ex.Message)
 
-    /// The boundary-resolving entry the witness hook calls.
+    /// The boundary-resolving entry the witness hook calls. `fingerprints`
+    /// is the hook's capture-time freshness probe (S8) — `[]` when the
+    /// probe was skipped or failed (auto then reads live; safe direction).
     let witness
         (nowUtc: DateTimeOffset)
         (dataSource: string)
         (database: string)
+        (fingerprints: (string * string) list)
         (parameters: MetadataSnapshotRunner.SnapshotParameters)
         (snapshot: MetadataSnapshotRunner.MetadataSnapshot)
         : WitnessOutcome =
-        witnessWith (EstateStoreLocation.storeDir ()) nowUtc dataSource database None parameters snapshot
+        witnessWith (EstateStoreLocation.storeDir ()) nowUtc dataSource database None fingerprints parameters snapshot
 
     /// Stamp the operator's environment label onto a source's manifest —
     /// the sync verb's naming act.

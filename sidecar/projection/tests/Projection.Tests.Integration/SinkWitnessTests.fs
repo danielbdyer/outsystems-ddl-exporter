@@ -54,12 +54,17 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                         do! Deploy.executeBatch cnn (MetadataExtractionSql.readLifecycleSeed ())
                         let digest = SinkStore.connDigest16 cnn.DataSource cnn.Database
 
-                        // 1) A TOTAL read witnesses sync 1.
+                        // 1) A TOTAL read witnesses sync 1 — and records the
+                        //    three freshness bellwethers (S8): the hook
+                        //    probes at capture time when a store rides.
                         let! first = LiveModelRead.fromConnection cnn
                         Assert.True(Result.isSuccess first)
                         let manifest1 = SinkStore.loadManifest tempStore digest
                         Assert.True(manifest1.IsSome)
                         Assert.Equal(1, manifest1.Value.LatestSyncId)
+                        Assert.Equal<string list>(
+                            SinkFreshness.targets |> List.map SinkFreshness.nameOf,
+                            manifest1.Value.SourceFingerprints |> List.map fst)
                         Assert.True((SinkStore.loadSnapshotAt tempStore digest 1).IsSome)
                         let journal1 =
                             SinkJournal.load (SinkStore.journalPath tempStore digest)
@@ -71,13 +76,28 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                         let manifestStill = (SinkStore.loadManifest tempStore digest).Value
                         Assert.Equal(1, manifestStill.LatestSyncId)
 
-                        // 3) A metadata mutation → the next total read
+                        // 3) A metadata mutation → the freshness bellwether
+                        //    MOVES against the recorded fingerprints (S8's
+                        //    live auto-detection), and the next total read
                         //    witnesses sync 2 with the tombstone displacement.
                         do! Deploy.executeBatch cnn
                                 "UPDATE [dbo].[ossys_Entity] SET [Is_Active] = 0 WHERE [Id] = 8000;"
+                        let! movedProbe = SinkFreshness.probe cnn
+                        let _ =
+                            match SinkFreshness.decide Config.SinkPolicy.Auto false (SinkStore.loadManifest tempStore digest) (Some movedProbe) with
+                            | SinkFreshness.Decision.ReadLive (SinkFreshness.Miss.FingerprintMoved moved) ->
+                                Assert.Contains("dbo.ossys_Entity", moved)
+                            | other -> Assert.Fail (sprintf "expected the entity bellwether to move, got %A" other)
                         let! _ = LiveModelRead.fromConnection cnn
                         let manifest2 = (SinkStore.loadManifest tempStore digest).Value
                         Assert.Equal(2, manifest2.LatestSyncId)
+                        // The fresh witness re-recorded the bellwethers, so
+                        //    `auto` now confirms and reuses sync 2.
+                        let! confirmedProbe = SinkFreshness.probe cnn
+                        let _ =
+                            match SinkFreshness.decide Config.SinkPolicy.Auto false (Some manifest2) (Some confirmedProbe) with
+                            | SinkFreshness.Decision.ReuseSink 2 -> ()
+                            | other -> Assert.Fail (sprintf "expected confirmed reuse of sync 2, got %A" other)
                         let journal2 =
                             SinkJournal.load (SinkStore.journalPath tempStore digest)
                             |> Result.defaultValue []

@@ -109,6 +109,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             TransformGroups = []
         }
         Output      = { Dir = "out/" }
+        Sink        = Config.defaultSink
     }
 
 let private hasErrorCode (code: string) (errs: ValidationError list) : bool =

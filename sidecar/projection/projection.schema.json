@@ -662,6 +662,34 @@
       },
       "additionalProperties": true
     },
+    "sink": {
+      "type": "object",
+      "description": "the sink freshness posture (reuse axis only \u2014 witnessing is gated by store presence, never by policy)",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "off",
+            "auto",
+            "pinned"
+          ],
+          "description": "off (default: every model read pays the wire) | auto (reuse the witnessed state while the ossys fingerprints match) | pinned (reuse without probing; --refresh overrides)"
+        },
+        "perEnvironment": {
+          "type": "object",
+          "description": "per-environment policy refinements, keyed by the label \u0060projection sync \u003Cenv\u003E\u0060 stamped",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "off",
+              "auto",
+              "pinned"
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "output": {
       "type": "object",
       "properties": {

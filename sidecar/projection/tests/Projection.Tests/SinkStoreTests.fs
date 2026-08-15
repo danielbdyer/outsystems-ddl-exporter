@@ -66,7 +66,7 @@ module SinkStoreTests =
                   { MetadataSnapshotRunner.defaultParameters with IncludeSystem = false }
                   { MetadataSnapshotRunner.defaultParameters with EntityFilterJson = Some "{}" } ]
             for parameters in scoped do
-                match SinkStore.witnessWith (Some root) nowUtc "server" "db" None parameters (snapshotA ()) with
+                match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] parameters (snapshotA ()) with
                 | SinkStore.WitnessOutcome.SkippedScoped _ -> ()
                 | other -> Assert.Fail (sprintf "scoped read was not gated: %A" other)
             // Nothing was written by any of them.
@@ -74,7 +74,7 @@ module SinkStoreTests =
 
     [<Fact>]
     let ``store disabled is a named no-op, never a throw`` () =
-        match SinkStore.witnessWith None nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) with
+        match SinkStore.witnessWith None nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) with
         | SinkStore.WitnessOutcome.Disabled reason -> Assert.Contains("live-only", reason)
         | other -> Assert.Fail (sprintf "expected Disabled, got %A" other)
 
@@ -85,7 +85,7 @@ module SinkStoreTests =
     [<Fact>]
     let ``witness persists sync 1, journals every appearance, and replay reproduces the canonical snapshot`` () =
         withTempStore (fun root ->
-            let outcome = SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ())
+            let outcome = SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ())
             match outcome with
             | SinkStore.WitnessOutcome.Persisted (1, displacements, false) ->
                 Assert.Equal(3, displacements) // module + entity + attribute
@@ -111,9 +111,9 @@ module SinkStoreTests =
     let ``a second unchanged witness is Unchanged and appends nothing (CDC-silence at the store)`` () =
         withTempStore (fun root ->
             let digest = SinkStore.connDigest16 "server" "db"
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             let before = File.ReadAllText(SinkStore.journalPath root digest)
-            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) with
+            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) with
             | SinkStore.WitnessOutcome.Unchanged 1 -> ()
             | other -> Assert.Fail (sprintf "expected Unchanged 1, got %A" other)
             Assert.Equal(before, File.ReadAllText(SinkStore.journalPath root digest)))
@@ -122,8 +122,8 @@ module SinkStoreTests =
     let ``a changed estate witnesses sync 2 with the tombstone displacement journaled and replay tracking it`` () =
         withTempStore (fun root ->
             let digest = SinkStore.connDigest16 "server" "db"
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
-            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
+            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
             | SinkStore.WitnessOutcome.Persisted (2, 1, false) -> ()
             | other -> Assert.Fail (sprintf "expected Persisted sync 2 with 1 displacement, got %A" other)
             let lines = (SinkJournal.load (SinkStore.journalPath root digest)) |> Result.defaultValue []
@@ -142,9 +142,9 @@ module SinkStoreTests =
     let ``nameEnvironment stamps the label and later witnesses preserve it`` () =
         withTempStore (fun root ->
             let digest = SinkStore.connDigest16 "server" "db"
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             Assert.True(SinkStore.nameEnvironment root digest "cloud-uat")
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotB ()) |> ignore
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) |> ignore
             Assert.Equal(Some "cloud-uat", (SinkStore.loadManifest root digest).Value.EnvLabel))
 
     // ------------------------------------------------------------------
@@ -155,7 +155,7 @@ module SinkStoreTests =
     let ``journal: a torn trailing line is tolerated; an interior corrupt line refuses by name`` () =
         withTempStore (fun root ->
             let digest = SinkStore.connDigest16 "server" "db"
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             let path = SinkStore.journalPath root digest
             let intact = File.ReadAllText path
             // Torn trailing line: append a half-written line with no newline.
@@ -221,11 +221,11 @@ module SinkStoreTests =
     let ``an orphan snapshot (manifest past the journal) reconciles at the next witness, named in its outcome`` () =
         withTempStore (fun root ->
             let digest = SinkStore.connDigest16 "server" "db"
-            SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
+            SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             // Simulate the crash window: the journal vanishes; the
             // manifest + snapshot survive.
             File.Delete(SinkStore.journalPath root digest)
-            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
+            match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
             | SinkStore.WitnessOutcome.Persisted (2, 1, true) -> ()
             | other -> Assert.Fail (sprintf "expected reconciling Persisted sync 2, got %A" other)
             // The reconciled journal replays to the latest state whole.

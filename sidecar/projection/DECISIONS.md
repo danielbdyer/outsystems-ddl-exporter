@@ -31010,3 +31010,52 @@ Judgment calls, recorded:
    (`canonical (loadSnapshotAt latest) = replay chain` — the S5 witness suite's
    step 5 restated accordingly). No store-compat concern: no pre-S7 store exists
    outside tests.
+
+## 2026-08-15 — sink S8: the freshness axis (TableFingerprint extraction; sink config section; the decision table)
+
+**R2, now RULED where it operates** (chapter-open codification made binding): `sink.policy`
+governs the REUSE axis only — `off | auto | pinned` (the `bridgeRowStaging[].cache`
+vocabulary at its second instance, per-environment refinable) decide whether a model read
+may serve the witnessed state instead of paying the wire. Witnessing is gated by store
+presence + acquisition totality, NEVER by policy: an operator who wants no witnessing
+disables the store. One lever, one meaning.
+
+The pieces, and the judgment calls in them:
+
+1. **`TableFingerprint` extracted at the second consumer** (`Projection.Adapters.Sql`,
+   compiled before `EvidenceFingerprint`): the table-shaped staleness probe (one
+   UNION ALL round-trip of row count / canonical MAX(pk) / order-independent content
+   checksum) with the estate's Catalog-shaped `EvidenceFingerprint.probe` now a thin
+   Kind→target caller. The estate's emitted SQL is BYTE-IDENTICAL through the extraction
+   (pinned as text in `SinkFreshnessTests`); bench label + failure code are the caller's
+   (`estate.fingerprint.probe`/`estate.evidence.probeFailed` kept; the sink names
+   `sink.fingerprint.probe`/`sink.probeFailed`).
+2. **The three bellwethers probe star-form**: `dbo.ossys_Espace` / `ossys_Entity` /
+   `ossys_Entity_Attr` with `CHECKSUM_AGG(BINARY_CHECKSUM(*))` — no column inventory is
+   assumed for a platform table, and the star form skips noncomparable columns
+   server-side (an ntext/image OML column can never fail the batch). Single-column `ID`
+   MAX on all three.
+3. **Recorded at witness time, by the hook** (`LiveModelRead`): the capture-time probe
+   runs ONLY when the read is total AND a store rides (no store ⇒ no round-trip bought
+   for nothing); a probe failure records `[]` — `auto` then always reads live. The
+   manifest gains `sourceFingerprints` (older manifests read as `[]` — total parser).
+4. **CDC-silence re-anchors the bellwethers**: an Unchanged witness whose probe MOVED
+   while the projected state did not (a mutation in a column the 26 rowsets never read)
+   rewrites ONLY the manifest's fingerprints — otherwise `auto` would degenerate into
+   always-live for such estates. A failed probe never clobbers good recordings.
+5. **The decision table is pure and its miss taxonomy CLOSED**
+   (`SinkFreshness.decide`): `RefreshForced` (the operator's one-run override — beats
+   even a pin, and names the decision under every policy) > `PolicyOff` >
+   pinned-reuse-without-probing > auto's ladder (`NoWitnessedState` /
+   `FingerprintAbsent` / `ProbeFailed` / `FingerprintMoved [targets]` — movement names
+   its movers). Every miss reads live; freshness only ever degrades toward the wire,
+   never toward stale reuse.
+6. **Config**: `sink: { policy, perEnvironment }` in the SHAPING view;
+   `SinkPolicy.all` drives the GENERATED schema enum (both the `policy` field and the
+   `perEnvironment` value type — A44 both directions, binder-tested);
+   `projection.schema.json` regenerated (the byte-drift test is the mechanism);
+   CONFIG_REFERENCE rows added. The `Config.overlay` section-granularity pick gains the
+   `Sink` arm (the field-count trap audited at every construction site).
+7. **The decision table's production consumer is S13** (offline/sink-backed operation
+   wires it into the verbs), as the approved plan stages it — the mechanism, its config,
+   and its laws land here; the read-path wiring lands with the operation that needs it.

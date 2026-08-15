@@ -136,8 +136,18 @@ module LiveModelRead =
                 // write seam (the notice artifacts below). Quiet on
                 // success: the sync verb (S6) is the surface that REPORTS
                 // witness outcomes; ambient reads witness silently.
+                // The freshness bellwethers (S8): probed only when the read
+                // is total AND a store rides (else the round-trip would buy
+                // nothing); a probe failure yields [] and the witness
+                // records no fingerprints — `auto` then reads live (the
+                // safe direction), never a failed read.
+                let! sinkFingerprints =
+                    if SinkStore.isTotalAcquisition parameters
+                       && (EstateStoreLocation.storeDir ()).IsSome
+                    then SinkFreshness.probe cnn
+                    else System.Threading.Tasks.Task.FromResult []
                 let witnessNotices =
-                    match SinkStore.witness System.DateTimeOffset.UtcNow cnn.DataSource cnn.Database parameters snapshot with
+                    match SinkStore.witness System.DateTimeOffset.UtcNow cnn.DataSource cnn.Database sinkFingerprints parameters snapshot with
                     | SinkStore.WitnessOutcome.Failed (code, message) ->
                         [ DiagnosticEntry.create
                             "sink:witness" DiagnosticSeverity.Warning code

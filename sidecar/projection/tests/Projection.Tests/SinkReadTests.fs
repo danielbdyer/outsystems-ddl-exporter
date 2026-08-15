@@ -53,7 +53,7 @@ module SinkReadTests =
     /// Witness one source and stamp its label — the store a `sink:<env>` ref
     /// resolves against (the sync verb's two acts, replayed directly).
     let private witnessNamed (root: string) (at: DateTimeOffset) (server: string) (db: string) (label: string) snapshot =
-        SinkStore.witnessWith (Some root) at server db None MetadataSnapshotRunner.defaultParameters snapshot |> ignore
+        SinkStore.witnessWith (Some root) at server db None [] MetadataSnapshotRunner.defaultParameters snapshot |> ignore
         let digest = SinkStore.connDigest16 server db
         SinkStore.nameEnvironment root digest label |> ignore
         digest
@@ -94,7 +94,7 @@ module SinkReadTests =
         withTempStore (fun root ->
             let digest = witnessNamed root t1 "server-a" "db" "uat" (snapshotA ())
             // The estate moves; the second witness is sync 2 at t2.
-            SinkStore.witnessWith (Some root) t2 "server-a" "db" None MetadataSnapshotRunner.defaultParameters (snapshotB ()) |> ignore
+            SinkStore.witnessWith (Some root) t2 "server-a" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) |> ignore
             match SinkRead.resolve "uat" None with
             | Error es -> Assert.Fail (sprintf "latest resolve refused: %A" es)
             | Ok latest ->

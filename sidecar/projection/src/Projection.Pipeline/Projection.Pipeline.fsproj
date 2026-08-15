@@ -40,6 +40,11 @@
          Before LiveModelRead.fs — the witness hook calls SinkStore. -->
     <Compile Include="SinkJournal.fs" />
     <Compile Include="SinkStore.fs" />
+    <!-- SinkFreshness.fs (S8): the three ossys freshness bellwethers, their
+         probe/rendering, and the pure off|auto|pinned (plus refresh) decision
+         table. After SinkStore (Manifest) and Config (SinkPolicy); before
+         LiveModelRead (the hook probes at capture time). -->
+    <Compile Include="SinkFreshness.fs" />
     <Compile Include="LiveModelRead.fs" />
     <!-- SinkRead.fs (S7): sink:<env>[@syncId] resolution (manifest env-label
          scan) + the sink→Catalog read (toBundle → parse — the live pipeline
