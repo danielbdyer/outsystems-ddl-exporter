@@ -31059,3 +31059,48 @@ The pieces, and the judgment calls in them:
 7. **The decision table's production consumer is S13** (offline/sink-backed operation
    wires it into the verbs), as the approved plan stages it — the mechanism, its config,
    and its laws land here; the read-path wiring lands with the operation that needs it.
+
+## 2026-08-15 — sink S9: selection becomes a pure, witnessed pass (A49 promotes to LIVE)
+
+The chapter's ideological center lands: **acquisition is total; selection is pure.** The
+lifecycle axes (`includeSystemModules` / `includeInactiveModules`) that
+`ModuleFilter.apply` had dropped SILENTLY inside its Result channel — rows the
+acquisition had already paid for, erased with no lineage — are now a registered pass.
+
+- **One drop semantic, two channels.** `ModuleFilter.lifecycleFilter` (the former
+  Step 2, extracted verbatim; `isSystemModule` made public) is THE definition: `apply`
+  keeps dropping silently on the Result channel (behavior-identical — the pushdown ≡
+  filter law pins it), and `Passes/SelectionSuppression.fs` (the `VisibilityMask`
+  shape, `OperatorIntent Selection`) emits one `Removed` lineage event per suppressed
+  kind. `RemovalReason` widened with the two marker variants (`LifecycleInactive`,
+  `SystemOwnedModule`); attribution order = the historical arm order (system wins).
+  `RemovalReason` compiles AFTER `ModuleFilter`, so the shared carrier speaks in keys
+  (`LifecycleRemoval`) and the pass maps keys to reasons.
+- **The seam interleaves, exactly.** `ModuleFilter.apply` decomposes into
+  `applySelection` (names; Result refusals stay here) → lifecycle → `applyEntityFilters`
+  (entities + the cross-scope prune + the emptiness refusals); `apply` recomposes the
+  three so the monolith's step order is preserved to the letter. The Pipeline's
+  `applyModuleFilter` runs the SAME composition with the registered pass in the
+  lifecycle slot and PROJECTS its trail onto the operator channel
+  (`EventProjection.ofLineageTrail` → LogSink) — the erasure is witnessed where it
+  happens.
+- **Registered in `chainSteps`** (22nd pass, identity default — byte-identical chain;
+  the `VisibilityMask` registration posture: metadata registered config-invariant, the
+  real axes execute at the seam). The three registry count pins move 26→27 / 21→22
+  with this lineage. `Policy.fs`'s F12 dormant-trigger comment now points at
+  SelectionSuppression as the worked example (F12's own trigger has NOT fired).
+- **A49 promotes to LIVE.** The three-way commuting law extends the pushdown ≡ filter
+  law IN PLACE (`OssysExtractionCanaryTests`): pushdown ≡ filter∘live ≡ filter∘sink
+  over the edge-case seed, with the sink leg witnessed into an EXPLICIT temp store
+  (no env vars — R7) and `OnlyActiveAttributes` held equal across all three legs at
+  its total setting (the axis stays the file's NAMED RESIDUAL; the historical two-leg
+  law keeps exercising the held-equal-at-true form). The AxiomTests stub flips to four
+  `citationOf` witnesses (the three-way law, the sync verb's structural pin, the
+  two-channel equality, the totality gate); AXIOMS.md A49 status → LIVE; matrix
+  regenerated. Also proven in passing: two consecutive total acquisitions of one
+  estate parse to EQUAL catalogs (the three-way law compares across acquisitions —
+  T1's determinism claim carrying real weight).
+- **Delta-lint comparator refined (procedural note):** the S9 `Lineage.fs` insertion
+  shifted eight pre-existing LINT-ALLOW entries' line numbers, so the delta gate now
+  compares with line numbers normalized (file + rationale substance) — zero new
+  violations remains the bar; the baseline recording (`825671c`) is unchanged.

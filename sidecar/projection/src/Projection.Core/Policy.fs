@@ -740,10 +740,15 @@ module SelectionPolicy =
     /// pruning) with NO pipeline wiring today, so it does not yet need a
     /// `RegisteredAllTransforms` entry. TRIGGER: the day a live path invokes
     /// this, it MUST register as `OperatorIntent (OverlayAxis Selection)` and
-    /// bind execution↔registration in a test (mirror `LogicalTableEmission` /
-    /// the F2 `filterPlatformAutoIndexes` lift) — a selection that silently
+    /// bind execution↔registration in a test — a selection that silently
     /// drops kinds is the exact untracked-operator-intent pattern the sweep
-    /// hunts.
+    /// hunts. The WORKED EXAMPLE for that registration is now
+    /// `Passes/SelectionSuppression.fs` (the data-sink chapter, S9): the
+    /// lifecycle-selection axes that used to erase silently inside
+    /// `ModuleFilter.apply` landed as a registered Selection-axis pass with
+    /// one `Removed` lineage event per suppression — mirror it when this
+    /// trigger fires. (This function's own trigger has NOT fired: it
+    /// remains unwired.)
     let filterCatalog (policy: SelectionPolicy) (c: Catalog) : Catalog =
         c
         |> Lens.over CatalogLenses.modules (

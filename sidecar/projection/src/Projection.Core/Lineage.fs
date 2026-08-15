@@ -27,6 +27,16 @@ type RemovalReason =
     | OriginPredicate of origin: Origin
     | ExplicitKeyList
     | ModalityPredicate of mark: ModalityMark
+    /// The kind (or its whole module) is lifecycle-inactive and the
+    /// operator's scope excludes inactive metadata (`SelectionSuppression`,
+    /// the data-sink chapter S9 — the axis that used to erase silently
+    /// inside `ModuleFilter.apply`'s Result channel). Marker variant: the
+    /// suppressed key rides the event's own `SsKey`.
+    | LifecycleInactive
+    /// Every kind of the module is `ModalityMark.SystemOwned` and the
+    /// operator's scope excludes system modules (`SelectionSuppression`,
+    /// S9). Marker variant, same rationale.
+    | SystemOwnedModule
 
 /// Companion module for `RemovalReason`. Provides the rendering-
 /// boundary projection: typed payload → diagnostic string. Strings
@@ -57,6 +67,10 @@ module RemovalReason =
             "explicit-key-list"
         | ModalityPredicate mark ->
             String.concat "" [ "modality="; ModalityMark.toDiagnosticString mark ]  // LINT-ALLOW: terminal diagnostic projection; typed `RemovalReason` DU IS the structure
+        | LifecycleInactive ->
+            "lifecycle-inactive"
+        | SystemOwnedModule ->
+            "system-owned-module"
 
 
 /// Reason a `SymmetricClosure` pass step skipped attaching an inverse

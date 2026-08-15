@@ -28,19 +28,22 @@ open Projection.Core
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7' slice β + D.1.a: RegisteredTransforms.all carries 26 Core-resident entries (21 pass + 5 strategy)`` () =
+let ``A.4.7' slice β + D.1.a: RegisteredTransforms.all carries 27 Core-resident entries (22 pass + 5 strategy)`` () =
     // Slice D.1.a added LogicalTableEmission + LogicalColumnEmission
     // (the two default-on emission-axis passes for logical-name
     // substitution into the physical-realization slot).
     // NM-36 wired cascadeShockZones as a DataIntent analytics pass (20th);
-    // bridge retargeting added bridgeRetargetPass (21st, OperatorIntent Selection).
-    Assert.Equal(26, List.length RegisteredTransforms.all)
+    // bridge retargeting added bridgeRetargetPass (21st, OperatorIntent Selection);
+    // the data-sink chapter S9 added selectionSuppression (22nd, OperatorIntent
+    // Selection — the lifecycle axes on the lineage channel).
+    Assert.Equal(27, List.length RegisteredTransforms.all)
 
 [<Fact>]
-let ``A.4.7' slice β + D.1.a: RegisteredTransforms.allChainSteps carries 21 PassChainAdapter entries`` () =
+let ``A.4.7' slice β + D.1.a: RegisteredTransforms.allChainSteps carries 22 PassChainAdapter entries`` () =
     // Slice D.1.a added LogicalTableEmission + LogicalColumnEmission;
-    // NM-36 added cascadeShockZones; bridge retargeting added bridgeRetargetPass.
-    Assert.Equal(21, List.length RegisteredTransforms.allChainSteps)
+    // NM-36 added cascadeShockZones; bridge retargeting added bridgeRetargetPass;
+    // the data-sink chapter S9 added selectionSuppression.
+    Assert.Equal(22, List.length RegisteredTransforms.allChainSteps)
 
 [<Fact>]
 let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in RegisteredTransforms.all`` () =
@@ -63,7 +66,7 @@ let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in
 [<Fact>]
 let ``A41: RegisteredTransforms.all validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create RegisteredTransforms.all with
-    | Ok entries -> Assert.Equal(26, List.length entries)
+    | Ok entries -> Assert.Equal(27, List.length entries)
     | Error es -> failwithf "expected RegisteredTransforms.all to validate; got %A" es
 
 [<Fact>]

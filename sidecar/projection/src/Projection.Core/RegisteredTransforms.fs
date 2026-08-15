@@ -119,6 +119,12 @@ module RegisteredTransforms =
     let chainStepsWithPins (logicalEmissionPins: Set<SsKey>) : ChainStep list =
         [ catalogStep CanonicalizeIdentity.registered
           catalogStep (VisibilityMask.registered emptyMask)
+          // S9 (the data-sink chapter) — the lifecycle-selection pass, the
+          // Selection-axis sibling of VisibilityMask. The chain default is
+          // the no-suppression identity (byte-identical); the Pipeline's
+          // applyModuleFilter seam executes it with the operator's real
+          // axes, so registered ⇔ executed holds for the one pass.
+          catalogStep (SelectionSuppression.registered SelectionSuppression.identity)
           catalogStep (NamingMorphism.registered identityMorphism)
           catalogStep NormalizeStaticPopulations.registered
           catalogStep SymmetricClosure.registered

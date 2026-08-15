@@ -410,6 +410,86 @@ let ``slice 4 equivalence: scoped pushdown read equals full read narrowed by Mod
         | s, f ->
             failwithf "equivalence legs failed: scoped=%A filtered=%A" s f
 
+// ---------------------------------------------------------------------
+// A49 (the data-sink chapter, S9) — the THREE-WAY commuting law: the
+// two-leg pushdown ≡ filter law above gains the sink leg.
+//
+//     scopedRead(scope) ≡ filter(scope) ∘ liveTotal ≡ filter(scope) ∘ sinkOf(liveTotal)
+//
+// Acquisition is TOTAL (the witnessed leg binds `defaultParameters`
+// exactly — the sink's totality gate enforces it); selection is PURE
+// (the same in-memory seam narrows the live and the witnessed catalog
+// to the same value the pushdown produced). The `OnlyActiveAttributes`
+// axis is held EQUAL across all three legs at its total setting (false)
+// — the axis stays the file's named residual (its own canary above);
+// the two-leg law keeps exercising the true=held-equal form. The sink
+// leg witnesses into an EXPLICIT temp store (no env vars — R7: the
+// pure pool must never sprout ambient sink directories).
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (selection is pure; acquisition is total)`` () =
+    if skipIfNoDocker "ossys-three-way-selection" then
+        let threeWayModel = { scopedModel with OnlyActiveAttributes = false }
+        let tempStore = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sink-three-way", System.Guid.NewGuid().ToString("N"))
+        System.IO.Directory.CreateDirectory tempStore |> ignore
+        try
+            let legs =
+                TaskSync.run (fun () ->
+                    task {
+                        let seed = MetadataExtractionSql.readEdgeCaseSeed()
+                        return!
+                            Deploy.withBootstrappedDatabase "OssysThreeWay" seed (fun cnn ->
+                                task {
+                                    // Leg 1 — the pushdown read (scope bound into the SQL).
+                                    let! scoped =
+                                        LiveModelRead.fromConnectionWith
+                                            (SnapshotScopeBinding.fromModel threeWayModel) cnn
+                                    // Leg 2 — the TOTAL live read (defaultParameters exactly).
+                                    let! live = LiveModelRead.fromConnection cnn
+                                    // Leg 3 — the same total acquisition, witnessed into an
+                                    // explicit store and read back through the sink pipeline.
+                                    let! snapshot = MetadataSnapshotRunner.runAsync cnn MetadataSnapshotRunner.defaultParameters
+                                    let sinkRead =
+                                        match snapshot with
+                                        | Error es -> Task.FromResult (Result.failure es)
+                                        | Ok snap ->
+                                            let nowUtc = System.DateTimeOffset.Parse("2026-08-15T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                                            match SinkStore.witnessWith (Some tempStore) nowUtc cnn.DataSource cnn.Database None [] MetadataSnapshotRunner.defaultParameters snap with
+                                            | SinkStore.WitnessOutcome.Persisted (syncId, _, _) ->
+                                                let digest = SinkStore.connDigest16 cnn.DataSource cnn.Database
+                                                match SinkStore.loadManifest tempStore digest with
+                                                | Some manifest ->
+                                                    SinkRead.readCatalog
+                                                        { Root = tempStore
+                                                          Digest = digest
+                                                          Manifest = manifest
+                                                          SyncId = syncId
+                                                          CapturedAtUtc = nowUtc }
+                                                | None -> Task.FromResult (Result.failureOf (ValidationError.create "test.manifestAbsent" "the witness persisted no manifest"))
+                                            | other -> Task.FromResult (Result.failureOf (ValidationError.create "test.witnessRefused" (sprintf "%A" other)))
+                                    let! sink = sinkRead
+                                    return Result.success (scoped, live, sink)
+                                })
+                    })
+            match legs with
+            | Error es -> Assert.Fail (sprintf "three-way legs failed to acquire: %A" es)
+            | Ok (scoped, live, sink) ->
+                let narrow (leg: Result<Catalog>) : Result<Catalog> =
+                    match leg, ModuleFilterBinding.fromConfig threeWayModel with
+                    | Ok catalog, Ok opts -> ModuleFilter.apply opts catalog
+                    | Error es, _ -> Result.failure es
+                    | _, Error es -> Result.failure es
+                match scoped, narrow live, narrow sink with
+                | Ok pushdown, Ok filteredLive, Ok filteredSink ->
+                    // The law, at the value grain, both ways.
+                    Assert.Equal<Catalog>(pushdown, filteredLive)
+                    Assert.Equal<Catalog>(pushdown, filteredSink)
+                | s, l, k ->
+                    failwithf "three-way legs failed: pushdown=%A live=%A sink=%A" s l k
+        finally
+            try System.IO.Directory.Delete(tempStore, true) with _ -> ()
+
 [<Fact>]
 let ``attribute-activity pushdown: onlyActiveAttributes excludes inactive attributes at query time`` () =
     // `model.onlyActiveAttributes = true` (the config default) binds to

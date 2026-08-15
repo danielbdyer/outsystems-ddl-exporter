@@ -1898,27 +1898,46 @@ module Compose =
 
     /// Apply the config-driven module-selection filter (`model.modules` +
     /// the system / inactive include flags) to the read catalog — the
-    /// `ModuleFilter.apply` Selection seam (pillar 9). An empty `model.modules`
-    /// is the all-permissive identity (`ModuleFilterBinding.fromConfig` returns
-    /// `ModuleFilter.empty`, and `ModuleFilter.apply` short-circuits to the
-    /// input), so the default config is byte-identical. A non-empty selection
-    /// narrows the catalog to the named modules + their per-module entity
-    /// subsets; operator-supplied-name mismatches surface as structured
-    /// `moduleFilter.*` errors (fail-loud, never a silent empty catalog).
+    /// Selection seam (pillar 9). An empty `model.modules` is the
+    /// all-permissive identity (`ModuleFilterBinding.fromConfig` returns
+    /// `ModuleFilter.empty`, short-circuit), so the default config is
+    /// byte-identical. A non-empty selection narrows the catalog to the
+    /// named modules + their per-module entity subsets; operator-supplied-
+    /// name mismatches surface as structured `moduleFilter.*` errors
+    /// (fail-loud, never a silent empty catalog).
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the SINGLE shared module-filter
     /// seam. `runWithConfig`'s model-read path (`readConfigModel`) and the
     /// flow dispatch's resolved-catalog path (`Program.needCatalog`) both
     /// route the read catalog through here, so a `model.modules` scope
     /// narrows the bundle and the live/docker/migrate catalogs identically.
-    /// An empty `model.modules` is the all-permissive identity
-    /// (`ModuleFilterBinding`/`ModuleFilter.apply` short-circuit), so the
-    /// default config is byte-identical.
+    ///
+    /// S9 (the data-sink chapter): the LIFECYCLE axes route through the
+    /// registered `SelectionSuppression` pass — the monolithic
+    /// `ModuleFilter.apply` step order (names → lifecycle → entities) is
+    /// preserved exactly (one drop semantic, `ModuleFilter.lifecycleFilter`,
+    /// shared by both), but here every suppressed kind's `Removed` lineage
+    /// event is PROJECTED onto the operator channel
+    /// (`EventProjection.ofLineageTrail` → LogSink) instead of erased —
+    /// the acquisition stays total; the selection is a pure, witnessed pass.
     let applyModuleFilter
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Catalog> =
         ModuleFilterBinding.fromConfig cfg.Model
-        |> Result.bind (fun opts -> ModuleFilter.apply opts catalog)
+        |> Result.bind (fun opts ->
+            if not (ModuleFilter.hasFilter opts) then Result.success catalog
+            else
+                ModuleFilter.applySelection opts catalog
+                |> Result.bind (fun selected ->
+                    let axes : Projection.Core.Passes.SelectionSuppression.Axes =
+                        { IncludeSystemModules = opts.IncludeSystemModules
+                          IncludeInactiveModules = opts.IncludeInactiveModules }
+                    let suppressed =
+                        (Projection.Core.Passes.SelectionSuppression.registered axes).Run selected
+                    suppressed.Trail
+                    |> EventProjection.ofLineageTrail
+                    |> List.iter LogSink.emit
+                    ModuleFilter.applyEntityFilters opts (LineageDiagnostics.payload suppressed)))
 
     /// The full-export model read under the live-OSSYS-primary / file-fallback
     /// policy (V1_INPUT_DEPRECATION.md §3). `cfg.Model.Ossys` set ⇒ read live

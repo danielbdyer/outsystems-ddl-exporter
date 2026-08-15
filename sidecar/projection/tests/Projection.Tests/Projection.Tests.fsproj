@@ -215,6 +215,7 @@
     <Compile Include="MultiEnvironmentPromotionTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
+    <Compile Include="SelectionSuppressionTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
     <Compile Include="NormalizeStaticPopulationsTests.fs" />
     <Compile Include="SymmetricClosureTests.fs" />

@@ -2244,9 +2244,10 @@ axiom-file pointer to those facts.
 
 ## A49 — acquisition is total; selection is pure (the data sink chapter open, 2026-08-15)
 
-*Status: CANDIDATE (chapter open 2026-08-15 — the data sink chapter, `CHAPTER_SINK_OPEN.md`;
-promotion trigger: the three-way equivalence witness lands with the `SelectionSuppression`
-pass at slice S9).*
+*Status: LIVE (promoted at slice S9, 2026-08-15 — the `SelectionSuppression` pass landed
+(one drop semantic shared with `ModuleFilter.apply`, two channels), the three-way
+equivalence witness runs in `OssysExtractionCanaryTests`, and the sync path's total
+binding is structurally pinned in `SinkStoreTests`).*
 
 **Statement.** The engine's acquisition of the OSSYS metadata plane carries no operator
 Selection: the sync path binds `MetadataSnapshotRunner.defaultParameters` exactly (all

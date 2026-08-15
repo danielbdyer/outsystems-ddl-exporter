@@ -198,6 +198,10 @@
     <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
+    <!-- Passes/SelectionSuppression.fs (sink S9): the lifecycle-selection axes
+         on the lineage channel — one drop semantic (ModuleFilter.lifecycleFilter),
+         two channels. After ModuleFilter + Lineage; the VisibilityMask shape. -->
+    <Compile Include="Passes/SelectionSuppression.fs" />
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />

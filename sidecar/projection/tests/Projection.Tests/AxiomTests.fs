@@ -1735,13 +1735,16 @@ Ledger.replay over the SinkJournal LedgerSpec instance + the inequality law) —
 entry to citationOf pointers in that commit.")>]
 let ``T19: the sink journal replays — fold applyDisplacement from genesis = latest (FTC at acquisition grain)`` () = ()
 
-[<Fact(Skip = "A49 candidate (Bucket C; the data sink chapter opens 2026-08-15 — \
-CHAPTER_SINK_OPEN.md; DECISIONS 'The data sink chapter opens'). Acquisition is total; \
-selection is pure: the sync path binds MetadataSnapshotRunner.defaultParameters exactly (no \
-WHERE-clause policy on the sync path), and module/entity selection commutes across the three \
-legs — pushdown ≡ SelectionSuppression∘live ≡ SelectionSuppression∘sink — with the \
-OnlyActiveAttributes axis a NAMED RESIDUAL per the extraction canary's own scope note. \
-Promotion trigger: slice S9 lands the SelectionSuppression pass and extends the pushdown \
-equivalence law in OssysExtractionCanaryTests to the three-way form — flip this entry to \
-citationOf pointers in that commit.")>]
-let ``A49: acquisition is total; selection is pure (the three-way commuting law)`` () = ()
+[<Fact>]
+let ``A49: acquisition is total; selection is pure (the three-way commuting law)`` () =
+    // Promoted at S9 (the data-sink chapter): the SelectionSuppression pass
+    // landed (one drop semantic, two channels — the lifecycle axes that used
+    // to erase silently inside ModuleFilter.apply now carry lineage), the
+    // sync path's total binding is structurally pinned, and the pushdown
+    // equivalence law holds in its three-way form. The OnlyActiveAttributes
+    // axis stays the extraction canary's NAMED RESIDUAL (held equal across
+    // all legs, never compensated post-hoc).
+    citationOf "tests/Projection.Tests/OssysExtractionCanaryTests.fs" "A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (selection is pure; acquisition is total)"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "A49 pin: the sync verb acquires with defaultParameters exactly (total acquisition, structurally)"
+    citationOf "tests/Projection.Tests/SelectionSuppressionTests.fs" "one drop semantic, two channels: the pass equals apply's lifecycle arm and names every suppression"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "totality gate: only a defaultParameters-shaped read witnesses; each scoped axis skips by name"

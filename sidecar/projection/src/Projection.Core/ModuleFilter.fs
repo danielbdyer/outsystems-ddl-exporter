@@ -293,10 +293,54 @@ module ModuleFilter =
     /// operator considers "the system" is one whose every entity
     /// is system-owned. An empty-kind module returns false (cannot
     /// exist post-`Module.create` per LR1 non-empty invariant).
-    let private isAllSystemModule (m: Module) : bool =
+    /// Public since S9 (the data-sink chapter): the
+    /// `SelectionSuppression` pass shares this ONE definition.
+    let isSystemModule (m: Module) : bool =
         not (List.isEmpty m.Kinds)
         && m.Kinds
            |> List.forall (fun k -> List.contains ModalityMark.SystemOwned k.Modality)
+
+    /// The kinds a lifecycle decision removed from one module, by axis —
+    /// the shared carrier between `apply` (which drops them SILENTLY on
+    /// the Result channel, exactly as it always has) and the
+    /// `SelectionSuppression` pass (which turns each key into a `Removed`
+    /// lineage event; the data-sink chapter S9). `RemovalReason` compiles
+    /// AFTER this file, so the carrier speaks in keys and the pass maps
+    /// keys to reasons.
+    type LifecycleRemoval = {
+        /// Removed because the module is all-`SystemOwned` and the scope
+        /// excludes system modules.
+        SystemOwned : SsKey list
+        /// Removed because the module (or the kind itself) is
+        /// lifecycle-inactive and the scope excludes inactive metadata.
+        Inactive    : SsKey list
+    }
+
+    /// **The one lifecycle-axes drop semantic** (`apply`'s former Step 2,
+    /// extracted at S9 so the silent channel and the lineage channel
+    /// cannot drift): given the two include flags, either keep the module
+    /// (possibly with its inactive kinds dropped) or drop it whole.
+    /// Attribution order matches the historical arm order — the
+    /// system-module test wins over the inactive test when both would
+    /// fire (deterministic attribution, the `VisibilityMask` first-match
+    /// convention).
+    let lifecycleFilter
+        (includeSystemModules: bool)
+        (includeInactiveModules: bool)
+        (m: Module)
+        : Module option * LifecycleRemoval =
+        if not includeSystemModules && isSystemModule m then
+            None, { SystemOwned = m.Kinds |> List.map (fun k -> k.SsKey); Inactive = [] }
+        elif not includeInactiveModules then
+            if not m.IsActive then
+                None, { SystemOwned = []; Inactive = m.Kinds |> List.map (fun k -> k.SsKey) }
+            else
+                let activeKinds, inactiveKinds = m.Kinds |> List.partition (fun k -> k.IsActive)
+                let removal = { SystemOwned = []; Inactive = inactiveKinds |> List.map (fun k -> k.SsKey) }
+                if List.isEmpty activeKinds then None, removal
+                else Some (Lens.set CatalogLenses.kindsOf activeKinds m), removal
+        else
+            Some m, { SystemOwned = []; Inactive = [] }
 
     /// Apply the filter to a catalog. Returns `Result<Catalog>`
     /// carrying the filtered catalog (or accumulated validation
@@ -348,79 +392,66 @@ module ModuleFilter =
                     else { k with References = kept }))
                 m)
 
-    let apply (opts: ModuleFilterOptions) (catalog: Catalog) : Result<Catalog> =
-        use _ = Bench.scope "moduleFilter.apply"
-        if not (hasFilter opts) then
+    /// Step 1 alone (S9 decomposition): resolve operator-supplied module
+    /// names against the catalog and narrow to the selected modules.
+    /// Lookup is by lowercased Name.value; the original operator-typed
+    /// name surfaces in any missing-name error. NO lifecycle filtering,
+    /// NO entity filtering, NO reference pruning — those are the other
+    /// two pieces; `apply` composes all three, and the Pipeline seam
+    /// interleaves the registered `SelectionSuppression` pass between
+    /// them so the lifecycle drops carry lineage.
+    let applySelection (opts: ModuleFilterOptions) (catalog: Catalog) : Result<Catalog> =
+        if Set.isEmpty opts.Modules then
             Result.success catalog
         else
-        // Step 1: resolve operator-supplied module names against the
-        // catalog. Lookup is by lowercased Name.value; the original
-        // operator-typed name surfaces in any missing-name error.
         let catalogIndex =
             catalog.Modules
             |> List.map (fun m -> (Name.value m.Name).ToLowerInvariant(), m)
             |> Map.ofList
-        let selected, missingErrors =
-            if Set.isEmpty opts.Modules then
-                catalog.Modules, []
-            else
-                let resolved = ResizeArray<Module>()
-                let missing = ResizeArray<string>()
-                opts.ModulesOriginal
-                |> List.iter (fun original ->
-                    let lowered = original.ToLowerInvariant()
-                    match Map.tryFind lowered catalogIndex with
-                    | Some m -> resolved.Add(m)
-                    | None -> missing.Add(original))
-                if missing.Count > 0 then
-                    let codes =
-                        missing
-                        |> String.concat ", "
-                    [],
-                    [ ValidationError.create
-                        "moduleFilter.modules.missing"
-                        (sprintf "Requested module(s) not found in catalog: %s." codes) ]
-                else
-                    List.ofSeq resolved, []
-        if not (List.isEmpty missingErrors) then
-            Result.failure missingErrors
+        let resolved = ResizeArray<Module>()
+        let missing = ResizeArray<string>()
+        opts.ModulesOriginal
+        |> List.iter (fun original ->
+            let lowered = original.ToLowerInvariant()
+            match Map.tryFind lowered catalogIndex with
+            | Some m -> resolved.Add(m)
+            | None -> missing.Add(original))
+        if missing.Count > 0 then
+            let codes = missing |> String.concat ", "
+            Result.failureOf (
+                ValidationError.create
+                    "moduleFilter.modules.missing"
+                    (sprintf "Requested module(s) not found in catalog: %s." codes))
         else
-        // Step 2: apply system + inactive filters at module level.
-        // Inactive modules also reduce their kind list to active-
-        // only kinds (V1 parity: `module with { Entities =
-        // activeEntities }`).
-        let filteredModules =
-            selected
-            |> List.choose (fun m ->
-                if not opts.IncludeSystemModules && isAllSystemModule m then
-                    None
-                elif not opts.IncludeInactiveModules then
-                    if not m.IsActive then None
-                    else
-                        let activeKinds = m.Kinds |> List.filter (fun k -> k.IsActive)
-                        if List.isEmpty activeKinds then None
-                        else Some (Lens.set CatalogLenses.kindsOf activeKinds m)
-                else
-                    Some m)
-        if List.isEmpty filteredModules then
+            Result.success { catalog with Modules = List.ofSeq resolved }
+
+    /// Steps 3+4 + the cross-scope prune + the post-lifecycle emptiness
+    /// refusal (S9 decomposition): per-module entity filters with their
+    /// accumulated `entities.missing` / `entities.empty` errors, the
+    /// degenerate empty-module defense, and the reference prune that
+    /// restores `Catalog.create` constructibility. The input is expected
+    /// POST-lifecycle (the historical Step-2 output); an input emptied by
+    /// the lifecycle axes refuses `moduleFilter.modules.empty` exactly as
+    /// the monolithic `apply` did.
+    let applyEntityFilters (opts: ModuleFilterOptions) (catalog: Catalog) : Result<Catalog> =
+        if List.isEmpty catalog.Modules then
             Result.failureOf (
                 ValidationError.create
                     "moduleFilter.modules.empty"
                     "Module filter removed all modules from the catalog.")
         else
-        // Step 3: apply per-module entity filters. Each filter's
-        // unmatched-name set surfaces as one
-        // `moduleFilter.entities.missing` error; an entity filter
-        // that would zero out its module surfaces as
+        // Per-module entity filters. Each filter's unmatched-name set
+        // surfaces as one `moduleFilter.entities.missing` error; an
+        // entity filter that would zero out its module surfaces as
         // `moduleFilter.entities.empty`. Errors accumulate (a
         // multi-module filter producing two missing-name events
         // returns both).
         if Map.isEmpty opts.EntityFilters then
-            Result.success { catalog with Modules = pruneCrossScopeReferences filteredModules }
+            Result.success { catalog with Modules = pruneCrossScopeReferences catalog.Modules }
         else
         let entityErrors = ResizeArray<ValidationError>()
         let adjusted =
-            filteredModules
+            catalog.Modules
             |> List.map (fun m ->
                 let moduleLowered = (Name.value m.Name).ToLowerInvariant()
                 match Map.tryFind moduleLowered opts.EntityFilters with
@@ -447,14 +478,10 @@ module ModuleFilter =
         if entityErrors.Count > 0 then
             Result.failure (List.ofSeq entityErrors)
         else
-        // Step 4: post-entity-filter empty-module check — a filter
-        // that matched zero kinds in a module should already have
-        // surfaced as `entities.empty` above; this catch is for the
-        // degenerate "all modules ended up with zero kinds AND no
-        // entity filter was active" case (cannot occur structurally
-        // post-Step-2 since Step-2's `isAllSystemModule` /
-        // `IncludeInactiveModules` checks already drop empty
-        // modules — defense-in-depth).
+        // Post-entity-filter empty-module check — defense-in-depth (a
+        // filter that matched zero kinds already surfaced as
+        // `entities.empty` above; the lifecycle piece already drops
+        // emptied modules).
         if adjusted |> List.exists (fun m -> List.isEmpty m.Kinds) then
             Result.failureOf (
                 ValidationError.create
@@ -462,3 +489,24 @@ module ModuleFilter =
                     "Module filter removed all entities from at least one module.")
         else
             Result.success { catalog with Modules = pruneCrossScopeReferences adjusted }
+
+    /// The historical total filter, now the COMPOSITION of the three S9
+    /// pieces — name selection → the one lifecycle drop semantic
+    /// (`lifecycleFilter`, silent here on the Result channel exactly as it
+    /// always was) → entity filters + prune. Behavior-identical to the
+    /// monolith (the pushdown ≡ filter equivalence law pins it); the
+    /// Pipeline's `applyModuleFilter` seam interleaves the registered
+    /// `SelectionSuppression` pass in the lifecycle slot so the same drops
+    /// carry lineage there.
+    let apply (opts: ModuleFilterOptions) (catalog: Catalog) : Result<Catalog> =
+        use _ = Bench.scope "moduleFilter.apply"
+        if not (hasFilter opts) then
+            Result.success catalog
+        else
+            applySelection opts catalog
+            |> Result.bind (fun selected ->
+                let kept =
+                    selected.Modules
+                    |> List.choose (fun m ->
+                        fst (lifecycleFilter opts.IncludeSystemModules opts.IncludeInactiveModules m))
+                applyEntityFilters opts { selected with Modules = kept })
