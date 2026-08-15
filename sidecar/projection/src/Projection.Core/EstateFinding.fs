@@ -821,12 +821,13 @@ module EstateFindingKind =
         | EstateFindingKind.ProofDiverged -> DetectionStatus.Active
         // The data-sink chapter's DECIDE vocabulary: the claims detectors
         // went LIVE at S11b (the estate face assembles journal claims for
-        // every sink-named environment); the residue sweep flips at S12,
-        // the correspondence proposer at S14.
+        // every sink-named environment); the residue sweep flipped at S12
+        // and the correspondence proposer at S14 — the chapter's whole
+        // vocabulary is detector-backed.
         | EstateFindingKind.PhysicalClaimContested
         | EstateFindingKind.PhysicalTombstoneOnly
-        | EstateFindingKind.PhysicalUnclaimed -> DetectionStatus.Active
-        | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.NotYetDetected
+        | EstateFindingKind.PhysicalUnclaimed
+        | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.Active
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

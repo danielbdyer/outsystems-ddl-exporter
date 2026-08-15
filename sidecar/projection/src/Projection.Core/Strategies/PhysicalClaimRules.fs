@@ -113,17 +113,20 @@ module PhysicalClaimRules =
         | PhysicalClaimOutcome.TombstoneOnly _ -> "tombstoneOnly"
         | PhysicalClaimOutcome.Unclaimed -> "unclaimed"
 
+    /// One claim's diagnostic clause — the ONE claim renderer both the
+    /// outcome clauses and the correspondence clauses (S14) speak through.
+    let private claimText (c: PhysicalClaim) =
+        System.String.Concat( // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed PhysicalClaim IS the structure
+            c.ModuleName, ".", c.EntityName,
+            (if c.IsExternalRegistration then " (external re-registration)" else ""),
+            (if c.IsActive then "" else " (tombstone)"),
+            " @sync ", string c.FirstWitnessedSync)
+
     /// The structured rendering — typed payload → the diagnostic clause a
     /// boundary consumer prints. Strings emerge only here (the
     /// `RemovalReason.toDiagnosticString` convention).
     let toStructured (set: ClaimSet) (outcome: PhysicalClaimOutcome) : (string * string) list =
         let table = System.String.Concat(set.Schema, ".", set.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed ClaimSet IS the structure
-        let claimText (c: PhysicalClaim) =
-            System.String.Concat( // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed PhysicalClaim IS the structure
-                c.ModuleName, ".", c.EntityName,
-                (if c.IsExternalRegistration then " (external re-registration)" else ""),
-                (if c.IsActive then "" else " (tombstone)"),
-                " @sync ", string c.FirstWitnessedSync)
         [ "table", table
           "outcome", token outcome
           match outcome with
@@ -136,3 +139,61 @@ module PhysicalClaimRules =
           | PhysicalClaimOutcome.TombstoneOnly tombstones ->
               "tombstones", (tombstones |> List.map claimText |> String.concat "; ") // LINT-ALLOW: terminal diagnostic projection at the rendering boundary — joining already-rendered claim clauses for one structured field; the typed claim list IS the structure
           | PhysicalClaimOutcome.Unclaimed -> () ]
+
+    // -- the cross-cutover identity correspondence (S14) ---------------------
+
+    /// A cross-cutover identity correspondence PROPOSAL: the sole live
+    /// claim on a table whose lineage carries tombstones reads as ONE
+    /// identity continuing across a delete-then-re-register cutover (the
+    /// External-Entities path the chapter opens with). A proposal is
+    /// EVIDENCE for the operator's ruling — NEVER an adoption: the type
+    /// carries the two claims and their native keys and can write nothing
+    /// (no catalog passes through the proposer; no `SsKey` is minted —
+    /// a ruled continuity would thread `SsKey.derivedFrom`/`V1Mapped` at
+    /// the ruling's own hands, and the closed `DerivationReason` set
+    /// widens THEN, not here).
+    type CorrespondenceProposal = {
+        Schema : string
+        Table : string
+        /// The tombstoned prior edition proposed as the same identity —
+        /// the LATEST-witnessed tombstone when several ride the lineage
+        /// (the edition nearest the cutover).
+        From : PhysicalClaim
+        /// The continuing (sole live) registration.
+        To : PhysicalClaim
+        /// The names agree case-insensitively (a re-import keeps the
+        /// entity's name) — the corroborating signal; the shared physical
+        /// table is the primary continuity carrier either way.
+        SameName : bool
+    }
+
+    /// Propose at most one correspondence per adjudicated set — total.
+    /// ONLY the Adopted-over-tombstones shape proposes: a contested table
+    /// has no adjudicated continuation (the contest is its own finding),
+    /// a tombstone-only table has nothing live to continue INTO, an
+    /// unclaimed table has no claims at all, and a clean sole adoption
+    /// (no tombstones) has no cutover to correspond across.
+    let proposeCorrespondence (set: ClaimSet) (outcome: PhysicalClaimOutcome) : CorrespondenceProposal option =
+        match outcome with
+        | PhysicalClaimOutcome.Adopted (winner, outranked) ->
+            outranked
+            |> List.filter (fun c -> not c.IsActive)
+            |> List.sortByDescending (fun c -> c.FirstWitnessedSync, c.EntityId)
+            |> List.tryHead
+            |> Option.map (fun from ->
+                { Schema = set.Schema
+                  Table = set.Table
+                  From = from
+                  To = winner
+                  SameName = System.String.Equals(from.EntityName, winner.EntityName, System.StringComparison.OrdinalIgnoreCase) })
+        | PhysicalClaimOutcome.Contested _
+        | PhysicalClaimOutcome.TombstoneOnly _
+        | PhysicalClaimOutcome.Unclaimed -> None
+
+    /// The proposal's structured rendering — the same
+    /// typed-payload→clauses convention as `toStructured`.
+    let correspondenceClauses (p: CorrespondenceProposal) : (string * string) list =
+        [ "table", System.String.Concat(p.Schema, ".", p.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed proposal IS the structure
+          "from", claimText p.From
+          "to", claimText p.To
+          "sameName", (if p.SameName then "true" else "false") ]

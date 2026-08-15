@@ -210,10 +210,11 @@ let ``coverage: the emission coverage line is derived from the detector set — 
     // S14 the correspondence proposer). A kind outside this set claiming
     // NotYetDetected fails here, so "runs today" can never silently regress.
     // S11b flipped the claims pair Active; S12 flipped the residue sweep
-    // (PhysicalUnclaimed); S14 retires the correspondence proposer.
-    let declaredNotYetDetected =
-        Set.ofList
-            [ EstateFindingKind.IdentityCutoverCorrespondence ]
+    // (PhysicalUnclaimed); S14 flipped the correspondence proposer — the
+    // declared set is EMPTY: every kind in the vocabulary is
+    // detector-backed today, and the law keeps the next vocabulary-first
+    // kind honest (it must declare itself here or fail).
+    let declaredNotYetDetected : Set<EstateFindingKind> = Set.empty
     for kind in EstateFindingKind.all do
         match EstateFindingKind.detectionStatus kind with
         | DetectionStatus.Active ->

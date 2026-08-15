@@ -2242,7 +2242,33 @@ module Estate =
                       Lever = leverOf EstateFindingKind.PhysicalUnclaimed
                       Fork = false
                       Difficulty = None }
-            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ -> None)
+            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ ->
+                // S14 — the cross-cutover identity correspondence: a sole
+                // live claim over tombstoned lineage PROPOSES continuity
+                // (one physical table; delete-then-re-register). A DECIDE
+                // finding only — the ruling adopts or rejects; the tool
+                // never threads an identity on its own (the proposer can
+                // write nothing: no catalog reaches it, no SsKey leaves it).
+                // A clean sole adoption (no tombstones) proposes nothing.
+                PhysicalClaimRules.proposeCorrespondence set outcome
+                |> Option.map (fun p ->
+                    let fromText =
+                        PhysicalClaimRules.correspondenceClauses p
+                        |> List.tryFind (fst >> (=) "from") |> Option.map snd |> Option.defaultValue ""
+                    let toText =
+                        PhysicalClaimRules.correspondenceClauses p
+                        |> List.tryFind (fst >> (=) "to") |> Option.map snd |> Option.defaultValue ""
+                    { Key = FindingKey.create EstateFindingKind.IdentityCutoverCorrespondence subject
+                      Kind = EstateFindingKind.IdentityCutoverCorrespondence
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Envs = [ env, 1L ]
+                      Statement =
+                        sprintf "%s appears to continue as %s%s (one physical table %s; tombstone-then-registration) — confirm or reject the correspondence."
+                            fromText toText (if p.SameName then "" else " (renamed)") subject
+                      Lever = leverOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Fork = false
+                      Difficulty = None }))
 
     /// Stamp the sink's claim findings onto a computed report and re-derive
     /// the verdict under the SAME formula (unified ⇔ nothing diverges;

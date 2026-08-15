@@ -31273,3 +31273,33 @@ that renders them, never as phantom copy).
   env grain — it binds where env names exist, `SinkSection.effective (Some env)`); the
   shaping-view model read carries no environment name, so per-env refinements do not
   bind there (stated in the code; the standing policy governs).
+
+## 2026-08-15 — sink S14: the cross-cutover identity correspondence (proposed, never adopted)
+
+- **The proposer is a pure reading of the adjudication** — `PhysicalClaimRules.
+  proposeCorrespondence`, total over every outcome: ONLY the Adopted-over-tombstones
+  shape proposes (a contest has no adjudicated continuation — it is its own finding; a
+  tombstone-only table has nothing live to continue INTO; a clean sole adoption has no
+  cutover to correspond across). `From` is the LATEST-witnessed tombstone (the edition
+  nearest the cutover); `To` is the sole live claim; `SameName` carries the
+  corroborating signal (the shared physical table is the primary continuity carrier —
+  a RENAMED continuation still proposes, and the finding says "(renamed)").
+  Property-pinned: a proposal exists IFF the adjudication is Adopted over ≥1 tombstone.
+- **Never auto-adopted, structurally**: no catalog reaches the proposer and no `SsKey`
+  leaves it — the proposal carries the two CLAIMS (with their native keys as evidence)
+  into an `IdentityCutoverCorrespondence` DECIDE finding whose lever is the Ruling
+  ("nothing is adopted without the ruling", pinned by test). The plan's "SsKey
+  continuity via existing DerivedFrom/V1Mapped variants" cashes as: the vocabulary a
+  ruled continuity would thread ALREADY EXISTS — the closed `DerivationReason` set
+  widens at the ruling's implementation (a named follow-on), not at the proposal. The
+  detector flips Active and the declared NotYetDetected set empties — every kind in the
+  estate vocabulary is detector-backed today, and the coverage law keeps the next
+  vocabulary-first kind honest.
+- **The finding never forks**: the correspondence is the happy path's paperwork (the
+  re-registration IS adopted for the catalog's lineage; the identity question rides the
+  DECIDE lane) — `withSinkClaims` converges a unified estate on it, never forks it.
+  Voice `sink.cutoverCorrespondence` (§5) joins the claim notices at the face.
+- **The live witness rides the seed**: the lifecycle seed's Shipment pair (tombstoned
+  original + live extension re-registration on one table) proposes with `From` = the
+  tombstone, `To` = the re-registration, `SameName` — the chapter's original incident
+  now carries its identity-continuity proposal end-to-end from a real acquisition.

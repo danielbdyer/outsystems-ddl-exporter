@@ -84,8 +84,10 @@ let private inScopeCodes : Set<string> =
           // S13 also emits it as a LogSink envelope from the model read's
           // sink-served path — the line rides EVERY sink-backed answer)
           "sink.evidenceAge"
-          // the sink's estate claim notices (check estate — S11b + S12)
+          // the sink's estate claim notices (check estate — S11b + S12 +
+          // the S14 correspondence proposals)
           "sink.claimContested"; "sink.tombstoneOnly"; "sink.unclaimed"
+          "sink.cutoverCorrespondence"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -176,8 +178,9 @@ let private knownEmittableCodes : Set<string> =
           "sink.evidenceAge"
           // the sink's estate claim notices — render-synthesized at
           // `runCheckEstate` when a sink-named environment carries them
-          // (S11b + S12)
+          // (S11b + S12 + the S14 correspondence proposals)
           "sink.claimContested"; "sink.tombstoneOnly"; "sink.unclaimed"
+          "sink.cutoverCorrespondence"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"

@@ -518,6 +518,10 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     if unclaimed > 0 then
                         TtyRenderer.renderVoicedTo Console.Out "sink.unclaimed"
                             (Map.ofList [ "env", box basis.Env; "tables", box unclaimed ])
+                    let correspondence = claimCount EstateFindingKind.IdentityCutoverCorrespondence
+                    if correspondence > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.cutoverCorrespondence"
+                            (Map.ofList [ "env", box basis.Env; "tables", box correspondence ])
                 let laneCount lane =
                     Estate.laneCounts report
                     |> List.tryFind (fun (l, _) -> l = lane)

@@ -79,6 +79,48 @@ let ``contested rivals rank tier-first, then the LATER first-witnessed sync, the
         Assert.Equal<int list>([ 4; 3; 5; 6 ], ordered |> List.map (fun c -> c.EntityId))
     | other -> Assert.Fail (sprintf "expected Contested, got %A" other)
 
+// -- the cross-cutover identity correspondence (S14) --------------------------
+// The proposer is structurally incapable of adopting: no catalog reaches
+// it and no SsKey leaves it — the proposal carries the two CLAIMS (with
+// their native keys as evidence) for a DECIDE finding the operator rules.
+
+[<Fact>]
+let ``a sole live claim over tombstones proposes the correspondence — From is the LATEST-witnessed tombstone`` () =
+    let s = setOf [ claim 8002 "Shipment" false false 1   // early tombstone
+                    claim 8005 "Shipment" false false 4   // the cutover-nearest tombstone
+                    claim 9002 "Shipment" true true 5 ]   // the continuing registration
+    match PhysicalClaimRules.proposeCorrespondence s (PhysicalClaimRules.adjudicate s) with
+    | Some p ->
+        Assert.Equal(9002, p.To.EntityId)
+        Assert.Equal(8005, p.From.EntityId)
+        Assert.True(p.SameName)
+        Assert.Equal("OSUSR_FUL_T", p.Table)
+    | None -> Assert.Fail "expected a correspondence proposal"
+
+[<Fact>]
+let ``a renamed continuation still proposes (the table is the carrier); the name disagreement is stated`` () =
+    let s = setOf [ claim 8002 "Shipment" false false 1; claim 9002 "ShipmentV2" true true 2 ]
+    match PhysicalClaimRules.proposeCorrespondence s (PhysicalClaimRules.adjudicate s) with
+    | Some p ->
+        Assert.False(p.SameName)
+        let clauses = PhysicalClaimRules.correspondenceClauses p |> Map.ofList
+        Assert.Equal("false", clauses.["sameName"])
+        Assert.Contains("tombstone", clauses.["from"])
+    | None -> Assert.Fail "expected a proposal for the renamed continuation"
+
+[<Property(MaxTest = 60)>]
+let ``property: a proposal exists IFF the adjudication is Adopted over at least one tombstone — no other shape proposes`` (activeFlags: bool list) =
+    let flags = if List.isEmpty activeFlags then [ true ] else activeFlags
+    let claims = flags |> List.mapi (fun i active -> claim (100 + i) (sprintf "E%d" i) active (i % 2 = 0) (1 + i % 3))
+    let s = setOf claims
+    let outcome = PhysicalClaimRules.adjudicate s
+    let proposal = PhysicalClaimRules.proposeCorrespondence s outcome
+    let liveCount = flags |> List.filter id |> List.length
+    let tombCount = List.length flags - liveCount
+    match proposal with
+    | Some p -> liveCount = 1 && tombCount >= 1 && p.To.IsActive && not p.From.IsActive
+    | None -> liveCount <> 1 || tombCount = 0
+
 // -- the journal assembly (SinkClaims) ---------------------------------------
 
 let private edition () =

@@ -68,13 +68,25 @@ type SinkClaimsSeedTests(fixture: EphemeralContainerFixture) =
                         | other -> Assert.Fail (sprintf "Invoice: expected TombstoneOnly, got %A" other)
 
                     // 3) The cutover pair: the live extension re-registration
-                    //    adopts; the tombstoned original rides as outranked.
+                    //    adopts; the tombstoned original rides as outranked —
+                    //    and the S14 correspondence proposer reads the pair
+                    //    as ONE identity continuing across the cutover
+                    //    (proposal only; the ruling is the operator's).
                     let _ =
                         match Map.tryFind "OSUSR_FUL_SHIPMENT" outcomes with
                         | Some (PhysicalClaimRules.PhysicalClaimOutcome.Adopted (w, [ o ])) ->
                             Assert.True(w.IsExternalRegistration)
                             Assert.True(w.IsActive)
                             Assert.False(o.IsActive)
+                            let shipmentSet =
+                                SinkClaims.assemble snapshot journal
+                                |> List.find (fun s -> s.Table.ToUpperInvariant() = "OSUSR_FUL_SHIPMENT")
+                            match PhysicalClaimRules.proposeCorrespondence shipmentSet (PhysicalClaimRules.adjudicate shipmentSet) with
+                            | Some p ->
+                                Assert.Equal(o.EntityId, p.From.EntityId)
+                                Assert.Equal(w.EntityId, p.To.EntityId)
+                                Assert.True(p.SameName, "the re-import kept the entity's name")
+                            | None -> Assert.Fail "Shipment: expected the cutover correspondence proposal"
                         | other -> Assert.Fail (sprintf "Shipment: expected re-registration adopted over the tombstone, got %A" other)
 
                     // 4) Two LIVE claims: Contested, eSpace-led recommendation.

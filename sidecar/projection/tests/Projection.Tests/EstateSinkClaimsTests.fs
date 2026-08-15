@@ -11,8 +11,11 @@ open Projection.Tests.Fixtures
 // through the strategy's one renderer); Contested carries the FORK witness,
 // so `withSinkClaims` turns a Unified estate Forked (exit 5 at the face);
 // TombstoneOnly turns it Converging; Unclaimed (S12's residue) mints its
-// own DECIDE finding; Adopted mints nothing, and an empty claims list is
-// the identity (a run with no sink is byte-identical).
+// own DECIDE finding; an adoption over TOMBSTONES proposes the
+// cross-cutover identity correspondence (S14 — a DECIDE finding the
+// operator rules; the tool never adopts); a CLEAN sole adoption mints
+// nothing, and an empty claims list is the identity (a run with no sink
+// is byte-identical).
 
 let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int) : PhysicalClaimRules.PhysicalClaim =
     { EntityId = id
@@ -88,6 +91,40 @@ let ``an unclaimed residue table mints a PhysicalUnclaimed DECIDE finding (S12)`
         Assert.Contains("dbo.OSUSR_FUL_ARCHIVE", f.Statement)
         Assert.Contains("no metadata claim", f.Statement)
     | other -> Assert.Fail (sprintf "expected one PhysicalUnclaimed finding, got %A" other)
+
+[<Fact>]
+let ``an adoption over tombstones proposes the cutover correspondence — a DECIDE finding the operator rules, never a fork, never an adoption`` () =
+    // The cutover pair: the extension re-registration is the sole live
+    // claim; the tombstoned original rides outranked — S14's proposal.
+    let findings =
+        Estate.sinkClaimFindingsOf "cloud-uat"
+            [ adjudicated "OSUSR_FUL_SHIPMENT"
+                [ claim 8002 "Shipment" false false 1; claim 9002 "Shipment" true true 3 ] ]
+    match findings with
+    | [ f ] ->
+        Assert.Equal(EstateFindingKind.IdentityCutoverCorrespondence, f.Kind)
+        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Equal(EstatePlane.Identity, f.Plane)
+        Assert.False(f.Fork, "a proposal is the happy path's paperwork — it never forks the estate")
+        // The structural never-auto-adopted pin: the kind's lever IS the
+        // ruling imperative (confirm or reject), and the proposer's type
+        // can write nothing (no catalog in, no SsKey out).
+        let _ =
+            match EstateFindingKind.leverFormOf EstateFindingKind.IdentityCutoverCorrespondence with
+            | EstateLeverForm.Ruling imperative -> Assert.Contains("nothing is adopted without the ruling", imperative)
+            | other -> Assert.Fail (sprintf "the correspondence lever must be a Ruling, got %A" other)
+        Assert.Contains("Fulfillment.Shipment", f.Statement)
+        Assert.Contains("FulfillmentExtension.Shipment", f.Statement)
+        Assert.Contains("dbo.OSUSR_FUL_SHIPMENT", f.Statement)
+        Assert.Contains("confirm or reject", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one correspondence proposal, got %A" other)
+    // The proposal converges a unified estate (a DECIDE row awaits its
+    // ruling) — it never forks it.
+    let report =
+        Estate.withSinkClaims
+            [ "cloud-uat", [ adjudicated "OSUSR_FUL_SHIPMENT" [ claim 8002 "Shipment" false false 1; claim 9002 "Shipment" true true 3 ] ] ]
+            (unifiedReport ())
+    Assert.Equal(Estate.Verdict.Converging, report.Verdict)
 
 [<Fact>]
 let ``no sink claims is the identity — a run with no sink store is byte-identical`` () =
