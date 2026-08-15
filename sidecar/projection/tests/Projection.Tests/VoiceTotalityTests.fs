@@ -80,7 +80,9 @@ let private inScopeCodes : Set<string> =
           // the sink sync face's verdict pair + the store refusal
           // (projection sync — the data-sink chapter, S6)
           "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
-          // the sink operand's mandatory freshness line (sink refs — S7)
+          // the sink operand's mandatory freshness line (sink refs — S7;
+          // S13 also emits it as a LogSink envelope from the model read's
+          // sink-served path — the line rides EVERY sink-backed answer)
           "sink.evidenceAge"
           // the sink's estate claim notices (check estate — S11b + S12)
           "sink.claimContested"; "sink.tombstoneOnly"; "sink.unclaimed"

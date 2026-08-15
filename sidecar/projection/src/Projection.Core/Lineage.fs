@@ -134,6 +134,12 @@ type AnnotationDetail =
     /// reason given. Pairs with `Created` events (one per inverse
     /// successfully attached).
     | ClosureSkipped of reason: SymmetricClosureSkipReason
+    /// One physical-claim adjudication (the data-sink chapter, S13):
+    /// the table's ownership decision, annotated onto the kind as a
+    /// sink-backed read parses it — the adopted-over-outranked,
+    /// contested, and tombstone-only decisions ride the trail; the
+    /// trivial sole adoption (no rivals) annotates nothing.
+    | PhysicalClaimDecision of table: string * outcome: PhysicalClaimRules.PhysicalClaimOutcome
     /// **Free-form label.** Used by writer-monad-laws tests, the
     /// `Composition.fanOut` synthetic-decision test, and any future
     /// pass whose typed annotation shape hasn't yet been earned.
@@ -167,6 +173,8 @@ module AnnotationDetail =
             String.concat "" [ id; " -> "; CategoricalUniquenessOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection
         | ClosureSkipped reason ->
             SymmetricClosureSkipReason.toDiagnosticString reason
+        | PhysicalClaimDecision (table, outcome) ->
+            String.concat "" [ table; " -> "; PhysicalClaimRules.token outcome ]  // LINT-ALLOW: terminal diagnostic projection; typed `AnnotationDetail` DU IS the structure
         | Label label ->
             label
 

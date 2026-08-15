@@ -94,6 +94,47 @@ module SinkRead =
                           SyncId = chosen
                           CapturedAtUtc = capturedAt }
 
+    /// Resolve a live CONNECTION STRING to its sink coordinate — the
+    /// digest-based sibling of the env-label scan (R3's string side: the
+    /// digest derives from `SqlConnectionStringBuilder`'s DataSource +
+    /// InitialCatalog, the same normalized pair the witness hook reads off
+    /// the open connection, so the two sides agree by construction). The
+    /// caller resolves `env:`/`file:` refs to the raw string first
+    /// (`Source.resolveConn` — Source compiles after this module).
+    let resolveByConnectionString (connStr: string) (syncId: int option) : Result<Resolved> =
+        match EstateStoreLocation.storeDir () with
+        | None ->
+            fail "sink.storeDisabled"
+                "sink read: no sink store is configured for this run — set PROJECTION_ESTATE_DIR (or PROJECTION_LEDGER_DIR) and re-run."
+        | Some root ->
+            let identity =
+                try
+                    let b = Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connStr)
+                    Some (b.DataSource, b.InitialCatalog)
+                with _ -> None
+            match identity with
+            | None ->
+                fail "sink.connUnresolvable"
+                    "sink read: the connection string did not parse, so no sink identity can be derived from it."
+            | Some (dataSource, database) ->
+                let digest = SinkStore.connDigest16 dataSource database
+                match SinkStore.loadManifest root digest with
+                | None ->
+                    fail "sink.noWitnessedState"
+                        (sprintf "sink read: no witnessed state exists for this source (digest %s) — a total live read (or `projection sync`) witnesses the first edition." digest)
+                | Some manifest ->
+                    let chosen = syncId |> Option.defaultValue manifest.LatestSyncId
+                    if chosen < 1 || chosen > manifest.LatestSyncId then
+                        fail "sink.syncNotFound"
+                            (sprintf "sink read: this source carries witnessed syncs 1..%d; @%d is outside that range." manifest.LatestSyncId chosen)
+                    else
+                        Result.success
+                            { Root = root
+                              Digest = digest
+                              Manifest = manifest
+                              SyncId = chosen
+                              CapturedAtUtc = manifest.CapturedAtUtc }
+
     /// Read the resolved witnessed state as a `Catalog` — the live pipeline
     /// minus the wire. `CatalogReader.parse` applies the same (idempotent)
     /// bundle normalization the live read surfaces notices for; the sink read

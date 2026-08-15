@@ -1939,35 +1939,131 @@ module Compose =
                     |> List.iter LogSink.emit
                     ModuleFilter.applyEntityFilters opts (LineageDiagnostics.payload suppressed)))
 
-    /// The full-export model read under the live-OSSYS-primary / file-fallback
-    /// policy (V1_INPUT_DEPRECATION.md §3). `cfg.Model.Ossys` set ⇒ read live
-    /// from OSSYS (`LiveModelRead`, V1-free); else read `cfg.Model.Path` (the
-    /// `osm_model.json` fallback). The read catalog passes through the
-    /// config-driven module-selection filter (identity on the default config).
-    /// Byte-identical to the prior `read cfg.Model.Path` when `Ossys = None` and
-    /// no `model.modules` selection is declared.
-    let readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+    /// The sink-served half of the model read (S13; module-level per FS3511):
+    /// read the witnessed edition, run the claims-annotation pass with the
+    /// journal-assembled adjudications (the lineage half of the claims
+    /// machinery, at its real execution site — the trail projects onto the
+    /// operator channel exactly like the selection seam's), say the
+    /// mandatory freshness line as a LogSink envelope, and narrow through
+    /// the SAME semantic seam the live read uses (A49's three-way law is
+    /// what licenses total-then-filter ≡ pushdown).
+    let private readModelFromSink
+        (cfg: Config.Config)
+        (resolved: SinkRead.Resolved)
+        (ageDays: int)
+        : Task<Result<Catalog>> =
         task {
-            let! read =
-                match cfg.Model.Ossys, cfg.Model.Path with
-                | Some connSpec, _ ->
-                    // Reconciliation slice 4 (DECISIONS 2026-06-13; C4) —
-                    // the declared module/entity scope pushes down to the
-                    // rowsets SQL at query time (extraction-cost reduction;
-                    // opt-in through non-empty model.modules, the A7
-                    // polarity). `applyModuleFilter` below REMAINS the
-                    // semantic seam — double enforcement, V1's own
-                    // precedent.
-                    LiveModelRead.fromConnSpecWith (SnapshotScopeBinding.fromModel cfg.Model) connSpec
-                | None, Some path -> read path
-                | None, None ->
-                    Task.FromResult
-                        (Result.failureOf
-                            (ValidationError.create
-                                "pipeline.config.modelNoSource"
-                                "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
-            return read |> Result.bind (applyModuleFilter cfg)
+            LogSink.emit
+                (LogSink.envelope LogSink.Info LogSink.Summary "sink.evidenceAge"
+                    (Map.ofList
+                        [ "digest", box resolved.Digest
+                          "syncId", box resolved.SyncId
+                          "age", box ageDays ]))
+            match SinkStore.loadSnapshotAt resolved.Root resolved.Digest resolved.SyncId with
+            | None ->
+                return
+                    Result.failureOf
+                        (ValidationError.create "sink.snapshotUnreadable"
+                            (sprintf "model read: witnessed sync %d reads as absent (torn or undecodable — the store is fail-closed); re-run against the wire." resolved.SyncId))
+            | Some snapshot ->
+                match! SinkRead.readCatalog resolved with
+                | Error es -> return Result.failure es
+                | Ok catalog ->
+                    let journal =
+                        SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest)
+                        |> Result.defaultValue []
+                    let outcomes = SinkClaims.adjudicateAll snapshot journal
+                    let annotated =
+                        (Projection.Core.Passes.PhysicalClaimPass.registered outcomes).Run catalog
+                    annotated.Trail
+                    |> EventProjection.ofLineageTrail
+                    |> List.iter LogSink.emit
+                    return applyModuleFilter cfg (LineageDiagnostics.payload annotated)
         }
+
+    /// The full-export model read under the live-OSSYS-primary / file-fallback
+    /// policy (V1_INPUT_DEPRECATION.md §3) — S13 adds the sink's freshness
+    /// fast path (R2's REUSE axis, consumed): under `sink.policy` auto, a
+    /// fingerprint-confirmed witnessed state serves the model WITHOUT paying
+    /// the 26-rowset wire read; under `pinned` it serves without probing at
+    /// all — the OFFLINE lever is the config policy itself, one lever, no new
+    /// flag. `refresh` is the per-run override (beats even a pin). Every miss
+    /// reads live (which witnesses the fresh state), so freshness only ever
+    /// degrades toward the wire. The default (`policy off`) is byte-identical
+    /// to the standing read — and so is `onlyActiveAttributes = true` (the
+    /// model default): the attribute axis is A49's named residual, so only a
+    /// total-shaped model read (`onlyActiveAttributes = false`) is
+    /// sink-servable at all.
+    let readConfigModelWith (refresh: bool) (cfg: Config.Config) : Task<Result<Catalog>> =
+        task {
+            match cfg.Model.Ossys, cfg.Model.Path with
+            | Some connSpec, _ ->
+                // The shaping view carries no environment NAME (model.env
+                // resolves to `ossys` at the movement surface), so the
+                // STANDING policy governs the model read; per-environment
+                // refinements bind where names exist (the estate face).
+                let policy = Config.SinkSection.effective None cfg.Sink
+                // The sink holds TOTAL witnessed states. The module/entity/
+                // lifecycle axes narrow identically on either side of the
+                // wire (A49's three-way law — the same pure seam below), so
+                // a module-scoped model still rides the fast path. The
+                // ATTRIBUTE axis (`onlyActiveAttributes`, the config
+                // default) is that law's NAMED RESIDUAL: the pure seam
+                // cannot yet express it, so an attribute-narrowed read
+                // always pays the wire — never a silent divergence.
+                if (policy = Config.SinkPolicy.Off && not refresh) || cfg.Model.OnlyActiveAttributes then
+                    // The standing wire read, untouched (byte-identical).
+                    let! live = LiveModelRead.fromConnSpecWith (SnapshotScopeBinding.fromModel cfg.Model) connSpec
+                    return live |> Result.bind (applyModuleFilter cfg)
+                else
+                    let connStr = Source.resolveConn connSpec
+                    let resolved =
+                        match SinkRead.resolveByConnectionString connStr None with
+                        | Ok r -> Some r
+                        | Error _ -> None
+                    // `auto` pays the three-bellwether probe (one cheap
+                    // round-trip against the 26-rowset read it may save);
+                    // `pinned` never touches the wire; a probe failure reads
+                    // as unavailable (the decision table's safe direction).
+                    let! probed =
+                        task {
+                            if policy = Config.SinkPolicy.Auto && Option.isSome resolved && not refresh then
+                                try
+                                    use cnn = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                                    do! cnn.OpenAsync()
+                                    let! pairs = SinkFreshness.probe cnn
+                                    return (if List.isEmpty pairs then None else Some pairs)
+                                with _ -> return None
+                            else return None
+                        }
+                    let decision =
+                        SinkFreshness.decide policy refresh (resolved |> Option.map (fun r -> r.Manifest)) probed
+                    match decision, resolved with
+                    | SinkFreshness.Decision.ReuseSink syncId, Some r when r.SyncId = syncId ->
+                        let ageDays =
+                            max 0 (int (System.DateTimeOffset.UtcNow - r.CapturedAtUtc).TotalDays)
+                        return! readModelFromSink cfg r ageDays
+                    | _ ->
+                        // Every miss — named by the decision table — pays the
+                        // wire, which witnesses the fresh state.
+                        let! live = LiveModelRead.fromConnSpecWith (SnapshotScopeBinding.fromModel cfg.Model) connSpec
+                        return live |> Result.bind (applyModuleFilter cfg)
+            | None, Some path ->
+                let! fileRead = read path
+                return fileRead |> Result.bind (applyModuleFilter cfg)
+            | None, None ->
+                return
+                    Result.failureOf
+                        (ValidationError.create
+                            "pipeline.config.modelNoSource"
+                            "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection).")
+        }
+
+    /// The standing two-argument form — `readConfigModelWith false`
+    /// (no per-run refresh; the config policy governs, `off` by default,
+    /// byte-identical to the pre-sink read).
+    let readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+        readConfigModelWith false cfg
 
     /// WP6 step 4 (DECISIONS 2026-06-13) — the full-export model read followed
     /// by data hydration. Reads the catalog (`readConfigModel`) then grafts

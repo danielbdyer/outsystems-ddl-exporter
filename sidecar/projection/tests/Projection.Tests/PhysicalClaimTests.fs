@@ -108,3 +108,35 @@ let ``claims assemble from the witnessed edition (tombstones included) with the 
     match SinkClaims.adjudicateAll (edition ()) [] |> List.find (fun (s, _) -> s.Table = "OSUSR_FUL_SHIPMENT") |> snd with
     | PhysicalClaimRules.PhysicalClaimOutcome.Adopted (winner, _) -> Assert.Equal(9002, winner.EntityId)
     | other -> Assert.Fail (sprintf "expected the re-registration adopted, got %A" other)
+
+// -- the claims-annotation pass (S13) -----------------------------------------
+
+open Projection.Core.Passes
+open Projection.Tests.Fixtures
+
+let private adjudicatedAt (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) =
+    let s : PhysicalClaimRules.ClaimSet = { Schema = "dbo"; Table = table; Claims = claims }
+    s, PhysicalClaimRules.adjudicate s
+
+[<Fact>]
+let ``the annotation pass marks kinds whose tables carry non-trivial decisions; sole adoptions and the chain default stay quiet`` () =
+    // The fixture catalog's Customer kind lives at dbo.OSUSR_S1S_CUSTOMER.
+    let table = "OSUSR_S1S_CUSTOMER"
+    let contested = adjudicatedAt table [ claim 1 "Customer" true false 1; claim 2 "Customer" true true 1 ]
+    let annotated = (PhysicalClaimPass.registered [ contested ]).Run sampleCatalog
+    // Identity-preserving: no kind dropped, no key invented.
+    Assert.Equal<Catalog>(sampleCatalog, LineageDiagnostics.payload annotated)
+    let details =
+        annotated.Trail
+        |> List.choose (fun e ->
+            match e.TransformKind with
+            | Annotated (PhysicalClaimDecision (t, o)) -> Some (t, o)
+            | _ -> None)
+    match details with
+    | [ (t, PhysicalClaimRules.PhysicalClaimOutcome.Contested _) ] -> Assert.Equal("dbo." + table, t)
+    | other -> Assert.Fail (sprintf "expected one contested annotation, got %A" other)
+    // A sole adoption (no rivals) is trivial — quiet trail.
+    let sole = adjudicatedAt table [ claim 1 "Customer" true false 1 ]
+    Assert.Empty ((PhysicalClaimPass.registered [ sole ]).Run sampleCatalog).Trail
+    // The chain default ([]) is the identity with an empty trail.
+    Assert.Empty ((PhysicalClaimPass.registered []).Run sampleCatalog).Trail

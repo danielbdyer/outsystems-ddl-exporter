@@ -23,7 +23,7 @@ let private allMetadata : RegisteredTransformMetadata list =
     RegisteredTransforms.all @ RegisteredDataTransforms.all
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Identity returns the four identity-axis entries`` () =
+let ``5.13.identity-axis-closure: byDomain Identity returns the five identity-axis entries`` () =
     // Identity-domain entries:
     //   - canonicalizeIdentity (DataIntent — mechanical identity-form
     //     normalization at adapter→catalog boundary)
@@ -37,6 +37,8 @@ let ``5.13.identity-axis-closure: byDomain Identity returns the four identity-ax
     // pass that produces the context).
     //   - physicalClaimRules (DataIntent strategy — the data-sink chapter
     //     S11: which metadata identity owns a physical table).
+    //   - physicalClaims (DataIntent pass — S13: the ownership decisions
+    //     annotated onto kinds as a sink-backed read parses them).
     let identityEntries =
         TransformRegistry.byDomain Identity allMetadata
     let names =
@@ -44,7 +46,7 @@ let ``5.13.identity-axis-closure: byDomain Identity returns the four identity-ax
         |> List.map (fun rt -> rt.Name)
         |> List.sort
     Assert.Equal<string list>(
-        [ "canonicalizeIdentity"; "namingMorphism"; "physicalClaimRules"; "userFkReflow" ],
+        [ "canonicalizeIdentity"; "namingMorphism"; "physicalClaimRules"; "physicalClaims"; "userFkReflow" ],
         names)
 
 [<Fact>]

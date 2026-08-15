@@ -31226,3 +31226,50 @@ that renders them, never as phantom copy).
   residue — and the orphan adjudicates `Unclaimed`.
 - The finer residue grains (columns / triggers / computed columns) stay deferred under
   the row's own trigger.
+
+## 2026-08-15 — sink S13: offline operation (the policy is the lever; the pay-once path lands)
+
+- **The config policy IS the offline lever — no new verb flag.** `sink.policy = pinned`
+  makes the model read offline-true (serve the witnessed edition, never probe, never pay
+  the wire; the mandatory `sink.evidenceAge` line names the staleness); `auto` is the
+  pay-once fast path (three-bellwether probe → confirmed reuse; one cheap round-trip
+  against the 26-rowset read it saves); `--refresh` beats even a pin for one run; `off`
+  (the default) is byte-identical to the standing wire read. One lever, one meaning —
+  the offline story the plan sketched as a `--offline` flag collapses into the policy
+  vocabulary S8 already ruled (R2's reuse axis, now consumed by its first real reader).
+- **The fast path is licensed by A49 and GATED by its named residual.** Serving a total
+  witnessed state and narrowing through `applyModuleFilter` is the law's `filter∘sink`
+  leg — module/entity/lifecycle scoping rides the fast path untouched. The ATTRIBUTE
+  axis (`model.onlyActiveAttributes`, default **true**) is the law's named residual (the
+  three-way canary holds it equal at total): the pure seam cannot yet express it, so an
+  attribute-narrowed read always pays the wire — `readConfigModelWith` gates on the
+  flag, never a silent divergence. Consequence, stated plainly in CONFIG_REFERENCE: the
+  sink serves total-shaped model reads only; a config that wants sink-served reads sets
+  `onlyActiveAttributes: false`. (An attribute-suppression pass would widen
+  sink-servability to the config default — deferred under the S9 residual's trigger.)
+- **The claims-annotation pass lands at its real execution site** (the S11b deferral,
+  cashed): `AnnotationDetail.PhysicalClaimDecision` + `Passes/PhysicalClaimPass.fs`,
+  registered in `chainSteps` with the identity default (`registered []`) and run with
+  journal-assembled adjudications at the sink-backed model read — the trail projects
+  onto the operator channel exactly like the selection seam's. Classification is
+  **DataIntent** (annotating WITNESSED adjudications is evidence-carriage, not operator
+  opinion), so the pass joins the skeleton view: the A.4.7' pin moves ten → eleven with
+  the rationale in place, and the skeleton baseline stays byte-unchanged (identity
+  default; the purity property keeps proving zero OperatorIntent events).
+- **R3's string side, proven live**: `SinkRead.resolveByConnectionString` derives the
+  digest from `SqlConnectionStringBuilder`'s DataSource + InitialCatalog — the same
+  normalized pair the witness hook reads off the open connection — and the offline
+  witness only serves because the two sides agree (the pinned read resolves the state
+  the hook persisted). Digest parity is also pinned pure against
+  `SinkStore.connDigest16` directly.
+- **The Docker witness** (`SinkOfflineReadTests`): pinned-miss pays the wire and
+  witnesses sync 1; the estate mutates; the pin serves sync 1 K2-honestly (catalog
+  EQUALS the live read's, manifest unmoved — no wire paid; stale BY CHOICE); refresh
+  beats the pin, sees the tombstone, witnesses sync 2; auto confirms and reuses sync 2;
+  and the two editions yield the temporal diff two `live:` reads can't legitimately
+  give (`SinkDiffView` norm > 0 on the activity flip).
+- **Named residuals**: the estate face's per-environment catalogs still read live under
+  `--offline` (serving THEM from the sink is the same fast path applied at the estate's
+  env grain — it binds where env names exist, `SinkSection.effective (Some env)`); the
+  shaping-view model read carries no environment name, so per-env refinements do not
+  bind there (stated in the code; the standing policy governs).

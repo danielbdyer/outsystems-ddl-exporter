@@ -82,7 +82,10 @@ module EventProjection =
         | CategoricalUniquenessDecision (id, outcome) ->
             let applied = match outcome with CategoricalUniquenessOutcome.SuggestUnique _ -> true | _ -> false
             Some (id, applied, CategoricalUniquenessOutcome.toDiagnosticString outcome)
-        | ClosureSkipped _ | Label _ -> None
+        // A claim decision is an OBSERVATION of table ownership, not an
+        // enforce/decline choice — it rides the `transform.lineage` trail
+        // (S13), like the closure skips.
+        | ClosureSkipped _ | PhysicalClaimDecision _ | Label _ -> None
 
     /// Project one `LineageEvent`. Decision annotations promote to the
     /// `info`-level `transform.applied` / `transform.declined` narration;

@@ -91,6 +91,7 @@
     <Compile Include="SinkSyncVerbTests.fs" />
     <Compile Include="SinkRefParityTests.fs" />
     <Compile Include="SinkClaimsSeedTests.fs" />
+    <Compile Include="SinkOfflineReadTests.fs" />
     <Compile Include="T18CycleBreakCanaryTests.fs" />
   </ItemGroup>
 

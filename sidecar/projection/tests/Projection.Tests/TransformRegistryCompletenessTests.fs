@@ -205,6 +205,9 @@ let ``L3-CC-Transform-Totality: TableRename overlay produces OperatorIntent Emis
 [<Fact>]
 let ``L3-CC-Transform-Totality: aggregated registry covers all 12 passes + 1 adapter + 6 strategies = 19 entries`` () =
     // The 6th strategy is physicalClaimRules (the data-sink chapter S11).
+    // (The aggregate here is the LIVE executable chain's registry view —
+    // identity-default chain passes like selectionSuppression /
+    // physicalClaims ride chainSteps, counted in RegisteredTransformsTests.)
     Assert.Equal(19, List.length allRegistrations)
 
 [<Fact>]

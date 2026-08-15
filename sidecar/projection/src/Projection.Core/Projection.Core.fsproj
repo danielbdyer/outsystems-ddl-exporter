@@ -206,6 +206,10 @@
          on the lineage channel — one drop semantic (ModuleFilter.lifecycleFilter),
          two channels. After ModuleFilter + Lineage; the VisibilityMask shape. -->
     <Compile Include="Passes/SelectionSuppression.fs" />
+    <!-- Passes/PhysicalClaimPass.fs (sink S13): the claims machinery's
+         lineage half — non-trivial table-ownership decisions annotated
+         onto kinds as a sink-backed read parses the witnessed edition. -->
+    <Compile Include="Passes/PhysicalClaimPass.fs" />
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />

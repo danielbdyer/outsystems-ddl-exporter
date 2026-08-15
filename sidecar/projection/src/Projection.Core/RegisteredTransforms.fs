@@ -125,6 +125,11 @@ module RegisteredTransforms =
           // applyModuleFilter seam executes it with the operator's real
           // axes, so registered ⇔ executed holds for the one pass.
           catalogStep (SelectionSuppression.registered SelectionSuppression.identity)
+          // S13 (the data-sink chapter) — the claims-annotation pass. The
+          // chain default annotates nothing (byte-identical); the
+          // sink-backed model read executes it with the journal-assembled
+          // adjudications.
+          catalogStep (PhysicalClaimPass.registered [])
           catalogStep (NamingMorphism.registered identityMorphism)
           catalogStep NormalizeStaticPopulations.registered
           catalogStep SymmetricClosure.registered

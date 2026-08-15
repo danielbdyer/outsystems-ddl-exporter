@@ -22,7 +22,7 @@ open Projection.Tests.Fixtures
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7' slice ε: skeletonChainSteps contains the ten pure-DataIntent passes`` () =
+let ``A.4.7' slice ε: skeletonChainSteps contains the eleven pure-DataIntent passes`` () =
     // `namingMorphism` lands in the skeleton because its Sites
     // classify as DataIntent — the act of carrying a logical→
     // physical name correspondence is data-intention; an operator-
@@ -35,7 +35,11 @@ let ``A.4.7' slice ε: skeletonChainSteps contains the ten pure-DataIntent passe
     // H-076): `centrality`, `boundedContext`, `profileAnomaly`,
     // `schemaComplexity`, and `queryHint`. NM-36 adds a sixth,
     // `cascadeShockZones`. All are purely evidence-driven with no
-    // operator opinion (DataIntent Sites).
+    // operator opinion (DataIntent Sites). The data-sink chapter
+    // (S13) adds `physicalClaims`: annotating kinds with WITNESSED
+    // physical-claim adjudications is evidence-carriage, not operator
+    // opinion — and its chain default (no adjudications supplied) is
+    // the identity, so the skeleton baseline is byte-unchanged.
     let names =
         RegisteredTransforms.skeletonChainSteps
         |> List.map (fun adapter -> adapter.Name)
@@ -51,7 +55,8 @@ let ``A.4.7' slice ε: skeletonChainSteps contains the ten pure-DataIntent passe
               "profileAnomaly"
               "schemaComplexity"
               "queryHint"
-              "cascadeShockZones" ]
+              "cascadeShockZones"
+              "physicalClaims" ]
     Assert.Equal<Set<string>>(expected, names)
 
 [<Fact>]

@@ -114,3 +114,19 @@ module SinkReadTests =
     let ``identityOf round-trips through Ref.parse (one scheme, one writer)`` () =
         Assert.Equal(Ref.Sink ("uat", None), Ref.parse (SinkRead.identityOf "uat" None))
         Assert.Equal(Ref.Sink ("uat", Some 7), Ref.parse (SinkRead.identityOf "uat" (Some 7)))
+
+    [<Fact>]
+    let ``resolveByConnectionString derives the SAME digest the witness hook records (R3 — the two sides agree)`` () =
+        withTempStore (fun root ->
+            witnessNamed root t1 "server-a" "db" "uat" (snapshotA ()) |> ignore
+            match SinkRead.resolveByConnectionString "Server=server-a;Database=db;TrustServerCertificate=True" None with
+            | Ok resolved ->
+                Assert.Equal(SinkStore.connDigest16 "server-a" "db", resolved.Digest)
+                Assert.Equal(1, resolved.SyncId)
+            | Error es -> Assert.Fail (sprintf "digest-side resolve refused: %A" es))
+
+    [<Fact>]
+    let ``resolveByConnectionString refuses by name: unparseable string; no witnessed state`` () =
+        withTempStore (fun _ ->
+            Assert.Equal("sink.connUnresolvable", primaryCode (SinkRead.resolveByConnectionString "not==a;;;valid==string" None))
+            Assert.Equal("sink.noWitnessedState", primaryCode (SinkRead.resolveByConnectionString "Server=nowhere;Database=nada" None)))
