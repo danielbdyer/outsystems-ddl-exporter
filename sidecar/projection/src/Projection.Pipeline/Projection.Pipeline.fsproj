@@ -41,6 +41,11 @@
     <Compile Include="SinkJournal.fs" />
     <Compile Include="SinkStore.fs" />
     <Compile Include="LiveModelRead.fs" />
+    <!-- SinkRead.fs (S7): sink:<env>[@syncId] resolution (manifest env-label
+         scan) + the sink→Catalog read (toBundle → parse — the live pipeline
+         minus the wire). After SinkStore (the scan) and LiveModelRead (the
+         docstring's parity referent); before Source.fs (ofSink calls it). -->
+    <Compile Include="SinkRead.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />

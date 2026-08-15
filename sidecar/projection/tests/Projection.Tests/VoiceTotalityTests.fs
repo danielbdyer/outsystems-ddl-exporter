@@ -80,6 +80,8 @@ let private inScopeCodes : Set<string> =
           // the sink sync face's verdict pair + the store refusal
           // (projection sync — the data-sink chapter, S6)
           "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
+          // the sink operand's mandatory freshness line (sink refs — S7)
+          "sink.evidenceAge"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -165,6 +167,9 @@ let private knownEmittableCodes : Set<string> =
           // the sink sync face's verdict pair + the store refusal —
           // render-synthesized at `runSync` (the data-sink chapter, S6)
           "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
+          // the sink operand's freshness line — render-synthesized at the
+          // diff/compare faces when a `sink:` ref rides (S7)
+          "sink.evidenceAge"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"

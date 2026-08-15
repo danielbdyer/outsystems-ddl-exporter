@@ -30948,3 +30948,65 @@ and eliminated). The last reshaping of that path is the 2026-07-21..25
 bridge-retargeting arc, the same direct-push arc behind the 82-site lint finding. Out
 of the sink chapter's scope (the sink never touches the transfer leg); standing
 follow-on owed beside the 82-site disposition; recorded in `CHAPTER_SINK_OPEN.md` §3.
+
+## 2026-08-15 — sink S7: sink refs land (`sink:<env>[@<syncId>]`; K2 total parity proven)
+
+The witnessed states become addressable operands on the one revision algebra:
+`Ref.Sink` parses the `sink:` scheme (a non-numeric `@`-tail stays part of the LABEL —
+labels are opaque operator strings — so a malformed pin fails downstream as
+`sink.envUnknown` naming the whole text, never a silent misroute to a file ref);
+`SinkRead.resolve` is the manifest env-label scan (R4 — config-free, offline-true;
+`sink.envUnknown` / `sink.envAmbiguous` / `sink.syncNotFound` / `sink.snapshotUnreadable`,
+each → the config-shape exit 2 through the standing generic `sink.` arm);
+`Source.ofSink` is the port verb (ReadCatalog only — a witnessed state carries no live
+data to probe, so `AcquireProfile = None` structurally, exactly like a snapshot file).
+The read is the live pipeline minus the wire: snapshot → `toBundle` →
+`CatalogReader.parse (SnapshotRowsets …)` — parse's own idempotent normalization does
+the normalizing (the explicit `normalizeBundle` call in `LiveModelRead` exists only to
+SURFACE erasure notices at acquisition time; a sink read replays an acquisition whose
+notices were already surfaced, so the parse is the whole story). **K2 lands as its
+stated law**: `SinkRefParityTests` proves total `Assert.Equal<Catalog>` between the
+live read and the sink read of the state it witnessed — latest AND pinned (after the
+estate moves, `sink:uat@1` still reproduces edition 1; the new latest equals the new
+live read; the same operands resolve through `Ref.resolveCatalog`).
+
+Judgment calls, recorded:
+
+1. **`bothOssys` → `bothEspaceSafe` over `espaceSafe : Ref -> bool`** (pillar-8
+   rename, not an addition): the concept was always "both operands carry native
+   espace-safe identity", and a sink ref carries it by construction (the sink persists
+   the same rowsets the ossys read parses — K2 is the proof). File/json/`@runId`
+   operands stay OUT of `espaceSafe` (an authored model is not GUARANTEED native);
+   `live:` stays out (ReadSide synthesizes SsKeys). `diff sink:e@1 sink:e@2` therefore
+   normalizes to the logical shape like an ossys pair — the temporal diff S13 makes an
+   operator workflow.
+2. **The mandatory freshness line** (`sink.evidenceAge`, §5) renders at the
+   diff/compare faces for every `sink:` operand BEFORE any verdict — the
+   `estate.evidence.offline` posture at the sink's grain. A pinned edition's age comes
+   from ITS journal line's capture time, not the manifest's latest (the line must
+   describe the edition the read actually rides); the journal-unreadable fallback is
+   the manifest time (age is advisory; the read itself stays fail-closed).
+3. **`ModelResolution` gains `SinkWitness` via `chooseOriginWith offline sinkEnv …`**:
+   online, the sink is the LAST fallback (live > file > sink — no existing resolution
+   changes shape); `--offline` pins away from the wire (sink preferred, file allowed —
+   a file is already offline-true — live forbidden; nothing offline-true configured =
+   `model.offline.noSource`). The two-arg `chooseOrigin` delegates to the full form
+   (one selection law, property-pinned). The verb-level `--offline` flag and
+   estate/emit threading are S13's, as planned.
+4. **`SinkStore.fs` de-binarized**: the S4b digest-basis separator had landed as a raw
+   NUL byte in the source text, making the file invisible to ripgrep and binary to
+   diff tooling; replaced with the `"\u0000"` escape (spelled out) — same one-character string, same
+   digests (the digest laws pin it), text source again.
+5. **The witness persists the snapshot RAW (wire order), not canonicalized — K2's own
+   correction.** The first parity run failed on kind ORDER: the store held
+   `SinkDisplacement.canonical` (key-sorted rowsets) while the live parse receives the
+   rowsets in wire order and preserves it, so the two catalogs' lists disagreed. The
+   fix is the charter's own language — the SOURCE-SHAPED witness: persist exactly what
+   the wire yielded, so a sink read replays THE acquisition (same rows, same order,
+   same parse), not an equivalent of it. Canonical order remains the DIFF algebra's
+   internal normal form only: `diff` is Map-keyed (order-blind — CDC-silence and the
+   Unchanged gate are unaffected), and `applyAll`/`Ledger.replay` produce canonical
+   states, so T19's replay law is stated at canonical grain
+   (`canonical (loadSnapshotAt latest) = replay chain` — the S5 witness suite's
+   step 5 restated accordingly). No store-compat concern: no pre-S7 store exists
+   outside tests.

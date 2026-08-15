@@ -96,7 +96,11 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                                      |> Result.defaultValue [] |> List.length)
 
                         // 5) The replayed chain reproduces the latest
-                        //    witnessed snapshot (T19's live seed).
+                        //    witnessed snapshot AT CANONICAL GRAIN (T19's
+                        //    live seed). The store holds the snapshot
+                        //    exactly as acquired (wire order — the K2
+                        //    parity ruling); replay folds canonical
+                        //    states, so the equality is stated there.
                         let verified =
                             SinkJournal.load (SinkStore.journalPath tempStore digest)
                             |> Result.defaultValue []
@@ -104,7 +108,7 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                             |> Result.defaultWith (fun e -> failwithf "chain refused: %A" e)
                         let latest = (SinkStore.loadSnapshotAt tempStore digest 2).Value
                         Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
-                            latest, SinkJournal.replay verified)
+                            SinkDisplacement.canonical latest, SinkJournal.replay verified)
                         return ()
                     })))
         finally

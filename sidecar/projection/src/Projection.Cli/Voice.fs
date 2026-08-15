@@ -1246,6 +1246,23 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `sink.evidenceAge` — §5: the mandatory freshness line for a sink
+    /// operand (the data-sink chapter, S7). Said BEFORE any verdict stands on
+    /// the witnessed state — the `estate.evidence.offline` posture at the
+    /// sink's grain: provenance leads, the verdict follows.
+    let private sinkEvidenceAge : Copy =
+        { Code           = "sink.evidenceAge"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "sink:%s reads from witnessed state sync %s, captured %s — the source is unprobed; every verdict standing on it reads the estate as last witnessed."
+                        (textOr "env" "the environment" p)
+                        (textOr "syncId" "?" p)
+                        (ageClause (textOr "age" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1332,6 +1349,8 @@ module Voice =
           syncCompleted
           syncUnchanged
           sinkStoreDisabled
+          // §5 — the sink operand's mandatory freshness line (sink refs, S7)
+          sinkEvidenceAge
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

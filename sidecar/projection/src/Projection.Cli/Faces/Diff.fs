@@ -11,13 +11,32 @@ open Projection.Pipeline
 open Projection.Cli
 open Projection.Cli.OperatorConsole
 
+/// The mandatory freshness line for sink operands (the data-sink chapter, S7;
+/// the charter's "staleness is named on every surface"): each `sink:` ref's
+/// witnessed age is said BEFORE any verdict stands on it (the
+/// `estate.evidence.offline` posture — evidence provenance leads). A resolve
+/// failure stays quiet here: the read that follows refuses with the same
+/// named error, once.
+let private nameSinkEvidence (refs: Ref.Ref list) : unit =
+    for r in refs do
+        match r with
+        | Ref.Sink (env, syncId) ->
+            match SinkRead.resolve env syncId with
+            | Ok resolved ->
+                let age = (DateTimeOffset.UtcNow - resolved.CapturedAtUtc).Days
+                let payload : Voice.Payload = Map.ofList [ "env", box env; "syncId", box resolved.SyncId; "age", box (max 0 age) ] // LINT-ALLOW: Voice payload boxing at the terminal CLI boundary — the catalog's Payload carrier is Map<string,obj> by design; the typed surface is the Copy template (the run-face precedent)
+                TtyRenderer.renderVoicedTo Console.Error "sink.evidenceAge" payload
+            | Error _ -> ()
+        | _ -> ()
+
 /// `diff <refA> <refB>` — change, rendered essence-first (INSTRUMENT slice 1,
 /// the first surface of the instrument). Resolves both refs through `Ref`
-/// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the
-/// plain verdict that leads, then the per-channel dig beneath. `--format json`
-/// emits the same `View` as structure. `--module <name>` scopes the COMPUTATION
-/// to one module (a smaller, reviewable diff); `--only <channel>` scopes the
-/// DISPLAY to one channel (columns / relationships / indexes / sequences / tables).
+/// (file / `@runId` / `json:` / `live:` / `sink:`) and renders the catalog
+/// change: the plain verdict that leads, then the per-channel dig beneath.
+/// `--format json` emits the same `View` as structure. `--module <name>`
+/// scopes the COMPUTATION to one module (a smaller, reviewable diff);
+/// `--only <channel>` scopes the DISPLAY to one channel (columns /
+/// relationships / indexes / sequences / tables).
 let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (channel: string option) (onlyModule: string option) : int =
     let refA, refB = Ref.parse refAText, Ref.parse refBText
     // Espace posture (CROSS_ENVIRONMENT_READINESS.md): two `live:` (physical)
@@ -26,9 +45,12 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (c
     // Name it (never a silent, wrong diff); steer to the espace-safe operands.
     if Ref.bothLive refA refB then
         Console.Error.WriteLine "projection diff: comparing two `live:` reads by PHYSICAL identity is espace-unsafe — SsKeys are synthesized from physical names and will not align across OutSystems environments. Use `ossys:<conn>` operands (native GUID identity) for a cross-environment diff, or `projection check shape` for the readiness gate."
-    // Both OSSYS-sourced ⇒ the operator wants the espace-safe LOGICAL shape:
-    // normalize away the realization-name artifacts `CatalogDiff` compares.
-    let norm (c: Catalog) : Catalog = if Ref.bothOssys refA refB then Readiness.toLogicalShape c else c
+    // A sink operand's evidence age leads (the mandatory freshness line).
+    nameSinkEvidence [ refA; refB ]
+    // Both operands espace-safe (`ossys:` / `sink:` — native GUID identity) ⇒
+    // the operator wants the espace-safe LOGICAL shape: normalize away the
+    // realization-name artifacts `CatalogDiff` compares.
+    let norm (c: Catalog) : Catalog = if Ref.bothEspaceSafe refA refB then Readiness.toLogicalShape c else c
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
     // `--module <name>` keeps only the named module's kinds before diffing —
     // sequences are catalog-level, so a module scope drops them. Case-insensitive
@@ -80,7 +102,9 @@ let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
     // do not share identity; name the hazard rather than emit a silently-wrong compare.
     if Ref.bothLive refA refB then
         Console.Error.WriteLine "projection compare: comparing two `live:` reads by PHYSICAL identity is espace-unsafe — SsKeys are synthesized from physical names and will not align across OutSystems environments. Use `ossys:<conn>` operands (native GUID identity) for a cross-environment comparison, or `projection check shape` for the readiness gate."
-    let norm (c: Catalog) : Catalog = if Ref.bothOssys refA refB then Readiness.toLogicalShape c else c
+    // A sink operand's evidence age leads (the mandatory freshness line).
+    nameSinkEvidence [ refA; refB ]
+    let norm (c: Catalog) : Catalog = if Ref.bothEspaceSafe refA refB then Readiness.toLogicalShape c else c
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
     let resolveSrc (s: string) = (Ref.resolveSource (Ref.parse s)).GetAwaiter().GetResult()
     match resolveSrc refAText with

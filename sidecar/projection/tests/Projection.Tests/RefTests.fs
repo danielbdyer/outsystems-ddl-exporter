@@ -33,6 +33,18 @@ let ``Ref: parse reads the revision syntax`` () =
     Assert.Equal(Ref.File "model.json", Ref.parse "model.json")
 
 [<Fact>]
+let ``Ref: sink refs parse latest, pinned, and keep a malformed pin as label text (total, never misrouted)`` () =
+    // `sink:<env>[@<syncId>]` (the data-sink chapter, S7). A non-numeric pin
+    // stays part of the LABEL (labels are opaque operator strings), so the
+    // malformed form fails downstream as the named `sink.envUnknown` naming
+    // the whole text — total parse, no silent misroute to a file ref.
+    Assert.Equal(Ref.Sink ("uat", None), Ref.parse "sink:uat")
+    Assert.Equal(Ref.Sink ("uat", Some 3), Ref.parse "sink:uat@3")
+    Assert.Equal(Ref.Sink ("uat@edge", None), Ref.parse "sink:uat@edge")
+    Assert.Equal("sink:uat", Ref.identity (Ref.parse "sink:uat"))
+    Assert.Equal("sink:uat@3", Ref.identity (Ref.parse "sink:uat@3"))
+
+[<Fact>]
 let ``Ref: a json ref resolves to a catalog`` () =
     match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.Json minimalModel)) with
     | Ok c    -> Assert.NotEmpty(Catalog.allKinds c)
@@ -89,11 +101,21 @@ let ``Ref: an ossys ref reads the OSSYS metamodel and fails loud (never silent) 
     | Error es -> Assert.Contains(es, fun e -> e.Code = "connection.openFailed")
 
 [<Fact>]
-let ``Ref: bothOssys / bothLive classify the cross-environment operand posture`` () =
-    // Both OSSYS ⇒ espace-safe (the `compare`/`diff` run faces normalize to the
-    // logical shape); both `live:` ⇒ espace-UNSAFE (a named advisory fires).
-    Assert.True(Ref.bothOssys (Ref.parse "ossys:cloud-dev") (Ref.parse "ossys:cloud-qa"))
-    Assert.False(Ref.bothOssys (Ref.parse "ossys:cloud-dev") (Ref.parse "live:cloud-qa"))
+let ``Ref: espaceSafe / bothLive classify the cross-environment operand posture`` () =
+    // Espace-safe operands carry NATIVE (OssysOriginal GUID) identity:
+    // `ossys:` live model reads and `sink:` witnessed states (S7 — the sink
+    // persists the same rowsets the ossys read parses, K2). Both espace-safe
+    // ⇒ the `compare`/`diff` run faces normalize to the logical shape; both
+    // `live:` ⇒ espace-UNSAFE (a named advisory fires).
+    Assert.True(Ref.espaceSafe (Ref.parse "ossys:cloud-dev"))
+    Assert.True(Ref.espaceSafe (Ref.parse "sink:uat"))
+    Assert.False(Ref.espaceSafe (Ref.parse "live:a"))
+    Assert.False(Ref.espaceSafe (Ref.parse "model.json"))
+    Assert.False(Ref.espaceSafe (Ref.parse "@01ABC"))
+    Assert.True(Ref.bothEspaceSafe (Ref.parse "ossys:cloud-dev") (Ref.parse "ossys:cloud-qa"))
+    Assert.True(Ref.bothEspaceSafe (Ref.parse "ossys:cloud-dev") (Ref.parse "sink:uat"))
+    Assert.True(Ref.bothEspaceSafe (Ref.parse "sink:uat@1") (Ref.parse "sink:uat@2"))
+    Assert.False(Ref.bothEspaceSafe (Ref.parse "ossys:cloud-dev") (Ref.parse "live:cloud-qa"))
     Assert.True(Ref.bothLive (Ref.parse "live:a") (Ref.parse "live:b"))
     Assert.False(Ref.bothLive (Ref.parse "ossys:a") (Ref.parse "live:b"))
     Assert.False(Ref.bothLive (Ref.parse "file:a.json") (Ref.parse "file:b.json"))
