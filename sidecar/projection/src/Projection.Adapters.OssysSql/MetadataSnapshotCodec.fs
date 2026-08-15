@@ -714,6 +714,48 @@ module MetadataSnapshotCodec =
         }
 
     // ------------------------------------------------------------------
+    // Row-grain surface (S4b lift): the journal serializes displacement
+    // before/after images at row grain, so the per-row writers/readers
+    // go public here — same assembly as the records, one encoding for
+    // snapshot bodies and journal lines alike.
+    // ------------------------------------------------------------------
+
+    [<RequireQualifiedAccess>]
+    module Rows =
+        let writeModule = writeModuleRow
+        let readModule = readModuleRow
+        let writeEntity = writeEntityRow
+        let readEntity = readEntityRow
+        let writeAttribute = writeAttributeRow
+        let readAttribute = readAttributeRow
+        let writeReference = writeReferenceRow
+        let readReference = readReferenceRow
+        let writePhysicalTable = writePhysicalTableRow
+        let readPhysicalTable = readPhysicalTableRow
+        let writeColumnReality = writeColumnRealityRow
+        let readColumnReality = readColumnRealityRow
+        let writeColumnCheck = writeColumnCheckRow
+        let readColumnCheck = readColumnCheckRow
+        let writePhysColsPresent = writePhysColsPresentRow
+        let readPhysColsPresent = readPhysColsPresentRow
+        let writeIndex = writeAllIdxRow
+        let readIndex = readAllIdxRow
+        let writeIndexColumn = writeIdxColRow
+        let readIndexColumn = readIdxColRow
+        let writeFkReality = writeFkRealityRow
+        let readFkReality = readFkRealityRow
+        let writeFkColumn = writeFkColumnRow
+        let readFkColumn = readFkColumnRow
+        let writeTrigger = writeTriggerRow
+        let readTrigger = readTriggerRow
+        let writeSequence = writeSequenceRow
+        let readSequence = readSequenceRow
+        let writeTemporal = writeTemporalRow
+        let readTemporal = readTemporalRow
+        let writeCapability = writeCapabilityRow
+        let readCapability = readCapabilityRow
+
+    // ------------------------------------------------------------------
     // The document.
     // ------------------------------------------------------------------
 

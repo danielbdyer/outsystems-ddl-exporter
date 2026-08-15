@@ -356,6 +356,7 @@
     <Compile Include="MetadataSnapshotCapabilityTests.fs" />
     <Compile Include="MetadataSnapshotCodecTests.fs" />
     <Compile Include="SinkDisplacementTests.fs" />
+    <Compile Include="SinkStoreTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

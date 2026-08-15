@@ -35,6 +35,11 @@
          so the witness hook can journal displacements; needs only Core
          (AttributeFacet) + Adapters.OssysSql (the snapshot records). -->
     <Compile Include="SinkDisplacement.fs" />
+    <!-- SinkJournal.fs / SinkStore.fs (S4b): the acquisition grain's
+         ledger (the fourth LedgerSpec instance) and its durable home.
+         Before LiveModelRead.fs — the witness hook calls SinkStore. -->
+    <Compile Include="SinkJournal.fs" />
+    <Compile Include="SinkStore.fs" />
     <Compile Include="LiveModelRead.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />

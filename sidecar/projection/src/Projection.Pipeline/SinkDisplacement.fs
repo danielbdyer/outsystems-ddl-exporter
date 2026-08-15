@@ -229,6 +229,26 @@ module SinkDisplacement =
         // One row per snapshot by construction; its identity IS the table.
         "capabilities", KeyBasis.Composite [ "capabilities" ]
 
+    /// The algebra's zero — the genesis every journal replays from
+    /// (`diff emptySnapshot s1` is the first sync's appearances).
+    let emptySnapshot : MetadataSnapshotRunner.MetadataSnapshot =
+        { Modules = []
+          Entities = []
+          Attributes = []
+          References = []
+          PhysicalTables = []
+          ColumnReality = []
+          ColumnChecks = []
+          PhysColsPresent = []
+          Indexes = []
+          IndexColumns = []
+          ForeignKeysReality = []
+          ForeignKeyColumns = []
+          Triggers = []
+          Sequences = []
+          Temporal = []
+          Capabilities = [] }
+
     // ------------------------------------------------------------------
     // Canonical form: every rowset key-sorted. The algebra's laws hold
     // over canonical snapshots; the witness hook canonicalizes before

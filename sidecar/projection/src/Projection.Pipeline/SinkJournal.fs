@@ -1,0 +1,391 @@
+// LINT-ALLOW-FILE-MUTATION: journal persistence boundary (the data-sink
+//   chapter S4b; the CaptureJournal precedent) — NDJSON via System.Text.Json
+//   (the typed-AST library for the format) over an append-only file with an
+//   fsync'd FileStream; the displacement algebra, the line codec, and the
+//   LedgerSpec instance are pure — the I/O surface (fsync append /
+//   fail-closed load) is the thin boundary the witness and the sync verb
+//   call.
+namespace Projection.Pipeline
+
+open System
+open System.IO
+open System.Text.Json
+open Projection.Core
+open Projection.Adapters.OssysSql
+open FsToolkit.ErrorHandling
+
+/// The sink's displacement journal (S4b) — the acquisition grain's ledger,
+/// the FOURTH `Ledger.LedgerSpec` instance (after the capture journal's
+/// chunk grain, the episode store's episode grain, and the G10 marker
+/// grain). Append-only NDJSON, one line per displacement; fixed filename
+/// (`journal.ndjson` — the digest directory is the key, so no digest
+/// filename); fsync on append (the CaptureJournal durability posture); a
+/// torn TRAILING line is tolerated, an interior corrupt line refuses by
+/// name (`RunLedger`'s skip-malformed posture is exactly the silent
+/// forgetting a metadata ledger must never do); a regressing syncId refuses
+/// on the `Ledger.resumeAdmit` drift channel (`sink.journal.syncRegression`).
+/// No intent records: snapshots are idempotently re-derivable, so the
+/// orphan-snapshot window repairs by re-differencing at the next witness
+/// (`sink.journal.reconciledOrphanSnapshot`).
+[<RequireQualifiedAccess>]
+module SinkJournal =
+
+    [<Literal>]
+    let fileName = "journal.ndjson"
+
+    /// One journal line: a displacement stamped with its sync coordinates.
+    type JournalLine =
+        {
+            SyncId        : int
+            PrevSyncId    : int option
+            CapturedAtUtc : DateTimeOffset
+            Displacement  : SinkDisplacement.Displacement
+        }
+
+    /// The LedgerSpec instance: state is the witnessed snapshot, ⊕ is
+    /// `SinkDisplacement.applyOne`, genesis is the empty snapshot, and the
+    /// fingerprint is the line's sync ordinal (chain STRUCTURE, verified
+    /// honestly — the write witness is the fsync'd append itself).
+    let spec : LedgerSpec<MetadataSnapshotRunner.MetadataSnapshot, JournalLine, int> =
+        {
+            Genesis = SinkDisplacement.emptySnapshot
+            Apply = fun state line -> SinkDisplacement.applyOne state line.Displacement
+            FingerprintOf = fun line -> line.SyncId
+        }
+
+    // ------------------------------------------------------------------
+    // Line codec (compact single-line JSON; row images via the snapshot
+    // codec's row-grain surface — one encoding for bodies and lines).
+    // ------------------------------------------------------------------
+
+    let private writeKeyBasis (jw: Utf8JsonWriter) (basis: SinkDisplacement.KeyBasis) =
+        jw.WritePropertyName "keyBasis"
+        jw.WriteStartObject()
+        match basis with
+        | SinkDisplacement.KeyBasis.Native g ->
+            jw.WriteString("kind", "native")
+            jw.WriteString("guid", g.ToString("D"))
+        | SinkDisplacement.KeyBasis.Positional n ->
+            jw.WriteString("kind", "positional")
+            jw.WriteNumber("id", n)
+        | SinkDisplacement.KeyBasis.Composite parts ->
+            jw.WriteString("kind", "composite")
+            jw.WritePropertyName "parts"
+            jw.WriteStartArray()
+            for p in parts do jw.WriteStringValue p
+            jw.WriteEndArray()
+        jw.WriteEndObject()
+
+    let private writeRowImage (jw: Utf8JsonWriter) (name: string) (row: SinkDisplacement.SinkRow option) =
+        jw.WritePropertyName name
+        match row with
+        | None -> jw.WriteNullValue()
+        | Some r ->
+            jw.WriteStartObject()
+            match r with
+            | SinkDisplacement.SinkRow.Module x -> MetadataSnapshotCodec.Rows.writeModule jw x
+            | SinkDisplacement.SinkRow.Entity x -> MetadataSnapshotCodec.Rows.writeEntity jw x
+            | SinkDisplacement.SinkRow.Attribute x -> MetadataSnapshotCodec.Rows.writeAttribute jw x
+            | SinkDisplacement.SinkRow.Reference x -> MetadataSnapshotCodec.Rows.writeReference jw x
+            | SinkDisplacement.SinkRow.PhysicalTable x -> MetadataSnapshotCodec.Rows.writePhysicalTable jw x
+            | SinkDisplacement.SinkRow.ColumnReality x -> MetadataSnapshotCodec.Rows.writeColumnReality jw x
+            | SinkDisplacement.SinkRow.ColumnCheck x -> MetadataSnapshotCodec.Rows.writeColumnCheck jw x
+            | SinkDisplacement.SinkRow.PhysColsPresent x -> MetadataSnapshotCodec.Rows.writePhysColsPresent jw x
+            | SinkDisplacement.SinkRow.Index x -> MetadataSnapshotCodec.Rows.writeIndex jw x
+            | SinkDisplacement.SinkRow.IndexColumn x -> MetadataSnapshotCodec.Rows.writeIndexColumn jw x
+            | SinkDisplacement.SinkRow.FkReality x -> MetadataSnapshotCodec.Rows.writeFkReality jw x
+            | SinkDisplacement.SinkRow.FkColumn x -> MetadataSnapshotCodec.Rows.writeFkColumn jw x
+            | SinkDisplacement.SinkRow.Trigger x -> MetadataSnapshotCodec.Rows.writeTrigger jw x
+            | SinkDisplacement.SinkRow.Sequence x -> MetadataSnapshotCodec.Rows.writeSequence jw x
+            | SinkDisplacement.SinkRow.Temporal x -> MetadataSnapshotCodec.Rows.writeTemporal jw x
+            | SinkDisplacement.SinkRow.Capability x -> MetadataSnapshotCodec.Rows.writeCapability jw x
+            jw.WriteEndObject()
+
+    let private domainToken (t: SinkDisplacement.DomainTransition) : string =
+        match t with
+        | SinkDisplacement.DomainTransition.EntityDeactivated -> "entityDeactivated"
+        | SinkDisplacement.DomainTransition.EntityReactivated -> "entityReactivated"
+        | SinkDisplacement.DomainTransition.EntityRehomed _ -> "entityRehomed"
+        | SinkDisplacement.DomainTransition.EntityRegisteredExternal -> "entityRegisteredExternal"
+        | SinkDisplacement.DomainTransition.PhysicalTableClaimChanged _ -> "physicalTableClaimChanged"
+        | SinkDisplacement.DomainTransition.PhysicalTableSuperseded _ -> "physicalTableSuperseded"
+        | SinkDisplacement.DomainTransition.AttributeRetired -> "attributeRetired"
+        | SinkDisplacement.DomainTransition.AttributeReactivated -> "attributeReactivated"
+        | SinkDisplacement.DomainTransition.AttributeRetyped _ -> "attributeRetyped"
+        | SinkDisplacement.DomainTransition.ModuleRetired -> "moduleRetired"
+        | SinkDisplacement.DomainTransition.ModuleReactivated -> "moduleReactivated"
+        | SinkDisplacement.DomainTransition.ShapeChanged -> "shapeChanged"
+
+    let private writeDomain (jw: Utf8JsonWriter) (domain: SinkDisplacement.DomainTransition option) =
+        jw.WritePropertyName "domain"
+        match domain with
+        | None -> jw.WriteNullValue()
+        | Some t ->
+            jw.WriteStartObject()
+            jw.WriteString("token", domainToken t)
+            match t with
+            | SinkDisplacement.DomainTransition.EntityRehomed (fromId, toId) ->
+                jw.WriteNumber("fromEspaceId", fromId)
+                jw.WriteNumber("toEspaceId", toId)
+            | SinkDisplacement.DomainTransition.PhysicalTableClaimChanged (fromTable, toTable) ->
+                jw.WriteString("fromTable", fromTable)
+                jw.WriteString("toTable", toTable)
+            | SinkDisplacement.DomainTransition.PhysicalTableSuperseded table ->
+                jw.WriteString("table", table)
+            | SinkDisplacement.DomainTransition.AttributeRetyped facets ->
+                jw.WritePropertyName "facets"
+                jw.WriteStartArray()
+                for f in facets do jw.WriteStringValue (string f)
+                jw.WriteEndArray()
+            | _ -> ()
+            jw.WriteEndObject()
+
+    /// Render one journal line as compact single-line JSON (no newline).
+    let renderLine (line: JournalLine) : string =
+        let node =
+            JsonWriting.writeToNode (fun jw ->
+                jw.WriteStartObject()
+                jw.WriteNumber("syncId", line.SyncId)
+                (match line.PrevSyncId with
+                 | Some p -> jw.WriteNumber("prevSyncId", p)
+                 | None -> jw.WriteNull("prevSyncId"))
+                jw.WriteString("capturedAtUtc", line.CapturedAtUtc.ToString("O", Globalization.CultureInfo.InvariantCulture))
+                jw.WriteString("table", SinkDisplacement.SinkTable.token line.Displacement.Table)
+                jw.WriteString("key", line.Displacement.KeyText)
+                writeKeyBasis jw line.Displacement.KeyBasis
+                writeDomain jw line.Displacement.Domain
+                writeRowImage jw "before" line.Displacement.Before
+                writeRowImage jw "after" line.Displacement.After
+                jw.WriteEndObject())
+        node.ToJsonString()
+
+    // ------------------------------------------------------------------
+    // Line decode (fail-closed; the journal read path).
+    // ------------------------------------------------------------------
+
+    let private fail (code: string) (msg: string) : Result<'a> =
+        Result.failureOf (ValidationError.create code msg)
+
+    let private tableOfToken (token: string) : Result<SinkDisplacement.SinkTable> =
+        SinkDisplacement.SinkTable.all
+        |> List.tryFind (fun t -> SinkDisplacement.SinkTable.token t = token)
+        |> function
+           | Some t -> Ok t
+           | None -> fail "sink.journal.unknownTable" (sprintf "unknown journal table token '%s'" token)
+
+    let private readRowImage (table: SinkDisplacement.SinkTable) (el: JsonElement) : Result<SinkDisplacement.SinkRow option> =
+        if el.ValueKind = JsonValueKind.Null then Ok None
+        else
+            let lift (r: Result<'a>) (wrap: 'a -> SinkDisplacement.SinkRow) = r |> Result.map (wrap >> Some)
+            match table with
+            | SinkDisplacement.SinkTable.Modules -> lift (MetadataSnapshotCodec.Rows.readModule el) SinkDisplacement.SinkRow.Module
+            | SinkDisplacement.SinkTable.Entities -> lift (MetadataSnapshotCodec.Rows.readEntity el) SinkDisplacement.SinkRow.Entity
+            | SinkDisplacement.SinkTable.Attributes -> lift (MetadataSnapshotCodec.Rows.readAttribute el) SinkDisplacement.SinkRow.Attribute
+            | SinkDisplacement.SinkTable.References -> lift (MetadataSnapshotCodec.Rows.readReference el) SinkDisplacement.SinkRow.Reference
+            | SinkDisplacement.SinkTable.PhysicalTables -> lift (MetadataSnapshotCodec.Rows.readPhysicalTable el) SinkDisplacement.SinkRow.PhysicalTable
+            | SinkDisplacement.SinkTable.ColumnReality -> lift (MetadataSnapshotCodec.Rows.readColumnReality el) SinkDisplacement.SinkRow.ColumnReality
+            | SinkDisplacement.SinkTable.ColumnChecks -> lift (MetadataSnapshotCodec.Rows.readColumnCheck el) SinkDisplacement.SinkRow.ColumnCheck
+            | SinkDisplacement.SinkTable.PhysColsPresent -> lift (MetadataSnapshotCodec.Rows.readPhysColsPresent el) SinkDisplacement.SinkRow.PhysColsPresent
+            | SinkDisplacement.SinkTable.Indexes -> lift (MetadataSnapshotCodec.Rows.readIndex el) SinkDisplacement.SinkRow.Index
+            | SinkDisplacement.SinkTable.IndexColumns -> lift (MetadataSnapshotCodec.Rows.readIndexColumn el) SinkDisplacement.SinkRow.IndexColumn
+            | SinkDisplacement.SinkTable.ForeignKeysReality -> lift (MetadataSnapshotCodec.Rows.readFkReality el) SinkDisplacement.SinkRow.FkReality
+            | SinkDisplacement.SinkTable.ForeignKeyColumns -> lift (MetadataSnapshotCodec.Rows.readFkColumn el) SinkDisplacement.SinkRow.FkColumn
+            | SinkDisplacement.SinkTable.Triggers -> lift (MetadataSnapshotCodec.Rows.readTrigger el) SinkDisplacement.SinkRow.Trigger
+            | SinkDisplacement.SinkTable.Sequences -> lift (MetadataSnapshotCodec.Rows.readSequence el) SinkDisplacement.SinkRow.Sequence
+            | SinkDisplacement.SinkTable.Temporal -> lift (MetadataSnapshotCodec.Rows.readTemporal el) SinkDisplacement.SinkRow.Temporal
+            | SinkDisplacement.SinkTable.Capabilities -> lift (MetadataSnapshotCodec.Rows.readCapability el) SinkDisplacement.SinkRow.Capability
+
+    let private asNonNullString (code: string) (context: string) (el: JsonElement) : Result<string> =
+        match el.GetString() with
+        | null -> fail code (sprintf "%s: string element returned null" context)
+        | s -> Ok s
+
+    let private readKeyBasis (el: JsonElement) : Result<SinkDisplacement.KeyBasis> =
+        match el.TryGetProperty "kind" with
+        | true, k when k.ValueKind = JsonValueKind.String ->
+            asNonNullString "sink.journal.corruptLine" "keyBasis kind" k
+            |> Result.bind (fun kind ->
+                match kind with
+                | "native" ->
+                    match el.TryGetProperty "guid" with
+                    | true, g when g.ValueKind = JsonValueKind.String ->
+                        asNonNullString "sink.journal.corruptLine" "keyBasis guid" g
+                        |> Result.bind (fun gs ->
+                            match Guid.TryParseExact(gs, "D") with
+                            | true, guid -> Ok (SinkDisplacement.KeyBasis.Native guid)
+                            | _ -> fail "sink.journal.corruptLine" "native keyBasis carries a non-Guid")
+                    | _ -> fail "sink.journal.corruptLine" "native keyBasis missing guid"
+                | "positional" ->
+                    match el.TryGetProperty "id" with
+                    | true, n when n.ValueKind = JsonValueKind.Number -> Ok (SinkDisplacement.KeyBasis.Positional (n.GetInt32()))
+                    | _ -> fail "sink.journal.corruptLine" "positional keyBasis missing id"
+                | "composite" ->
+                    match el.TryGetProperty "parts" with
+                    | true, parts when parts.ValueKind = JsonValueKind.Array ->
+                        parts.EnumerateArray()
+                        |> Seq.map (fun p ->
+                            if p.ValueKind = JsonValueKind.String then
+                                asNonNullString "sink.journal.corruptLine" "keyBasis part" p
+                            else fail "sink.journal.corruptLine" "composite keyBasis part is not a string")
+                        |> Seq.toList
+                        |> List.fold (fun acc item ->
+                            match acc, item with
+                            | Ok xs, Ok x -> Ok (x :: xs)
+                            | Error e, _ -> Error e
+                            | _, Error e -> Error e) (Ok [])
+                        |> Result.map (List.rev >> SinkDisplacement.KeyBasis.Composite)
+                    | _ -> fail "sink.journal.corruptLine" "composite keyBasis missing parts"
+                | other -> fail "sink.journal.corruptLine" (sprintf "unknown keyBasis kind '%s'" other))
+        | _ -> fail "sink.journal.corruptLine" "keyBasis missing kind"
+
+    /// Parse one journal line. The domain classification is re-derivable
+    /// from the images, so the decode re-derives nothing — it restores the
+    /// displacement structurally (domain token payloads ride the line for
+    /// readers, but the typed Domain is rebuilt at replay only when needed;
+    /// here it is restored as None-safe re-classification is S10's view).
+    let parseLine (text: string) : Result<JournalLine> =
+        let parsed =
+            try Ok (JsonDocument.Parse text)
+            with ex -> fail "sink.journal.corruptLine" (sprintf "journal line did not parse: %s" ex.Message)
+        parsed
+        |> Result.bind (fun doc ->
+            use doc = doc
+            let root = doc.RootElement
+            result {
+                let! syncId =
+                    match root.TryGetProperty "syncId" with
+                    | true, v when v.ValueKind = JsonValueKind.Number -> Ok (v.GetInt32())
+                    | _ -> fail "sink.journal.corruptLine" "line missing syncId"
+                let prevSyncId =
+                    match root.TryGetProperty "prevSyncId" with
+                    | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetInt32())
+                    | _ -> None
+                let! capturedAt =
+                    match root.TryGetProperty "capturedAtUtc" with
+                    | true, v when v.ValueKind = JsonValueKind.String ->
+                        asNonNullString "sink.journal.corruptLine" "capturedAtUtc" v
+                        |> Result.bind (fun text ->
+                            match DateTimeOffset.TryParse(text, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) with
+                            | true, dto -> Ok dto
+                            | _ -> fail "sink.journal.corruptLine" "capturedAtUtc is not round-trippable")
+                    | _ -> fail "sink.journal.corruptLine" "line missing capturedAtUtc"
+                let! table =
+                    match root.TryGetProperty "table" with
+                    | true, v when v.ValueKind = JsonValueKind.String ->
+                        asNonNullString "sink.journal.corruptLine" "table" v
+                        |> Result.bind tableOfToken
+                    | _ -> fail "sink.journal.corruptLine" "line missing table"
+                let! key =
+                    match root.TryGetProperty "key" with
+                    | true, v when v.ValueKind = JsonValueKind.String ->
+                        asNonNullString "sink.journal.corruptLine" "key" v
+                    | _ -> fail "sink.journal.corruptLine" "line missing key"
+                let! basis =
+                    match root.TryGetProperty "keyBasis" with
+                    | true, v when v.ValueKind = JsonValueKind.Object -> readKeyBasis v
+                    | _ -> fail "sink.journal.corruptLine" "line missing keyBasis"
+                let! before =
+                    match root.TryGetProperty "before" with
+                    | true, v -> readRowImage table v
+                    | _ -> fail "sink.journal.corruptLine" "line missing before image"
+                let! after =
+                    match root.TryGetProperty "after" with
+                    | true, v -> readRowImage table v
+                    | _ -> fail "sink.journal.corruptLine" "line missing after image"
+                return
+                    { SyncId = syncId
+                      PrevSyncId = prevSyncId
+                      CapturedAtUtc = capturedAt
+                      Displacement =
+                        { Table = table
+                          KeyText = key
+                          KeyBasis = basis
+                          Before = before
+                          After = after
+                          Domain = None } }
+            })
+
+    // ------------------------------------------------------------------
+    // The file boundary.
+    // ------------------------------------------------------------------
+
+    /// Append lines with fsync (the CaptureJournal durability posture):
+    /// the append is the write witness — a line the caller sees appended
+    /// has reached the platters, so a crash leaves no half-claimed ledger.
+    let append (path: string) (lines: JournalLine list) : Result<unit> =
+        try
+            (match Path.GetDirectoryName path with
+             | null -> ()
+             | "" -> ()
+             | dir -> Directory.CreateDirectory dir |> ignore)
+            use stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read)
+            use writer = new StreamWriter(stream, Text.UTF8Encoding(false))
+            for line in lines do
+                writer.WriteLine(renderLine line)
+            writer.Flush()
+            stream.Flush(true)
+            Ok ()
+        with ex ->
+            fail "sink.writeFailed" (sprintf "journal append failed: %s" ex.Message)
+
+    /// Load the whole journal (the metadata plane is small — whole-file is
+    /// honest). A torn TRAILING line (no final newline) is tolerated as
+    /// the named at-least-once window; an interior corrupt line refuses.
+    let load (path: string) : Result<JournalLine list> =
+        if not (File.Exists path) then Ok []
+        else
+            try
+                let text = File.ReadAllText path
+                let endsWithNewline = text.EndsWith "\n"
+                let rawLines =
+                    text.Split('\n')
+                    |> Array.toList
+                    |> List.filter (fun l -> l.Trim() <> "")
+                let parsedAll =
+                    rawLines |> List.map parseLine
+                let lastIndex = List.length parsedAll - 1
+                parsedAll
+                |> List.mapi (fun i r -> i, r)
+                |> List.fold (fun acc (i, r) ->
+                    match acc, r with
+                    | Error e, _ -> Error e
+                    | Ok xs, Ok line -> Ok (line :: xs)
+                    | Ok xs, Error _ when i = lastIndex && not endsWithNewline ->
+                        // The torn trailing line: tolerated, named by absence.
+                        Ok xs
+                    | Ok _, Error e -> Error e) (Ok [])
+                |> Result.map List.rev
+            with ex ->
+                fail "sink.journal.unreadable" (sprintf "journal read failed: %s" ex.Message)
+
+    /// The monotone-chain admission: every line must carry the next sync
+    /// ordinal within its sync group (non-decreasing across the file,
+    /// strictly increasing between sync groups). A regression is the named
+    /// drift, never a silent re-run.
+    let admitChain (lines: JournalLine list) : Result<Verified<JournalLine> list> =
+        let folder (acc: Result<int * Verified<JournalLine> list>) (line: JournalLine) =
+            acc
+            |> Result.bind (fun (lastSync, verified) ->
+                if line.SyncId < lastSync then
+                    fail "sink.journal.syncRegression"
+                        (sprintf "journal syncId regressed: %d after %d" line.SyncId lastSync)
+                else
+                    match Ledger.resumeAdmit line.SyncId (Ledger.entryOf spec line.SyncId line) with
+                    | Ok v -> Ok (line.SyncId, v :: verified)
+                    | Error drift ->
+                        fail "sink.journal.syncRegression"
+                            (sprintf "journal fingerprint drift at position %d" drift.Position))
+        lines
+        |> List.fold folder (Ok (0, []))
+        |> Result.map (snd >> List.rev)
+
+    /// The FTC at the acquisition grain: fold ⊕ over the verified chain
+    /// from the genesis (empty) snapshot — `Ledger.replay`, not a bespoke
+    /// fold. With the witness writing canonical snapshots, `replay` of a
+    /// journal reproduces the latest witnessed snapshot exactly (T19).
+    let replay (verified: Verified<JournalLine> list) : MetadataSnapshotRunner.MetadataSnapshot =
+        Ledger.replay spec verified
+
+    /// The latest sync ordinal recorded, when any.
+    let lastSyncId (lines: JournalLine list) : int option =
+        lines |> List.map (fun l -> l.SyncId) |> function [] -> None | ids -> Some (List.max ids)
