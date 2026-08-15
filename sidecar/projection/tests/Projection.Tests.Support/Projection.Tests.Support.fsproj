@@ -20,6 +20,10 @@
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="TransferActs.fs" />
     <Compile Include="GoldenCatalog.fs" />
+    <!-- Sink chapter S1: declarative MetadataSnapshot row builders (the
+         codec-totality substrate). Needs only Projection.Adapters.OssysSql
+         types; no intra-Support dependencies. -->
+    <Compile Include="OssysSnapshotBuilders.fs" />
     <Compile Include="Fixtures/SourceSchema.fs" />
     <Compile Include="Fixtures/FixtureGenerator.fs" />
     <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />

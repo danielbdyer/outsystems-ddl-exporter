@@ -21,9 +21,11 @@ open System.Reflection  // LINT-ALLOW: embedded-resource manifest loading at the
 /// module names; empty/null = all modules), `@IncludeSystem` (BIT),
 /// `@IncludeInactive` (BIT), `@OnlyActiveAttributes` (BIT),
 /// `@EntityFilterJson` (NVARCHAR(MAX); per-module entity allow-list).
-/// The script emits 22 result sets in a fixed order (per V1's
-/// `MetadataResultSetProcessorFactory`); slice δ orchestrates the
-/// enumeration via `DbDataReader.NextResultAsync`.
+/// The script emits `MetadataSnapshotRunner.ExpectedResultSets` result
+/// sets in a fixed order (the count lives on that constant alone — a
+/// number restated here drifted once already; sink chapter open,
+/// 2026-08-15); the runner orchestrates the enumeration via
+/// `DbDataReader.NextResultAsync`.
 [<RequireQualifiedAccess>]
 module MetadataExtractionSql =
 
@@ -46,6 +48,16 @@ module MetadataExtractionSql =
     /// V2 runner → Catalog → SSDT emit → deploy → readback → diff.
     [<Literal>]
     let private FixtureResourceName = "Projection.Adapters.OssysSql.Resources.ossys-edge-case.seed.sql"
+
+    /// Embedded-resource name for the data-sink chapter's lifecycle seed
+    /// (S1, 2026-08-15; CHAPTER_SINK_OPEN.md). Authored fresh for V2 (no
+    /// V1 donor). A SEPARATE resource from the edge-case seed — 14
+    /// consumer files pin that seed's exact counts, so the post-cutover
+    /// lifecycle shapes (tombstoned entity with a surviving table; the
+    /// tombstone ↔ extension re-registration pair; the two-active-claims
+    /// contested pair; the orphan physical table) live here instead.
+    [<Literal>]
+    let private LifecycleSeedResourceName = "Projection.Adapters.OssysSql.Resources.ossys-lifecycle.seed.sql"
 
     let private readResource (resourceName: string) : string =
         let assembly = Assembly.GetExecutingAssembly()
@@ -70,3 +82,10 @@ module MetadataExtractionSql =
     /// construction. Chapter 5.0 slice β — the canary mockup donor.
     let readEdgeCaseSeed () : string =
         readResource FixtureResourceName
+
+    /// Read the data-sink chapter's lifecycle seed as a UTF-8 string —
+    /// the post-cutover estate shapes (tombstone / re-registration pair /
+    /// contested pair / orphan table) the sink's recoverability and
+    /// adjudication witnesses run against. Sink chapter S1.
+    let readLifecycleSeed () : string =
+        readResource LifecycleSeedResourceName
