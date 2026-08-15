@@ -116,6 +116,19 @@ S16 chapter close (the eight-item ritual; the V1-input-envelope walk fires)
   estate store root (`EstateStoreLocation.storeDirFrom`), never `outputs.*` — nothing
   enters `SsdtBundle`/`DataBundle`, so `GoldenEmissionTests`' artifact-set equality never
   sees it. K10's eject slice re-checks `EjectRunTests` explicitly.
+- **(added at S6) Two Docker transfer-leg tests are red on the inherited tree**, verified
+  pre-existing by running both against the pre-chapter commit (`34d4967`) in a clean
+  worktree on a freshly restarted container: `StagedMergeDeployE2ETests` (the emitted
+  script no longer contains the `#fk_` deferred-FK staging table the assert expects) and
+  `T18CycleBreakCanaryTests` (Phase-2 MERGE conflicts with `FK_T18_ALPHA_BETA` — the
+  deferral that should precede it is absent). Same family: the >threshold self-referential
+  / weak-cycle FK-deferral path through the staged merge, last reshaped by the 2026-07-21..25
+  bridge-retargeting arc — the same direct-push arc that landed the 82 lint violations
+  against the red gate. NOT a memory signature (survival rule 2 was probed first: restart +
+  focused solo re-run still fails). Out of this chapter's scope (the sink never touches the
+  transfer leg); owed to DECISIONS as a standing follow-on beside the 82-site disposition.
+  The delta gate for Docker: the rest of the pool is green mid-chapter (the one full-pool
+  run's only failures are these two), and every sink Docker suite passes focused.
 
 ## 4 — Where truth lives for this chapter
 

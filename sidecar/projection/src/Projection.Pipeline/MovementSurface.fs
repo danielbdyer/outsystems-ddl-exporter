@@ -1042,7 +1042,7 @@ module ProjectionConfig =
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
         set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
-              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
+              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run"; "sync" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -2701,6 +2701,27 @@ module Command =
                     | Error es -> PlanAction.Refused (6, List.head es)
         { Notes = []; Action = action }
 
+    /// Route a `sync` verb tail (the data-sink chapter, S6): `sync <env>
+    /// [--format json]` — the env is positional-first (the `profile`
+    /// convention); it resolves to its live connection; the run is a forced
+    /// total witnessed read + displacement report + the env-label stamp.
+    let planSync (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let envArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match envArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.sync.noEnv" "projection sync: name a source environment (sync <env>).")
+            | Some envRaw ->
+                match resolveLiveConn cfg envRaw with
+                | Ok conn ->
+                    PlanAction.SyncEnvironment
+                        { EnvLabel = envRaw
+                          ConnSpec = conn
+                          AsJson = (valueOf "--format" = Some "json") }
+                | Error es -> PlanAction.Refused (6, List.head es)
+        { Notes = []; Action = action }
+
     /// Route a `synth-correct` verb tail (FUZZING §2.2, slice F0c-I/O):
     /// `synth-correct --out <path>` proposes a first-draft blessed-correction
     /// artifact from the CONFIGURED model's catalog (the proposer types PII by
@@ -2752,6 +2773,9 @@ module Command =
         | "revert" :: rest  -> Result.success (Intent.Revert rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
+        // `sync <env>` — the sink's naming verb (S6): forced total
+        // witnessed read + displacement report + the env-label stamp.
+        | "sync" :: rest -> Result.success (Intent.Sync rest)
         // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
         // `argv.[0]` match in `Program.main`, now first-class typed intents on the
         // one dispatch plane. `slice-reset` is `slice-apply` under `reset = true`.
@@ -2820,6 +2844,7 @@ module Command =
         | Intent.Revert args       -> planRevert cfg args
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
+        | Intent.Sync args         -> planSync cfg args
         | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }
         | Intent.SliceApply (reset, args)  -> { Notes = []; Action = PlanAction.RunSliceApply (reset, args) }
         | Intent.SliceFlow args            -> { Notes = []; Action = PlanAction.RunSliceFlow args }

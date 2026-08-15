@@ -77,6 +77,9 @@ let private inScopeCodes : Set<string> =
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           // the row-fidelity proof pair (check data --rows — T17, wave B2)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
+          // the sink sync face's verdict pair + the store refusal
+          // (projection sync — the data-sink chapter, S6)
+          "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -159,6 +162,9 @@ let private knownEmittableCodes : Set<string> =
           // the row-fidelity proof pair — render-synthesized at the
           // `check data --rows` face (`runCheckDataRows`)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
+          // the sink sync face's verdict pair + the store refusal —
+          // render-synthesized at `runSync` (the data-sink chapter, S6)
+          "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"

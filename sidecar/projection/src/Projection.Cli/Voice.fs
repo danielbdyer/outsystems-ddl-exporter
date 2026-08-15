@@ -1203,6 +1203,49 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `sync.completed` — §3: `projection sync`'s witnessed verdict (the
+    /// data-sink chapter, S6). The estate moved; the sync ordinal and the
+    /// journaled displacement count are the located evidence.
+    let private syncCompleted : Copy =
+        { Code           = "sync.completed"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "Sync %s witnessed for %s — %s displacement(s) journaled since the prior witness."
+                        (textOr "syncId" "?" p)
+                        (textOr "env" "the environment" p)
+                        (humane (textOr "displacements" "0" p)))
+          Substantiation = fun _ -> []
+          Action         =
+            fun p ->
+                text "journal" p
+                |> Option.filter (fun s -> s <> "")
+                |> Option.map (fun path -> View.Action(sprintf "Review %s — every displacement this sync journaled, machine-readable." path)) }
+
+    /// `sync.unchanged` — §6: the metadata plane's CDC-silence, said as one
+    /// quiet line (silence is the strongest guarantee; nothing journaled).
+    let private syncUnchanged : Copy =
+        { Code           = "sync.unchanged"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "%s matches its latest witnessed state — sync %s stands; nothing journaled."
+                        (textOr "env" "The environment" p)
+                        (textOr "syncId" "?" p))
+          Substantiation = fun _ -> [ View.Field("evidence", "metadata displacement count = 0", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `sink.storeDisabled` — §14: the sync verb needs a sink store root; the
+    /// remedy is the configuration, named (the eject.storeUnreadable shape).
+    let private sinkStoreDisabled : Copy =
+        { Code           = "sink.storeDisabled"
+          DocSection     = "§14"
+          Statement      = fun _ -> View.Hero(View.Bad, "No sink store is configured for this run. Set PROJECTION_ESTATE_DIR (or PROJECTION_LEDGER_DIR) and re-run.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -1284,6 +1327,11 @@ module Voice =
           // §6 — the row-fidelity proof pair (check data --rows; T17, B2)
           fidelityRowsMatched
           fidelityRowsDiverged
+          // §3 / §6 / §14 — the sink sync verdict pair + the store refusal
+          // (projection sync; the data-sink chapter, S6)
+          syncCompleted
+          syncUnchanged
+          sinkStoreDisabled
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

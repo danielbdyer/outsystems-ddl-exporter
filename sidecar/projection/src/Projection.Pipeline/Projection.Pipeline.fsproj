@@ -160,6 +160,10 @@
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
     <Compile Include="ProfileCaptureRun.fs" />
+    <!-- SinkSyncRun.fs (S6): the sync verb's run — the forced total
+         witnessed read + displacement report; after ProfileCaptureRun as
+         its structural sibling (both are verb-run I/O front ends). -->
+    <Compile Include="SinkSyncRun.fs" />
     <Compile Include="CorrectionProposeRun.fs" />
     <Compile Include="SliceExtractRun.fs" />
     <Compile Include="SliceApplyRun.fs" />

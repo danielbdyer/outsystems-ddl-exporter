@@ -1273,6 +1273,35 @@ let ``profile against an unknown environment is Refused`` () =
     | PlanAction.Refused (6, _) -> ()
     | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
 
+// -- sync verb (the data-sink chapter, S6) -----------------------------------
+// `sync <env>` is the sink's naming verb: a forced total witnessed read + the
+// displacement report + the env-label stamp. The env is positional-first (the
+// profile convention); it resolves to its live connection at plan time.
+
+[<Fact>]
+let ``sync <env> routes to SyncEnvironment carrying the resolved connection`` () =
+    match planArgs synthCfg [ "sync"; "cloud-uat" ] with
+    | PlanAction.SyncEnvironment { EnvLabel = "cloud-uat"; ConnSpec = "env:CLOUD_UAT_CONN"; AsJson = false } -> ()
+    | other -> Assert.Fail(sprintf "expected SyncEnvironment, got %A" other)
+
+[<Fact>]
+let ``sync <env> --format json sets the machine lens`` () =
+    match planArgs synthCfg [ "sync"; "cloud-uat"; "--format"; "json" ] with
+    | PlanAction.SyncEnvironment { AsJson = true } -> ()
+    | other -> Assert.Fail(sprintf "expected SyncEnvironment (json), got %A" other)
+
+[<Fact>]
+let ``sync without an environment is Refused (named)`` () =
+    match planArgs synthCfg [ "sync" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.sync.noEnv", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-env refusal, got %A" other)
+
+[<Fact>]
+let ``sync against an unknown environment is Refused`` () =
+    match planArgs synthCfg [ "sync"; "nope" ] with
+    | PlanAction.Refused (6, _) -> ()
+    | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
+
 // -- slice data-portability verbs (recon #3 — one dispatch plane) -----------
 // Formerly an `argv.[0]` side-channel in `Program.main`; these pin that the four
 // verbs now route through the one typed `Command.parse` → `Command.plan` plane,

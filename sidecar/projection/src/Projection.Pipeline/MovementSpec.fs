@@ -472,6 +472,11 @@ type Intent =
     /// F0c-I/O): heuristic PII typing for the operator to review / fine-tune /
     /// BLESS. The durable sibling of `profile` — both write a reviewable hinge.
     | SynthCorrect of args: string list
+    /// `sync <env>` — the sink's naming verb (the data-sink chapter, S6):
+    /// a forced TOTAL witnessed read + displacement report; stamps the
+    /// environment label onto the sink manifest (the act that makes an
+    /// environment addressable as `sink:<env>`).
+    | Sync of args: string list
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
@@ -732,6 +737,11 @@ type PlanAction =
     /// capture the durable Profile from a live environment to a file
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.
     | CaptureProfile of conn: string * out: string
+    // sync ---------------------------------------------------------------
+    /// the sink's naming verb (S6): a forced total witnessed read of a
+    /// live environment + the displacement report + the env-label stamp.
+    /// Reified as a record from birth (the CheckGoArgs lesson).
+    | SyncEnvironment of args: SyncArgs
     /// propose a FIRST-DRAFT blessed-correction artifact to a file (FUZZING
     /// §2.2, slice F0c-I/O): resolve the model's catalog → `CorrectionProposer
     /// .propose` (heuristic PII typing) → `CorrectionCodec.serialize` → write.
@@ -769,6 +779,15 @@ and CheckGoArgs =
       EmitImpact : bool
       Review     : bool
       Planned    : PlanAction }
+
+/// `sync <env>`'s coordinates (the `SyncEnvironment` payload; S6).
+and SyncArgs =
+    { /// The operator's environment name — stamped onto the sink manifest
+      /// (the naming act `sink:<env>` resolution stands on).
+      EnvLabel : string
+      /// The resolved live connection spec (`env:` / `file:` / raw).
+      ConnSpec : string
+      AsJson   : bool }
 
 /// `check estate`'s coordinates (the `CheckEstate` payload). `TargetLabel` is
 /// the masthead's display name for the unification basis; `Target` is its

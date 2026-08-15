@@ -49,6 +49,8 @@
     <!-- Faces/Fidelity.fs: the row-fidelity face (check data - -rows; T17, wave B2). -->
     <Compile Include="Faces/Fidelity.fs" />
     <Compile Include="Faces/Slice.fs" />
+    <!-- Faces/Sync.fs: the sink's naming face (projection sync; the data-sink chapter, S6). -->
+    <Compile Include="Faces/Sync.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

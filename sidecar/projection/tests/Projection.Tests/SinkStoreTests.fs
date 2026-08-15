@@ -234,3 +234,16 @@ module SinkStoreTests =
             Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
                 SinkDisplacement.canonical (snapshotB ()),
                 SinkJournal.replay verified))
+
+    // ------------------------------------------------------------------
+    // A49's structural pin (the sync verb; S6).
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    let ``A49 pin: the sync verb acquires with defaultParameters exactly (total acquisition, structurally)`` () =
+        // `projection sync` MUST ride the show-me-everything shape — the
+        // totality gate at the store enforces it dynamically; this pins it
+        // structurally so a drifted binding fails in the pure pool, cite-ably
+        // (AXIOMS A49 promotes over this at S9).
+        Assert.Equal(MetadataSnapshotRunner.defaultParameters, SinkSyncRun.acquisitionParameters)
+        Assert.True(SinkStore.isTotalAcquisition SinkSyncRun.acquisitionParameters)
