@@ -824,8 +824,8 @@ module EstateFindingKind =
         // every sink-named environment); the residue sweep flips at S12,
         // the correspondence proposer at S14.
         | EstateFindingKind.PhysicalClaimContested
-        | EstateFindingKind.PhysicalTombstoneOnly -> DetectionStatus.Active
-        | EstateFindingKind.PhysicalUnclaimed
+        | EstateFindingKind.PhysicalTombstoneOnly
+        | EstateFindingKind.PhysicalUnclaimed -> DetectionStatus.Active
         | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.NotYetDetected
 
 /// The stable cross-artifact identity of one finding — the board, the

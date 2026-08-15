@@ -1277,6 +1277,20 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `sink.unclaimed` — §5: the residue sweep's notice (S12) — tables on
+    /// disk with no metadata claim at all, outside the modeled estate.
+    let private sinkUnclaimed : Copy =
+        { Code           = "sink.unclaimed"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "%s carries %s unclaimed table(s) — on disk with no metadata claim, outside the modeled estate; each ruling is on the DECIDE lane."
+                        (textOr "env" "an environment" p)
+                        (humane (textOr "tables" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `sink.evidenceAge` — §5: the mandatory freshness line for a sink
     /// operand (the data-sink chapter, S7). Said BEFORE any verdict stands on
     /// the witnessed state — the `estate.evidence.offline` posture at the
@@ -1382,9 +1396,10 @@ module Voice =
           sinkStoreDisabled
           // §5 — the sink operand's mandatory freshness line (sink refs, S7)
           sinkEvidenceAge
-          // §5 — the sink's estate claim notices (check estate, S11b)
+          // §5 — the sink's estate claim notices (check estate, S11b + S12)
           sinkClaimContested
           sinkTombstoneOnly
+          sinkUnclaimed
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

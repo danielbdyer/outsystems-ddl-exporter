@@ -2227,8 +2227,22 @@ module Estate =
                       Lever = leverOf EstateFindingKind.PhysicalTombstoneOnly
                       Fork = false
                       Difficulty = None }
-            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _
-            | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed -> None)
+            | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed ->
+                // S12 — the residue sweep's outcome: on disk with no
+                // metadata claim at all, outside the modeled estate.
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalUnclaimed subject
+                      Kind = EstateFindingKind.PhysicalUnclaimed
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalUnclaimed
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalUnclaimed
+                      Envs = [ env, 1L ]
+                      Statement =
+                        sprintf "%s exists in the environment with no metadata claim — outside the modeled estate entirely."
+                            subject
+                      Lever = leverOf EstateFindingKind.PhysicalUnclaimed
+                      Fork = false
+                      Difficulty = None }
+            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ -> None)
 
     /// Stamp the sink's claim findings onto a computed report and re-derive
     /// the verdict under the SAME formula (unified ⇔ nothing diverges;

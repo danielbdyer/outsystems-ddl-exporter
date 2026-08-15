@@ -59,6 +59,10 @@
          (the Catalog has already lost losing claims — evidence assembles
          at the acquisition grain). -->
     <Compile Include="SinkClaims.fs" />
+    <!-- SinkResidue.fs (S12): the physical-residue sweep beside the OSSYS
+         read — INFORMATION_SCHEMA universe minus the witnessed edition's
+         claims, ridden as assemble-empty claim sets (Unclaimed). -->
+    <Compile Include="SinkResidue.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />

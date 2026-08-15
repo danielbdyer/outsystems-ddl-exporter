@@ -86,9 +86,21 @@ type SinkClaimsSeedTests(fixture: EphemeralContainerFixture) =
                         | other -> Assert.Fail (sprintf "Carrier: expected Contested, got %A" other)
 
                     // 5) The orphan physical table has NO metadata claim, so
-                    //    no set assembles for it here — its detection is the
-                    //    S12 residue sweep against sys.tables.
+                    //    no set assembles from the edition — the S12 residue
+                    //    sweep beside the OSSYS read finds it, and ONLY it:
+                    //    the four claimed tables (tombstones included) are
+                    //    not residue.
                     Assert.False(Map.containsKey "OSUSR_FUL_ARCHIVE" outcomes)
+                    let! residue = SinkResidue.sweep cnn snapshot
+                    let _ =
+                        match residue with
+                        | Ok [ archive ] ->
+                            Assert.Equal("OSUSR_FUL_ARCHIVE", archive.Table)
+                            match PhysicalClaimRules.adjudicate archive with
+                            | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed -> ()
+                            | other -> Assert.Fail (sprintf "expected Unclaimed, got %A" other)
+                        | Ok other -> Assert.Fail (sprintf "expected exactly the orphan, got %A" (other |> List.map (fun s -> s.Table)))
+                        | Error es -> Assert.Fail (sprintf "the sweep refused: %A" es)
                     return ()
                 }))
         finally

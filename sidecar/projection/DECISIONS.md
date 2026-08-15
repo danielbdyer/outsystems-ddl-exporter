@@ -242,7 +242,7 @@ table before continuing.
 | **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
 | **Sub-unanimity consensus thresholds (`check estate`)** | 2026-07-15 (the estate chapter opens) | The operator asks for a per-axis apply threshold below unanimity. Until then: the estate decision is the meet over the evidence join (deciding on `Profile.merge` ≡ unanimous per-env decisions); consensus ratios live in `estate.json` only and never lead a rendered line (the blocking environment is named instead). | deferred (2026-07-15) |
 | **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
-| **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | deferred (2026-07-15) |
+| **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | **TABLE grain cashed 2026-08-15 (the data-sink chapter, S12) — in its stated shape**: `SinkResidue.sweep` probes `INFORMATION_SCHEMA.TABLES` (the `OSUSR_%` universe — a NAMED caveat: an arbitrarily-named external table is indistinguishable from a non-OutSystems table and stays out) beside the OSSYS read at `check estate`, subtracts the witnessed edition's claims (tombstones still claim), and the residue rides the claims plane as `Unclaimed` → `PhysicalUnclaimed` DECIDE findings. The finer grains the row also names (columns / triggers / computed columns) STAY deferred under the same trigger. See `2026-08-15 — sink S12` below. |
 | **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | **Cashed out — 2026-07-15, estate wave A6 (first-in-PR).** The relaxation direction is STRUCTURAL: `TighteningDirection` (`EvidenceDriven \| RelaxationOnly`) on both nullability and FK configs; budget-less `kind:"nullability"` entries bind `relaxationOnly` (budgeted entries stay dropped — coercion unchanged); per-reference `referenceOverrides` (`keepUntracked`) land the previously-inexpressible single-FK untrack; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes only) reaches `SsdtDdlEmitter.columnDef` — the one lawful loosening. A44 enforcement test: `` `overlay: every emitted key binds through TighteningBinding and reaches emission` `` (TighteningBindingTests). See `2026-07-15 — The nullability-binder amendment lands` entry below. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
@@ -31204,3 +31204,25 @@ that renders them, never as phantom copy).
   landing an unexecuted registered pass at S11 would be phantom registration, the exact
   thing pillar 9 forbids. The estate face consumes outcomes directly; the lineage
   annotation joins where a lineage-bearing read exists.
+
+## 2026-08-15 — sink S12: the residue sweep (present-but-unclaimed goes live)
+
+- **`SinkResidue.fs`** (Pipeline): the S8/O4 deferral's TABLE grain, cashed in its
+  stated shape — `INFORMATION_SCHEMA.TABLES` beside the OSSYS read (the one place the
+  estate deliberately looks past OSSYS), the `OSUSR_%` universe (the named caveat: an
+  arbitrarily-named external table stays out — indistinguishable from a non-OutSystems
+  table; its claim, when one exists, adjudicates normally), minus the witnessed
+  edition's claims (a tombstone still claims its table until DbCleaner). The residue
+  rides the SAME outcome plane as every claim decision: assemble-empty sets the
+  adjudicator maps to `Unclaimed` by construction, so `sinkClaimFindingsOf` mints
+  `PhysicalUnclaimed` DECIDE findings through the one builder.
+- **The face**: the sweep runs per sink-named environment on its live connection,
+  beside the claims assembly; `--offline` skips it (the static-probe posture) and a
+  probe failure degrades to no residue (advisory-silent). Voice `sink.unclaimed` (§5)
+  joins the claim notices; the detector flips Active and the declared set retires it
+  (only the S14 correspondence proposer remains declared).
+- **The Docker witness**: over the lifecycle seed, the sweep finds EXACTLY the orphan
+  (`OSUSR_FUL_ARCHIVE`) — the four claimed tables, tombstones included, are not
+  residue — and the orphan adjudicates `Unclaimed`.
+- The finer residue grains (columns / triggers / computed columns) stay deferred under
+  the row's own trigger.

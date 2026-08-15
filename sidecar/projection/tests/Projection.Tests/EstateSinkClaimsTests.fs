@@ -10,8 +10,9 @@ open Projection.Tests.Fixtures
 // contract rows (lane/plane/lever from the per-kind functions, statements
 // through the strategy's one renderer); Contested carries the FORK witness,
 // so `withSinkClaims` turns a Unified estate Forked (exit 5 at the face);
-// TombstoneOnly turns it Converging; Adopted/Unclaimed mint nothing, and an
-// empty claims list is the identity (a run with no sink is byte-identical).
+// TombstoneOnly turns it Converging; Unclaimed (S12's residue) mints its
+// own DECIDE finding; Adopted mints nothing, and an empty claims list is
+// the identity (a run with no sink is byte-identical).
 
 let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int) : PhysicalClaimRules.PhysicalClaim =
     { EntityId = id
@@ -36,14 +37,16 @@ let private unifiedReport () =
         [ "cloud-uat", ({ Label = "cloud-uat"; Catalog = sampleCatalog; Profile = None } : Compare.Operand) ]
 
 [<Fact>]
-let ``contested and tombstone-only mint DECIDE findings with their contract rows; adopted and unclaimed mint nothing`` () =
+let ``contested, tombstone-only, and unclaimed mint DECIDE findings with their contract rows; adopted mints nothing`` () =
     let outcomes =
         [ adjudicated "OSUSR_FUL_CARRIER" [ claim 8003 "Carrier" true false 1; claim 9003 "Carrier" true true 1 ]
           adjudicated "OSUSR_FUL_INVOICE" [ claim 8001 "Invoice" false false 1 ]
           adjudicated "OSUSR_FUL_ORDER" [ claim 8000 "Order" true false 1 ]
           adjudicated "OSUSR_FUL_EMPTY" [] ]
     let findings = Estate.sinkClaimFindingsOf "cloud-uat" outcomes
-    Assert.Equal(2, List.length findings)
+    Assert.Equal(3, List.length findings)
+    Assert.True(findings |> List.exists (fun f -> f.Kind = EstateFindingKind.PhysicalUnclaimed))
+    Assert.False(findings |> List.exists (fun f -> f.Statement.Contains "OSUSR_FUL_ORDER"))
     let contested = findings |> List.find (fun f -> f.Kind = EstateFindingKind.PhysicalClaimContested)
     Assert.Equal(EstateLane.Decide, contested.Lane)
     Assert.Equal(EstatePlane.Identity, contested.Plane)
@@ -70,6 +73,21 @@ let ``withSinkClaims re-derives the verdict: contested forks a unified estate; t
             [ "cloud-uat", [ adjudicated "OSUSR_FUL_INVOICE" [ claim 8001 "Invoice" false false 1 ] ] ]
             unified
     Assert.Equal(Estate.Verdict.Converging, tombstoned.Verdict)
+
+[<Fact>]
+let ``an unclaimed residue table mints a PhysicalUnclaimed DECIDE finding (S12)`` () =
+    let findings =
+        Estate.sinkClaimFindingsOf "cloud-uat" [ adjudicated "OSUSR_FUL_ARCHIVE" [] ]
+    match findings with
+    | [ f ] ->
+        Assert.Equal(EstateFindingKind.PhysicalUnclaimed, f.Kind)
+        Assert.Equal(EstateLane.Decide, f.Lane)
+        Assert.Equal(EstatePlane.Schema, f.Plane)
+        Assert.False(f.Fork)
+        Assert.True(f.Lever.IsSome)
+        Assert.Contains("dbo.OSUSR_FUL_ARCHIVE", f.Statement)
+        Assert.Contains("no metadata claim", f.Statement)
+    | other -> Assert.Fail (sprintf "expected one PhysicalUnclaimed finding, got %A" other)
 
 [<Fact>]
 let ``no sink claims is the identity — a run with no sink store is byte-identical`` () =

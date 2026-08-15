@@ -396,7 +396,29 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                             let journal =
                                 SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest)
                                 |> Result.defaultValue []
-                            Some (label, SinkClaims.adjudicateAll snapshot journal)
+                            let claims = SinkClaims.adjudicateAll snapshot journal
+                            // S12 — the residue sweep beside the OSSYS read:
+                            // the environment's OSUSR universe minus the
+                            // witnessed edition's claims, ridden as
+                            // assemble-empty sets the adjudicator maps to
+                            // Unclaimed. Live-only (--offline skips it, like
+                            // the static probe); a probe failure degrades to
+                            // no residue (advisory-silent).
+                            let residue =
+                                match args.Evidence with
+                                | EstateEvidenceMode.Offline -> []
+                                | _ ->
+                                    match args.Confirm |> List.tryFind (fun (l, _) -> l = label) with
+                                    | None -> []
+                                    | Some (_, refStr) ->
+                                        try
+                                            use cnn = new Microsoft.Data.SqlClient.SqlConnection(Source.resolveConn refStr)
+                                            cnn.OpenAsync().GetAwaiter().GetResult()
+                                            match (SinkResidue.sweep cnn snapshot).GetAwaiter().GetResult() with
+                                            | Ok sets -> sets |> List.map (fun s -> s, PhysicalClaimRules.adjudicate s)
+                                            | Error _ -> []
+                                        with _ -> []
+                            Some (label, claims @ residue)
                         | None -> None
                     | Error _ -> None)
             let stamped =
@@ -492,6 +514,10 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     if tombstoneOnly > 0 then
                         TtyRenderer.renderVoicedTo Console.Out "sink.tombstoneOnly"
                             (Map.ofList [ "env", box basis.Env; "tables", box tombstoneOnly ])
+                    let unclaimed = claimCount EstateFindingKind.PhysicalUnclaimed
+                    if unclaimed > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.unclaimed"
+                            (Map.ofList [ "env", box basis.Env; "tables", box unclaimed ])
                 let laneCount lane =
                     Estate.laneCounts report
                     |> List.tryFind (fun (l, _) -> l = lane)
