@@ -354,6 +354,8 @@
     <Compile Include="PerfHarnessCatalogTests.fs" />
     <Compile Include="ProofManifestTests.fs" />
     <Compile Include="MetadataSnapshotCapabilityTests.fs" />
+    <Compile Include="MetadataSnapshotCodecTests.fs" />
+    <Compile Include="SinkDisplacementTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

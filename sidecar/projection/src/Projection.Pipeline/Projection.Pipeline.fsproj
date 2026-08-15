@@ -22,6 +22,19 @@
     <Compile Include="Run.fs" />
     <Compile Include="ConnectionSpec.fs" />
     <Compile Include="NoticeSink.fs" />
+    <!-- EstateStoreLocation.fs: MOVED UP from the estate cluster (sink
+         chapter S4a, 2026-08-15 — the R1 plan correction in DECISIONS
+         "The data sink chapter opens"). The witness hook inside
+         LiveModelRead.fs resolves the store root internally, so the
+         location rule must compile BEFORE it. Safe move: the module
+         opens only System; its estate-cluster consumers all compile
+         later. -->
+    <Compile Include="EstateStoreLocation.fs" />
+    <!-- SinkDisplacement.fs: the sink's pure displacement algebra (S4a) —
+         diff/apply over witnessed MetadataSnapshots. Before LiveModelRead.fs
+         so the witness hook can journal displacements; needs only Core
+         (AttributeFacet) + Adapters.OssysSql (the snapshot records). -->
+    <Compile Include="SinkDisplacement.fs" />
     <Compile Include="LiveModelRead.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
@@ -49,7 +62,8 @@
          retarget scope + mandatory-coverage guard, fail-closed). -->
     <Compile Include="BridgeRowStagingBinding.fs" />
     <Compile Include="DeployFeasibility.fs" />
-    <Compile Include="EstateStoreLocation.fs" />
+    <!-- EstateStoreLocation.fs moved up beside NoticeSink.fs (sink S4a);
+         BridgeStagingCache keeps compiling after it unchanged. -->
     <Compile Include="BridgeStagingCache.fs" />
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
