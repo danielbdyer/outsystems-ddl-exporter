@@ -1246,6 +1246,37 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `sink.claimContested` — §5: the sink's journal-assembled claims put
+    /// contested tables on the board (the data-sink chapter, S11b). Said
+    /// with the provenance block, before the verdict stands on them; each
+    /// table's ruling lives on the board's DECIDE lane.
+    let private sinkClaimContested : Copy =
+        { Code           = "sink.claimContested"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "%s carries %s contested table(s) — two live claims on one physical table; each ruling is on the DECIDE lane."
+                        (textOr "env" "an environment" p)
+                        (humane (textOr "tables" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `sink.tombstoneOnly` — §5: the sink names the recoverable deleted
+    /// estate (S11b) — tables claimed only by deleted entities, whose
+    /// shapes stay addressable through the witnessed editions.
+    let private sinkTombstoneOnly : Copy =
+        { Code           = "sink.tombstoneOnly"
+          DocSection     = "§5"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "%s carries %s tombstone-only table(s) — deleted entities whose physical tables survive; each shape stays addressable through the sink's witnessed editions."
+                        (textOr "env" "an environment" p)
+                        (humane (textOr "tables" "0" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `sink.evidenceAge` — §5: the mandatory freshness line for a sink
     /// operand (the data-sink chapter, S7). Said BEFORE any verdict stands on
     /// the witnessed state — the `estate.evidence.offline` posture at the
@@ -1351,6 +1382,9 @@ module Voice =
           sinkStoreDisabled
           // §5 — the sink operand's mandatory freshness line (sink refs, S7)
           sinkEvidenceAge
+          // §5 — the sink's estate claim notices (check estate, S11b)
+          sinkClaimContested
+          sinkTombstoneOnly
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing

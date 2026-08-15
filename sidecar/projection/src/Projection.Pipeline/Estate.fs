@@ -2174,6 +2174,83 @@ module Estate =
                     | Some p -> { b with Provenance = p }
                     | None -> b) }
 
+    /// The sink's claim findings for one environment (the data-sink chapter,
+    /// S11b): the journal-assembled adjudication becomes DECIDE-lane board
+    /// findings. `Contested` carries the FORK witness — two live writers on
+    /// one table turn the estate verdict to Forked (exit 5), never a silent
+    /// pick; `TombstoneOnly` is the chapter's original incident (deleted
+    /// from the module, table intact, shape addressable through the sink's
+    /// witnessed editions); `Adopted` is lineage, not a finding; `Unclaimed`
+    /// is S12's residue sweep. Statements render through the strategy's ONE
+    /// renderer (`PhysicalClaimRules.toStructured`); levers mint from the
+    /// per-kind contract row exactly like every other finding.
+    let sinkClaimFindingsOf
+        (env: string)
+        (outcomes: (PhysicalClaimRules.ClaimSet * PhysicalClaimRules.PhysicalClaimOutcome) list)
+        : Finding list =
+        let leverOf (kind: EstateFindingKind) =
+            match EstateFindingKind.leverFormOf kind with
+            | EstateLeverForm.Ruling imperative -> Some imperative
+            | _ -> None
+        let clauseOf (field: string) (set: PhysicalClaimRules.ClaimSet) outcome =
+            PhysicalClaimRules.toStructured set outcome
+            |> List.tryFind (fst >> (=) field)
+            |> Option.map snd
+            |> Option.defaultValue ""
+        outcomes
+        |> List.choose (fun (set, outcome) ->
+            let subject = sprintf "%s.%s" set.Schema set.Table
+            match outcome with
+            | PhysicalClaimRules.PhysicalClaimOutcome.Contested rivals ->
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalClaimContested subject
+                      Kind = EstateFindingKind.PhysicalClaimContested
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalClaimContested
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalClaimContested
+                      Envs = [ env, int64 (List.length rivals) ]
+                      Statement =
+                        sprintf "%s carries %d live claims — %s — and a live writer is never silently outranked; the first rival is the ladder's recommendation."
+                            subject (List.length rivals) (clauseOf "rivals" set outcome)
+                      Lever = leverOf EstateFindingKind.PhysicalClaimContested
+                      Fork = true
+                      Difficulty = None }
+            | PhysicalClaimRules.PhysicalClaimOutcome.TombstoneOnly tombstones ->
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalTombstoneOnly subject
+                      Kind = EstateFindingKind.PhysicalTombstoneOnly
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalTombstoneOnly
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalTombstoneOnly
+                      Envs = [ env, int64 (List.length tombstones) ]
+                      Statement =
+                        sprintf "%s is claimed only by deleted entities — %s — the table and its rows survive, and each shape stays addressable through the sink's witnessed editions."
+                            subject (clauseOf "tombstones" set outcome)
+                      Lever = leverOf EstateFindingKind.PhysicalTombstoneOnly
+                      Fork = false
+                      Difficulty = None }
+            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _
+            | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed -> None)
+
+    /// Stamp the sink's claim findings onto a computed report and re-derive
+    /// the verdict under the SAME formula (unified ⇔ nothing diverges;
+    /// forked ⇔ any fork witness; converging otherwise) — a Contested claim
+    /// forks the estate exactly like a cross-environment fork. Empty claims
+    /// (no sink rides, or every table adopted) is the identity, so a run
+    /// with no sink store is byte-identical.
+    let withSinkClaims
+        (claimsByEnv: (string * (PhysicalClaimRules.ClaimSet * PhysicalClaimRules.PhysicalClaimOutcome) list) list)
+        (report: EstateReport)
+        : EstateReport =
+        let sinkFindings =
+            claimsByEnv |> List.collect (fun (env, outcomes) -> sinkClaimFindingsOf env outcomes)
+        if List.isEmpty sinkFindings then report
+        else
+            let findings = report.Findings @ sinkFindings
+            let verdict =
+                if List.isEmpty findings then Verdict.Unified
+                elif findings |> List.exists (fun f -> f.Fork) then Verdict.Forked
+                else Verdict.Converging
+            { report with Findings = findings; Verdict = verdict }
+
     /// The estate is unified — the exit-0 predicate.
     let isUnified (report: EstateReport) : bool =
         report.Verdict = Verdict.Unified

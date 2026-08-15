@@ -819,12 +819,12 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged -> DetectionStatus.Active
-        // The data-sink chapter's DECIDE vocabulary (S11): the claims
-        // detectors light up when the estate face assembles journal claims
-        // (S11b flips Contested + TombstoneOnly; S12 flips Unclaimed; S14
-        // flips the correspondence proposer).
+        // The data-sink chapter's DECIDE vocabulary: the claims detectors
+        // went LIVE at S11b (the estate face assembles journal claims for
+        // every sink-named environment); the residue sweep flips at S12,
+        // the correspondence proposer at S14.
         | EstateFindingKind.PhysicalClaimContested
-        | EstateFindingKind.PhysicalTombstoneOnly
+        | EstateFindingKind.PhysicalTombstoneOnly -> DetectionStatus.Active
         | EstateFindingKind.PhysicalUnclaimed
         | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.NotYetDetected
 

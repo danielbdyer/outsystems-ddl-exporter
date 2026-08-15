@@ -82,6 +82,8 @@ let private inScopeCodes : Set<string> =
           "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
           // the sink operand's mandatory freshness line (sink refs — S7)
           "sink.evidenceAge"
+          // the sink's estate claim notices (check estate — S11b)
+          "sink.claimContested"; "sink.tombstoneOnly"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -170,6 +172,9 @@ let private knownEmittableCodes : Set<string> =
           // the sink operand's freshness line — render-synthesized at the
           // diff/compare faces when a `sink:` ref rides (S7)
           "sink.evidenceAge"
+          // the sink's estate claim notices — render-synthesized at
+          // `runCheckEstate` when a sink-named environment carries them (S11b)
+          "sink.claimContested"; "sink.tombstoneOnly"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"

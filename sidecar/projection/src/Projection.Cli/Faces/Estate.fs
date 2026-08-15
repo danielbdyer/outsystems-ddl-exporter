@@ -378,7 +378,31 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                         if estateMovedAfterProof then Estate.FidelityClause.Stale (flow, ageDays)
                         elif not proof.Agrees then Estate.FidelityClause.Diverged (flow, proof.DifferenceTotal)
                         else Estate.FidelityClause.Green (flow, ageDays)
-            let stamped = stampedArtifacts |> Estate.withFidelity fidelityClause
+            // The sink's claim findings (the data-sink chapter, S11b): when a
+            // sink store rides and an environment's name resolves to a
+            // witnessed source (`projection sync <env>` stamped it), the
+            // journal-assembled claims join the board — Contested carries the
+            // Fork witness (exit 5), TombstoneOnly names the recoverable
+            // deleted estate. An absent store or an unstamped name degrades
+            // to nothing: the sink is ADVISORY evidence, and a run with no
+            // sink is byte-identical.
+            let sinkClaimsByEnv =
+                envs
+                |> List.choose (fun (label, _) ->
+                    match SinkRead.resolve label None with
+                    | Ok resolved ->
+                        match SinkStore.loadSnapshotAt resolved.Root resolved.Digest resolved.SyncId with
+                        | Some snapshot ->
+                            let journal =
+                                SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest)
+                                |> Result.defaultValue []
+                            Some (label, SinkClaims.adjudicateAll snapshot journal)
+                        | None -> None
+                    | Error _ -> None)
+            let stamped =
+                stampedArtifacts
+                |> Estate.withSinkClaims sinkClaimsByEnv
+                |> Estate.withFidelity fidelityClause
             // The burndown (wave A7): this run's reading chains from the
             // LATEST recorded one (first-seen carry + the streak), while the
             // displayed movement diffs against the operator's baseline — the
@@ -450,6 +474,24 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                      TtyRenderer.renderVoicedTo Console.Out "estate.overlay"
                          (Map.ofList [ "relaxations", box entries ])
                  | _ -> ())
+                // The sink's claim notices (S11b) — said with the provenance
+                // block, before the verdict stands on them: per environment,
+                // the contested and tombstone-only table counts the sink's
+                // journal-assembled claims contributed to the board.
+                for basis in report.Bases do
+                    let claimCount (kind: EstateFindingKind) =
+                        report.Findings
+                        |> List.filter (fun f ->
+                            f.Kind = kind && f.Envs |> List.exists (fun (e, _) -> e = basis.Env))
+                        |> List.length
+                    let contested = claimCount EstateFindingKind.PhysicalClaimContested
+                    if contested > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.claimContested"
+                            (Map.ofList [ "env", box basis.Env; "tables", box contested ])
+                    let tombstoneOnly = claimCount EstateFindingKind.PhysicalTombstoneOnly
+                    if tombstoneOnly > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.tombstoneOnly"
+                            (Map.ofList [ "env", box basis.Env; "tables", box tombstoneOnly ])
                 let laneCount lane =
                     Estate.laneCounts report
                     |> List.tryFind (fun (l, _) -> l = lane)

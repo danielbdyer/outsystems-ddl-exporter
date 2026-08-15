@@ -31178,3 +31178,29 @@ that renders them, never as phantom copy).
   the witnessed edition (the chapter's original incident, proven live); Shipment → the
   live extension re-registration adopts over the tombstoned original; Carrier →
   Contested, eSpace-led recommendation; the orphan table assembles no set (S12's sweep).
+
+## 2026-08-15 — sink S11b: the claims reach the board (check estate; the detectors go live)
+
+- **`Estate.sinkClaimFindingsOf` + `Estate.withSinkClaims`** — the post-compute stamping
+  combinator (the `withEvidence`/`withRemediation` idiom, so `computeWith`'s signature and
+  every existing caller stay untouched): Contested and TombstoneOnly mint DECIDE-lane
+  findings with their contract rows (statements through the strategy's ONE renderer,
+  levers from the per-kind form); **Contested carries the Fork witness**, and the verdict
+  re-derives under the SAME formula — a contested table forks the estate (exit 5) exactly
+  like a cross-environment fork. Empty claims (or all-adopted) is the identity: a run
+  with no sink store is byte-identical, pinned by test.
+- **The face wiring** (`runCheckEstate`): each estate environment's NAME resolves against
+  the sink's manifests (`SinkRead.resolve` — the label `projection sync <env>` stamped);
+  a witnessed source contributes its journal-assembled claims; an absent store or an
+  unstamped name degrades to nothing (the sink is ADVISORY evidence). The claim notices
+  (`sink.claimContested` / `sink.tombstoneOnly`, §5) render with the provenance block,
+  before the verdict stands on them; the board's DECIDE lane carries each ruling.
+- **The detectors flip Active** (Contested + TombstoneOnly) and the coverage law's
+  declared set retires them in the same commit, per its own rule; PhysicalUnclaimed (S12)
+  and IdentityCutoverCorrespondence (S14) remain declared.
+- **Deferred, named:** `AnnotationDetail.PhysicalClaimDecision` + `PhysicalClaimPass`
+  (the plan's S11 sketch) move to S13 — their real execution site is the sink-backed
+  MODEL READ (annotating adopted claims onto the catalog's lineage as it is read);
+  landing an unexecuted registered pass at S11 would be phantom registration, the exact
+  thing pillar 9 forbids. The estate face consumes outcomes directly; the lineage
+  annotation joins where a lineage-bearing read exists.

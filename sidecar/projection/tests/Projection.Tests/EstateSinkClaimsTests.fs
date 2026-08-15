@@ -1,0 +1,83 @@
+module Projection.Tests.EstateSinkClaimsTests
+
+open Xunit
+open Projection.Core
+open Projection.Pipeline
+open Projection.Tests.Fixtures
+
+// The sink's claim findings on the estate board (the data-sink chapter,
+// S11b): Contested and TombstoneOnly mint DECIDE-lane findings with their
+// contract rows (lane/plane/lever from the per-kind functions, statements
+// through the strategy's one renderer); Contested carries the FORK witness,
+// so `withSinkClaims` turns a Unified estate Forked (exit 5 at the face);
+// TombstoneOnly turns it Converging; Adopted/Unclaimed mint nothing, and an
+// empty claims list is the identity (a run with no sink is byte-identical).
+
+let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int) : PhysicalClaimRules.PhysicalClaim =
+    { EntityId = id
+      EntityKey = None
+      EntityName = name
+      ModuleName = if ext then "FulfillmentExtension" else "Fulfillment"
+      IsActive = active
+      IsExternalRegistration = ext
+      FirstWitnessedSync = sync }
+
+let private setOf (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
+    { Schema = "dbo"; Table = table; Claims = claims }
+
+let private adjudicated (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) =
+    let s = setOf table claims
+    s, PhysicalClaimRules.adjudicate s
+
+let private unifiedReport () =
+    Estate.compute
+        (Estate.TargetOperand.AuthoredModel "model.json")
+        sampleCatalog
+        [ "cloud-uat", ({ Label = "cloud-uat"; Catalog = sampleCatalog; Profile = None } : Compare.Operand) ]
+
+[<Fact>]
+let ``contested and tombstone-only mint DECIDE findings with their contract rows; adopted and unclaimed mint nothing`` () =
+    let outcomes =
+        [ adjudicated "OSUSR_FUL_CARRIER" [ claim 8003 "Carrier" true false 1; claim 9003 "Carrier" true true 1 ]
+          adjudicated "OSUSR_FUL_INVOICE" [ claim 8001 "Invoice" false false 1 ]
+          adjudicated "OSUSR_FUL_ORDER" [ claim 8000 "Order" true false 1 ]
+          adjudicated "OSUSR_FUL_EMPTY" [] ]
+    let findings = Estate.sinkClaimFindingsOf "cloud-uat" outcomes
+    Assert.Equal(2, List.length findings)
+    let contested = findings |> List.find (fun f -> f.Kind = EstateFindingKind.PhysicalClaimContested)
+    Assert.Equal(EstateLane.Decide, contested.Lane)
+    Assert.Equal(EstatePlane.Identity, contested.Plane)
+    Assert.True(contested.Fork, "two live writers fork the estate")
+    Assert.True(contested.Lever.IsSome, "a DECIDE finding carries its ruling imperative")
+    Assert.Contains("dbo.OSUSR_FUL_CARRIER", contested.Statement)
+    Assert.Contains("Fulfillment.Carrier", contested.Statement)
+    Assert.Equal<(string * int64) list>([ "cloud-uat", 2L ], contested.Envs)
+    let tombstone = findings |> List.find (fun f -> f.Kind = EstateFindingKind.PhysicalTombstoneOnly)
+    Assert.False(tombstone.Fork)
+    Assert.Contains("witnessed editions", tombstone.Statement)
+
+[<Fact>]
+let ``withSinkClaims re-derives the verdict: contested forks a unified estate; tombstone-only converges it`` () =
+    let unified = unifiedReport ()
+    Assert.Equal(Estate.Verdict.Unified, unified.Verdict)
+    let contested =
+        Estate.withSinkClaims
+            [ "cloud-uat", [ adjudicated "OSUSR_FUL_CARRIER" [ claim 8003 "Carrier" true false 1; claim 9003 "Carrier" true true 1 ] ] ]
+            unified
+    Assert.Equal(Estate.Verdict.Forked, contested.Verdict)
+    let tombstoned =
+        Estate.withSinkClaims
+            [ "cloud-uat", [ adjudicated "OSUSR_FUL_INVOICE" [ claim 8001 "Invoice" false false 1 ] ] ]
+            unified
+    Assert.Equal(Estate.Verdict.Converging, tombstoned.Verdict)
+
+[<Fact>]
+let ``no sink claims is the identity — a run with no sink store is byte-identical`` () =
+    let unified = unifiedReport ()
+    Assert.Equal(unified, Estate.withSinkClaims [] unified)
+    // All-adopted outcomes are lineage, not findings — also the identity.
+    Assert.Equal(
+        unified,
+        Estate.withSinkClaims
+            [ "cloud-uat", [ adjudicated "OSUSR_FUL_ORDER" [ claim 8000 "Order" true false 1 ] ] ]
+            unified)
