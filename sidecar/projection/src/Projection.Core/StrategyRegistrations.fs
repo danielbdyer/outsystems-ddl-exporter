@@ -111,9 +111,28 @@ module StrategyRegistrations =
     /// `Compose.run` traversal will fold this list into
     /// `TransformRegistry.all` alongside the pass / adapter / emitter
     /// registrations.
+    /// Physical-claim adjudication strategy (the data-sink chapter, S11).
+    /// Consumed by the estate's claims assembly (`SinkClaims.adjudicateAll`
+    /// over journal-assembled claim sets). The ladder (live over tombstone;
+    /// eSpace over extension; latest first-witnessed sync) is
+    /// algorithm-internal — no operator opinion at the per-table level, and
+    /// a genuine tie is CONTESTED (a DECIDE finding), never a silent pick —
+    /// so the site classifies as `DataIntent`. Domain `Identity`: the
+    /// decision is which metadata identity owns a physical table.
+    let physicalClaimRules : RegisteredTransformMetadata =
+        { Name = "physicalClaimRules"
+          Domain = Identity
+          StageBinding = Pass
+          Sites =
+            [ { SiteName = "adjudicate"
+                Classification = DataIntent
+                Rationale = "Per-physical-table ownership adjudication (PhysicalClaimOutcome) over journal-assembled claim sets: a sole live claim adopts (tombstones ride as outranked lineage — the cutover's happy path); two or more live claims are Contested ALWAYS — a DECIDE finding, never a silent pick — with the rivals ladder-ordered (eSpace over extension, then the sink's temporal dimension) so the finding leads with the recommendation." } ]
+          Status = Active }
+
     let all : RegisteredTransformMetadata list =
         [ nullabilityRules
           uniqueIndexRules
           foreignKeyRules
           categoricalUniquenessRules
-          cycleResolution ]
+          cycleResolution
+          physicalClaimRules ]

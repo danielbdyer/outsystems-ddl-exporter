@@ -55,6 +55,10 @@
          window — parse both editions, CatalogDiff.between. A derived view
          over the journal, bounded by the erasure-witness inequality. -->
     <Compile Include="SinkDiffView.fs" />
+    <!-- SinkClaims.fs (S11): journal-assembled claim sets + adjudication
+         (the Catalog has already lost losing claims — evidence assembles
+         at the acquisition grain). -->
+    <Compile Include="SinkClaims.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />

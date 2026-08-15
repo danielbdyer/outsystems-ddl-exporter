@@ -198,19 +198,31 @@ let ``presentation: every finding kind carries its contract row — statement sp
             Assert.Fail(sprintf "%s's lever form %A is incoherent with its lane %A" token form lane)
 
 [<Fact>]
-let ``coverage: the emission coverage line is derived from the detector set — NotYetDetected is emission-plane only, and the three closed-gap kinds are retired (no drift)`` () =
+let ``coverage: the emission coverage line is derived from the detector set — NotYetDetected is declared, never implied, and the three closed-gap kinds are retired (no drift)`` () =
     // DECISIONS 2026-07-18 — the derived coverage line. The predecessor copy
     // was hand-maintained and drifted (it promised temporal tables + sequences
     // as "coming" after both shipped, and never named authored-default /
     // computed-expression). Deriving the line from `detectionStatus` closes
-    // that drift class. Law: a non-Active status names an Emission-plane kind
-    // (a gap is an emission fact) — held vacuously today (every kind is Active),
-    // but the guard holds for any future vocabulary-first kind.
+    // that drift class. Law (amended at the data-sink chapter S11): a
+    // non-Active status is DECLARED — it belongs to the closed set of
+    // vocabulary-first kinds whose detector is a named follow-on (the sink's
+    // claims vocabulary: S11b flips the claims pair, S12 the residue sweep,
+    // S14 the correspondence proposer). A kind outside this set claiming
+    // NotYetDetected fails here, so "runs today" can never silently regress.
+    let declaredNotYetDetected =
+        Set.ofList
+            [ EstateFindingKind.PhysicalClaimContested
+              EstateFindingKind.PhysicalTombstoneOnly
+              EstateFindingKind.PhysicalUnclaimed
+              EstateFindingKind.IdentityCutoverCorrespondence ]
     for kind in EstateFindingKind.all do
         match EstateFindingKind.detectionStatus kind with
-        | DetectionStatus.Active -> ()
+        | DetectionStatus.Active ->
+            Assert.False(Set.contains kind declaredNotYetDetected,
+                sprintf "%s flipped Active — remove it from the declared set in the same commit" (EstateFindingKind.token kind))
         | DetectionStatus.NotYetDetected ->
-            Assert.Equal(EstatePlane.Emission, EstateFindingKind.planeOf kind)
+            Assert.True(Set.contains kind declaredNotYetDetected,
+                sprintf "%s claims NotYetDetected without a declaration" (EstateFindingKind.token kind))
     // The three closed-gap kinds (the emitter carries compression, sequences,
     // and PERSISTED) are retired from the vocabulary — their tokens resolve to
     // no kind.

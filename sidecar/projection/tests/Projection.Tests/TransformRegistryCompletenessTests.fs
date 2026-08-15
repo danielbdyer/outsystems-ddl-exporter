@@ -203,8 +203,9 @@ let ``L3-CC-Transform-Totality: TableRename overlay produces OperatorIntent Emis
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``L3-CC-Transform-Totality: aggregated registry covers all 12 passes + 1 adapter + 5 strategies = 18 entries`` () =
-    Assert.Equal(18, List.length allRegistrations)
+let ``L3-CC-Transform-Totality: aggregated registry covers all 12 passes + 1 adapter + 6 strategies = 19 entries`` () =
+    // The 6th strategy is physicalClaimRules (the data-sink chapter S11).
+    Assert.Equal(19, List.length allRegistrations)
 
 [<Fact>]
 let ``L3-CC-Transform-Totality: every expected pass / adapter / strategy name is present in the registry`` () =
@@ -232,6 +233,7 @@ let ``L3-CC-Transform-Totality: every expected pass / adapter / strategy name is
             "foreignKeyRules"
             "categoricalUniquenessRules"
             "cycleResolution"
+            "physicalClaimRules"
         ]
     Assert.Equal<Set<string>>(expected, names)
 
@@ -280,7 +282,7 @@ let ``NM-42: every hand-listed pass / strategy is a step in the live RegisteredT
 [<Fact>]
 let ``L3-CC-Transform-Totality: aggregated registry validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create allRegistrations with
-    | Ok entries -> Assert.Equal(18, List.length entries)
+    | Ok entries -> Assert.Equal(19, List.length entries)
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         Assert.Fail(sprintf "Expected aggregated registry to validate; got errors: %s" codes)

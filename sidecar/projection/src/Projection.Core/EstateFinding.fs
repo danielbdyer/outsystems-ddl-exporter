@@ -248,6 +248,25 @@ type EstateFindingKind =
     /// The fidelity proof reports differing rows — the load is not yet
     /// byte-faithful; the verdict cannot read Unified over a red proof (RT-10).
     | ProofDiverged
+    /// Two or more LIVE metadata claims on one physical table — two live
+    /// writers are never silently ranked into an adoption; the operator
+    /// rules which edition owns the table (the data-sink chapter, S11;
+    /// `PhysicalClaimRules` — the rivals arrive ladder-ordered so the
+    /// finding leads with the recommendation).
+    | PhysicalClaimContested
+    /// A physical table whose only metadata claims are tombstones
+    /// (`Is_Active = 0`; the table survives until DbCleaner) — the estate
+    /// the operator deleted is still addressable through the sink's
+    /// witnessed editions (S11; the chapter's original incident).
+    | PhysicalTombstoneOnly
+    /// A physical table present in the environment with NO metadata claim
+    /// at all — outside the modeled estate entirely (S12's residue sweep
+    /// against sys.tables).
+    | PhysicalUnclaimed
+    /// A post-cutover identity correspondence proposal: journal + claims
+    /// evidence says two SS_Keys are editions of one entity across the
+    /// cutover (S14). DECIDE only — a correspondence is NEVER auto-adopted.
+    | IdentityCutoverCorrespondence
 
 [<RequireQualifiedAccess>]
 module EstateFindingKind =
@@ -299,7 +318,11 @@ module EstateFindingKind =
           EstateFindingKind.DataStaticIdentity
           EstateFindingKind.ProofMissing
           EstateFindingKind.ProofStale
-          EstateFindingKind.ProofDiverged ]
+          EstateFindingKind.ProofDiverged
+          EstateFindingKind.PhysicalClaimContested
+          EstateFindingKind.PhysicalTombstoneOnly
+          EstateFindingKind.PhysicalUnclaimed
+          EstateFindingKind.IdentityCutoverCorrespondence ]
 
     /// The stable machine token (the `FindingKey` prefix and the
     /// `estate.json` discriminator). Never operator-facing on its own.
@@ -349,6 +372,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing             -> "proof.missing"
         | EstateFindingKind.ProofStale               -> "proof.stale"
         | EstateFindingKind.ProofDiverged            -> "proof.diverged"
+        | EstateFindingKind.PhysicalClaimContested   -> "physical.claimContested"
+        | EstateFindingKind.PhysicalTombstoneOnly    -> "physical.tombstoneOnly"
+        | EstateFindingKind.PhysicalUnclaimed        -> "physical.unclaimed"
+        | EstateFindingKind.IdentityCutoverCorrespondence -> "identity.cutoverCorrespondence"
 
     /// The machine token's inverse — the kind a stored `token` names, or
     /// `None` for an unknown token. Derived from `all`, so it cannot drift
@@ -409,6 +436,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing             -> "the fidelity proof has not run"
         | EstateFindingKind.ProofStale               -> "the fidelity proof predates the evidence"
         | EstateFindingKind.ProofDiverged            -> "the fidelity proof found differing rows"
+        | EstateFindingKind.PhysicalClaimContested   -> "two claims on one table"
+        | EstateFindingKind.PhysicalTombstoneOnly    -> "only deleted entities claim this table"
+        | EstateFindingKind.PhysicalUnclaimed        -> "a table no entity claims"
+        | EstateFindingKind.IdentityCutoverCorrespondence -> "a proposed identity correspondence"
 
     /// The disposition lane a kind presents in (Appendix A). The direction
     /// classifier (wave A3) splits presence: a kind an environment carries
@@ -478,6 +509,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged           -> EstateLane.Decide
+        | EstateFindingKind.PhysicalClaimContested  -> EstateLane.Decide
+        | EstateFindingKind.PhysicalTombstoneOnly   -> EstateLane.Decide
+        | EstateFindingKind.PhysicalUnclaimed       -> EstateLane.Decide
+        | EstateFindingKind.IdentityCutoverCorrespondence -> EstateLane.Decide
 
     /// The plane a kind lives on.
     let planeOf (kind: EstateFindingKind) : EstatePlane =
@@ -529,6 +564,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged           -> EstatePlane.Operational
+        | EstateFindingKind.PhysicalClaimContested  -> EstatePlane.Identity
+        | EstateFindingKind.PhysicalTombstoneOnly   -> EstatePlane.Identity
+        | EstateFindingKind.PhysicalUnclaimed       -> EstatePlane.Schema
+        | EstateFindingKind.IdentityCutoverCorrespondence -> EstatePlane.Identity
 
     /// The presentation contract's lever form per kind (Appendix A, wave
     /// A6 — the contract table held to the code). The board mints the
@@ -587,6 +626,14 @@ module EstateFindingKind =
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged ->
             EstateLeverForm.Ruling "Run the configured fidelity flow (projection check fidelity), then re-run the board."
+        | EstateFindingKind.PhysicalClaimContested ->
+            EstateLeverForm.Ruling "Rule which edition owns the table: keep one claimant's registration and retire the rival's, then re-run projection sync."
+        | EstateFindingKind.PhysicalTombstoneOnly ->
+            EstateLeverForm.Ruling "Rule the table's fate: re-register the entity (Integration Studio) to reclaim it, or schedule the drop — its shape stays addressable through the sink's witnessed editions either way."
+        | EstateFindingKind.PhysicalUnclaimed ->
+            EstateLeverForm.Ruling "Rule the residue: adopt the table into the modeled estate, or schedule its retirement."
+        | EstateFindingKind.IdentityCutoverCorrespondence ->
+            EstateLeverForm.Ruling "Rule the correspondence: confirm the two identities are one entity across the cutover, or reject the proposal — nothing is adopted without the ruling."
         | EstateFindingKind.SchemaTrust
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
@@ -708,6 +755,14 @@ module EstateFindingKind =
             "The fidelity proof for flow 'uat-load' is 9 day(s) old and the estate's evidence has moved since — the proof predates what this run can see."
         | EstateFindingKind.ProofDiverged ->
             "The fidelity proof for flow 'uat-load' reports 3 differing row(s) — the load is not yet byte-faithful."
+        | EstateFindingKind.PhysicalClaimContested ->
+            "OSUSR_FUL_CARRIER carries two live claims — Fulfillment.Carrier and FulfillmentExtension.Carrier — and a live writer is never silently outranked."
+        | EstateFindingKind.PhysicalTombstoneOnly ->
+            "OSUSR_FUL_INVOICE is claimed only by the deleted entity Fulfillment.Invoice (tombstoned sync 2) — the table and its rows survive, and the entity's shape is addressable at sink:uat@1."
+        | EstateFindingKind.PhysicalUnclaimed ->
+            "OSUSR_FUL_ARCHIVE exists in the environment with no metadata claim — outside the modeled estate entirely."
+        | EstateFindingKind.IdentityCutoverCorrespondence ->
+            "Fulfillment.Shipment appears to continue as FulfillmentExtension.Shipment (one physical table, tombstone-then-registration across syncs 2..3) — confirm or reject the correspondence."
 
     /// Whether the estate check runs a detector for a kind today (Appendix
     /// A, DECISIONS 2026-07-18 — the derived coverage line). Total, so the
@@ -764,6 +819,14 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged -> DetectionStatus.Active
+        // The data-sink chapter's DECIDE vocabulary (S11): the claims
+        // detectors light up when the estate face assembles journal claims
+        // (S11b flips Contested + TombstoneOnly; S12 flips Unclaimed; S14
+        // flips the correspondence proposer).
+        | EstateFindingKind.PhysicalClaimContested
+        | EstateFindingKind.PhysicalTombstoneOnly
+        | EstateFindingKind.PhysicalUnclaimed
+        | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.NotYetDetected
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen

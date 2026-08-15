@@ -120,6 +120,10 @@
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/ForeignKeyReadback.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
+    <!-- Strategies/PhysicalClaimRules.fs (sink S11): physical-table ownership
+         adjudication over journal-assembled claim sets. In the strategies
+         window BEFORE Lineage.fs (AnnotationDetail will reference outcomes). -->
+    <Compile Include="Strategies/PhysicalClaimRules.fs" />
     <!-- H-071 through H-076 result types — compiled before ComposeState
          so ComposeState can carry them as optional evidence fields.
          Pattern mirrors TopologicalOrder.fs / TopologicalOrderPass.fs. -->

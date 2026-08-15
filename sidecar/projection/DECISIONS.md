@@ -31133,3 +31133,48 @@ acquisition had already paid for, erased with no lineage — are now a registere
   the view laws run over a hand-built parseable edition family; the T19 chain laws keep
   `fullyPopulated` (replay never parses). A parse-true builder family is a named follow-on
   if a future law needs FsCheck at the catalog grain.
+
+## 2026-08-15 — sink S11a: physical-claim adjudication (the "latest edition" question, ruled)
+
+The claims half of S11 lands (S11a); the estate-face plumbing + Voice codes are S11b —
+the slice split so every commit stays green and complete (the codes land WITH the face
+that renders them, never as phantom copy).
+
+- **`Strategies/PhysicalClaimRules.fs`** (Core, the strategies window before Lineage.fs):
+  the total adjudication ladder over journal-assembled claim sets. **One ruling made
+  here, deviating from the plan's one-line sketch and DEFERRING to the S1 seed's staged
+  intent + the house center:** the plan sketched tier ordering (eSpace > extension >
+  tombstone, journal-order tie-break) as the ADOPTION rule; landed instead as — a sole
+  live claim adopts (tombstones ride as `outranked` lineage: the cutover's happy path);
+  **two or more LIVE claims are Contested, ALWAYS** — two live writers on one table are
+  never silently ranked into an adoption (the exact silent-pick the house forbids;
+  Contested participates in Fork → exit 5). The ladder still ORDERS the rivals (tier,
+  then the LATER first-witnessed sync — the sink's temporal dimension — then row id) so
+  the finding leads with the recommendation. The seed's Carrier pair (both active) is
+  the staged witness: under the sketch it would have silently adopted the eSpace claim.
+- **`SinkClaims.fs`** (Pipeline): claim sets assemble FROM THE JOURNAL + the witnessed
+  edition, never the Catalog (the Catalog has already lost losing claims — CatalogReader
+  keeps one kind per table). Tombstones ride (the sink is total); the extension flag
+  reads the module's case-insensitive 'Extension' kind + `Is_External`; each claim
+  carries its first-witnessed sync. Key-basis honesty: `EntityId` is the in-set
+  discriminator (always present); `EntityKey : SsKey option` carries the native GUID
+  when supplied.
+- **`EstateFindingKind` +4** (all nine contract rows each, same commit):
+  `PhysicalClaimContested` (Decide/Identity/Ruling), `PhysicalTombstoneOnly`
+  (Decide/Identity/Ruling), `PhysicalUnclaimed` (Decide/Schema/Ruling),
+  `IdentityCutoverCorrespondence` (Decide/Identity/Ruling — never auto-adopted). All
+  four land `NotYetDetected` (honesty: the detectors light up at S11b/S12/S14), and the
+  coverage law AMENDED accordingly: NotYetDetected is now DECLARED per-kind (a closed
+  set in the test) rather than emission-plane-implied — a kind cannot claim
+  NotYetDetected without a declaration, and a flipped detector must retire its
+  declaration in the same commit.
+- **Registry counts move** (26→28 total across two slices' pins; strategies 5→6;
+  Identity-domain entries 3→4; the completeness trio 18→19) — each pin updated with its
+  lineage comment. `physicalClaimRules` registers `DataIntent` (the ladder is
+  algorithm-internal; a genuine multi-live contest REFUSES to pick, which is exactly why
+  it is not operator intent).
+- **The Docker witness** (`SinkClaimsSeedTests`, lifecycle seed): Order → sole adoption;
+  Invoice → TombstoneOnly with the tombstoned entity's attribute shape RECOVERABLE from
+  the witnessed edition (the chapter's original incident, proven live); Shipment → the
+  live extension re-registration adopts over the tombstoned original; Carrier →
+  Contested, eSpace-led recommendation; the orphan table assembles no set (S12's sweep).
