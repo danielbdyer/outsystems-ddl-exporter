@@ -54,11 +54,13 @@ let classifyCode (code: string) : int =
         elif has "cdcTrackedSink" then 9                              // reconciled: synth-load was 7
         elif has "insufficientGrant" || has "grantProbeFailed" then 7 // reconciled: slice.apply.grantProbeFailed was 6
         elif has "connection" then 6                                  // `connection`, `connectionSpec`
-        // The sink family (the data-sink chapter, S6). A syncId regression is
-        // the journal's drift channel — the fail-loud 9 (the resumeAdmit
-        // convention) — tested BEFORE the generic `sink.` config-shape 2;
-        // `sink.writeFailed` already landed on the write axis (1) above.
+        // The sink family (the data-sink chapter, S6). A syncId regression OR
+        // a broken predecessor link is the journal's drift channel — the
+        // fail-loud 9 (the ChainAdmission refusal, align-III.2) — tested
+        // BEFORE the generic `sink.` config-shape 2; `sink.writeFailed`
+        // already landed on the write axis (1) above.
         elif code.StartsWith "sink.journal.syncRegression" then 9
+        elif code.StartsWith "sink.journal.brokenChain" then 9
         elif code.StartsWith "sink." then 2
         // The ruling verb (align-II.6): a missing estate store is a config
         // prerequisite (2); `rule.writeFailed` already landed on the write

@@ -22,6 +22,13 @@ type BasisAnchor =
     | FindingKey of key: FindingKey
     /// An evidence-pack digest (the A4-4 adoption-lever anchor).
     | EvidenceDigest of value: string
+    /// A witnessed sink edition (align-III.2 — the II.1-deferred widen, its
+    /// trigger fired now that `SinkEdition` is a carrier and the ledger's
+    /// admission is honest). A ruling anchored to an edition is judgment
+    /// about a sink finding AS OF that witnessed state; a reopen probe can
+    /// compare the current edition against the ruled one — the substrate an
+    /// append-only ruling history stands on.
+    | SinkEdition of edition: SinkEdition
 
 /// The operator's verdict. No `Pending` — an unruled subject simply has
 /// no ruling in the keyed store (absence is the pending state, and it is

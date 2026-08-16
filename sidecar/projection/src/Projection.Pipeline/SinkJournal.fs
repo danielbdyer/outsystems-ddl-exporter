@@ -46,13 +46,17 @@ module SinkJournal =
 
     /// The LedgerSpec instance: state is the witnessed snapshot, ⊕ is
     /// `SinkDisplacement.applyOne`, genesis is the empty snapshot, and the
-    /// fingerprint is the line's sync ordinal (chain STRUCTURE, verified
-    /// honestly — the write witness is the fsync'd append itself).
+    /// resume discipline is `Linkage` (align-III.2 — retiring the tautology
+    /// that made `FingerprintOf = SyncId` compare against itself). The
+    /// linkage reads each line's SyncId as its group identity and PrevSyncId
+    /// as the predecessor it claims; `Ledger.admitChain` verifies the sync
+    /// chain for real — a group that does not link to the one before refuses
+    /// by name. The write witness is the fsync'd append itself.
     let spec : LedgerSpec<MetadataSnapshotRunner.MetadataSnapshot, JournalLine, SyncOrdinal> =
         {
             Genesis = SinkDisplacement.emptySnapshot
             Apply = fun state line -> SinkDisplacement.applyOne state line.Displacement
-            FingerprintOf = fun line -> line.SyncId
+            Admission = ChainAdmission.Linkage ((fun line -> line.SyncId), (fun line -> line.PrevSyncId))
         }
 
     // ------------------------------------------------------------------
@@ -478,27 +482,29 @@ module SinkJournal =
             | JournalReading.Read lines -> lines
             | JournalReading.Unreadable _ -> []
 
-    /// The monotone-chain admission: every line must carry the next sync
-    /// ordinal within its sync group (non-decreasing across the file,
-    /// strictly increasing between sync groups). A regression is the named
-    /// drift, never a silent re-run.
+    /// The chain admission (align-III.2): the sink journal is a `Linkage`
+    /// grain, so admission runs through the shared `Ledger.admitChain`
+    /// substrate — no hand-rolled fold, no tautological self-compare. The
+    /// substrate verifies BOTH that sync groups strictly increase and that
+    /// each group names the one before as its `PrevSyncId`; a regression
+    /// refuses `sink.journal.syncRegression`, a broken predecessor link
+    /// refuses `sink.journal.brokenChain`. Neither is a silent re-run.
     let admitChain (lines: JournalLine list) : Result<Verified<JournalLine> list> =
-        let folder (acc: Result<SyncOrdinal option * Verified<JournalLine> list>) (line: JournalLine) =
-            acc
-            |> Result.bind (fun (lastSync, verified) ->
-                match lastSync with
-                | Some last when line.SyncId < last ->
-                    fail "sink.journal.syncRegression"
-                        (sprintf "journal syncId regressed: %s after %s" (SyncOrdinal.text line.SyncId) (SyncOrdinal.text last))
-                | _ ->
-                    match Ledger.resumeAdmit line.SyncId (Ledger.entryOf spec (SyncOrdinal.value line.SyncId) line) with
-                    | Ok v -> Ok (Some line.SyncId, v :: verified)
-                    | Error drift ->
-                        fail "sink.journal.syncRegression"
-                            (sprintf "journal fingerprint drift at position %d" drift.Position))
-        lines
-        |> List.fold folder (Ok (None, []))
-        |> Result.map (snd >> List.rev)
+        let renderOrd (o: SyncOrdinal option) : string =
+            match o with Some s -> SyncOrdinal.text s | None -> "genesis (no predecessor)"
+        match Ledger.admitChain spec lines with
+        | Ok verified -> Result.success verified
+        | Error (ChainRefusal.OrdinalRegression (pos, ordinal, prior)) ->
+            fail "sink.journal.syncRegression"
+                (sprintf "journal syncId regressed at line %d: sync %s after sync %s" pos (SyncOrdinal.text ordinal) (SyncOrdinal.text prior))
+        | Error (ChainRefusal.BrokenLink (pos, claimed, expected)) ->
+            fail "sink.journal.brokenChain"
+                (sprintf "journal chain broke at line %d: the sync names predecessor %s, but the chain reached %s" pos (renderOrd claimed) (renderOrd expected))
+        | Error ChainRefusal.RecomputeRequiresSource ->
+            // Unreachable — the sink journal is a Linkage grain, never a
+            // recompute one — but named rather than silently dropped.
+            fail "sink.journal.brokenChain"
+                "the sink journal admits by predecessor linkage; a source recompute was requested against a linkage chain (internal invariant)"
 
     /// The FTC at the acquisition grain: fold ⊕ over the verified chain
     /// from the genesis (empty) snapshot — `Ledger.replay`, not a bespoke

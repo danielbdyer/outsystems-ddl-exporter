@@ -37,6 +37,7 @@ open Projection.Cli
 [<InlineData("sink.storeDisabled", 2)>]              // config-shape: no store root
 [<InlineData("sink.writeFailed", 1)>]                // the write axis wins first
 [<InlineData("sink.journal.syncRegression", 9)>]     // the journal's drift channel
+[<InlineData("sink.journal.brokenChain", 9)>]        // align-III.2 — a broken predecessor link, same drift channel
 let ``CliExit.classifyCode maps each CLI refusal code to its axis exit`` (code: string) (expected: int) =
     Assert.Equal(expected, CliExit.classifyCode code)
 

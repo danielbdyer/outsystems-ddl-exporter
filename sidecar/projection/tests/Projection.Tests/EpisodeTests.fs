@@ -87,6 +87,21 @@ let ``6.H.1: durableProjection drops the in-memory Profile, preserving every oth
 // ===========================================================================
 
 [<Fact>]
+let ``align-III.2: the episode grain names its discipline — admitChain runs Monotone through the shared ledger substrate`` () =
+    // The grain finally instantiates a LedgerSpec (Monotone over the
+    // schema-plane ordinal); admitChain admits a strictly-increasing chain
+    // and refuses a regression as the typed ChainRefusal — the same order
+    // `append` holds edge by edge.
+    match EpisodicLifecycle.admitChain [ e0; e1 ] with
+    | Ok verified -> Assert.Equal(2, List.length verified)
+    | Error r -> failwithf "a monotone episode chain must admit; refused %A" r
+    match EpisodicLifecycle.admitChain [ e1; e0 ] with
+    | Ok _ -> failwith "a regressing episode chain must never admit"
+    | Error (ChainRefusal.OrdinalRegression (pos, ordinal, prior)) ->
+        Assert.Equal(1, pos); Assert.Equal(0, ordinal); Assert.Equal(1, prior)
+    | Error other -> failwithf "expected OrdinalRegression, got %A" other
+
+[<Fact>]
 let ``EpisodicLifecycle.append enforces monotonic history (L3-L2)`` () =
     let es = EpisodicLifecycle.append e0 devGenesis |> mustResultFail
     Assert.Contains(es, fun e -> e.Code = "episodicLifecycle.append.nonMonotonic")

@@ -1738,6 +1738,9 @@ let ``T19: the sink journal replays — fold applyDisplacement from genesis = la
     citationOf "tests/Projection.Tests/SinkStoreTests.fs" "T19 chain law (FsCheck): random two-to-four-edition chains replay to the latest canonical state"
     citationOf "tests/Projection.Tests/SinkStoreTests.fs" "a second unchanged witness is Unchanged and appends nothing (CDC-silence at the store)"
     citationOf "tests/Projection.Tests/SinkStoreTests.fs" "journal: a regressing syncId refuses on the drift channel (sink.journal.syncRegression)"
+    // align-III.2 — the enforcement widened from a hand guard to the honest
+    // `Linkage` admission: a broken PrevSyncId link refuses by name too.
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "align-III.2: a broken predecessor link refuses on the chain channel (sink.journal.brokenChain)"
     citationOf "tests/Projection.Tests/SinkDiffViewTests.fs" "erasure witness: the view's norm never exceeds the journal's displacement count (per mutation)"
     citationOf "tests/Projection.Tests/SinkDisplacementTests.fs" "CDC-silence at acquisition grain: diff a a = []"
 

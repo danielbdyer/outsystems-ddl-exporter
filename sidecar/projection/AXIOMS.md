@@ -2294,14 +2294,21 @@ canonical grain,
 with the displacement stream TOTAL over row identities (every row-identity delta yields
 exactly one record carrying its after-image fragment; the domain transition vocabulary is a
 classification over total row-grain carriers, never a filter), a zero-displacement sync
-appending nothing (the metadata plane's CDC-silence), and a regressing syncId refused by
-name on the `Ledger.resumeAdmit` drift channel. The derived Catalog view is bounded by the
-journal — `CatalogDiff.norm (between (parse b₁) (parse b₂)) ≤ |entries(sync)|` — and a
-strict inequality is accounted for by named erasures (the erasure witness, executable).
+appending nothing (the metadata plane's CDC-silence), and a chain that regresses OR breaks
+its `PrevSyncId` linkage refused by name (align-III.2 — the `Linkage` admission verifies the
+sync chain for real, retiring the tautology that made the drift arm unreachable). The
+derived Catalog view is bounded by the journal — `CatalogDiff.norm (between (parse b₁)
+(parse b₂)) ≤ |entries(sync)|` — and a strict inequality is accounted for by named erasures
+(the erasure witness, executable).
 
 **Enforcement.** `SinkJournal` instantiates `Ledger.LedgerSpec` (Genesis / Apply /
-FingerprintOf), so replay IS `Ledger.replay` and regression-refusal IS `resumeAdmit`;
-fsync append; a torn trailing line tolerated, an interior corrupt line thrown.
+Admission = `Linkage`), so replay IS `Ledger.replay` and chain admission IS
+`Ledger.admitChain` — the linkage reads each line's SyncId as its group identity and
+PrevSyncId as the predecessor it claims, so a sync that does not link to the one before
+refuses `sink.journal.brokenChain` and a regression refuses `sink.journal.syncRegression`
+(align-III.2 — the enforcement sentence is now TRUE; previously `FingerprintOf = SyncId`
+made `resumeAdmit` compare `SyncId = SyncId`, the real check a hand guard beside it). Fsync
+append; a torn trailing line tolerated, an interior corrupt line thrown.
 
 **Property test.** (at promotion) FsCheck snapshot chains through `Ledger.replay`; the
 erasure-witness inequality; the zero-displacement silence law.

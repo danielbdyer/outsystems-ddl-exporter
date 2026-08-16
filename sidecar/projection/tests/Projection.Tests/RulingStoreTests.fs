@@ -10,8 +10,11 @@ open Projection.Pipeline
 // finding, digest filename, full key inside the document); fail-closed
 // load (missing → Ok None — pending-by-absence; malformed → ParseFailure,
 // never silently unruled); atomic deterministic writes (T1). NOT a
-// LedgerSpec — the align-II.0 standing ruling; history is deferred past
-// align-III.2 with BasisAnchor.SinkEdition as its widen trigger.
+// LedgerSpec — the align-II.0 standing ruling. align-III.2 FIRED the
+// BasisAnchor.SinkEdition widen: a ruling now anchors to a witnessed
+// edition and the codec round-trips it (the round-trip law below covers
+// that shape). The append-only history store the widen unblocks is
+// deferred to its first consumer.
 
 let private at = DateTimeOffset(2026, 8, 16, 12, 0, 0, TimeSpan.Zero)
 
@@ -46,7 +49,11 @@ let ``A53 store law: a ruling round-trips through save + load for every anchor a
               ruling (key "Order.CustomerId2") RulingVerdict.Rejected (Some (BasisAnchor.Digest "d1")) (Some "not ours") None
               ruling (key "Ent.A") RulingVerdict.Confirmed (Some (BasisAnchor.Fingerprint "fp:1")) None (Some ReopenCondition.OnEvidenceChange)
               ruling (key "Ent.B") RulingVerdict.Confirmed (Some (BasisAnchor.FindingKey (key "Ent.B"))) (Some "matches the witnessed shape") (Some (ReopenCondition.After at))
-              ruling (key "Ent.C") RulingVerdict.Rejected (Some (BasisAnchor.EvidenceDigest "ev256")) None None ]
+              ruling (key "Ent.C") RulingVerdict.Rejected (Some (BasisAnchor.EvidenceDigest "ev256")) None None
+              // align-III.2 — the widened anchor: a ruling on a sink finding
+              // AS OF a witnessed edition (digest × ordinal), round-tripping
+              // field-wise.
+              ruling (key "Ent.D") RulingVerdict.Confirmed (Some (BasisAnchor.SinkEdition { ConnDigest = "abcd1234abcd1234"; Ordinal = SyncOrdinal.next (Some SyncOrdinal.genesis) })) (Some "ruled on sync 2") (Some ReopenCondition.OnEvidenceChange) ]
         for r in shapes do
             match RulingStore.save root r with
             | Error e -> Assert.Fail(RulingStore.describe e)

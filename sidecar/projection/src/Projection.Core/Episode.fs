@@ -189,20 +189,32 @@ module EpisodicLifecycle =
     let head (EpisodicLifecycle data) : Episode = List.head data.Episodes
     let latest (EpisodicLifecycle data) : Episode = List.last data.Episodes
 
+    /// The schema-plane ordinal that totally orders the chain (L3-L2) — the
+    /// one projection the grain's admission discipline reads, declared once.
+    let private episodeOrdinal (e: Episode) : int = Version.ordinal (Episode.version e)
+
+    /// The episode grain's `LedgerSpec` instance (align-III.2 — the grain
+    /// finally NAMES its discipline as a value, retiring the hand-rolled
+    /// ResumeAdmit). State is the schema plane; ⊕ replaces (each episode
+    /// carries FULL state, so replay reproduces the latest snapshot); the
+    /// resume discipline is `Monotone` over the schema-plane ordinal — card
+    /// L3's honest structural check, never a faked recompute. The write
+    /// witness (B'≡B) is `WriteAdmit` at `MigrationRun.recordVerified`; this
+    /// spec is the RESUME side, and `admitChain` is its whole-chain law.
+    let ledgerSpec : LedgerSpec<Catalog, Episode, int> =
+        { Genesis   = { Modules = []; Sequences = [] }
+          Apply     = fun _ episode -> episode.Schema
+          Admission = ChainAdmission.Monotone episodeOrdinal }
+
     /// Append the next episode, enforcing L3-L2 (monotonic history) on the
-    /// schema-plane `Version` ordinal — the same rule `Lifecycle.append` holds.
-    /// A non-monotone append fails rather than silently reordering.
-    ///
-    /// This check IS the episode grain's **ResumeAdmit** (R3 / RI-3, card
-    /// L3): re-run over every edge when the store reloads a chain, it
-    /// verifies chain STRUCTURE — ordinal monotonicity — and nothing more.
-    /// The grain's write witness (B'≡B, `MigrationRun.recordVerified`)
-    /// cannot be re-verified at load (no B' exists to re-deploy), and this
-    /// contract does not pretend to.
+    /// schema-plane ordinal `ledgerSpec` declares — the same rule
+    /// `Lifecycle.append` holds. A non-monotone append fails rather than
+    /// silently reordering. This is the incremental face of the grain's
+    /// `Monotone` ResumeAdmit; `admitChain` is its whole-chain face.
     let append (episode: Episode) (lifecycle: EpisodicLifecycle) : Result<EpisodicLifecycle> =
         let (EpisodicLifecycle data) = lifecycle
-        let lastOrdinal = Version.ordinal (Episode.version (List.last data.Episodes))
-        let nextOrdinal = Version.ordinal (Episode.version episode)
+        let lastOrdinal = episodeOrdinal (List.last data.Episodes)
+        let nextOrdinal = episodeOrdinal episode
         if nextOrdinal > lastOrdinal then
             Result.success (EpisodicLifecycle { data with Episodes = data.Episodes @ [ episode ] })
         else
@@ -211,6 +223,13 @@ module EpisodicLifecycle =
                     "episodicLifecycle.append.nonMonotonic"
                     "Appended episode version ordinal must strictly exceed the latest episode's ordinal."
                     (Map.ofList [ "nextOrdinal", Some (string nextOrdinal); "lastOrdinal", Some (string lastOrdinal) ]))
+
+    /// Admit a whole reloaded episode chain through the shared ledger
+    /// substrate (`Ledger.admitChain ledgerSpec`) — the grain's `Monotone`
+    /// discipline verified end-to-end, the same order `append` holds edge by
+    /// edge. A regression refuses as the typed `ChainRefusal`.
+    let admitChain (chain: Episode list) : Result<Verified<Episode> list, ChainRefusal<int>> =
+        Ledger.admitChain ledgerSpec chain
 
     /// The schema-plane diff chain `[between E₀.Schema E₁.Schema; …]` — the
     /// per-edge displacement along the timeline (the same fold `Lifecycle`

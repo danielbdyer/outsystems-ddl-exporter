@@ -32345,3 +32345,62 @@ after which `VoiceRegisterTests`' frozen list widens to the full src tree. The
 exemplary consent surfaces (WriteSignoff/ActConsent) carry the same class; they stay
 untouched pending an explicit operator ruling (the standing anti-finding rule holds
 until then).
+
+## 2026-08-16 — align-III.2: ledger honesty — ChainAdmission retires the tautology; the sink journal verifies its PrevSyncId chain
+
+The S-track's ledger-honesty charge. The audit (a5) named a tautology: the sink
+journal's `LedgerSpec.FingerprintOf = fun line -> line.SyncId` made `resumeAdmit`'s
+comparison `line.SyncId = line.SyncId` — always `Ok`, the drift arm unreachable, the
+REAL check a hand-rolled `SyncId < lastSync` guard beside it. The episode grain
+instantiated no `LedgerSpec` at all (its ResumeAdmit hand-rolled in
+`EpisodicLifecycle.append`).
+
+**ChainAdmission (Core, `Ledger.fs`).** The resume discipline is now a VALUE on the
+spec — `ChainAdmission<'entry,'fp> = WitnessRecompute of fingerprintOf | Monotone of
+ordinalOf | Linkage of (identityOf * predecessorOf)` — inspected by a new pure
+`Ledger.admitChain`, so a grain can no longer fake a fingerprint that recomputes to
+itself. `LedgerSpec.FingerprintOf` is retired; its `'fp` constraint widens `equality →
+comparison` (Monotone/Linkage order chains). `admitChain` handles the pure arms
+(`Monotone` strict-increase; `Linkage` GROUPED — entries sharing an identity are one
+sync group, group N+1 must name group N as predecessor and strictly exceed it, the
+first group claims none) and refuses a `WitnessRecompute` chain `RecomputeRequiresSource`
+(a recompute grain has no offline whole-chain admission — its fingerprints recompute
+from the live source, per entry, via the unchanged `resumeAdmit`). `entryOf` now takes
+the projection directly (`fingerprintOf`, not the spec), decoupling the write-stamp from
+the resume discipline. Refusals are the typed `ChainRefusal` (OrdinalRegression /
+BrokenLink / RecomputeRequiresSource).
+
+**The three grains declare their discipline.** SinkJournal → `Linkage (SyncId,
+PrevSyncId)`; its `admitChain` delegates to `Ledger.admitChain` (no hand-rolled fold,
+no self-compare) and maps `ChainRefusal` → `sink.journal.syncRegression` (regression) /
+`sink.journal.brokenChain` (NEW — a broken predecessor link). CaptureJournal →
+`WitnessRecompute fingerprintOf` (the recompute stays per-chunk at the boundary).
+EpisodicLifecycle → a real `ledgerSpec` (`Monotone` over the schema-plane ordinal,
+state = Catalog, ⊕ = replace); `append` reads the spec's one ordinal projection and a
+new `EpisodicLifecycle.admitChain` runs the whole-chain law through the shared substrate.
+
+**BEHAVIORAL — a genuinely broken sink chain now refuses.** Before: a monotone journal
+whose sync group named the WRONG predecessor was admitted silently (the tautology never
+looked at PrevSyncId). Now it refuses `sink.journal.brokenChain` (CliExit → 9, the drift
+family). A healthy store (every witness writes each sync's lines linking to the prior
+sync) is byte-identical — the witness already produces well-linked chains, so no
+existing store's admission changes. The regression refusal is unchanged
+(`syncRegression`, order-checked before linkage).
+
+**BasisAnchor.SinkEdition widen (the II.1-deferred trigger, FIRED here).** `BasisAnchor`
+gains `SinkEdition of SinkEdition` — a ruling may now anchor to a witnessed edition
+(digest × ordinal), the substrate a reopen-on-edition-change probe and an append-only
+ruling history stand on. `RulingStore`'s codec round-trips it field-wise (connDigest +
+ordinal, the ordinal re-minting fail-closed). This is a CARRIER completion (reify
+eagerly — the ruling's evidence-identity vocabulary was incomplete while editions became
+first-class at III.1); the append-only ruling HISTORY STORE the widen unblocks is a
+verb/feature, deferred to its first consumer (re-ruling preservation) per "verbs at the
+second consumer".
+
+**T19 doc fix.** The enforcement sentence is now TRUE: `SinkJournal` instantiates
+`LedgerSpec` with `Admission = Linkage`, admission IS `Ledger.admitChain`, and the
+linkage verifies PrevSyncId for real (the T19 citation set gains the brokenChain law).
+No matrix motion (T19 was already live; a citation added to a live axiom leaves the
+counts). Laws: `LedgerTests` ChainAdmission suite (Monotone/Linkage/WitnessRecompute-
+offline); `SinkStoreTests` brokenChain; `EpisodeTests` episode-grain admitChain;
+`RulingStoreTests` SinkEdition round-trip; `CliExitTests` brokenChain → 9.

@@ -8,9 +8,11 @@ open Projection.Core
 /// JSON document per ruled subject under `<store>/rulings/<digest16>.json`
 /// (digest filenames per the SinkStore precedent; the full finding key
 /// lives INSIDE the document). Keyed replace-by-key — a re-ruling
-/// REPLACES the prior ruling for its key; append-only ruling HISTORY is
-/// a named deferral past align-III.2 (`BasisAnchor.SinkEdition` is its
-/// widen trigger). NOT a `LedgerSpec` (the align-II.0 standing ruling).
+/// REPLACES the prior ruling for its key. NOT a `LedgerSpec` (the
+/// align-II.0 standing ruling). The `BasisAnchor.SinkEdition` widen FIRED
+/// at align-III.2 (a ruling may now anchor to a witnessed edition, and the
+/// codec round-trips it); the append-only ruling HISTORY store the widen
+/// unblocks is deferred to its first consumer (re-ruling preservation).
 /// PRJ001: Pipeline boundary (I/O); typed-AST JSON both directions.
 type RulingError =
     | ReadFailure of path: string * message: string
@@ -56,7 +58,15 @@ module RulingStore =
                  jw.WriteString("value", FindingKey.text k)
              | BasisAnchor.EvidenceDigest v ->
                  jw.WriteString("kind", "evidenceDigest")
-                 jw.WriteString("value", v))
+                 jw.WriteString("value", v)
+             | BasisAnchor.SinkEdition edition ->
+                 // align-III.2 — the edition's two coordinates ride as
+                 // fields (not a packed `digest@ordinal` string) so the
+                 // round-trip is field-wise; the ordinal is the raw int and
+                 // re-mints fail-closed on read.
+                 jw.WriteString("kind", "sinkEdition")
+                 jw.WriteString("connDigest", edition.ConnDigest)
+                 jw.WriteNumber("ordinal", SyncOrdinal.value edition.Ordinal))
             jw.WriteEndObject()
 
     let private writeReopen (jw: Utf8JsonWriter) (reopen: ReopenCondition option) : unit =
@@ -112,6 +122,11 @@ module RulingStore =
             | s -> Some s
         | _ -> None
 
+    let private tryInt (el: JsonElement) (name: string) : int option =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetInt32())
+        | _ -> None
+
     let private parseKey (text: string) : Result<FindingKey, string> =
         // align-II.2 hoist: the reconstruction lives on FindingKey itself
         // (second consumer — TighteningBinding parses persisted keys too).
@@ -124,16 +139,27 @@ module RulingStore =
         | false, _ -> Error "record missing 'basis' field (null allowed; absence is malformed)"
         | true, v when v.ValueKind = JsonValueKind.Null -> Ok None
         | true, v when v.ValueKind = JsonValueKind.Object ->
-            match tryStr v "kind", tryStr v "value" with
-            | Some "digest", Some value         -> Ok (Some (BasisAnchor.Digest value))
-            | Some "fingerprint", Some value    -> Ok (Some (BasisAnchor.Fingerprint value))
-            | Some "evidenceDigest", Some value -> Ok (Some (BasisAnchor.EvidenceDigest value))
-            | Some "findingKey", Some value ->
-                match parseKey value with
-                | Ok k -> Ok (Some (BasisAnchor.FindingKey k))
-                | Error e -> Error e
-            | Some other, _ -> Error (sprintf "unknown basis kind '%s'" other)
-            | None, _ -> Error "basis object missing 'kind'"
+            match tryStr v "kind" with
+            | Some "digest"         -> (match tryStr v "value" with Some value -> Ok (Some (BasisAnchor.Digest value)) | None -> Error "digest basis missing 'value'")
+            | Some "fingerprint"    -> (match tryStr v "value" with Some value -> Ok (Some (BasisAnchor.Fingerprint value)) | None -> Error "fingerprint basis missing 'value'")
+            | Some "evidenceDigest" -> (match tryStr v "value" with Some value -> Ok (Some (BasisAnchor.EvidenceDigest value)) | None -> Error "evidenceDigest basis missing 'value'")
+            | Some "findingKey" ->
+                (match tryStr v "value" with
+                 | Some value ->
+                     match parseKey value with
+                     | Ok k -> Ok (Some (BasisAnchor.FindingKey k))
+                     | Error e -> Error e
+                 | None -> Error "findingKey basis missing 'value'")
+            | Some "sinkEdition" ->
+                // align-III.2 — two fields, the ordinal re-minting fail-closed.
+                (match tryStr v "connDigest", tryInt v "ordinal" with
+                 | Some digest, Some n ->
+                     (match SyncOrdinal.create n with
+                      | Ok ord -> Ok (Some (BasisAnchor.SinkEdition { ConnDigest = digest; Ordinal = ord }))
+                      | Error m -> Error (sprintf "sinkEdition basis ordinal: %s" m))
+                 | _ -> Error "sinkEdition basis missing 'connDigest' / 'ordinal'")
+            | Some other -> Error (sprintf "unknown basis kind '%s'" other)
+            | None -> Error "basis object missing 'kind'"
         | _ -> Error "malformed 'basis' (expected object or null)"
 
     let private parseReopen (el: JsonElement) : Result<ReopenCondition option, string> =

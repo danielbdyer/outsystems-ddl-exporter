@@ -201,6 +201,33 @@ module SinkStoreTests =
             Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.journal.syncRegression")
 
     [<Fact>]
+    let ``align-III.2: a broken predecessor link refuses on the chain channel (sink.journal.brokenChain)`` () =
+        // The tautology's retirement made visible: a MONOTONE chain whose
+        // sync 2 names the WRONG predecessor (sync 9, never witnessed) now
+        // refuses `brokenChain` — the old FingerprintOf=SyncId self-compare
+        // admitted it silently. `line sync prev` builds one sync's line.
+        let line syncId prevSyncId =
+            { SinkJournal.SyncId = ord syncId
+              SinkJournal.PrevSyncId = prevSyncId
+              SinkJournal.CapturedAtUtc = nowUtc
+              SinkJournal.Displacement =
+                { Table = SinkDisplacement.SinkTable.Modules
+                  KeyText = "espace:800"
+                  KeyBasis = SinkDisplacement.KeyBasis.Positional 800
+                  Before = None
+                  After = Some (SinkDisplacement.SinkRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
+                  Domain = None } }
+        // A well-formed two-sync chain admits (genesis → sync 2 linking to 1).
+        match SinkJournal.admitChain [ line 1 None; line 2 (Some (ord 1)) ] with
+        | Ok verified -> Assert.Equal(2, List.length verified)
+        | Error errors -> Assert.Fail(sprintf "a linked chain must admit: %A" (errors |> List.map (fun e -> e.Code)))
+        // The same chain with sync 2 naming predecessor 9 breaks by name.
+        match SinkJournal.admitChain [ line 1 None; line 2 (Some (ord 9)) ] with
+        | Ok _ -> Assert.Fail "a broken predecessor link admitted"
+        | Error errors ->
+            Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.journal.brokenChain")
+
+    [<Fact>]
     let ``align-III.1: a stored line naming sync 0 is a corrupt line by name — the ordinal re-mints fail-closed`` () =
         // Render a healthy line, then tamper the wire's syncId to 0 (the
         // ordinal VO makes the value unmintable in memory, so only a torn
