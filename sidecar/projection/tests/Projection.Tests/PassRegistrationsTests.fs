@@ -204,10 +204,10 @@ let ``A.4.7 slice γ: TableRename.registered.Run on Error surfaces ValidationErr
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7 slice γ: UserFkReflowPass.registered factory carries OperatorIntent Selection site`` () =
+let ``A.4.7 slice γ (reclassified align-I.3): UserFkReflowPass.registered factory carries OperatorIntent Identity site`` () =
     let rt = UserFkReflowPass.registered Policy.empty Profile.empty
     Assert.Equal(Domain.Identity, rt.Domain)
-    Assert.Equal(OperatorIntent Selection, (firstSite rt).Classification)
+    Assert.Equal(OperatorIntent OverlayAxis.Identity, (firstSite rt).Classification)
 
 // ---------------------------------------------------------------------------
 // Metadata projection sanity — RegisteredTransform.toMetadata drops Run

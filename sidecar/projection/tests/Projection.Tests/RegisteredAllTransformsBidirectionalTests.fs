@@ -284,21 +284,22 @@ let ``Overlay-exercise (Ordering axis): TopologicalOrderPass.registeredWith Trea
     Assert.NotEmpty result.Trail
 
 [<Fact>]
-let ``Overlay-exercise (Selection axis): UserFkReflowPass under non-empty UserMatchingStrategy classifies events as OperatorIntent Selection`` () =
-    // UserFkReflowPass's Sites classify as `OperatorIntent Selection`
-    // (per pre-scope IDENTITY axis — operator chooses how to match
-    // source/target Users). Setting Policy.UserMatching to a
-    // non-FallbackToSystemUser strategy exercises the axis.
+let ``Overlay-exercise (Identity axis): UserFkReflowPass under non-empty UserMatchingStrategy classifies events as OperatorIntent Identity`` () =
+    // UserFkReflowPass's Sites classify as `OperatorIntent Identity`
+    // (align-I.3 — the pre-scope had already NAMED this the IDENTITY
+    // axis: the operator rules how source/target Users resolve).
+    // Setting Policy.UserMatching to a non-FallbackToSystemUser
+    // strategy exercises the axis.
     let policy =
         { Policy.empty with UserMatching = ByEmail }
     let metadata = RegisteredTransform.toMetadata (UserFkReflowPass.registered policy Profile.empty)
-    let selectionSites =
+    let identityAxisSites =
         metadata.Sites
         |> List.filter (fun s ->
             match s.Classification with
-            | OperatorIntent Selection -> true
+            | OperatorIntent OverlayAxis.Identity -> true
             | _ -> false)
-    Assert.NotEmpty selectionSites
+    Assert.NotEmpty identityAxisSites
 
 // ---------------------------------------------------------------------------
 // Coverage view consistency — `TransformRegistry.skeletonView` +

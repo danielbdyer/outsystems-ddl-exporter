@@ -490,9 +490,10 @@ module Reconciliation =
 
     /// Registry metadata (pillar 9). The reconciliation ruleset is operator
     /// intent — which Source identities reconcile to which pre-existing Sink
-    /// identities. Classified `OperatorIntent Selection`, mirroring the
-    /// forward `UserFkReflowPass` ("re-direction reads as Selection"); the
-    /// Transfer epic's first `OperatorIntent` site. The downstream
+    /// identities. Classified `OperatorIntent Identity` (align-I.3), mirroring
+    /// the forward `UserFkReflowPass` (identity resolution — which identity a
+    /// reference resolves through); the Transfer epic's first
+    /// `OperatorIntent` site. The downstream
     /// consumption (re-pointing FK values via `SurrogateRemap.remapRowFks`)
     /// registers separately on each consuming emitter, so this entry covers
     /// only the acquisition.
@@ -501,6 +502,6 @@ module Reconciliation =
           Domain       = Identity
           StageBinding = Pipeline
           Sites =
-            [ TransformSite.operatorIntent "matchByRule" Selection
+            [ TransformSite.operatorIntent "matchByRule" OverlayAxis.Identity
                 "Match each Source surrogate to a pre-existing Sink surrogate by the operator-supplied ruleset (match column or manual override), producing the per-kind SurrogateRemapContext that downstream consumers (Transfer realization, static-artifact emit) re-point FKs through. Operator intent — which identities reconcile; generalizes UserFkReflowPass.discover from the User kind. Unmatched Source surrogates skip-and-diagnose." ]
           Status = Active }

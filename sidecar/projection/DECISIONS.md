@@ -31466,3 +31466,43 @@ the "Witness-" naming freeze applies to new witness-plane names from Chapter II 
 the two named transfer-leg tests; delta-lint stays 82 = 82 substance-normalized per commit.
 The I.5 sequence convergence carries an escape hatch (ship the registry alone, defer
 convergence by named trigger) — if pulled, this entry gains the trigger row.
+
+## 2026-08-16 — align-I.3: the identity plane names itself (three sites reclassify Selection → Identity) [BEHAVIORAL]
+
+**Ruling.** The three identity-plane `OperatorIntent` sites reclassify from `Selection` to
+`Identity` (the axis align-I.2 minted): `UserFkReflowPass` (the slice-α "refinement
+candidate" note resolves — the refinement lands as Identity, not Insertion),
+`BridgeRetargetPass` (its stated justification was "the same axis UserFkReflowPass lands
+on" — it moves with its anchor), and `Reconciliation.registeredMetadata`'s `matchByRule`
+site (its stated justification was "mirroring the forward UserFkReflowPass" — same). All
+three answer *which identity does this reference resolve through*, not *which kinds does
+the catalog surface*; the audit (a3-F2) showed the mislabel blinded `ConflictDetector`:
+the Selection exemption at `unreachableTransforms` swallowed identity-plane work on
+Selection-removed kinds, and `axisOfCode` could not name their diagnostics.
+
+**Behavioral consequences, named.**
+1. **New conflicts CAN surface (the point).** Identity-plane events on Selection-removed
+   kinds now flag `UnreachableTransform`; `axisOfCode` gains the `userFkReflow.` /
+   `bridgeRetarget.` prefixes → `Identity`, so an SsKey-carrying identity diagnostic on a
+   removed kind flags `AxisContradiction (Identity, …)`. No `transferReconciliation.*`
+   diagnostic codes exist, so no third prefix lands (rule: prefixes map codes that exist).
+2. **Durable axis strings move for FUTURE writes only.** `Episode.AppliedTransforms`
+   rows and manifest `appliedTransforms` entries attributed to these passes record
+   `identity` where they recorded `selection`; the SSDT manifest's `registry.digest`
+   value moves (classification enters the digest — relational tests only, no pinned
+   literal, no committed golden carries the old string). Persisted episodes are witness
+   records: previously-written `selection` rows stay true to what that run did and parse
+   forever; the `identity` codec token landed at align-I.2. No re-key, no migration.
+3. **Consumers enumerated**: `ConflictDetector` (narrows), `ManifestEmitter`
+   (appliedTransforms + digest), `Episode.withProvenance`/`LifecycleStore` (future rows),
+   `EventProjection.classificationTag` (`operatorIntent:identity` on these passes' events),
+   `TransformGroupsBinding.groupForAxis` (Identity → None, ruled at I.2 — both presets
+   stay hand `passTags` rows).
+
+**What does NOT move.** True Selection stays Selection: `VisibilityMask`,
+`SelectionSuppression` (A49's lifecycle axes), and the `removedBySelectionPolicy` /
+self-contradiction exemptions in `ConflictDetector` — those exemptions now cover ONLY
+kind-surfacing selection, which is the narrowing the audit asked for. `Domain.Identity`
+(the *what-it-touches* partition) is untouched — this entry moves the *whose-intent* axis.
+Historical entries (2026-05-16 slice α classification, A.4.7 close) record what was ruled
+then and are not rewritten; this entry supersedes.

@@ -161,14 +161,15 @@ let ``L3-CC-Transform-Totality: skeleton-view passes emit zero OperatorIntent Li
 [<Fact>]
 let ``L3-CC-Transform-Totality: every distinct OverlayAxis used has at least one registered overlay`` () =
     let axesPresent = TransformRegistry.overlayAxes allRegistrations
-    // Selection (VisibilityMask + UserFkReflowPass); Tightening (4
-    // intervention passes + 4 strategies); Emission (TableRename);
-    // Ordering (TopologicalOrderPass.selfLoopHandling — Q9-trigger-
-    // fires worked example). Insertion has no registered consumer at
+    // Selection (VisibilityMask); Identity (UserFkReflowPass —
+    // reclassified align-I.3); Tightening (4 intervention passes + 4
+    // strategies); Emission (TableRename); Ordering
+    // (TopologicalOrderPass.selfLoopHandling — Q9-trigger-fires
+    // worked example). Insertion has no registered consumer at
     // chapter A.4.7 close — forward signal: chapter 4.x adds an
-    // Insertion-axis pass and this assertion gains a fourth
+    // Insertion-axis pass and this assertion gains a sixth
     // expected axis.
-    let expected = Set.ofList [ Selection; Tightening; Emission; Ordering ]
+    let expected = Set.ofList [ Selection; Tightening; Emission; Ordering; OverlayAxis.Identity ]
     Assert.Equal<Set<OverlayAxis>>(expected, axesPresent)
 
 [<Fact>]

@@ -17,10 +17,11 @@ open Projection.Core
 /// `cleared` or was `blocked`, keyed by the reference. Empty policy ⇒ empty map +
 /// no events (skeleton-pure, byte-identical emission).
 ///
-/// **Classification.** `OperatorIntent Selection` — a retarget reroutes which
-/// target a reference resolves through (the operator selects which references
-/// retarget vs preserve), the same axis `UserFkReflowPass` lands on. `Domain =
-/// Schema` — the decision governs an emitted FK constraint.
+/// **Classification.** `OperatorIntent Identity` (align-I.3) — a retarget rules
+/// which target a reference resolves *through* (identity resolution), the same
+/// axis `UserFkReflowPass` lands on; A50 designates `Policy.BridgeRetarget →
+/// OverlayAxis.Identity`. `Domain = Schema` — the decision governs an emitted
+/// FK constraint.
 [<RequireQualifiedAccess>]
 module BridgeRetargetPass =
 
@@ -30,7 +31,7 @@ module BridgeRetargetPass =
     [<Literal>]
     let private passName : string = "bridgeRetarget"
 
-    let private classification : Classification = OperatorIntent Selection
+    let private classification : Classification = OperatorIntent OverlayAxis.Identity
 
     /// One `Annotated` lineage event per declared retarget — `bridgeRetarget.cleared`
     /// when its readiness let it land, `bridgeRetarget.blocked` otherwise — keyed by
@@ -64,6 +65,6 @@ module BridgeRetargetPass =
           Sites =
             [ { SiteName = "bridgeRetarget"
                 Classification = classification
-                Rationale = "Reroute a declared foreign key to resolve through a bridge attribute (Policy.BridgeRetarget) instead of its original parent's primary key, when the retarget's readiness (evidence-backed quality-control checks) clears. OperatorIntent Selection: the operator selects which references retarget; a blocked or unproven retarget lands NO map entry (the FK stays on the parent), recorded as a `blocked` lineage event. Empty policy ⇒ empty retarget map (byte-identical emission)." } ]
+                Rationale = "Reroute a declared foreign key to resolve through a bridge attribute (Policy.BridgeRetarget) instead of its original parent's primary key, when the retarget's readiness (evidence-backed quality-control checks) clears. OperatorIntent Identity (align-I.3): the operator rules which identity each declared reference resolves through; a blocked or unproven retarget lands NO map entry (the FK stays on the parent), recorded as a `blocked` lineage event. Empty policy ⇒ empty retarget map (byte-identical emission)." } ]
           Run = fun c -> run c policy profile
           Status = Active }

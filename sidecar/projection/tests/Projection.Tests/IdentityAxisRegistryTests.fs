@@ -29,8 +29,9 @@ let ``5.13.identity-axis-closure: byDomain Domain.Identity returns the five iden
     //     normalization at adapter→catalog boundary)
     //   - namingMorphism (DataIntent — morphism IS data; pass
     //     applies it mechanically)
-    //   - userFkReflow (OperatorIntent Selection — operator selects
-    //     which references reroute via Policy.UserMatching)
+    //   - userFkReflow (OperatorIntent Identity per align-I.3 — the
+    //     operator rules which identity each reference resolves
+    //     through via Policy.UserMatching)
     //
     // Migration + Bootstrap emitters are Data-domain (they consume
     // UserRemapContext via threading; the Identity domain is the
@@ -55,8 +56,8 @@ let ``5.13.identity-axis-closure: byOverlayAxis Insertion cross-cuts Data + Iden
     // emitter's migrationRowEmission + userRemapRewrite;
     // Bootstrap emitter's userRemapBootstrap; the composer's
     // migrationContextThreading + userRemapContextThreading).
-    // UserFkReflowPass is OperatorIntent Selection (not Insertion);
-    // it does NOT appear under byOverlayAxis Insertion.
+    // UserFkReflowPass is OperatorIntent Identity (align-I.3; not
+    // Insertion); it does NOT appear under byOverlayAxis Insertion.
     let insertionEntries =
         TransformRegistry.byOverlayAxis Insertion allMetadata
     let names =
@@ -69,18 +70,25 @@ let ``5.13.identity-axis-closure: byOverlayAxis Insertion cross-cuts Data + Iden
     Assert.DoesNotContain("userFkReflow", names)
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byOverlayAxis Selection includes UserFkReflowPass`` () =
+let ``5.13.identity-axis-closure: byOverlayAxis Identity includes UserFkReflowPass (and Selection no longer does)`` () =
     // UserFkReflowPass.registered's site classifies as
-    // OperatorIntent Selection — the operator selects which
-    // User-FK references reroute via Policy.UserMatching +
-    // source/target populations.
-    let selectionEntries =
-        TransformRegistry.byOverlayAxis Selection allMetadata
+    // OperatorIntent Identity (align-I.3) — the operator rules
+    // which identity each User-FK reference resolves through via
+    // Policy.UserMatching + source/target populations. The
+    // Selection view no longer carries it (Selection = which kinds
+    // surface; the reclassification un-blinded ConflictDetector).
+    let identityAxisEntries =
+        TransformRegistry.byOverlayAxis OverlayAxis.Identity allMetadata
     let names =
-        selectionEntries
+        identityAxisEntries
         |> List.map (fun rt -> rt.Name)
         |> Set.ofList
     Assert.Contains("userFkReflow", names)
+    let selectionNames =
+        TransformRegistry.byOverlayAxis Selection allMetadata
+        |> List.map (fun rt -> rt.Name)
+        |> Set.ofList
+    Assert.DoesNotContain("userFkReflow", selectionNames)
 
 [<Fact>]
 let ``5.13.identity-axis-closure: byDomain Data includes both Core Data passes and Data emitters`` () =
@@ -142,15 +150,24 @@ let ``5.13.identity-axis-closure: byOverlayAxis Tightening lives in Schema + Dat
     Assert.Empty tighteningInIdentity
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Domain.Identity ∩ byOverlayAxis Selection = UserFkReflowPass alone`` () =
+let ``5.13.identity-axis-closure: byDomain Domain.Identity ∩ byOverlayAxis Identity = UserFkReflowPass alone`` () =
     // The two filters compose at the consumer level — composing
-    // them gives the "OperatorIntent-Selection IDENTITY-axis"
-    // surface. UserFkReflowPass is the sole entry: the other two
-    // Identity-domain passes (canonicalizeIdentity + namingMorphism)
-    // are DataIntent and drop out via the OverlayAxis filter.
+    // them gives the "OperatorIntent-Identity IDENTITY-domain"
+    // surface (align-I.3: domain names *what it touches*, axis
+    // names *whose intent* — for userFkReflow the two coincide).
+    // UserFkReflowPass is the sole entry: the other Identity-domain
+    // passes (canonicalizeIdentity + namingMorphism +
+    // physicalClaimRules + physicalClaims) are DataIntent and drop
+    // out via the OverlayAxis filter; Domain.Identity ∩ Selection
+    // is now EMPTY.
     let intersection =
         allMetadata
         |> TransformRegistry.byDomain Domain.Identity
-        |> TransformRegistry.byOverlayAxis Selection
+        |> TransformRegistry.byOverlayAxis OverlayAxis.Identity
     Assert.Equal(1, List.length intersection)
     Assert.Equal("userFkReflow", intersection.Head.Name)
+    let selectionIntersection =
+        allMetadata
+        |> TransformRegistry.byDomain Domain.Identity
+        |> TransformRegistry.byOverlayAxis Selection
+    Assert.Empty selectionIntersection

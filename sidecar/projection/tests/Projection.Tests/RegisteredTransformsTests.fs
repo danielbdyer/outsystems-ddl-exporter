@@ -33,7 +33,8 @@ let ``A.4.7' slice β + D.1.a: RegisteredTransforms.all carries 29 Core-resident
     // (the two default-on emission-axis passes for logical-name
     // substitution into the physical-realization slot).
     // NM-36 wired cascadeShockZones as a DataIntent analytics pass (20th);
-    // bridge retargeting added bridgeRetargetPass (21st, OperatorIntent Selection);
+    // bridge retargeting added bridgeRetargetPass (21st, OperatorIntent
+    // Identity — reclassified from Selection at align-I.3);
     // the data-sink chapter S9 added selectionSuppression (22nd, OperatorIntent
     // Selection — the lifecycle axes on the lineage channel); S11 added the
     // physicalClaimRules strategy (6th strategy row — table-ownership
