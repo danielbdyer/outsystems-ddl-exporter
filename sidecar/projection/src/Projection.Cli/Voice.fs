@@ -383,6 +383,24 @@ module Voice =
                 | None    -> []
           Action         = fun _ -> None }
 
+    /// `eject.sinkCarried` — §13 resultative (the data-sink chapter,
+    /// S15/K10): the sink's terminal witnessed states ride the provenance
+    /// package — after the eject there is no upstream to re-derive from,
+    /// so the metadata editions and their displacement journals are named
+    /// as carried. Said only when a sink store rides the run (a pre-sink
+    /// eject stays silent — the status quo ante needs no line).
+    let private ejectSinkCarried : Copy =
+        { Code           = "eject.sinkCarried"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "sources" p, text "syncs" p, text "journalEntries" p with
+                | Some s, Some y, Some j ->
+                    View.Note(sprintf "The sink rides the package — %s witnessed source(s), %s edition(s), %s journal entries: the metadata plane survives the eject." (humane s) (humane y) (humane j))
+                | _ -> View.Note "The sink rides the package — the witnessed metadata editions survive the eject."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `episode.recorded` — the run's durable record (`THE_VOICE.md` §13 — "This
     /// run recorded to the history."). Stative and agentless: the record is a
     /// state, named with its episode ordinal and timeline when present.
@@ -1359,6 +1377,7 @@ module Voice =
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
           ejectPackaged
+          ejectSinkCarried
           containerStarting
           deployBundleEmitted
           canaryDeployed

@@ -49,9 +49,10 @@ let private inScopeCodes : Set<string> =
           // refusal and the generic located stop
           "migrate.inexpressible"; "migrate.stopped"
           // the eject face: the §13 package line, the §6 self-verification
-          // pair, and the §14 located store finding
+          // pair, the §14 located store finding, and the sink-carried line
+          // (the data-sink chapter, S15/K10)
           "eject.packaged"; "eject.verified"; "eject.unverified"
-          "eject.storeUnreadable"
+          "eject.storeUnreadable"; "eject.sinkCarried"
           // the verify-data face: the §6 data-fidelity verdict pair
           "verifyData.matched"; "verifyData.diverged"
           // the §4 move verdicts — the transfer / migrate faces (register
@@ -142,9 +143,10 @@ let private knownEmittableCodes : Set<string> =
           "drift.none"; "drift.diverged"
           // the migrate family's shared stop channel
           "migrate.inexpressible"; "migrate.stopped"
-          // the eject face's package + self-verification + store finding
+          // the eject face's package + self-verification + store finding +
+          // the sink-carried line (S15/K10)
           "eject.packaged"; "eject.verified"; "eject.unverified"
-          "eject.storeUnreadable"
+          "eject.storeUnreadable"; "eject.sinkCarried"
           // the verify-data face's verdict pair
           "verifyData.matched"; "verifyData.diverged"
           // the §4 transfer / migrate move verdicts (recon #11)

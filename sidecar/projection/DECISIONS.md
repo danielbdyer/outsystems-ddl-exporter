@@ -31303,3 +31303,33 @@ that renders them, never as phantom copy).
   original + live extension re-registration on one table) proposes with `From` = the
   tombstone, `To` = the re-registration, `SameName` — the chapter's original incident
   now carries its identity-continuity proposal end-to-end from a real acquisition.
+
+## 2026-08-16 — sink S15: the eject carries the sink; the Twin imports through it (K10 cashed)
+
+- **The eject carries the sink's terminal states.** `EjectPackage` gains `SinkStates`
+  (per witnessed source: digest, env label, latest sync, journal length, capture time)
+  through the `withSinkClaims` idiom — `fromChain` stays pure and sink-blind (stamps
+  `[]`); the FACE collects from the configured store (`EjectRun.sinkTerminalStates`,
+  store-gated: no store, no states — the pre-sink eject is byte-identical) and stamps.
+  `eject.sinkCarried` (§13 resultative) names the carriage only when states ride — the
+  status quo ante needs no line. After the eject there is no upstream to re-derive
+  from; the package now NAMES the metadata editions and displacement journals that
+  survive it.
+- **The Twin's post-eject rendition map**: `EvidenceSource` gains `catalogRef` — a
+  `sink:<env>[@<syncId>]` ref that supplies the PHYSICAL rendition's catalog (the
+  logical-names-over-physical-realizations map the live OSSYS read would have given;
+  K2 parity makes it THE same catalog) while the DATA still profiles over `ConnRef`'s
+  live connection. Closed by parse law (A44): physical rendition only
+  (`twin.config.evidence.catalogRefLogical` — a logical source's names are the
+  estate's own), sink scheme only (`twin.config.evidence.catalogRefScheme`). The
+  import-time arm keeps the refusal total if a config arrives by another door.
+- **The Docker witness** (`TwinSinkCatalogImportTests`): lifecycle seed → witness
+  stamped `cutover` → `catalogRef: "sink:cutover"` imports dbo.Order's evidence with
+  the catalog from the witnessed edition and the profile from the live data
+  connection (columns evidenced > 0; the rich pack lands); `sink:ghost` refuses
+  `sink.envUnknown` — never a silent empty pack.
+- **Scope note**: the eject remains an in-memory package + self-verification (no
+  bundle-directory writer exists to extend); the sink's durable form ALREADY lives
+  under the store the package names — carrying the states (not copying the files) is
+  the honest grain. A future bundle-writer slice would serialize `SinkStates`
+  alongside the episodes; named residual, no trigger armed.

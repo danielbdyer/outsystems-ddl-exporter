@@ -88,6 +88,38 @@ let ``AC-X6: eject round-trips through the durable store`` () =
     finally
         if System.IO.File.Exists path then System.IO.File.Delete path
 
+// -- the sink rides the eject (the data-sink chapter, S15/K10) ----------------
+
+[<Fact>]
+let ``K10: the sink's terminal states ride the package via the stamping combinator; empty is the identity`` () =
+    let pkg =
+        match EjectRun.fromChain threeEpisodeChain with
+        | Ok p -> p
+        | Error e -> Assert.Fail(sprintf "%A" e); Unchecked.defaultof<EjectPackage>
+    // The assembly is pure and sink-blind: fromChain stamps no states
+    // (the face collects from the configured store and stamps).
+    Assert.Empty pkg.SinkStates
+    // Empty stamping is the identity — a pre-sink eject is byte-identical.
+    Assert.Equal(pkg, EjectRun.withSinkStates [] pkg)
+    // States ride the package intact.
+    let state : SinkTerminalState =
+        { Digest = "abc123"
+          EnvLabel = Some "uat"
+          LatestSyncId = 4
+          JournalEntries = 17
+          CapturedAtUtc = at "2026-08-15T12:00:00+00:00" }
+    let stamped = EjectRun.withSinkStates [ state ] pkg
+    Assert.Equal<SinkTerminalState list>([ state ], stamped.SinkStates)
+    // Stamping touches nothing else: the package still self-verifies.
+    Assert.True(EjectRun.isFaithful stamped)
+
+[<Fact>]
+let ``K10: with no sink store configured, the collector reports no states (the pre-sink eject, named)`` () =
+    // R7 — the test environment carries no store env vars by default, so
+    // the collector's store-gated arm is the one that runs here.
+    Assert.True(System.String.IsNullOrEmpty(System.Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"))
+    Assert.Empty(EjectRun.sinkTerminalStates ())
+
 // -- ReportRun (THE_CLI.md §8 / F4) — the migration-team change bundle -------
 
 [<Fact>]

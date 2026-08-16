@@ -186,13 +186,25 @@ let runEject (storePath: string) : int =
         TtyRenderer.renderVoicedTo Console.Error "eject.storeUnreadable"
             (Map.ofList [ "cause", box msg ])
         2
-    | Ok pkg ->
+    | Ok assembled ->
+        // The sink's terminal witnessed states ride the package (S15/K10):
+        // after the eject there is no upstream to re-derive from, so the
+        // metadata editions + displacement journals are named as carried.
+        // Store-gated — a pre-sink eject says nothing and changes nothing.
+        let sinkStates = EjectRun.sinkTerminalStates ()
+        let pkg = EjectRun.withSinkStates sinkStates assembled
         // §13 resultative — the package line, voiced; the timeline beneath.
         TtyRenderer.renderVoicedTo Console.Out "eject.packaged"
             (Map.ofList
                 [ "timeline",         box (Timeline.name pkg.Timeline)
                   "episodeCount",     box (List.length pkg.Episodes)
                   "refactorLogCount", box (List.length pkg.RefactorLogRefs) ])
+        if not (List.isEmpty pkg.SinkStates) then
+            TtyRenderer.renderVoicedTo Console.Out "eject.sinkCarried"
+                (Map.ofList
+                    [ "sources",        box (List.length pkg.SinkStates)
+                      "syncs",          box (pkg.SinkStates |> List.sumBy (fun s -> s.LatestSyncId))
+                      "journalEntries", box (pkg.SinkStates |> List.sumBy (fun s -> s.JournalEntries)) ])
         if EjectRun.isFaithful pkg then
             // §6 — the freeze's self-verification, asserted.
             TtyRenderer.renderVoicedTo Console.Out "eject.verified" Map.empty
