@@ -32230,3 +32230,18 @@ re-records — every slice byte-identical on healthy inputs by design).
 
 Chapter III (State, Law, Grain & Lexicon — Arcs S+L+H+X, ~24 slices) is next under the
 same standing authorization; III.0 opens it.
+
+## 2026-08-16 — align-III.0: Chapter III opens (State, Law, Grain & Lexicon — the program's final chapter)
+
+`CHAPTER_ALIGN_III_OPEN.md` frames the four charges (S: state honesty — ChainAdmission,
+typed instants, the FTC reading grain, the dead twin, DataObservation, rename-isometry;
+L: law honesty — A44 resident, four Skip-prose promotions to 93 live, generator truth
+with ONE named re-baseline, TriggerProbes, L3-Eject; H: grain carriers —
+PhysicalTableRef test-FIRST, Environment.parse total, env-digest sets, typed temporal;
+X: the lexicon, strictly last, one rename per commit), the wave map with the named
+IIIa/IIIb seam after III.12, the inherited standing rulings, and seven acceptance laws
+the close will witness. No new axiom stub at open — this chapter's laws either already
+sit as Skip-prose residents (A45/T17/A47/A48, promoted at III.9) or mint at their slice
+with the same-commit discipline (III.7's rename-isometry; III.12's L3-Eject Bucket-C).
+The II.1 deferred ruling-history trigger (`BasisAnchor.SinkEdition`) is scheduled: it
+fires at III.2 with ChainAdmission.
