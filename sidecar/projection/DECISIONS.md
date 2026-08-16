@@ -32204,3 +32204,29 @@ environments.json reader). The `TargetErasure` rider (A37 promotion) also stays 
 The E-track (II.7–II.12) closes: the wire contract, the erasure record, the scope value,
 the journal's full inverse + reading + first-witness trichotomy, the axis-bearing
 fingerprint readings, and the pedigree — six epistemic seams, each now a value.
+
+## 2026-08-16 — align-II.13: Chapter II closes (the Ruling & the Epistemics — both charges discharged)
+
+Fourteen slices, `1f17d47..` this close. **Arc R:** operator judgment is a VALUE with a
+carrier (`OperatorRuling`, II.1), a keyed fail-closed durable home (`RulingStore`, II.1),
+config attribution un-severed to the surfaces (II.2), per-subject grain (index rulings +
+proposal identity, II.3), honest outcomes beneath it (first-class abstain; the probe
+trichotomy, II.4/II.4b), a receiving surface (the estate DECIDE lane renders rulings on
+their findings, II.5 — A53 LIVE), and a recording verb (`projection rule`, II.6 — the
+10-step checklist walked). Record + render ONLY throughout — auto-application stays the
+named deferral. **Arc E:** six epistemic seams became values — the wire contract (II.7,
+`RowsetContract` + the located drift refusal), the erasure record (II.8, `BundleErasure`
+— A54 LIVE), the acquisition scope (II.9, `AcquisitionScope`/`ScopeAxis`; the totality
+gate reads the type; the S13 gate compares subsumption), the journal's full inverse +
+named readings + first-witness trichotomy (II.10), axis-bearing fingerprint readings
+(II.11), and the finding pedigree (II.12).
+
+Close ritual walked (CHAPTER_ALIGN_II_CLOSE.md): claims⇔witnesses total; Release fast
+solution-wide PASSED; full Docker PASSED with exactly the two named reds (confirmed
+against the failed-tests list); delta-lint 82=82 across all fourteen slices; law census
+89 live (A53 + A54 promoted) / C=6 / D=1, zero phantoms; deferrals banked with triggers;
+docs current; anti-findings held (exemplary consent surfaces untouched; zero golden
+re-records — every slice byte-identical on healthy inputs by design).
+
+Chapter III (State, Law, Grain & Lexicon — Arcs S+L+H+X, ~24 slices) is next under the
+same standing authorization; III.0 opens it.

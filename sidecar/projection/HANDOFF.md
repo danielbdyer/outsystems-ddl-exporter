@@ -1,4 +1,56 @@
-# Handoff addendum — 2026-08-16 (latest): alignment Chapter I closed (the Teleology Chapter); Chapter II — the Ruling & the Epistemics — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+# Handoff addendum — 2026-08-16 (latest): alignment Chapters I AND II closed; Chapter III — State, Law, Grain & Lexicon — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program is two thirds done, under the one
+standing operator authorization (three chapters, run CONSECUTIVELY, no pauses; the
+rulings live in DECISIONS "THE ALIGNMENT PROGRAM OPENS"). Chapter II (Arcs R + E,
+fourteen slices, `1f17d47..` the close commit) discharged both charges: the ruling
+plane is LIVE end-to-end — `OperatorRuling` (Core) → `RulingStore` (keyed, fail-closed,
+atomic; `<store>/rulings/`) → estate reception (rulings render on their findings; the
+K9 correspondence records end-to-end; A53) → the `projection rule` verb (the 10-step
+checklist; record + render ONLY, auto-application stays the named deferral) — and six
+epistemic seams are values: `RowsetContract` (the 26-set walk derives from one table;
+drift refuses located), `BundleErasure` (A54 — `toBundle` returns what it loses),
+`AcquisitionScope`/`ScopeAxis` (the totality gate reads the type; the S13 fast-path
+gate compares subsumption), the journal's full inverse + `JournalReading` +
+`FirstWitnessedSync` trichotomy, typed fingerprint readings (a miss names its axes),
+and the finding `Pedigree`. Read `CHAPTER_ALIGN_II_CLOSE.md` — §1 claims⇔witnesses,
+§2 the behavioral ledger, §4 what you inherit.
+
+**Your program: Chapter III — "State, Law, Grain & Lexicon" (Arcs S+L+H+X, ~24
+slices).** The master plan is `/root/.claude/plans/yes-let-s-iterate-on-enumerated-pascal.md`
+(if the scratch path is gone: the spine is in the DECISIONS program-open entry and the
+audit synthesis; ground truth a5/a10/a2/a9 + the audit's correctness section). Open
+with III.0, then the S-track (III.1 SyncOrdinal VO + typed instants → III.2 ledger
+honesty/ChainAdmission — where the deferred ruling HISTORY's `BasisAnchor.SinkEdition`
+widen fires → III.3 the R6 gate CanaryVerdict → III.4 EstateHistory.replay → III.5
+dead-twin deletion → III.6 DataObservation → III.7 rename-isometry), the L-track
+(III.8–III.12: A44 resident, four Skip-prose promotions, generator honesty with ONE
+matrix re-baseline, TriggerProbes, L3-Eject), the H-track (III.13 PhysicalTableRef
+test-FIRST, III.14 Environment.parse AFTER III.5, III.15 env-digest set, III.16
+temporal config), and the X-arc STRICTLY LAST (one rename per commit; X6 optional).
+III.23 is the program close: the audit gains its DISPOSITIONED banner, BACKLOG +
+V2_DRIVER rows, this file's final letter, CLAUDE.md currency, the last PR refresh.
+Named seam after III.12 if the chapter drags (IIIa/IIIb split).
+
+**What will bite you first.** (1) The gate ladder is per-commit and non-negotiable —
+delta-lint's baseline chain lives in the scratchpad (`ii12-nolines.txt` is current;
+rebuild from `scripts/lint-discipline.sh | grep '^\[' | sed 's/:[0-9]*:/:/' | sort` if
+gone) and 82=82 substance-normalized is the bar; `--no-verify` names the pre-existing
+red lint gate every commit. (2) Docker focus runs the INTEGRATION assembly only
+(survival rule 14) — pure suites re-run via `dotnet test --filter` on the fsproj.
+(3) A batch of connection failures = the warm container died (rule 2) —
+`scripts/warm-sql.sh restart`, never a regression hunt. (4) The known-red Docker set
+is exactly {StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — confirm against the
+failed-tests LIST, not the count (rule 12). (5) New DU variants APPEND when order is
+serialization-load-bearing; count fields at every `{ X with }` reconstruction (rule 7).
+(6) AxiomTests touches regenerate the matrix in the SAME commit; the verifiability
+gate self-parses (89 live / C=6 / D=1 as of this close).
+
+---
+
+# Handoff addendum — 2026-08-16 (superseded): alignment Chapter I closed (the Teleology Chapter); Chapter II — the Ruling & the Epistemics. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
 
 To the next agent.
 
