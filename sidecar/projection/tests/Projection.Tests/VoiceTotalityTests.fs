@@ -79,6 +79,8 @@ let private inScopeCodes : Set<string> =
           // the ruling store's named degradation (align-II.5 — an unreadable
           // store renders the board unruled, the cause on stderr)
           "estate.rulings.unreadable"
+          // the ruling verb's durable-record verdict (align-II.6; A53)
+          "rule.recorded"
           // the row-fidelity proof pair (check data --rows — T17, wave B2)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
           // the sink sync face's verdict pair + the store refusal
@@ -175,6 +177,9 @@ let private knownEmittableCodes : Set<string> =
           // the ruling store's named degradation — render-synthesized at the
           // same face when `RulingStore.loadAll` fail-closes (align-II.5)
           "estate.rulings.unreadable"
+          // the ruling verb's durable-record verdict — render-synthesized at
+          // `runRule` (align-II.6; A53)
+          "rule.recorded"
           // the row-fidelity proof pair — render-synthesized at the
           // `check data --rows` face (`runCheckDataRows`)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
@@ -337,6 +342,7 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "estate.overlay"; "estate.envUnreadable"
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
           "estate.rulings.unreadable"
+          "rule.recorded"
           "fidelity.rows.matched"; "fidelity.rows.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"

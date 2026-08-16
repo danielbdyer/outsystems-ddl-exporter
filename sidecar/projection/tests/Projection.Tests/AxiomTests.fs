@@ -1917,3 +1917,4 @@ let ``A53: the operator ruling is a carrier — keyed, anchored, fail-closed, an
     citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a missing ruling is Ok None (pending-by-absence), not an error"
     citationOf "tests/Projection.Tests/EstateTests.fs" "reception: a recorded ruling renders on its finding in the lever's slot — lanes, verdict, and ladder stand (record + render only)"
     citationOf "tests/Projection.Tests/EstateSinkClaimsTests.fs" "K9 end-to-end (align-II.5): a confirmed S14 correspondence ruling renders on its finding — recorded judgment, no adoption"
+    citationOf "tests/Projection.Tests/MovementSurfaceTests.fs" "rule <key> --confirm --by routes to RecordRuling carrying the parsed key and verdict"

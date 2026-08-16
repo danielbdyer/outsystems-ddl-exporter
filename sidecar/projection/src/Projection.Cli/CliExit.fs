@@ -60,6 +60,10 @@ let classifyCode (code: string) : int =
         // `sink.writeFailed` already landed on the write axis (1) above.
         elif code.StartsWith "sink.journal.syncRegression" then 9
         elif code.StartsWith "sink." then 2
+        // The ruling verb (align-II.6): a missing estate store is a config
+        // prerequisite (2); `rule.writeFailed` already landed on the write
+        // axis (1) above.
+        elif code.StartsWith "rule." then 2
         elif code.StartsWith "model."
              || code.StartsWith "synthetic.profileRef"
              || code.StartsWith "slice." then 2

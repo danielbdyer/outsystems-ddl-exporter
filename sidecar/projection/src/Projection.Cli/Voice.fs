@@ -1236,6 +1236,24 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `rule.recorded` — §13: `projection rule`'s durable-record verdict
+    /// (align-II.6; A53). The ruling is persisted in the keyed store —
+    /// replace-by-key, so a re-ruling supersedes — and the estate board
+    /// renders it on its finding at the next check. Recorded and rendered,
+    /// never auto-applied (the align-II.0 standing ruling).
+    let private ruleRecorded : Copy =
+        { Code           = "rule.recorded"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                View.Hero(View.Ok,
+                    sprintf "The ruling is recorded: %s — %s by %s."
+                        (textOr "subject" "the finding" p)
+                        (textOr "verdict" "ruled" p)
+                        (textOr "by" "the operator" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some (View.Action "Run projection check environments — the board renders the ruling on its finding.") }
+
     /// `sync.completed` — §3: `projection sync`'s witnessed verdict (the
     /// data-sink chapter, S6). The estate moved; the sync ordinal and the
     /// journaled displacement count are the located evidence.
@@ -1439,6 +1457,8 @@ module Voice =
           // §14 — the ruling store's named degradation (align-II.5: an
           // unreadable store renders the board unruled, cause on stderr)
           estateRulingsUnreadable
+          // §13 — the ruling verb's durable-record verdict (align-II.6; A53)
+          ruleRecorded
           // §6 — the row-fidelity proof pair (check data --rows; T17, B2)
           fidelityRowsMatched
           fidelityRowsDiverged

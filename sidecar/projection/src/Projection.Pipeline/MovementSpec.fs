@@ -477,6 +477,13 @@ type Intent =
     /// environment label onto the sink manifest (the act that makes an
     /// environment addressable as `sink:<env>`).
     | Sync of args: string list
+    /// `rule <finding-key> (--confirm | --reject) --by <name>
+    /// [--rationale <text>]` — record an operator ruling on one estate
+    /// finding (align-II.6; A53). Record + render ONLY: the verb persists
+    /// judgment through the keyed ruling store and renders it back;
+    /// applying it to policy or model stays the operator's move
+    /// (align-II.0 standing ruling).
+    | Rule of args: string list
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
@@ -742,6 +749,12 @@ type PlanAction =
     /// live environment + the displacement report + the env-label stamp.
     /// Reified as a record from birth (the CheckGoArgs lesson).
     | SyncEnvironment of args: SyncArgs
+    // rule ---------------------------------------------------------------
+    /// record an operator ruling on one estate finding (align-II.6; A53):
+    /// the keyed ruling store persists it, the face renders it back.
+    /// Record + render ONLY — no policy or model application (the
+    /// align-II.0 standing ruling). Reified as a record from birth.
+    | RecordRuling of args: RuleArgs
     /// propose a FIRST-DRAFT blessed-correction artifact to a file (FUZZING
     /// §2.2, slice F0c-I/O): resolve the model's catalog → `CorrectionProposer
     /// .propose` (heuristic PII typing) → `CorrectionCodec.serialize` → write.
@@ -788,6 +801,22 @@ and SyncArgs =
       /// The resolved live connection spec (`env:` / `file:` / raw).
       ConnSpec : string
       AsJson   : bool }
+
+/// `rule <finding-key>`'s coordinates (the `RecordRuling` payload;
+/// align-II.6). The key arrives PARSED — a malformed or unknown token is a
+/// plan-time refusal, so the face only ever records judgment on a key the
+/// vocabulary recognizes.
+and RuleArgs =
+    { /// The finding the ruling adjudicates — the cross-artifact key the
+      /// board and environments.json print.
+      Key       : FindingKey
+      /// The operator's verdict (confirmed | rejected).
+      Verdict   : RulingVerdict
+      /// Who rules — a ruling always carries its author (the WriteSignoff
+      /// / approve convention: judgment is never ambient-attributed).
+      By        : string
+      Rationale : string option
+      AsJson    : bool }
 
 /// `check estate`'s coordinates (the `CheckEstate` payload). `TargetLabel` is
 /// the masthead's display name for the unification basis; `Target` is its

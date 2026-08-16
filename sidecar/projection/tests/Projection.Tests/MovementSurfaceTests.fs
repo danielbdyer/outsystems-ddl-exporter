@@ -1302,6 +1302,71 @@ let ``sync against an unknown environment is Refused`` () =
     | PlanAction.Refused (6, _) -> ()
     | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
 
+// -- rule verb (align-II.6; A53) ---------------------------------------------
+// `rule <finding-key> (--confirm | --reject) --by <name> [--rationale <text>]`
+// records an operator ruling on one estate finding. The key parses AT PLAN
+// TIME (judgment is never recorded against a token the vocabulary does not
+// recognize); the verdict is exactly one flag; the author is mandatory.
+// Record + render only — the plan carries no application lever.
+
+[<Fact>]
+let ``rule <key> --confirm --by routes to RecordRuling carrying the parsed key and verdict`` () =
+    match planArgs synthCfg [ "rule"; "schema.presence:Customer"; "--confirm"; "--by"; "dana" ] with
+    | PlanAction.RecordRuling args ->
+        Assert.Equal("schema.presence:Customer", FindingKey.text args.Key)
+        Assert.Equal(RulingVerdict.Confirmed, args.Verdict)
+        Assert.Equal("dana", args.By)
+        Assert.Equal(None, args.Rationale)
+        Assert.False args.AsJson
+    | other -> Assert.Fail(sprintf "expected RecordRuling, got %A" other)
+
+[<Fact>]
+let ``rule --reject carries the rationale and the machine lens`` () =
+    match planArgs synthCfg [ "rule"; "identity.cutoverCorrespondence:dbo.OSUSR_APP_SHIPMENT"; "--reject"; "--by"; "dana"; "--rationale"; "two entities after all"; "--format"; "json" ] with
+    | PlanAction.RecordRuling args ->
+        Assert.Equal(RulingVerdict.Rejected, args.Verdict)
+        Assert.Equal(Some "two entities after all", args.Rationale)
+        Assert.True args.AsJson
+    | other -> Assert.Fail(sprintf "expected RecordRuling (rejected), got %A" other)
+
+[<Fact>]
+let ``rule without a finding key is Refused (named)`` () =
+    match planArgs synthCfg [ "rule"; "--confirm"; "--by"; "dana" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.noKey", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-key refusal, got %A" other)
+
+[<Fact>]
+let ``rule with a malformed or unknown key token is Refused naming the token`` () =
+    match planArgs synthCfg [ "rule"; "nonsense-token"; "--confirm"; "--by"; "dana" ] with
+    | PlanAction.Refused (2, e) ->
+        Assert.Equal("cli.rule.keyUnknown", e.Code)
+        Assert.Contains("nonsense-token", e.Message)
+    | other -> Assert.Fail(sprintf "expected key refusal, got %A" other)
+    match planArgs synthCfg [ "rule"; "not.a.kind:Subject"; "--confirm"; "--by"; "dana" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.keyUnknown", e.Code)
+    | other -> Assert.Fail(sprintf "expected unknown-kind refusal, got %A" other)
+
+[<Fact>]
+let ``rule needs exactly one verdict — neither and both are Refused (named)`` () =
+    match planArgs synthCfg [ "rule"; "schema.presence:Customer"; "--by"; "dana" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.noVerdict", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-verdict refusal, got %A" other)
+    match planArgs synthCfg [ "rule"; "schema.presence:Customer"; "--confirm"; "--reject"; "--by"; "dana" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.bothVerdicts", e.Code)
+    | other -> Assert.Fail(sprintf "expected both-verdicts refusal, got %A" other)
+
+[<Fact>]
+let ``rule without an author is Refused — judgment is never ambient-attributed`` () =
+    match planArgs synthCfg [ "rule"; "schema.presence:Customer"; "--confirm" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.noBy", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-author refusal, got %A" other)
+
+[<Fact>]
+let ``rule with a blank rationale is Refused (omit the flag instead)`` () =
+    match planArgs synthCfg [ "rule"; "schema.presence:Customer"; "--confirm"; "--by"; "dana"; "--rationale"; "  " ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.rule.rationaleBlank", e.Code)
+    | other -> Assert.Fail(sprintf "expected blank-rationale refusal, got %A" other)
+
 // -- slice data-portability verbs (recon #3 — one dispatch plane) -----------
 // Formerly an `argv.[0]` side-channel in `Program.main`; these pin that the four
 // verbs now route through the one typed `Command.parse` → `Command.plan` plane,

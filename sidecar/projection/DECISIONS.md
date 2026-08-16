@@ -31973,3 +31973,41 @@ AXIOMS.md restated; matrix regenerated in this commit.
 
 Additive throughout: a store with no `rulings/` directory and a config with no provenance
 fields render byte-identical boards; no goldens moved.
+
+## 2026-08-16 — align-II.6: the ruling verb — `projection rule` records through the carrier (the 10-step checklist walked)
+
+**The verb (a8's charge; A53's enforcement sentence made literal).**
+`projection rule <finding-key> (--confirm | --reject) --by <name> [--rationale <text>]
+[--format json]` records an `OperatorRuling<FindingKey>` in the keyed ruling store under
+the SAME estate root the board reads, and renders the judgment back through the one-mint
+board copy (`Estate.rulingText`) — the verb's echo and the board's line are one sentence.
+The checklist, walked: Intent.Rule + PlanAction.RecordRuling/RuleArgs (MovementSpec,
+reified-record-from-birth) → parse arm → `planRule` (plan) → `reservedFlowVerbs` + "rule"
+(NM-10 auto-covers the flow-name collision) → `Faces/Rule.fs` → Program dispatch + usage →
+`rule.recorded` Voice copy + `all` + DocSection §13 → the three VoiceTotality lists →
+CliExit (`rule.*` → 2; `rule.writeFailed` rides the write axis 1) → ConfigSchema: NO new
+config key (the verb is store-backed, not config-backed) — step 10 verified empty.
+
+**Plan-time key parsing (a deliberate tightening).** The finding key parses AT PLAN time
+(`FindingKey.tryParse`): judgment is never recorded against a token the vocabulary does
+not recognize — `cli.rule.keyUnknown` names the token. Exactly one verdict flag
+(`cli.rule.noVerdict` / `cli.rule.bothVerdicts`); the author is MANDATORY (`--by`,
+`cli.rule.noBy` — the approve/WriteSignoff convention: judgment is never
+ambient-attributed, so no Environment.UserName default); a blank rationale refuses
+(`cli.rule.rationaleBlank` — omit the flag instead).
+
+**Scope guard, held.** Record + render ONLY: the verb persists and echoes; no policy or
+model application (align-II.0 standing ruling). The success copy says so ("recorded …
+renders it on the finding at the next check"), and the follow-up action names the board.
+
+**Two named deferrals (unchanged triggers).**
+- *EvidenceDigest basis*: the ruling anchors `Basis = FindingKey` (self-anchor). Anchoring
+  to a per-finding evidence digest awaits the first `ReopenCondition.OnEvidenceChange`
+  consumer — a reopen compare needs a comparable per-finding evidence identity, which the
+  estate does not yet mint (fingerprints are per (env, kind), not per finding).
+- *ApprovalStore ByProposal wire* (from align-II.3): does NOT ride this verb — `rule` is
+  FindingKey-grain; per-proposal suggest-config rejection persists at proposal-key grain.
+  Trigger stands: the first operator flow needing a rejected proposal durable across runs.
+
+Gates: the verb suites 310/0 (MovementSurface + VoiceTotality + AxiomTests with the added
+A53 citation); matrix regen no-drift; delta-lint 82=82; fast + perf per the ladder.

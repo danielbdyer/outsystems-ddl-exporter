@@ -28,6 +28,7 @@ open Projection.Cli.Faces.Estate
 open Projection.Cli.Faces.Fidelity
 open Projection.Cli.Faces.Slice
 open Projection.Cli.Faces.Sync
+open Projection.Cli.Faces.Rule
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
 /// are a typed `string list` carrying the structured help-page
@@ -77,6 +78,10 @@ let private usageLines : string list =
         "    projection synth-correct --out <path>   propose a blessed-correction artifact (review/edit/bless)"
         "    projection sync <env> [--format json]   witness the environment's OSSYS metadata into the local"
         "                      sink (a forced total read + the displacement journal) and stamp its name"
+        "    projection rule <finding-key> (--confirm | --reject) --by <name> [--rationale <text>]"
+        "                      record an operator ruling on one estate finding (the key printed in"
+        "                      environments.json); the board renders it on the finding at the next check —"
+        "                      the ruling is recorded and rendered, never auto-applied to policy or model"
         "    projection inspect [<runId> [<runId>]]  a stored run (no id = latest; arrows dig, PgUp/PgDn walk runs)"
         "    projection init                 scaffold a projection.json"
         "    projection revert [--script <p>] --against <env> [--go] [--force]   undo a transfer: run"
@@ -304,6 +309,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
             (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
     | PlanAction.CaptureProfile (conn, out) -> shellRun "projection capture-profile" Shell.Go (fun () -> runCaptureProfile conn out)
     | PlanAction.SyncEnvironment args -> shellRun "projection sync" Shell.Go (fun () -> runSync args)
+    | PlanAction.RecordRuling args -> shellRun "projection rule" Shell.Go (fun () -> runRule args)
     | PlanAction.ProposeCorrection (model, modelOssys, out) -> shellRun "projection synth-correct" Shell.Go (fun () -> runProposeCorrection model modelOssys out)
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env

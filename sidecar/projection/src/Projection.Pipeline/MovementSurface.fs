@@ -1042,7 +1042,7 @@ module ProjectionConfig =
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
         set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
-              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run"; "sync" ]
+              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run"; "sync"; "rule" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -2722,6 +2722,52 @@ module Command =
                 | Error es -> PlanAction.Refused (6, List.head es)
         { Notes = []; Action = action }
 
+    /// Route a `rule` verb tail (align-II.6; A53): `rule <finding-key>
+    /// (--confirm | --reject) --by <name> [--rationale <text>] [--format
+    /// json]` — record an operator ruling on one estate finding, keyed by
+    /// the cross-artifact finding key the board and environments.json
+    /// print. The key parses at plan time (a malformed or unknown token is
+    /// a named refusal — judgment is never recorded against a key the
+    /// vocabulary does not recognize); the verdict is exactly one of
+    /// --confirm/--reject; the author is mandatory (--by — the approve
+    /// convention: judgment is never ambient-attributed). Record + render
+    /// ONLY (the align-II.0 standing ruling).
+    let planRule (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let keyArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match keyArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.rule.noKey" "projection rule: name the finding to rule (rule <finding-key> — the key printed in environments.json, e.g. schema.presence:Customer).")
+            | Some raw ->
+                match FindingKey.tryParse raw with
+                | None ->
+                    PlanAction.Refused (2, err "cli.rule.keyUnknown" (sprintf "projection rule: '%s' is not a finding key — the form is <kind-token>:<subject> as printed in environments.json (e.g. identity.cutoverCorrespondence:dbo.OSUSR_APP_SHIPMENT)." raw))
+                | Some key ->
+                    match List.contains "--confirm" args, List.contains "--reject" args with
+                    | true, true ->
+                        PlanAction.Refused (2, err "cli.rule.bothVerdicts" "projection rule: --confirm and --reject are one choice — pass exactly one.")
+                    | false, false ->
+                        PlanAction.Refused (2, err "cli.rule.noVerdict" "projection rule: state the verdict — --confirm or --reject.")
+                    | confirmed, _ ->
+                        match valueOf "--by" with
+                        | None ->
+                            PlanAction.Refused (2, err "cli.rule.noBy" "projection rule: name who rules (--by <name>) — a ruling always carries its author.")
+                        | Some by when String.IsNullOrWhiteSpace by ->
+                            PlanAction.Refused (2, err "cli.rule.noBy" "projection rule: name who rules (--by <name>) — a ruling always carries its author.")
+                        | Some by ->
+                            match valueOf "--rationale" with
+                            | Some r when String.IsNullOrWhiteSpace r ->
+                                PlanAction.Refused (2, err "cli.rule.rationaleBlank" "projection rule: a supplied --rationale cannot be blank — omit the flag instead.")
+                            | rationale ->
+                                PlanAction.RecordRuling
+                                    { Key = key
+                                      Verdict = if confirmed then RulingVerdict.Confirmed else RulingVerdict.Rejected
+                                      By = by
+                                      Rationale = rationale
+                                      AsJson = (valueOf "--format" = Some "json") }
+        { Notes = []; Action = action }
+
     /// Route a `synth-correct` verb tail (FUZZING §2.2, slice F0c-I/O):
     /// `synth-correct --out <path>` proposes a first-draft blessed-correction
     /// artifact from the CONFIGURED model's catalog (the proposer types PII by
@@ -2776,6 +2822,9 @@ module Command =
         // `sync <env>` — the sink's naming verb (S6): forced total
         // witnessed read + displacement report + the env-label stamp.
         | "sync" :: rest -> Result.success (Intent.Sync rest)
+        // `rule <finding-key>` — record an operator ruling on one estate
+        // finding (align-II.6; A53). Record + render only.
+        | "rule" :: rest -> Result.success (Intent.Rule rest)
         // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
         // `argv.[0]` match in `Program.main`, now first-class typed intents on the
         // one dispatch plane. `slice-reset` is `slice-apply` under `reset = true`.
@@ -2845,6 +2894,7 @@ module Command =
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
         | Intent.Sync args         -> planSync cfg args
+        | Intent.Rule args         -> planRule args
         | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }
         | Intent.SliceApply (reset, args)  -> { Notes = []; Action = PlanAction.RunSliceApply (reset, args) }
         | Intent.SliceFlow args            -> { Notes = []; Action = PlanAction.RunSliceFlow args }

@@ -51,6 +51,8 @@
     <Compile Include="Faces/Slice.fs" />
     <!-- Faces/Sync.fs: the sink's naming face (projection sync; the data-sink chapter, S6). -->
     <Compile Include="Faces/Sync.fs" />
+    <!-- Faces/Rule.fs: the ruling face (projection rule; align-II.6, A53 — record + render only). -->
+    <Compile Include="Faces/Rule.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
