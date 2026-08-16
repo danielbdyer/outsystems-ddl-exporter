@@ -2303,3 +2303,28 @@ fsync append; a torn trailing line tolerated, an interior corrupt line thrown.
 
 **Property test.** (at promotion) FsCheck snapshot chains through `Ledger.replay`; the
 erasure-witness inequality; the zero-displacement silence law.
+
+## A50 — the operator outcome space is enumerable (the alignment program, Chapter I open, 2026-08-16)
+
+*Status: CANDIDATE (Bucket-C stub at chapter open; promotion trigger = align-I.2 lands
+`OverlayAxis.Identity`, the total `axisOfPolicyAxis` map, and the totality property).*
+
+**Statement.** Every operator decision channel is a value of the axis vocabulary:
+`axisOfPolicyAxis : PolicyAxis → OverlayAxis` is TOTAL — every Policy axis has a designated
+OverlayAxis — and the axis vocabulary expands only by the trigger discipline (a new Policy
+channel cannot land without an axis ruling). Consequently conflict detection, by-axis
+registry queries, the manifest's applied-transforms enumeration, and the policy DSL all
+quantify over the REAL operator outcome space, and `PolicyExpr.Override` is total over the
+axis set or refuses by name — never a silent no-op. (The audit found the prior stated
+relation `OverlayAxis ⊃ Policy DU axes` false in both directions: Policy grew
+`UserMatching` + `BridgeRetarget` with no axis counterpart while `Override(Ordering)`
+silently evaluated to `Policy.empty` — the documented collapse trigger had fired unnoticed
+at `PolicyExpr.eval`.)
+
+**Enforcement.** (at promotion) the total map lives in Core beside the DU (the
+`WriteSignoff.allModes` single-source shape); the DU expansion discipline (DECISIONS
+2026-05-16, four steps) governs every widening; `Override`'s arms are exhaustive over the
+axis set with any unaddressable axis a named refusal.
+
+**Property test.** (at promotion) "every Policy axis has a designated OverlayAxis" +
+`Override` totality-or-named-refusal.

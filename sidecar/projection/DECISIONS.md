@@ -31425,3 +31425,44 @@ reified-primitive arcs (0/R/E/T/S/L/H/X), and the certified anti-findings.
   Findings become work only through operator adjudication; each adopted arc opens in
   the house rhythm (charter frame, same-commit laws, per-slice gates, close ritual).
   No code changed under the audit; no trigger fires from it.
+
+## 2026-08-16 — THE ALIGNMENT PROGRAM OPENS (operator authorization; Chapter I of three)
+
+The operator adjudicated the audit the same day it landed: **full execution of all eight
+arcs**, "spare no expense," via the approved master plan (plan-mode review with three
+recorded rulings). `CHAPTER_ALIGN_I_OPEN.md` is Chapter I's frame; A50 lands as a
+Bucket-C candidate this commit.
+
+**Operator rulings (2026-08-16, plan-mode questions):**
+
+1. **Three chapters, run consecutively** under this one authorization — I (Arcs 0+T,
+   "The Teleology Chapter"), II (Arcs R+E, "The Ruling & the Epistemics"), III (Arcs
+   S+L+H+X, "State, Law, Grain & Lexicon") — each with its own open/close ritual, no
+   pauses between.
+2. **July debt**: the eleven `SamplePr*` FS3511s fold in as align-I.1 (they block the
+   solution-wide Release build every close ritual wants); the 82 lint sites and the two
+   transfer-leg Docker reds stay OUT — their own future arcs.
+3. **Delivery**: keep stacking on PR #695 (one narrative, charter → sink → audit →
+   alignment); description refreshed at each chapter close; commit prefix
+   `align-<I|II|III>.<n>`.
+
+**The fired trigger, acknowledged and resolved (the audit's a3-F1).** The 2026-05-16
+deferral ("the Policy.fs ↔ OverlayAxis structural collapse … deferred to whichever
+consumer first needs to consult both vocabularies at one call site") FIRED at
+`PolicyExpr.eval`'s `Override` arm and went unnoticed — the arm consults both
+vocabularies and maps `Override(Ordering, _)` to `Policy.empty` as a silent no-op, while
+Policy grew `UserMatching` and `BridgeRetarget` with no axis counterpart. **Resolution =
+path (a)-lite**: `OverlayAxis` stays the canonical intent vocabulary and gains
+`Identity` (align-I.2, appended AFTER `Ordering` — DU order is T1-load-bearing for the
+durable applied-transforms sort); the total `axisOfPolicyAxis` map in Core is the
+consult-both answer; `Override` becomes total-or-named-refusal; NO structural type
+fusion (the collapse refactor is retired as unnecessary, not re-deferred). A50 is the
+law this becomes.
+
+**Standing program rules (all three chapters):** behavioral slices carry their DECISIONS
+entry with the change; new DU variants append when DU order is serialization-load-bearing;
+the "Witness-" naming freeze applies to new witness-plane names from Chapter II onward
+(the X-arc's measured cut then has a fixed target); the known-red Docker set stays exactly
+the two named transfer-leg tests; delta-lint stays 82 = 82 substance-normalized per commit.
+The I.5 sequence convergence carries an escape hatch (ship the registry alone, defer
+convergence by named trigger) — if pulled, this entry gains the trigger row.

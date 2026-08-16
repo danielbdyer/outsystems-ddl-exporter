@@ -13,7 +13,7 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tole
 | Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 84 |
 | Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
-| **total axiom entries** | | **122** |
+| **total axiom entries** | | **123** |
 
 **Verifiability gate: `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
