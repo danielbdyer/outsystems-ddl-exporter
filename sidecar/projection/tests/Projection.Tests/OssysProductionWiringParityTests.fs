@@ -268,6 +268,10 @@ let ``align-II.7: the parsed targets are exactly the MetadataSnapshot fields —
         Reflection.FSharpType.GetRecordFields typeof<MetadataSnapshotRunner.MetadataSnapshot>
         |> Array.map (fun p -> p.Name)
         |> Array.toList
+        // `Scope` is the stamped acquisition METADATA (align-II.9), not a
+        // wire rowset — the one declared non-rowset field. A second
+        // metadata field must join this list deliberately or fail here.
+        |> List.filter (fun name -> name <> "Scope")
     Assert.Equal<Set<string>>(Set.ofList snapshotFields, Set.ofList parsedTargets)
     Assert.Equal(List.length parsedTargets, parsedTargets |> List.distinct |> List.length)
 
@@ -381,3 +385,87 @@ let ``5.1.γ row 36: noOpProgress is a no-throw default`` () =
 [<Fact>]
 let ``5.1.γ: production-wiring parity file present`` () =
     Assert.True(true)
+
+// -----------------------------------------------------------------
+// align-II.9 (E2; audit a1) — AcquisitionScope: how an acquisition was
+// scoped, as a value. The ONE classifier reads the parameters; the
+// totality gate reads the type; the S13 fast-path gate compares scope
+// subsumption. These pin the classifier's totality, the gate
+// equivalence, the subsumption law, and the wire-token round-trip.
+// -----------------------------------------------------------------
+
+/// Every (modules × system × inactive × attrs × filter) combination —
+/// the classifier's whole input space at the boolean grain.
+let private allParameterShapes : MetadataSnapshotRunner.SnapshotParameters list =
+    [ for modules in [ []; [ "Sales" ] ] do
+        for includeSystem in [ true; false ] do
+            for includeInactive in [ true; false ] do
+                for onlyActive in [ true; false ] do
+                    for filter in [ None; Some "{}" ] ->
+                        { MetadataSnapshotRunner.SnapshotParameters.ModuleNames = modules
+                          IncludeSystem = includeSystem
+                          IncludeInactive = includeInactive
+                          OnlyActiveAttributes = onlyActive
+                          EntityFilterJson = filter } ]
+
+[<Fact>]
+let ``align-II.9: ofParameters is Total exactly on the show-me-everything shape — the totality gate reads the type (equivalence over the whole space)`` () =
+    Assert.Equal(32, List.length allParameterShapes)
+    for p in allParameterShapes do
+        let scope = MetadataSnapshotRunner.AcquisitionScope.ofParameters p
+        // The retired structural-equality predicate and the classifier
+        // agree everywhere — the gate's meaning did not move.
+        Assert.True(
+            (p = MetadataSnapshotRunner.defaultParameters) = (scope = MetadataSnapshotRunner.AcquisitionScope.Total),
+            sprintf "gate equivalence broke on %A (scope %A)" p scope)
+        // Scoped never carries an empty axis list (Total IS that state).
+        match scope with
+        | MetadataSnapshotRunner.AcquisitionScope.Scoped axes -> Assert.NotEmpty axes
+        | MetadataSnapshotRunner.AcquisitionScope.Total -> ()
+
+[<Fact>]
+let ``align-II.9: each parameter knob fires exactly its named axis`` () =
+    let axesOf p =
+        match MetadataSnapshotRunner.AcquisitionScope.ofParameters p with
+        | MetadataSnapshotRunner.AcquisitionScope.Total -> []
+        | MetadataSnapshotRunner.AcquisitionScope.Scoped axes -> axes
+    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>(
+        [ MetadataSnapshotRunner.ScopeAxis.Modules ],
+        axesOf { MetadataSnapshotRunner.defaultParameters with ModuleNames = [ "Sales" ] })
+    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>(
+        [ MetadataSnapshotRunner.ScopeAxis.System ],
+        axesOf { MetadataSnapshotRunner.defaultParameters with IncludeSystem = false })
+    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>(
+        [ MetadataSnapshotRunner.ScopeAxis.Lifecycle ],
+        axesOf { MetadataSnapshotRunner.defaultParameters with IncludeInactive = false })
+    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>(
+        [ MetadataSnapshotRunner.ScopeAxis.AttributeActivity ],
+        axesOf { MetadataSnapshotRunner.defaultParameters with OnlyActiveAttributes = true })
+    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>(
+        [ MetadataSnapshotRunner.ScopeAxis.EntityFilter ],
+        axesOf { MetadataSnapshotRunner.defaultParameters with EntityFilterJson = Some "{}" })
+
+[<Fact>]
+let ``align-II.9: a held-Total state serves any request without the attribute axis — the S13 gate's subsumption, behavior-identical to the residual special-case`` () =
+    for p in allParameterShapes do
+        let requested = MetadataSnapshotRunner.AcquisitionScope.ofParameters p
+        // The named residual: servability is exactly the absence of the
+        // attribute axis — the boolean the gate used to special-case.
+        Assert.Equal(
+            not p.OnlyActiveAttributes,
+            MetadataSnapshotRunner.AcquisitionScope.serves MetadataSnapshotRunner.AcquisitionScope.Total requested)
+    // A scoped held state serves only its identical scope (the honest
+    // future-proof: nothing witnesses scoped today).
+    let scoped = MetadataSnapshotRunner.AcquisitionScope.Scoped [ MetadataSnapshotRunner.ScopeAxis.Modules ]
+    Assert.True(MetadataSnapshotRunner.AcquisitionScope.serves scoped scoped)
+    Assert.False(MetadataSnapshotRunner.AcquisitionScope.serves scoped MetadataSnapshotRunner.AcquisitionScope.Total)
+
+[<Fact>]
+let ``align-II.9: the scope wire token round-trips over the whole classifier range and refuses junk`` () =
+    for p in allParameterShapes do
+        let scope = MetadataSnapshotRunner.AcquisitionScope.ofParameters p
+        Assert.Equal<MetadataSnapshotRunner.AcquisitionScope option>(
+            Some scope,
+            MetadataSnapshotRunner.AcquisitionScope.tryParse (MetadataSnapshotRunner.AcquisitionScope.token scope))
+    for junk in [ ""; "scoped:"; "scoped:nonsense"; "partial"; "scoped:modules+nonsense" ] do
+        Assert.Equal<MetadataSnapshotRunner.AcquisitionScope option>(None, MetadataSnapshotRunner.AcquisitionScope.tryParse junk)

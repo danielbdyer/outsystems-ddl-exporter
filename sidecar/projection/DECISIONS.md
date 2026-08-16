@@ -32081,3 +32081,39 @@ contract-name-citation law, and capability-invariance (the S2 pin, unchanged).
 
 Verified at scale: the armed comprehensive canary (`PROJECTION_RUN_COMPREHENSIVE_CANARY=1`,
 the 300-table fixture) ran the reshaped projection end-to-end green.
+
+## 2026-08-16 — align-II.9: AcquisitionScope — how a read was scoped becomes a value (the E-track adapter trio closes)
+
+**a1's charge.** "Was this read total?" lived as a structural equality against
+`defaultParameters`, the S13 fast-path residual lived as a bare `OnlyActiveAttributes`
+special-case, and a gated skip said "scoped" without saying HOW. Now `AcquisitionScope =
+Total | Scoped of ScopeAxis list` (`ScopeAxis = Modules | System | Lifecycle |
+AttributeActivity | EntityFilter`) with ONE classifier (`ofParameters`) reading the
+parameters; `runAsync` stamps every `MetadataSnapshot` with its scope; the totality gate
+READS THE TYPE (`isTotalAcquisition = (ofParameters p = Total)` — equivalence with the
+retired structural equality law-pinned over the whole 32-shape space); the witness skip
+carries the firing axes (`WitnessOutcome.SkippedScoped of ScopeAxis list` — the FS0025
+fan-out was two wildcard sites); and the S13 fast-path gate compares SCOPE SUBSUMPTION
+(`AcquisitionScope.serves held requested`): a held-Total state serves any request
+without the ATTRIBUTE axis — A49's named residual is now a named axis — and behavior is
+IDENTICAL to the special-case it replaces (law: `serves Total (ofParameters p) = not
+p.OnlyActiveAttributes` over the whole space).
+
+**The codec field (R12, held).** `scope` is an OPTIONAL 17th field defaulting `Total` —
+NO codecVersion bump, no forced re-witnessing: a pre-II.9 stored snapshot (no key) reads
+back `Total`, which is TRUE by the totality gate's own invariant (only total acquisitions
+were ever witnessed). A present token round-trips; a malformed one fail-closes on its own
+code (`sink.codec.scopeMalformed`), the token named. Byte-note: newly-written snapshots
+gain the key; the witness diffs CONTENT, so CDC-silence semantics are untouched.
+
+**Two domain rulings surfaced by the laws themselves (test-first honesty).**
+- The DISPLACEMENT algebra is rowset-grain and its domain is totality-gated snapshots:
+  `fullyPopulated` stays `Scope = Total` (the T19/FTC laws quantify over the algebra's
+  real domain), and the codec's non-default coverage is the explicit R12 scoped
+  round-trip law instead.
+- The II.7 parsed⇔fields bidirectional law now subtracts `Scope` as the ONE declared
+  non-rowset metadata field — a second metadata field must join that declaration
+  deliberately or the law fails.
+
+Additive throughout: wire reads, witness outcomes, and the fast-path decision are
+behavior-identical on every existing shape; the only new surface is the named vocabulary.

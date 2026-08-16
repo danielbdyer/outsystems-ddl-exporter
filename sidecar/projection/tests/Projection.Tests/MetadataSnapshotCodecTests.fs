@@ -96,3 +96,38 @@ module MetadataSnapshotCodecTests =
         | Ok _ -> Assert.Fail "a mistyped field parsed"
         | Error errors ->
             Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.codec.expectedInt")
+
+    // -- align-II.9 (E2) — the OPTIONAL scope field (R12) --------------------
+    // A pre-II.9 stored snapshot (no `scope` key) deserializes with
+    // Scope = Total — honest by the totality gate's own invariant (only
+    // total acquisitions were ever witnessed); a present scope round-trips
+    // (the fully-populated property above varies it by seed); a malformed
+    // token fail-closes with the token named. No codecVersion bump.
+
+    [<Fact>]
+    let ``sink codec scope (R12): a snapshot document with no scope key deserializes as Total — old stores read back truthfully`` () =
+        let text = MetadataSnapshotCodec.serialize OssysSnapshotBuilders.emptySnapshot
+        Assert.Contains("\"scope\": \"total\"", text)
+        let sixteenField = text.Replace(",\n  \"scope\": \"total\"", "")
+        Assert.DoesNotContain("scope", sixteenField)
+        match MetadataSnapshotCodec.deserialize sixteenField with
+        | Ok round -> Assert.Equal(MetadataSnapshotRunner.AcquisitionScope.Total, round.Scope)
+        | Error errors -> Assert.Fail (sprintf "the 16-field document failed to read: %A" errors)
+
+    [<Fact>]
+    let ``sink codec scope (R12): a scoped token round-trips and a malformed one refuses by name`` () =
+        let scoped =
+            { OssysSnapshotBuilders.emptySnapshot with
+                Scope =
+                    MetadataSnapshotRunner.AcquisitionScope.Scoped
+                        [ MetadataSnapshotRunner.ScopeAxis.Modules
+                          MetadataSnapshotRunner.ScopeAxis.EntityFilter ] }
+        match MetadataSnapshotCodec.deserialize (MetadataSnapshotCodec.serialize scoped) with
+        | Ok round -> Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(scoped, round)
+        | Error errors -> Assert.Fail (sprintf "scoped snapshot failed to round-trip: %A" errors)
+        let text = MetadataSnapshotCodec.serialize OssysSnapshotBuilders.emptySnapshot
+        let malformed = text.Replace("\"scope\": \"total\"", "\"scope\": \"scoped:nonsense\"")
+        match MetadataSnapshotCodec.deserialize malformed with
+        | Ok _ -> Assert.Fail "a malformed scope token parsed"
+        | Error errors ->
+            Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.codec.scopeMalformed")

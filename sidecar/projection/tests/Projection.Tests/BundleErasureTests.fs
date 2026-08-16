@@ -45,7 +45,8 @@ let private snapshotWith
       PhysicalTables = physicalTables; ColumnReality = []; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = []
-      Capabilities = [] }
+      Capabilities = []
+      Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
 /// A snapshot every projection joins cleanly — the constant modulus alone.
 let private fullyJoined () : MetadataSnapshotRunner.MetadataSnapshot =

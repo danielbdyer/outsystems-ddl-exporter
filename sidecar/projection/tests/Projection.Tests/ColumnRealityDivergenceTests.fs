@@ -35,7 +35,8 @@ let private snapshotOf
       PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = []
-      Capabilities = [] }
+      Capabilities = []
+      Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
 let private divergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnRealityDivergences s

@@ -61,14 +61,16 @@ module SinkStoreTests =
     let ``totality gate: only a defaultParameters-shaped read witnesses; each scoped axis skips by name`` () =
         withTempStore (fun root ->
             let scoped =
-                [ { MetadataSnapshotRunner.defaultParameters with ModuleNames = [ "Fulfillment" ] }
-                  { MetadataSnapshotRunner.defaultParameters with IncludeInactive = false }
-                  { MetadataSnapshotRunner.defaultParameters with OnlyActiveAttributes = true }
-                  { MetadataSnapshotRunner.defaultParameters with IncludeSystem = false }
-                  { MetadataSnapshotRunner.defaultParameters with EntityFilterJson = Some "{}" } ]
-            for parameters in scoped do
+                [ { MetadataSnapshotRunner.defaultParameters with ModuleNames = [ "Fulfillment" ] }, MetadataSnapshotRunner.ScopeAxis.Modules
+                  { MetadataSnapshotRunner.defaultParameters with IncludeInactive = false }, MetadataSnapshotRunner.ScopeAxis.Lifecycle
+                  { MetadataSnapshotRunner.defaultParameters with OnlyActiveAttributes = true }, MetadataSnapshotRunner.ScopeAxis.AttributeActivity
+                  { MetadataSnapshotRunner.defaultParameters with IncludeSystem = false }, MetadataSnapshotRunner.ScopeAxis.System
+                  { MetadataSnapshotRunner.defaultParameters with EntityFilterJson = Some "{}" }, MetadataSnapshotRunner.ScopeAxis.EntityFilter ]
+            for parameters, expectedAxis in scoped do
                 match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] parameters (snapshotA ()) with
-                | SinkStore.WitnessOutcome.SkippedScoped _ -> ()
+                // align-II.9 — the skip names the axis that fired the gate.
+                | SinkStore.WitnessOutcome.SkippedScoped axes ->
+                    Assert.Equal<MetadataSnapshotRunner.ScopeAxis list>([ expectedAxis ], axes)
                 | other -> Assert.Fail (sprintf "scoped read was not gated: %A" other)
             // Nothing was written by any of them.
             Assert.False(Directory.Exists(SinkStore.sinkRoot root) && Directory.EnumerateFileSystemEntries(SinkStore.sinkRoot root) |> Seq.isEmpty |> not))

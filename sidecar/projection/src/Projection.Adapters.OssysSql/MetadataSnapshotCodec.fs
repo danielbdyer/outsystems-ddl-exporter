@@ -781,6 +781,10 @@ module MetadataSnapshotCodec =
             wRows jw "sequences" writeSequenceRow s.Sequences
             wRows jw "temporal" writeTemporalRow s.Temporal
             wRows jw "capabilities" writeCapabilityRow s.Capabilities
+            // align-II.9 — the acquisition scope, appended last (optional
+            // on read, defaulting Total: old stored snapshots are honest
+            // by the totality gate's own invariant; NO version bump).
+            jw.WriteString("scope", MetadataSnapshotRunner.AcquisitionScope.token s.Scope)
             jw.WriteEndObject())
 
     /// The `serialize` sibling that stays in UTF-8 (for a future embedder
@@ -827,6 +831,24 @@ module MetadataSnapshotCodec =
                     let! sequences = reqList root "sequences" readSequenceRow
                     let! temporal = reqList root "temporal" readTemporalRow
                     let! capabilities = reqList root "capabilities" readCapabilityRow
+                    // align-II.9 — the OPTIONAL scope field: absent reads
+                    // `Total` (every witnessed snapshot predating the field
+                    // WAS total — the totality gate's invariant); a present
+                    // but malformed token fail-closes with the token named
+                    // (never silently read as any particular scope).
+                    let! scope =
+                        match root.TryGetProperty "scope" with
+                        | false, _ -> Ok MetadataSnapshotRunner.AcquisitionScope.Total
+                        | true, v when v.ValueKind = JsonValueKind.String ->
+                            let raw = match v.GetString() with | null -> "" | s -> s
+                            match MetadataSnapshotRunner.AcquisitionScope.tryParse raw with
+                            | Some s -> Ok s
+                            | None ->
+                                fail "sink.codec.scopeMalformed"
+                                    (sprintf "snapshot 'scope' token '%s' is not a scope the codec knows (total | scoped:<axes>)." raw)
+                        | _ ->
+                            fail "sink.codec.scopeMalformed"
+                                "snapshot 'scope' must be a string token when present."
                     return
                         ({ Modules = modules
                            Entities = entities
@@ -843,5 +865,6 @@ module MetadataSnapshotCodec =
                            Triggers = triggers
                            Sequences = sequences
                            Temporal = temporal
-                           Capabilities = capabilities } : MetadataSnapshotRunner.MetadataSnapshot)
+                           Capabilities = capabilities
+                           Scope = scope } : MetadataSnapshotRunner.MetadataSnapshot)
                 })

@@ -2025,15 +2025,23 @@ module Compose =
                 // STANDING policy governs the model read; per-environment
                 // refinements bind where names exist (the estate face).
                 let policy = Config.SinkSection.effective None cfg.Sink
-                // The sink holds TOTAL witnessed states. The module/entity/
+                // The sink holds TOTAL witnessed states. The gate compares
+                // SCOPE SUBSUMPTION (align-II.9): the module/entity/
                 // lifecycle axes narrow identically on either side of the
                 // wire (A49's three-way law — the same pure seam below), so
-                // a module-scoped model still rides the fast path. The
-                // ATTRIBUTE axis (`onlyActiveAttributes`, the config
-                // default) is that law's NAMED RESIDUAL: the pure seam
-                // cannot yet express it, so an attribute-narrowed read
-                // always pays the wire — never a silent divergence.
-                if (policy = Config.SinkPolicy.Off && not refresh) || cfg.Model.OnlyActiveAttributes then
+                // a held-Total state serves any request without the
+                // ATTRIBUTE axis — that axis is the law's NAMED RESIDUAL,
+                // a named `ScopeAxis` now, and it always pays the wire
+                // (never a silent divergence). Behavior-identical to the
+                // `onlyActiveAttributes` special-case it replaces,
+                // law-pinned.
+                let requestedScope =
+                    Projection.Adapters.OssysSql.MetadataSnapshotRunner.AcquisitionScope.ofParameters
+                        (SnapshotScopeBinding.fromModel cfg.Model)
+                let sinkServable =
+                    Projection.Adapters.OssysSql.MetadataSnapshotRunner.AcquisitionScope.serves
+                        Projection.Adapters.OssysSql.MetadataSnapshotRunner.AcquisitionScope.Total requestedScope
+                if (policy = Config.SinkPolicy.Off && not refresh) || not sinkServable then
                     // The standing wire read, untouched (byte-identical).
                     let! live = LiveModelRead.fromConnSpecWith (SnapshotScopeBinding.fromModel cfg.Model) connSpec
                     return live |> Result.bind (applyModuleFilter cfg)

@@ -116,7 +116,8 @@ let private snapshot () : MetadataSnapshotRunner.MetadataSnapshot =
       ForeignKeysReality = [ fkRealityRow 5000 (Some "CASCADE") ]
       ForeignKeyColumns  = [ fkColumnRow 201 5000 ]
       Triggers = []
-      Capabilities = [] }
+      Capabilities = []
+      Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
 let private referenceByAttrId (bundle: OssysRowsetTypes.RowsetBundle) (attrId: int) : OssysRowsetTypes.ReferenceRow =
     bundle.References |> List.find (fun r -> r.AttrId = attrId)

@@ -78,6 +78,110 @@ module MetadataSnapshotRunner =
             EntityFilterJson     = None
         }
 
+    /// align-II.9 (E2; audit a1) — one axis a scoped acquisition narrowed
+    /// on. Each axis names the `SnapshotParameters` knob that fired it;
+    /// the ATTRIBUTE axis is A49's named residual — the pure narrowing
+    /// seam cannot express it, so it always pays the wire.
+    [<RequireQualifiedAccess>]
+    type ScopeAxis =
+        /// `ModuleNames` non-empty — narrowed to named modules.
+        | Modules
+        /// `IncludeSystem = false` — system modules excluded.
+        | System
+        /// `IncludeInactive = false` — inactive entities excluded.
+        | Lifecycle
+        /// `OnlyActiveAttributes = true` — inactive attributes excluded
+        /// (A49's named residual: never sink-servable).
+        | AttributeActivity
+        /// `EntityFilterJson` present — narrowed to named entities.
+        | EntityFilter
+
+    /// align-II.9 — HOW an acquisition was scoped, as a value: total (the
+    /// show-me-everything shape) or narrowed on the named axes. Stamped on
+    /// every `MetadataSnapshot`; persisted by the codec as an OPTIONAL
+    /// field defaulting `Total` — honest by the totality gate's own
+    /// invariant (only total acquisitions were ever witnessed), so old
+    /// stored snapshots read back truthfully with no version bump.
+    [<RequireQualifiedAccess>]
+    type AcquisitionScope =
+        | Total
+        | Scoped of axes: ScopeAxis list
+
+    [<RequireQualifiedAccess>]
+    module ScopeAxis =
+
+        /// Every axis, in canonical (declaration) order — the order
+        /// `AcquisitionScope.ofParameters` emits and the codec persists.
+        let all : ScopeAxis list =
+            [ ScopeAxis.Modules; ScopeAxis.System; ScopeAxis.Lifecycle
+              ScopeAxis.AttributeActivity; ScopeAxis.EntityFilter ]
+
+        /// Wire token (the codec's closed vocabulary).
+        let token (a: ScopeAxis) : string =
+            match a with
+            | ScopeAxis.Modules           -> "modules"
+            | ScopeAxis.System            -> "system"
+            | ScopeAxis.Lifecycle         -> "lifecycle"
+            | ScopeAxis.AttributeActivity -> "attributeActivity"
+            | ScopeAxis.EntityFilter      -> "entityFilter"
+
+        let tryParse (t: string) : ScopeAxis option =
+            all |> List.tryFind (fun a -> token a = t)
+
+    [<RequireQualifiedAccess>]
+    module AcquisitionScope =
+
+        /// The ONE classifier: the scope an acquisition ran under, read
+        /// from its parameters. Emits axes in canonical order; the empty
+        /// axis list IS `Total` (never `Scoped []` — the constructor
+        /// discipline below keeps the two states distinct).
+        let ofParameters (p: SnapshotParameters) : AcquisitionScope =
+            let axes =
+                [ if not (List.isEmpty p.ModuleNames) then ScopeAxis.Modules
+                  if not p.IncludeSystem then ScopeAxis.System
+                  if not p.IncludeInactive then ScopeAxis.Lifecycle
+                  if p.OnlyActiveAttributes then ScopeAxis.AttributeActivity
+                  if Option.isSome p.EntityFilterJson then ScopeAxis.EntityFilter ]
+            match axes with
+            | [] -> AcquisitionScope.Total
+            | axes -> AcquisitionScope.Scoped axes
+
+        /// Whether a state witnessed under `held` can serve a read
+        /// requested under `requested` through the pure narrowing seam
+        /// (A49's three-way law): a TOTAL held state serves any request
+        /// narrowed on the module/system/lifecycle/entity axes (narrowing
+        /// commutes across the wire); the ATTRIBUTE axis is the law's
+        /// named residual — it always pays the wire. A scoped held state
+        /// serves only its identical scope (nothing witnesses scoped
+        /// today — the totality gate — so the arm is the honest
+        /// future-proof, never a guess).
+        let serves (held: AcquisitionScope) (requested: AcquisitionScope) : bool =
+            match held, requested with
+            | AcquisitionScope.Total, AcquisitionScope.Total -> true
+            | AcquisitionScope.Total, AcquisitionScope.Scoped axes ->
+                not (List.contains ScopeAxis.AttributeActivity axes)
+            | AcquisitionScope.Scoped h, r -> AcquisitionScope.Scoped h = r
+
+        /// Wire token: `total`, or `scoped:` + the axis tokens joined by
+        /// `+` in canonical order.
+        let token (s: AcquisitionScope) : string =
+            match s with
+            | AcquisitionScope.Total -> "total"
+            | AcquisitionScope.Scoped axes ->
+                "scoped:" + (axes |> List.map ScopeAxis.token |> String.concat "+")  // LINT-ALLOW: closed-vocabulary wire token minted at the codec boundary — a fixed discriminator prefix + validated axis tokens; the inverse tryParse round-trips it
+
+        /// The token's inverse — fail-closed: an unknown discriminator or
+        /// axis token, or an empty axis list, is `None` (a malformed
+        /// stored scope never silently reads as any particular scope).
+        let tryParse (raw: string) : AcquisitionScope option =
+            if raw = "total" then Some AcquisitionScope.Total
+            elif raw.StartsWith "scoped:" then
+                let parts = raw.Substring("scoped:".Length).Split '+' |> Array.toList
+                let axes = parts |> List.map ScopeAxis.tryParse
+                if List.isEmpty parts || axes |> List.exists Option.isNone then None
+                else Some (AcquisitionScope.Scoped (axes |> List.choose id))
+            else None
+
     /// Per-rowset progress observation. Invoked by `runAsync` after each
     /// rowset's parse completes (or skip completes, for the 18 V2-skipped
     /// rowsets). `ResultSetIndex` is the zero-based position in the
@@ -431,6 +535,13 @@ module MetadataSnapshotRunner =
             /// `toBundle` ignores it by design (capability-invariance is
             /// property-tested).
             Capabilities       : OssysCapabilityRow list
+            /// align-II.9 (E2) — HOW this acquisition was scoped, stamped
+            /// by `runAsync` from its own parameters (the one classifier).
+            /// The codec persists it as an OPTIONAL field defaulting
+            /// `Total` — old stored snapshots read back truthfully by the
+            /// totality gate's own invariant (only total acquisitions were
+            /// ever witnessed).
+            Scope              : AcquisitionScope
         }
 
     // -------------------------------------------------------------------
@@ -1136,6 +1247,7 @@ module MetadataSnapshotRunner =
                         Sequences          = sequences
                         Temporal           = temporal
                         Capabilities       = capabilities
+                        Scope              = AcquisitionScope.ofParameters parameters
                     }
             with
             | ex ->

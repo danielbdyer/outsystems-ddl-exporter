@@ -242,8 +242,10 @@ module SinkStore =
         /// The estate is byte-identical to the latest witnessed state —
         /// nothing written (the metadata plane's CDC-silence).
         | Unchanged of syncId: int
-        /// A scoped acquisition — witnessing refused by the totality gate.
-        | SkippedScoped of reason: string
+        /// A scoped acquisition — witnessing refused by the totality gate;
+        /// the axes it narrowed on, named (align-II.9: the scope is a
+        /// value, so the skip carries WHICH narrowing fired the gate).
+        | SkippedScoped of axes: MetadataSnapshotRunner.ScopeAxis list
         /// No store root resolved — live-only, named.
         | Disabled of reason: string
         /// The store was reachable but a write failed — ADVISORY; the
@@ -251,9 +253,11 @@ module SinkStore =
         | Failed of code: string * message: string
 
     /// The totality gate, pure: only the show-me-everything shape becomes
-    /// a sink state.
+    /// a sink state. align-II.9 — the gate READS THE TYPE: the one scope
+    /// classifier decides (the `parameters = defaultParameters` structural
+    /// equality it replaces is the same predicate, law-pinned).
     let isTotalAcquisition (parameters: MetadataSnapshotRunner.SnapshotParameters) : bool =
-        parameters = MetadataSnapshotRunner.defaultParameters
+        MetadataSnapshotRunner.AcquisitionScope.ofParameters parameters = MetadataSnapshotRunner.AcquisitionScope.Total
 
     /// Witness one acquisition. Resolves the store internally
     /// (`EstateStoreLocation.storeDir()`); gates on totality; canonicalizes;
@@ -275,9 +279,12 @@ module SinkStore =
         | None ->
             WitnessOutcome.Disabled "no store root (PROJECTION_ESTATE_DIR / PROJECTION_LEDGER_DIR unset) — live-only"
         | Some root ->
-            if not (isTotalAcquisition parameters) then
-                WitnessOutcome.SkippedScoped "scoped acquisition — only a total read becomes a sink state (the totality gate)"
-            else
+            match MetadataSnapshotRunner.AcquisitionScope.ofParameters parameters with
+            | MetadataSnapshotRunner.AcquisitionScope.Scoped axes ->
+                // The totality gate: only a total read becomes a sink
+                // state — the skip names the axes that narrowed this one.
+                WitnessOutcome.SkippedScoped axes
+            | MetadataSnapshotRunner.AcquisitionScope.Total ->
                 try
                     let digest = connDigest16 dataSource database
                     // The snapshot persists EXACTLY as acquired — the

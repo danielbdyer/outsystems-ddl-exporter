@@ -247,7 +247,10 @@ module SinkDisplacement =
           Triggers = []
           Sequences = []
           Temporal = []
-          Capabilities = [] }
+          Capabilities = []
+          // The genesis is a total nothing — the zero the totality-gated
+          // journal replays from (align-II.9: scope is a stamped value).
+          Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
     // ------------------------------------------------------------------
     // Canonical form: every rowset key-sorted. The algebra's laws hold

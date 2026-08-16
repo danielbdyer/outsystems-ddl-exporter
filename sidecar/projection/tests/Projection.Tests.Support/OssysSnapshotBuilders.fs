@@ -234,7 +234,8 @@ module OssysSnapshotBuilders =
           Triggers           = []
           Sequences          = []
           Temporal           = []
-          Capabilities       = [] }
+          Capabilities       = []
+          Scope              = MetadataSnapshotRunner.AcquisitionScope.Total }
 
     /// The common trio — modules + entities + attributes, physical axes empty.
     let snapshotOf
@@ -423,4 +424,10 @@ module OssysSnapshotBuilders =
                 HasAttrSsKey          = true
                 HasLength             = true
                 HasOrderNum           = (s % 2 = 1)
-                HasEntityDescription  = true } ] }
+                HasEntityDescription  = true } ]
+          // align-II.9 — Total, deliberately: this substrate feeds the
+          // DISPLACEMENT algebra's laws too, and that algebra's domain is
+          // totality-gated snapshots (only Total is ever witnessed). The
+          // codec's non-default scope coverage is the explicit scoped
+          // round-trip law in MetadataSnapshotCodecTests (R12).
+          Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
