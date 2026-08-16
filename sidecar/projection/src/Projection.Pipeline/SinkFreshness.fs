@@ -35,21 +35,27 @@ module SinkFreshness =
     let nameOf (t: TableFingerprint.TableTarget) : string =
         System.String.Concat(t.Schema, ".", t.Table)
 
-    /// A reading's recorded text — `count|maxPk|content`, absent terms as
-    /// `-`. One rendering, both sides (recorded at witness, compared at
-    /// probe), so equality is string equality.
-    let render (r: TableFingerprint.TableReading) : string =
-        sprintf "%d|%s|%s" r.RowCount (defaultArg r.MaxPk "-") (defaultArg r.Content "-")
+    /// The typed reading a probe measurement carries (align-II.11: the
+    /// manifest persists the three explicit fields; the packed
+    /// `count|maxPk|content` display form lives on `FingerprintReading.packed`).
+    let readingOf (r: TableFingerprint.TableReading) : SinkStore.FingerprintReading =
+        { RowCount = r.RowCount; MaxPk = r.MaxPk; Content = r.Content }
 
-    /// Probe the three targets on an open source connection → the rendered
-    /// (target, fingerprint) pairs. ADVISORY: a probe failure returns `[]`
+    /// A reading's display text — the S8 packed form (kept as the ONE
+    /// rendering for logs and old-manifest parsing; comparison no longer
+    /// rides it — `decide` compares fields).
+    let render (r: TableFingerprint.TableReading) : string =
+        SinkStore.FingerprintReading.packed (readingOf r)
+
+    /// Probe the three targets on an open source connection → the typed
+    /// (target, reading) pairs. ADVISORY: a probe failure returns `[]`
     /// (the witness records no fingerprints; `auto` then always reads live
     /// — freshness only ever degrades toward the wire, never toward stale
     /// reuse).
-    let probe (cnn: SqlConnection) : Task<(string * string) list> =
+    let probe (cnn: SqlConnection) : Task<(string * SinkStore.FingerprintReading) list> =
         task {
             match! TableFingerprint.probeWith "sink.fingerprint.probe" "sink.probeFailed" cnn targets with
-            | Ok readings -> return readings |> List.map (fun r -> nameOf r.Target, render r)
+            | Ok readings -> return readings |> List.map (fun r -> nameOf r.Target, readingOf r)
             | Error _ -> return []
         }
 
@@ -68,8 +74,11 @@ module SinkFreshness =
         | FingerprintAbsent
         /// The live probe failed NOW — freshness cannot be confirmed.
         | ProbeFailed
-        /// The estate moved: the named targets' readings differ.
-        | FingerprintMoved of targets: string list
+        /// The estate moved: each moved target with the AXES that moved
+        /// (align-II.11 — field-wise comparison names the movement; an
+        /// absent current reading moves every axis, since nothing
+        /// confirms any of them).
+        | FingerprintMoved of moved: (string * SinkStore.FingerprintAxis list) list
 
     [<RequireQualifiedAccess>]
     type Decision =
@@ -87,7 +96,7 @@ module SinkFreshness =
         (policy: Config.SinkPolicy)
         (refresh: bool)
         (manifest: SinkStore.Manifest option)
-        (probed: (string * string) list option)
+        (probed: (string * SinkStore.FingerprintReading) list option)
         : Decision =
         if refresh then Decision.ReadLive Miss.RefreshForced
         else
@@ -110,10 +119,17 @@ module SinkFreshness =
                             let currentMap = Map.ofList current
                             let moved =
                                 recorded
-                                |> List.choose (fun (target, fingerprint) ->
+                                |> List.choose (fun (target, reading) ->
                                     match Map.tryFind target currentMap with
-                                    | Some now when now = fingerprint -> None
-                                    | _ -> Some target)
+                                    | Some now ->
+                                        match SinkStore.FingerprintReading.movedAxes reading now with
+                                        | [] -> None
+                                        | axes -> Some (target, axes)
+                                    | None ->
+                                        // An absent current reading moves
+                                        // every axis — nothing confirms
+                                        // any of them.
+                                        Some (target, [ SinkStore.FingerprintAxis.Rows; SinkStore.FingerprintAxis.MaxPk; SinkStore.FingerprintAxis.Content ]))
                             match moved with
                             | [] -> Decision.ReuseSink m.LatestSyncId
-                            | targets -> Decision.ReadLive (Miss.FingerprintMoved targets)
+                            | moved -> Decision.ReadLive (Miss.FingerprintMoved moved)

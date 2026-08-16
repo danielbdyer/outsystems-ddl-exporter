@@ -68,6 +68,59 @@ module SinkStore =
     // The manifest.
     // ------------------------------------------------------------------
 
+    /// align-II.11 (E6; audit a7) — one freshness bellwether's reading,
+    /// TYPED: the three explicit measurements the probe takes. The
+    /// manifest persists them as fields (codec idiom: absent terms as
+    /// null), so comparison is field-wise and a miss can name WHICH AXES
+    /// moved — the packed `count|maxPk|content` string this replaces
+    /// interned the three readings into one opaque token.
+    type FingerprintReading =
+        {
+            RowCount : int64
+            MaxPk    : string option
+            Content  : string option
+        }
+
+    /// The axes a fingerprint comparison can move on.
+    [<RequireQualifiedAccess>]
+    type FingerprintAxis =
+        | Rows
+        | MaxPk
+        | Content
+
+    [<RequireQualifiedAccess>]
+    module FingerprintReading =
+
+        /// The S8 packed display/legacy-wire form (`count|maxPk|content`,
+        /// absent terms as `-`).
+        let packed (r: FingerprintReading) : string =
+            sprintf "%d|%s|%s" r.RowCount (defaultArg r.MaxPk "-") (defaultArg r.Content "-")
+
+        /// The packed form's inverse — pre-II.11 manifests persisted the
+        /// packed string; parsing it keeps every old store readable with
+        /// no re-witnessing. `None` for a token the packed grammar never
+        /// produced (the reader then skips the entry — the safe direction:
+        /// `auto` reads live).
+        let tryParsePacked (raw: string) : FingerprintReading option =
+            match raw.Split '|' with
+            | [| count; maxPk; content |] ->
+                match System.Int64.TryParse count with
+                | true, n ->
+                    Some
+                        { RowCount = n
+                          MaxPk = (if maxPk = "-" then None else Some maxPk)
+                          Content = (if content = "-" then None else Some content) }
+                | _ -> None
+            | _ -> None
+
+        /// Field-wise comparison, the moved axes named. Trivial equality
+        /// per axis — the reading is three explicit fields, so "what
+        /// moved" is a projection, never a string diff.
+        let movedAxes (recorded: FingerprintReading) (current: FingerprintReading) : FingerprintAxis list =
+            [ if recorded.RowCount <> current.RowCount then FingerprintAxis.Rows
+              if recorded.MaxPk <> current.MaxPk then FingerprintAxis.MaxPk
+              if recorded.Content <> current.Content then FingerprintAxis.Content ]
+
     type Manifest =
         {
             ConnDigest     : string
@@ -79,13 +132,13 @@ module SinkStore =
             /// SHA-256 over the latest snapshot's serialized text — the
             /// torn-write detector (the estate sidecar's binding rule).
             SnapshotSha256 : string
-            /// The freshness bellwethers recorded AT witness time (S8):
-            /// rendered (target, fingerprint) pairs over the three ossys
-            /// tables, matched by `SinkFreshness.decide` under `auto`.
-            /// `[]` when the capture-time probe failed or the state
-            /// predates S8 — `auto` then always reads live (the safe
-            /// direction; a pin never consults these).
-            SourceFingerprints : (string * string) list
+            /// The freshness bellwethers recorded AT witness time (S8;
+            /// TYPED at align-II.11): per-target readings over the three
+            /// ossys tables, matched field-wise by `SinkFreshness.decide`
+            /// under `auto`. `[]` when the capture-time probe failed or
+            /// the state predates S8 — `auto` then always reads live (the
+            /// safe direction; a pin never consults these).
+            SourceFingerprints : (string * FingerprintReading) list
         }
 
     let private sha256Text (text: string) : string =
@@ -105,10 +158,20 @@ module SinkStore =
             jw.WriteString("capturedAtUtc", m.CapturedAtUtc.ToString("O", Globalization.CultureInfo.InvariantCulture))
             jw.WriteString("snapshotSha256", m.SnapshotSha256)
             jw.WriteStartArray("sourceFingerprints")
-            for (target, fingerprint) in m.SourceFingerprints do
+            for (target, reading) in m.SourceFingerprints do
                 jw.WriteStartObject()
                 jw.WriteString("target", target)
-                jw.WriteString("fingerprint", fingerprint)
+                // align-II.11 — three explicit fields (absent as null);
+                // pre-II.11 readers are not a supported direction, and
+                // pre-II.11 WRITERS' packed `fingerprint` strings still
+                // read (the parse below).
+                jw.WriteNumber("rowCount", reading.RowCount)
+                (match reading.MaxPk with
+                 | Some v -> jw.WriteString("maxPk", v)
+                 | None -> jw.WriteNull("maxPk"))
+                (match reading.Content with
+                 | Some v -> jw.WriteString("content", v)
+                 | None -> jw.WriteNull("content"))
                 jw.WriteEndObject()
             jw.WriteEndArray()
             jw.WriteEndObject())
@@ -149,8 +212,27 @@ module SinkStore =
                                 | true, v when v.ValueKind = JsonValueKind.String ->
                                     match v.GetString() with null -> None | s -> Some s
                                 | _ -> None
-                            match field "target", field "fingerprint" with
-                            | Some t, Some f -> yield t, f
+                            let optField (name: string) : string option =
+                                match e.TryGetProperty name with
+                                | true, v when v.ValueKind = JsonValueKind.String ->
+                                    match v.GetString() with null -> None | s -> Some s
+                                | _ -> None
+                            let rowCount =
+                                match e.TryGetProperty "rowCount" with
+                                | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetInt64())
+                                | _ -> None
+                            // align-II.11: typed fields when present; the
+                            // pre-II.11 packed `fingerprint` string parses
+                            // through the one inverse; an entry neither
+                            // form explains is skipped (the safe
+                            // direction — `auto` reads live).
+                            match field "target", rowCount with
+                            | Some t, Some n ->
+                                yield t, ({ RowCount = n; MaxPk = optField "maxPk"; Content = optField "content" } : FingerprintReading)
+                            | Some t, None ->
+                                match field "fingerprint" |> Option.bind FingerprintReading.tryParsePacked with
+                                | Some reading -> yield t, reading
+                                | None -> ()
                             | _ -> () ]
                 | _ -> []
             match strOf "connDigest", intOf "latestSyncId", optStrOf "envLabel", strOf "sourceDataSource", strOf "sourceDatabase", strOf "capturedAtUtc", strOf "snapshotSha256" with
@@ -169,6 +251,11 @@ module SinkStore =
                 | _ -> None
             | _ -> None
         with _ -> None
+
+    /// The manifest codec, exposed pure (align-II.11: the wire laws —
+    /// typed-field round-trip + packed-string legacy read — pin it).
+    let manifestJsonText (m: Manifest) : string = manifestJson m
+    let tryParseManifestText (text: string) : Manifest option = tryParseManifest text
 
     // ------------------------------------------------------------------
     // Atomic write / fail-closed read primitives (estate idioms).
@@ -271,7 +358,7 @@ module SinkStore =
         (dataSource: string)
         (database: string)
         (envLabel: string option)
-        (fingerprints: (string * string) list)
+        (fingerprints: (string * FingerprintReading) list)
         (parameters: MetadataSnapshotRunner.SnapshotParameters)
         (snapshot: MetadataSnapshotRunner.MetadataSnapshot)
         : WitnessOutcome =
@@ -391,7 +478,7 @@ module SinkStore =
         (nowUtc: DateTimeOffset)
         (dataSource: string)
         (database: string)
-        (fingerprints: (string * string) list)
+        (fingerprints: (string * FingerprintReading) list)
         (parameters: MetadataSnapshotRunner.SnapshotParameters)
         (snapshot: MetadataSnapshotRunner.MetadataSnapshot)
         : WitnessOutcome =

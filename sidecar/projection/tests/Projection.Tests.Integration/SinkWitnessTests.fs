@@ -86,7 +86,16 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                         let _ =
                             match SinkFreshness.decide Config.SinkPolicy.Auto false (SinkStore.loadManifest tempStore digest) (Some movedProbe) with
                             | SinkFreshness.Decision.ReadLive (SinkFreshness.Miss.FingerprintMoved moved) ->
-                                Assert.Contains("dbo.ossys_Entity", moved)
+                                // align-II.11 — the miss names the target AND
+                                // the moved axes. This test's mutation is an
+                                // in-place UPDATE: rows and max key HOLD and
+                                // only the content checksum moves — exactly
+                                // the movement class the content term exists
+                                // to catch (the survival-rule-15 story, now
+                                // visible because the axes are named).
+                                Assert.Contains("dbo.ossys_Entity", moved |> List.map fst)
+                                let axes = moved |> List.find (fst >> (=) "dbo.ossys_Entity") |> snd
+                                Assert.Contains(SinkStore.FingerprintAxis.Content, axes)
                             | other -> Assert.Fail (sprintf "expected the entity bellwether to move, got %A" other)
                         let! _ = LiveModelRead.fromConnection cnn
                         let manifest2 = (SinkStore.loadManifest tempStore digest).Value

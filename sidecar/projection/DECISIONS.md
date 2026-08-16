@@ -32150,3 +32150,28 @@ journals are byte-identical (law-pinned).
 
 Consumers enumerated: the ladder rank (two sites), the one claim renderer (`claimText`),
 the correspondence tombstone sort, `SinkClaims.assemble`, the two test claim builders.
+
+## 2026-08-16 — align-II.11: typed fingerprint readings — three explicit fields; a miss names its axes
+
+**a7's charge.** The freshness bellwethers interned three measurements (row count, max
+key, content checksum) into one packed `count|maxPk|content` string at PROBE time; the
+manifest persisted the token; comparison was string equality; and a miss could name WHICH
+TABLE moved but never WHICH AXIS. Now `SinkStore.FingerprintReading` carries the three
+explicit fields; the manifest persists them as fields (codec idiom, absent as null);
+`SinkFreshness.probe` returns typed readings; comparison is field-wise
+(`FingerprintReading.movedAxes` — trivial per-axis equality); and
+`Miss.FingerprintMoved of (target * FingerprintAxis list) list` names the movement — an
+in-place UPDATE now reads as `Content` moved with rows/max-key HELD (the survival-rule-15
+story, visible at the decision instead of buried in a checksum). An absent current
+reading moves every axis (nothing confirms any of them).
+
+**Wire compatibility (no re-witnessing).** The packed form survives as
+`FingerprintReading.packed` (the display + legacy wire) with `tryParsePacked` its
+law-pinned inverse: a pre-II.11 manifest's packed `fingerprint` strings read straight
+into typed readings; an entry neither wire explains is skipped (the safe direction —
+`auto` reads live for it). The manifest codec pair is exposed pure
+(`manifestJsonText`/`tryParseManifestText`) so the wire laws are executable.
+
+Consumers: the decision table (field-wise now), the witness recording (typed through
+`witnessWith`), the Integration witness canary (pins the UPDATE-moves-Content-only axis
+live), `SinkFreshness.render` (= packed ∘ readingOf — byte-identical display).
