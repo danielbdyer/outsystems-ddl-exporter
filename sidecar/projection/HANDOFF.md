@@ -1,4 +1,62 @@
-# Handoff addendum — 2026-08-16 (latest): the data-sink chapter closed whole — the OSSYS metadata plane has its ledger. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+# Handoff addendum — 2026-08-16 (latest): alignment Chapter I closed (the Teleology Chapter); Chapter II — the Ruling & the Epistemics — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program is one third done, under one
+standing operator authorization ("make a masterful plan to get it done, spare no
+expense" — three chapters, run CONSECUTIVELY, no pauses between; the rulings are in
+DECISIONS "THE ALIGNMENT PROGRAM OPENS"). Chapter I (Arcs 0 + T, eleven slices,
+`482c0e6..ffeaf4c`) landed the correctness trio and the teleology arc: A50 (the
+operator outcome space is enumerable — `PolicyAxis.overlayAxisOf` total, Override
+never a silent no-op), A51 (synthesis conventions are a closed 23-row registry;
+mints are typo-proof; the sequence identity CONVERGED on `OS_SEQ` two-segment), A52
+(chain assemblies satisfy product preconditions; the skeleton names its four
+exclusions instead of shipping zero-edge analytics), plus typed identity-plane
+decisions (I.7), the FiringSite axis with F12's dormancy as a registry value (I.8),
+and the config-provenance rule pinned per factory (I.9). Read
+`CHAPTER_ALIGN_I_CLOSE.md` — §1 is the claim/witness map, §3 the ritual walk, §4 the
+anti-findings.
+
+**Your program: Chapter II — "The Ruling & the Epistemics" (Arcs R + E, fourteen
+slices).** The master plan is `/root/.claude/plans/yes-let-s-iterate-on-enumerated-pascal.md`
+(if that scratch path is gone, the plan's Chapter II spine is reproduced in the
+DECISIONS program-open entry and the audit synthesis §6); the finding-level ground
+truth is `AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md` + `audits/alignment-2026-08-16/`
+(a4/a5/a6 are Chapter II's primary workpapers — the ruling dialects and the epistemic
+debt). Open with II.0 (frame + ruling-law Bucket-C stub + matrix), then the R-track:
+II.1 the `OperatorRuling<'anchor>` carrier — and hold the STANDING DESIGN RULING: the
+ruling store is a keyed replace-by-key store under `<store>/rulings/` (the
+`ApprovalStore` fail-closed-load + atomic-write shape), NOT a fifth `LedgerSpec`;
+append-only ruling HISTORY is deferred past III.2 with `BasisAnchor.SinkEdition` as
+its widen trigger. Then II.2 tightening provenance (config schema optional
+approvedBy/approvedAt/rationale/finding; `EstatePosture` STOPS severing Relaxation's
+Scope/Evidence/ReopenProbe), II.3 per-subject index rulings, II.4 abstain honesty
+(BEHAVIORAL for trail consumers — DECISIONS first), II.5 estate reception (ruling law
+LIVE), II.6 the `projection rule <finding-key> (--confirm|--reject)` verb — record +
+render ONLY, the 10-step verb checklist, auto-application stays a named deferral.
+E-track: II.7 RowsetContract → II.8 typed erasures (`toBundle` gains `BundleErasure
+list`; the LiveModelRead rollup concat seam takes it with no new plumbing) → II.9
+`AcquisitionScope` (optional codec field defaulting Total — NO version bump; the
+totality gate's own invariant makes old snapshots honest) — those three touch one
+adapter file, run them SERIAL; then II.10 journal read-side, II.11 typed fingerprint
+readings, II.12 finding pedigree LAST (EstateFinding collision with II.5), II.13
+close ritual.
+
+**Standing rules that will bite you if forgotten:** the "Witness-" naming freeze
+applies to NEW witness-plane names from Chapter II onward (X-arc's measured cut needs
+a fixed target); behavioral slices carry their DECISIONS entry WITH the change;
+delta-lint must hold 82 = 82 substance-normalized every commit (`--no-verify` with
+the named deviance line); the known-red Docker set is exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests}; commits are
+`sidecar/projection: align-II.<n> — <name>`; push every slice; refresh the PR
+description at the chapter close. Bare `Identity` in EXPRESSION position resolves to
+`Domain.Identity` (declared later) — qualify `OverlayAxis.Identity` (patterns with a
+known scrutinee type are fine unqualified). The A51 sweep will catch any free-string
+mint you add under src/; route through `SsKey.mint`.
+
+---
+
+# Handoff addendum — 2026-08-16 (superseded): the data-sink chapter closed whole — the OSSYS metadata plane has its ledger. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
 
 To the next agent.
 

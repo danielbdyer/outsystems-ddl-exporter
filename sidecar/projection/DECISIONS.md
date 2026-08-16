@@ -31714,3 +31714,32 @@ provenance wrapper that would let `registered` DERIVE classification and make
 skeleton-purity sound against mis-wiring instead of sound-by-convention — stays deferred.
 TRIGGER: the first mis-wiring the rule table catches (equivalently: the first
 operator-authored NamingMorphism, the seam the table's namingMorphism row names).
+
+## 2026-08-16 — CHAPTER ALIGN-I CLOSES (the Teleology Chapter; eleven slices, three laws, the eight-item ritual walked)
+
+Chapter I of the alignment program closes same-day: I.0–I.9 landed (`482c0e6..ffeaf4c`),
+all on PR #695 per the stacking ruling. The witness map, the behavioral-change ledger,
+the ritual walk, and the anti-findings live in `CHAPTER_ALIGN_I_CLOSE.md` — the one-line
+summary: the three correctness-adjacent audit defects are DEAD (ConflictDetector
+un-blinded at I.3; the sequence identity converged at I.5; the skeleton stopped computing
+zero-edge analytics at I.6), the teleology arc landed typed (decisions I.7, firing sites
+I.8, the provenance rule I.9), and three laws went LIVE same-commit (A50 outcome-space
+enumerability, A51 synthesis-convention closure, A52 chain-precondition satisfiability;
+84 → 87 live).
+
+**Ritual highlights.** Fired-and-resolved: the 2026-05-16 collapse trigger (path
+(a)-lite), the Label promotion trigger (named AND exercised in one chapter), the F12
+dormancy comment (now a registry value). Newly deferred, named: `Supplied<'T>` (trigger:
+the first mis-wiring ConfigProvenanceTests catches); the sequence rename-warning rider
+(trigger: a real sequence-rename workflow). CLAUDE.md §4 re-verified, no additions
+(the one candidate trap is compiler-loud, not silent). Close verification:
+`TEST_CONFIG=Release` fast SOLUTION-WIDE (the I.1 dividend), full Docker pool with the
+known-red set exactly the two named transfer-leg tests, verifiability 87 live, matrix
+current, delta-lint 82 = 82 at every commit, analyzers 0/0, perf-gate clean solo.
+
+**Chapter II — "The Ruling & the Epistemics" (Arcs R + E) opens immediately** per the
+consecutive-chapters ruling; the master plan's fourteen-slice spine governs; II.0
+expands it. The II.1 design ruling stands as planned: the ruling store is a keyed
+replace-by-key store under `<store>/rulings/` (the ApprovalStore shape + atomic idiom),
+NOT a fifth LedgerSpec — append-only ruling HISTORY stays deferred past III.2's
+ChainAdmission with the `BasisAnchor.SinkEdition` widen as its trigger.
