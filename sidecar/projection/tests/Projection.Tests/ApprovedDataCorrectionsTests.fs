@@ -92,7 +92,7 @@ let private baseCorrection : ApprovedDataCorrection =
       ReferencedEntity = None
       ConfiguredProbes = []
       ApprovedBy = Some "operator"
-      ApprovedAt = Some "2026-07-23" }
+      ApprovedAt = Some (System.DateTimeOffset(2026, 7, 23, 0, 0, 0, System.TimeSpan.Zero)) }
 
 let private applyOk (corrections: ApprovedDataCorrection list) : CorrectionOutcome =
     match ApprovedDataCorrections.apply catalog corrections rowsMap with

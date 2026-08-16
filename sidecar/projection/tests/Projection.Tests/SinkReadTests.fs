@@ -17,6 +17,12 @@ open Projection.Adapters.OssysSql
 [<Xunit.Collection("Global-MutableState")>]
 module SinkReadTests =
 
+    // align-III.1: expected-ordinal literal for asserts.
+    let private ord (n: int) : SyncOrdinal =
+        match SyncOrdinal.create n with
+        | Ok o -> o
+        | Error m -> failwith m
+
     let private t1 = DateTimeOffset.Parse("2026-08-10T12:00:00Z", Globalization.CultureInfo.InvariantCulture)
     let private t2 = DateTimeOffset.Parse("2026-08-14T12:00:00Z", Globalization.CultureInfo.InvariantCulture)
 
@@ -86,8 +92,11 @@ module SinkReadTests =
     let ``a pin outside the witnessed range is the named sink.syncNotFound refusal`` () =
         withTempStore (fun root ->
             witnessNamed root t1 "server-a" "db" "uat" (snapshotA ()) |> ignore
-            Assert.Equal("sink.syncNotFound", primaryCode (SinkRead.resolve "uat" (Some 2)))
-            Assert.Equal("sink.syncNotFound", primaryCode (SinkRead.resolve "uat" (Some 0))))
+            Assert.Equal("sink.syncNotFound", primaryCode (SinkRead.resolve "uat" (Some (ord 2)))))
+            // align-III.1: a below-1 pin is UNREPRESENTABLE here — the
+            // ordinal VO stops it at the ref grammar (RefTests pins that
+            // "sink:uat@0" stays label text), so `resolve` no longer owns
+            // that refusal.
 
     [<Fact>]
     let ``resolve reads latest by default and a pinned edition by its own capture time`` () =
@@ -99,12 +108,12 @@ module SinkReadTests =
             | Error es -> Assert.Fail (sprintf "latest resolve refused: %A" es)
             | Ok latest ->
                 Assert.Equal(digest, latest.Digest)
-                Assert.Equal(2, latest.SyncId)
+                Assert.Equal(ord 2, latest.SyncId)
                 Assert.Equal(t2, latest.CapturedAtUtc)
-            match SinkRead.resolve "uat" (Some 1) with
+            match SinkRead.resolve "uat" (Some (ord 1)) with
             | Error es -> Assert.Fail (sprintf "pinned resolve refused: %A" es)
             | Ok pinned ->
-                Assert.Equal(1, pinned.SyncId)
+                Assert.Equal(ord 1, pinned.SyncId)
                 // The pinned edition's age comes from ITS journal line, not
                 // the manifest's latest capture time (the freshness line must
                 // describe the edition the read actually rides).
@@ -113,7 +122,7 @@ module SinkReadTests =
     [<Fact>]
     let ``identityOf round-trips through Ref.parse (one scheme, one writer)`` () =
         Assert.Equal(Ref.Sink ("uat", None), Ref.parse (SinkRead.identityOf "uat" None))
-        Assert.Equal(Ref.Sink ("uat", Some 7), Ref.parse (SinkRead.identityOf "uat" (Some 7)))
+        Assert.Equal(Ref.Sink ("uat", Some (ord 7)), Ref.parse (SinkRead.identityOf "uat" (Some (ord 7))))
 
     [<Fact>]
     let ``resolveByConnectionString derives the SAME digest the witness hook records (R3 — the two sides agree)`` () =
@@ -122,7 +131,7 @@ module SinkReadTests =
             match SinkRead.resolveByConnectionString "Server=server-a;Database=db;TrustServerCertificate=True" None with
             | Ok resolved ->
                 Assert.Equal(SinkStore.connDigest16 "server-a" "db", resolved.Digest)
-                Assert.Equal(1, resolved.SyncId)
+                Assert.Equal(ord 1, resolved.SyncId)
             | Error es -> Assert.Fail (sprintf "digest-side resolve refused: %A" es))
 
     [<Fact>]

@@ -16,6 +16,12 @@ open Projection.Adapters.OssysSql
 
 module SinkStoreTests =
 
+    /// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+    let private ord (n: int) : SyncOrdinal =
+        match SyncOrdinal.create n with
+        | Ok o -> o
+        | Error m -> failwith m
+
     let private nowUtc = DateTimeOffset.Parse("2026-08-15T12:00:00Z", Globalization.CultureInfo.InvariantCulture)
 
     let private withTempStore (test: string -> unit) =
@@ -90,12 +96,12 @@ module SinkStoreTests =
         withTempStore (fun root ->
             let outcome = SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ())
             match outcome with
-            | SinkStore.WitnessOutcome.Persisted (1, displacements, false) ->
+            | SinkStore.WitnessOutcome.Persisted (e, displacements, false) when e.Ordinal = ord 1 ->
                 Assert.Equal(3, displacements) // module + entity + attribute
             | other -> Assert.Fail (sprintf "expected Persisted sync 1, got %A" other)
             let digest = SinkStore.connDigest16 "server" "db"
             let manifest = (SinkStore.loadManifest root digest).Value
-            Assert.Equal(1, manifest.LatestSyncId)
+            Assert.Equal(ord 1, manifest.LatestSyncId)
             Assert.Equal(None, manifest.EnvLabel)
             let lines =
                 match SinkJournal.load (SinkStore.journalPath root digest) with
@@ -117,8 +123,10 @@ module SinkStoreTests =
             SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             let before = File.ReadAllText(SinkStore.journalPath root digest)
             match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) with
-            | SinkStore.WitnessOutcome.Unchanged 1 -> ()
-            | other -> Assert.Fail (sprintf "expected Unchanged 1, got %A" other)
+            // The unchanged outcome names the full EDITION it still
+            // equals (align-III.1: the SinkEdition carrier).
+            | SinkStore.WitnessOutcome.Unchanged e when e = { ConnDigest = digest; Ordinal = ord 1 } -> ()
+            | other -> Assert.Fail (sprintf "expected Unchanged at edition 1, got %A" other)
             Assert.Equal(before, File.ReadAllText(SinkStore.journalPath root digest)))
 
     [<Fact>]
@@ -127,19 +135,19 @@ module SinkStoreTests =
             let digest = SinkStore.connDigest16 "server" "db"
             SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotA ()) |> ignore
             match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
-            | SinkStore.WitnessOutcome.Persisted (2, 1, false) -> ()
+            | SinkStore.WitnessOutcome.Persisted (e, 1, false) when e.Ordinal = ord 2 -> ()
             | other -> Assert.Fail (sprintf "expected Persisted sync 2 with 1 displacement, got %A" other)
             let lines = (SinkJournal.load (SinkStore.journalPath root digest)) |> Result.defaultValue []
             let last = List.last lines
-            Assert.Equal(2, last.SyncId)
-            Assert.Equal(Some 1, last.PrevSyncId)
+            Assert.Equal(ord 2, last.SyncId)
+            Assert.Equal(Some (ord 1), last.PrevSyncId)
             let verified = (SinkJournal.admitChain lines) |> Result.defaultWith (fun e -> failwithf "chain refused: %A" e)
             Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
                 SinkDisplacement.canonical (snapshotB ()),
                 SinkJournal.replay verified)
             // The latest snapshot loads SHA-bound; the previous stays loadable.
-            Assert.True((SinkStore.loadSnapshotAt root digest 2).IsSome)
-            Assert.True((SinkStore.loadSnapshotAt root digest 1).IsSome))
+            Assert.True((SinkStore.loadSnapshotAt root digest (ord 2)).IsSome)
+            Assert.True((SinkStore.loadSnapshotAt root digest (ord 1)).IsSome))
 
     [<Fact>]
     let ``nameEnvironment stamps the label and later witnesses preserve it`` () =
@@ -177,7 +185,7 @@ module SinkStoreTests =
     [<Fact>]
     let ``journal: a regressing syncId refuses on the drift channel (sink.journal.syncRegression)`` () =
         let line syncId =
-            { SinkJournal.SyncId = syncId
+            { SinkJournal.SyncId = ord syncId
               SinkJournal.PrevSyncId = None
               SinkJournal.CapturedAtUtc = nowUtc
               SinkJournal.Displacement =
@@ -193,10 +201,33 @@ module SinkStoreTests =
             Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.journal.syncRegression")
 
     [<Fact>]
+    let ``align-III.1: a stored line naming sync 0 is a corrupt line by name — the ordinal re-mints fail-closed`` () =
+        // Render a healthy line, then tamper the wire's syncId to 0 (the
+        // ordinal VO makes the value unmintable in memory, so only a torn
+        // or foreign store can present it).
+        let rendered =
+            SinkJournal.renderLine
+                { SinkJournal.SyncId = ord 1
+                  SinkJournal.PrevSyncId = None
+                  SinkJournal.CapturedAtUtc = nowUtc
+                  SinkJournal.Displacement =
+                    { Table = SinkDisplacement.SinkTable.Modules
+                      KeyText = "espace:800"
+                      KeyBasis = SinkDisplacement.KeyBasis.Positional 800
+                      Before = None
+                      After = Some (SinkDisplacement.SinkRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
+                      Domain = None } }
+        let tampered = rendered.Replace("\"syncId\":1", "\"syncId\":0")
+        match SinkJournal.parseLine tampered with
+        | Ok l -> Assert.Fail (sprintf "a sync-0 line parsed: %A" l.SyncId)
+        | Error errors ->
+            Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.journal.corruptLine")
+
+    [<Fact>]
     let ``journal line codec: a rendered line parses back to the same displacement (domain re-derivable, images exact)`` () =
         let original =
-            { SinkJournal.SyncId = 4
-              SinkJournal.PrevSyncId = Some 3
+            { SinkJournal.SyncId = ord 4
+              SinkJournal.PrevSyncId = Some (ord 3)
               SinkJournal.CapturedAtUtc = nowUtc
               SinkJournal.Displacement =
                 { Table = SinkDisplacement.SinkTable.Entities
@@ -230,8 +261,8 @@ module SinkStoreTests =
               Some SinkDisplacement.DomainTransition.ShapeChanged ]
         for domain in domains do
             let line =
-                { SinkJournal.SyncId = 4
-                  SinkJournal.PrevSyncId = Some 3
+                { SinkJournal.SyncId = ord 4
+                  SinkJournal.PrevSyncId = Some (ord 3)
                   SinkJournal.CapturedAtUtc = nowUtc
                   SinkJournal.Displacement =
                     { Table = SinkDisplacement.SinkTable.Entities
@@ -246,7 +277,7 @@ module SinkStoreTests =
         // An unknown domain token fail-closes — never silently unclassified.
         let rendered =
             SinkJournal.renderLine
-                { SinkJournal.SyncId = 1; SinkJournal.PrevSyncId = None; SinkJournal.CapturedAtUtc = nowUtc
+                { SinkJournal.SyncId = ord 1; SinkJournal.PrevSyncId = None; SinkJournal.CapturedAtUtc = nowUtc
                   SinkJournal.Displacement =
                     { Table = SinkDisplacement.SinkTable.Entities; KeyText = "entity:1"
                       KeyBasis = SinkDisplacement.KeyBasis.Positional 1
@@ -285,7 +316,7 @@ module SinkStoreTests =
             // manifest + snapshot survive.
             File.Delete(SinkStore.journalPath root digest)
             match SinkStore.witnessWith (Some root) nowUtc "server" "db" None [] MetadataSnapshotRunner.defaultParameters (snapshotB ()) with
-            | SinkStore.WitnessOutcome.Persisted (2, 1, true) -> ()
+            | SinkStore.WitnessOutcome.Persisted (e, 1, true) when e.Ordinal = ord 2 -> ()
             | other -> Assert.Fail (sprintf "expected reconciling Persisted sync 2, got %A" other)
             // The reconciled journal replays to the latest state whole.
             let lines = (SinkJournal.load (SinkStore.journalPath root digest)) |> Result.defaultValue []

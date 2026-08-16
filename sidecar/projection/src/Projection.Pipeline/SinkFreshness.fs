@@ -83,7 +83,7 @@ module SinkFreshness =
     [<RequireQualifiedAccess>]
     type Decision =
         /// Serve the witnessed state (the pay-once fast path).
-        | ReuseSink of syncId: int
+        | ReuseSink of syncId: SyncOrdinal
         /// Pay the wire (which witnesses the fresh state), for the named miss.
         | ReadLive of miss: Miss
 

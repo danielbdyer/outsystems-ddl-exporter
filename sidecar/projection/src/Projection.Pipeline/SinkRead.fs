@@ -25,10 +25,10 @@ module SinkRead =
 
     /// The ref-scheme identity (`sink:<env>` / `sink:<env>@<syncId>`) — one
     /// definition shared by `Ref.identity` and `Source.ofSink`.
-    let identityOf (env: string) (syncId: int option) : string =
+    let identityOf (env: string) (syncId: SyncOrdinal option) : string =
         match syncId with
         | None -> "sink:" + env // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
-        | Some n -> sprintf "sink:%s@%d" env n // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
+        | Some n -> sprintf "sink:%s@%s" env (SyncOrdinal.text n) // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
 
     /// A resolved sink coordinate: the store root, the source directory's
     /// digest, its manifest, the pinned-or-latest sync ordinal, and when that
@@ -40,7 +40,7 @@ module SinkRead =
             Root          : string
             Digest        : string
             Manifest      : SinkStore.Manifest
-            SyncId        : int
+            SyncId        : SyncOrdinal
             CapturedAtUtc : DateTimeOffset
         }
 
@@ -49,7 +49,7 @@ module SinkRead =
 
     /// Resolve `sink:<env>[@<syncId>]` to its store coordinate. The scan is
     /// the naming act's inverse: manifests whose `EnvLabel` equals `env`.
-    let resolve (env: string) (syncId: int option) : Result<Resolved> =
+    let resolve (env: string) (syncId: SyncOrdinal option) : Result<Resolved> =
         match EstateStoreLocation.storeDir () with
         | None ->
             fail "sink.storeDisabled"
@@ -68,9 +68,12 @@ module SinkRead =
                     (sprintf "sink ref: the name '%s' is claimed by %d witnessed sources (%s) — re-run `projection sync` with a distinct name so each source's label is unique." env (List.length claimants) digests)
             | [ manifest ] ->
                 let chosen = syncId |> Option.defaultValue manifest.LatestSyncId
-                if chosen < 1 || chosen > manifest.LatestSyncId then
+                // align-III.1: below-1 pins are unrepresentable (the ordinal
+                // VO), so the only out-of-range direction left is "past the
+                // latest witnessed edition".
+                if chosen > manifest.LatestSyncId then
                     fail "sink.syncNotFound"
-                        (sprintf "sink ref: '%s' carries witnessed syncs 1..%d; @%d is outside that range." env manifest.LatestSyncId chosen)
+                        (sprintf "sink ref: '%s' carries witnessed syncs 1..%s; @%s is outside that range." env (SyncOrdinal.text manifest.LatestSyncId) (SyncOrdinal.text chosen))
                 else
                     let capturedAt =
                         if chosen = manifest.LatestSyncId then manifest.CapturedAtUtc
@@ -101,7 +104,7 @@ module SinkRead =
     /// the open connection, so the two sides agree by construction). The
     /// caller resolves `env:`/`file:` refs to the raw string first
     /// (`Source.resolveConn` — Source compiles after this module).
-    let resolveByConnectionString (connStr: string) (syncId: int option) : Result<Resolved> =
+    let resolveByConnectionString (connStr: string) (syncId: SyncOrdinal option) : Result<Resolved> =
         match EstateStoreLocation.storeDir () with
         | None ->
             fail "sink.storeDisabled"
@@ -124,9 +127,9 @@ module SinkRead =
                         (sprintf "sink read: no witnessed state exists for this source (digest %s) — a total live read (or `projection sync`) witnesses the first edition." digest)
                 | Some manifest ->
                     let chosen = syncId |> Option.defaultValue manifest.LatestSyncId
-                    if chosen < 1 || chosen > manifest.LatestSyncId then
+                    if chosen > manifest.LatestSyncId then
                         fail "sink.syncNotFound"
-                            (sprintf "sink read: this source carries witnessed syncs 1..%d; @%d is outside that range." manifest.LatestSyncId chosen)
+                            (sprintf "sink read: this source carries witnessed syncs 1..%s; @%s is outside that range." (SyncOrdinal.text manifest.LatestSyncId) (SyncOrdinal.text chosen))
                     else
                         Result.success
                             { Root = root
@@ -145,7 +148,7 @@ module SinkRead =
         | None ->
             Task.FromResult (
                 fail "sink.snapshotUnreadable"
-                    (sprintf "sink ref: witnessed sync %d for digest %s reads as absent (torn or undecodable — the store is fail-closed); re-run `projection sync` to witness a fresh state." r.SyncId r.Digest))
+                    (sprintf "sink ref: witnessed sync %s for digest %s reads as absent (torn or undecodable — the store is fail-closed); re-run `projection sync` to witness a fresh state." (SyncOrdinal.text r.SyncId) r.Digest))
         | Some snapshot ->
             // The replay path drops the projection's erasure record by name
             // (align-II.8; the SinkDiffView twin): witness-time notices
@@ -154,7 +157,7 @@ module SinkRead =
 
     /// `sink:<env>[@<syncId>]` → `Catalog`, in one motion (the `Source.ofSink`
     /// body): resolve the name, then read the witnessed state.
-    let readEnv (env: string) (syncId: int option) : Task<Result<Catalog>> =
+    let readEnv (env: string) (syncId: SyncOrdinal option) : Task<Result<Catalog>> =
         match resolve env syncId with
         | Error es -> Task.FromResult (Result.failure es)
         | Ok resolved -> readCatalog resolved

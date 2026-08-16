@@ -32245,3 +32245,59 @@ sit as Skip-prose residents (A45/T17/A47/A48, promoted at III.9) or mint at thei
 with the same-commit discipline (III.7's rename-isometry; III.12's L3-Eject Bucket-C).
 The II.1 deferred ruling-history trigger (`BasisAnchor.SinkEdition`) is scheduled: it
 fires at III.2 with ChainAdmission.
+
+## 2026-08-16 — align-III.1: SyncOrdinal + SinkEdition; every stored instant parses fail-closed (the MinValue lie retires)
+
+The S-track opens with the a5 workpaper's two smallest-grain findings: the sink
+ledger's edition ordinal was a bare `int` (absence a magic 0; a stored 0 readable),
+and four stored instants were raw text or silently fabricated (`ApprovedAt : string`,
+`Ts : string`, and the LifecycleStore/ApprovalStore `at` decodes defaulting
+`DateTimeOffset.MinValue` — an approval or episode "dated" year 1).
+
+**SyncOrdinal + SinkEdition (Core, before OperatorRuling.fs).** `SyncOrdinal` is a
+private VO: 1-based (`genesis`), `create` fail-closed below 1, `next` minting
+genesis-from-nothing / predecessor-plus-one, absence always `SyncOrdinal option` —
+never 0. Typed across the sink plane: `JournalLine.SyncId/PrevSyncId` (+ the
+LedgerSpec fingerprint), `Manifest.LatestSyncId`, `snapshotPath`/`loadSnapshotAt`,
+`SinkRead` (identityOf/Resolved/resolve/resolveByConnectionString/readEnv),
+`Source.ofSink`, `Ref.Sink`, `ModelResolution.SinkWitness`,
+`SinkFreshness.Decision.ReuseSink`, `SinkSyncRun.SyncOutcome`,
+`EjectRun.SinkTerminalState`, `SinkClaims`, `FirstWitnessedSync.AtSync`. The magic-0
+absence encoding retired at all three witness sites (`previousOrdinal`,
+`lastSyncId`, the admitChain seed are options now — the two journal-line fabrication
+sites SIMPLIFIED: `PrevSyncId = previousOrdinal` directly). `SinkEdition =
+{ ConnDigest; Ordinal }` is the a5 carrier, minted with its first consumer:
+`WitnessOutcome.Persisted/Unchanged` now name WHICH edition landed / still stands
+(zero render blast — LiveModelRead surfaces only `Failed`). align-III.2's
+`BasisAnchor.SinkEdition` widen consumes it next, as scheduled at II.1.
+
+**Typed instants.** (a) LifecycleStore coordinate `at`: missing/malformed → hard
+`ParseFailure` (was a MinValue-dated episode). (b) ApprovalStore record `at`: the
+identical fix — the a5-uncited same-lie rider, named here. (c)
+`DataCorrectionReceipt.ApprovedAt` + `ApprovedDataCorrection.ApprovedAt` →
+`DateTimeOffset option`: the config decode mints fail-closed
+(`pipeline.config.emission.dataCorrections.approvedAt`, the II.2 provenance posture);
+the store read parses with `AssumeUniversal` (a pre-III.1 stored date-only
+"2026-07-23" reads as the UTC instant DETERMINISTICALLY — host-local parsing would
+fork the value by machine; malformed text is a hard ParseFailure); the store write
+canonicalizes to the round-trip "O" form (a raw-text approvedAt re-persists
+value-identical, byte-canonicalized). (d) `Run.Ts` + `RunLedger.LedgerRecord.Ts` →
+`DateTimeOffset`: the wire keeps the UTC `o` form byte-identical
+(`UtcDateTime.ToString("o")` — every ts either store ever wrote was UTC); a torn `ts`
+refuses the record (Run: load → None; RunLedger: the line drops through the standing
+lenient posture — align-III.3 owns naming the skips). (e) Determinism rider:
+`TighteningBinding`'s approvedAt parse moves RoundtripKind → `AssumeUniversal` for
+the same one-config-one-instant guarantee; explicit offsets pass through unchanged.
+
+**BEHAVIORAL — malformed stored values only.** A journal line naming sync ≤ 0 is
+`sink.journal.corruptLine` (was readable data); a manifest naming latestSyncId ≤ 0
+reads as absent (fail-closed family); a `sink:<env>@0` / `@-n` pin is a malformed
+pin — it stays label text (the grammar's existing malformed-pin rule) and refuses
+downstream as `sink.envUnknown` (was `sink.syncNotFound`); `resolve` drops its
+`chosen < 1` clause (unrepresentable). Healthy stores, healthy configs, healthy
+renders: byte-identical (ordinal messages render through `SyncOrdinal.text` — same
+bytes; the sync face's JSON/Voice payloads box `SyncOrdinal.value` — same ints).
+Laws: SyncOrdinalTests (create/next/order/edition-text) + fail-closed instant laws
+beside each store's existing decode laws (LifecycleStore ×3, ApprovalStore, RunLedger,
+Run, Config, TighteningBinding, SinkStore corrupt-line + manifest-absent, Ref grammar
+non-positive-pin).

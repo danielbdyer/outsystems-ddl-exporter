@@ -29,6 +29,12 @@ open Projection.Adapters.OssysSql
 [<Xunit.Collection("Docker-SqlServer")>]
 type SinkOfflineReadTests(fixture: EphemeralContainerFixture) =
 
+    // align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+    let ord (n: int) : SyncOrdinal =
+        match SyncOrdinal.create n with
+        | Ok o -> o
+        | Error m -> failwith m
+
     let withStoreEnv (root: string option) (body: unit -> unit) =
         let priorEstate = Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"
         let priorLedger = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
@@ -77,7 +83,7 @@ type SinkOfflineReadTests(fixture: EphemeralContainerFixture) =
                             match first with
                             | Ok c -> c
                             | Error es -> failwithf "first read refused: %A" es
-                        Assert.Equal(1, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
+                        Assert.Equal(ord 1, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
                         Assert.True((orderOf c1).IsActive)
 
                         // 2) The estate mutates AFTER the witness — the
@@ -98,7 +104,7 @@ type SinkOfflineReadTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal<Catalog>(c1, c2)
                         Assert.True((orderOf c2).IsActive,
                             "the pin serves the WITNESSED edition — the mutation stays invisible until refresh")
-                        Assert.Equal(1, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
+                        Assert.Equal(ord 1, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
 
                         // 4) REFRESH beats the pin: the wire is paid, the
                         //    tombstone is visible, and the fresh edition is
@@ -109,7 +115,7 @@ type SinkOfflineReadTests(fixture: EphemeralContainerFixture) =
                             | Ok c -> c
                             | Error es -> failwithf "refresh read refused: %A" es
                         Assert.False((orderOf c3).IsActive, "refresh pays the wire — the tombstone is visible")
-                        Assert.Equal(2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
+                        Assert.Equal(ord 2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
 
                         // 5) AUTO over the unchanged estate: the bellwethers
                         //    confirm sync 2 and the read serves it — no third
@@ -121,14 +127,14 @@ type SinkOfflineReadTests(fixture: EphemeralContainerFixture) =
                             | Ok c -> c
                             | Error es -> failwithf "auto read refused: %A" es
                         Assert.Equal<Catalog>(c3, c4)
-                        Assert.Equal(2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
+                        Assert.Equal(ord 2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
 
                         // 6) The temporal dividend: two witnessed editions
                         //    carry the diff two `live:` reads can't
                         //    legitimately give — and the window's substance
                         //    is exactly the activity flip (norm > 0).
-                        let s1 = (SinkStore.loadSnapshotAt tempStore digest 1).Value
-                        let s2 = (SinkStore.loadSnapshotAt tempStore digest 2).Value
+                        let s1 = (SinkStore.loadSnapshotAt tempStore digest (ord 1)).Value
+                        let s2 = (SinkStore.loadSnapshotAt tempStore digest (ord 2)).Value
                         match! SinkDiffView.catalogDiffOf s1 s2 with
                         | Ok view -> Assert.True(CatalogDiff.norm view > 0, "the witnessed window carries the activity flip")
                         | Error es -> failwithf "the temporal view refused: %A" es

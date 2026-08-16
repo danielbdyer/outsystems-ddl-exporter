@@ -12,12 +12,18 @@ open Projection.Adapters.Sql
 // type can express is pinned here. R2 rides beneath every row: no decision
 // in this table touches witnessing.
 
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 let private reading (count: int64) (maxPk: string option) (content: string option) : SinkStore.FingerprintReading =
     { RowCount = count; MaxPk = maxPk; Content = content }
 
 let private manifest (fingerprints: (string * SinkStore.FingerprintReading) list) : SinkStore.Manifest =
     { ConnDigest = "abcd1234abcd1234"
-      LatestSyncId = 3
+      LatestSyncId = ord 3
       EnvLabel = Some "uat"
       SourceDataSource = "server"
       SourceDatabase = "db"
@@ -43,7 +49,7 @@ let ``off pays the wire by name; pinned reuses without probing; both are total o
     | SinkFreshness.Decision.ReadLive SinkFreshness.Miss.PolicyOff -> ()
     | other -> Assert.Fail (sprintf "expected PolicyOff, got %A" other)
     match SinkFreshness.decide Config.SinkPolicy.Pinned false (Some (manifest recorded)) None with
-    | SinkFreshness.Decision.ReuseSink 3 -> ()
+    | SinkFreshness.Decision.ReuseSink s when s = ord 3 -> ()
     | other -> Assert.Fail (sprintf "expected the pin to reuse without probing, got %A" other)
     for policy in [ Config.SinkPolicy.Pinned; Config.SinkPolicy.Auto ] do
         match SinkFreshness.decide policy false None None with
@@ -54,7 +60,7 @@ let ``off pays the wire by name; pinned reuses without probing; both are total o
 let ``auto reuses only a fingerprint-confirmed state; every miss shape is its own name`` () =
     // Confirmed → reuse the latest witnessed sync.
     match SinkFreshness.decide Config.SinkPolicy.Auto false (Some (manifest recorded)) (Some recorded) with
-    | SinkFreshness.Decision.ReuseSink 3 -> ()
+    | SinkFreshness.Decision.ReuseSink s when s = ord 3 -> ()
     | other -> Assert.Fail (sprintf "expected confirmed reuse, got %A" other)
     // No recording (pre-S8 witness or capture-time probe failure) → live.
     match SinkFreshness.decide Config.SinkPolicy.Auto false (Some (manifest [])) (Some recorded) with
@@ -163,3 +169,15 @@ let ``align-II.11: movedAxes is field-wise and empty exactly on equality`` () =
     Assert.Equal<SinkStore.FingerprintAxis list>(
         [ SinkStore.FingerprintAxis.Rows; SinkStore.FingerprintAxis.MaxPk; SinkStore.FingerprintAxis.Content ],
         SinkStore.FingerprintReading.movedAxes a (reading 9L None None))
+
+[<Fact>]
+let ``align-III.1: a manifest naming latestSyncId 0 reads as absent — fail-closed like every undecodable field`` () =
+    // No witness ever writes 0 (the first edition is the genesis ordinal),
+    // so a 0 on the wire is a torn or foreign manifest; the ordinal re-mints
+    // fail-closed and the whole manifest reads as absent, never as data.
+    let zeroWire =
+        """{ "connDigest": "abcd1234abcd1234", "latestSyncId": 0, "envLabel": "uat",
+             "sourceDataSource": "server", "sourceDatabase": "db",
+             "capturedAtUtc": "2026-08-15T12:00:00.0000000+00:00", "snapshotSha256": "sha",
+             "sourceFingerprints": [] }"""
+    Assert.True((SinkStore.tryParseManifestText zeroWire).IsNone)

@@ -456,7 +456,7 @@ let ``A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (s
                                         | Ok snap ->
                                             let nowUtc = System.DateTimeOffset.Parse("2026-08-15T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
                                             match SinkStore.witnessWith (Some tempStore) nowUtc cnn.DataSource cnn.Database None [] MetadataSnapshotRunner.defaultParameters snap with
-                                            | SinkStore.WitnessOutcome.Persisted (syncId, _, _) ->
+                                            | SinkStore.WitnessOutcome.Persisted (edition, _, _) ->
                                                 let digest = SinkStore.connDigest16 cnn.DataSource cnn.Database
                                                 match SinkStore.loadManifest tempStore digest with
                                                 | Some manifest ->
@@ -464,7 +464,7 @@ let ``A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (s
                                                         { Root = tempStore
                                                           Digest = digest
                                                           Manifest = manifest
-                                                          SyncId = syncId
+                                                          SyncId = edition.Ordinal
                                                           CapturedAtUtc = nowUtc }
                                                 | None -> Task.FromResult (Result.failureOf (ValidationError.create "test.manifestAbsent" "the witness persisted no manifest"))
                                             | other -> Task.FromResult (Result.failureOf (ValidationError.create "test.witnessRefused" (sprintf "%A" other)))

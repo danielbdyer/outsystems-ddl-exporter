@@ -24,7 +24,7 @@ let private nameSinkEvidence (refs: Ref.Ref list) : unit =
             match SinkRead.resolve env syncId with
             | Ok resolved ->
                 let age = (DateTimeOffset.UtcNow - resolved.CapturedAtUtc).Days
-                let payload : Voice.Payload = Map.ofList [ "env", box env; "syncId", box resolved.SyncId; "age", box (max 0 age) ] // LINT-ALLOW: Voice payload boxing at the terminal CLI boundary — the catalog's Payload carrier is Map<string,obj> by design; the typed surface is the Copy template (the run-face precedent)
+                let payload : Voice.Payload = Map.ofList [ "env", box env; "syncId", box (SyncOrdinal.value resolved.SyncId); "age", box (max 0 age) ] // LINT-ALLOW: Voice payload boxing at the terminal CLI boundary — the catalog's Payload carrier is Map<string,obj> by design; the typed surface is the Copy template (the run-face precedent)
                 TtyRenderer.renderVoicedTo Console.Error "sink.evidenceAge" payload
             | Error _ -> ()
         | _ -> ()

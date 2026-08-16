@@ -21,7 +21,7 @@ module ModelResolution =
     type ModelOrigin =
         | LiveOssys of conn: string
         | ModelFile of path: string
-        | SinkWitness of env: string * syncId: int option
+        | SinkWitness of env: string * syncId: SyncOrdinal option
 
     /// The full selection — pure, total (the data-sink chapter, S7).
     /// `offline = true` pins away from the wire: a live-OSSYS read is
@@ -33,7 +33,7 @@ module ModelResolution =
     /// configured, so no existing resolution changes shape.
     let chooseOriginWith
         (offline: bool)
-        (sinkEnv: (string * int option) option)
+        (sinkEnv: (string * SyncOrdinal option) option)
         (modelOssys: string option)
         (modelFile: string option)
         : Result<ModelOrigin> =

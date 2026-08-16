@@ -54,7 +54,7 @@ type SinkSyncVerbTests(fixture: EphemeralContainerFixture) =
                         | Ok report ->
                             Assert.Equal("uat", report.EnvLabel)
                             match report.Outcome with
-                            | SinkSyncRun.SyncOutcome.Witnessed (1, displacements) ->
+                            | SinkSyncRun.SyncOutcome.Witnessed (s, displacements) when s = SyncOrdinal.genesis ->
                                 Assert.True(displacements > 0, "genesis sync journals the appearing rows")
                             | other -> Assert.Fail (sprintf "expected Witnessed sync 1, got %A" other)
                             let manifest = SinkStore.loadManifest tempStore report.ConnDigest
@@ -64,7 +64,7 @@ type SinkSyncVerbTests(fixture: EphemeralContainerFixture) =
                         // 2) An unchanged re-sync is the CDC-silence: Silent, sync 1 stands.
                         let! second = SinkSyncRun.run connStr "uat"
                         match second |> Result.map (fun r -> r.Outcome) with
-                        | Ok (SinkSyncRun.SyncOutcome.Silent 1) -> ()
+                        | Ok (SinkSyncRun.SyncOutcome.Silent s) when s = SyncOrdinal.genesis -> ()
                         | other -> Assert.Fail (sprintf "expected Silent sync 1, got %A" other)
 
                         // 3) A metadata mutation → the next sync witnesses sync 2.
@@ -72,7 +72,7 @@ type SinkSyncVerbTests(fixture: EphemeralContainerFixture) =
                                 "UPDATE [dbo].[ossys_Entity] SET [Is_Active] = 0 WHERE [Id] = 8000;"
                         let! third = SinkSyncRun.run connStr "uat"
                         match third |> Result.map (fun r -> r.Outcome) with
-                        | Ok (SinkSyncRun.SyncOutcome.Witnessed (2, displacements)) ->
+                        | Ok (SinkSyncRun.SyncOutcome.Witnessed (s, displacements)) when SyncOrdinal.value s = 2 ->
                             Assert.True(displacements > 0, "the tombstone displacement is journaled")
                         | other -> Assert.Fail (sprintf "expected Witnessed sync 2, got %A" other)
                         return ()

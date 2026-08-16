@@ -12,7 +12,7 @@ type SinkTerminalState =
     {
         Digest         : string
         EnvLabel       : string option
-        LatestSyncId   : int
+        LatestSyncId   : SyncOrdinal
         JournalEntries : int
         CapturedAtUtc  : System.DateTimeOffset
     }

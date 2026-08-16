@@ -39,10 +39,15 @@ let ``Ref: sink refs parse latest, pinned, and keep a malformed pin as label tex
     // malformed form fails downstream as the named `sink.envUnknown` naming
     // the whole text — total parse, no silent misroute to a file ref.
     Assert.Equal(Ref.Sink ("uat", None), Ref.parse "sink:uat")
-    Assert.Equal(Ref.Sink ("uat", Some 3), Ref.parse "sink:uat@3")
+    Assert.Equal(Ref.Sink ("uat", Some SyncOrdinal.genesis), Ref.parse "sink:uat@1")
     Assert.Equal(Ref.Sink ("uat@edge", None), Ref.parse "sink:uat@edge")
+    // align-III.1: a NON-POSITIVE pin is a malformed pin — no such edition
+    // can exist (the ordinal VO), so it stays label text exactly like a
+    // non-numeric tail (and fails downstream as `sink.envUnknown`).
+    Assert.Equal(Ref.Sink ("uat@0", None), Ref.parse "sink:uat@0")
+    Assert.Equal(Ref.Sink ("uat@-2", None), Ref.parse "sink:uat@-2")
     Assert.Equal("sink:uat", Ref.identity (Ref.parse "sink:uat"))
-    Assert.Equal("sink:uat@3", Ref.identity (Ref.parse "sink:uat@3"))
+    Assert.Equal("sink:uat@1", Ref.identity (Ref.parse "sink:uat@1"))
 
 [<Fact>]
 let ``Ref: a json ref resolves to a catalog`` () =
@@ -57,7 +62,7 @@ let ``Ref: a runId ref resolves to the run's catalog (the Run-Ref connection)`` 
     try
         Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", dir)
         let run : Run.Run =
-            { RunId = "01HUB"; Ts = "t"; Command = "x"; InputDigest = "d"; Outcome = "succeeded"
+            { RunId = "01HUB"; Ts = DateTimeOffset(2026, 6, 5, 0, 0, 0, TimeSpan.Zero); Command = "x"; InputDigest = "d"; Outcome = "succeeded"
               Canary = None; Registered = 0; Applied = 0; Declined = 0; Events = []
               Artifacts = Map.ofList [ "model.json", minimalModel ]
               Ledgers = []; Bench = None }

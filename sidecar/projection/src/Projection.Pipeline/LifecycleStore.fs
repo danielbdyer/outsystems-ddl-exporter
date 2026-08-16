@@ -178,7 +178,7 @@ module LifecycleStore =
             jw.WriteEndArray()
             match r.EvidenceDigest with Some d -> jw.WriteString("evidenceDigest", d) | None -> jw.WriteNull("evidenceDigest")
             match r.ApprovedBy with Some s -> jw.WriteString("approvedBy", s) | None -> jw.WriteNull("approvedBy")
-            match r.ApprovedAt with Some s -> jw.WriteString("approvedAt", s) | None -> jw.WriteNull("approvedAt")
+            match r.ApprovedAt with Some dto -> jw.WriteString("approvedAt", dto.ToString(isoFormat, inv)) | None -> jw.WriteNull("approvedAt")
             jw.WriteEndObject()
         jw.WriteEndArray()
 
@@ -319,14 +319,17 @@ module LifecycleStore =
                 match prop el "environment" |> bindR readEnvironment with
                 | Error m -> Error m
                 | Ok environment ->
-                    let at =
-                        match optStr el "at" with
-                        | Some s ->
-                            match DateTimeOffset.TryParse(s, inv, System.Globalization.DateTimeStyles.RoundtripKind) with
-                            | true, dto -> dto
-                            | _ -> DateTimeOffset.MinValue
-                        | None -> DateTimeOffset.MinValue
-                    Ok (EpisodeCoordinate.create version environment at)
+                    // align-III.1 — the stored instant parses FAIL-CLOSED
+                    // (the writer always emits the round-trip form): a
+                    // missing or malformed `at` is a hard parse error,
+                    // never a fabricated `MinValue` coordinate dated
+                    // year 1 — the retired lie a5-F7 named.
+                    match optStr el "at" with
+                    | None -> Error "coordinate missing required 'at' instant"
+                    | Some s ->
+                        match DateTimeOffset.TryParse(s, inv, System.Globalization.DateTimeStyles.RoundtripKind) with
+                        | true, dto -> Ok (EpisodeCoordinate.create version environment dto)
+                        | _ -> Error (sprintf "coordinate carries a malformed 'at' instant '%s'" s)
         | Error m, _ -> Error m
         | _, Error m -> Error m
 
@@ -451,22 +454,41 @@ module LifecycleStore =
                                             | Some rid -> yield { RowIdentity = rid; Before = optStr rcEl "before"; After = optStr rcEl "after" }
                                             | None -> () ]
                                     | _ -> []
-                                Ok { CorrectionId = correctionId
-                                     SourceRemediationId = optStr el "sourceRemediationId"
-                                     Subject = AttributeCoordinate.create m e a
-                                     Derivation = derivation
-                                     GuardResults = grs
-                                     RowsMatched = matched
-                                     RowsChanged = changed
-                                     RowsExcluded = excluded
-                                     ChangedRows = rowChanges "changedRows"
-                                     ExcludedRows = rowChanges "excludedRows"
-                                     BeforeDigest = optStr el "beforeDigest"
-                                     AfterDigest = optStr el "afterDigest"
-                                     EvidenceColumns = evidence
-                                     EvidenceDigest = optStr el "evidenceDigest"
-                                     ApprovedBy = optStr el "approvedBy"
-                                     ApprovedAt = optStr el "approvedAt" }
+                                // align-III.1 — the decision instant parses
+                                // FAIL-CLOSED. Pre-III.1 stores persisted the
+                                // config's raw text (typically a date-only
+                                // "2026-07-23"); `AssumeUniversal` anchors a
+                                // zoneless form to UTC deterministically
+                                // (host-local parsing would fork the value by
+                                // machine), and an explicit offset passes
+                                // through. Truly-malformed text is a hard
+                                // error — never a fabricated instant.
+                                let approvedAt =
+                                    match optStr el "approvedAt" with
+                                    | None -> Ok None
+                                    | Some s ->
+                                        match DateTimeOffset.TryParse(s, inv, System.Globalization.DateTimeStyles.AssumeUniversal) with
+                                        | true, dto -> Ok (Some dto)
+                                        | _ -> Error (sprintf "receipt '%s' carries a malformed 'approvedAt' instant '%s'" correctionId s)
+                                match approvedAt with
+                                | Error msg -> Error msg
+                                | Ok approvedAt ->
+                                    Ok { CorrectionId = correctionId
+                                         SourceRemediationId = optStr el "sourceRemediationId"
+                                         Subject = AttributeCoordinate.create m e a
+                                         Derivation = derivation
+                                         GuardResults = grs
+                                         RowsMatched = matched
+                                         RowsChanged = changed
+                                         RowsExcluded = excluded
+                                         ChangedRows = rowChanges "changedRows"
+                                         ExcludedRows = rowChanges "excludedRows"
+                                         BeforeDigest = optStr el "beforeDigest"
+                                         AfterDigest = optStr el "afterDigest"
+                                         EvidenceColumns = evidence
+                                         EvidenceDigest = optStr el "evidenceDigest"
+                                         ApprovedBy = optStr el "approvedBy"
+                                         ApprovedAt = approvedAt }
                             | Error msg, _, _ -> Error msg
                             | _, Error msg, _ -> Error msg
                             | _, _, Error msg -> Error msg

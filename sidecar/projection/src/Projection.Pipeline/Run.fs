@@ -41,7 +41,11 @@ module Run =
 
     type Run = {
         RunId       : string
-        Ts          : string
+        /// The run's wall-clock instant — typed at align-III.1 (a5's
+        /// typed-instants charge). The wire keeps the UTC `o` form the
+        /// capture always wrote; the parse is fail-closed (a torn `ts`
+        /// refuses the record, never fabricates an empty instant).
+        Ts          : DateTimeOffset
         Command     : string
         /// Content hash of the run's inputs (config + source catalog) —
         /// stable across wall-clock; same inputs → same digest.
@@ -81,7 +85,9 @@ module Run =
     let private toJson (r: Run) : string =
         let o = JsonObject()
         o.["runId"]       <- JsonValue.Create r.RunId
-        o.["ts"]          <- JsonValue.Create r.Ts
+        // The UTC `o` form ("…Z") — byte-identical to every ts the store
+        // ever carried (capture always stamped UTC).
+        o.["ts"]          <- JsonValue.Create (r.Ts.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture))
         o.["command"]     <- JsonValue.Create r.Command
         o.["inputDigest"] <- JsonValue.Create r.InputDigest
         o.["outcome"]     <- JsonValue.Create r.Outcome
@@ -203,13 +209,20 @@ module Run =
                         | _ -> DateTime.MinValue
                     Some ({ CapturedAtUtc = capturedAt; Tag = estr v "tag"; Stats = stats } : Projection.Core.Bench.Run)
                 else None
-            Some {
-                RunId = str "runId"; Ts = str "ts"; Command = str "command"
-                InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
-                Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
-                Events = events; Artifacts = artifacts
-                Ledgers = ledgers; Bench = bench
-            }
+            // align-III.1 — the instant parses FAIL-CLOSED within this
+            // reader's existing posture (malformed run.json → None): a torn
+            // `ts` refuses the record instead of loading it with a
+            // fabricated empty instant.
+            match DateTimeOffset.TryParse(str "ts", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
+            | false, _ -> None
+            | true, ts ->
+                Some {
+                    RunId = str "runId"; Ts = ts; Command = str "command"
+                    InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
+                    Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
+                    Events = events; Artifacts = artifacts
+                    Ledgers = ledgers; Bench = bench
+                }
         with :? System.Text.Json.JsonException -> None   // malformed run JSON → None; a fatal propagates
 
     // --- the store (opt-in via PROJECTION_RUNS_DIR) ------------------------
@@ -341,7 +354,7 @@ module Run =
         : Run =
         let registered, applied, declined = LogSink.transformCounts ()
         { RunId       = LogSink.runId ()
-          Ts          = DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the run-record IO boundary (ISO-8601 round-trip o format)
+          Ts          = DateTimeOffset.UtcNow  // wall-clock at the run-record IO boundary; serialized in the UTC `o` form
           Command     = command
           InputDigest = inputDigest
           Outcome     = (if code = 0 then "succeeded" else "failed")

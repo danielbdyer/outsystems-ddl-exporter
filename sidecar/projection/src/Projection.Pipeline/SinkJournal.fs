@@ -33,11 +33,13 @@ module SinkJournal =
     [<Literal>]
     let fileName = "journal.ndjson"
 
-    /// One journal line: a displacement stamped with its sync coordinates.
+    /// One journal line: a displacement stamped with its sync coordinates
+    /// (typed at align-III.1 — the ordinal VO makes a zero/negative sync
+    /// unwritable; the wire stays a raw int and re-mints fail-closed).
     type JournalLine =
         {
-            SyncId        : int
-            PrevSyncId    : int option
+            SyncId        : SyncOrdinal
+            PrevSyncId    : SyncOrdinal option
             CapturedAtUtc : DateTimeOffset
             Displacement  : SinkDisplacement.Displacement
         }
@@ -46,7 +48,7 @@ module SinkJournal =
     /// `SinkDisplacement.applyOne`, genesis is the empty snapshot, and the
     /// fingerprint is the line's sync ordinal (chain STRUCTURE, verified
     /// honestly — the write witness is the fsync'd append itself).
-    let spec : LedgerSpec<MetadataSnapshotRunner.MetadataSnapshot, JournalLine, int> =
+    let spec : LedgerSpec<MetadataSnapshotRunner.MetadataSnapshot, JournalLine, SyncOrdinal> =
         {
             Genesis = SinkDisplacement.emptySnapshot
             Apply = fun state line -> SinkDisplacement.applyOne state line.Displacement
@@ -145,9 +147,9 @@ module SinkJournal =
         let node =
             JsonWriting.writeToNode (fun jw ->
                 jw.WriteStartObject()
-                jw.WriteNumber("syncId", line.SyncId)
+                jw.WriteNumber("syncId", SyncOrdinal.value line.SyncId)
                 (match line.PrevSyncId with
-                 | Some p -> jw.WriteNumber("prevSyncId", p)
+                 | Some p -> jw.WriteNumber("prevSyncId", SyncOrdinal.value p)
                  | None -> jw.WriteNull("prevSyncId"))
                 jw.WriteString("capturedAtUtc", line.CapturedAtUtc.ToString("O", Globalization.CultureInfo.InvariantCulture))
                 jw.WriteString("table", SinkDisplacement.SinkTable.token line.Displacement.Table)
@@ -330,12 +332,21 @@ module SinkJournal =
             result {
                 let! syncId =
                     match root.TryGetProperty "syncId" with
-                    | true, v when v.ValueKind = JsonValueKind.Number -> Ok (v.GetInt32())
+                    | true, v when v.ValueKind = JsonValueKind.Number ->
+                        // align-III.1 — the ordinal re-mints fail-closed: a
+                        // stored 0/negative is a corrupt line by name, never
+                        // a readable "edition".
+                        match SyncOrdinal.create (v.GetInt32()) with
+                        | Ok o -> Ok o
+                        | Error m -> fail "sink.journal.corruptLine" (sprintf "line syncId: %s" m)
                     | _ -> fail "sink.journal.corruptLine" "line missing syncId"
-                let prevSyncId =
+                let! prevSyncId =
                     match root.TryGetProperty "prevSyncId" with
-                    | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetInt32())
-                    | _ -> None
+                    | true, v when v.ValueKind = JsonValueKind.Number ->
+                        match SyncOrdinal.create (v.GetInt32()) with
+                        | Ok o -> Ok (Some o)
+                        | Error m -> fail "sink.journal.corruptLine" (sprintf "line prevSyncId: %s" m)
+                    | _ -> Ok None
                 let! capturedAt =
                     match root.TryGetProperty "capturedAtUtc" with
                     | true, v when v.ValueKind = JsonValueKind.String ->
@@ -472,20 +483,21 @@ module SinkJournal =
     /// strictly increasing between sync groups). A regression is the named
     /// drift, never a silent re-run.
     let admitChain (lines: JournalLine list) : Result<Verified<JournalLine> list> =
-        let folder (acc: Result<int * Verified<JournalLine> list>) (line: JournalLine) =
+        let folder (acc: Result<SyncOrdinal option * Verified<JournalLine> list>) (line: JournalLine) =
             acc
             |> Result.bind (fun (lastSync, verified) ->
-                if line.SyncId < lastSync then
+                match lastSync with
+                | Some last when line.SyncId < last ->
                     fail "sink.journal.syncRegression"
-                        (sprintf "journal syncId regressed: %d after %d" line.SyncId lastSync)
-                else
-                    match Ledger.resumeAdmit line.SyncId (Ledger.entryOf spec line.SyncId line) with
-                    | Ok v -> Ok (line.SyncId, v :: verified)
+                        (sprintf "journal syncId regressed: %s after %s" (SyncOrdinal.text line.SyncId) (SyncOrdinal.text last))
+                | _ ->
+                    match Ledger.resumeAdmit line.SyncId (Ledger.entryOf spec (SyncOrdinal.value line.SyncId) line) with
+                    | Ok v -> Ok (Some line.SyncId, v :: verified)
                     | Error drift ->
                         fail "sink.journal.syncRegression"
                             (sprintf "journal fingerprint drift at position %d" drift.Position))
         lines
-        |> List.fold folder (Ok (0, []))
+        |> List.fold folder (Ok (None, []))
         |> Result.map (snd >> List.rev)
 
     /// The FTC at the acquisition grain: fold ⊕ over the verified chain
@@ -496,5 +508,5 @@ module SinkJournal =
         Ledger.replay spec verified
 
     /// The latest sync ordinal recorded, when any.
-    let lastSyncId (lines: JournalLine list) : int option =
+    let lastSyncId (lines: JournalLine list) : SyncOrdinal option =
         lines |> List.map (fun l -> l.SyncId) |> function [] -> None | ids -> Some (List.max ids)

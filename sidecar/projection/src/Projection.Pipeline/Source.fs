@@ -268,7 +268,7 @@ module Source =
     /// replays). ReadCatalog only: a witnessed state carries no live data to
     /// probe, so `AcquireProfile = None` — asking a sink for data evidence is
     /// structurally impossible, exactly like a snapshot file.
-    let ofSink (env: string) (syncId: int option) : Source =
+    let ofSink (env: string) (syncId: SyncOrdinal option) : Source =
         { Identity       = SinkRead.identityOf env syncId
           Capabilities   = Set.ofList [ ReadCatalog ]
           ReadCatalog    = (fun () -> SinkRead.readEnv env syncId)

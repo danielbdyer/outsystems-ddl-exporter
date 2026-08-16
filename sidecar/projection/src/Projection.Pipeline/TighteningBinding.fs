@@ -102,7 +102,12 @@ module TighteningBinding =
                     match atOpt with
                     | None -> Result.success None
                     | Some raw ->
-                        match System.DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind) with
+                        // align-III.1 determinism rider: a zoneless form
+                        // anchors to UTC (`AssumeUniversal`) instead of the
+                        // host's local offset — the same config must not
+                        // parse to two instants on two machines. Explicit
+                        // offsets pass through unchanged.
+                        match System.DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
                         | true, dto -> Result.success (Some dto)
                         | false, _ ->
                             Result.failureOf (

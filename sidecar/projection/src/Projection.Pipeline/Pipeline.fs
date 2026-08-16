@@ -1979,14 +1979,14 @@ module Compose =
                 (LogSink.envelope LogSink.Info LogSink.Summary "sink.evidenceAge"
                     (Map.ofList
                         [ "digest", box resolved.Digest
-                          "syncId", box resolved.SyncId
+                          "syncId", box (SyncOrdinal.value resolved.SyncId)
                           "age", box ageDays ]))
             match SinkStore.loadSnapshotAt resolved.Root resolved.Digest resolved.SyncId with
             | None ->
                 return
                     Result.failureOf
                         (ValidationError.create "sink.snapshotUnreadable"
-                            (sprintf "model read: witnessed sync %d reads as absent (torn or undecodable — the store is fail-closed); re-run against the wire." resolved.SyncId))
+                            (sprintf "model read: witnessed sync %s reads as absent (torn or undecodable — the store is fail-closed); re-run against the wire." (SyncOrdinal.text resolved.SyncId)))
             | Some snapshot ->
                 match! SinkRead.readCatalog resolved with
                 | Error es -> return Result.failure es

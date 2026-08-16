@@ -34,11 +34,11 @@ module SinkSyncRun =
     type SyncOutcome =
         /// A new sync landed (the estate moved): its ordinal and the
         /// journaled displacement count.
-        | Witnessed of syncId: int * displacements: int
+        | Witnessed of syncId: SyncOrdinal * displacements: int
         /// The estate matches the latest witnessed state — nothing
         /// journaled (the metadata plane's CDC-silence, rendered as one
         /// quiet line by the face).
-        | Silent of syncId: int
+        | Silent of syncId: SyncOrdinal
 
     type SyncReport =
         {
@@ -60,8 +60,13 @@ module SinkSyncRun =
                     "projection sync: the witness persisted nothing (the store was reachable at plan time; the read's notice rollup names the write failure).")
         | Some after ->
             SinkStore.nameEnvironment root digest envLabel |> ignore
-            let beforeSync = before |> Option.map (fun m -> m.LatestSyncId) |> Option.defaultValue 0
-            if after.LatestSyncId > beforeSync then
+            // align-III.1: "no prior witness" is the option — a first
+            // witness (before = None) is always a new edition.
+            let movedPastBefore =
+                match before with
+                | None -> true
+                | Some b -> after.LatestSyncId > b.LatestSyncId
+            if movedPastBefore then
                 let displacements =
                     match SinkJournal.load (SinkStore.journalPath root digest) with
                     | Ok lines ->

@@ -61,8 +61,8 @@ module SinkStore =
     let sourceDir (storeRoot: string) (digest: string) : string = Path.Combine(sinkRoot storeRoot, digest)
     let manifestPath (storeRoot: string) (digest: string) : string = Path.Combine(sourceDir storeRoot digest, "manifest.json")
     let journalPath (storeRoot: string) (digest: string) : string = Path.Combine(sourceDir storeRoot digest, SinkJournal.fileName)
-    let snapshotPath (storeRoot: string) (digest: string) (syncId: int) : string =
-        Path.Combine(sourceDir storeRoot digest, "snapshots", string syncId, "snapshot.json")
+    let snapshotPath (storeRoot: string) (digest: string) (syncId: SyncOrdinal) : string =
+        Path.Combine(sourceDir storeRoot digest, "snapshots", SyncOrdinal.text syncId, "snapshot.json")
 
     // ------------------------------------------------------------------
     // The manifest.
@@ -124,7 +124,11 @@ module SinkStore =
     type Manifest =
         {
             ConnDigest     : string
-            LatestSyncId   : int
+            /// Typed at align-III.1: manifests always name a real edition
+            /// (the first witness mints the genesis ordinal), so this is
+            /// never optional — and never 0. The wire stays a raw int and
+            /// re-mints fail-closed on read.
+            LatestSyncId   : SyncOrdinal
             EnvLabel       : string option
             SourceDataSource : string
             SourceDatabase : string
@@ -149,7 +153,7 @@ module SinkStore =
         JsonWriting.writeToString (fun jw ->
             jw.WriteStartObject()
             jw.WriteString("connDigest", m.ConnDigest)
-            jw.WriteNumber("latestSyncId", m.LatestSyncId)
+            jw.WriteNumber("latestSyncId", SyncOrdinal.value m.LatestSyncId)
             (match m.EnvLabel with
              | Some l -> jw.WriteString("envLabel", l)
              | None -> jw.WriteNull("envLabel"))
@@ -191,6 +195,15 @@ module SinkStore =
                 match root.TryGetProperty name with
                 | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetInt32())
                 | _ -> None
+            // align-III.1 — the ordinal re-mints fail-closed: a manifest
+            // naming sync 0 (or below) is torn/foreign and reads as absent,
+            // exactly like every other undecodable field here.
+            let ordinalOf (name: string) =
+                intOf name
+                |> Option.bind (fun n ->
+                    match SyncOrdinal.create n with
+                    | Ok o -> Some o
+                    | Error _ -> None)
             let optStrOf (name: string) =
                 match root.TryGetProperty name with
                 | true, v when v.ValueKind = JsonValueKind.String ->
@@ -235,7 +248,7 @@ module SinkStore =
                                 | None -> ()
                             | _ -> () ]
                 | _ -> []
-            match strOf "connDigest", intOf "latestSyncId", optStrOf "envLabel", strOf "sourceDataSource", strOf "sourceDatabase", strOf "capturedAtUtc", strOf "snapshotSha256" with
+            match strOf "connDigest", ordinalOf "latestSyncId", optStrOf "envLabel", strOf "sourceDataSource", strOf "sourceDatabase", strOf "capturedAtUtc", strOf "snapshotSha256" with
             | Some digest, Some latest, Some envLabel, Some ds, Some db, Some at, Some sha ->
                 match DateTimeOffset.TryParse(at, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind) with
                 | true, dto ->
@@ -284,7 +297,7 @@ module SinkStore =
 
     /// Fail-closed snapshot read, SHA-bound when the manifest names this
     /// sync: a torn write reads as absent, never as data.
-    let loadSnapshotAt (storeRoot: string) (digest: string) (syncId: int) : MetadataSnapshotRunner.MetadataSnapshot option =
+    let loadSnapshotAt (storeRoot: string) (digest: string) (syncId: SyncOrdinal) : MetadataSnapshotRunner.MetadataSnapshot option =
         tryReadAllText (snapshotPath storeRoot digest syncId)
         |> Option.bind (fun text ->
             let shaBound =
@@ -324,11 +337,14 @@ module SinkStore =
     /// Why a read did not become a sink state — every skip is named.
     [<RequireQualifiedAccess>]
     type WitnessOutcome =
-        /// A new sync landed: snapshot + journal lines + manifest.
-        | Persisted of syncId: int * displacements: int * reconciledOrphan: bool
+        /// A new sync landed: snapshot + journal lines + manifest. The
+        /// outcome names WHICH edition landed (align-III.1: the digest ×
+        /// ordinal pair travels as the `SinkEdition` carrier).
+        | Persisted of edition: SinkEdition * displacements: int * reconciledOrphan: bool
         /// The estate is byte-identical to the latest witnessed state —
-        /// nothing written (the metadata plane's CDC-silence).
-        | Unchanged of syncId: int
+        /// nothing written (the metadata plane's CDC-silence); the edition
+        /// it still equals, named.
+        | Unchanged of edition: SinkEdition
         /// A scoped acquisition — witnessing refused by the totality gate;
         /// the axes it narrowed on, named (align-II.9: the scope is a
         /// value, so the skip carries WHICH narrowing fired the gate).
@@ -389,8 +405,11 @@ module SinkStore =
                         |> Option.bind (fun m -> loadSnapshotAt root digest m.LatestSyncId |> Option.map (fun s -> m, s))
                     let previousSnapshot =
                         previous |> Option.map snd |> Option.defaultValue SinkDisplacement.emptySnapshot
-                    let previousSyncId =
-                        previous |> Option.map (fun (m, _) -> m.LatestSyncId) |> Option.defaultValue 0
+                    // align-III.1 — "nothing witnessed yet" is the option,
+                    // never a magic 0: both fabrication sites below carry
+                    // it directly as the predecessor link.
+                    let previousOrdinal =
+                        previous |> Option.map (fun (m, _) -> m.LatestSyncId)
                     // Orphan reconciliation: a manifest pointing past the
                     // journal's last sync means a crash landed between the
                     // manifest and the journal in some earlier ordering, or
@@ -402,26 +421,34 @@ module SinkStore =
                         match SinkJournal.load journalFile with
                         | Ok lines -> lines
                         | Error _ -> []
-                    let journalLast = SinkJournal.lastSyncId journalLines |> Option.defaultValue 0
+                    let journalLast = SinkJournal.lastSyncId journalLines
+                    let journalBehind =
+                        match previousOrdinal, journalLast with
+                        | Some _, None -> true
+                        | Some prev, Some jl -> jl < prev
+                        | None, _ -> false
                     let reconciled =
-                        if journalLast < previousSyncId then
+                        match previousOrdinal with
+                        | Some prev when journalBehind ->
                             let fromSnapshot =
-                                if journalLast = 0 then SinkDisplacement.emptySnapshot
-                                else loadSnapshotAt root digest journalLast |> Option.defaultValue SinkDisplacement.emptySnapshot
+                                match journalLast with
+                                | None -> SinkDisplacement.emptySnapshot
+                                | Some jl -> loadSnapshotAt root digest jl |> Option.defaultValue SinkDisplacement.emptySnapshot
                             let missing = SinkDisplacement.diff fromSnapshot previousSnapshot
                             let lines =
                                 missing
                                 |> List.map (fun d ->
-                                    { SinkJournal.SyncId = previousSyncId
-                                      SinkJournal.PrevSyncId = (if journalLast = 0 then None else Some journalLast)
+                                    { SinkJournal.SyncId = prev
+                                      SinkJournal.PrevSyncId = journalLast
                                       SinkJournal.CapturedAtUtc = nowUtc
                                       SinkJournal.Displacement = d })
                             match SinkJournal.append journalFile lines with
                             | Ok () -> true
                             | Error _ -> false
-                        else false
+                        | _ -> false
                     let displacements = SinkDisplacement.diff previousSnapshot snapshot
-                    if List.isEmpty displacements && Option.isSome previous then
+                    match displacements, previous with
+                    | [], Some (previousM, _) ->
                         // CDC-silence — nothing journaled. The freshness
                         // recording still RE-ANCHORS when the probe moved
                         // while the projected state did not (a mutation in a
@@ -430,20 +457,18 @@ module SinkStore =
                         // keeps `auto` from degenerating into always-live
                         // for such estates. A failed probe ([]) never
                         // clobbers good recordings.
-                        (match previousManifest with
-                         | Some m when not (List.isEmpty fingerprints) && fingerprints <> m.SourceFingerprints ->
-                             writeAtomic (manifestPath root digest) (manifestJson { m with SourceFingerprints = fingerprints })
-                         | _ -> ())
-                        WitnessOutcome.Unchanged previousSyncId
-                    else
-                        let syncId = previousSyncId + 1
+                        (if not (List.isEmpty fingerprints) && fingerprints <> previousM.SourceFingerprints then
+                            writeAtomic (manifestPath root digest) (manifestJson { previousM with SourceFingerprints = fingerprints }))
+                        WitnessOutcome.Unchanged { ConnDigest = digest; Ordinal = previousM.LatestSyncId }
+                    | _ ->
+                        let syncId = SyncOrdinal.next previousOrdinal
                         let text = MetadataSnapshotCodec.serialize snapshot
                         writeAtomic (snapshotPath root digest syncId) text
                         let lines =
                             displacements
                             |> List.map (fun d ->
                                 { SinkJournal.SyncId = syncId
-                                  SinkJournal.PrevSyncId = (if previousSyncId = 0 then None else Some previousSyncId)
+                                  SinkJournal.PrevSyncId = previousOrdinal
                                   SinkJournal.CapturedAtUtc = nowUtc
                                   SinkJournal.Displacement = d })
                         match SinkJournal.append journalFile lines with
@@ -467,7 +492,7 @@ module SinkStore =
                                   SnapshotSha256 = sha256Text text
                                   SourceFingerprints = fingerprints }
                             writeAtomic (manifestPath root digest) (manifestJson manifest)
-                            WitnessOutcome.Persisted (syncId, List.length displacements, reconciled)
+                            WitnessOutcome.Persisted ({ ConnDigest = digest; Ordinal = syncId }, List.length displacements, reconciled)
                 with ex ->
                     WitnessOutcome.Failed ("sink.writeFailed", ex.Message)
 

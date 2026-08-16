@@ -25,7 +25,11 @@ module RunLedger =
     /// the run's `summary.runComplete`; this is the index).
     type LedgerRecord = {
         RunId      : string
-        Ts         : string
+        /// Typed at align-III.1 (a5's typed-instants charge). The wire
+        /// keeps the UTC `o` form; a malformed stored `ts` drops the line
+        /// through this reader's existing lenient posture (align-III.3
+        /// owns naming the skips).
+        Ts         : DateTimeOffset
         Command    : string
         Outcome    : string
         /// "green" (canary.diffEmpty) / "red" (canary.divergence) / None (no
@@ -46,7 +50,7 @@ module RunLedger =
         (use jw = new Utf8JsonWriter(ms)
          jw.WriteStartObject()
          jw.WriteString("runId", r.RunId)
-         jw.WriteString("ts", r.Ts)
+         jw.WriteString("ts", r.Ts.UtcDateTime.ToString("o", Globalization.CultureInfo.InvariantCulture))
          jw.WriteString("command", r.Command)
          jw.WriteString("outcome", r.Outcome)
          (match r.Canary with
@@ -72,11 +76,18 @@ module RunLedger =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String
                 then Some (str v) else None
-            Some {
-                RunId = getStr "runId"; Ts = getStr "ts"; Command = getStr "command"
-                Outcome = getStr "outcome"; Canary = canary
-                Registered = getInt "registered"; Applied = getInt "applied"; Declined = getInt "declined"
-            }
+            // align-III.1 — the instant parses FAIL-CLOSED within this
+            // reader's existing lenient posture: a malformed `ts` drops
+            // the line (like any malformed line), never fabricates an
+            // empty instant.
+            match DateTimeOffset.TryParse(getStr "ts", Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.AssumeUniversal) with
+            | false, _ -> None
+            | true, ts ->
+                Some {
+                    RunId = getStr "runId"; Ts = ts; Command = getStr "command"
+                    Outcome = getStr "outcome"; Canary = canary
+                    Registered = getInt "registered"; Applied = getInt "applied"; Declined = getInt "declined"
+                }
         with :? System.Text.Json.JsonException -> None   // malformed ledger JSON → None; a fatal propagates
 
     /// The configured ledger directory (opt-in via `PROJECTION_LEDGER_DIR`).

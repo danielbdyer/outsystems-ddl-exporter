@@ -33,7 +33,8 @@ let buildInspectView (r: Run.Run) : View.View =
         | _ -> View.Neutral
     let header =
         [ View.Hero (outcomeStatus, sprintf "%s — %s" r.RunId r.Command)
-          View.Field ("at", r.Ts, View.Neutral)
+          // The UTC `o` form — the same bytes the stored ts always carried.
+          View.Field ("at", r.Ts.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture), View.Neutral)
           View.Field (
               "outcome",
               r.Outcome + (match r.Canary with Some c -> sprintf "   ·   canary %s" c | None -> ""),

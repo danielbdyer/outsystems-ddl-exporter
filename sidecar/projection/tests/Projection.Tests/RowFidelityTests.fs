@@ -312,7 +312,7 @@ let private withRunStore (f: string -> unit) : unit =
         if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
 
 let private storedRun (runId: string) (ledgers: Run.LedgerRef list) : Run.Run =
-    { RunId = runId; Ts = "2026-07-17T08:00:00Z"; Command = "projection move"
+    { RunId = runId; Ts = System.DateTimeOffset(2026, 7, 17, 8, 0, 0, System.TimeSpan.Zero); Command = "projection move"
       InputDigest = ""; Outcome = "succeeded"; Canary = None
       Registered = 0; Applied = 0; Declined = 0
       Events = []; Artifacts = Map.empty; Ledgers = ledgers; Bench = None }

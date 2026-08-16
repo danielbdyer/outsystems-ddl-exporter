@@ -24,11 +24,11 @@ let private reportJson (report: SinkSyncRun.SyncReport) : string =
     match report.Outcome with
     | SinkSyncRun.SyncOutcome.Witnessed (syncId, displacements) ->
         o["outcome"] <- JsonValue.Create "witnessed"
-        o["syncId"] <- JsonValue.Create syncId
+        o["syncId"] <- JsonValue.Create (SyncOrdinal.value syncId)
         o["displacements"] <- JsonValue.Create displacements
     | SinkSyncRun.SyncOutcome.Silent syncId ->
         o["outcome"] <- JsonValue.Create "unchanged"
-        o["syncId"] <- JsonValue.Create syncId
+        o["syncId"] <- JsonValue.Create (SyncOrdinal.value syncId)
         o["displacements"] <- JsonValue.Create 0
     o.ToJsonString()
 
@@ -52,14 +52,14 @@ let runSync (args: SyncArgs) : int =
                     TtyRenderer.renderVoicedTo Console.Out "sync.completed"
                         (Map.ofList
                             [ "env", box report.EnvLabel
-                              "syncId", box syncId
+                              "syncId", box (SyncOrdinal.value syncId)
                               "displacements", box displacements
                               yield! (journal |> Option.map (fun p -> "journal", box p) |> Option.toList) ] : Voice.Payload)
                 | SinkSyncRun.SyncOutcome.Silent syncId ->
                     TtyRenderer.renderVoicedTo Console.Out "sync.unchanged"
                         (Map.ofList
                             [ "env", box report.EnvLabel
-                              "syncId", box syncId ] : Voice.Payload)
+                              "syncId", box (SyncOrdinal.value syncId) ] : Voice.Payload)
             0
         | Error errors ->
             match errors with

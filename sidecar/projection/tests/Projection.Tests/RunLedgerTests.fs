@@ -9,7 +9,7 @@ open Projection.Pipeline
 /// (`REPORTING_HORIZON.md` §3; `DECISIONS 2026-05-22 — R6`).
 
 let private record (canary: string option) : RunLedger.LedgerRecord =
-    { RunId = "r"; Ts = "t"; Command = "projection canary"; Outcome = "succeeded"
+    { RunId = "r"; Ts = System.DateTimeOffset(2026, 6, 5, 0, 0, 0, System.TimeSpan.Zero); Command = "projection canary"; Outcome = "succeeded"
       Canary = canary; Registered = 42; Applied = 0; Declined = 0 }
 
 [<Fact>]
@@ -66,3 +66,20 @@ let ``Tier-4: append then read round-trips records in order`` () =
         Assert.Equal(None, records.[2].Canary)
     finally
         try Directory.Delete(dir, true) with _ -> ()
+
+[<Fact>]
+let ``align-III.1: a stored line with a malformed ts drops through the lenient posture — never a fabricated instant`` () =
+    // The reader's standing posture skips malformed lines (align-III.3 owns
+    // naming the skips); typing the instant folds a torn `ts` into that
+    // posture instead of loading it as an empty string.
+    let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    try
+        RunLedger.append dir (record (Some "green"))
+        File.AppendAllText(
+            RunLedger.ledgerPath dir,
+            """{"runId":"torn","ts":"not-an-instant","command":"c","outcome":"failed","canary":null,"registered":0,"applied":0,"declined":0}""" + "\n")
+        let records = RunLedger.read dir
+        Assert.Equal(1, List.length records)
+        Assert.Equal("r", records.[0].RunId)
+    finally
+        if Directory.Exists dir then Directory.Delete(dir, true)

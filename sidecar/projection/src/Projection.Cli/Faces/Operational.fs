@@ -203,7 +203,7 @@ let runEject (storePath: string) : int =
             TtyRenderer.renderVoicedTo Console.Out "eject.sinkCarried"
                 (Map.ofList
                     [ "sources",        box (List.length pkg.SinkStates)
-                      "syncs",          box (pkg.SinkStates |> List.sumBy (fun s -> s.LatestSyncId))
+                      "syncs",          box (pkg.SinkStates |> List.sumBy (fun s -> SyncOrdinal.value s.LatestSyncId))
                       "journalEntries", box (pkg.SinkStates |> List.sumBy (fun s -> s.JournalEntries)) ])
         if EjectRun.isFaithful pkg then
             // §6 — the freeze's self-verification, asserted.

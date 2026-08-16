@@ -37,7 +37,7 @@ module private RunTestCatalogs =
 /// predicate: load(save(run)) = run, and inputDigest depends only on inputs.
 
 let private sample : Run.Run =
-    { RunId = "01ABCDEF"; Ts = "2026-06-05T00:00:00Z"; Command = "projection canary"
+    { RunId = "01ABCDEF"; Ts = System.DateTimeOffset(2026, 6, 5, 0, 0, 0, System.TimeSpan.Zero); Command = "projection canary"
       InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = Some "green"
       Registered = 42; Applied = 3; Declined = 1
       Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ]
@@ -334,3 +334,16 @@ let ``Run: capture builds a Run from the live LogSink state + the artifact tree`
     Assert.Equal<Map<string, string>>(artifacts, run.Artifacts)   // the tree is carried
     Assert.NotEmpty(run.RunId)
     Assert.NotEmpty(run.Events)                     // the Info event is in the trail
+
+[<Fact>]
+let ``align-III.1: a stored run with a torn ts refuses to load (fail-closed within the reader's option posture)`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.Guid.NewGuid().ToString("N"))
+    try
+        Run.save dir sample
+        let path = Run.runPath dir sample.RunId
+        System.IO.File.WriteAllText(
+            path,
+            System.IO.File.ReadAllText(path).Replace("\"ts\": \"2026-06-05T00:00:00.0000000Z\"", "\"ts\": \"not-an-instant\""))
+        Assert.True((Run.load dir sample.RunId).IsNone)
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)

@@ -22,6 +22,12 @@ open Projection.Adapters.OssysSql
 [<Xunit.Collection("Docker-SqlServer")>]
 type SinkWitnessTests(fixture: EphemeralContainerFixture) =
 
+    // align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+    let ord (n: int) : SyncOrdinal =
+        match SyncOrdinal.create n with
+        | Ok o -> o
+        | Error m -> failwith m
+
     let withStoreEnv (root: string option) (body: unit -> unit) =
         let priorEstate = Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"
         let priorLedger = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
@@ -61,11 +67,11 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                         Assert.True(Result.isSuccess first)
                         let manifest1 = SinkStore.loadManifest tempStore digest
                         Assert.True(manifest1.IsSome)
-                        Assert.Equal(1, manifest1.Value.LatestSyncId)
+                        Assert.Equal(ord 1, manifest1.Value.LatestSyncId)
                         Assert.Equal<string list>(
                             SinkFreshness.targets |> List.map SinkFreshness.nameOf,
                             manifest1.Value.SourceFingerprints |> List.map fst)
-                        Assert.True((SinkStore.loadSnapshotAt tempStore digest 1).IsSome)
+                        Assert.True((SinkStore.loadSnapshotAt tempStore digest (ord 1)).IsSome)
                         let journal1 =
                             SinkJournal.load (SinkStore.journalPath tempStore digest)
                             |> Result.defaultValue []
@@ -74,7 +80,7 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                         // 2) An UNCHANGED total read appends nothing.
                         let! _ = LiveModelRead.fromConnection cnn
                         let manifestStill = (SinkStore.loadManifest tempStore digest).Value
-                        Assert.Equal(1, manifestStill.LatestSyncId)
+                        Assert.Equal(ord 1, manifestStill.LatestSyncId)
 
                         // 3) A metadata mutation → the freshness bellwether
                         //    MOVES against the recorded fingerprints (S8's
@@ -99,19 +105,19 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                             | other -> Assert.Fail (sprintf "expected the entity bellwether to move, got %A" other)
                         let! _ = LiveModelRead.fromConnection cnn
                         let manifest2 = (SinkStore.loadManifest tempStore digest).Value
-                        Assert.Equal(2, manifest2.LatestSyncId)
+                        Assert.Equal(ord 2, manifest2.LatestSyncId)
                         // The fresh witness re-recorded the bellwethers, so
                         //    `auto` now confirms and reuses sync 2.
                         let! confirmedProbe = SinkFreshness.probe cnn
                         let _ =
                             match SinkFreshness.decide Config.SinkPolicy.Auto false (Some manifest2) (Some confirmedProbe) with
-                            | SinkFreshness.Decision.ReuseSink 2 -> ()
+                            | SinkFreshness.Decision.ReuseSink s when s = ord 2 -> ()
                             | other -> Assert.Fail (sprintf "expected confirmed reuse of sync 2, got %A" other)
                         let journal2 =
                             SinkJournal.load (SinkStore.journalPath tempStore digest)
                             |> Result.defaultValue []
                         Assert.True(List.length journal2 > List.length journal1)
-                        let sync2Lines = journal2 |> List.filter (fun l -> l.SyncId = 2)
+                        let sync2Lines = journal2 |> List.filter (fun l -> l.SyncId = ord 2)
                         Assert.NotEmpty sync2Lines
 
                         // 4) A SCOPED read is gated: nothing advances.
@@ -119,7 +125,7 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                             { MetadataSnapshotRunner.defaultParameters with
                                 ModuleNames = [ "Fulfillment" ] }
                         let! _ = LiveModelRead.fromConnectionWith scoped cnn
-                        Assert.Equal(2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
+                        Assert.Equal(ord 2, (SinkStore.loadManifest tempStore digest).Value.LatestSyncId)
                         Assert.Equal(List.length journal2,
                                      SinkJournal.load (SinkStore.journalPath tempStore digest)
                                      |> Result.defaultValue [] |> List.length)
@@ -135,7 +141,7 @@ type SinkWitnessTests(fixture: EphemeralContainerFixture) =
                             |> Result.defaultValue []
                             |> SinkJournal.admitChain
                             |> Result.defaultWith (fun e -> failwithf "chain refused: %A" e)
-                        let latest = (SinkStore.loadSnapshotAt tempStore digest 2).Value
+                        let latest = (SinkStore.loadSnapshotAt tempStore digest (ord 2)).Value
                         Assert.Equal<MetadataSnapshotRunner.MetadataSnapshot>(
                             SinkDisplacement.canonical latest, SinkJournal.replay verified)
                         return ()

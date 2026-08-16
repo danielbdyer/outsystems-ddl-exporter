@@ -598,3 +598,24 @@ let ``align-II.3: a malformed index ref refuses by name`` () =
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "indexRef.malformed")
     | Ok _ -> Assert.Fail "expected the malformed ref to refuse"
+
+[<Fact>]
+let ``align-III.1: a date-only approvedAt anchors to UTC — the same config parses to ONE instant on every host`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides =
+                [ { AttributeRef = "AppCore.User.MiddleName"
+                    Action = "keepNullable"
+                    ApprovedBy = Some "dan"
+                    ApprovedAt = Some "2026-07-23"
+                    Rationale = None
+                    Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Fail(sprintf "expected the date-only instant to bind: %A" es)
+    | Ok policy ->
+        let overrides =
+            policy.Interventions
+            |> List.collect (function TighteningIntervention.Nullability (_, cfg) -> cfg.Overrides | _ -> [])
+        let p = (List.exactlyOne overrides).Provenance |> Option.get
+        Assert.Equal(Some (System.DateTimeOffset(2026, 7, 23, 0, 0, 0, System.TimeSpan.Zero)), p.ApprovedAt)

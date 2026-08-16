@@ -278,7 +278,7 @@ let private sampleReceipts : DataCorrectionReceipt list =
         ExcludedRows = []
         BeforeDigest = Some "abc123"; AfterDigest = Some "def456"
         EvidenceColumns = [ AttributeCoordinate.create "Sales" "Account" "LegacyCustomerId" ]; EvidenceDigest = Some "ev123"
-        ApprovedBy = Some "operator"; ApprovedAt = Some "2026-07-23" }
+        ApprovedBy = Some "operator"; ApprovedAt = Some (System.DateTimeOffset(2026, 7, 23, 0, 0, 0, System.TimeSpan.Zero)) }
       { CorrectionId = "drop-malformed"; SourceRemediationId = None
         Subject = AttributeCoordinate.create "Ops" "Rule" "Id"
         Derivation = DataCorrectionDerivation.ExcludeRows
@@ -352,3 +352,67 @@ let ``loadCorrectionReceipts refuses a malformed receipts file by name`` () =
         match FidelityCompareRun.loadCorrectionReceipts path with
         | Ok _ -> Assert.True(false, "expected a shape refusal")
         | Error es -> Assert.Equal("fidelity.correctionReceipts.shape", (List.head es).Code))
+
+// ===========================================================================
+// align-III.1 — stored instants parse FAIL-CLOSED (the MinValue lie retired)
+// ===========================================================================
+
+[<Fact>]
+let ``align-III.1: a malformed coordinate 'at' is a ParseFailure — never a MinValue-dated episode`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path chain |> mustStoreOk
+        // Tamper every coordinate's stored instant. The writer's default
+        // encoder escapes '+' (the II.5 lesson), so the tamper matches the
+        // VALUE by shape, not by exact bytes.
+        let tampered =
+            System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText path,
+                "\"at\": \"[^\"]*\"",
+                "\"at\": \"not-an-instant\"")
+        System.IO.File.WriteAllText(path, tampered)
+        match LifecycleStore.load path with
+        | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
+        | other -> Assert.Fail(sprintf "expected ParseFailure, got %A" other))
+
+[<Fact>]
+let ``align-III.1: a coordinate missing its 'at' is a ParseFailure (the writer always emits it)`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path chain |> mustStoreOk
+        // Rename the key: the field goes missing without breaking the JSON.
+        let tampered =
+            System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText path,
+                "\"at\": \"([^\"]*)\"",
+                "\"atRenamed\": \"$1\"")
+        System.IO.File.WriteAllText(path, tampered)
+        match LifecycleStore.load path with
+        | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
+        | other -> Assert.Fail(sprintf "expected ParseFailure, got %A" other))
+
+[<Fact>]
+let ``align-III.1: a receipt's malformed 'approvedAt' is a ParseFailure; a stored date-only form reads as the UTC instant`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path receiptChain |> mustStoreOk
+        // (a) The pre-III.1 stores carried the config's raw text — typically
+        // date-only. Simulate one and read it back: AssumeUniversal anchors
+        // it to UTC deterministically (host-local parsing would fork the
+        // value by machine).
+        let dateOnly =
+            System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText path,
+                "\"approvedAt\": \"[^\"]*\"",
+                "\"approvedAt\": \"2026-07-23\"")
+        System.IO.File.WriteAllText(path, dateOnly)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let loadedReceipt =
+            (EpisodicLifecycle.episodes loaded |> List.item 1).DataCorrectionReceipts
+            |> List.find (fun r -> r.CorrectionId = "backfill-customerid")
+        Assert.Equal(Some (DateTimeOffset(2026, 7, 23, 0, 0, 0, TimeSpan.Zero)), loadedReceipt.ApprovedAt)
+        // (b) Truly-malformed text is a hard error — never a fabricated instant.
+        let malformed =
+            System.IO.File.ReadAllText(path)
+                .Replace("\"approvedAt\": \"2026-07-23\"", "\"approvedAt\": \"yesterday-ish\"")
+        System.IO.File.WriteAllText(path, malformed)
+        match LifecycleStore.load path with
+        | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
+        | other -> Assert.Fail(sprintf "expected ParseFailure, got %A" other))

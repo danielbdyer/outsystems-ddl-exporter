@@ -68,7 +68,7 @@ type TwinSinkCatalogImportTests () =
                         MetadataSnapshotRunner.defaultParameters snapshot
                 let _ =
                     match witnessed with
-                    | SinkStore.WitnessOutcome.Persisted (1, _, _) -> ()
+                    | SinkStore.WitnessOutcome.Persisted (e, _, _) when e.Ordinal = Projection.Core.SyncOrdinal.genesis -> ()
                     | other -> failwithf "expected the first witnessed sync, got %A" other
 
                 // The import resolves `sink:cutover` through the configured

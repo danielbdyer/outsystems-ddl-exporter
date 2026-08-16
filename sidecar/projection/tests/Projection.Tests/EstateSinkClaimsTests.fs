@@ -17,6 +17,12 @@ open Projection.Tests.Fixtures
 // nothing, and an empty claims list is the identity (a run with no sink
 // is byte-identical).
 
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int) : PhysicalClaimRules.PhysicalClaim =
     { EntityId = id
       EntityKey = None
@@ -24,7 +30,7 @@ let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int
       ModuleName = if ext then "FulfillmentExtension" else "Fulfillment"
       IsActive = active
       IsExternalRegistration = ext
-      FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some sync) }
+      FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some (ord sync)) }
 
 let private setOf (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
     { Schema = "dbo"; Table = table; Claims = claims }

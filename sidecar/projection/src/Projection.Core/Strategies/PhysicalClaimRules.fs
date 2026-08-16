@@ -40,19 +40,19 @@ module PhysicalClaimRules =
     [<RequireQualifiedAccess>]
     type FirstWitnessedSync =
         | SinceGenesis
-        | AtSync of syncId: int
+        | AtSync of syncId: SyncOrdinal
         | Unknown
 
     [<RequireQualifiedAccess>]
     module FirstWitnessedSync =
 
         /// The one classifier: the journal's appearance sync, when found.
-        /// Sync 1 IS the genesis witness (the first edition's diff from
-        /// the empty state).
-        let ofAppearance (found: int option) : FirstWitnessedSync =
+        /// The genesis ordinal IS the genesis witness (the first edition's
+        /// diff from the empty state).
+        let ofAppearance (found: SyncOrdinal option) : FirstWitnessedSync =
             match found with
-            | Some 1 -> FirstWitnessedSync.SinceGenesis
-            | Some n -> FirstWitnessedSync.AtSync n
+            | Some o when o = SyncOrdinal.genesis -> FirstWitnessedSync.SinceGenesis
+            | Some o -> FirstWitnessedSync.AtSync o
             | None -> FirstWitnessedSync.Unknown
 
         /// The ladder's recency rank — SinceGenesis and Unknown both rank
@@ -62,7 +62,7 @@ module PhysicalClaimRules =
         let rank (f: FirstWitnessedSync) : int =
             match f with
             | FirstWitnessedSync.SinceGenesis -> 1
-            | FirstWitnessedSync.AtSync n -> n
+            | FirstWitnessedSync.AtSync o -> SyncOrdinal.value o
             | FirstWitnessedSync.Unknown -> 1
 
         /// The rendered sync token — Unknown says "?" (never a
@@ -71,7 +71,7 @@ module PhysicalClaimRules =
         let text (f: FirstWitnessedSync) : string =
             match f with
             | FirstWitnessedSync.SinceGenesis -> "1"
-            | FirstWitnessedSync.AtSync n -> string n
+            | FirstWitnessedSync.AtSync o -> SyncOrdinal.text o
             | FirstWitnessedSync.Unknown -> "?"
 
     type PhysicalClaim = {

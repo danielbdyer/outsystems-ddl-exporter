@@ -1829,6 +1829,22 @@ module Config =
                     match el.TryGetProperty "referencedEntity" with
                     | true, r when r.ValueKind = JsonValueKind.Object -> dcEntity r "referencedEntity" |> Result.map Some
                     | _ -> Result.success None
+                // align-III.1 — the decision instant mints FAIL-CLOSED at the
+                // config boundary (the II.2 `provenance.approvedAt.malformed`
+                // posture): a zoneless form ("2026-07-23") anchors to UTC via
+                // `AssumeUniversal` (deterministic across hosts); malformed
+                // text is a named refusal, never raw text riding into the
+                // receipt ledger.
+                let! approvedAt =
+                    match dcStr el "approvedAt" with
+                    | None -> Result.success None
+                    | Some raw ->
+                        match DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
+                        | true, dto -> Result.success (Some dto)
+                        | _ ->
+                            Result.failureOf
+                                (configError "emission.dataCorrections.approvedAt"
+                                    (sprintf "correction '%s' carries a malformed 'approvedAt' instant '%s' (ISO-8601 form required)." id raw))
                 return
                     { Id = id
                       SourceRemediationId = dcStr el "sourceRemediationId"
@@ -1842,7 +1858,7 @@ module Config =
                       ReferencedEntity = referencedEntity
                       ConfiguredProbes = probes
                       ApprovedBy = dcStr el "approvedBy"
-                      ApprovedAt = dcStr el "approvedAt" } }
+                      ApprovedAt = approvedAt } }
 
     let private parseDataCorrections (emission: JsonElement) : Result<ApprovedDataCorrection list> =
         match tryGetProperty emission "dataCorrections" with

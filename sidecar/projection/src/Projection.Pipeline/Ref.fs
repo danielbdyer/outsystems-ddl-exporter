@@ -24,7 +24,7 @@ module Ref =
         /// A witnessed sink state (the data-sink chapter, S7):
         /// `sink:<env>[@<syncId>]` — the environment name `projection sync`
         /// stamped, optionally pinned to a sync ordinal (latest otherwise).
-        | Sink of env: string * syncId: int option
+        | Sink of env: string * syncId: SyncOrdinal option
 
     /// Parse a reference string — the revision syntax (cf. a git revision:
     /// `HEAD` / `<sha>` / `<path>`). `@<id>` is a stored run; `live:<conn>` a
@@ -40,12 +40,18 @@ module Ref =
             // of the LABEL (labels are opaque operator strings), so a
             // malformed pin fails downstream as the named `sink.envUnknown`
             // naming the whole text — total parse, never a silent misroute.
+            // align-III.1: a NON-POSITIVE numeric tail is a malformed pin too
+            // (no such edition can exist — the ordinal VO), so it takes the
+            // same label-text route as a non-numeric tail.
             let body = s.Substring(5)
             match body.LastIndexOf '@' with
             | -1 -> Sink(body, None)
             | i ->
                 match System.Int32.TryParse(body.Substring(i + 1)) with
-                | true, n -> Sink(body.Substring(0, i), Some n)
+                | true, n ->
+                    match SyncOrdinal.create n with
+                    | Ok o -> Sink(body.Substring(0, i), Some o)
+                    | Error _ -> Sink(body, None)
                 | false, _ -> Sink(body, None)
         else File s
 

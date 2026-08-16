@@ -85,7 +85,10 @@ type ApprovedDataCorrection =
       /// Extra reference probes for `NoConfiguredReferenceMatches`.
       ConfiguredProbes    : ConfiguredReferenceProbe list
       ApprovedBy          : string option
-      ApprovedAt          : string option }
+      /// Typed at align-III.1: the config decode mints it fail-closed
+      /// (a malformed `approvedAt` is a named config refusal), so the
+      /// receipt inherits a real instant, never raw text.
+      ApprovedAt          : System.DateTimeOffset option }
 
 /// The engine's output: the corrected row map and the count-bearing receipts.
 type CorrectionOutcome =

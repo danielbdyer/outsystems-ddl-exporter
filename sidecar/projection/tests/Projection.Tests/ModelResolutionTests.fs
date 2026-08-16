@@ -8,6 +8,12 @@ open Projection.Pipeline
 // Live OSSYS is primary when configured; the osm_model.json file is the
 // optional fallback; neither is a named refusal. Pure selection law.
 
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 [<Fact>]
 let ``primary: live OSSYS wins when configured`` () =
     match ModelResolution.chooseOrigin (Some "env:OSSYS_CONN") (Some "model.json") with
@@ -46,8 +52,8 @@ let ``online: the sink env serves only when nothing live or authored is configur
     match ModelResolution.chooseOriginWith false (Some ("uat", None)) None (Some "model.json") with
     | Ok (ModelResolution.ModelFile _) -> ()
     | other -> Assert.Fail(sprintf "expected the file to keep its fallback slot, got %A" other)
-    match ModelResolution.chooseOriginWith false (Some ("uat", Some 3)) None None with
-    | Ok (ModelResolution.SinkWitness ("uat", Some 3)) -> ()
+    match ModelResolution.chooseOriginWith false (Some ("uat", Some (ord 3))) None None with
+    | Ok (ModelResolution.SinkWitness ("uat", Some o)) when o = ord 3 -> ()
     | other -> Assert.Fail(sprintf "expected the sink as last fallback, got %A" other)
 
 [<Fact>]

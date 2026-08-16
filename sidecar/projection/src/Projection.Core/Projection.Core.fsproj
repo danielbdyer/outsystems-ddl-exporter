@@ -63,6 +63,11 @@
     <Compile Include="Lifecycle.fs" />
     <Compile Include="Tolerance.fs" />
     <Compile Include="EstateFinding.fs" />
+    <!-- SyncOrdinal.fs: the sink edition ordinal VO + SinkEdition carrier
+         (align-III.1; a5's S-VO charge). Before PhysicalClaimRules.fs
+         (FirstWitnessedSync.AtSync carries it) and OperatorRuling.fs
+         (align-III.2 widens BasisAnchor with SinkEdition). -->
+    <Compile Include="SyncOrdinal.fs" />
     <!-- OperatorRuling.fs: the ruling carrier (align-II.1; A53). After
          EstateFinding.fs because BasisAnchor carries the typed FindingKey. -->
     <Compile Include="OperatorRuling.fs" />

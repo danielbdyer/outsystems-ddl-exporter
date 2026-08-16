@@ -74,7 +74,7 @@ type SinkRefParityTests(fixture: EphemeralContainerFixture) =
                             match liveSecond with
                             | Ok c -> c
                             | Error es -> failwithf "second live read refused: %A" es
-                        let! sinkPinned = Source.read (Source.ofSink "uat" (Some 1))
+                        let! sinkPinned = Source.read (Source.ofSink "uat" (Some SyncOrdinal.genesis))
                         match sinkPinned with
                         | Error es -> Assert.Fail (sprintf "pinned sink read refused: %A" es)
                         | Ok pinnedCatalog -> Assert.Equal<Catalog>(liveCatalog1, pinnedCatalog)

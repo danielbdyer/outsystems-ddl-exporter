@@ -21,6 +21,12 @@ let private mustResultOk (r: Result<'a>) : 'a =
 let private nameOf (s: string) : Name = Name.create s |> mustResultOk
 let private ver (o: int) (lbl: string) : Version = Version.create o lbl |> mustResultOk
 let private tl (name: string) : Timeline = Timeline.create name |> mustResultOk
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 let private at (iso: string) : DateTimeOffset = DateTimeOffset.Parse(iso, System.Globalization.CultureInfo.InvariantCulture)
 
 // A genesis schema (the sample catalog) evolving through one table rename
@@ -105,7 +111,7 @@ let ``K10: the sink's terminal states ride the package via the stamping combinat
     let state : SinkTerminalState =
         { Digest = "abc123"
           EnvLabel = Some "uat"
-          LatestSyncId = 4
+          LatestSyncId = ord 4
           JournalEntries = 17
           CapturedAtUtc = at "2026-08-15T12:00:00+00:00" }
     let stamped = EjectRun.withSinkStates [ state ] pkg
