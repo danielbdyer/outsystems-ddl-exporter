@@ -1770,3 +1770,62 @@ let ``A50: the operator outcome space is enumerable (axisOfPolicyAxis total)`` (
     citationOf "tests/Projection.Tests/ClassificationCarryThroughTests.fs" "A50: the preimages partition the Policy channels — Ordering's is EMPTY (its lever lives outside Policy)"
     citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Ordering produces Policy.empty BECAUSE its Policy preimage is empty — the map's theorem, not a silent arm"
     citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Identity extracts BOTH identity channels (UserMatching + BridgeRetarget) and nothing else"
+
+// ===========================================================================
+// A51 — synthesis conventions are a closed registry (align-I.4, 2026-08-16)
+// ===========================================================================
+
+[<Fact>]
+let ``A51: synthesis conventions are a closed registry (token injective; round-trip; zero free-string production mints)`` () =
+    // (1) Token injectivity — distinct conventions mint distinct wire
+    // tokens, so cross-convention keys are unequal by construction and
+    // `Catalog.create`'s sequence/kind disjointness is a theorem.
+    let tokens = SynthesisConvention.all |> List.map SynthesisConvention.token
+    Assert.Equal(List.length tokens, tokens |> List.distinct |> List.length)
+    // (2) Round-trip — every registered token parses back to its
+    // convention (the DerivationReason codec discipline).
+    for c in SynthesisConvention.all do
+        Assert.Equal(Some c, SynthesisConvention.tryParse (SynthesisConvention.token c))
+    // (2b) The registry is the audited corpus, counted: 23 conventions.
+    // The count corrected TWICE on the way in (a2-A2-1 said nineteen and
+    // listed twenty, missing the lowercase "migration"; the first
+    // single-line grep said 21, missing the two multi-line ReadSide
+    // mints THIS sweep then caught — READSIDE_ATTR + READSIDE_REF). The
+    // pin moves only with a DECISIONS-named registry amendment.
+    Assert.Equal(23, List.length SynthesisConvention.all)
+    // (2c) The named convergence target stays visible until align-I.5
+    // resolves it: the sequence grain carries exactly three conventions
+    // across three reader families.
+    let sequenceConventions =
+        SynthesisConvention.all
+        |> List.filter (fun c -> SynthesisConvention.grain c = SynthesisGrain.Sequence)
+    Assert.Equal(3, List.length sequenceConventions)
+    Assert.Equal(3, sequenceConventions |> List.map SynthesisConvention.readerFamily |> List.distinct |> List.length)
+    // (3) Zero free-string production mints — the M16-style
+    // comment-stripped sweep over src/. Production sites route through
+    // `SsKey.mint` / `SsKey.mintComposite`; a literal-token call under
+    // src/ is a registry bypass and fails here by name.
+    let srcRoot = Path.Combine(projectionRoot, "src")
+    let sourceFiles =
+        Directory.GetFiles(srcRoot, "*.fs", SearchOption.AllDirectories)
+        |> Array.filter (fun f ->
+            let sep = string Path.DirectorySeparatorChar
+            not (f.Contains(sep + "obj" + sep)) && not (f.Contains(sep + "bin" + sep)))
+    // Corpus-floor guard: the sweep must actually see the production tree
+    // (a path drift would otherwise vacuously pass with zero files).
+    Assert.True(
+        sourceFiles.Length >= 200,
+        sprintf "A51 sweep saw only %d src files — corpus floor breached (vacuous-pass guard)" sourceFiles.Length)
+    let mintLiteral = Regex("synthesized(?:Composite)?\\s+\"([^\"]+)\"")
+    let offenders =
+        [ for file in sourceFiles do
+            let source =
+                File.ReadAllLines file
+                |> Array.map (fun line -> if line.TrimStart().StartsWith("//") then "" else line)
+                |> String.concat "\n"
+            for m in mintLiteral.Matches(source) -> (Path.GetFileName file, m.Groups.[1].Value) ]
+    Assert.True(
+        List.isEmpty offenders,
+        sprintf
+            "A51: free-string synthesis mints under src/ (route through SsKey.mint / SsKey.mintComposite, adding the convention to the registry if new):\n%s"
+            (offenders |> List.map (fun (f, t) -> sprintf "  %s: \"%s\"" f t) |> String.concat "\n"))

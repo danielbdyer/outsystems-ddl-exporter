@@ -31506,3 +31506,48 @@ kind-surfacing selection, which is the narrowing the audit asked for. `Domain.Id
 (the *what-it-touches* partition) is untouched — this entry moves the *whose-intent* axis.
 Historical entries (2026-05-16 slice α classification, A.4.7 close) record what was ruled
 then and are not rewritten; this entry supersedes.
+
+## 2026-08-16 — align-I.4: the synthesis conventions become a registry; the extension marker is read once [BEHAVIORAL: marker unification]
+
+**The registry (a2-A2-1).** `SsKey.Synthesized`'s `source` axis carried exactly the load
+`DerivationReason` was closed for (2026-06-27: "a typo can no longer mint a
+silently-different identity") yet stayed a free string whose vocabulary lived only in
+greps. `SynthesisConvention` closes it: **23 variants** (the audit said nineteen and listed
+twenty, missing the lowercase `migration`; the pre-registry grep said 21, missing the two
+multi-line ReadSide mints; A51's own first execution then caught `READSIDE_ATTR` +
+`READSIDE_REF` — the registry is the corrected, counted, law-swept truth), each with `token`/`tryParse` (the DerivationReason codec shape) and two
+total maps — `grain` (Module/Kind/Attribute/Reference/Index/Trigger/Sequence/Check/Row)
+and `readerFamily` (OsmModel/OssysRowset/ReadSide/SyntheticData/MigrationRows/
+GoldenSlice/TwinScenario). `SsKey.mint`/`SsKey.mintComposite` are the typed constructors;
+all 24 production mint expressions (9 files) route through them; the free-string
+constructors remain for TEST-local conventions. **Wire format byte-identical** — `token`
+preserves every literal verbatim. A51 (LIVE, same commit) pins injectivity + round-trip +
+an M16-style comment-stripped sweep: zero free-string mints under `src/`.
+
+**What the registry makes queryable.** The sequence grain has THREE conventions across
+THREE reader families (`OsSequence`/`OssysSequence`/`ReadSideSequence`) — align-I.5's
+convergence target is now a registry fact, not a grep. `OsSequence` (the declared OSSYS
+helper) has zero live callers today; the live rowset path mints `OssysSequence`
+single-segment dot-joined — the segmentation breach the audit named stays VISIBLE in the
+registry until I.5 resolves it.
+
+**`Catalog.create` disjointness comment corrected.** It justified sequence/kind key
+disjointness via "disjoint prefixes (`OS_SEQ_*` vs `OS_KIND_*`)" — citing a prefix the
+live path does not use, and naming the wrong mechanism. The true mechanism: SsKey
+equality is STRUCTURAL over `(source, basisParts)`; distinct registry tokens (A51) make
+cross-convention keys unequal by construction. Rendered text may even alias across
+conventions (`OS_IDX ["LOGICAL"; x]` renders `OS_IDX_LOGICAL_x`) — harmlessly, because
+keying never reads the rendering.
+
+**BEHAVIORAL — the extension marker reads once (Trim + OrdinalIgnoreCase ruled).**
+`EspaceKindReading` (Core, beside `Origin`): `ESpace | Extension | Unmarked | Other of
+raw`, total over the raw optional column. Three lanes previously open-coded the
+classification under TWO idioms — SinkClaims trimmed + lowercased; OssysTranslation's
+`parseOriginFromRowset` and SinkDisplacement's `isExtensionModule` compared un-trimmed —
+so a `" Extension"` value classified as an extension for claim assembly but NOT for
+origin classification or displacement domains. Ruled: **whitespace variants unify** — a
+trimmed case-insensitive match is the reading in all three lanes. Consumers enumerated:
+`parseOriginFromRowset` (Origin three-way), `SinkClaims.assemble` (extension-espace claim
+sets), `SinkDisplacement.isExtensionModule` (domain classifier). No committed fixture
+carries a whitespace-variant marker, so goldens are unmoved; the unification is a
+live-estate robustness fix.

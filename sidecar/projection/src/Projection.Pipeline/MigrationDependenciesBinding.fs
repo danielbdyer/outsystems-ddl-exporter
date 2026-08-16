@@ -39,9 +39,10 @@ open FsToolkit.ErrorHandling
 /// the shared `CatalogResolution.tryKindByLogical` (rename-invariant,
 /// A1 — resolution against the pre-rename catalog is sound because the
 /// `SsKey` is what flows downstream). The row `id` synthesizes a stable
-/// `Identifier` (`SsKey.synthesizedComposite "migration" [module;
-/// entity; id]`) so cross-version diffs and re-publication track per
-/// the `MigrationDependencyRow.Identifier` contract.
+/// `Identifier` (`SsKey.mintComposite SynthesisConvention.MigrationRow
+/// [module; entity; id]` — the registered lowercase `"migration"`
+/// convention, align-I.4) so cross-version diffs and re-publication
+/// track per the `MigrationDependencyRow.Identifier` contract.
 ///
 /// **Fail loud, never silent (standing law §4).** No path ⇒ the empty
 /// context (no-op; byte-identical to the prior `MigrationDependency
@@ -198,7 +199,7 @@ module MigrationDependenciesBinding =
         |> Result.bind (fun kindKey ->
             raw.Rows
             |> List.map (fun row ->
-                SsKey.synthesizedComposite "migration" [ raw.Module; raw.Entity; row.Id ]
+                SsKey.mintComposite SynthesisConvention.MigrationRow [ raw.Module; raw.Entity; row.Id ]
                 |> Result.map (fun identifier ->
                     { KindKey    = kindKey
                       Identifier = identifier

@@ -663,10 +663,10 @@ module SyntheticData =
                 (match pkAttr, List.tryItem i pkPool with
                  | Some _, Some pkRaw ->
                      // a stable per-row identity rooted in the kind + PK value.
-                     SsKey.synthesizedComposite "SYNTH_ROW" [ SsKey.rootOriginal kind.SsKey; pkRaw ]
+                     SsKey.mintComposite SynthesisConvention.SynthRow [ SsKey.rootOriginal kind.SsKey; pkRaw ]
                      |> function Ok k -> k | Error _ -> kind.SsKey
                  | _ ->
-                     SsKey.synthesizedComposite "SYNTH_ROW" [ SsKey.rootOriginal kind.SsKey; string i ]
+                     SsKey.mintComposite SynthesisConvention.SynthRow [ SsKey.rootOriginal kind.SsKey; string i ]
                      |> function Ok k -> k | Error _ -> kind.SsKey)
               // WP-3 bridge: the σ samplers still speak the raw-string
               // convention (`""` = NULL); lift at the carrier boundary.

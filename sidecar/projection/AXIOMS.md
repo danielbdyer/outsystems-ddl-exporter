@@ -2333,3 +2333,33 @@ axis set with any unaddressable axis a named refusal.
 
 **Property test.** (at promotion) "every Policy axis has a designated OverlayAxis" +
 `Override` totality-or-named-refusal.
+
+## A51 — synthesis conventions are a closed registry (align-I.4, 2026-08-16)
+
+*Status: LIVE (landed with the registry in the same commit).*
+
+**Statement.** Every production-minted `Synthesized` identity carries a convention from
+the closed `SynthesisConvention` registry: `token` is injective (distinct conventions ⇒
+distinct wire tokens), `tryParse ∘ token = Some` for every registered convention, and no
+production mint site supplies a free-string convention — `SsKey.mint` /
+`SsKey.mintComposite` are the production constructors; the free-string siblings serve
+test-local conventions only. Each convention declares its **grain** and **reader family**,
+so cross-lane identity splits are enumerable facts rather than greps (the sequence grain's
+three conventions across three reader families is align-I.5's named convergence target), a
+typo cannot mint a silently-different identity, and `Catalog.create`'s sequence/kind key
+disjointness is a theorem of structural `(source, basisParts)` equality plus token
+distinctness — not a comment about rendered prefixes (rendered identifiers may alias
+across conventions, harmlessly, because keying never reads the rendering).
+
+**Enforcement.** The registry lives beside `DerivationReason` in `Identity.fs` — the same
+closure discipline, applied to the convention axis; new conventions are added THERE, never
+as free strings. The wire tokens are byte-identical to the pre-registry literals
+(including the lowercase `"migration"`), so the SsKey codec and every persisted key are
+unmoved.
+
+**Property test.** `AxiomTests.fs` ``A51: synthesis conventions are a closed registry
+(token injective; round-trip; zero free-string production mints)`` — injectivity +
+round-trip + registry count over `SynthesisConvention.all`, plus the M16-style
+comment-stripped source sweep asserting zero free-string `synthesized`/
+`synthesizedComposite` literal mints under `src/` (corpus-floor-guarded against a
+vacuous pass).

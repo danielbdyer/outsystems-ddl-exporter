@@ -50,9 +50,10 @@ module SinkClaims =
         let extensionEspaces =
             snapshot.Modules
             |> List.choose (fun m ->
-                match m.EspaceKind with
-                | Some kind when kind.Trim().ToLowerInvariant() = "extension" -> Some m.EspaceId
-                | _ -> None)
+                // align-I.4: the Espace_Kind marker reads through the one
+                // Core classifier (Trim + OrdinalIgnoreCase) — this lane's
+                // former trim-and-lowercase idiom generalized to all three.
+                if EspaceKindReading.isExtension m.EspaceKind then Some m.EspaceId else None)
             |> Set.ofList
         let moduleNames =
             snapshot.Modules

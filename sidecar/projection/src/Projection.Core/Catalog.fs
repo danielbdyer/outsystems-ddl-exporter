@@ -37,6 +37,50 @@ module Name =
 /// it (a fourth source category would mean another reader and another set
 /// of axioms about its provenance).
 ///
+/// The OSSYS `Espace_Kind` marker, read ONCE (align-I.4). Three lanes
+/// previously open-coded the classification under TWO idioms — the sink
+/// claim assembly trimmed + lowercased while the rowset origin
+/// translation and the sink-displacement domain classifier compared
+/// un-trimmed — so a `" Extension"` value classified as an extension for
+/// claim assembly but NOT for origin or displacement. One total reading
+/// now rules **Trim + OrdinalIgnoreCase** (DECISIONS align-I.4:
+/// whitespace variants unify). The known vocabulary is the two witnessed
+/// OSSYS values (`"eSpace"` in the V1 test seed; `"Extension"` per
+/// DECISIONS 2026-05-19 rule 17); anything else is carried verbatim, and
+/// an absent column is its own named fact — never folded into a guess.
+[<RequireQualifiedAccess>]
+type EspaceKindReading =
+    /// `"eSpace"` — a normal (native) module.
+    | ESpace
+    /// `"Extension"` — an Integration-Studio extension module.
+    | Extension
+    /// The `Espace_Kind` column was absent/null — no marker witnessed.
+    | Unmarked
+    /// A marker outside the known vocabulary, preserved verbatim.
+    | Other of raw: string
+
+[<RequireQualifiedAccess>]
+module EspaceKindReading =
+
+    /// Total classifier over the raw optional column value — the single
+    /// site where the marker's comparison discipline lives.
+    let ofRaw (espaceKind: string option) : EspaceKindReading =
+        match espaceKind with
+        | None -> EspaceKindReading.Unmarked
+        | Some raw ->
+            let trimmed = raw.Trim()
+            if System.String.Equals(trimmed, "Extension", System.StringComparison.OrdinalIgnoreCase) then
+                EspaceKindReading.Extension
+            elif System.String.Equals(trimmed, "eSpace", System.StringComparison.OrdinalIgnoreCase) then
+                EspaceKindReading.ESpace
+            else
+                EspaceKindReading.Other raw
+
+    /// The one question all three consuming lanes ask of the marker.
+    let isExtension (espaceKind: string option) : bool =
+        ofRaw espaceKind = EspaceKindReading.Extension
+
+
 /// **Slice 4.6 — algebraic variant names (decouple V1 vocabulary from Core).**
 /// The variants name *what the kind's provenance IS* in V2's algebra, not
 /// the V1 product surface that observes it: `Native` (originated within the
@@ -227,11 +271,11 @@ module StaticRow =
     /// boundary (`ReadSide.materializeStream`) and the positional (quanta)
     /// realizations mint IDENTICAL identities for the same stream position:
     /// their outputs must agree at full-record grain, not just rendered
-    /// text. Total: `SsKey.synthesized` refuses only blank input, and the
+    /// text. Total: the mint refuses only blank input, and the
     /// composed text is non-blank for any inputs (the literal dots).
     let readsideIdentity (schemaText: string) (tableText: string) (rowIdx: int) : SsKey =
         let basisText = sprintf "%s.%s.%d" schemaText tableText rowIdx
-        match SsKey.synthesized "READSIDE_ROW" basisText with
+        match SsKey.mint SynthesisConvention.ReadSideRow basisText with
         | Ok k -> k
         | Error _ ->
             invalidOp (sprintf "StaticRow.readsideIdentity: unreachable blank basis '%s'" basisText)
@@ -2071,13 +2115,20 @@ module Catalog =
                                         idx.SsKey k.SsKey col.Attribute))
             List.ofSeq refAcc, List.ofSeq idxAcc, List.ofSeq attrAcc
 
-        // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
-        // are top-level Catalog objects; their SsKeys must be unique
-        // across the catalog by A4. Disjointness from Kind SsKeys is
-        // not currently enforced — sequences and kinds are different
-        // schema-object kinds (SEQUENCE vs TABLE) and use disjoint
-        // SsKey-synthesis prefixes (`OS_SEQ_*` vs `OS_KIND_*`), so
-        // collisions are not structurally possible.
+        // Sequence SsKey disjointness (chapter A.0' slice δ; comment
+        // corrected at align-I.4 — it cited a rendered prefix the live
+        // path does not use). Sequences are top-level Catalog objects;
+        // their SsKeys must be unique across the catalog by A4.
+        // Disjointness from Kind SsKeys is STRUCTURAL, not textual:
+        // SsKey equality is over `(source, basisParts)`, and every
+        // sequence-grain convention (OssysSequence / OsSequence /
+        // ReadSideSequence — `SynthesisGrain.Sequence` in the A51
+        // registry) has a token distinct from every kind-grain
+        // convention's (A51 token injectivity), so a sequence key can
+        // never equal a kind key. Rendered text is NOT the mechanism —
+        // rendered identifiers may even alias across conventions
+        // (`OS_IDX ["LOGICAL"; x]` renders as `OS_IDX_LOGICAL_x`),
+        // harmlessly, because keying never reads the rendering.
         let sequenceDupes =
             sequences
             |> Validation.duplicateKeyErrors

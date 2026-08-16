@@ -64,15 +64,15 @@ module ReadSide =
     let private reconstructedModuleName : string = "Reconstructed"
 
     let private moduleSsKey () : Result<SsKey> =
-        SsKey.synthesized "READSIDE_MOD" reconstructedModuleName
+        SsKey.mint SynthesisConvention.ReadSideModule reconstructedModuleName
 
     let private kindSsKey (schema: string) (table: string) : Result<SsKey> =
-        SsKey.synthesized "READSIDE_KIND" (sprintf "%s.%s" schema table)
+        SsKey.mint SynthesisConvention.ReadSideKind (sprintf "%s.%s" schema table)
 
     let private attributeSsKey
         (schema: string) (table: string) (column: string) : Result<SsKey> =
-        SsKey.synthesized
-            "READSIDE_ATTR"
+        SsKey.mint
+            SynthesisConvention.ReadSideAttribute
             (sprintf "%s.%s.%s" schema table column)
 
     /// Recover an attribute's SsKey from the persisted COLUMN-level
@@ -1175,8 +1175,8 @@ module ReadSide =
             // against the reconstructed target Kind in PhysicalSchema.
             let! tgtKindKey = recoverKindSsKey tableSsKeys fk.TargetSchema fk.TargetTable
             let! refKey =
-                SsKey.synthesized
-                    "READSIDE_REF"
+                SsKey.mint
+                    SynthesisConvention.ReadSideReference
                     (sprintf "%s.%s.%s" fk.SourceSchema fk.SourceTable fk.SourceColumn)
             let! refName = Name.create (sprintf "FK_%s_%s" fk.SourceTable fk.SourceColumn)
             // Slice 5.13.fk-features-emit — smart-constructor migration.
@@ -1301,7 +1301,7 @@ module ReadSide =
             Map.tryFind (schema, table) triggers
             |> Option.defaultValue []
             |> List.choose (fun (name, disabled, body) ->
-                match SsKey.synthesized "READSIDE_TRIGGER" (sprintf "%s.%s.%s" schema table name),
+                match SsKey.mint SynthesisConvention.ReadSideTrigger (sprintf "%s.%s.%s" schema table name),
                       Name.create name with
                 | Ok sk, Ok nm ->
                     match Trigger.create sk nm disabled body with
@@ -1312,7 +1312,7 @@ module ReadSide =
             Map.tryFind (schema, table) checks
             |> Option.defaultValue []
             |> List.choose (fun (name, definition, notTrusted) ->
-                match SsKey.synthesized "READSIDE_CHECK" (sprintf "%s.%s.%s" schema table name) with
+                match SsKey.mint SynthesisConvention.ReadSideCheck (sprintf "%s.%s.%s" schema table name) with
                 | Ok sk ->
                     let nm = match Name.create name with | Ok n -> Some n | Error _ -> None
                     match ColumnCheck.create sk nm definition notTrusted with
@@ -1368,7 +1368,7 @@ module ReadSide =
                     // doesn't carry) rather than emit a partial index.
                     if List.length keyColumns <> List.length cols then None
                     else
-                        match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
+                        match SsKey.mint SynthesisConvention.ReadSideIndex (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
                               Name.create indexName with
                         | Ok sk, Ok nm ->
                             // ReadSide query at readIndexes excludes PKs (`is_primary_key = 0`),
@@ -1388,7 +1388,7 @@ module ReadSide =
                 if not r.IsCached then NoCache
                 elif Option.isSome r.CacheSize then Cache
                 else Unspecified
-            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+            match SsKey.mint SynthesisConvention.ReadSideSequence (sprintf "%s.%s" r.Schema r.Name),
                   Name.create r.Name with
             | Ok sk, Ok nm ->
                 match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with

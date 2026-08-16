@@ -99,7 +99,7 @@ module Readiness =
     /// synthesis failure (impossible for a well-formed index) leaves the index
     /// untouched — safe: it simply does not normalize.
     let private toLogicalIndex (i: Index) : Index =
-        match SsKey.synthesizedComposite "OS_IDX_LOGICAL" [ indexIdentity i ] with
+        match SsKey.mintComposite SynthesisConvention.OsIndexLogical [ indexIdentity i ] with
         | Ok key ->
             { i with
                 SsKey = key

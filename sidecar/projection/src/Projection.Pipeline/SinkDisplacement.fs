@@ -281,10 +281,10 @@ module SinkDisplacement =
     let private isExtensionModule (s: MetadataSnapshotRunner.MetadataSnapshot) (espaceId: int) : bool =
         s.Modules
         |> List.exists (fun m ->
-            m.EspaceId = espaceId
-            && (match m.EspaceKind with
-                | Some k -> String.Equals(k, "Extension", StringComparison.OrdinalIgnoreCase)
-                | None -> false))
+            // align-I.4: the Espace_Kind marker reads through the one Core
+            // classifier — this lane previously compared un-trimmed, so a
+            // `" Extension"` value escaped the extension domain.
+            m.EspaceId = espaceId && EspaceKindReading.isExtension m.EspaceKind)
 
     let private tableClaimedByOther (s: MetadataSnapshotRunner.MetadataSnapshot) (row: MetadataSnapshotRunner.OssysEntityRow) : bool =
         s.Entities

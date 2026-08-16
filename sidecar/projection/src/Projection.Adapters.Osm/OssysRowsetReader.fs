@@ -1019,7 +1019,7 @@ module OssysRowsetReader =
                     if not r.IsCached then NoCache
                     elif Option.isSome r.CacheSize then Cache
                     else Unspecified
-                match SsKey.synthesized "OSSYS_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+                match SsKey.mint SynthesisConvention.OssysSequence (sprintf "%s.%s" r.Schema r.Name),
                       Name.create r.Name with
                 | Ok sk, Ok nm ->
                     match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with

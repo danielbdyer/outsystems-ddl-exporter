@@ -54,7 +54,7 @@ module SliceApplyRun =
                     let rows =
                         e.Rows
                         |> List.mapi (fun i row ->
-                            { Identifier = SsKey.synthesizedComposite "GOLDEN" [ e.Entity; string i ] |> Result.value
+                            { Identifier = SsKey.mintComposite SynthesisConvention.GoldenRow [ e.Entity; string i ] |> Result.value
                               Values = row })
                     Ok (kind.SsKey, rows)
         golden.Entities
