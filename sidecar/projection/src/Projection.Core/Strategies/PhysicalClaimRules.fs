@@ -30,6 +30,50 @@ namespace Projection.Core
 module PhysicalClaimRules =
 
     /// One metadata claim on a physical table, as the journal assembles it.
+    /// align-II.10 (E3; audit a1) — WHEN the journal first witnessed a
+    /// claim, as a value: from the first witnessed edition, at a later
+    /// named sync, or UNKNOWN — the journal carries no appearance line (a
+    /// gappy or reconciled ledger). Unknown was previously fabricated as
+    /// sync 1; the trichotomy keeps the ladder conservative (missing
+    /// provenance never outranks a known-recent claim) while the rendering
+    /// says "?" instead of lying.
+    [<RequireQualifiedAccess>]
+    type FirstWitnessedSync =
+        | SinceGenesis
+        | AtSync of syncId: int
+        | Unknown
+
+    [<RequireQualifiedAccess>]
+    module FirstWitnessedSync =
+
+        /// The one classifier: the journal's appearance sync, when found.
+        /// Sync 1 IS the genesis witness (the first edition's diff from
+        /// the empty state).
+        let ofAppearance (found: int option) : FirstWitnessedSync =
+            match found with
+            | Some 1 -> FirstWitnessedSync.SinceGenesis
+            | Some n -> FirstWitnessedSync.AtSync n
+            | None -> FirstWitnessedSync.Unknown
+
+        /// The ladder's recency rank — SinceGenesis and Unknown both rank
+        /// earliest (1): recency never rewards missing provenance (the
+        /// retired fabrication ranked identically, so healthy AND gappy
+        /// ladders are order-stable).
+        let rank (f: FirstWitnessedSync) : int =
+            match f with
+            | FirstWitnessedSync.SinceGenesis -> 1
+            | FirstWitnessedSync.AtSync n -> n
+            | FirstWitnessedSync.Unknown -> 1
+
+        /// The rendered sync token — Unknown says "?" (never a
+        /// fabricated ordinal); the healthy readings render the ordinal
+        /// they always did (byte-identical).
+        let text (f: FirstWitnessedSync) : string =
+            match f with
+            | FirstWitnessedSync.SinceGenesis -> "1"
+            | FirstWitnessedSync.AtSync n -> string n
+            | FirstWitnessedSync.Unknown -> "?"
+
     type PhysicalClaim = {
         /// The claimant's ossys row id — the in-set discriminator (always
         /// present; key-basis honesty: the positional identity).
@@ -46,9 +90,10 @@ module PhysicalClaimRules =
         /// (`EspaceKind = 'Extension'`, `Is_External = 1` — the
         /// Integration-Studio path; `Origin = ExternalIndirect`).
         IsExternalRegistration : bool
-        /// The journal sync at which this claim was FIRST witnessed — the
-        /// temporal dimension ossys does not expose. Higher = later edition.
-        FirstWitnessedSync : int
+        /// WHEN the journal first witnessed this claim — the temporal
+        /// dimension ossys does not expose (align-II.10: a value, never a
+        /// fabricated ordinal).
+        FirstWitnessedSync : FirstWitnessedSync
     }
 
     /// One physical table and every claim the journal can assemble on it.
@@ -86,7 +131,7 @@ module PhysicalClaimRules =
     /// The rival ordering inside a contest: tier, then the LATER
     /// first-witnessed sync, then the row id (deterministic).
     let private rank (c: PhysicalClaim) : int * int * int =
-        tierOf c, -c.FirstWitnessedSync, c.EntityId
+        tierOf c, -(FirstWitnessedSync.rank c.FirstWitnessedSync), c.EntityId
 
     /// Adjudicate one claim set. Total — every input shape lands on one
     /// closed outcome; the ladder's order IS the semantics (layer comments
@@ -120,7 +165,7 @@ module PhysicalClaimRules =
             c.ModuleName, ".", c.EntityName,
             (if c.IsExternalRegistration then " (external re-registration)" else ""),
             (if c.IsActive then "" else " (tombstone)"),
-            " @sync ", string c.FirstWitnessedSync)
+            " @sync ", FirstWitnessedSync.text c.FirstWitnessedSync)
 
     /// The structured rendering — typed payload → the diagnostic clause a
     /// boundary consumer prints. Strings emerge only here (the
@@ -178,7 +223,7 @@ module PhysicalClaimRules =
         | PhysicalClaimOutcome.Adopted (winner, outranked) ->
             outranked
             |> List.filter (fun c -> not c.IsActive)
-            |> List.sortByDescending (fun c -> c.FirstWitnessedSync, c.EntityId)
+            |> List.sortByDescending (fun c -> FirstWitnessedSync.rank c.FirstWitnessedSync, c.EntityId)
             |> List.tryHead
             |> Option.map (fun from ->
                 { Schema = set.Schema

@@ -1991,9 +1991,21 @@ module Compose =
                 match! SinkRead.readCatalog resolved with
                 | Error es -> return Result.failure es
                 | Ok catalog ->
-                    let journal =
-                        SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest)
-                        |> Result.defaultValue []
+                    // align-II.10 — an unreadable ledger degrades NAMED on
+                    // the machine channel (one Warn envelope); the claims
+                    // annotation stands down rather than assembling over a
+                    // silently-empty list.
+                    let reading =
+                        SinkJournal.JournalReading.ofLoad
+                            (SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest))
+                    do
+                        match reading with
+                        | SinkJournal.JournalReading.Unreadable cause ->
+                            LogSink.emit
+                                (LogSink.envelope LogSink.Warn LogSink.Extract "sink.journal.unreadable"
+                                    (Map.ofList [ "digest", box resolved.Digest; "cause", box cause ]))
+                        | SinkJournal.JournalReading.Read _ -> ()
+                    let journal = SinkJournal.JournalReading.lines reading
                     let outcomes = SinkClaims.adjudicateAll snapshot journal
                     let annotated =
                         (Projection.Core.Passes.PhysicalClaimPass.registered outcomes).Run catalog

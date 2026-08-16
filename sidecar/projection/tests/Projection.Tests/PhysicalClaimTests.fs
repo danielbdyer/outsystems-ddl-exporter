@@ -23,7 +23,7 @@ let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int
       ModuleName = if ext then "FulfillmentExtension" else "Fulfillment"
       IsActive = active
       IsExternalRegistration = ext
-      FirstWitnessedSync = sync }
+      FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some sync) }
 
 let private setOf (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
     { Schema = "dbo"; Table = "OSUSR_FUL_T"; Claims = claims }
@@ -182,3 +182,58 @@ let ``the annotation pass marks kinds whose tables carry non-trivial decisions; 
     Assert.Empty ((PhysicalClaimPass.registered [ sole ]).Run sampleCatalog).Trail
     // The chain default ([]) is the identity with an empty trail.
     Assert.Empty ((PhysicalClaimPass.registered []).Run sampleCatalog).Trail
+
+// -- align-II.10: FirstWitnessedSync is a value, never a fabricated ordinal ---
+
+[<Fact>]
+let ``align-II.10: the first-witnessed reading is a trichotomy — genesis, a named sync, or UNKNOWN (the retired fabrication) — and the rendering says so`` () =
+    // The classifier: sync 1 IS the genesis witness; a later sync names
+    // itself; no appearance line is UNKNOWN — previously fabricated as 1.
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.SinceGenesis, PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some 1))
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.AtSync 3, PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some 3))
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.Unknown, PhysicalClaimRules.FirstWitnessedSync.ofAppearance None)
+    // The rendering: healthy readings keep their ordinal bytes; Unknown
+    // says "?" instead of lying.
+    Assert.Equal("1", PhysicalClaimRules.FirstWitnessedSync.text PhysicalClaimRules.FirstWitnessedSync.SinceGenesis)
+    Assert.Equal("3", PhysicalClaimRules.FirstWitnessedSync.text (PhysicalClaimRules.FirstWitnessedSync.AtSync 3))
+    Assert.Equal("?", PhysicalClaimRules.FirstWitnessedSync.text PhysicalClaimRules.FirstWitnessedSync.Unknown)
+    // The ladder rank: missing provenance never rewards recency (Unknown
+    // ranks as the earliest, exactly where the retired fabrication sat, so
+    // healthy AND gappy adjudication ladders are order-stable).
+    Assert.Equal(1, PhysicalClaimRules.FirstWitnessedSync.rank PhysicalClaimRules.FirstWitnessedSync.Unknown)
+    Assert.Equal(1, PhysicalClaimRules.FirstWitnessedSync.rank PhysicalClaimRules.FirstWitnessedSync.SinceGenesis)
+    Assert.Equal(3, PhysicalClaimRules.FirstWitnessedSync.rank (PhysicalClaimRules.FirstWitnessedSync.AtSync 3))
+
+[<Fact>]
+let ``align-II.10: assembly reads the journal's appearance line — genesis, a later sync, and the journal-silent claim each classify honestly`` () =
+    let appearance (syncId: int) (entityId: int) (table: string) : SinkJournal.JournalLine =
+        { SyncId = syncId; PrevSyncId = (if syncId = 1 then None else Some (syncId - 1)); CapturedAtUtc = System.DateTimeOffset.UnixEpoch
+          Displacement =
+            { Table = SinkDisplacement.SinkTable.Entities
+              KeyText = sprintf "entity:%d" entityId
+              KeyBasis = SinkDisplacement.KeyBasis.Positional entityId
+              Before = None
+              After = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow entityId 800 "Order" table))
+              Domain = None } }
+    // Order appeared at genesis; Shipment's re-registration at sync 3; the
+    // tombstoned original has NO appearance line (a reconciled ledger).
+    let journal = [ appearance 1 8000 "OSUSR_FUL_ORDER"; appearance 3 9002 "OSUSR_FUL_SHIPMENT" ]
+    let sets = SinkClaims.assemble (edition ()) journal
+    let order = (sets |> List.find (fun s -> s.Table = "OSUSR_FUL_ORDER")).Claims |> List.find (fun c -> c.EntityId = 8000)
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.SinceGenesis, order.FirstWitnessedSync)
+    let shipment = sets |> List.find (fun s -> s.Table = "OSUSR_FUL_SHIPMENT")
+    let ext = shipment.Claims |> List.find (fun c -> c.EntityId = 9002)
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.AtSync 3, ext.FirstWitnessedSync)
+    let tomb = shipment.Claims |> List.find (fun c -> c.EntityId = 8002)
+    Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.Unknown, tomb.FirstWitnessedSync)
+    // The unknown reading renders "?" through the one claim renderer.
+    let outcome = PhysicalClaimRules.adjudicate shipment
+    match outcome with
+    | PhysicalClaimRules.PhysicalClaimOutcome.Adopted (winner, _) ->
+        Assert.Equal(9002, winner.EntityId)
+        match PhysicalClaimRules.proposeCorrespondence shipment outcome with
+        | Some p ->
+            let fromText = PhysicalClaimRules.correspondenceClauses p |> List.find (fst >> (=) "from") |> snd
+            Assert.Contains("@sync ?", fromText)
+        | None -> Assert.Fail "expected a correspondence proposal over the tombstone"
+    | other -> Assert.Fail (sprintf "expected adoption, got %A" other)

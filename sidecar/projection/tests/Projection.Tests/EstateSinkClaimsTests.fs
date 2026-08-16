@@ -24,7 +24,7 @@ let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int
       ModuleName = if ext then "FulfillmentExtension" else "Fulfillment"
       IsActive = active
       IsExternalRegistration = ext
-      FirstWitnessedSync = sync }
+      FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some sync) }
 
 let private setOf (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
     { Schema = "dbo"; Table = table; Claims = claims }

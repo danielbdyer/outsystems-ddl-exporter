@@ -208,13 +208,69 @@ module SinkStoreTests =
         match SinkJournal.parseLine (SinkJournal.renderLine original) with
         | Error e -> Assert.Fail (sprintf "line did not parse back: %A" e)
         | Ok parsed ->
-            Assert.Equal(original.SyncId, parsed.SyncId)
-            Assert.Equal(original.PrevSyncId, parsed.PrevSyncId)
-            Assert.Equal(original.CapturedAtUtc, parsed.CapturedAtUtc)
-            Assert.Equal(original.Displacement.Table, parsed.Displacement.Table)
-            Assert.Equal(original.Displacement.KeyText, parsed.Displacement.KeyText)
-            Assert.Equal(original.Displacement.Before, parsed.Displacement.Before)
-            Assert.Equal(original.Displacement.After, parsed.Displacement.After)
+            // align-II.10: the FULL inverse — the domain classification
+            // decodes too, so the whole line round-trips identically.
+            Assert.Equal(original, parsed)
+
+    [<Fact>]
+    let ``align-II.10 (beside T19): parseLine ∘ renderLine = id over every domain classification — the read side loses nothing the witness recorded`` () =
+        let domains : SinkDisplacement.DomainTransition option list =
+            [ None
+              Some SinkDisplacement.DomainTransition.EntityDeactivated
+              Some SinkDisplacement.DomainTransition.EntityReactivated
+              Some (SinkDisplacement.DomainTransition.EntityRehomed (800, 900))
+              Some SinkDisplacement.DomainTransition.EntityRegisteredExternal
+              Some (SinkDisplacement.DomainTransition.PhysicalTableClaimChanged ("OSUSR_A_T", "OSUSR_B_T"))
+              Some (SinkDisplacement.DomainTransition.PhysicalTableSuperseded "OSUSR_A_T")
+              Some SinkDisplacement.DomainTransition.AttributeRetired
+              Some SinkDisplacement.DomainTransition.AttributeReactivated
+              Some (SinkDisplacement.DomainTransition.AttributeRetyped [ AttributeFacet.DataType; AttributeFacet.Length ])
+              Some SinkDisplacement.DomainTransition.ModuleRetired
+              Some SinkDisplacement.DomainTransition.ModuleReactivated
+              Some SinkDisplacement.DomainTransition.ShapeChanged ]
+        for domain in domains do
+            let line =
+                { SinkJournal.SyncId = 4
+                  SinkJournal.PrevSyncId = Some 3
+                  SinkJournal.CapturedAtUtc = nowUtc
+                  SinkJournal.Displacement =
+                    { Table = SinkDisplacement.SinkTable.Entities
+                      KeyText = "entity:8000"
+                      KeyBasis = SinkDisplacement.KeyBasis.Positional 8000
+                      Before = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER"))
+                      After = Some (SinkDisplacement.SinkRow.Entity { OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER" with IsActive = false })
+                      Domain = domain } }
+            match SinkJournal.parseLine (SinkJournal.renderLine line) with
+            | Ok parsed -> Assert.Equal(line, parsed)
+            | Error e -> Assert.Fail (sprintf "domain %A did not round-trip: %A" domain e)
+        // An unknown domain token fail-closes — never silently unclassified.
+        let rendered =
+            SinkJournal.renderLine
+                { SinkJournal.SyncId = 1; SinkJournal.PrevSyncId = None; SinkJournal.CapturedAtUtc = nowUtc
+                  SinkJournal.Displacement =
+                    { Table = SinkDisplacement.SinkTable.Entities; KeyText = "entity:1"
+                      KeyBasis = SinkDisplacement.KeyBasis.Positional 1
+                      Before = None
+                      After = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow 1 800 "A" "OSUSR_A"))
+                      Domain = Some SinkDisplacement.DomainTransition.ShapeChanged } }
+        match SinkJournal.parseLine (rendered.Replace("\"shapeChanged\"", "\"mysteryToken\"")) with
+        | Ok _ -> Assert.Fail "an unknown domain token parsed"
+        | Error errors ->
+            Assert.Contains(errors, fun (e: ValidationError) -> e.Code = "sink.journal.corruptLine")
+
+    [<Fact>]
+    let ``align-II.10: JournalReading names an unreadable ledger and carries the lines of a readable one`` () =
+        match SinkJournal.JournalReading.ofLoad (Ok []) with
+        | SinkJournal.JournalReading.Read [] -> ()
+        | other -> Assert.Fail (sprintf "expected Read [], got %A" other)
+        let unreadable =
+            SinkJournal.JournalReading.ofLoad
+                (Result.failureOf (ValidationError.create "sink.journal.unreadable" "journal read failed: the disk is on fire"))
+        match unreadable with
+        | SinkJournal.JournalReading.Unreadable cause ->
+            Assert.Contains("the disk is on fire", cause)
+            Assert.Empty(SinkJournal.JournalReading.lines unreadable)
+        | other -> Assert.Fail (sprintf "expected Unreadable, got %A" other)
 
     // ------------------------------------------------------------------
     // Orphan reconciliation.

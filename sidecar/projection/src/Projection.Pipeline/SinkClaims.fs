@@ -21,15 +21,15 @@ module SinkClaims =
     let private keyOf (e: MetadataSnapshotRunner.OssysEntityRow) : SsKey option =
         e.EntitySsKey |> Option.map SsKey.OssysOriginal
 
-    /// The sync at which the journal first witnessed this entity claiming
-    /// this physical table. Total: an entity present in the edition always
-    /// has an appearance line (the journal is total from genesis); the
-    /// defensive fallback reads as "since the beginning".
+    /// WHEN the journal first witnessed this entity claiming this physical
+    /// table (align-II.10): the appearance line's sync when found; UNKNOWN
+    /// when the journal carries no such line (a gappy or reconciled ledger
+    /// — previously fabricated as sync 1, an instant nothing witnessed).
     let private firstWitnessedSync
         (journal: SinkJournal.JournalLine list)
         (entityId: int)
         (table: string)
-        : int =
+        : PhysicalClaimRules.FirstWitnessedSync =
         journal
         |> List.tryPick (fun l ->
             match l.Displacement.After with
@@ -38,7 +38,7 @@ module SinkClaims =
                 && System.String.Equals(e.PhysicalTableName, table, System.StringComparison.OrdinalIgnoreCase) ->
                 Some l.SyncId
             | _ -> None)
-        |> Option.defaultValue 1
+        |> PhysicalClaimRules.FirstWitnessedSync.ofAppearance
 
     /// Assemble every physical table's claim set from a witnessed edition +
     /// its journal. The edition supplies WHO claims (total — tombstones

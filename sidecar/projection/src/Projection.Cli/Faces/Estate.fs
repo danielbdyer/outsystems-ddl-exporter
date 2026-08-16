@@ -402,9 +402,20 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                     | Ok resolved ->
                         match SinkStore.loadSnapshotAt resolved.Root resolved.Digest resolved.SyncId with
                         | Some snapshot ->
-                            let journal =
-                                SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest)
-                                |> Result.defaultValue []
+                            // align-II.10 — an unreadable ledger is a NAMED
+                            // degradation, never a silent empty claim set:
+                            // the cause prints as an advisory and the sink
+                            // contribution for this environment stands down.
+                            let reading =
+                                SinkJournal.JournalReading.ofLoad
+                                    (SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest))
+                            (match reading with
+                             | SinkJournal.JournalReading.Unreadable cause ->
+                                 printErrors Console.Error
+                                     [ ValidationError.create "sink.journal.unreadable"
+                                         (sprintf "check environments: the sink journal for %s could not be read — %s. The sink's claim findings stand down this run; the ledger file is untouched on disk." label cause) ]
+                             | SinkJournal.JournalReading.Read _ -> ())
+                            let journal = SinkJournal.JournalReading.lines reading
                             let claims = SinkClaims.adjudicateAll snapshot journal
                             // S12 — the residue sweep beside the OSSYS read:
                             // the environment's OSUSR universe minus the

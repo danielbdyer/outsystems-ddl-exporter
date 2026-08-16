@@ -238,11 +238,87 @@ module SinkJournal =
                 | other -> fail "sink.journal.corruptLine" (sprintf "unknown keyBasis kind '%s'" other))
         | _ -> fail "sink.journal.corruptLine" "keyBasis missing kind"
 
-    /// Parse one journal line. The domain classification is re-derivable
-    /// from the images, so the decode re-derives nothing — it restores the
-    /// displacement structurally (domain token payloads ride the line for
-    /// readers, but the typed Domain is rebuilt at replay only when needed;
-    /// here it is restored as None-safe re-classification is S10's view).
+    let private facetOfToken (t: string) : Result<AttributeFacet> =
+        match t with
+        | "DataType" -> Ok AttributeFacet.DataType
+        | "Nullability" -> Ok AttributeFacet.Nullability
+        | "PrimaryKey" -> Ok AttributeFacet.PrimaryKey
+        | "Length" -> Ok AttributeFacet.Length
+        | "Precision" -> Ok AttributeFacet.Precision
+        | "Scale" -> Ok AttributeFacet.Scale
+        | "Identity" -> Ok AttributeFacet.Identity
+        | "DefaultValue" -> Ok AttributeFacet.DefaultValue
+        | "Computed" -> Ok AttributeFacet.Computed
+        | other -> fail "sink.journal.corruptLine" (sprintf "unknown attribute facet token '%s'" other)
+
+    /// align-II.10 (E3) — decode the domain classification the writer
+    /// records. Payload-bearing tokens restore their payloads; an unknown
+    /// token or a malformed payload fail-closes (a corrupt classification
+    /// never silently reads as unclassified).
+    let private readDomain (el: JsonElement) : Result<SinkDisplacement.DomainTransition option> =
+        match el.TryGetProperty "domain" with
+        | false, _ -> fail "sink.journal.corruptLine" "line missing domain (null is a written value, never an omission)"
+        | true, v when v.ValueKind = JsonValueKind.Null -> Ok None
+        | true, v when v.ValueKind = JsonValueKind.Object ->
+            match v.TryGetProperty "token" with
+            | true, t when t.ValueKind = JsonValueKind.String ->
+                asNonNullString "sink.journal.corruptLine" "domain token" t
+                |> Result.bind (fun token ->
+                    let str (name: string) : Result<string> =
+                        match v.TryGetProperty name with
+                        | true, x when x.ValueKind = JsonValueKind.String ->
+                            asNonNullString "sink.journal.corruptLine" (sprintf "domain %s" name) x
+                        | _ -> fail "sink.journal.corruptLine" (sprintf "domain '%s' missing '%s'" token name)
+                    let num (name: string) : Result<int> =
+                        match v.TryGetProperty name with
+                        | true, x when x.ValueKind = JsonValueKind.Number -> Ok (x.GetInt32())
+                        | _ -> fail "sink.journal.corruptLine" (sprintf "domain '%s' missing '%s'" token name)
+                    match token with
+                    | "entityDeactivated" -> Ok (Some SinkDisplacement.DomainTransition.EntityDeactivated)
+                    | "entityReactivated" -> Ok (Some SinkDisplacement.DomainTransition.EntityReactivated)
+                    | "entityRegisteredExternal" -> Ok (Some SinkDisplacement.DomainTransition.EntityRegisteredExternal)
+                    | "attributeRetired" -> Ok (Some SinkDisplacement.DomainTransition.AttributeRetired)
+                    | "attributeReactivated" -> Ok (Some SinkDisplacement.DomainTransition.AttributeReactivated)
+                    | "moduleRetired" -> Ok (Some SinkDisplacement.DomainTransition.ModuleRetired)
+                    | "moduleReactivated" -> Ok (Some SinkDisplacement.DomainTransition.ModuleReactivated)
+                    | "shapeChanged" -> Ok (Some SinkDisplacement.DomainTransition.ShapeChanged)
+                    | "entityRehomed" ->
+                        num "fromEspaceId"
+                        |> Result.bind (fun fromId ->
+                            num "toEspaceId"
+                            |> Result.map (fun toId -> Some (SinkDisplacement.DomainTransition.EntityRehomed (fromId, toId))))
+                    | "physicalTableClaimChanged" ->
+                        str "fromTable"
+                        |> Result.bind (fun fromTable ->
+                            str "toTable"
+                            |> Result.map (fun toTable -> Some (SinkDisplacement.DomainTransition.PhysicalTableClaimChanged (fromTable, toTable))))
+                    | "physicalTableSuperseded" ->
+                        str "table"
+                        |> Result.map (fun table -> Some (SinkDisplacement.DomainTransition.PhysicalTableSuperseded table))
+                    | "attributeRetyped" ->
+                        match v.TryGetProperty "facets" with
+                        | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                            arr.EnumerateArray()
+                            |> Seq.map (fun f ->
+                                if f.ValueKind = JsonValueKind.String then
+                                    asNonNullString "sink.journal.corruptLine" "facet" f |> Result.bind facetOfToken
+                                else fail "sink.journal.corruptLine" "facet is not a string")
+                            |> Seq.toList
+                            |> List.fold (fun acc item ->
+                                match acc, item with
+                                | Ok xs, Ok x -> Ok (x :: xs)
+                                | Error e, _ -> Error e
+                                | _, Error e -> Error e) (Ok [])
+                            |> Result.map (List.rev >> SinkDisplacement.DomainTransition.AttributeRetyped >> Some)
+                        | _ -> fail "sink.journal.corruptLine" "domain 'attributeRetyped' missing 'facets'"
+                    | other -> fail "sink.journal.corruptLine" (sprintf "unknown domain token '%s'" other))
+            | _ -> fail "sink.journal.corruptLine" "domain object missing token"
+        | _ -> fail "sink.journal.corruptLine" "malformed 'domain' (expected object or null)"
+
+    /// Parse one journal line — the full inverse of `renderLine`
+    /// (align-II.10: the domain classification DECODES; `parseLine ∘
+    /// renderLine = id` is a live law beside T19, so a journal read sees
+    /// exactly the classification the witness recorded).
     let parseLine (text: string) : Result<JournalLine> =
         let parsed =
             try Ok (JsonDocument.Parse text)
@@ -292,6 +368,7 @@ module SinkJournal =
                     match root.TryGetProperty "after" with
                     | true, v -> readRowImage table v
                     | _ -> fail "sink.journal.corruptLine" "line missing after image"
+                let! domain = readDomain root
                 return
                     { SyncId = syncId
                       PrevSyncId = prevSyncId
@@ -302,7 +379,7 @@ module SinkJournal =
                           KeyBasis = basis
                           Before = before
                           After = after
-                          Domain = None } }
+                          Domain = domain } }
             })
 
     // ------------------------------------------------------------------
@@ -357,6 +434,38 @@ module SinkJournal =
                 |> Result.map List.rev
             with ex ->
                 fail "sink.journal.unreadable" (sprintf "journal read failed: %s" ex.Message)
+
+    /// align-II.10 (E3) — the journal read as a NAMED reading: the lines,
+    /// or the located cause of an unreadable ledger. The two claim-assembly
+    /// consumers thread it so an unreadable journal degrades NAMED (the
+    /// estate face says so; the sink-served model read logs it) instead of
+    /// silently assembling claims over an empty list.
+    [<RequireQualifiedAccess>]
+    type JournalReading =
+        | Read of lines: JournalLine list
+        | Unreadable of cause: string
+
+    [<RequireQualifiedAccess>]
+    module JournalReading =
+
+        /// Classify a load result. The cause is the primary error's
+        /// located message.
+        let ofLoad (r: Result<JournalLine list>) : JournalReading =
+            match r with
+            | Ok lines -> JournalReading.Read lines
+            | Error errors ->
+                let cause =
+                    match errors with
+                    | e :: _ -> e.Message
+                    | [] -> "the journal read returned no cause"
+                JournalReading.Unreadable cause
+
+        /// The lines a reading carries — empty on Unreadable (the consumer
+        /// has already surfaced the degradation by name).
+        let lines (r: JournalReading) : JournalLine list =
+            match r with
+            | JournalReading.Read lines -> lines
+            | JournalReading.Unreadable _ -> []
 
     /// The monotone-chain admission: every line must carry the next sync
     /// ordinal within its sync group (non-decreasing across the file,

@@ -32117,3 +32117,36 @@ gain the key; the witness diffs CONTENT, so CDC-silence semantics are untouched.
 
 Additive throughout: wire reads, witness outcomes, and the fast-path decision are
 behavior-identical on every existing shape; the only new surface is the named vocabulary.
+
+## 2026-08-16 — align-II.10: the journal read-side — the decode is the render's inverse; readings and first-witness instants stop lying
+
+**a1/a5's charge, three seams:**
+
+**1. `parseLine` decodes the domain classification.** `renderLine` recorded every
+`DomainTransition` (token + payloads); `parseLine` restored `Domain = None` — the
+round-trip LOST the classification the witness recorded, and every journal consumer saw
+an unclassified displacement. Now the decode is the render's full inverse: all twelve
+domain tokens restore with their payloads (rehomed espace ids, claim-change tables,
+superseded table, retyped facets), an unknown token or malformed payload fail-closes on
+`sink.journal.corruptLine` (a corrupt classification never silently reads as
+unclassified), and `parseLine ∘ renderLine = id` is a live law beside T19 walking every
+case. Replay/admission are Domain-blind, so healthy stores are byte-identical.
+
+**2. `JournalReading = Read | Unreadable of cause`.** Both claim-assembly sites collapsed
+an unreadable ledger to `[]` (`Result.defaultValue`) — claims silently assembled over
+nothing. The estate face now prints the located cause as an advisory
+(`sink.journal.unreadable`; the sink contribution for that environment stands down,
+named); the sink-served model read emits one Warn envelope on the machine channel. A
+readable ledger is byte-identical.
+
+**3. `FirstWitnessedSync = SinceGenesis | AtSync of int | Unknown`.** The assembly's
+"defensive fallback" fabricated sync 1 for a claim with NO appearance line — an instant
+nothing witnessed, rendered indistinguishably from the real genesis. The trichotomy keeps
+the adjudication ladder ORDER-STABLE (Unknown ranks exactly where the fabrication sat —
+missing provenance never rewards recency) while the rendering stops lying: healthy
+readings keep their ordinal bytes ("@sync 1", "@sync 3"); Unknown renders "@sync ?".
+BEHAVIORAL only for gappy/reconciled ledgers (the fabricated "1" becomes "?"); healthy
+journals are byte-identical (law-pinned).
+
+Consumers enumerated: the ladder rank (two sites), the one claim renderer (`claimText`),
+the correspondence tombstone sort, `SinkClaims.assemble`, the two test claim builders.
