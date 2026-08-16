@@ -327,14 +327,17 @@ let ``mandatory: requiresApproval helper fires for the conflict outcome`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``direction: a relaxation-only intervention never tightens — a mandatory column with zero nulls reads NoTighteningSignal`` () =
+let ``direction: a relaxation-only intervention never tightens — a mandatory column with zero nulls is the honest abstain`` () =
     // Under EvidenceDriven this exact shape reads EnforceNotNull
     // (LogicalMandatoryNoProfile) — the coercion the amendment must not
-    // re-enable. RelaxationOnly reads it as no signal at all.
+    // re-enable. RelaxationOnly states no opinion at all — and since
+    // align-II.4 the trail says exactly that (DeclaredShapeCarried),
+    // instead of falsely recording "keep nullable" about a column that
+    // stays NOT NULL.
     let attr = mkMandatoryAttr "OS_ATTR_RO_Clean" true
     let cfg = NullabilityTighteningConfig.relaxationOnly false []
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
-    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.DeclaredShapeCarried, decision.Outcome)
 
 [<Fact>]
 let ``direction: a relaxation-only intervention acts exactly at its overrides — KeepNullable(OperatorOverride)`` () =
@@ -355,4 +358,4 @@ let ``direction: relaxation-only never lifts to operator approval, whatever the 
     let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
     let cfg = NullabilityTighteningConfig.relaxationOnly false []
     let decision = NullabilityRules.evaluate "test" cfg attr profile
-    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.DeclaredShapeCarried, decision.Outcome)

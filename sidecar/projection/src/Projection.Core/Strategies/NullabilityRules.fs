@@ -70,6 +70,15 @@ type NullabilityOutcome =
     | EnforceNotNull of evidence: NullabilityEvidence
     | KeepNullable of reason: KeepNullableReason
     | RequireOperatorApproval of conflict: NullabilityConflict
+    /// align-II.4 (a4-2) — the FIRST-CLASS ABSTAIN: the intervention
+    /// states no opinion for this attribute (a direction gate — under
+    /// RelaxationOnly no evidence signal proposes tightening) and the
+    /// DECLARED shape carries. Retires the epistemically false blanket
+    /// `KeepNullable NoTighteningSignal` that recorded "keep nullable"
+    /// about columns that stay NOT NULL. Identity at emission (the
+    /// overlay reads only the EnforceNotNull/override sets); the trail
+    /// stops asserting falsehoods.
+    | DeclaredShapeCarried
 
 
 /// One decision keyed to its attribute and the intervention that
@@ -173,6 +182,8 @@ module NullabilityOutcome =
         | NullabilityOutcome.KeepNullable r ->
             StructuredString.create "KeepNullable"
                 [ "reason", KeepNullableReason.toDiagnosticString r ]
+        | NullabilityOutcome.DeclaredShapeCarried ->
+            StructuredString.tag "DeclaredShapeCarried"
         | NullabilityOutcome.RequireOperatorApproval c ->
             StructuredString.create "RequireOperatorApproval"
                 [ "conflict", NullabilityConflict.toDiagnosticString c ]
@@ -246,7 +257,12 @@ module NullabilityRules =
             if NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
                 mkDecision (NullabilityOutcome.KeepNullable OperatorOverride)
             else
-                mkDecision (NullabilityOutcome.KeepNullable NoTighteningSignal)
+                // align-II.4: the honest abstain — the intervention states
+                // no opinion; the declared shape carries. (The prior
+                // `KeepNullable NoTighteningSignal` blanket asserted "keep
+                // nullable" about NOT-NULL columns — false in the lineage,
+                // the one plane whose whole job is to not lie.)
+                mkDecision NullabilityOutcome.DeclaredShapeCarried
         // 1. Operator override — absolute.
         elif NullabilityTighteningConfig.shouldKeepNullable attribute.SsKey config then
             mkDecision (NullabilityOutcome.KeepNullable OperatorOverride)

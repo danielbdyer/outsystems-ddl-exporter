@@ -88,6 +88,9 @@ module SummaryFormatter =
             Some Bucket.Mandatory
         | NullabilityOutcome.KeepNullable (RelaxedUnderEvidence _)                -> Some Bucket.Remediation
         | NullabilityOutcome.KeepNullable _                                       -> None
+        // align-II.4: the abstain buckets NOWHERE — the intervention
+        // stated no opinion; there is nothing to summarize.
+        | NullabilityOutcome.DeclaredShapeCarried                                 -> None
         | NullabilityOutcome.RequireOperatorApproval _                            -> Some Bucket.Remediation
 
     let private classifyForeignKey
@@ -97,6 +100,9 @@ module SummaryFormatter =
         | ForeignKeyOutcome.EnforceConstraint _              -> Some Bucket.ForeignKey
         | ForeignKeyOutcome.DoNotEnforce (DataHasOrphans _)  -> Some Bucket.Remediation
         | ForeignKeyOutcome.DoNotEnforce _                   -> None
+        // align-II.4: the abstain buckets nowhere (previously the
+        // enforce-disguise mis-bucketed it into ForeignKey counts).
+        | ForeignKeyOutcome.DeclaredShapeCarried             -> None
 
     let private classifyUniqueIndex
         (decision: UniqueIndexDecision)

@@ -202,10 +202,11 @@ module ForeignKeyPass =
             None
         | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
             None
-        | ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried ->
-            // A relaxation-only intervention states no opinion for this
-            // reference — the declared shape emits untouched; nothing
-            // observer-relevant happened (DECISIONS 2026-07-15).
+        | ForeignKeyOutcome.DeclaredShapeCarried ->
+            // align-II.4: the abstain at OUTCOME grain — a relaxation-only
+            // intervention states no opinion for this reference; the
+            // declared shape emits untouched; nothing observer-relevant
+            // happened (DECISIONS 2026-07-15).
             None
         | ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked ->
             // The operator's explicit interim posture — a chosen state,

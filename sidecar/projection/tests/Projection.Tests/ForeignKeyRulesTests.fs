@@ -516,5 +516,8 @@ let ``direction: a relaxation-only intervention carries the declared shape for e
                 [ { ReferenceKey = ssKey "SomeOtherReference"; Action = KeepUntracked; Provenance = None } ]
     let decision = decide cfg sampleCatalog order orderRef Profile.empty
     Assert.Equal(
-        ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried,
+        ForeignKeyOutcome.DeclaredShapeCarried,
         decision.Outcome)
+    // align-II.4: the abstain no longer answers `enforces` true — the
+    // predicate's stated meaning holds.
+    Assert.False(ForeignKeyRules.enforces decision)

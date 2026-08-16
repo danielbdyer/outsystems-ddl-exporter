@@ -27,11 +27,6 @@ type ForeignKeyEvidence =
     /// outcome's "did we make a constraint?" question still has a
     /// binary answer; the evidence variant carries the modifier.
     | ScriptWithNoCheck of orphanCount: int64
-    /// A RELAXATION-ONLY intervention (DECISIONS 2026-07-15, the estate
-    /// A6 amendment) states no opinion for this reference: the declared
-    /// shape emits untouched. Identity at emission — the decision lands
-    /// in neither `DropFk` nor `NoCheckFk`.
-    | DeclaredShapeCarried
     /// No reliable orphan evidence (no probe ran, or the probe was
     /// unreliable), but the operator opted into `AllowNoCheckCreation`
     /// (with `EnableCreation`), so a resolvable logical FK whose target
@@ -99,6 +94,15 @@ type ForeignKeyKeepReason =
 type ForeignKeyOutcome =
     | EnforceConstraint of evidence: ForeignKeyEvidence
     | DoNotEnforce      of reason:   ForeignKeyKeepReason
+    /// align-II.4 (a4-2) — the FIRST-CLASS ABSTAIN: a RELAXATION-ONLY
+    /// intervention states no opinion for this reference; the declared
+    /// shape emits untouched. Previously DISGUISED as an evidence
+    /// variant of the positive outcome (`EnforceConstraint
+    /// DeclaredShapeCarried`), which made `enforces` answer true for a
+    /// decision that creates nothing and forced emitters to
+    /// special-case the lie back out. `enforces` regains its stated
+    /// meaning.
+    | DeclaredShapeCarried
 
 
 /// One decision keyed to its reference and the intervention that
@@ -159,7 +163,6 @@ module ForeignKeyEvidence =
         | ScriptWithNoCheck orphanCount ->
             StructuredString.create "ScriptWithNoCheck"
                 [ "orphanCount", Inv.int64 orphanCount ]
-        | DeclaredShapeCarried -> StructuredString.tag "DeclaredShapeCarried"
         | NoCheckWithoutEvidence -> StructuredString.tag "NoCheckWithoutEvidence"
 
     let toDiagnosticString (e: ForeignKeyEvidence) : string =
@@ -193,6 +196,10 @@ module ForeignKeyOutcome =
         | ForeignKeyOutcome.DoNotEnforce r ->
             StructuredString.create "DoNotEnforce"
                 [ "reason", ForeignKeyKeepReason.toDiagnosticString r ]
+        // align-II.4: the abstain renders at OUTCOME grain — the same
+        // token the evidence-disguise carried, so trail readers grep on.
+        | ForeignKeyOutcome.DeclaredShapeCarried ->
+            StructuredString.tag "DeclaredShapeCarried"
 
     let toDiagnosticString (o: ForeignKeyOutcome) : string =
         toStructured o |> StructuredString.render
@@ -300,7 +307,9 @@ module ForeignKeyRules =
         if ForeignKeyTighteningConfig.shouldKeepUntracked reference.SsKey config then
             mkDecision (ForeignKeyOutcome.DoNotEnforce OperatorUntracked)
         elif config.Direction = TighteningDirection.RelaxationOnly then
-            mkDecision (ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried)
+            // align-II.4: the honest abstain at OUTCOME grain — no more
+            // enforce-disguise.
+            mkDecision ForeignKeyOutcome.DeclaredShapeCarried
         else
 
         // 1. Target kind must exist in the catalog. Structural
@@ -390,11 +399,15 @@ module ForeignKeyRules =
     // Helpers for callers exploring the decision shape.
     // -----------------------------------------------------------------------
 
-    /// True iff the decision creates the FK constraint.
+    /// True iff the decision creates the FK constraint. align-II.4:
+    /// this predicate's stated meaning is TRUE again — the abstain is
+    /// its own outcome, no longer an enforce-disguise this function
+    /// had to lie about.
     let enforces (decision: ForeignKeyDecision) : bool =
         match decision.Outcome with
         | ForeignKeyOutcome.EnforceConstraint _ -> true
         | ForeignKeyOutcome.DoNotEnforce      _ -> false
+        | ForeignKeyOutcome.DeclaredShapeCarried -> false
 
     /// True iff the decision is an EnforceConstraint with the
     /// ScriptWithNoCheck evidence variant. Convenience for emitters

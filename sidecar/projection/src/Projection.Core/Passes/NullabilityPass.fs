@@ -153,6 +153,10 @@ module NullabilityPass =
             None
         | NullabilityOutcome.KeepNullable OperatorOverride ->
             None
+        | NullabilityOutcome.DeclaredShapeCarried ->
+            // align-II.4: the abstain — the intervention states no opinion;
+            // nothing observer-relevant happened (identity at emission).
+            None
         | NullabilityOutcome.KeepNullable NoTighteningSignal ->
             None
         | NullabilityOutcome.KeepNullable (RelaxedUnderEvidence (nulls, rows, budget)) ->

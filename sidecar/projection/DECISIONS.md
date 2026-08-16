@@ -31861,3 +31861,40 @@ Seven-plus-two laws live: adopt-one/refuse-one/sibling-follows-flag, the
 evidence-carrying advisory, proposalKey determinism + distinctness, per-proposal
 suppression beside a surviving sibling, whole-policy subsumption, and the two binding
 refusals.
+
+## 2026-08-16 — align-II.4: the abstain becomes first-class (one outcome, one spelling, no lies) [BEHAVIORAL]
+
+**The finding (a4-2).** "The intervention states no opinion; the declared shape carries"
+is ONE teleological outcome the domain owns — and it had three spellings, one of them
+FALSE: nullability's RelaxationOnly blanket recorded `KeepNullable NoTighteningSignal`
+about columns that stay NOT NULL (false in the lineage — the one plane whose whole job is
+to not lie); FK disguised it as an EVIDENCE variant of the positive outcome
+(`EnforceConstraint DeclaredShapeCarried`), so `enforces` answered true for a decision
+that creates nothing and emitters special-cased the lie back out; unique-index spelled it
+`ApplyProfilePromotions=false` (addressed at align-II.3).
+
+**Landed.** `NullabilityOutcome.DeclaredShapeCarried` + `ForeignKeyOutcome.
+DeclaredShapeCarried` — per-strategy first-class abstains (the PhysicalClaimRules
+standard: when the domain has N outcomes, the DU has N cases). The FK evidence-disguise
+variant RETIRES; `enforces` regains its stated meaning (false for the abstain, with the
+law pinned); the ForeignKeyPass identity special-case now keys on the outcome; the
+SummaryFormatter buckets the abstain NOWHERE (previously the FK disguise mis-bucketed it
+into ForeignKey counts — a mis-summary, now impossible).
+
+**Behavioral consequences, named.** (1) Trail annotation strings change for the two
+abstain shapes: nullability's `KeepNullable { reason = NoTighteningSignal }` blanket
+becomes `DeclaredShapeCarried`; FK's `EnforceConstraint { evidence = DeclaredShapeCarried }`
+becomes the outcome-grain `DeclaredShapeCarried` (same greppable token, honest grain).
+(2) SummaryFormatter's ForeignKey bucket count DROPS by the abstain count on
+relaxation-only runs (it was counting non-creations as creations). (3) The
+`DecisionOverlay` read-sets are BYTE-IDENTICAL (it reads only the EnforceNotNull/override
+and DropFk/NoCheckFk sets — the overlay-identity law re-pinned on the new outcome).
+(4) EventProjection: both strategies' decision arms are unchanged this slice (the typed
+AnnotationDetail arms match on outcome DUs structurally; the abstain falls where the old
+spellings fell). Consumers enumerated: trail/audit readers, SummaryFormatter,
+DecisionOverlay, ForeignKeyPass diagnostics.
+
+**Scope note (re-scope named).** The plan's II.4 bundled the probe-reading trichotomy
+(a4-3: `ProbeReading = NotProfiled | Unreliable | Reliable`) and the four-way
+`ForeignKeyReadback.Unreadable` (a4-8). Those land as the NEXT slice (align-II.4b) —
+one-commit-one-coherent-change; the abstain reshape is this commit's whole story.

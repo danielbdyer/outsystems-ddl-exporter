@@ -111,7 +111,8 @@ let ``one intervention: lineage event detail names the intervention id and outco
             match outcome with
             | NullabilityOutcome.EnforceNotNull _
             | NullabilityOutcome.KeepNullable _
-            | NullabilityOutcome.RequireOperatorApproval _ -> ()
+            | NullabilityOutcome.RequireOperatorApproval _
+            | NullabilityOutcome.DeclaredShapeCarried -> ()
         | other ->
             Assert.Fail(sprintf "Expected Annotated (NullabilityDecision _), got %A" other))
 
