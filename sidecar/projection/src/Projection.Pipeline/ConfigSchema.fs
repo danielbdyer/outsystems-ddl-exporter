@@ -53,6 +53,12 @@ module ConfigSchema =
         if desc <> "" then o["description"] <- JsonValue.Create desc
         o
 
+    let private number (desc: string) : JsonObject =
+        let o = JsonObject()
+        o["type"] <- JsonValue.Create "number"
+        if desc <> "" then o["description"] <- JsonValue.Create desc
+        o
+
     let private enumOf (desc: string) (values: string list) : JsonObject =
         let o = JsonObject()
         o["type"] <- JsonValue.Create "string"
@@ -178,9 +184,47 @@ module ConfigSchema =
                                 "acknowledgedImpact", str ""
                                 "approvedBy", str ""
                                 "date", str "" ]) ]
+        // align-II.2 — the ruling attribution an override row may carry.
+        // Optional everywhere; `approvedBy` anchors the attribution (the
+        // binder refuses attribution fields without an approver, a
+        // malformed `approvedAt`, and an unknown `finding` key — each by
+        // name).
+        // (A function, not a shared list — JsonNode values are single-parent,
+        // so each attaching object mints fresh nodes.)
+        let provenanceFields () =
+            [ "approvedBy", str "who approved this override (the attribution anchor)"
+              "approvedAt", str "when (ISO-8601 round-trip form; parsed fail-closed)"
+              "rationale", str "why — carried onto the estate posture un-severed"
+              "finding", str "the finding key this override answers (<kind-token>:<subject>)" ]
         props["policy"] <-
             objectOf "tightening + transform-group toggles" []
                 [ "insertion", str "e.g. SchemaOnly"
+                  "tightening",
+                      objectOf "operator tightening interventions (align-II.2: override rows carry optional ruling attribution)" []
+                          [ "interventions",
+                                arrayOf "one entry per intervention kind"
+                                    (objectOf "" [ "kind"; "id" ]
+                                        ([ "kind", enumOf "" [ "nullability"; "uniqueIndex"; "foreignKey"; "categoricalUniqueness" ]
+                                           "id", str "stable intervention id"
+                                           "nullBudget", number "nullability: permitted null fraction [0,1]"
+                                           "allowMandatoryRelaxation", boolean "nullability"
+                                           "overrides",
+                                               arrayOf "nullability per-attribute overrides"
+                                                   (objectOf "" [ "attributeRef"; "action" ]
+                                                       ([ "attributeRef", str "Module.Entity.Attribute or Schema.Table.Column"
+                                                          "action", enumOf "" [ "keepNullable" ] ] @ provenanceFields ()))
+                                           "enforceSingleColumnUnique", boolean "uniqueIndex"
+                                           "enforceMultiColumnUnique", boolean "uniqueIndex"
+                                           "applyUniquePromotions", boolean "uniqueIndex: apply (true) vs advise-only (default)"
+                                           "enableCreation", boolean "foreignKey"
+                                           "allowCrossSchema", boolean "foreignKey"
+                                           "allowNoCheckCreation", boolean "foreignKey"
+                                           "referenceOverrides",
+                                               arrayOf "foreignKey per-reference overrides"
+                                                   (objectOf "" [ "referenceRef"; "action" ]
+                                                       ([ "referenceRef", str "the anchoring attribute (logical or physical form)"
+                                                          "action", enumOf "" [ "keepUntracked" ] ] @ provenanceFields ()))
+                                           "minDistinctCountForUniqueness", integer "categoricalUniqueness" ])) ]
                   "transformGroups",
                       arrayOf "opt-in/out of registered pass groups"
                           (objectOf "" [ "name"; "enabled" ]

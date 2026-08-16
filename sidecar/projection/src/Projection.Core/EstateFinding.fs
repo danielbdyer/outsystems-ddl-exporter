@@ -853,6 +853,22 @@ module FindingKey =
     /// The key's stable text — the token every artifact carries verbatim.
     let text (FindingKey t) : string = t
 
+    /// Parse a stored key text back to the typed key (align-II.2 — hoisted
+    /// at the second consumer: RulingStore and TighteningBinding both
+    /// reconstruct persisted keys). `None` for a malformed token (no
+    /// discriminator, unknown kind, blank subject); `create` concatenates
+    /// identically, so `tryParse (text k) = Some k`.
+    let tryParse (raw: string) : FindingKey option =
+        let i = raw.IndexOf ':'
+        if i <= 0 then None
+        else
+            match EstateFindingKind.ofToken (raw.Substring(0, i)) with
+            | None -> None
+            | Some kind ->
+                let subject = raw.Substring(i + 1)
+                if System.String.IsNullOrWhiteSpace subject then None
+                else Some (create kind subject)
+
     /// The logical subject the key names (the `Entity` or `Entity.Column`
     /// after the kind discriminator) — the plain half an operator reads.
     let subject (FindingKey t) : string =

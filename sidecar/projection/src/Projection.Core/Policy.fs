@@ -391,6 +391,23 @@ type TighteningDirection =
 type TighteningOverride = {
     AttributeKey : SsKey
     Action       : OverrideAction
+    /// align-II.2 — who approved this override, when, why, and which
+    /// finding it answers. `None` = a pre-provenance config row; the
+    /// estate posture surfaces the provenance UN-severed
+    /// (`EstatePosture.activeWithProvenance`).
+    Provenance   : OverrideProvenance option
+}
+
+/// align-II.2 (a4) — the provenance an operator override carries: the
+/// ruling attribution that was previously unrecordable (an override row
+/// said WHAT but never WHO/WHEN/WHY/AGAINST-WHICH-FINDING). All fields
+/// beyond the approver are optional; the binder parses instants
+/// fail-closed and finding keys through `FindingKey.tryParse`.
+and OverrideProvenance = {
+    ApprovedBy : string
+    ApprovedAt : System.DateTimeOffset option
+    Rationale  : string option
+    Finding    : FindingKey option
 }
 
 /// What an override does. V2 starts with the single action V1 actually
@@ -511,6 +528,8 @@ type ForeignKeyOverrideAction =
 type ForeignKeyOverride = {
     ReferenceKey : SsKey
     Action       : ForeignKeyOverrideAction
+    /// align-II.2 — ruling attribution (see `OverrideProvenance`).
+    Provenance   : OverrideProvenance option
 }
 
 type ForeignKeyTighteningConfig = {

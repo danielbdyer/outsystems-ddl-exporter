@@ -31793,3 +31793,34 @@ closed-vocabulary strings the store owns.
 Laws landed live with the slice (A53 stays Bucket-C until II.5 reception): store
 round-trip over every anchor/verdict/optional-field combination; replace-by-key (the
 second save wins); missing → Ok None; malformed → ParseFailure; byte-determinism.
+
+## 2026-08-16 — align-II.2: tightening overrides carry their ruling attribution; the estate posture stops severing it
+
+**The gap (a4).** An override row said WHAT (`keepNullable` / `keepUntracked`) but never
+WHO/WHEN/WHY/AGAINST-WHICH-FINDING — and `EstatePosture.activeOf` severed even the row
+identity down to bare key-sets. Operator judgment was applied but unattributable.
+
+**Landed.** `OverrideProvenance = {ApprovedBy; ApprovedAt: DateTimeOffset option;
+Rationale option; Finding: FindingKey option}` (Core, beside the override records);
+`Provenance : OverrideProvenance option` on `TighteningOverride` + `ForeignKeyOverride`
+(28 construction sites walked compiler-driven, `Provenance = None`). Config rows gain the
+four optional keys (`approvedBy/approvedAt/rationale/finding` — raw textual grain);
+`TighteningBinding.bindProvenance` threads them fail-closed: attribution without an
+approver refuses (`provenance.approverMissing`), a malformed instant refuses
+(`provenance.approvedAt.malformed`), an unknown finding key refuses
+(`provenance.finding.unknown`) — never a silently-dropped attribution. A bare row binds
+`None` — the pre-provenance shape, byte-identical downstream (DecisionOverlay read-sets
+unmoved; the full fast pool is the witness).
+
+**The hoist (second consumer).** `FindingKey.tryParse` lands on Core (`tryParse (text k)
+= Some k` by construction); RulingStore's private duplicate retires onto it.
+
+**The posture sibling.** `EstatePosture.activeWithProvenance` returns the relaxation keys
+WITH their attribution; `activeOf` stays the bare-key reading (consumers byte-identical).
+The II.5 reception is the sibling's named consumer.
+
+**The schema.** `policy.tightening` was schema-UNDOCUMENTED entirely; it enters
+`projection.schema.json` now (interventions + both override grains + the provenance
+fields; enums closed). Regenerated via the generator (+150 lines; the byte-drift test
+holds); one generator lesson banked — JsonNode values are single-parent, so shared
+field lists must be functions minting fresh nodes.

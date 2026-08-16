@@ -166,7 +166,7 @@ let ``A6 amendment: a budget-less nullability entry binds RELAXATION-ONLY with i
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "nullability" "estate-interim" with
-            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable" } ] }
+            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     let result =
         TighteningBinding.fromConfig
             catalog
@@ -197,7 +197,7 @@ let ``A6 amendment: a nullability entry naming BOTH a budget and a keepNullable 
     let entry =
         { emptyEntry "nullability" "budget-and-override" with
             NullBudget = Some 0.05m
-            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable" } ] }
+            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok policy ->
         match policy.Interventions with
@@ -217,7 +217,7 @@ let ``A6 amendment: the physical Schema.Table.Column form resolves a keepNullabl
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "nullability" "estate-interim" with
-            NullabilityOverrides = [ { AttributeRef = "dbo.OSUSR_APPCORE_USER.MIDDLENAME"; Action = "keepNullable" } ] }
+            NullabilityOverrides = [ { AttributeRef = "dbo.OSUSR_APPCORE_USER.MIDDLENAME"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok policy -> Assert.Equal(1, List.length policy.Interventions)
     | Error es -> failwithf "expected Ok, got %A" es
@@ -227,7 +227,7 @@ let ``A6 amendment: an unresolvable keepNullable override ref surfaces the struc
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "nullability" "estate-interim" with
-            NullabilityOverrides = [ { AttributeRef = "AppCore.User.NoSuchColumn"; Action = "keepNullable" } ] }
+            NullabilityOverrides = [ { AttributeRef = "AppCore.User.NoSuchColumn"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok _ -> failwith "expected Error"
     | Error es ->
@@ -326,7 +326,7 @@ let ``A6 amendment: a foreignKey entry carrying only referenceOverrides binds th
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "foreignKey" "estate-untrack" with
-            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked" } ] }
+            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok policy ->
         match policy.Interventions with
@@ -347,7 +347,7 @@ let ``A6 amendment: a toggle beside referenceOverrides keeps the evidence-driven
     let entry =
         { emptyEntry "foreignKey" "fk-wide" with
             EnableCreation = Some true
-            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked" } ] }
+            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok policy ->
         match policy.Interventions with
@@ -362,7 +362,7 @@ let ``A6 amendment: an unknown reference override action is refused by name`` ()
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "foreignKey" "estate-untrack" with
-            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "dropForever" } ] }
+            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "dropForever"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok _ -> failwith "expected Error"
     | Error es ->
@@ -373,7 +373,7 @@ let ``A6 amendment: a referenceRef naming an attribute that anchors no relations
     let catalog = loadCatalog ()
     let entry =
         { emptyEntry "foreignKey" "estate-untrack" with
-            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.User.MiddleName"; Action = "keepUntracked" } ] }
+            ForeignKeyOverrides = [ { ReferenceRef = "AppCore.User.MiddleName"; Action = "keepUntracked"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Ok _ -> failwith "expected Error"
     | Error es ->
@@ -442,9 +442,9 @@ let ``overlay: every emitted key binds through TighteningBinding and reaches emi
     let section : Config.TighteningSection =
         { Interventions =
             [ { emptyEntry "nullability" "estate-interim-nullability" with
-                  NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable" } ] }
+                  NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
               { emptyEntry "foreignKey" "estate-interim-untrack" with
-                  ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked" } ] } ] }
+                  ForeignKeyOverrides = [ { ReferenceRef = "AppCore.Order.UserId"; Action = "keepUntracked"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] } ] }
     let tightening =
         match TighteningBinding.fromConfig catalog (Some section) with
         | Ok p -> p
@@ -478,3 +478,96 @@ let ``overlay: every emitted key binds through TighteningBinding and reaches emi
     let baseline = SsdtDdlEmitter.statements catalog |> Render.toText
     Assert.Contains("NOT NULL", lineOf "[MIDDLENAME]" baseline)
     Assert.Contains("FOREIGN KEY", baseline)
+
+// ----------------------------------------------------------------------
+// align-II.2 — ruling attribution on override rows. The binder threads
+// approvedBy/approvedAt/rationale/finding onto the typed override
+// (fail-closed instants; finding keys through FindingKey.tryParse) and
+// EstatePosture.activeWithProvenance surfaces it UN-severed.
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``align-II.2: an attributed keepNullable override binds its full provenance (who, when, why, which finding)`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides =
+                [ { AttributeRef = "AppCore.User.MiddleName"
+                    Action = "keepNullable"
+                    ApprovedBy = Some "dan"
+                    ApprovedAt = Some "2026-08-16T12:00:00.0000000+00:00"
+                    Rationale = Some "band accepted pending cleanup"
+                    Finding = Some "data.notNullPastBand:User.MiddleName" } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Ok policy ->
+        let overrides =
+            policy.Interventions
+            |> List.collect (function TighteningIntervention.Nullability (_, cfg) -> cfg.Overrides | _ -> [])
+        let p = (List.exactlyOne overrides).Provenance |> Option.get
+        Assert.Equal("dan", p.ApprovedBy)
+        Assert.Equal(Some (System.DateTimeOffset(2026, 8, 16, 12, 0, 0, System.TimeSpan.Zero)), p.ApprovedAt)
+        Assert.Equal(Some "band accepted pending cleanup", p.Rationale)
+        Assert.Equal(Some "data.notNullPastBand:User.MiddleName", p.Finding |> Option.map FindingKey.text)
+    | Error es -> Assert.Fail(sprintf "expected the attributed bind to succeed: %A" es)
+
+[<Fact>]
+let ``align-II.2: a bare override row binds Provenance = None (the pre-provenance shape, byte-identical)`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides = [ { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable"; ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Ok policy ->
+        let overrides =
+            policy.Interventions
+            |> List.collect (function TighteningIntervention.Nullability (_, cfg) -> cfg.Overrides | _ -> [])
+        Assert.Equal(None, (List.exactlyOne overrides).Provenance)
+    | Error es -> Assert.Fail(sprintf "expected the bare bind to succeed: %A" es)
+
+[<Fact>]
+let ``align-II.2: attribution fields without an approver refuse by name`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides =
+                [ { AttributeRef = "AppCore.User.MiddleName"
+                    Action = "keepNullable"
+                    ApprovedBy = None
+                    ApprovedAt = None
+                    Rationale = Some "orphaned rationale"
+                    Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "provenance.approverMissing")
+    | Ok _ -> Assert.Fail "expected the approver-less attribution to refuse"
+
+[<Fact>]
+let ``align-II.2: a malformed approvedAt instant refuses by name (never a silently-dropped attribution)`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides =
+                [ { AttributeRef = "AppCore.User.MiddleName"
+                    Action = "keepNullable"
+                    ApprovedBy = Some "dan"
+                    ApprovedAt = Some "yesterday-ish"
+                    Rationale = None
+                    Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "provenance.approvedAt.malformed")
+    | Ok _ -> Assert.Fail "expected the malformed instant to refuse"
+
+[<Fact>]
+let ``align-II.2: an unknown finding key refuses by name`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "nullability" "estate-interim" with
+            NullabilityOverrides =
+                [ { AttributeRef = "AppCore.User.MiddleName"
+                    Action = "keepNullable"
+                    ApprovedBy = Some "dan"
+                    ApprovedAt = None
+                    Rationale = None
+                    Finding = Some "not-a-kind:whatever" } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "provenance.finding.unknown")
+    | Ok _ -> Assert.Fail "expected the unknown finding to refuse"

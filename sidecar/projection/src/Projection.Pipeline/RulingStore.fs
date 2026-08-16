@@ -113,16 +113,11 @@ module RulingStore =
         | _ -> None
 
     let private parseKey (text: string) : Result<FindingKey, string> =
-        let i = text.IndexOf ':'
-        if i <= 0 then Error (sprintf "malformed finding key '%s' (no kind discriminator)" text)
-        else
-            match EstateFindingKind.ofToken (text.Substring(0, i)) with
-            | None -> Error (sprintf "unknown finding kind token in key '%s'" text)
-            | Some kind ->
-                let subject = text.Substring(i + 1)
-                if String.IsNullOrWhiteSpace subject then
-                    Error (sprintf "malformed finding key '%s' (blank subject)" text)
-                else Ok (FindingKey.create kind subject)
+        // align-II.2 hoist: the reconstruction lives on FindingKey itself
+        // (second consumer — TighteningBinding parses persisted keys too).
+        match FindingKey.tryParse text with
+        | Some k -> Ok k
+        | None -> Error (sprintf "malformed or unknown finding key '%s'" text)
 
     let private parseBasis (el: JsonElement) : Result<BasisAnchor option, string> =
         match el.TryGetProperty "basis" with

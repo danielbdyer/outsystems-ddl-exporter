@@ -162,7 +162,7 @@ let ``overrides survive through the pass: a KeepNullable override produces KeepN
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let cfg =
         mkConfig 0.0m false
-            [ { AttributeKey = pkAttr.SsKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = pkAttr.SsKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let policy = policyWithIntervention "with-override" cfg
     let lineage = nullRun sampleCatalog policy Profile.empty
     let pkDecision =

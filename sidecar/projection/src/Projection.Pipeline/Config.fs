@@ -531,6 +531,13 @@ module Config =
     type TighteningAttributeOverride = {
         AttributeRef : string
         Action       : string
+        // align-II.2 — optional ruling attribution (raw textual grain;
+        // the binder parses the instant fail-closed and the finding key
+        // through FindingKey.tryParse).
+        ApprovedBy   : string option
+        ApprovedAt   : string option
+        Rationale    : string option
+        Finding      : string option
     }
 
     /// One row of the per-reference override table inside a `foreignKey`
@@ -544,6 +551,11 @@ module Config =
     type TighteningReferenceOverride = {
         ReferenceRef : string
         Action       : string
+        // align-II.2 — optional ruling attribution (see the attribute row).
+        ApprovedBy   : string option
+        ApprovedAt   : string option
+        Rationale    : string option
+        Finding      : string option
     }
 
     /// One operator-supplied tightening intervention. The `Kind` field
@@ -2001,7 +2013,17 @@ module Config =
         result {
             let! ref = getString element "attributeRef"
             let! action = getString element "action"
-            return { AttributeRef = ref; Action = action }
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { AttributeRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
         }
 
     let private parseTighteningOverrides (element: JsonElement) : Result<TighteningAttributeOverride list> =
@@ -2020,7 +2042,17 @@ module Config =
         result {
             let! ref = getString element "referenceRef"
             let! action = getString element "action"
-            return { ReferenceRef = ref; Action = action }
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { ReferenceRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
         }
 
     /// The `referenceOverrides` array on a `foreignKey` intervention

@@ -110,6 +110,33 @@ module EstatePosture =
     /// loaded config resolved against the target catalog): the relaxation
     /// keys the estate's meter lines stand on. One reading for both the
     /// board and the retirement notices.
+    /// align-II.2 — the UN-severed reading: the relaxation keys WITH the
+    /// ruling attribution each override row carries (who approved, when,
+    /// why, against which finding). `activeOf` below stays the bare-key
+    /// reading (its consumers are byte-identical); this sibling feeds the
+    /// surfaces that render judgment — the II.5 reception is its
+    /// consumer.
+    let activeWithProvenance
+        (policy: TighteningPolicy)
+        : (SsKey * OverrideProvenance option) list * (SsKey * OverrideProvenance option) list =
+        let relaxedRefs =
+            policy.Interventions
+            |> List.collect (function
+                | TighteningIntervention.ForeignKey (_, cfg) ->
+                    cfg.Overrides
+                    |> List.filter (fun o -> o.Action = ForeignKeyOverrideAction.KeepUntracked)
+                    |> List.map (fun o -> o.ReferenceKey, o.Provenance)
+                | _ -> [])
+        let relaxedAttrs =
+            policy.Interventions
+            |> List.collect (function
+                | TighteningIntervention.Nullability (_, cfg) when cfg.Direction = TighteningDirection.RelaxationOnly ->
+                    cfg.Overrides
+                    |> List.filter (fun o -> o.Action = OverrideAction.KeepNullable)
+                    |> List.map (fun o -> o.AttributeKey, o.Provenance)
+                | _ -> [])
+        relaxedRefs, relaxedAttrs
+
     let activeOf (policy: TighteningPolicy) : Set<SsKey> * Set<SsKey> =
         let relaxedRefs =
             policy.Interventions

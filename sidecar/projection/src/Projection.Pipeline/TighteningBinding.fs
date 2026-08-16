@@ -76,6 +76,58 @@ module TighteningBinding =
                     "overrideAction.unknown"
                     (sprintf "Override action '%s' is unknown. Valid: 'keepNullable'." other))
 
+    /// align-II.2 — bind the optional ruling attribution on an override
+    /// row. The instant parses fail-closed (a malformed `approvedAt` is a
+    /// named refusal, never a silently-dropped attribution); the finding
+    /// key reconstructs through `FindingKey.tryParse` (unknown kind
+    /// tokens refuse by name). A row with NO attribution fields binds
+    /// `None` — the pre-provenance shape, byte-identical downstream.
+    let private bindProvenance
+        (context: string)
+        (approvedBy: string option)
+        (approvedAt: string option)
+        (rationale: string option)
+        (finding: string option)
+        : Result<OverrideProvenance option> =
+        match approvedBy, approvedAt, rationale, finding with
+        | None, None, None, None -> Result.success None
+        | None, _, _, _ ->
+            Result.failureOf (
+                bindError
+                    "provenance.approverMissing"
+                    (sprintf "Override '%s' carries attribution fields but no 'approvedBy' — the approver is the attribution's anchor." context))
+        | Some by, atOpt, rationaleOpt, findingOpt ->
+            result {
+                let! at =
+                    match atOpt with
+                    | None -> Result.success None
+                    | Some raw ->
+                        match System.DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind) with
+                        | true, dto -> Result.success (Some dto)
+                        | false, _ ->
+                            Result.failureOf (
+                                bindError
+                                    "provenance.approvedAt.malformed"
+                                    (sprintf "Override '%s' carries a malformed 'approvedAt' instant '%s' (ISO-8601 round-trip form required)." context raw))
+                let! findingKey =
+                    match findingOpt with
+                    | None -> Result.success None
+                    | Some raw ->
+                        match FindingKey.tryParse raw with
+                        | Some k -> Result.success (Some k)
+                        | None ->
+                            Result.failureOf (
+                                bindError
+                                    "provenance.finding.unknown"
+                                    (sprintf "Override '%s' names finding '%s', which parses to no known finding kind." context raw))
+                return
+                    Some
+                        { ApprovedBy = by
+                          ApprovedAt = at
+                          Rationale = rationaleOpt
+                          Finding = findingKey }
+            }
+
     let private bindOverride
         (catalog: Catalog)
         (entry: Config.TighteningAttributeOverride)
@@ -83,9 +135,11 @@ module TighteningBinding =
         result {
             let! ssKey  = resolveAttributeRef catalog entry.AttributeRef
             let! action = parseOverrideAction entry.Action
+            let! provenance = bindProvenance entry.AttributeRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
             return {
                 AttributeKey = ssKey
                 Action       = action
+                Provenance   = provenance
             }
         }
 
@@ -158,8 +212,9 @@ module TighteningBinding =
                     k.References
                     |> List.tryFind (fun r -> r.SourceAttribute = attrKey)
                     |> Option.map (fun r -> r.SsKey))
+            let! provenance = bindProvenance entry.ReferenceRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
             match referenceKey with
-            | Some key -> return { ReferenceKey = key; Action = action }
+            | Some key -> return { ReferenceKey = key; Action = action; Provenance = provenance }
             | None ->
                 return!
                     Result.failureOf (
