@@ -22,8 +22,8 @@ slices).** The master plan is `/root/.claude/plans/yes-let-s-iterate-on-enumerat
 (if that scratch path is gone, the plan's Chapter II spine is reproduced in the
 DECISIONS program-open entry and the audit synthesis §6); the finding-level ground
 truth is `AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md` + `audits/alignment-2026-08-16/`
-(a4/a5/a6 are Chapter II's primary workpapers — the ruling dialects and the epistemic
-debt). Open with II.0 (frame + ruling-law Bucket-C stub + matrix), then the R-track:
+(a4 — the ruling dialects; a1 + a7 — the epistemic
+debt; a8 — the verb checklist: Chapter II's primary workpapers). Open with II.0 (frame + ruling-law Bucket-C stub + matrix), then the R-track:
 II.1 the `OperatorRuling<'anchor>` carrier — and hold the STANDING DESIGN RULING: the
 ruling store is a keyed replace-by-key store under `<store>/rulings/` (the
 `ApprovalStore` fail-closed-load + atomic-write shape), NOT a fifth `LedgerSpec`;

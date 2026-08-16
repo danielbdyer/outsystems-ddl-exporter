@@ -31743,3 +31743,21 @@ expands it. The II.1 design ruling stands as planned: the ruling store is a keye
 replace-by-key store under `<store>/rulings/` (the ApprovalStore shape + atomic idiom),
 NOT a fifth LedgerSpec — append-only ruling HISTORY stays deferred past III.2's
 ChainAdmission with the `BasisAnchor.SinkEdition` widen as its trigger.
+
+## 2026-08-16 — CHAPTER ALIGN-II OPENS (the Ruling & the Epistemics; Arcs R + E, fourteen slices)
+
+Chapter II opens immediately per the consecutive-chapters ruling. The frame is
+`CHAPTER_ALIGN_II_OPEN.md` (judgment axes; the wave map with the serial E-track
+constraint — II.7→II.8→II.9 touch ONE adapter file; II.12 last for the EstateFinding
+collision with II.5); the primary workpapers are a4 (ruling dialects), a1 + a7
+(epistemic debt), a8 (the verb checklist) — the Chapter-I handoff letter's a4/a5/a6
+cite was wrong and is corrected in this commit (drift in the index is a first-class
+defect). A53 lands as the Bucket-C ruling-law stub (promotes at II.5 with estate
+reception); matrix regenerated (deferred C = 7).
+
+**Standing rulings restated for the chapter:** the ruling store is KEYED
+replace-by-key under `<store>/rulings/` (ApprovalStore shape), NOT a fifth LedgerSpec
+(history deferred past III.2, `BasisAnchor.SinkEdition` trigger); record + render ONLY
+(auto-application a named deferral); the "Witness-" naming freeze is ACTIVE from this
+chapter; exemplary consent surfaces untouched; II.4 is the chapter's named BEHAVIORAL
+slice (trail lineage becomes epistemically true; applied/declined SETS byte-identical).

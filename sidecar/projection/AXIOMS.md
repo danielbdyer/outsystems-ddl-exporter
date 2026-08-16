@@ -2399,3 +2399,24 @@ unit-test callers — assembled chains cannot reach it.
 **Property test.** `SkeletonPurityTests.fs` — the seven-pass pin, the exact four-exclusion
 pin, the voiced-diagnostics pin, the full-chain zero-exclusion assert, and profile-
 parameterized purity.
+
+## A53 — the operator ruling is a carrier (align-II open, 2026-08-16)
+
+*Status: CANDIDATE (Bucket C stub at II.0; promotes to LIVE at align-II.5 when
+estate reception renders rulings on their findings end-to-end).*
+
+**Statement (candidate).** Operator judgment on a finding is a VALUE, not a config
+side-effect: `OperatorRuling<'anchor>` carries subject, basis anchor (`Digest |
+Fingerprint | FindingKey | EvidenceDigest`), who, when, rationale, and reopen
+condition. The ruling store is keyed replace-by-key (fail-closed load; atomic write;
+the ApprovalStore shape); a ruling ANCHORS to the evidence it judged, so a
+confirmed/rejected correspondence (K9's demand) is recordable and renderable
+end-to-end; rulings are received on the estate DECIDE lane and never auto-apply
+policy (record + render only — application is a named deferral).
+
+**Enforcement (at promotion).** Round-trip + fail-closed-load laws on the store;
+reception renders the ruling on its finding; the `projection rule` verb records
+through the same carrier.
+
+**Property test.** (at promotion) store round-trip; malformed-store refusal;
+anchored-basis presence; reception rendering.

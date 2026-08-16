@@ -1894,3 +1894,16 @@ let ``A52: chain assemblies satisfy product preconditions (full chain asserts; s
     |> List.iteri (fun ix step ->
         if step.Requires |> List.contains ChainProduct.Topology then
             Assert.True(ix > producerIx, sprintf "'%s' requires Topology but precedes its producer" step.Metadata.Name))
+
+// ===========================================================================
+// A53 — the operator ruling is a carrier (align-II open; Bucket C stub)
+// ===========================================================================
+
+[<Fact(Skip = "A53: the operator ruling is a carrier — Bucket C. The OperatorRuling<'anchor> \
+carrier + keyed replace-by-key store (ApprovalStore shape: fail-closed load, atomic write) \
+land at align-II.1; anchored basis (Digest | Fingerprint | FindingKey | EvidenceDigest) \
+makes a confirmed/rejected correspondence recordable end-to-end (K9). Promoted to Bucket A \
+at align-II.5 when estate reception renders rulings on their findings and the store laws \
+(round-trip; malformed refusal) are live facts.")>]
+let ``A53: the operator ruling is a carrier (keyed, anchored, fail-closed) — verified at align-II.5`` () : unit =
+    failwith "Bucket C stub — see AXIOMS.md A53; promotion lands with align-II.5"
