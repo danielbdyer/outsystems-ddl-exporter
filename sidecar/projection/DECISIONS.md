@@ -31898,3 +31898,32 @@ DecisionOverlay, ForeignKeyPass diagnostics.
 (a4-3: `ProbeReading = NotProfiled | Unreliable | Reliable`) and the four-way
 `ForeignKeyReadback.Unreadable` (a4-8). Those land as the NEXT slice (align-II.4b) —
 one-commit-one-coherent-change; the abstain reshape is this commit's whole story.
+
+## 2026-08-16 — align-II.4b: the probe trichotomy reads once (the dead token lives); the readback classification rides typed [BEHAVIORAL]
+
+**a4-3 — `ProbeReading`.** "No candidate was ever profiled" ≠ "a probe ran and came back
+unreliable" ≠ "reliable evidence" — one trichotomy the three strategies spelled three
+ways, one spelling DEAD: UniqueIndex's probe helpers collapsed unreliable→None, so
+`evaluate` could only ever emit `NoCandidateProfiled` while `EvidenceMissing` had live
+operator copy, live SummaryFormatter arms, and direct test constructions — dead
+vocabulary with live consumers, the precise inverse of the house's declared-unproduced
+honesty pattern. `ProbeReading<'r> = NotProfiled | Unreliable of ProbeStatus | Reliable
+of 'r` lands in Core beside `ProbeStatus` with the one collapse-free classifier
+(`ofCandidate`); the UniqueIndex probes return it, and **an unreliable probe now reads
+`EvidenceMissing`** — the operator advice separates "run the profiler" from "your probe
+failed — investigate". FK's probe consult routes through the same reading with its fold
+onto `EvidenceMissing` made EXPLICIT and named at the consumer (byte-identical behavior;
+the FK-side reason split awaits operator-copy demand — a named deferral).
+CategoricalUniqueness already reified both (the reference dialect) and is untouched.
+
+**BEHAVIORAL:** a unique-index candidate whose probe RAN but was unreliable now decides
+`DoNotEnforce EvidenceMissing` (previously `NoCandidateProfiled`) — trail strings and the
+already-live distinct operator copy (`tightening.uniqueIndex.evidenceMissing`) now fire
+for it; the one behavioral test pin moved with the change, saying why.
+
+**a4-8 — the readback.** `ForeignKeyReadback.Unreadable of reason: string` interned a
+COMPUTED four-way classification into prose inside a Core DU. Now `Unreadable of side:
+LostSide (BothSchemas | ParentSchema | ReferencedSchema) * visible: FkVisible` with the
+sentence minted by `describe` (byte-identical copy; the ResolutionReason/describe
+precedent) — aggregation by cause/side reads the value, not a sentence. ReadSide's
+consumer projects through `describe`; the tests pin the typed side AND the copy.

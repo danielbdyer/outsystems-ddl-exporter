@@ -174,10 +174,11 @@ let ``single-column: probe succeeded + duplicates present ⇒ DoNotEnforce(DataH
 [<Fact>]
 let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
     // V2's collapsed-mode default: missing/unreliable evidence does not
-    // tighten. The "no reliable candidate" branch produces
-    // NoCandidateProfiled (the rules module collapses the "no probe" and
-    // "unreliable probe" cases into the same keep reason — there's no
-    // observable difference at the decision level).
+    // tighten. align-II.4b (a4-3): an UNRELIABLE probe is no longer
+    // collapsed into "no candidate profiled" — a probe RAN and failed,
+    // and the decision says so (EvidenceMissing: "your probe failed —
+    // investigate", vs NoCandidateProfiled: "run the profiler"). The
+    // dead token lives.
     let index = indexFixture "OS_IDX_Single_Unreliable" [ customerNameKey ] false
     let cfg = mkConfig true false
     let profile =
@@ -185,7 +186,7 @@ let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` ()
             UniqueCandidates = [ mkSingleCandidateUnreliable customerNameKey ] }
     let decision = decide cfg customer index profile
     Assert.Equal(
-        UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled,
+        UniqueIndexOutcome.DoNotEnforce EvidenceMissing,
         decision.Outcome)
 
 [<Fact>]

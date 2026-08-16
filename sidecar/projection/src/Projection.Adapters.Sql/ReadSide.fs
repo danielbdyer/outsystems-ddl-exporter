@@ -1570,7 +1570,8 @@ module ReadSide =
                               TargetTable  = c.TargetTable
                               TargetColumn = c.TargetColumn
                               IsNotTrusted = c.IsNotTrusted })
-                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason)
+                    | ForeignKeyReadback.Unreadable (side, visible) ->
+                        eprintfn "%s" (ForeignKeyReadback.describe side visible))
 
             // Result set 5: V2.LogicalName extended properties
             // (slice D.1.b). Column 2 (sys.columns.name) is NULL for

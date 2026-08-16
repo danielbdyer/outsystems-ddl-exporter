@@ -353,9 +353,18 @@ module ForeignKeyRules =
                         mkDecision (ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked)
                     else
                         mkDecision (ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence)
-                let realityOpt = Profile.tryFindForeignKey reference.SsKey profile
-                match realityOpt with
-                | Some reality when ProbeStatus.isReliable reality.ProbeStatus ->
+                // align-II.4b: the probe reads through the shared
+                // collapse-free `ProbeReading`; FK's reason vocabulary
+                // deliberately FOLDS NotProfiled and Unreliable onto
+                // EvidenceMissing (both arms below) — the fold is now a
+                // visible consumer choice, not a helper's erasure. The
+                // per-arm split (an FK-side NoCandidateProfiled) lands
+                // when operator copy demands it.
+                let reading =
+                    Profile.tryFindForeignKey reference.SsKey profile
+                    |> ProbeReading.ofCandidate (fun reality -> reality.ProbeStatus) id
+                match reading with
+                | ProbeReading.Reliable reality ->
                     // Probe ran successfully; consult the result.
                     if reality.HasOrphan then
                         if config.AllowNoCheckCreation then
@@ -385,11 +394,11 @@ module ForeignKeyRules =
                             mkDecision
                                 (ForeignKeyOutcome.EnforceConstraint
                                     (NoEvidenceObstacle reality.ProbeStatus.SampleSize))
-                | Some _ ->
-                    // Probe outcome is unreliable (FallbackTimeout /
+                | ProbeReading.Unreliable _ ->
+                    // Probe ran but was unreliable (FallbackTimeout /
                     // Cancelled / AmbiguousMapping) → missing-evidence path.
                     onMissingEvidence ()
-                | None ->
+                | ProbeReading.NotProfiled ->
                     // No probe at all → missing-evidence path (NOCHECK under
                     // the operator's opt-in; strict-decline otherwise).
                     onMissingEvidence ()
