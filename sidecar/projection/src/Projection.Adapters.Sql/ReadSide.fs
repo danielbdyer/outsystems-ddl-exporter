@@ -1388,7 +1388,12 @@ module ReadSide =
                 if not r.IsCached then NoCache
                 elif Option.isSome r.CacheSize then Cache
                 else Unspecified
-            match SsKey.mint SynthesisConvention.ReadSideSequence (sprintf "%s.%s" r.Schema r.Name),
+            // align-I.5: the sequence identity converged — ReadSide mints
+            // the SAME OS_SEQ two-segment identity as the rowset/JSON
+            // lanes, because a sequence has no persisted-key channel and
+            // its identity is the object's, not the reader's. The prior
+            // READSIDE_SEQUENCE keys parse forever (legacy registry row).
+            match SsKey.mintComposite SynthesisConvention.OsSequence [ r.Schema; r.Name ],
                   Name.create r.Name with
             | Ok sk, Ok nm ->
                 match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with

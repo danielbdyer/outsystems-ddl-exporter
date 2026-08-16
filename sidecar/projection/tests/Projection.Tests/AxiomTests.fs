@@ -1793,14 +1793,17 @@ let ``A51: synthesis conventions are a closed registry (token injective; round-t
     // mints THIS sweep then caught — READSIDE_ATTR + READSIDE_REF). The
     // pin moves only with a DECISIONS-named registry amendment.
     Assert.Equal(23, List.length SynthesisConvention.all)
-    // (2c) The named convergence target stays visible until align-I.5
-    // resolves it: the sequence grain carries exactly three conventions
-    // across three reader families.
+    // (2c) align-I.5 resolved the convergence target: the sequence grain
+    // still REGISTERS three conventions (stored keys parse forever), but
+    // exactly one is mintable — OsSequence; the other two are
+    // legacy-parse-only.
     let sequenceConventions =
         SynthesisConvention.all
         |> List.filter (fun c -> SynthesisConvention.grain c = SynthesisGrain.Sequence)
     Assert.Equal(3, List.length sequenceConventions)
-    Assert.Equal(3, sequenceConventions |> List.map SynthesisConvention.readerFamily |> List.distinct |> List.length)
+    let mintableSequence =
+        sequenceConventions |> List.filter (fun c -> not (SynthesisConvention.legacyParseOnly c))
+    Assert.Equal<SynthesisConvention list>([ SynthesisConvention.OsSequence ], mintableSequence)
     // (3) Zero free-string production mints — the M16-style
     // comment-stripped sweep over src/. Production sites route through
     // `SsKey.mint` / `SsKey.mintComposite`; a literal-token call under
@@ -1829,3 +1832,25 @@ let ``A51: synthesis conventions are a closed registry (token injective; round-t
         sprintf
             "A51: free-string synthesis mints under src/ (route through SsKey.mint / SsKey.mintComposite, adding the convention to the registry if new):\n%s"
             (offenders |> List.map (fun (f, t) -> sprintf "  %s: \"%s\"" f t) |> String.concat "\n"))
+    // (4) Legacy conventions are parse-only (align-I.5): no production
+    // site mints a legacy row. The registry's own definition site
+    // (Identity.fs) is the single allowed mention.
+    let legacyNames =
+        SynthesisConvention.all
+        |> List.filter SynthesisConvention.legacyParseOnly
+        |> List.map (fun c -> sprintf "%A" c)
+    Assert.NotEmpty legacyNames
+    let legacyMention = Regex("SynthesisConvention\.(" + String.concat "|" legacyNames + ")\b")
+    let legacyOffenders =
+        [ for file in sourceFiles do
+            if Path.GetFileName file <> "Identity.fs" then
+                let source =
+                    File.ReadAllLines file
+                    |> Array.map (fun line -> if line.TrimStart().StartsWith("//") then "" else line)
+                    |> String.concat "\n"
+                for m in legacyMention.Matches(source) -> (Path.GetFileName file, m.Value) ]
+    Assert.True(
+        List.isEmpty legacyOffenders,
+        sprintf
+            "A51: legacy-parse-only conventions minted/referenced under src/ (stored keys parse; new mints are forbidden — use the converged convention):\n%s"
+            (legacyOffenders |> List.map (fun (f, t) -> sprintf "  %s: %s" f t) |> String.concat "\n"))

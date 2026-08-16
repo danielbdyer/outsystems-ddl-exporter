@@ -2336,7 +2336,12 @@ axis set with any unaddressable axis a named refusal.
 
 ## A51 — synthesis conventions are a closed registry (align-I.4, 2026-08-16)
 
-*Status: LIVE (landed with the registry in the same commit).*
+*Status: LIVE (landed with the registry in the same commit). Amended at align-I.5, same
+day: the sequence grain CONVERGED — `OsSequence` (`OS_SEQ ["schema"; "name"]`, the typed
+two-segment discipline) is the one live sequence mint on every lane; `OssysSequence` and
+`ReadSideSequence` are legacy-parse-only rows (stored keys parse forever; new production
+mints refused by the law's legacy sweep, prong 4). A sequence has no persisted-key channel
+and no rename channel, so identity converges at the CONVENTION or not at all.*
 
 **Statement.** Every production-minted `Synthesized` identity carries a convention from
 the closed `SynthesisConvention` registry: `token` is injective (distinct conventions ⇒
@@ -2349,7 +2354,10 @@ three conventions across three reader families is align-I.5's named convergence 
 typo cannot mint a silently-different identity, and `Catalog.create`'s sequence/kind key
 disjointness is a theorem of structural `(source, basisParts)` equality plus token
 distinctness — not a comment about rendered prefixes (rendered identifiers may alias
-across conventions, harmlessly, because keying never reads the rendering).
+across conventions, harmlessly, because keying never reads the rendering). A convention
+the estate has ever minted is never deleted: superseded rows become **legacy-parse-only**
+(`legacyParseOnly`), keeping every persisted key readable while the legacy sweep refuses
+new mints.
 
 **Enforcement.** The registry lives beside `DerivationReason` in `Identity.fs` — the same
 closure discipline, applied to the convention axis; new conventions are added THERE, never

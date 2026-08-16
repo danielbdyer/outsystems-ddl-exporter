@@ -249,6 +249,21 @@ module SynthesisConvention =
         | SynthesisConvention.TwinPin           -> SynthesisGrain.Row
         | SynthesisConvention.MigrationRow      -> SynthesisGrain.Row
 
+    /// LEGACY-PARSE-ONLY rows (align-I.5). A legacy convention's stored
+    /// keys parse forever — the registry never forgets a token that ever
+    /// minted — but new production mints are refused by A51's legacy
+    /// sweep. The two rows are the pre-convergence sequence conventions:
+    /// a sequence has no persisted-key channel and no rename channel, so
+    /// per-lane conventions made one physical sequence carry three
+    /// non-equal identities and every cross-lane diff fabricated an
+    /// add+remove pair. `OsSequence` (two typed segments) is the one
+    /// live mint since align-I.5.
+    let legacyParseOnly (c: SynthesisConvention) : bool =
+        match c with
+        | SynthesisConvention.OssysSequence
+        | SynthesisConvention.ReadSideSequence -> true
+        | _ -> false
+
     /// The reader family that owns the convention's naming discipline.
     let readerFamily (c: SynthesisConvention) : ReaderFamily =
         match c with

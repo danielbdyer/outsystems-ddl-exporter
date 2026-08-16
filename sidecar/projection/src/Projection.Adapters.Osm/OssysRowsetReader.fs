@@ -1019,7 +1019,12 @@ module OssysRowsetReader =
                     if not r.IsCached then NoCache
                     elif Option.isSome r.CacheSize then Cache
                     else Unspecified
-                match SsKey.mint SynthesisConvention.OssysSequence (sprintf "%s.%s" r.Schema r.Name),
+                // align-I.5: the sequence identity converged — the rowset
+                // path mints through the declared OS_SEQ typed-segment
+                // helper (one convention, one segmentation, every lane).
+                // The prior OSSYS_SEQUENCE single-segment keys parse
+                // forever (legacy registry row).
+                match OssysTranslation.sequenceSsKey r.Schema r.Name,
                       Name.create r.Name with
                 | Ok sk, Ok nm ->
                     match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with

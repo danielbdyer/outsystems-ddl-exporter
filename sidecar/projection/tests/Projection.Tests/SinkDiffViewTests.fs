@@ -76,12 +76,14 @@ let ``erasure witness: the view's norm never exceeds the journal's displacement 
 
 [<Fact>]
 let ``R6 sequence identity: one synthesis convention on both sides — a shared sequence never reads as add+remove`` () =
-    // The sink read rides the ROWSET path exclusively (toBundle → parse
-    // SnapshotRowsets), whose sequence SsKey convention is
-    // OSSYS_SEQUENCE "schema.name" (OssysRowsetReader) — the OS_SEQ
-    // composite lives only on the V1-json path (OssysTranslation), which
-    // no sink diff leg ever takes. So a sequence present in BOTH editions
-    // carries ONE identity and zero sequence-channel counts.
+    // align-I.5 strengthened this invariant from within-the-sink-legs to
+    // EVERY lane: the sequence identity converged on the OS_SEQ
+    // two-segment convention (OssysTranslation.sequenceSsKey), minted
+    // identically by the rowset path (which every sink diff leg rides),
+    // the V1-json path, and ReadSide. A sequence present in BOTH
+    // editions carries ONE identity and zero sequence-channel counts —
+    // and a sink-derived catalog now agrees with a live- or
+    // ReadSide-derived one at the sequence grain, too.
     let a = withSequence (baseEdition ())
     let b =
         { withSequence (baseEdition ()) with

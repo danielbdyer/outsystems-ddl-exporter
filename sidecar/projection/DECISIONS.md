@@ -31551,3 +31551,39 @@ trimmed case-insensitive match is the reading in all three lanes. Consumers enum
 sets), `SinkDisplacement.isExtensionModule` (domain classifier). No committed fixture
 carries a whitespace-variant marker, so goldens are unmoved; the unification is a
 live-estate robustness fix.
+
+## 2026-08-16 — align-I.5: the sequence identity converges (one mint, OS_SEQ two-segment; legacy tokens parse forever) [BEHAVIORAL]
+
+**Ruling.** A physical sequence's identity is the OBJECT's, not the reader's. The three
+sequence-grain conventions collapse to ONE live mint: `OsSequence` — `OS_SEQ ["schema";
+"name"]`, the declared typed-segment discipline of `OssysTranslation.sequenceSsKey`, which
+gains its FIRST live caller (the audit had noted it declared-but-uncalled). The rowset
+reader (previously `OSSYS_SEQUENCE "schema.name"` — a single dot-joined segment, breaching
+the chapter-3.6 slice-δ typed-segment discipline) and ReadSide (previously
+`READSIDE_SEQUENCE "schema.name"`) both now mint the OS_SEQ convention. `OssysSequence`
+and `ReadSideSequence` become LEGACY-PARSE-ONLY registry rows: stored keys parse forever;
+new production mints are refused by A51's legacy sweep (prong 4, added this slice).
+
+**Why (the audit's correctness-adjacent defect #2).** Sequences have NO persisted-identity
+channel (no `V2.SsKey` extended property — ReadSide always re-synthesizes) and NO rename
+channel — so per-lane conventions made one physical sequence carry three non-equal
+identities, and any cross-lane diff (sink-derived vs live-rowset vs ReadSide-derived
+catalog) fabricated an add+remove pair per sequence. With one convention + one
+segmentation, cross-lane sequence identity is equal by construction.
+
+**Behavioral consequences, named.**
+1. **One-time re-key for sequence-bearing estates.** Persisted episodes,
+   `catalog.snapshot.json`, and the live-path `Run.inputDigest` re-key ONCE — old
+   `OSSYS_SEQUENCE`/`READSIDE_SEQUENCE` keys still parse (registry rows stay), and the
+   next diff against a freshly-read catalog reads those sequences as removed+added one
+   time. Nothing round-trips through SQL Server; the sink stores raw rowsets pre-mint —
+   sink snapshots/journals/goldens/refactorlog/evidence packs unmoved.
+2. **Cross-lane sequence diffs stop fabricating add+remove** — the fix itself; the
+   SinkDiffView R6 sequence-identity invariant strengthens from "holds within the sink
+   legs" to "holds across sink ↔ live ↔ ReadSide legs".
+3. Consumers enumerated: `CatalogCodec`/`LifecycleStore` (episode keys), `Run.inputDigest`,
+   `CatalogDiff` sequence channels, `SinkDiffView`/sink-backed read legs.
+
+**Rider declined (named).** Extending `synthesizedRenameWarnings` to sequences stays OUT:
+sequences still have no rename channel, and the convergence removes the misdiff the
+warning would have hedged. Re-open trigger: a real sequence-rename workflow lands.
