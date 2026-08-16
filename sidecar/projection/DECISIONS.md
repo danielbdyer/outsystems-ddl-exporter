@@ -31761,3 +31761,35 @@ replace-by-key under `<store>/rulings/` (ApprovalStore shape), NOT a fifth Ledge
 (auto-application a named deferral); the "Witness-" naming freeze is ACTIVE from this
 chapter; exemplary consent surfaces untouched; II.4 is the chapter's named BEHAVIORAL
 slice (trail lineage becomes epistemically true; applied/declined SETS byte-identical).
+
+## 2026-08-16 — align-II.1: the OperatorRuling carrier + the keyed ruling store
+
+**The carrier (a4; A53 candidate).** `OperatorRuling<'subject>` lands in Core:
+{Subject; Verdict (Confirmed | Rejected — the plan's sketch omitted the verdict field;
+a ruling IS a verdict, so it carries one); Basis : BasisAnchor option (Digest |
+Fingerprint | FindingKey | EvidenceDigest — what the operator JUDGED, so reopen probes
+can compare); By; At : DateTimeOffset (boundary-supplied — Core reads no clock);
+Rationale option; Reopen : ReopenCondition option (OnEvidenceChange | After instant —
+minimal, expands under evidence)}. Placement: after `EstateFinding.fs`, NOT the plan's
+"after Coordinates.fs" sketch — the anchor carries the TYPED `FindingKey` (identity as
+a type beats file position; named here per the workpaper-beats-plan rule).
+
+**The store (the II.0 standing ruling, executed).** `RulingStore` (Pipeline): keyed
+replace-by-key, one JSON file per key under `<store>/rulings/<sha256-16 of key
+text>.json` (digest filenames — the SinkStore precedent — with the full key INSIDE the
+document); fail-closed load (missing file → Ok None — the safe first-run default; a
+present-but-malformed file → ParseFailure, NEVER silently empty); atomic write (tmp +
+File.Move overwrite — the EstateHistory idiom); deterministic bytes (re-saving an
+unchanged ruling is byte-stable, T1); typed-AST JSON both directions (Utf8JsonWriter /
+JsonDocument, PRJ001). `loadAll` fail-closes on the FIRST malformed file, naming it —
+a partial ruling read would silently lose operator judgment. NOT a LedgerSpec (the
+standing ruling); append-only history stays deferred past III.2.
+
+**Wire round-trip with zero new Core surface.** The stored key text reconstructs
+through the EXISTING `EstateFindingKind.ofToken` + `FindingKey.create` (create
+concatenates identically, so parse ∘ text = id); verdict/basis/reopen tokens are
+closed-vocabulary strings the store owns.
+
+Laws landed live with the slice (A53 stays Bucket-C until II.5 reception): store
+round-trip over every anchor/verdict/optional-field combination; replace-by-key (the
+second save wins); missing → Ok None; malformed → ParseFailure; byte-determinism.

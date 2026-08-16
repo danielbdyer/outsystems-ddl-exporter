@@ -67,6 +67,9 @@
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />
     <Compile Include="ApprovalStore.fs" />
+    <!-- RulingStore.fs: the keyed operator-ruling store (align-II.1; A53).
+         Replace-by-key under <store>/rulings/; NOT a LedgerSpec. -->
+    <Compile Include="RulingStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
     <Compile Include="ModuleFilterBinding.fs" />

@@ -63,6 +63,9 @@
     <Compile Include="Lifecycle.fs" />
     <Compile Include="Tolerance.fs" />
     <Compile Include="EstateFinding.fs" />
+    <!-- OperatorRuling.fs: the ruling carrier (align-II.1; A53). After
+         EstateFinding.fs because BasisAnchor carries the typed FindingKey. -->
+    <Compile Include="OperatorRuling.fs" />
     <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
