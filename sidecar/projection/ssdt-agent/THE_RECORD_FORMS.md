@@ -77,8 +77,9 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
   made concrete: what to run, what to check, who to ask, before it moves up a level.
 - **How it ships** — only the non-routine mechanics, each stated exactly. A relaxed gate is a
   setting on one publish, not a database state — say so, so no one hunts for a second PR.
-  (Provisional: where the target pipeline cannot toggle this gate, the change ships as a manual
-  pre-deploy `ALTER` instead; the gate strategy is being finalised.)
+  (Superseded for this estate: the gate cannot be toggled, so a data-loss change ships as a
+  **two-release** pattern, not a gate relaxation — see `FINDINGS_AND_CHANGES.md` Part 3. Fold-in
+  pending.)
 - **The data** — the counts and the bad rows, named, headline-colon-detail. Nothing else.
 - **What proving showed** — the `Tried / Did / Realized` sequence, on this branch, with the
   real messages. Never a prior run. This is the heart: it shows the reviewer the change was

@@ -79,10 +79,11 @@ Read the effect on existing data straight off the proof:
   `BlockOnPossibleDataLoss = false`; that is a setting on the publish command, not a state in
   the database; the next deploy uses the safe default on its own; no second PR turns it back
   on.*
-  > **Provisional — many pipelines cannot toggle this gate** (e.g. an Azure DevOps → Octopus
-  > dacpac deploy). Where the target cannot, do the change as a **manual pre-deploy `ALTER`** so
-  > DacFx's declarative difference carries no data-loss step and the gate never fires. The gate
-  > strategy is being settled; treat this bullet as provisional until it is.
+  > **Superseded for this estate — the gate cannot be toggled** (Azure DevOps → Octopus dacpac
+  > deploy). A single pre-deploy `ALTER` does **not** suffice for a narrowing or a populated
+  > `NOT NULL` — proven to block *and* half-apply (`FINDINGS_AND_CHANGES.md` F2). The proven
+  > shipping shape is the **two-release pattern** in `FINDINGS_AND_CHANGES.md` Part 3, which
+  > replaces this bullet (fold-in pending).
 - **A pre-deploy step is needed** → name what it does and that it is transient.
 - **Staged across PRs** → name the phases and why the app needs both shapes at once.
 - **Emit → How it ships** (omit if routine).
