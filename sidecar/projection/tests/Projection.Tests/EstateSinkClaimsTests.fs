@@ -136,3 +136,36 @@ let ``no sink claims is the identity — a run with no sink store is byte-identi
         Estate.withSinkClaims
             [ "cloud-uat", [ adjudicated "OSUSR_FUL_ORDER" [ claim 8000 "Order" true false 1 ] ] ]
             unified)
+
+[<Fact>]
+let ``K9 end-to-end (align-II.5): a confirmed S14 correspondence ruling renders on its finding — recorded judgment, no adoption`` () =
+    // The S14 proposal joins the board; the recorded ruling (the align-II.1
+    // carrier, FindingKey-anchored) renders in the lever's slot. NOTHING
+    // else moves: the verdict stays Converging (the finding is answered,
+    // not applied — adoption stays the named deferral), and a rejected
+    // re-ruling replaces the rendered judgment the same way.
+    let report =
+        Estate.withSinkClaims
+            [ "cloud-uat", [ adjudicated "OSUSR_FUL_SHIPMENT" [ claim 8002 "Shipment" false false 1; claim 9002 "Shipment" true true 3 ] ] ]
+            (unifiedReport ())
+    let correspondence =
+        report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.IdentityCutoverCorrespondence)
+    let rulingWith (verdict: RulingVerdict) (why: string) : OperatorRuling<FindingKey> =
+        OperatorRuling.create correspondence.Key verdict
+            (Some (BasisAnchor.FindingKey correspondence.Key)) "dana"
+            (System.DateTimeOffset(2026, 8, 16, 9, 0, 0, System.TimeSpan.Zero)) (Some why) None
+        |> Result.value
+    let confirmed = report |> Estate.withRulings [ rulingWith RulingVerdict.Confirmed "one entity across the cutover" ]
+    let lines = Estate.render confirmed
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "The ruling stands: confirmed by dana on 2026-08-16 — one entity across the cutover.")
+    // The answered question's imperative no longer renders.
+    Assert.DoesNotContain(lines, fun (l: string) -> l.Contains "Rule the correspondence:")
+    // Record + render only: the verdict and the finding stand as computed.
+    Assert.Equal(Estate.Verdict.Converging, confirmed.Verdict)
+    Assert.Equal<Estate.Finding list>(report.Findings, confirmed.Findings)
+    // A re-ruling REPLACES the rendered judgment (the keyed store's law,
+    // visible at the board): rejected renders where confirmed did.
+    let rejected = report |> Estate.withRulings [ rulingWith RulingVerdict.Rejected "two entities after all" ]
+    Assert.Contains(Estate.render rejected, fun (l: string) ->
+        l.Contains "The ruling stands: rejected by dana on 2026-08-16 — two entities after all.")

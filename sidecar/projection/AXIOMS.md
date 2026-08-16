@@ -2402,10 +2402,11 @@ parameterized purity.
 
 ## A53 — the operator ruling is a carrier (align-II open, 2026-08-16)
 
-*Status: CANDIDATE (Bucket C stub at II.0; promotes to LIVE at align-II.5 when
-estate reception renders rulings on their findings end-to-end).*
+*Status: LIVE (promoted at align-II.5 — the carrier landed at II.1, the estate
+reception at II.5; the `projection rule` verb records through the same carrier
+at II.6).*
 
-**Statement (candidate).** Operator judgment on a finding is a VALUE, not a config
+**Statement.** Operator judgment on a finding is a VALUE, not a config
 side-effect: `OperatorRuling<'anchor>` carries subject, basis anchor (`Digest |
 Fingerprint | FindingKey | EvidenceDigest`), who, when, rationale, and reopen
 condition. The ruling store is keyed replace-by-key (fail-closed load; atomic write;
@@ -2414,9 +2415,17 @@ confirmed/rejected correspondence (K9's demand) is recordable and renderable
 end-to-end; rulings are received on the estate DECIDE lane and never auto-apply
 policy (record + render only — application is a named deferral).
 
-**Enforcement (at promotion).** Round-trip + fail-closed-load laws on the store;
-reception renders the ruling on its finding; the `projection rule` verb records
-through the same carrier.
+**Enforcement.** The store laws are live facts (round-trip over every anchor and
+optional-field shape; replace-by-key; missing = pending-by-absence; a malformed
+document is a named `ParseFailure`, never silently unruled — `RulingStoreTests`).
+Reception renders the ruling on its finding in the lever's slot (one-mint copy,
+both board lenses and `environments.json`) and moves NOTHING else — lanes,
+verdict, and the cutover ladder read the same values ruled or unruled
+(`EstateTests` reception laws; `EstateSinkClaimsTests` K9 end-to-end). An
+unreadable ruling store degrades NAMED (`estate.rulings.unreadable`): the board
+renders unruled with the cause on stderr, and the recorded judgment stays intact
+on disk.
 
-**Property test.** (at promotion) store round-trip; malformed-store refusal;
-anchored-basis presence; reception rendering.
+**Property test.** `AxiomTests` A53 gates the corpus via M16 citations: store
+round-trip, malformed-store refusal, replace-by-key, pending-by-absence,
+reception rendering, and the K9 correspondence ruling.

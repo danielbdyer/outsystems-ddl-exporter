@@ -1896,14 +1896,24 @@ let ``A52: chain assemblies satisfy product preconditions (full chain asserts; s
             Assert.True(ix > producerIx, sprintf "'%s' requires Topology but precedes its producer" step.Metadata.Name))
 
 // ===========================================================================
-// A53 — the operator ruling is a carrier (align-II open; Bucket C stub)
+// A53 — the operator ruling is a carrier (align-II; promoted at align-II.5)
 // ===========================================================================
 
-[<Fact(Skip = "A53: the operator ruling is a carrier — Bucket C. The OperatorRuling<'anchor> \
-carrier + keyed replace-by-key store (ApprovalStore shape: fail-closed load, atomic write) \
-land at align-II.1; anchored basis (Digest | Fingerprint | FindingKey | EvidenceDigest) \
-makes a confirmed/rejected correspondence recordable end-to-end (K9). Promoted to Bucket A \
-at align-II.5 when estate reception renders rulings on their findings and the store laws \
-(round-trip; malformed refusal) are live facts.")>]
-let ``A53: the operator ruling is a carrier (keyed, anchored, fail-closed) — verified at align-II.5`` () : unit =
-    failwith "Bucket C stub — see AXIOMS.md A53; promotion lands with align-II.5"
+[<Fact>]
+let ``A53: the operator ruling is a carrier — keyed, anchored, fail-closed, and received on its finding (record + render only)`` () =
+    // Promoted at align-II.5 (the estate reception): the OperatorRuling
+    // carrier (align-II.1) is keyed by FindingKey and anchored by
+    // BasisAnchor; the keyed store round-trips, replaces by key, and
+    // fail-closes on a malformed document (recorded judgment is never
+    // silently unruled); the estate DECIDE lane renders each ruling on its
+    // finding — the K9 correspondence is recordable and renderable
+    // end-to-end — and reception moves NOTHING else (lanes, verdict, and
+    // the cutover ladder stand; application is the named deferral,
+    // align-II.0 standing ruling; the align-II.6 verb records through the
+    // same carrier).
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a ruling round-trips through save + load for every anchor and optional-field shape"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a malformed document is a ParseFailure — never silently unruled"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: replace-by-key — the second ruling for a key WINS and the first is gone"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a missing ruling is Ok None (pending-by-absence), not an error"
+    citationOf "tests/Projection.Tests/EstateTests.fs" "reception: a recorded ruling renders on its finding in the lever's slot — lanes, verdict, and ladder stand (record + render only)"
+    citationOf "tests/Projection.Tests/EstateSinkClaimsTests.fs" "K9 end-to-end (align-II.5): a confirmed S14 correspondence ruling renders on its finding — recorded judgment, no adoption"

@@ -98,15 +98,24 @@ let runCheckEstate (args: CheckEstateArgs) : int =
             |> Result.bind (fun bound ->
                 RenameBinding.fromConfig args.TableRenames
                 |> Result.map (fun renameSpecs ->
-                    let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
+                    // The UN-severed reading (align-II.2 → II.5): the relaxed
+                    // keys WITH the ruling attribution each override row
+                    // carries — the posture meter renders who approved the
+                    // relaxation, when the config names them.
+                    let refsProv, attrsProv = EstatePosture.activeWithProvenance bound
+                    let provenanceByKey =
+                        refsProv @ attrsProv
+                        |> List.choose (fun (key, p) -> p |> Option.map (fun pv -> key, pv))
+                        |> Map.ofList
                     ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
                        RepairBandByEntity = args.RepairBandByEntity
                        DecisionFloor = args.DecisionFloor |> Option.defaultValue Estate.decisionFloor
                        AsymmetryFactor = args.AsymmetryFactor |> Option.defaultValue Estate.asymmetryFactor
                        PromotionOrder = args.PromotionOrder
-                       RelaxedReferences = relaxedRefs
-                       RelaxedAttributes = relaxedAttrs
-                       RenameSpecs = renameSpecs } : Estate.Posture)))
+                       RelaxedReferences = refsProv |> List.map fst |> Set.ofList
+                       RelaxedAttributes = attrsProv |> List.map fst |> Set.ofList
+                       RenameSpecs = renameSpecs
+                       Provenance = provenanceByKey } : Estate.Posture)))
         let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []
         if not (List.isEmpty postureErrors) then
             printErrors Console.Error postureErrors
@@ -421,10 +430,29 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                             Some (label, claims @ residue)
                         | None -> None
                     | Error _ -> None)
+            // The recorded rulings (align-II.5; A53's reception): the keyed
+            // store under the SAME estate root carries operator judgment;
+            // the board renders each ruling on its finding. Reception is
+            // record + render only — no lane, verdict, or ladder movement
+            // (application is the named deferral). A malformed store is a
+            // NAMED degradation to an unruled render: the judgment stays
+            // intact on disk, and no verdict ever stood on it, so the run
+            // proceeds with the cause on stderr.
+            let rulings =
+                match store with
+                | None -> []
+                | Some root ->
+                    match RulingStore.loadAll root with
+                    | Ok rs -> rs
+                    | Error e ->
+                        TtyRenderer.renderVoicedTo Console.Error "estate.rulings.unreadable"
+                            (Map.ofList [ "cause", box (RulingStore.describe e) ])
+                        []
             let stamped =
                 stampedArtifacts
                 |> Estate.withSinkClaims sinkClaimsByEnv
                 |> Estate.withFidelity fidelityClause
+                |> Estate.withRulings rulings
             // The burndown (wave A7): this run's reading chains from the
             // LATEST recorded one (first-seen carry + the streak), while the
             // displayed movement diffs against the operator's baseline — the

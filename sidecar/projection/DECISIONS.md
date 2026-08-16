@@ -31927,3 +31927,49 @@ LostSide (BothSchemas | ParentSchema | ReferencedSchema) * visible: FkVisible` w
 sentence minted by `describe` (byte-identical copy; the ResolutionReason/describe
 precedent) — aggregation by cause/side reads the value, not a sentence. ReadSide's
 consumer projects through `describe`; the tests pin the typed side AND the copy.
+
+## 2026-08-16 — align-II.5: estate reception — rulings render on their findings (A53 LIVE; record + render only)
+
+**The reception (a4's charge; K9's demand).** The estate face loads the keyed ruling
+store (`RulingStore.loadAll` under the SAME estate evidence root) and stamps the report
+(`Estate.withRulings` — `compute` stays store-blind, the established face-stamp shape). A
+recorded ruling renders ON its finding in the lever's slot: the DECIDE question is
+answered, and one line carries one move (THE_VOICE §8) — the one-mint copy
+(`Estate.rulingText`, "The ruling stands: confirmed by … on … — …") feeds the plain lens,
+the rich lens, and (as a structured `ruling` object beside the lever) `environments.json`.
+The ACTION line names the first UNRULED finding; a fully-ruled queue says so instead of
+asking again. A confirmed/rejected S14 correspondence is now recordable and renderable
+end-to-end — the K9 witness lives in `EstateSinkClaimsTests`.
+
+**Record + render ONLY (the scope guard, held).** Reception moves NOTHING but the
+rendering: lanes, the verdict formula, and the cutover ladder read the same values ruled
+or unruled — an operator-confirmed `EmissionDeployedNotNullLoosened` still blocks the
+ladder until the model/config actually moves. Applying a ruling is the named deferral
+(align-II.0 standing ruling); the align-II.6 verb records through the same carrier.
+
+**The degradation posture (a deliberate ruling).** An unreadable/malformed ruling store
+does NOT abort the estate check: rulings are a judgment overlay, never a verdict operand
+(record + render only ⇒ no verdict ever stands on them), so the face degrades NAMED —
+`estate.rulings.unreadable` on stderr with the located cause, the board renders unruled,
+the run proceeds, and the judgment stays intact on disk. This mirrors the face's
+evidence-degradation philosophy while honoring the store's fail-closed read (loadAll
+still refuses partial reads; the face never renders a partial ruling set as if whole).
+Contrast: an unreadable ENVIRONMENT still exits 6 — operands and overlays differ.
+
+**The posture meter receives the un-severed provenance (align-II.2's named consumer).**
+The face's posture binding now reads `EstatePosture.activeWithProvenance`; `Estate.Posture`
+gains `Provenance : Map<SsKey, OverrideProvenance>`, and the PostureActive/PostureRetirable
+meter lines append the attribution once per finding ("Approved by … on … — …", date-only —
+the meter is a daily-cadence surface; the config keeps the full instant). A provenance-less
+posture renders byte-identical to the pre-II.5 board.
+
+**A53 → LIVE (Bucket C → A; 88 live / C=6 / D=1).** The axiom gates the corpus via M16
+citations: store round-trip over every anchor/optional shape, malformed refusal,
+replace-by-key, pending-by-absence, reception rendering, and the K9 correspondence ruling.
+AXIOMS.md restated; matrix regenerated in this commit.
+
+**Voice.** One new code, complete in this slice: `estate.rulings.unreadable` (copy + `all`
++ the three VoiceTotality lists — in-scope, emittable, render-call-site).
+
+Additive throughout: a store with no `rulings/` directory and a config with no provenance
+fields render byte-identical boards; no goldens moved.

@@ -2065,3 +2065,121 @@ let ``static content: compute (empty static content) mints no D10/D11 and leaves
     Assert.False report.StaticInspected
     Assert.Contains(Estate.render report, fun (l: string) -> l.Contains "static-entity content")
     Assert.Contains("\"staticContentInspected\": false", Estate.toJsonString report)
+
+// ---------------------------------------------------------------------------
+// The ruling reception (align-II.5; A53). Record + render ONLY:
+//   - A recorded ruling renders on its finding — the one-mint copy takes the
+//     lever's slot (the DECIDE question is answered; one line, one move).
+//   - Nothing else moves: lanes, verdict, and the cutover ladder read the
+//     SAME values ruled or unruled (applying a ruling is the named deferral).
+//   - The ACTION line names the first UNRULED finding; a fully-ruled queue
+//     says so instead of asking again.
+//   - A ruling keyed to no finding renders nowhere (no fabricated rows).
+//   - environments.json carries the judgment beside the lever.
+//   - The posture meter renders the bound override's approval attribution
+//     (align-II.2's un-severed provenance — this is its named consumer).
+// ---------------------------------------------------------------------------
+
+let private receptionAt = System.DateTimeOffset(2026, 8, 16, 9, 0, 0, System.TimeSpan.Zero)
+
+/// A DECIDE-laden report: every kind the environment carries beyond the
+/// EMPTY target is deployed-ahead drift (SchemaPresence, DECIDE lane).
+let private decideReport () : Estate.EstateReport =
+    Estate.compute agreed emptyCat [ "cloud-uat", operand "cloud-uat" sampleCatalog ]
+
+let private rulingOn (key: FindingKey) (verdict: RulingVerdict) (rationale: string option) : OperatorRuling<FindingKey> =
+    OperatorRuling.create key verdict (Some (BasisAnchor.FindingKey key)) "dana" receptionAt rationale None
+    |> Result.value
+
+[<Fact>]
+let ``reception: a recorded ruling renders on its finding in the lever's slot — lanes, verdict, and ladder stand (record + render only)`` () =
+    let unruled = decideReport ()
+    let first = unruled.Findings |> List.head
+    let ruled = unruled |> Estate.withRulings [ rulingOn first.Key RulingVerdict.Confirmed (Some "adopt it into the model") ]
+    let lines = Estate.render ruled
+    // The one-mint copy renders in the lever's slot for the ruled finding.
+    Assert.Contains(lines, fun (l: string) ->
+        l.Contains "The ruling stands: confirmed by dana on 2026-08-16 — adopt it into the model.")
+    // The unruled siblings keep their lever imperatives (one still asks).
+    Assert.True(List.length unruled.Findings >= 2, "the fixture needs at least two DECIDE findings")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "→ Rule the kind: adopt it into the model, or schedule its removal.")
+    // Record + render only: nothing but the rendering moved.
+    Assert.Equal(unruled.Verdict, ruled.Verdict)
+    Assert.Equal<(EstateLane * int) list>(Estate.laneCounts unruled, Estate.laneCounts ruled)
+    Assert.Equal((Estate.cutoverLadder unruled).Green, (Estate.cutoverLadder ruled).Green)
+    Assert.Equal<Estate.Finding list>(unruled.Findings, ruled.Findings)
+
+[<Fact>]
+let ``reception: the ACTION line skips a ruled finding and names the first unruled one; a fully-ruled queue says so`` () =
+    let unruled = decideReport ()
+    let keys = unruled.Findings |> List.map (fun f -> f.Key)
+    let partially = unruled |> Estate.withRulings [ rulingOn (List.head keys) RulingVerdict.Rejected (Some "schedule its removal") ]
+    let secondLabel = FindingKey.readableLabel (List.item 1 keys)
+    Assert.Contains(Estate.render partially, fun (l: string) ->
+        l.Contains "Next: rule the first DECIDE finding" && l.Contains secondLabel)
+    let fully =
+        unruled
+        |> Estate.withRulings (keys |> List.map (fun k -> rulingOn k RulingVerdict.Confirmed None))
+    Assert.Contains(Estate.render fully, fun (l: string) ->
+        l.Contains "Next: every DECIDE finding carries its ruling — carry the rulings into the model and config, then re-run.")
+
+[<Fact>]
+let ``reception: a ruling keyed to no finding on this run renders nowhere — the board never fabricates a row for it`` () =
+    let unruled = decideReport ()
+    let stray = rulingOn (FindingKey.create EstateFindingKind.DataOrphans "Ghost.Column") RulingVerdict.Confirmed None
+    let ruled = unruled |> Estate.withRulings [ stray ]
+    Assert.Equal<string list>(Estate.render unruled, Estate.render ruled)
+
+[<Fact>]
+let ``reception: environments.json carries the judgment beside the lever — verdict, by, at, and rationale on the ruled finding only`` () =
+    let requireNode (label: string) (n: System.Text.Json.Nodes.JsonNode | null) : System.Text.Json.Nodes.JsonNode =
+        match Option.ofObj n with
+        | Some node -> node
+        | None ->
+            Assert.Fail (sprintf "%s: required JsonNode child was null" label)
+            Unchecked.defaultof<_>
+    let unruled = decideReport ()
+    let first = unruled.Findings |> List.head
+    let ruled = unruled |> Estate.withRulings [ rulingOn first.Key RulingVerdict.Rejected (Some "not this estate's shape") ]
+    let findings =
+        (requireNode "findings" ((Estate.toJson ruled).["findings"])).AsArray()
+        |> Seq.map (requireNode "finding")
+        |> List.ofSeq
+    let nodeOf (matches: string -> bool) =
+        findings |> List.find (fun n -> matches ((requireNode "key" n.["key"]).GetValue<string>()))
+    let ruledNode = nodeOf ((=) (FindingKey.text first.Key))
+    let ruling = requireNode "ruling" ruledNode.["ruling"]
+    Assert.Equal("rejected", (requireNode "verdict" ruling.["verdict"]).GetValue<string>())
+    Assert.Equal("dana", (requireNode "by" ruling.["by"]).GetValue<string>())
+    Assert.Equal("2026-08-16T09:00:00.0000000+00:00", (requireNode "at" ruling.["at"]).GetValue<string>())
+    Assert.Equal("not this estate's shape", (requireNode "rationale" ruling.["rationale"]).GetValue<string>())
+    // The lever stays beside the judgment (the machine sibling carries both).
+    Assert.NotNull(ruledNode.["lever"])
+    // The unruled siblings carry no ruling object.
+    let unruledNode = nodeOf ((<>) (FindingKey.text first.Key))
+    Assert.Null(unruledNode.["ruling"])
+
+[<Fact>]
+let ``reception: the posture meter renders the bound override's approval attribution (align-II.2's un-severed provenance received)`` () =
+    let provenance : OverrideProvenance =
+        { ApprovedBy = "dana"
+          ApprovedAt = Some (System.DateTimeOffset(2026, 7, 30, 0, 0, 0, System.TimeSpan.Zero))
+          Rationale = Some "backfill scheduled"
+          Finding = None }
+    let posture : Estate.Posture =
+        { Estate.Posture.defaults with
+            RelaxedReferences = Set.singleton orderRefToCustomer
+            Provenance = Map.ofList [ orderRefToCustomer, provenance ] }
+    let dirty = { Profile.empty with ForeignKeys = [ orphanEvidence orderRefToCustomer 113L ] }
+    let report =
+        Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.Contains("Approved by dana on 2026-07-30 — backfill scheduled.", active.Statement)
+    // A provenance-less posture is byte-identical to the pre-II.5 meter.
+    let bare =
+        Estate.computeWith
+            { posture with Provenance = Map.empty } Estate.StaticContent.empty agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let bareActive = bare.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
+    Assert.DoesNotContain("Approved by", bareActive.Statement)

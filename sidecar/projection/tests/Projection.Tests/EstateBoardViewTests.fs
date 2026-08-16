@@ -56,7 +56,8 @@ let private divergedReport : Estate.EstateReport =
       Burndown = None
       Streak = 0
       Fidelity = Estate.FidelityClause.Green ("cloud-uat-load", 2)
-      StaticInspected = true }
+      StaticInspected = true
+      Rulings = [] }
 
 /// A unified estate: no findings, a store, a streak — the empty state is a full
 /// surface (RT-13).
@@ -84,6 +85,28 @@ let ``ofReport: the DECIDE fork's statement and the REPAIR finding's lever both 
     // The lever is the one child of its finding's disclosure — revealed at the
     // calm default depth.
     Assert.Contains("Review block 2 of environments.remediation.cloud-uat.sql.", out)
+
+[<Fact>]
+let ``ofReport: a recorded ruling renders on its finding in the lever's slot — the rich lens reads the same one-mint copy (align-II.5)`` () =
+    // The DECIDE fork carries a recorded ruling; the REPAIR finding stays
+    // levered. The ruling line is `Estate.rulingText`'s copy verbatim (one
+    // mint, two lenses), and the ACTION region stops asking the answered
+    // question — the fully-ruled queue says so.
+    let ruling : OperatorRuling<FindingKey> =
+        { Subject = FindingKey.create EstateFindingKind.DataStaticIdentity "Status"
+          Verdict = RulingVerdict.Confirmed
+          Basis = Some (BasisAnchor.FindingKey (FindingKey.create EstateFindingKind.DataStaticIdentity "Status"))
+          By = "dana"
+          At = System.DateTimeOffset(2026, 8, 16, 9, 0, 0, System.TimeSpan.Zero)
+          Rationale = Some "the dev numbering is the seed"
+          Reopen = None }
+    let out = render (divergedReport |> Estate.withRulings [ ruling ])
+    Assert.Contains("The ruling stands: confirmed by dana on 2026-08-16 — the dev numbering is the seed.", out)
+    // The ruled finding's lever imperative no longer renders; the unruled
+    // REPAIR finding's lever still does.
+    Assert.DoesNotContain("Rule the seed: pin explicit key values in the model.", out)
+    Assert.Contains("Review block 2 of environments.remediation.cloud-uat.sql.", out)
+    Assert.Contains("Every DECIDE finding carries its ruling", out)
 
 [<Fact>]
 let ``ofReport: the matrix renders each environment's per-plane counts`` () =

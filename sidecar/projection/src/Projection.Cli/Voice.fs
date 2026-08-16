@@ -1221,6 +1221,21 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `estate.rulings.unreadable` — §14: the keyed ruling store did not
+    /// read; the board renders unruled this run, said with the located
+    /// cause (align-II.5 — reception is render-only, so no verdict stood
+    /// on the rulings; the recorded judgment stays intact on disk).
+    let private estateRulingsUnreadable : Copy =
+        { Code           = "estate.rulings.unreadable"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Note(
+                    sprintf "The recorded rulings could not be read this run — %s. The board renders without them; the ruling files are intact on disk."
+                        (textOr "cause" "the ruling store did not parse" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `sync.completed` — §3: `projection sync`'s witnessed verdict (the
     /// data-sink chapter, S6). The estate moved; the sync ordinal and the
     /// journaled displacement count are the located evidence.
@@ -1421,6 +1436,9 @@ module Voice =
           estateEvidenceCached
           estateEvidenceStale
           estateEvidenceOffline
+          // §14 — the ruling store's named degradation (align-II.5: an
+          // unreadable store renders the board unruled, cause on stderr)
+          estateRulingsUnreadable
           // §6 — the row-fidelity proof pair (check data --rows; T17, B2)
           fidelityRowsMatched
           fidelityRowsDiverged

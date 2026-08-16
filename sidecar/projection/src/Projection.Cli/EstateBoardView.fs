@@ -91,11 +91,15 @@ let private storeLine : Estate.EvidenceStoreBasis -> string =
 
 /// One finding as a disclosure — the statement is the headline (glyph + color by
 /// status), the lever (when its artifact exists) is the one child, revealed at the
-/// calm default depth. A lever-less WATCH line is a bare status headline.
-let private findingBlock (f: Estate.Finding) : View =
-    match f.Lever with
-    | Some lever -> Disclosure (f.Statement, findingStatus f, [ Action lever ])
-    | None       -> Disclosure (f.Statement, findingStatus f, [])
+/// calm default depth. A lever-less WATCH line is a bare status headline. A
+/// recorded ruling (align-II.5) answers the finding's question and takes the
+/// lever's slot — the SAME one-mint copy the plain lens renders
+/// (`Estate.rulingText`), as a Note (judgment recorded, not a move to make).
+let private findingBlock (report: Estate.EstateReport) (f: Estate.Finding) : View =
+    match Estate.rulingFor report f, f.Lever with
+    | Some ruling, _ -> Disclosure (f.Statement, findingStatus f, [ Note (Estate.rulingText ruling) ])
+    | None, Some lever -> Disclosure (f.Statement, findingStatus f, [ Action lever ])
+    | None, None       -> Disclosure (f.Statement, findingStatus f, [])
 
 /// A lane's findings, capped with the remainder named (THE_VOICE §12) — the SAME
 /// order and cap the plain lens uses, so the two lenses never disagree.
@@ -105,7 +109,7 @@ let private laneBlocks (lane: EstateLane) (report: Estate.EstateReport) : View l
     | fs ->
         let shown = fs |> List.truncate Estate.laneCap
         let remainder = List.length fs - List.length shown
-        (shown |> List.map findingBlock)
+        (shown |> List.map (findingBlock report))
         @ (if remainder > 0
            then [ Note (sprintf "and %d more — environments.json carries every finding." remainder) ]
            else [])
@@ -162,12 +166,15 @@ let private artifactBlocks (report: Estate.EstateReport) : View list =
 
 // -- the action --------------------------------------------------------------
 
-/// The one next move — the top DECIDE, else the top REPAIR, else the streak (the
-/// plain lens's ACTION region, reconstructed from the public report data).
+/// The one next move — the top UNRULED DECIDE, else the top REPAIR, else the
+/// streak (the plain lens's ACTION region, reconstructed from the public report
+/// data). A ruled DECIDE finding is an answered question (align-II.5): the
+/// action skips it, and a fully-ruled queue says so instead of asking again.
 let private actionOf (report: Estate.EstateReport) : Status * string =
-    match Estate.laneFindings EstateLane.Decide report with
-    | f :: _ -> Warn, sprintf "Rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
-    | [] ->
+    match Estate.unruledDecide report, Estate.laneFindings EstateLane.Decide report with
+    | f :: _, _ -> Warn, sprintf "Rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
+    | [], _ :: _ -> Pending, "Every DECIDE finding carries its ruling — carry the rulings into the model and config, then re-run."
+    | [], [] ->
         match Estate.laneFindings EstateLane.Repair report with
         | f :: _ -> Warn, sprintf "Review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
         | [] when report.Streak > 1 ->
@@ -200,7 +207,7 @@ let ofReport (report: Estate.EstateReport) : View =
               yield Note "No emission hazards in the checks that run today."
           else
               let shown = report.EmissionFindings |> List.truncate Estate.laneCap
-              yield! shown |> List.map findingBlock
+              yield! shown |> List.map (findingBlock report)
               let extra = List.length report.EmissionFindings - List.length shown
               if extra > 0 then yield Note (sprintf "and %d more — environments.json carries every finding." extra)
           // The coverage line is DERIVED from the detector set (the
