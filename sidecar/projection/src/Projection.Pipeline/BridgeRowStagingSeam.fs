@@ -516,6 +516,7 @@ module BridgeRowStagingSeam =
               Domain       = Data
               StageBinding = Pipeline
               Status       = Active
+              Firing       = FiringSite.AtBinding
               Sites =
                 [ TransformSite.operatorIntent "bridgeRowStaging" Insertion
                     "Derive the bridge-row supply for the declared bridge retargets from the LIVE estate (`overrides.bridgeRowStaging`): referenced keys from the retargeting FK columns, source/bridge snapshots, a pure per-key delta, staged GUARDED inserts + FILL-ONLY identity updates (never the full-row MERGE — an existing non-null bridge cell is structurally unreachable), planned-state retarget evidence, and the durable audit sextet. OperatorIntent Insertion: the staged rows are content the estate gains, driven entirely by operator declaration. Empty ⇒ identity (no acquisition, byte-identical); any block ⇒ the linked retargets stay unproven." ] }

@@ -345,7 +345,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: misclassified DataIntent 
               { SiteName = "actualOperatorIntent"
                 Classification = OperatorIntent Selection
                 Rationale = "actual filter that operator supplied" } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
     let skeleton = TransformRegistry.skeletonView [ counterfactual ]
     Assert.Empty skeleton  // counterfactual excluded — the leak surfaces structurally
 
@@ -362,7 +363,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: empty-Rationale entry rej
             [ { SiteName = "site"
                 Classification = DataIntent
                 Rationale = "" } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
     match TransformRegistry.create [ counterfactual ] with
     | Ok _ -> Assert.Fail "Expected empty-Rationale rejection."
     | Error es ->
@@ -382,7 +384,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: NotImplementedInV2 with e
             [ { SiteName = "site"
                 Classification = DataIntent
                 Rationale = "harvest analysis present" } ]
-          Status = NotImplementedInV2 "" }
+          Status = NotImplementedInV2 ""
+          Firing = FiringSite.AtBinding }
     match TransformRegistry.create [ counterfactual ] with
     | Ok _ -> Assert.Fail "Expected empty-NotImplementedInV2-rationale rejection."
     | Error es ->

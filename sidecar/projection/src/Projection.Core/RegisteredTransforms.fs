@@ -120,6 +120,12 @@ module RegisteredTransforms =
     let private producing (product: ChainProduct) (step: ChainStep) : ChainStep =
         { step with Produces = Some product }
 
+    /// Override a chain stand-in's firing site (align-I.8): the entry
+    /// registers in the chain with an identity config, and the NAMED
+    /// site executes it substantively with the operator's real config.
+    let private firedAt (site: FiringSite) (step: ChainStep) : ChainStep =
+        { step with Metadata = { step.Metadata with Firing = site } }
+
     /// **The single source of truth for the Core pass chain**, in
     /// EXECUTION order (canonical). Both the metadata registry (`all`)
     /// and the execution chain project from this list. Order: 5 catalog-
@@ -141,12 +147,14 @@ module RegisteredTransforms =
           // the no-suppression identity (byte-identical); the Pipeline's
           // applyModuleFilter seam executes it with the operator's real
           // axes, so registered ⇔ executed holds for the one pass.
-          catalogStep (SelectionSuppression.registered SelectionSuppression.identity)
+          firedAt (FiringSite.AtSeam "applyModuleFilter")
+              (catalogStep (SelectionSuppression.registered SelectionSuppression.identity))
           // S13 (the data-sink chapter) — the claims-annotation pass. The
           // chain default annotates nothing (byte-identical); the
           // sink-backed model read executes it with the journal-assembled
           // adjudications.
-          catalogStep (PhysicalClaimPass.registered [])
+          firedAt FiringSite.OnSinkRead
+              (catalogStep (PhysicalClaimPass.registered []))
           catalogStep (NamingMorphism.registered identityMorphism)
           catalogStep NormalizeStaticPopulations.registered
           catalogStep SymmetricClosure.registered
@@ -227,6 +235,27 @@ module RegisteredTransforms =
     /// property tests read this; it cannot drift from what runs.
     let all : RegisteredTransformMetadata list =
         (chainSteps |> List.map ChainStep.metadata) @ StrategyRegistrations.all
+
+    /// DORMANT registrations (align-I.8): code that exists with operator
+    /// intent but NO live invocation path. Dormant rows live HERE, never
+    /// in `all` — registered ⇔ executed stays exact — and each carries
+    /// its firing trigger so the deferral index enumerates them instead
+    /// of a comment guarding them. The F12 audit row is the founding
+    /// member: `SelectionPolicy.filterCatalog` (Policy.fs), a
+    /// Selection-axis Catalog→Catalog pruning with no pipeline wiring;
+    /// its worked registration example is SelectionSuppression (S9).
+    let dormant : RegisteredTransformMetadata list =
+        [ { Name = "selectionFilterCatalog"
+            Domain = Schema
+            StageBinding = Pass
+            Sites =
+              [ { SiteName = "filterCatalog"
+                  Classification = OperatorIntent Selection
+                  Rationale = "Prune the catalog to the kinds SelectionPolicy admits (a Selection-axis Catalog -> Catalog mutation). DORMANT per the F12 audit row: no live path invokes it; ModuleFilter/SelectionSuppression own live selection today." } ]
+            Status = Active
+            Firing =
+              FiringSite.Dormant
+                "the day a live path invokes SelectionPolicy.filterCatalog it moves to `all`, binds execution and registration together in a test (mirror SelectionSuppression, S9), and emits one Removed lineage event per suppression" } ]
 
     /// The full chain's supplied products: acquisition supplies the
     /// profiling evidence from outside the chain (align-I.6).

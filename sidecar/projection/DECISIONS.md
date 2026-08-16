@@ -31662,3 +31662,30 @@ resolves: a production pass may ride `Label` ONLY with a DECISIONS deferral nami
 typed-shape promotion trigger — and the trigger is AN EGRESS CONSUMER THAT NEEDS THE
 DECISION (the taxonomy, trail diffing, or the explain drill-down). This slice is the
 worked example: both riders promoted at exactly that trigger.
+
+## 2026-08-16 — align-I.8: WHERE a transform fires becomes a registry fact (FiringSite; the F12 dormancy reified)
+
+**Ruling (a3's seam-execution finding).** `RegisteredTransformMetadata` gains `Firing :
+FiringSite` — `AtBinding | AtSeam of seamName | OnSinkRead | Dormant of trigger`. The
+plan's sketch said `InChain`; the honest name is `AtBinding` (adapters fire at the read
+stage and emitters at the emit stage — "in chain" was pass-parochial). Previously the two
+chain stand-ins' real execution sites were comment-carried ("the Pipeline's
+applyModuleFilter seam executes it with the operator's real axes"); now
+`selectionSuppression` carries `AtSeam "applyModuleFilter"` and `physicalClaims` carries
+`OnSinkRead`, and the bidirectional tests iterate per-site (the exact stand-in sets are
+pinned).
+
+**Dormancy is a value.** `RegisteredTransforms.dormant` (never in `all` — registered ⇔
+executed stays exact) carries the F12 row: `selectionFilterCatalog` with `Firing =
+Dormant <trigger>`. The Policy.fs comment that guarded F12 now points at the registry
+row; the deferral index enumerates dormant code instead of a comment hunting it. The
+count-pin choreography holds (RegisteredTransforms 29 unchanged — dormant is a separate
+list).
+
+**The digest seals the axis.** `TransformRegistry.digest` gains a `firing=` segment
+(free-text payloads length-prefixed per NM-60). The digest VALUE moves once — named here;
+no pinned digest literal or committed golden exists (relational tests only, extended with
+a Firing-perturbation sensitivity check).
+
+Fan-out walked compiler-driven (FS0764): 24 production metadata literals + toMetadata +
+the two metadata smart constructors default `AtBinding`; five test fixtures patched.

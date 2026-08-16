@@ -504,4 +504,5 @@ module Reconciliation =
           Sites =
             [ TransformSite.operatorIntent "matchByRule" OverlayAxis.Identity
                 "Match each Source surrogate to a pre-existing Sink surrogate by the operator-supplied ruleset (match column or manual override), producing the per-kind SurrogateRemapContext that downstream consumers (Transfer realization, static-artifact emit) re-point FKs through. Operator intent — which identities reconcile; generalizes UserFkReflowPass.discover from the User kind. Unmatched Source surrogates skip-and-diagnose." ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }

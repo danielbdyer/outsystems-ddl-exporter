@@ -111,7 +111,7 @@ let ``a diagnostic without SsKey projects with no envelope ssKey`` () =
     Assert.Equal(None, env.SsKey)
 
 let private meta (name: string) (stage: StageBinding) (sites: TransformSite list) : RegisteredTransformMetadata =
-    { Name = name; Domain = Schema; StageBinding = stage; Sites = sites; Status = Active }
+    { Name = name; Domain = Schema; StageBinding = stage; Sites = sites; Status = Active; Firing = FiringSite.AtBinding }
 
 [<Fact>]
 let ``§7.4: a registered transform projects to transform.registered (debug, start) carrying per-site classification`` () =

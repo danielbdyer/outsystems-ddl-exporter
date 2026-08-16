@@ -523,4 +523,5 @@ module ApprovedDataCorrections =
                 "Fail-closed guard evaluation over acquired row evidence (null / coverage / reference / finding-count probes). Pure over the row map + catalog; no operator opinion beyond which guards the correction declares."
               TransformSite.dataIntent "correctionReceipts"
                 "Emit count-bearing correction receipts (rows matched / changed / excluded, guard results, before/after digest) threaded onto the episode + row-fidelity proof — the intervention ledger that bounds the byte-identity-with-noted-exceptions claim." ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }

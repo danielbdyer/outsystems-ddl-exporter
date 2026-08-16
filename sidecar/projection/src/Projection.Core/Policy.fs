@@ -738,14 +738,17 @@ module SelectionPolicy =
     /// continue to operate on the full catalog (per A33: sort/order
     /// passes see all kinds, emission filters afterwards).
     ///
-    /// F12 (audit 2026-06-17) — DORMANT, unregistered. This is a
+    /// F12 (audit 2026-06-17; REIFIED at align-I.8) — DORMANT. This is a
     /// `Catalog → Catalog` operator-intent mutation (a Selection-axis
-    /// pruning) with NO pipeline wiring today, so it does not yet need a
-    /// `RegisteredAllTransforms` entry. TRIGGER: the day a live path invokes
-    /// this, it MUST register as `OperatorIntent (OverlayAxis Selection)` and
-    /// bind execution↔registration in a test — a selection that silently
-    /// drops kinds is the exact untracked-operator-intent pattern the sweep
-    /// hunts. The WORKED EXAMPLE for that registration is now
+    /// pruning) with NO pipeline wiring today. Its dormancy is now a
+    /// REGISTRY VALUE, not a comment: `RegisteredTransforms.dormant`
+    /// carries the `selectionFilterCatalog` row with
+    /// `Firing = FiringSite.Dormant <trigger>` — the deferral index
+    /// enumerates it, and the bidirectional tests pin that dormant rows
+    /// never enter `all`. TRIGGER (as the row states): the day a live
+    /// path invokes this, it moves to `all`, binds execution ⇔
+    /// registration in a test, and emits one Removed lineage event per
+    /// suppression. The WORKED EXAMPLE for that registration is
     /// `Passes/SelectionSuppression.fs` (the data-sink chapter, S9): the
     /// lifecycle-selection axes that used to erase silently inside
     /// `ModuleFilter.apply` landed as a registered Selection-axis pass with

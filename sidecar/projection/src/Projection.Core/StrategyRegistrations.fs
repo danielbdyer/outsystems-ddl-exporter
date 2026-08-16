@@ -42,7 +42,8 @@ module StrategyRegistrations =
             [ { SiteName = "evaluate"
                 Classification = OperatorIntent Tightening
                 Rationale = "Per-attribute NOT NULL tightening decision (NullabilityOutcome) per operator-supplied Tightening policy (Cautious / Aggressive / Disabled). Profile evidence (null-count probes) drives the empirical decision; lands as Tightening-axis overlay via the host pass NullabilityPass." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// Unique-index promotion strategy. Consumed by `UniqueIndexPass`
     /// via `Composition.fanOut`. Operator-supplied policy
@@ -56,7 +57,8 @@ module StrategyRegistrations =
             [ { SiteName = "evaluate"
                 Classification = OperatorIntent Tightening
                 Rationale = "Per-index UNIQUE promotion decision (UniqueIndexOutcome) per operator-supplied Tightening policy. Profile evidence (duplicate-row probes) drives the empirical decision; lands as Tightening-axis overlay via the host pass UniqueIndexPass." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// Foreign-key enforcement strategy. Consumed by `ForeignKeyPass`
     /// via `Composition.fanOut`. Operator-supplied policy
@@ -70,7 +72,8 @@ module StrategyRegistrations =
             [ { SiteName = "evaluate"
                 Classification = OperatorIntent Tightening
                 Rationale = "Per-reference FK enforcement decision (ForeignKeyOutcome) per operator-supplied Tightening policy. Profile evidence (orphan-row probes) drives the empirical decision; lands as Tightening-axis overlay via the host pass ForeignKeyPass." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// Categorical-uniqueness promotion strategy. Consumed by
     /// `CategoricalUniquenessPass` via `Composition.fanOut`.
@@ -84,7 +87,8 @@ module StrategyRegistrations =
             [ { SiteName = "evaluate"
                 Classification = OperatorIntent Tightening
                 Rationale = "Per-attribute categorical-uniqueness promotion decision (CategoricalUniquenessOutcome) per operator-supplied Tightening policy. Profile evidence (cardinality + uniqueness probes) drives the empirical decision; lands as Tightening-axis overlay via the host pass CategoricalUniquenessPass." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// Cycle-resolution strategy. Consumed by `TopologicalOrderPass`
     /// when the graph contains cycles. The asymmetric-2-cycle
@@ -105,7 +109,8 @@ module StrategyRegistrations =
               { SiteName = "weightedResolution"
                 Classification = DataIntent
                 Rationale = "v7 slice 4 (DECISIONS 2026-07-18): the evidence-weighted member of the minimal-feedback family — the SAME exact solver at repairCostOf (Phase-2 repair rows = the break's CDC capture count, T15's norm), chosen once per flow at its render-topo binding (Pipeline.renderTopologyFor). A18-clean: Π consumes Catalog × Profile at the render plane; the chain prefix, the drain, and TransferScope stay SchemaMinimal — sound because SCC membership and refusal are resolver-invariant (the A46 lemma). Evidence-derived, no operator opinion; an empty profile degenerates to the schema-minimal default (the conservative-extension law)." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// All five strategy registrations in one list. Slice ζ's
     /// `Compose.run` traversal will fold this list into
@@ -127,7 +132,8 @@ module StrategyRegistrations =
             [ { SiteName = "adjudicate"
                 Classification = DataIntent
                 Rationale = "Per-physical-table ownership adjudication (PhysicalClaimOutcome) over journal-assembled claim sets: a sole live claim adopts (tombstones ride as outranked lineage — the cutover's happy path); two or more live claims are Contested ALWAYS — a DECIDE finding, never a silent pick — with the rivals ladder-ordered (eSpace over extension, then the sink's temporal dimension) so the finding leads with the recommendation." } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     let all : RegisteredTransformMetadata list =
         [ nullabilityRules

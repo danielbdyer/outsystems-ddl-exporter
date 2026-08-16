@@ -84,7 +84,8 @@ let private mkEntry (name: string) (status: TransformStatus) : RegisteredTransfo
       Domain = Schema
       StageBinding = Pass
       Sites = [ validSite ]
-      Status = status }
+      Status = status
+      Firing = FiringSite.AtBinding }
 
 let private failureCodes (errs: ValidationError list) : string list =
     errs |> List.map (fun e -> e.Code)
