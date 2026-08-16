@@ -23,7 +23,7 @@ let private allMetadata : RegisteredTransformMetadata list =
     RegisteredTransforms.all @ RegisteredDataTransforms.all
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Identity returns the five identity-axis entries`` () =
+let ``5.13.identity-axis-closure: byDomain Domain.Identity returns the five identity-axis entries`` () =
     // Identity-domain entries:
     //   - canonicalizeIdentity (DataIntent — mechanical identity-form
     //     normalization at adapter→catalog boundary)
@@ -40,7 +40,7 @@ let ``5.13.identity-axis-closure: byDomain Identity returns the five identity-ax
     //   - physicalClaims (DataIntent pass — S13: the ownership decisions
     //     annotated onto kinds as a sink-backed read parses them).
     let identityEntries =
-        TransformRegistry.byDomain Identity allMetadata
+        TransformRegistry.byDomain Domain.Identity allMetadata
     let names =
         identityEntries
         |> List.map (fun rt -> rt.Name)
@@ -108,7 +108,7 @@ let ``5.13.identity-axis-closure: byDomain partition is disjoint (each entry in 
     // Sanity invariant: every entry belongs to exactly one Domain
     // bucket. The filter applied across every Domain value must
     // sum to the total entry count.
-    let domains = [ Schema; Data; Identity; Diagnostics; CutoverSafety; CrossCutting ]
+    let domains = [ Schema; Data; Domain.Identity; Diagnostics; CutoverSafety; CrossCutting ]
     let bucketed =
         domains
         |> List.sumBy (fun d ->
@@ -137,12 +137,12 @@ let ``5.13.identity-axis-closure: byOverlayAxis Tightening lives in Schema + Dat
     // here.
     let tighteningInIdentity =
         allMetadata
-        |> TransformRegistry.byDomain Identity
+        |> TransformRegistry.byDomain Domain.Identity
         |> TransformRegistry.byOverlayAxis Tightening
     Assert.Empty tighteningInIdentity
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Identity ∩ byOverlayAxis Selection = UserFkReflowPass alone`` () =
+let ``5.13.identity-axis-closure: byDomain Domain.Identity ∩ byOverlayAxis Selection = UserFkReflowPass alone`` () =
     // The two filters compose at the consumer level — composing
     // them gives the "OperatorIntent-Selection IDENTITY-axis"
     // surface. UserFkReflowPass is the sole entry: the other two
@@ -150,7 +150,7 @@ let ``5.13.identity-axis-closure: byDomain Identity ∩ byOverlayAxis Selection 
     // are DataIntent and drop out via the OverlayAxis filter.
     let intersection =
         allMetadata
-        |> TransformRegistry.byDomain Identity
+        |> TransformRegistry.byDomain Domain.Identity
         |> TransformRegistry.byOverlayAxis Selection
     Assert.Equal(1, List.length intersection)
     Assert.Equal("userFkReflow", intersection.Head.Name)

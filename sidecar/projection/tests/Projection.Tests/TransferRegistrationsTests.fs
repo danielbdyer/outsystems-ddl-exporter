@@ -60,7 +60,7 @@ let ``DataLoadPlan splits four DataIntent sites from one OperatorIntent Insertio
 [<Fact>]
 let ``the reconciliation ruleset is an OperatorIntent Selection site (Identity domain)`` () =
     let rt = Reconciliation.registeredMetadata
-    Assert.Equal(Identity, rt.Domain)
+    Assert.Equal(Domain.Identity, rt.Domain)
     Assert.NotEmpty rt.Sites
     for site in rt.Sites do
         Assert.Equal(OperatorIntent Selection, site.Classification)

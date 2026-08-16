@@ -32,6 +32,7 @@ module EventProjection =
         | Insertion  -> "insertion"
         | Tightening -> "tightening"
         | Ordering   -> "ordering"
+        | Identity   -> "identity"
 
     let private classificationTag (c: Classification) : string =
         match c with

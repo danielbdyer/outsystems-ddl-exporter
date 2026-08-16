@@ -42,7 +42,7 @@ let ``A.4.7 slice β: StageBinding carries five stage seams`` () =
 [<Fact>]
 let ``A.4.7 slice β: Domain carries six codified concerns`` () =
     let domains : Domain list =
-        [ Schema; Data; Identity; Diagnostics; CutoverSafety; CrossCutting ]
+        [ Schema; Data; Domain.Identity; Diagnostics; CutoverSafety; CrossCutting ]
     Assert.Equal(6, domains.Length)
 
 [<Fact>]

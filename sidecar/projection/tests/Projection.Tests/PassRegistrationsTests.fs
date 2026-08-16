@@ -46,7 +46,7 @@ let private firstSite (rt: RegisteredTransform<'In, 'Out>) : TransformSite =
 let ``A.4.7 slice γ: CanonicalizeIdentity.registered carries Identity domain + Pass stage + DataIntent site`` () =
     let rt = CanonicalizeIdentity.registered
     Assert.Equal("canonicalizeIdentity", rt.Name)
-    Assert.Equal(Identity, rt.Domain)
+    Assert.Equal(Domain.Identity, rt.Domain)
     Assert.Equal(Pass, rt.StageBinding)
     Assert.Equal(DataIntent, (firstSite rt).Classification)
     Assert.Equal(Active, rt.Status)
@@ -82,7 +82,7 @@ let ``A.4.7 slice γ: NamingMorphism.registered factory produces DataIntent site
     let appendV (n: Name) : Name =
         Name.create (System.String.Concat (Name.value n, "_v")) |> Result.value
     let rt = NamingMorphism.registered appendV
-    Assert.Equal(Identity, rt.Domain)
+    Assert.Equal(Domain.Identity, rt.Domain)
     Assert.Equal(DataIntent, (firstSite rt).Classification)
     // Run produces lineage with Renamed events.
     let result = rt.Run sampleCatalog
@@ -206,7 +206,7 @@ let ``A.4.7 slice γ: TableRename.registered.Run on Error surfaces ValidationErr
 [<Fact>]
 let ``A.4.7 slice γ: UserFkReflowPass.registered factory carries OperatorIntent Selection site`` () =
     let rt = UserFkReflowPass.registered Policy.empty Profile.empty
-    Assert.Equal(Identity, rt.Domain)
+    Assert.Equal(Domain.Identity, rt.Domain)
     Assert.Equal(OperatorIntent Selection, (firstSite rt).Classification)
 
 // ---------------------------------------------------------------------------

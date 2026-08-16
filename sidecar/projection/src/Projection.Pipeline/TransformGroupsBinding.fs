@@ -119,7 +119,12 @@ module RegisteredTransformTags =
         | Selection
         | Emission
         | Insertion
-        | Ordering -> None
+        | Ordering
+        // Identity (align-I.2) is PERMANENTLY not group-derivable: two
+        // distinct operator presets (UserReflow, BridgeRetarget) share the
+        // axis, so the axis cannot pick the group — both stay hand
+        // `passTags` rows.
+        | Identity -> None
 
     /// Look up a pass's tags by name. `Set.empty` for passes not in
     /// the map (untagged passes always run).

@@ -1518,8 +1518,10 @@ each module's primary public surface is its `.registered` /
 
 ```fsharp
 type StageBinding   = Adapter | Pass | OrderingPolicy | Emitter | Pipeline
-type OverlayAxis    = Selection | Emission | Insertion | Tightening | Ordering
-                      // = Policy DU axes + Ordering (Q9-trigger-fires worked example)
+type OverlayAxis    = Selection | Emission | Insertion | Tightening | Ordering | Identity
+                      // the operator outcome space; related to Policy's six decision
+                      // channels by the TOTAL map PolicyAxis.overlayAxisOf (A50, align-I.2 —
+                      // Ordering's preimage is empty; Identity's is {UserMatching, BridgeRetarget})
 type Classification = DataIntent | OperatorIntent of OverlayAxis
 type TransformSite  = { SiteName : string ; Classification : Classification ; Rationale : string }
 type TransformStatus = Active | NotImplementedInV2 of rationale: string
@@ -2306,8 +2308,11 @@ erasure-witness inequality; the zero-displacement silence law.
 
 ## A50 — the operator outcome space is enumerable (the alignment program, Chapter I open, 2026-08-16)
 
-*Status: CANDIDATE (Bucket-C stub at chapter open; promotion trigger = align-I.2 lands
-`OverlayAxis.Identity`, the total `axisOfPolicyAxis` map, and the totality property).*
+*Status: LIVE (promoted at align-I.2, same day — `OverlayAxis.Identity` appended (DU order
+is T1-load-bearing), `PolicyAxis` enumerates the six Policy decision channels,
+`PolicyAxis.overlayAxisOf` is the total designation, and `PolicyExpr.eval`'s Override arm
+projects through the DERIVED preimage — Override(Ordering)'s no-op is now the map's
+theorem, and Override(Identity) reaches both identity channels).*
 
 **Statement.** Every operator decision channel is a value of the axis vocabulary:
 `axisOfPolicyAxis : PolicyAxis → OverlayAxis` is TOTAL — every Policy axis has a designated

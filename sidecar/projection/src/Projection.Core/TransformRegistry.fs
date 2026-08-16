@@ -473,13 +473,12 @@ module TransformRegistry =
         | Emitter -> "Emitter"
         | Pipeline -> "Pipeline"
 
+    /// Delegates to the ONE canonical codec (`OverlayAxis.name`) — this was
+    /// a private duplicate of the token map until align-I.2's `Identity`
+    /// variant forced every projection site to declare itself; the digest's
+    /// tokens are unchanged (same names, same source of truth).
     let private overlayAxisName (a: OverlayAxis) : string =
-        match a with
-        | Selection -> "Selection"
-        | Emission -> "Emission"
-        | Insertion -> "Insertion"
-        | Tightening -> "Tightening"
-        | Ordering -> "Ordering"
+        OverlayAxis.name a
 
     let private classificationName (c: Classification) : string =
         match c with

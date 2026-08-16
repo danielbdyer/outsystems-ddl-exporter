@@ -669,10 +669,13 @@ type UserMatchingStrategy =
     | FallbackToSystemUser of fallback: TargetUserId * primary: UserMatchingStrategy
 
 
-/// The five-axis policy aggregate (A12 amended 2026-05-09 four-axis;
-/// extended at chapter 4.2 slice α to add `UserMatching` per pre-scope
-/// §2). Each axis is its own structured value; the five are composed
-/// in a single record. Changing one axis does not constrain the
+/// The six-channel policy aggregate (A12 amended 2026-05-09 four-axis;
+/// extended at chapter 4.2 slice α with `UserMatching` and at the
+/// 2026-07 bridge arc with `BridgeRetarget`). Each decision channel is
+/// its own structured value, composed in a single record; the channel
+/// set is ENUMERATED as `PolicyAxis.all` and every channel carries an
+/// A50 designation (`PolicyAxis.overlayAxisOf` — align-I.2). Changing
+/// one channel does not constrain the
 /// others. `Policy.empty` is the no-policy default — schema-only
 /// emission, every kind selected, no insertion semantics, no
 /// tightening interventions, default `ByEmail` user matching — and is

@@ -1755,17 +1755,18 @@ let ``A49: acquisition is total; selection is pure (the three-way commuting law)
     citationOf "tests/Projection.Tests/SelectionSuppressionTests.fs" "one drop semantic, two channels: the pass equals apply's lifecycle arm and names every suppression"
     citationOf "tests/Projection.Tests/SinkStoreTests.fs" "totality gate: only a defaultParameters-shaped read witnesses; each scoped axis skips by name"
 
-// Bucket C — A50 candidate (the alignment program, Chapter I open, 2026-08-16).
-// The operator outcome space is enumerable: every Policy decision channel has
-// a designated OverlayAxis (`axisOfPolicyAxis` total), the axis vocabulary
-// expands only by the trigger discipline, and `PolicyExpr.Override` is total
-// over the axis set or refuses by name — never a silent no-op. The audit
-// (AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md, Arc 0) found the relation false in
-// both directions today: Policy grew UserMatching + BridgeRetarget with no
-// axis counterpart, and Override(Ordering) silently evaluates to Policy.empty.
-[<Fact(Skip = "A50: the operator outcome space is enumerable (axisOfPolicyAxis total; \
-the axis vocabulary expands only by trigger) — Bucket C. Candidate at the alignment \
-program's Chapter I open (2026-08-16). Promotion trigger: align-I.2 lands \
-OverlayAxis.Identity, the total axisOfPolicyAxis map, and the totality property; \
-Override becomes total-or-named-refusal in the same slice.")>]
-let ``A50: the operator outcome space is enumerable (axisOfPolicyAxis total)`` () = ()
+[<Fact>]
+let ``A50: the operator outcome space is enumerable (axisOfPolicyAxis total)`` () =
+    // Promoted at align-I.2 (the alignment program, same day as the
+    // candidate): `OverlayAxis` gained `Identity` (APPENDED — DU order is
+    // T1-load-bearing for the durable applied-transforms sort),
+    // `PolicyAxis` enumerates the six Policy decision channels, and
+    // `PolicyAxis.overlayAxisOf` is the total designation whose DERIVED
+    // preimage now drives `PolicyExpr.eval`'s Override arm — so
+    // Override(Ordering) = Policy.empty is the map's theorem (empty
+    // preimage) instead of the fired collapse trigger's silent no-op, and
+    // Override(Identity) projects both identity channels.
+    citationOf "tests/Projection.Tests/ClassificationCarryThroughTests.fs" "A50: every Policy decision channel has a designated OverlayAxis (axisOfPolicyAxis is total)"
+    citationOf "tests/Projection.Tests/ClassificationCarryThroughTests.fs" "A50: the preimages partition the Policy channels — Ordering's is EMPTY (its lever lives outside Policy)"
+    citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Ordering produces Policy.empty BECAUSE its Policy preimage is empty — the map's theorem, not a silent arm"
+    citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Identity extracts BOTH identity channels (UserMatching + BridgeRetarget) and nothing else"
