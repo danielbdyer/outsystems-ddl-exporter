@@ -97,7 +97,7 @@ type SinkLifecycleSeedTests(fixture: EphemeralContainerFixture) =
                     p.EntityId = 8001 && p.TableName = "OSUSR_FUL_INVOICE")
 
                 let bundle, notices =
-                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
+                    OssysRowsetReader.normalizeBundle (fst (MetadataSnapshotRunner.toBundle snapshot))
 
                 // Distinct SS_Keys ⇒ the inactive-shadow normalization does
                 // NOT collapse the pairs; every module has entities. Nothing

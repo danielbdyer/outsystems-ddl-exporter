@@ -74,19 +74,19 @@ let private referenceByAttrId (bundle: OssysRowsetTypes.RowsetBundle) (attrId: i
 
 [<Fact>]
 let ``WP-1a: a reference with a reflected #FkReality row projects HasDbConstraint = true`` () =
-    let bundle = MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ())
+    let bundle = fst (MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ()))
     let backed = referenceByAttrId bundle 201
     Assert.True(backed.HasDbConstraint)
 
 [<Fact>]
 let ``WP-1a: a logical-only reference (no reflected FK) projects HasDbConstraint = false — was hardcoded true`` () =
-    let bundle = MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ())
+    let bundle = fst (MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ()))
     let logicalOnly = referenceByAttrId bundle 301
     Assert.False(logicalOnly.HasDbConstraint)
 
 [<Fact>]
 let ``WP-1a: the fix leaves the sibling #FkReality axes intact (backed ref stays trusted; logical-only defaults trusted, no ON UPDATE)`` () =
-    let bundle = MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ())
+    let bundle = fst (MetadataSnapshotRunner.toBundle (twoReferenceSnapshot ()))
     let backed = referenceByAttrId bundle 201
     let logicalOnly = referenceByAttrId bundle 301
     // Backed FK reflected as trusted (IsNoCheck = false ⇒ trusted).

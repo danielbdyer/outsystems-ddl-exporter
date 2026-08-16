@@ -32049,3 +32049,35 @@ canary pins on "capabilities" last).
 
 Additive: wire behavior is byte-identical on a conforming script; the only new
 behavior is a NAMED refusal where a drifted script previously mis-parsed.
+
+## 2026-08-16 — align-II.8: typed erasures — toBundle returns what it loses (A54 LIVE)
+
+**a1's charge; the adjunction's modulus made enumerable.** The bundle projection
+performed five classes of silent loss the audit verified: PhysColsPresent never reaches
+the bundle; FK reflection folds to four per-reference scalars; ColumnReality's axes
+collapse onto per-attribute facets; Data_Kind's string domain folds to `IsStatic`; a
+schema defaults to `dbo` when the physical join misses; a data type defaults to `Text`;
+a reference that fails its join drops row-silently; the capability vector is ignored by
+design. Now: `toBundle : MetadataSnapshot -> RowsetBundle * BundleErasure list` — the
+closed DU `FoldedRowset of rowset * detail | UnjoinedReference of attrId | AssumedSchema
+| AssumedDataType | CapabilityInvariant`, with the CONSTANT modulus (four folds +
+capability-invariance) on every projection and the data-dependent cases firing exactly
+when their shape occurs, collected on the SAME predicates the projection decides with.
+Every `FoldedRowset` cites a `RowsetContract` name — II.7's wire vocabulary and II.8's
+erasure record are one language (law-pinned).
+
+**The tuple is deliberate (not a sibling wrapper).** A bare-`RowsetBundle` `toBundle`
+would HIDE information — the audit's exact finding — so the pair forces every consumer
+to dispose of the record visibly: the live read (`LiveModelRead`) appends it to the
+existing notice-rollup concat seam (by-design folds as Info on the detail artifact;
+assumptions/drops as Warnings); the two sink REPLAY paths (`SinkRead`/`SinkDiffView`)
+drop it BY NAME with the S7 raw-at-rest citation (witness-time notices already
+surfaced; a replay re-projects the same facts); tests take `fst`.
+
+**A54 LIVE** (89 live / C=6 / D=1; matrix regenerated this commit): constant-modulus
+law, exactly-when firing per case, the drop-count reconciliation (`|snapshot.References|
+= |bundle.References| + |unjoined|`), code/sentence/severity totality, the
+contract-name-citation law, and capability-invariance (the S2 pin, unchanged).
+
+Verified at scale: the armed comprehensive canary (`PROJECTION_RUN_COMPREHENSIVE_CANARY=1`,
+the 300-table fixture) ran the reshaped projection end-to-end green.

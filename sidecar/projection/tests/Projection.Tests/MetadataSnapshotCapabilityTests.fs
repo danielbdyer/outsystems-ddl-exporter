@@ -17,8 +17,8 @@ module MetadataSnapshotCapabilityTests =
         let snapshot = OssysSnapshotBuilders.fullyPopulated 7
         let withoutVector = { snapshot with Capabilities = [] }
         Assert.Equal<Projection.Adapters.Osm.OssysRowsetTypes.RowsetBundle>(
-            MetadataSnapshotRunner.toBundle withoutVector,
-            MetadataSnapshotRunner.toBundle snapshot)
+            fst (MetadataSnapshotRunner.toBundle withoutVector),
+            fst (MetadataSnapshotRunner.toBundle snapshot))
 
     [<Fact>]
     let ``capability vector round-trips the builder unchanged (field-count guard at the record grain)`` () =

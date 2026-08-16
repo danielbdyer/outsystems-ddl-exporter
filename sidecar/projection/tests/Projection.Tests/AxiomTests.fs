@@ -1918,3 +1918,25 @@ let ``A53: the operator ruling is a carrier — keyed, anchored, fail-closed, an
     citationOf "tests/Projection.Tests/EstateTests.fs" "reception: a recorded ruling renders on its finding in the lever's slot — lanes, verdict, and ladder stand (record + render only)"
     citationOf "tests/Projection.Tests/EstateSinkClaimsTests.fs" "K9 end-to-end (align-II.5): a confirmed S14 correspondence ruling renders on its finding — recorded judgment, no adoption"
     citationOf "tests/Projection.Tests/MovementSurfaceTests.fs" "rule <key> --confirm --by routes to RecordRuling carrying the parsed key and verdict"
+
+// ===========================================================================
+// A54 — the bundle projection's erasures are enumerable (align-II.8)
+// ===========================================================================
+
+[<Fact>]
+let ``A54: the bundle projection's erasures are enumerable — toBundle returns what it loses (constant modulus + exactly-when firing)`` () =
+    // Landed live with the vocabulary (align-II.8): the projection's
+    // signature carries the erasure record, the constant modulus (the
+    // by-design folds + capability-invariance) rides every bundle, the
+    // data-dependent assumptions/drops fire exactly when their shape
+    // occurs, the drop count reconciles the projection, every fold cites
+    // a RowsetContract name, and the live read surfaces the record on
+    // the notice rollup (Info for design facts, Warning for shape
+    // surprises).
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54 modulus: a fully-joined snapshot erases exactly the constant modulus — the by-design folds and capability-invariance, nothing else"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54 modulus: every folded rowset cites a name the rowset contract carries — the erasure record and the wire contract share one vocabulary"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: an entity with no physical-table row erases as AssumedSchema and the bundle assumes dbo — exactly when the join misses"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: an attribute with no declared data type erases as AssumedDataType and the bundle assumes Text — exactly when the type is absent"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: a reference that does not join erases as UnjoinedReference — the drop count reconciles the projection"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: every erasure case carries a distinct routing code and a complete located sentence; the by-design cases ride Info, the data-dependent ones warn"
+    citationOf "tests/Projection.Tests/MetadataSnapshotCapabilityTests.fs" "toBundle is capability-invariant: the vector informs the sink, never the bundle"

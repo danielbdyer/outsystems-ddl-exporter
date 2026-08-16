@@ -28,7 +28,12 @@ module SinkDiffView =
     /// minus the store walk (`SinkRead.readCatalog` is the store-addressed
     /// sibling; this one takes the snapshot the caller already holds).
     let catalogOf (snapshot: MetadataSnapshotRunner.MetadataSnapshot) : Task<Result<Catalog>> =
-        CatalogReader.parse (CatalogReader.SnapshotRowsets (MetadataSnapshotRunner.toBundle snapshot))
+        // The replay path drops the projection's erasure record by name
+        // (align-II.8): witness-time notices already surfaced on the live
+        // read, and the sink stores the snapshot raw at rest (S7) — a
+        // replay re-projects the same facts, so re-warning would say
+        // nothing new.
+        CatalogReader.parse (CatalogReader.SnapshotRowsets (fst (MetadataSnapshotRunner.toBundle snapshot)))
 
     /// The Catalog-grain diff between two witnessed editions.
     let catalogDiffOf

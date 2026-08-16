@@ -47,7 +47,7 @@ let private extractFromSeed () : Task<Result<Catalog>> =
                     match snapshotResult with
                     | Error errors -> return Result.failure errors
                     | Ok snapshot ->
-                        let bundle = MetadataSnapshotRunner.toBundle snapshot
+                        let bundle = fst (MetadataSnapshotRunner.toBundle snapshot)
                         let! catalog = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
                         return catalog
                 })

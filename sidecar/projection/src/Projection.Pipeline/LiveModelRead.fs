@@ -162,8 +162,14 @@ module LiveModelRead =
                 // erasure. `CatalogReader.parse` re-applies the (idempotent)
                 // normalization internally; calling it here is what lets the
                 // live read surface the erasure notices.
+                // align-II.8 (A54) — the bundle projection returns its NAMED
+                // erasures beside the bundle (the folds by design as Info,
+                // the data-dependent assumptions/drops as Warnings); they
+                // join the same notice rollup the normalization erasures
+                // ride, so nothing the projection loses stays silent.
+                let projected, bundleErasures = MetadataSnapshotRunner.toBundle snapshot
                 let bundle, erasureNotices =
-                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
+                    OssysRowsetReader.normalizeBundle projected
                 // F9 (audit 2026-06-17) — surface, never silently discard, every
                 // logical-vs-deployed `#ColumnReality` divergence the snapshot
                 // carries (the adapter keeps the LOGICAL value; the operator is
@@ -190,6 +196,7 @@ module LiveModelRead =
                      // reflected/reality value; the operator is told the model
                      // diverged).
                      @ MetadataSnapshotRunner.deleteRuleDivergences snapshot
+                     @ (bundleErasures |> List.map MetadataSnapshotRunner.BundleErasure.toDiagnostic)
                      @ erasureNotices
                      @ witnessNotices)
                 // Slice 4 — under a pushed scope, prune reference rows

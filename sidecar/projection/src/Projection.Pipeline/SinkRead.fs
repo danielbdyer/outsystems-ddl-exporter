@@ -147,7 +147,10 @@ module SinkRead =
                 fail "sink.snapshotUnreadable"
                     (sprintf "sink ref: witnessed sync %d for digest %s reads as absent (torn or undecodable — the store is fail-closed); re-run `projection sync` to witness a fresh state." r.SyncId r.Digest))
         | Some snapshot ->
-            CatalogReader.parse (CatalogReader.SnapshotRowsets (MetadataSnapshotRunner.toBundle snapshot))
+            // The replay path drops the projection's erasure record by name
+            // (align-II.8; the SinkDiffView twin): witness-time notices
+            // already surfaced on the live read (S7 raw-at-rest posture).
+            CatalogReader.parse (CatalogReader.SnapshotRowsets (fst (MetadataSnapshotRunner.toBundle snapshot)))
 
     /// `sink:<env>[@<syncId>]` → `Catalog`, in one motion (the `Source.ofSink`
     /// body): resolve the name, then read the witnessed state.

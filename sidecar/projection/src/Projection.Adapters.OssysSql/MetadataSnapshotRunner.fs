@@ -1547,7 +1547,90 @@ module MetadataSnapshotRunner =
                                     "flaggedAttributes", (flagged |> List.map (fun a -> a.AttrName) |> String.concat ",")
                                     "primaryKeySsKey", string pkKey ] } ])
 
-    let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
+    /// align-II.8 (E1; audit a1; A54) — one NAMED erasure of the bundle
+    /// projection: what `toBundle` folds, assumes, or drops, as a value.
+    /// The adjunction's modulus at this seam is enumerable — nothing is
+    /// lost in silence. Closed; a new fold or assumption in `toBundle`
+    /// lands WITH its variant (the A54 constant-modulus law pins the set).
+    [<RequireQualifiedAccess>]
+    type BundleErasure =
+        /// A parsed rowset's axes fold into a narrower bundle carrier (or
+        /// none): the rowset (its `RowsetContract` name) and what the fold
+        /// keeps or loses. Constant — these folds are the projection's
+        /// design, present on every bundle.
+        | FoldedRowset of rowset: string * detail: string
+        /// A reference row dropped at the join — its target entity name or
+        /// its owning attribute did not resolve, so no `ReferenceRow`
+        /// carries it (data-dependent; the dropped row's attribute id
+        /// locates it).
+        | UnjoinedReference of attrId: int
+        /// An entity with no physical-table row — its schema is assumed
+        /// `dbo` (data-dependent).
+        | AssumedSchema of entityId: int * entityName: string
+        /// An attribute with no declared data type — assumed `Text`
+        /// (data-dependent).
+        | AssumedDataType of attrId: int * attrName: string
+        /// The capability vector informs the sink plane only — the bundle
+        /// is capability-invariant BY DESIGN (the data-sink chapter, S2),
+        /// stated as a value rather than a comment.
+        | CapabilityInvariant
+
+    [<RequireQualifiedAccess>]
+    module BundleErasure =
+
+        /// Stable routing code per case (`<domain>.<subject>.<problem>`).
+        let code (e: BundleErasure) : string =
+            match e with
+            | BundleErasure.FoldedRowset _       -> "adapter.ossys.bundleErasure.foldedRowset"
+            | BundleErasure.UnjoinedReference _  -> "adapter.ossys.bundleErasure.unjoinedReference"
+            | BundleErasure.AssumedSchema _      -> "adapter.ossys.bundleErasure.assumedSchema"
+            | BundleErasure.AssumedDataType _    -> "adapter.ossys.bundleErasure.assumedDataType"
+            | BundleErasure.CapabilityInvariant  -> "adapter.ossys.bundleErasure.capabilityInvariant"
+
+        /// The located sentence (one mint; the notice rollup and the tests
+        /// read the same copy).
+        let describe (e: BundleErasure) : string =
+            match e with
+            | BundleErasure.FoldedRowset (rowset, detail) ->
+                sprintf "the '%s' rowset folds at the bundle projection: %s." rowset detail
+            | BundleErasure.UnjoinedReference attrId ->
+                sprintf "the reference on attribute id %d did not join (its target entity name or owning attribute is unresolved) — no reference row carries it." attrId
+            | BundleErasure.AssumedSchema (entityId, entityName) ->
+                sprintf "entity %s (id %d) has no physical-table row — its schema is assumed 'dbo'." entityName entityId
+            | BundleErasure.AssumedDataType (attrId, attrName) ->
+                sprintf "attribute %s (id %d) declares no data type — assumed 'Text'." attrName attrId
+            | BundleErasure.CapabilityInvariant ->
+                "the capability vector informs the sink plane only — the bundle is capability-invariant by design."
+
+        /// The notice-rollup projection: the constant by-design folds ride
+        /// as Info (recorded on the detail artifact, never a warning wall);
+        /// the data-dependent assumptions and drops warn (a shape surprise
+        /// the operator should see).
+        let toDiagnostic (e: BundleErasure) : DiagnosticEntry =
+            let severity =
+                match e with
+                | BundleErasure.FoldedRowset _
+                | BundleErasure.CapabilityInvariant -> DiagnosticSeverity.Info
+                | BundleErasure.UnjoinedReference _
+                | BundleErasure.AssumedSchema _
+                | BundleErasure.AssumedDataType _ -> DiagnosticSeverity.Warning
+            DiagnosticEntry.create "adapter:OSSYS" severity (code e) (describe e)
+
+    /// The constant modulus — the folds every bundle projection performs
+    /// by design, independent of the data (A54's enumerable half; the
+    /// data-dependent erasures join per shape).
+    let private constantErasures : BundleErasure list =
+        [ BundleErasure.FoldedRowset ("physColsPresent",
+            "the presence set is witnessed and persisted raw at the sink; no bundle field carries it")
+          BundleErasure.FoldedRowset ("fkReality",
+            "per-FK reflection folds to four per-reference scalars (HasDbConstraint, OnUpdate, ReflectedOnDelete, IsConstraintTrusted)")
+          BundleErasure.FoldedRowset ("columnReality",
+            "deployed reflection folds onto per-attribute facets (computed, default name, collation, storage, nullability, persisted)")
+          BundleErasure.FoldedRowset ("entities",
+            "Data_Kind's string domain folds to IsStatic (staticEntity alone reads true)")
+          BundleErasure.CapabilityInvariant ]
+
+    let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle * BundleErasure list =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =
             snapshot.PhysicalTables
@@ -1851,6 +1934,29 @@ module MetadataSnapshotRunner =
                     RetentionUnit  = t.RetentionUnit
                 } : OssysRowsetTypes.TemporalRow))
 
+        // align-II.8 (A54) — the data-dependent erasures, collected on the
+        // SAME predicates the projections above decide with (an assumption
+        // or a drop fires exactly when its shape occurs; deterministic
+        // order — constants first, then entity/attribute/reference order).
+        let assumedSchemas =
+            snapshot.Entities
+            |> List.choose (fun e ->
+                if Map.containsKey e.EntityId physicalByEntity then None
+                else Some (BundleErasure.AssumedSchema (e.EntityId, e.EntityName)))
+        let assumedDataTypes =
+            snapshot.Attributes
+            |> List.choose (fun a ->
+                match a.DataType with
+                | Some _ -> None
+                | None -> Some (BundleErasure.AssumedDataType (a.AttrId, a.AttrName)))
+        let unjoinedReferences =
+            snapshot.References
+            |> List.choose (fun r ->
+                match r.RefEntityName, Map.tryFind r.AttrId attributeById with
+                | Some _, Some _ -> None
+                | _ -> Some (BundleErasure.UnjoinedReference r.AttrId))
+        let erasures =
+            constantErasures @ assumedSchemas @ assumedDataTypes @ unjoinedReferences
         {
             Modules      = modules
             Kinds        = kinds
@@ -1862,4 +1968,5 @@ module MetadataSnapshotRunner =
             ColumnChecks = columnChecks
             Sequences    = sequences
             Temporal     = temporal
-        }
+        },
+        erasures

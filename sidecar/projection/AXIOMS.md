@@ -2429,3 +2429,28 @@ on disk.
 **Property test.** `AxiomTests` A53 gates the corpus via M16 citations: store
 round-trip, malformed-store refusal, replace-by-key, pending-by-absence,
 reception rendering, and the K9 correspondence ruling.
+
+## A54 — the bundle projection's erasures are enumerable (align-II.8, 2026-08-16)
+
+*Status: LIVE (landed with the vocabulary in the same commit).*
+
+**Statement.** `toBundle : MetadataSnapshot -> RowsetBundle * BundleErasure list` — the
+acquisition-to-bundle projection RETURNS what it loses. The erasure vocabulary is a
+closed DU (`FoldedRowset of rowset * detail | UnjoinedReference of attrId |
+AssumedSchema of entityId * name | AssumedDataType of attrId * name |
+CapabilityInvariant`); the CONSTANT modulus (the by-design folds — physColsPresent,
+fkReality's four-scalar projection, columnReality's facet collapse, Data_Kind's fold to
+IsStatic — plus capability-invariance) is present on every projection, and the
+data-dependent assumptions/drops fire exactly when their shape occurs. Every
+`FoldedRowset` cites a `RowsetContract` name (one wire vocabulary, A54 ∘ the II.7
+contract). The live read surfaces the record on the notice rollup (by-design folds as
+Info; assumptions and drops as Warnings); the sink replay paths drop it BY NAME (the S7
+raw-at-rest posture — witness-time notices already surfaced).
+
+**Enforcement.** The tuple return forces every consumer to dispose of the erasure
+record visibly; the modulus, the exactly-when-firing laws, the projection-reconciling
+drop count, and the code/sentence/severity totality are live facts
+(`BundleErasureTests`); capability-invariance stays pinned in
+`MetadataSnapshotCapabilityTests`.
+
+**Property test.** `AxiomTests` A54 gates the corpus via M16 citations.
