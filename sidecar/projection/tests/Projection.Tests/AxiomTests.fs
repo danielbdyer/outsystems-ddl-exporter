@@ -1854,3 +1854,43 @@ let ``A51: synthesis conventions are a closed registry (token injective; round-t
         sprintf
             "A51: legacy-parse-only conventions minted/referenced under src/ (stored keys parse; new mints are forbidden — use the converged convention):\n%s"
             (legacyOffenders |> List.map (fun (f, t) -> sprintf "  %s: %s" f t) |> String.concat "\n"))
+
+// ===========================================================================
+// A52 — chain assemblies satisfy their product preconditions (align-I.6)
+// ===========================================================================
+
+[<Fact>]
+let ``A52: chain assemblies satisfy product preconditions (full chain asserts; skeleton excludes by name)`` () =
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): the skeleton assembly names exactly the four topology-dependent exclusions"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): runSkeleton voices each exclusion as a skeleton.stepExcluded diagnostic"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): the full chain asserts satisfiable — zero exclusions with ProfileEvidence supplied"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6: runSkeletonWith a non-empty profile still emits zero OperatorIntent events (the profile is DataIntent's free variable)"
+    // Structural half, inline: the canonical chain assembles with zero
+    // exclusions given the acquisition-supplied ProfileEvidence…
+    let kept, exclusions =
+        ChainStep.assemble
+            (Set.ofList [ ChainProduct.ProfileEvidence ])
+            RegisteredTransforms.chainSteps
+    Assert.Empty exclusions
+    Assert.Equal(List.length RegisteredTransforms.chainSteps, List.length kept)
+    // …the split point is producer-derived (the Topology producer ends
+    // the prefix; the string key is retired)…
+    let prefix, suffix = RegisteredTransforms.chainStepsSplitWithPins Set.empty
+    Assert.Equal(Some ChainProduct.Topology, (List.last prefix).Produces)
+    Assert.True(suffix |> List.forall (fun s -> s.Produces <> Some ChainProduct.Topology))
+    // …and no suffix-less dependency exists: every step requiring
+    // Topology sits AFTER the producer in the canonical order.
+    let names = RegisteredTransforms.chainSteps |> List.map (fun s -> s.Metadata.Name)
+    let producerIx = names |> List.findIndex (fun n -> n = (List.last prefix).Metadata.Name)
+    RegisteredTransforms.chainSteps
+    |> List.iteri (fun ix step ->
+        if step.Requires |> List.contains ChainProduct.Topology then
+            Assert.True(ix > producerIx, sprintf "'%s' requires Topology but precedes its producer" step.Metadata.Name))

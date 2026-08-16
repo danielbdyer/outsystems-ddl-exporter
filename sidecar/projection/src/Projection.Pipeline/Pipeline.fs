@@ -907,31 +907,53 @@ module Compose =
         : Outputs * ComposeState =
         projectWithStateWithPins Set.empty fullPolicy profile folders groups catalog
 
-    /// Skeleton-shape project: routes through
-    /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
-    /// slice ε; the four pure-DataIntent passes). Yields the baseline
-    /// reachable from `Project(catalog, Policy.empty, profile)` —
-    /// `osm emit --skeleton-only` consumes this. Chapter 4.9 slice δ —
-    /// uses `EmissionPolicy.defaults` (no filtering) because the
-    /// skeleton view is operator-free by definition.
-    let projectSkeleton (catalog: Catalog) : Outputs =
-        projectFromChain RegisteredTransforms.skeletonChainSteps Profile.empty EmissionPolicy.empty catalog
+    /// Skeleton-shape project for a caller-supplied profile (align-I.6:
+    /// DataIntent's definition is parameterized over profile —
+    /// "reachable from `Project(catalog, Policy.empty, profile)`" — and
+    /// this surfaces the free variable). Routes through the
+    /// precondition-honoring skeleton assembly (seven passes; the four
+    /// zero-edge topology dependents are excluded BY NAME with their
+    /// producer — A52). Uses `EmissionPolicy.empty` (no filtering)
+    /// because the skeleton is operator-free by definition.
+    let projectSkeletonWith (profile: Profile) (catalog: Catalog) : Outputs =
+        projectFromChain (RegisteredTransforms.skeletonChainStepsFor profile) profile EmissionPolicy.empty catalog
 
-    /// Chapter A.4.7' slice ε — registry-driven traversal restricted
-    /// to the skeleton view (every Site classifies as `DataIntent`).
-    /// Returns the `Lineage<Diagnostics<ComposeState>>` from running
-    /// `RegisteredTransforms.skeletonChainSteps`; consumers inspect
-    /// the trail to assert skeleton-purity, or project to the final
-    /// Catalog for skeleton-only emit (slice ζ CLI).
+    /// The profile-empty skeleton project — `osm emit --skeleton-only`
+    /// consumes this (the operator-free × evidence-free baseline point).
+    let projectSkeleton (catalog: Catalog) : Outputs =
+        projectSkeletonWith Profile.empty catalog
+
+    /// Chapter A.4.7' slice ε (align-I.6: profile-parameterized) —
+    /// registry-driven traversal restricted to the skeleton assembly
+    /// (every Site classifies `DataIntent`, product preconditions
+    /// honored). Consumers inspect the trail to assert skeleton-purity,
+    /// or project to the final Catalog for skeleton-only emit.
     ///
-    /// The skeleton-purity property test (`runSkeleton` emits zero
-    /// `OperatorIntent` LineageEvents) promotes from filter-shape
-    /// only (chapter A.4.7 slice θ) to true-execution at this slice.
-    let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+    /// Every assembly exclusion is VOICED as a `skeleton.stepExcluded`
+    /// Info diagnostic — the narrowed baseline names what it does not
+    /// compute (absent-with-a-name, never present-and-degenerate).
+    let runSkeletonWith (profile: Profile) (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
         use _ = Bench.scope "compose.runSkeleton"
+        let exclusionEntries =
+            snd RegisteredTransforms.skeletonAssembly
+            |> List.map (fun (e: ChainExclusion) ->
+                { Source   = "skeleton"
+                  Severity = DiagnosticSeverity.Info
+                  Code     = "skeleton.stepExcluded"
+                  Message  = sprintf "skeleton excludes '%s' — requires %A, whose producer is outside the skeleton" e.StepName e.Missing
+                  SsKey    = None
+                  Metadata = Map.ofList [ "step", e.StepName; "missing", sprintf "%A" e.Missing ]
+                  SuggestedConfig = None })
         PassChainAdapter.compose
-            RegisteredTransforms.skeletonChainSteps
+            (RegisteredTransforms.skeletonChainStepsFor profile)
             (ComposeState.initial catalog)
+        |> LineageDiagnostics.tellDiagnostics exclusionEntries
+
+    /// The profile-empty skeleton run — the skeleton-purity property
+    /// tests (zero `OperatorIntent` LineageEvents, true-execution)
+    /// exercise this AND the profile-supplied form.
+    let runSkeleton (catalog: Catalog) : Lineage<Diagnostics<ComposeState>> =
+        runSkeletonWith Profile.empty catalog
 
     /// Read a V1 `osm_model.json` from disk and parse it into a V2
     /// Catalog. Errors are surfaced via the codebase's single-arity

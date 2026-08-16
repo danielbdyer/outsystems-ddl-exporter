@@ -31587,3 +31587,46 @@ segmentation, cross-lane sequence identity is equal by construction.
 **Rider declined (named).** Extending `synthesizedRenameWarnings` to sequences stays OUT:
 sequences still have no rename channel, and the convergence removes the misdiff the
 warning would have hedged. Re-open trigger: a real sequence-rename workflow lands.
+
+## 2026-08-16 — align-I.6: chain preconditions become products; the skeleton stops computing over zero edges [BEHAVIORAL]
+
+**Ruling (a3-F2).** `ChainStep` gains `Requires : ChainProduct list` / `Produces :
+ChainProduct option` over a closed product vocabulary (`ChainProduct = Topology |
+ProfileEvidence` — named intermediate products with real downstream consumers, not a
+ComposeState field inventory). Chain assembly now honors the dependency structure:
+- The FULL chain **asserts** satisfiability (zero exclusions — a mis-wired chain is a
+  structural bug that fails loud at assembly, not silently at run).
+- The SKELETON assembly returns a NAMED exclusion cascade: a step whose requirement no
+  kept step produces is excluded WITH its reason. The four zero-edge topology dependents
+  (`centrality`, `boundedContext`, `schemaComplexity`, `cascadeShockZones`) leave the
+  skeleton with their producer (`topologicalOrder`, excluded for its OperatorIntent
+  Ordering site) — SkeletonPurityTests' pass pin moves ELEVEN → SEVEN, and each exclusion
+  is voiced as a `skeleton.stepExcluded` Info diagnostic on the run itself.
+- The profile split point becomes producer-derived (`Produces = Some Topology`), retiring
+  the `"topologicalOrder"` string key at `chainStepsSplitWithPins`.
+
+**BEHAVIORAL.** `--skeleton-only` loses the four silently-degenerate analytics:
+previously the skeleton KEPT the topology dependents while excluding their producer, so
+the lifts' `TopologicalOrder.empty` default made every skeleton centrality / context /
+complexity / shock-zone result a zero-edge computation presented as analysis — the exact
+bug class the full chain fixed in the `registered None` era, reconstructed by
+construction, invisible to skeleton-purity (which only asserts zero OperatorIntent
+events). Now those results are absent-with-a-name rather than present-and-wrong. The
+topology lifts keep their defensive default for direct unit-test callers, re-documented:
+an ASSEMBLED chain can no longer reach it (A52).
+
+**`runSkeletonWith profile` (the second limb).** DataIntent's definition is parameterized
+over profile ("reachable from `Project(catalog, Policy.empty, profile)`"), but the
+implemented skeleton offered only the profile-empty point. `runSkeletonWith` /
+`projectSkeletonWith` surface the free variable; `runSkeleton` = `runSkeletonWith
+Profile.empty` (byte-identical baseline). The evidence-informed operator-free posture —
+"what does the data alone say?" — is now a nameable run, and skeleton purity is pinned
+across profiles (zero OperatorIntent events for ANY profile: the profile is DataIntent's
+own free variable, not operator opinion).
+
+**Law.** A52 (LIVE, same commit): assembled chains satisfy their product preconditions —
+full-chain zero exclusions asserted; skeleton exclusions named and exact; no assembled
+step computes over a defaulted product. Consumers enumerated: `--skeleton-only` emit
+(sections), SkeletonPurityTests (pin), `chainStepsSplitWithPins` (derived split), the
+acquisition-overlapped runner (semantics unchanged; prefix profile-invariance property
+still pinned).

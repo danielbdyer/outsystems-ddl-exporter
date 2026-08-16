@@ -2371,3 +2371,31 @@ round-trip + registry count over `SynthesisConvention.all`, plus the M16-style
 comment-stripped source sweep asserting zero free-string `synthesized`/
 `synthesizedComposite` literal mints under `src/` (corpus-floor-guarded against a
 vacuous pass).
+
+## A52 — chain assemblies satisfy their product preconditions (align-I.6, 2026-08-16)
+
+*Status: LIVE (landed with the vocabulary in the same commit).*
+
+**Statement.** Every `ChainStep` declares the intermediate products it requires and the one
+it produces (`ChainProduct` — a closed vocabulary of the chain's dependency structure:
+`Topology`, `ProfileEvidence`). Chain assembly honors the declarations in execution order:
+the FULL chain is totally satisfiable and ASSERTS it (zero exclusions — a mis-wired chain
+fails loud at assembly, never computes over a defaulted product at run); a NARROWED
+assembly (the skeleton) excludes each unsatisfiable step BY NAME with the missing product,
+and the exclusion cascades with the producer (the four topology dependents leave the
+skeleton with `topologicalOrder`). Exclusions are voiced on the run as
+`skeleton.stepExcluded` diagnostics — absent-with-a-name, never present-and-degenerate.
+The profile split point is producer-derived (`Produces = Some Topology`), not a string
+key. The skeleton itself is profile-parameterized (`runSkeletonWith` — DataIntent's
+definition is "reachable from `Project(catalog, Policy.empty, profile)`", so the profile
+is the baseline's own free variable and skeleton purity holds at every profile point).
+
+**Enforcement.** `ChainStep.assemble` (forward-walk cascade) + `ChainStep.assertSatisfiable`
+(the full-chain assert, applied at `allChainStepsFor` / `allChainStepsForWithPins`);
+`RegisteredTransforms.skeletonAssembly` returns the named exclusions the skeleton runner
+voices. The topology lifts' `TopologicalOrder.empty` fallback survives ONLY for direct
+unit-test callers — assembled chains cannot reach it.
+
+**Property test.** `SkeletonPurityTests.fs` — the seven-pass pin, the exact four-exclusion
+pin, the voiced-diagnostics pin, the full-chain zero-exclusion assert, and profile-
+parameterized purity.
