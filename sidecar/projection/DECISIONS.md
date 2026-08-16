@@ -32011,3 +32011,41 @@ renders it on the finding at the next check"), and the follow-up action names th
 
 Gates: the verb suites 310/0 (MovementSurface + VoiceTotality + AxiomTests with the added
 A53 citation); matrix regen no-drift; delta-lint 82=82; fast + perf per the ladder.
+
+## 2026-08-16 — align-II.7: the rowset contract — the 26-set walk derives from one table (E-track opens)
+
+**a1's charge.** The acquisition walk's shape knowledge lived in comments, and the
+comments had drifted twice: `skipResultSet`'s doc said "17 result sets V2 doesn't
+consume" (there are ten), and the walk's tail said "Rowset 26" for a zero-based
+ordinal 25 — count-comments over the one seam where a silent shift mis-keys every
+downstream identity. `RowsetContract.all` is now the ONE place the wire shape lives:
+26 entries, each `{Ordinal; Name; LeadingColumn; Disposition}` with
+`RowsetDisposition = Parsed of target | Drained of reason` (ten V1-SUNSET JSON
+aggregations drain, named; sixteen parse, each naming its `MetadataSnapshot` field).
+`ExpectedResultSets = List.length RowsetContract.all` — the count-pin literal (and its
+`[<Literal>]`, unconsumed as an attribute argument) retired.
+
+**The walk verifies the contract per rowset.** `read`/`skip` cite their contract row
+by name; `expect` asserts the wire position AND the leading column (`reader.GetName 0`
+— metadata, legal under SequentialAccess) BEFORE any row parses. Drift now trips as
+`MetadataExtractionError.RowsetContractDrift (rowset, detail)` — located, on its own
+code (`adapter.ossysSql.rowsetContractDrift`) — instead of a mapper misreading shifted
+ordinals into wrong-but-parseable values. The count check (`ResultSetMissing`) stays
+as the post-loop net; the per-set tripwire fires first and names the set.
+
+**Laws.** The table's coherence is pinned pure (ordinals 0..N-1 in list order; names
+distinct; every drain reasoned; `byName` total over the table and refusing outside
+it) and the parsed⇔snapshot totality is BIDIRECTIONAL via reflection: the parsed
+targets are exactly the `MetadataSnapshot` record's fields — a field added without
+its wire row fails, and a ghost target fails. The live canaries (the pure pool's
+Docker-gated extraction suite + the Integration SequentialAccess suite) verify the
+table against the real wire on every run — the leading-column pins passed live on
+first contact.
+
+**Stale-prose kill.** The `ExpectedResultSets` count-history block (22→23→25→26 with
+the "leading validation projection" tale) is replaced by the contract table + its
+append-only evolution law (new rowsets join at the END — the same law the progress
+canary pins on "capabilities" last).
+
+Additive: wire behavior is byte-identical on a conforming script; the only new
+behavior is a NAMED refusal where a drifted script previously mis-parsed.

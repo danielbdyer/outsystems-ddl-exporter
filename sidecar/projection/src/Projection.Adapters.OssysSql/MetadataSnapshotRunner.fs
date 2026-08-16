@@ -566,8 +566,8 @@ module MetadataSnapshotRunner =
         }
 
     /// Skip the current result set without parsing any rows. Used for the
-    /// 17 result sets V2 doesn't yet consume; `NextResultAsync` advances
-    /// past them.
+    /// Drained rowsets (`RowsetContract` — the V1-SUNSET JSON aggregation
+    /// tail); `NextResultAsync` advances past them.
     let private skipResultSet (reader: SqlDataReader) : Task<unit> =
         task {
             let mutable hasMore = true
@@ -796,24 +796,90 @@ module MetadataSnapshotRunner =
           HasOrderNum           = readBool r 17
           HasEntityDescription  = readBool r 18 }
 
-    /// Number of user-visible result sets the carbon-copied OSSYS rowsets
-    /// script emits. V1's documentation describes 22 user-visible rowsets
-    /// (rowsets 0..21); the canary's empirical walk observes **23** —
-    /// the script includes a leading validation/sanity-check projection
-    /// that V1's per-processor walk doesn't enumerate but V2's
-    /// `NextResultAsync` loop does. **Truth is the canary** (R6 split-brain:
-    /// the canary is V2's load-bearing forcing function); the constant
-    /// pins what V2 actually observes against the carbon-copied SQL.
-    /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
-    /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
-    /// instead of silently accepting partial data. Matrix row 35.
-    /// **25 as of the extraction fork** (DECISIONS 2026-07-18; #669
-    /// EF-22 + EF-23): the appended `sys.sequences` and temporal-
-    /// configuration rowsets join the walk. **26 as of the data-sink
-    /// chapter** (S2, 2026-08-15; CHAPTER_SINK_OPEN.md): the appended
-    /// capability-vector rowset joins the walk.
-    [<Literal>]
-    let ExpectedResultSets = 26
+    /// align-II.7 (E5; audit a1) — what happens to one wire rowset: V2
+    /// parses it into a named `MetadataSnapshot` field, or drains it
+    /// unread for a named reason. The parsed/drained split is a VALUE,
+    /// never a comment.
+    [<RequireQualifiedAccess>]
+    type RowsetDisposition =
+        /// Parsed into the named `MetadataSnapshot` field.
+        | Parsed of target: string
+        /// Advanced past unread, for the named reason.
+        | Drained of reason: string
+
+    /// One wire rowset the carbon-copied script emits: its zero-based
+    /// wire ordinal, the walk/progress name, the leading column its
+    /// SELECT projects (the cheap drift tripwire — a reordered or
+    /// reshaped SELECT trips it BEFORE a mapper misreads shifted
+    /// ordinals into wrong-but-parseable values), and its disposition.
+    type RowsetContractEntry =
+        { Ordinal       : int
+          Name          : string
+          LeadingColumn : string
+          Disposition   : RowsetDisposition }
+
+    /// align-II.7 — THE ROWSET CONTRACT: every result set the carbon-copied
+    /// OSSYS rowsets script emits, in wire order. The walk derives from
+    /// this table (`ExpectedResultSets` is its length; the progress labels
+    /// are its names; each read/skip asserts its ordinal + leading
+    /// column), so the count, the order, the names, and the parsed/drained
+    /// split live in ONE place — the count-comments this table replaced
+    /// had drifted twice (a stale "17 skipped", a stale "rowset 26" for a
+    /// zero-based 25). Truth is the canary (R6 split-brain): the live
+    /// walk verifies every row of this table on each extraction, and the
+    /// append-only evolution law (new rowsets join at the END) is the
+    /// same law the progress canary pins.
+    [<RequireQualifiedAccess>]
+    module RowsetContract =
+
+        /// The V1-SUNSET drain reason — the ten JSON-aggregation helpers
+        /// V2 never consumes (the typed rowsets carry the same facts;
+        /// the session-context flag opts out of building them server-side).
+        let private v1SunsetJson = "V1-SUNSET JSON aggregation; the typed rowsets carry the same facts"
+
+        let all : RowsetContractEntry list =
+            [ { Ordinal = 0;  Name = "modules";         LeadingColumn = "EspaceId";    Disposition = RowsetDisposition.Parsed "Modules" }
+              { Ordinal = 1;  Name = "entities";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Entities" }
+              { Ordinal = 2;  Name = "attributes";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "Attributes" }
+              { Ordinal = 3;  Name = "references";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "References" }
+              { Ordinal = 4;  Name = "physicalTables";  LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "PhysicalTables" }
+              { Ordinal = 5;  Name = "columnReality";   LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "ColumnReality" }
+              { Ordinal = 6;  Name = "columnChecks";    LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "ColumnChecks" }
+              { Ordinal = 7;  Name = "attrCheckJson";   LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 8;  Name = "physColsPresent"; LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "PhysColsPresent" }
+              { Ordinal = 9;  Name = "allIdx";          LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Indexes" }
+              { Ordinal = 10; Name = "idxColsMapped";   LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "IndexColumns" }
+              { Ordinal = 11; Name = "fkReality";       LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "ForeignKeysReality" }
+              { Ordinal = 12; Name = "fkColumns";       LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "ForeignKeyColumns" }
+              { Ordinal = 13; Name = "fkAttrMap";       LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 14; Name = "attrHasFK";       LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 15; Name = "fkColumnsJson";   LeadingColumn = "FkObjectId";  Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 16; Name = "fkAttrJson";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 17; Name = "triggers";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Triggers" }
+              { Ordinal = 18; Name = "attrJson";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 19; Name = "relJson";         LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 20; Name = "idxJson";         LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 21; Name = "triggerJson";     LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 22; Name = "moduleJson";      LeadingColumn = "module.name"; Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 23; Name = "sequences";       LeadingColumn = "SchemaName";  Disposition = RowsetDisposition.Parsed "Sequences" }
+              { Ordinal = 24; Name = "temporal";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Temporal" }
+              { Ordinal = 25; Name = "capabilities";    LeadingColumn = "HasDataType"; Disposition = RowsetDisposition.Parsed "Capabilities" } ]
+
+        /// The contract row for a walk name — the walk cites entries by
+        /// name; an unknown name is an impossible-state guard (the walk
+        /// and the table ship in one file, and the live canary exercises
+        /// every citation).
+        let byName (name: string) : RowsetContractEntry =
+            match all |> List.tryFind (fun e -> e.Name = name) with
+            | Some e -> e
+            | None -> invalidArg (nameof name) (sprintf "'%s' is not a rowset the contract names" name)
+
+    /// The number of result sets the script emits — the length of the
+    /// rowset contract (align-II.7: the count lives on the table alone;
+    /// the post-loop assertion surfaces a dropped rowset as
+    /// `ResultSetMissing`, and each read/skip asserts its own position +
+    /// leading column as `RowsetContractDrift`). Matrix row 35.
+    let ExpectedResultSets = List.length RowsetContract.all
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
@@ -841,16 +907,17 @@ module MetadataSnapshotRunner =
         task {
             use _ = Bench.scope "adapter.osm.extract"
             try
-                // This runner ingests the TYPED rowsets and drains the JSON
-                // aggregate rowsets unread (result sets 7, 13–16, 18–22) —
-                // opt out of BUILDING them server-side. The flag rides
-                // SESSION context (not a command parameter) so the script
-                // stays byte-identical with the V1 donor and a context-less
-                // caller gets the historical full build; all 23 rowsets are
-                // still returned in order with their columns (the skipped
-                // ones empty), so `ExpectedResultSets` and the reader walk
-                // are untouched. Pool-reset clears session context, so the
-                // flag never leaks to another logical connection.
+                // This runner ingests the TYPED rowsets and drains the
+                // JSON-aggregation rowsets unread (`RowsetContract` — the
+                // Drained entries) — opt out of BUILDING them server-side.
+                // The flag rides SESSION context (not a command parameter)
+                // so the script stays byte-identical with the V1 donor and
+                // a context-less caller gets the historical full build;
+                // every rowset is still returned in order with its columns
+                // (the drained ones empty), so `ExpectedResultSets` and the
+                // reader walk are untouched. Pool-reset clears session
+                // context, so the flag never leaks to another logical
+                // connection.
                 use flagCommand = new SqlCommand("EXEC sp_set_session_context @key = N'OsmSkipJsonRowsets', @value = 1;", cnn)
                 let! _ = flagCommand.ExecuteNonQueryAsync()
                 let script = MetadataExtractionSql.read()
@@ -930,18 +997,28 @@ module MetadataSnapshotRunner =
                 // into a closure helper that keeps the per-rowset
                 // surface to ~1 line each.
                 //
-                // `read name mapper` advances to the next rowset, parses
-                // every row via the typed mapper, reports the rowcount
-                // for progress observation. Symmetric `skip name`
-                // advances + skips + reports rowcount=0 for the V1-SUNSET
-                // JSON-aggregation tail (#AttrCheckJson, #FkAttrMap,
-                // #AttrHasFK, #FkColumnsJson, #FkAttrJson, #AttrJson,
-                // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
+                // align-II.7 — the walk verifies THE ROWSET CONTRACT per
+                // rowset: `read`/`skip` cite their contract row by name,
+                // and `expect` asserts the wire position and the leading
+                // column before any row is parsed — drift trips HERE,
+                // located, never as a mapper misreading shifted ordinals.
+                let expect (entry: RowsetContractEntry) : unit =
+                    let position = observedResultSets - 1
+                    if position <> entry.Ordinal then
+                        raise (RowsetContractException (entry.Name,
+                                sprintf "expected at wire ordinal %d, observed at %d" entry.Ordinal position))
+                    if reader.FieldCount > 0 then
+                        let observed = reader.GetName 0
+                        if observed <> entry.LeadingColumn then
+                            raise (RowsetContractException (entry.Name,
+                                    sprintf "leads with column '%s'; the contract pins '%s'" observed entry.LeadingColumn))
                 let read (name: string) (mapper: RowAtRest -> 'T) : Task<'T list> =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
+                        let entry = RowsetContract.byName name
                         let! _ = advanceNext ()
+                        expect entry
                         let! rows = readResultSet name reader mapper
                         report name rows.Length
                         return rows
@@ -950,33 +1027,35 @@ module MetadataSnapshotRunner =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
+                        let entry = RowsetContract.byName name
                         let! _ = advanceNext ()
+                        expect entry
                         do! skipResultSet reader
                         report name 0
                     }
 
-                // Rowset 0 — modules (no advance; reader opens here).
+                // The contract's first row — modules (no advance; the
+                // reader opens already-positioned on it).
                 let! modules =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope "adapter.osm.extract.rowset.modules"
+                        expect (RowsetContract.byName "modules")
                         let! rows = readResultSet "modules" reader mapModuleRow
                         report "modules" rows.Length
                         return rows
                     }
 
-                // Rowsets 1–4 — already-lifted V2-consumed surface.
+                // The identity spine — the first parsed run of the contract.
                 let! entities       = read "entities"       mapEntityRow
                 let! attributes     = read "attributes"     mapAttributeRow
                 let! references     = read "references"     mapReferenceRow
                 let! physicalTables = read "physicalTables" mapPhysicalTableRow
 
-                // Rowsets 5–18 — physical-reflection lifts (slice
-                // 5.13.ossys-rowsets-cluster). #AttrCheckJson (rowset
-                // 7), #FkAttrMap, #AttrHasFK, #FkColumnsJson,
-                // #FkAttrJson (rowsets 13–16) are V1-SUNSET JSON
-                // helpers V2 doesn't consume; skipped with the same
-                // report-shape so progress count stays accurate.
+                // The physical-reflection run (slice
+                // 5.13.ossys-rowsets-cluster), Drained entries skipped
+                // with the same report-shape so the progress count stays
+                // accurate — which is which lives on `RowsetContract`.
                 let! columnReality   = read "columnReality"   mapColumnRealityRow
                 let! columnChecks    = read "columnChecks"    mapColumnCheckRow
                 do! skip "attrCheckJson"
@@ -990,30 +1069,30 @@ module MetadataSnapshotRunner =
                 do! skip "fkColumnsJson"
                 do! skip "fkAttrJson"
 
-                // Rowset 17 — triggers (matrix row 23).
+                // Triggers (matrix row 23).
                 let! triggers = read "triggers" mapTriggerRow
 
-                // Rowsets 18–22 — V1-SUNSET JSON aggregation tail.
+                // The V1-SUNSET JSON aggregation tail — all Drained.
                 do! skip "attrJson"
                 do! skip "relJson"
                 do! skip "idxJson"
                 do! skip "triggerJson"
                 do! skip "moduleJson"
 
-                // Rowsets 24 + 25 — sequences + temporal configuration
-                // (the extraction fork; DECISIONS 2026-07-18; #669
-                // EF-22 + EF-23). Appended at the script's end.
+                // Sequences + temporal configuration (the extraction
+                // fork; DECISIONS 2026-07-18; #669 EF-22 + EF-23).
+                // Appended at the script's end.
                 let! sequences = read "sequences" mapSequenceRow
                 let! temporal  = read "temporal"  mapTemporalRow
 
-                // Rowset 26 — the capability vector (the data-sink
-                // chapter, S2 2026-08-15): the @Has* COL_LENGTH probes,
-                // finally returned. Sink-plane evidence; `toBundle`
-                // ignores it by design.
+                // The capability vector, the contract's last row (the
+                // data-sink chapter, S2 2026-08-15): the @Has* COL_LENGTH
+                // probes, finally returned. Sink-plane evidence;
+                // `toBundle` ignores it by design.
                 let! capabilities = read "capabilities" mapCapabilityRow
 
                 // Drain any trailing rowsets the SQL might emit beyond
-                // the documented 23. Per matrix row 35: a SQL-contract
+                // the contract. Per matrix row 35: a SQL-contract
                 // drift adds rowsets here; the contract check below
                 // surfaces the structural drift before the IR-build
                 // path silently absorbs it. Today this loop should be

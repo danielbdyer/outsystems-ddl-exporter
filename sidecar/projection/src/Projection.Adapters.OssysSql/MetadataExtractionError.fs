@@ -57,6 +57,14 @@ type MetadataExtractionError =
     /// retry was attempted (the predicate refused to classify it as
     /// transient).
     | OtherSqlError of message: string
+    /// One wire rowset arrived OUT OF CONTRACT — at a wire ordinal other
+    /// than the one `RowsetContract` pins, or leading with a different
+    /// column than its SELECT projects (a reordered or reshaped script).
+    /// Script-shape grain like `ResultSetMissing`, but LOCATED: the named
+    /// rowset and the detail say exactly where the drift is, before a
+    /// mapper misreads shifted ordinals into wrong-but-parseable values
+    /// (align-II.7; audit a1).
+    | RowsetContractDrift of rowsetName: string * detail: string
 
 /// Internal F# exception type tagged at the row-mapping boundary inside
 /// `readResultSet` to carry the `resultSetName + rowIndex` context the
@@ -64,6 +72,12 @@ type MetadataExtractionError =
 /// (the DU's `RowMappingFailure` is the public form). Translation happens
 /// in `MetadataExtractionError.classify`.
 exception RowMappingException of resultSetName: string * rowIndex: int * inner: exn
+
+/// Internal F# exception tagged by the walk's contract check (align-II.7):
+/// a rowset at the wrong wire ordinal or leading with an unexpected column.
+/// Not exposed in `MetadataExtractionError` (the DU's `RowsetContractDrift`
+/// is the public form); translation happens in `classify`.
+exception RowsetContractException of rowsetName: string * detail: string
 
 [<RequireQualifiedAccess>]
 module MetadataExtractionError =
@@ -84,6 +98,9 @@ module MetadataExtractionError =
     [<Literal>]
     let CodeOtherSql = "adapter.ossysSql.runFailed"
 
+    [<Literal>]
+    let CodeRowsetContractDrift = "adapter.ossysSql.rowsetContractDrift"
+
     /// Classify an exception into the closed-DU `MetadataExtractionError`.
     /// Row-mapping exceptions tagged by `readResultSet` lift to
     /// `RowMappingFailure`; `SqlException` matched by the transient
@@ -93,6 +110,8 @@ module MetadataExtractionError =
         match ex with
         | RowMappingException (resultSetName, rowIndex, inner) ->
             MetadataExtractionError.RowMappingFailure (resultSetName, rowIndex, inner)
+        | RowsetContractException (rowsetName, detail) ->
+            MetadataExtractionError.RowsetContractDrift (rowsetName, detail)
         | :? SqlException as sql when isTransient sql ->
             MetadataExtractionError.TransientSqlError (sql.Number, sql.Message)
         | _ ->
@@ -150,6 +169,11 @@ module MetadataExtractionError =
             ValidationError.create
                 CodeOtherSql
                 (sprintf "MetadataSnapshotRunner.runAsync failed: %s" message)
+        | MetadataExtractionError.RowsetContractDrift (rowsetName, detail) ->
+            ValidationError.createWithMetadata
+                CodeRowsetContractDrift
+                (sprintf "OSSYS rowset '%s' arrived out of contract: %s. SQL-contract drift suspected." rowsetName detail)
+                (Map.ofList [ "rowset", Some rowsetName ])
 
     /// Assert observed result-set count matches the script's contract.
     /// Returns `Ok ()` on match; `Error [ValidationError]` carrying

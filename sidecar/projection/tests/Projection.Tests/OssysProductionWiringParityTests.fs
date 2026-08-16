@@ -230,10 +230,71 @@ let ``5.1.γ row 35: ExpectedResultSets is pinned per empirical canary observati
     // enumerates). The extraction fork (DECISIONS 2026-07-18; #669
     // EF-22 + EF-23) appended the sequences and temporal rowsets: 25.
     // The data-sink chapter (S2, 2026-08-15) appended the capability
-    // vector: 26. The constant pins V2's observation — if a future SQL
-    // refactor changes the count, this test surfaces it before the
-    // contract check would silently drift.
+    // vector: 26. align-II.7: the count now DERIVES from the rowset
+    // contract (`ExpectedResultSets = List.length RowsetContract.all`);
+    // this pin catches a table row added or dropped without the walk —
+    // the count still moves only with a deliberate contract change.
     Assert.Equal(26, MetadataSnapshotRunner.ExpectedResultSets)
+    Assert.Equal(List.length MetadataSnapshotRunner.RowsetContract.all, MetadataSnapshotRunner.ExpectedResultSets)
+
+// -----------------------------------------------------------------
+// align-II.7 (E5; audit a1) — THE ROWSET CONTRACT's own laws. The walk
+// derives its count, labels, positions, and leading-column tripwires
+// from `RowsetContract.all`; these pin the table's internal coherence
+// (the live canary verifies it against the wire on every extraction).
+// -----------------------------------------------------------------
+
+[<Fact>]
+let ``align-II.7: the rowset contract is wire-ordered — ordinals are exactly 0..N-1 in list order, names distinct, leading columns named`` () =
+    let entries = MetadataSnapshotRunner.RowsetContract.all
+    entries
+    |> List.iteri (fun ix e ->
+        Assert.Equal(ix, e.Ordinal)
+        Assert.False(String.IsNullOrWhiteSpace e.Name, sprintf "entry %d carries no name" ix)
+        Assert.False(String.IsNullOrWhiteSpace e.LeadingColumn, sprintf "'%s' carries no leading column" e.Name))
+    Assert.Equal(List.length entries, entries |> List.map (fun e -> e.Name) |> List.distinct |> List.length)
+
+[<Fact>]
+let ``align-II.7: the parsed targets are exactly the MetadataSnapshot fields — every field has its wire rowset, every parsed rowset a field`` () =
+    // The bidirectional totality: a snapshot field added without its
+    // contract row fails, and a contract row naming a ghost field fails.
+    let parsedTargets =
+        MetadataSnapshotRunner.RowsetContract.all
+        |> List.choose (fun e ->
+            match e.Disposition with
+            | MetadataSnapshotRunner.RowsetDisposition.Parsed target -> Some target
+            | MetadataSnapshotRunner.RowsetDisposition.Drained _ -> None)
+    let snapshotFields =
+        Reflection.FSharpType.GetRecordFields typeof<MetadataSnapshotRunner.MetadataSnapshot>
+        |> Array.map (fun p -> p.Name)
+        |> Array.toList
+    Assert.Equal<Set<string>>(Set.ofList snapshotFields, Set.ofList parsedTargets)
+    Assert.Equal(List.length parsedTargets, parsedTargets |> List.distinct |> List.length)
+
+[<Fact>]
+let ``align-II.7: every drained rowset carries its reason — a drain is never unexplained`` () =
+    for e in MetadataSnapshotRunner.RowsetContract.all do
+        match e.Disposition with
+        | MetadataSnapshotRunner.RowsetDisposition.Drained reason ->
+            Assert.False(String.IsNullOrWhiteSpace reason, sprintf "'%s' drains with no reason" e.Name)
+        | MetadataSnapshotRunner.RowsetDisposition.Parsed _ -> ()
+
+[<Fact>]
+let ``align-II.7: byName resolves every contract row and refuses an unknown name`` () =
+    for e in MetadataSnapshotRunner.RowsetContract.all do
+        Assert.Equal(e, MetadataSnapshotRunner.RowsetContract.byName e.Name)
+    Assert.Throws<ArgumentException>(fun () ->
+        MetadataSnapshotRunner.RowsetContract.byName "nonsense" |> ignore)
+    |> ignore
+
+[<Fact>]
+let ``align-II.7: a RowsetContractDrift surfaces the located rowset on its own code`` () =
+    let err =
+        MetadataExtractionError.RowsetContractDrift ("entities", "leads with column 'EspaceId'; the contract pins 'EntityId'")
+        |> MetadataExtractionError.toValidationError
+    Assert.Equal(MetadataExtractionError.CodeRowsetContractDrift, err.Code)
+    Assert.Contains("entities", err.Message)
+    Assert.Equal(Some "entities", err.Metadata.["rowset"])
 
 [<Fact>]
 let ``5.1.γ row 35: resultSetContractCheck succeeds on matching count`` () =
@@ -267,6 +328,7 @@ let ``5.1.γ row 35: every MetadataExtractionError variant produces a distinct c
             MetadataExtractionError.ResultSetMissing (22, 20)
             MetadataExtractionError.TransientSqlError (40613, "")
             MetadataExtractionError.OtherSqlError ""
+            MetadataExtractionError.RowsetContractDrift ("entities", "expected at wire ordinal 1, observed at 2")
         ]
     let codes =
         variants
